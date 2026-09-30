@@ -83,6 +83,7 @@ export class PreviewHost {
     play?: boolean; frame?: number;
     fit?: { x: number; y: number; w: number; h: number };
     stage?: { width: number; height: number; background: string };
+    skin?: string;
   } = {}): void {
     this.post({ type: "load", skeleton, atlas, pages, ...opts });
   }

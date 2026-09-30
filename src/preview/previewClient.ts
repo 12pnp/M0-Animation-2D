@@ -140,6 +140,8 @@ async function load(msg: Extract<HostToFrame, { type: "load" }>): Promise<void> 
   disposeCurrent();
   textures = pageTextures;
   view = new spine.Spine({ skeletonData, autoUpdate: false });
+  // A skeleton whose default skin draws nothing shows the stage's choice.
+  if (msg.skin && skeletonData.findSkin(msg.skin)) view.skeleton.setSkin(msg.skin);
   view.debug = msg.debugDraw ? new spine.SpineDebugRenderer() : undefined;
 
   fitBox = msg.fit ?? null;

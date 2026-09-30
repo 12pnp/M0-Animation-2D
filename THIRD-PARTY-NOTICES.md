@@ -11,6 +11,7 @@ generated from `src/core/about.ts`.
 |---|---|---|---|
 | [PixiJS](https://pixijs.com) | 8.21.0 | MIT | yes, `public/vendor/pixi.js` |
 | [spine-pixi-v8](https://github.com/EsotericSoftware/spine-runtimes) | 4.3.13 | Spine Runtimes License | yes, `public/vendor/spine-pixi-v8.js` (the Preview) |
+| [spine-core](https://github.com/EsotericSoftware/spine-runtimes) | 4.3.13 | Spine Runtimes License | yes, bundled (poses opened Spine files on the stage, reads their atlases) |
 | [ag-psd](https://github.com/Agamnentzar/ag-psd) | 31.x | MIT | yes, bundled |
 | [pako](https://github.com/nodeca/pako) | 2.x | MIT AND Zlib | yes, bundled, via ag-psd |
 | [base64-js](https://github.com/beatgammit/base64-js) | 1.x | MIT | yes, bundled, via ag-psd |
@@ -18,7 +19,6 @@ generated from `src/core/about.ts`.
 | [Vite](https://vite.dev) | 6.x | MIT | no, build only |
 | [Vitest](https://vitest.dev) | 3.x | MIT | no, tests only |
 | [TypeScript](https://www.typescriptlang.org) | 5.x | Apache-2.0 | no, build only |
-| [spine-core](https://github.com/EsotericSoftware/spine-runtimes) | 4.3.13 | Spine Runtimes License | no, tests only (`devDependencies`) |
 
 The vendored files carry their notices beside them:
 `public/vendor/LICENSE-pixijs.txt` and `public/vendor/LICENSE-spine-runtimes.txt`,

@@ -9,13 +9,23 @@ import type { DisplayRef, Node, NodeKind, Project } from "./types";
  */
 export function displaysOf(node: Node): DisplayRef[] {
   if (!node.itemId) return [];
-  return [{ itemId: node.itemId, pivot: node.pivot }, ...(node.extraDisplays ?? [])];
+  return [displayZero(node, node.itemId), ...(node.extraDisplays ?? [])];
 }
 
 export function displayAt(node: Node, index: number): DisplayRef | null {
   if (index < 0 || !node.itemId) return null;
-  if (index === 0) return { itemId: node.itemId, pivot: node.pivot };
+  if (index === 0) return displayZero(node, node.itemId);
   return node.extraDisplays?.[index - 1] ?? null;
+}
+
+function displayZero(node: Node, itemId: ItemId): DisplayRef {
+  return node.attachment ? { itemId, pivot: node.pivot, attachment: node.attachment } : { itemId, pivot: node.pivot };
+}
+
+/** The node a node's transform hangs from: the bone a slot rides, else its
+ *  parent. */
+export function anchorOf(node: Node): Node["parentId"] {
+  return node.slotBone ?? node.parentId;
 }
 
 /** Every library item the node can show — what usage counts, cycle checks

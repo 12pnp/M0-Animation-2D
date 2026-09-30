@@ -905,6 +905,20 @@ export class App {
     ];
   }
 
+  /** File ▸ Open Spine…: the skeleton .json, its .atlas and page images
+   *  picked together, or the zip File ▸ Export writes. */
+  private pickSpine(): void {
+    const input = h("input", { type: "file", multiple: true, accept: ".json,.atlas,.txt,.png,.jpg,.jpeg,.webp,.zip" });
+    input.style.display = "none";
+    document.body.appendChild(input);
+    on(input, "change", () => {
+      const files = [...(input.files ?? [])];
+      input.remove();
+      if (files.length) void this.project.openSpine(files);
+    });
+    input.click();
+  }
+
   /** File ▸ Import PSD… — the same path as dropping one on the Library. */
   private pickPsd(): void {
     const input = h("input", { type: "file", accept: ".psd,image/vnd.adobe.photoshop" });
@@ -1031,6 +1045,7 @@ export class App {
         items: () => [
           it("file.new"),
           it("file.open"),
+          it("file.openSpine"),
           ...this.recentItems(),
           "-",
           it("file.save"),
@@ -1234,6 +1249,7 @@ export class App {
     reg("file.saveAs", () => void this.project.saveAs());
     reg("file.importImages", () => this.shell.showPanel("library"));
     reg("file.importPsd", () => this.pickPsd());
+    reg("file.openSpine", () => this.pickSpine());
     reg("file.export", () => void this.exportProject());
     reg("file.exportFolder", () => void this.exportToFolder());
     reg("file.exportSettings", () => openExportSettings(this.store));

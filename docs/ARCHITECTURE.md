@@ -14,7 +14,8 @@
 > Rewrite each section when the phase that replaces it lands. "The Spine 4.3
 > contract" (phase 1) and "The Spine exporter" (phases 2 and 5) are new; "The preview is
 > ground truth" and "Vendored runtime" describe the Spine preview (phase 3); "Colour,
-> alpha and blend mode" and "Mask layers" describe Spine's tint and clipping (phase 6).
+> alpha and blend mode" and "Mask layers" describe Spine's tint and clipping (phase 6);
+> "Opening Spine files" is new (phase 7).
 
 How Animo is built, and — mostly — the things in it that fail **silently** when
 you get them wrong. This is not a style guide: it is the record of decisions
@@ -816,6 +817,93 @@ flowchart TD
   scene holding a looping symbol (the frog) moved there and is frozen here.
 - Depth stops at 10, as `SceneRenderer.drawEntry` does; symbols containing each other
   are an error.
+
+## Opening Spine files
+
+File ▸ Open Spine reads a Spine 4.3 export (the skeleton `.json`, its `.atlas` or Unity's
+`.atlas.txt`, and the page images, or a zip of them) into a new, unsaved project whose scene
+symbol is the skeleton.
+
+```mermaid
+flowchart LR
+    FILES["name.json · name.atlas · pages<br/>(or a zip)"] --> READ["io/import/spineFiles.ts<br/>readSpineFiles · cutRegions"]
+    READ -->|"regions upright, untrimmed"| ASSETS["AssetStore"]
+    READ --> IMP["core/spine/importSpine.ts"]
+    IMP --> KEYS["importKeys.ts<br/>mergeKeys (checked per interval)"]
+    IMP --> DOC["SymbolItem<br/>+ spine: SpineCarry"]
+    DOC --> EXP["exportSpine"]
+    DOC --> POSE["spinePose.ts<br/>posedSymbol"]
+    EXP -->|"setupOnly"| POSE
+    POSE -->|"spine-core: worlds, attachments,<br/>draw order, mesh vertices"| STAGE["SceneRenderer.drawSpineEntries"]
+```
+
+- **Cutting.** `cutRegions` draws each atlas region into its own canvas at its untrimmed
+  size, turned upright. Rotations of 90°, 180° and 270° are read the way
+  `MeshAttachment.computeUVs` reads them. Premultiplied pages are un-premultiplied. All
+  PNG encodes run at once: some browsers hold each `toBlob` to a one-second tick. The
+  whole import is checked with stand-in images before the open project is let go, so a
+  file that cannot open costs nothing.
+- **Bones and slots.** A bone is a bone node. A slot is an image node that RIDES its bone
+  (`Node.slotBone`): no transform or bone of its own, `parentId` null, so the layer
+  list can hold Spine's draw order, which does not follow the bone tree the way layers
+  do. The layers are the bone tree first, then the slots, front first. Slot and bone
+  names are separate namespaces in Spine and in `uniqueNames`. The file's first bone is
+  the skeleton's root whatever its name (`rootBoneOf`).
+- **Displays.** The default skin's regions and meshes are the slot's displays, each keeping
+  its attachment JSON (`DisplayRef.attachment`), the setup attachment first;
+  `Node.setupDisplay` −1 means the setup shows none. Everything else is carried
+  (`SymbolItem.spine`, `Animation.spine`, `Node.spine`, `IkConstraint.spine`).
+  Weighted vertices hold bone NAMES in the document (`carry.ts`), turned back into the
+  export's indices on the way out, because the export may order bones differently.
+- **Keys** (`importKeys.ts`). Spine keys each value on its own; the editor keys whole
+  frames with one ease per channel. Keys go on the union of the frames, each interval
+  gets per channel the ease that plays as Spine does (a bezier piece cut out by
+  de Casteljau, its value controls fitted to what the whole plays), and every interval
+  is then checked at each whole frame through the stage's own sampler against Spine's
+  evaluation (`valueAt`, the 10-piece polyline). What fails is written frame by frame,
+  exact. A key between frames makes the file run at the first multiple of its rate that
+  holds every key (60 for 1/60 s), else it stays between frames and its intervals are
+  written frame by frame. An attachment switched between frames shows from the next.
+- **Timing.** An opened animation ends AT its last frame (`Animation.endsAtLastFrame`),
+  where a Spine loop keys its last pose and wraps to 0. The export writes
+  `(duration − 1) / fps`, and editor playback wraps there.
+- **Shear.** The editor folds shearX into the rotation, which leaves the local matrix as it
+  was. Under a non-normal `inherit` Spine builds the parent frame from the rotation alone,
+  so there the shear stays Spine's own, carried.
+- **Colour.** Light L and dark D become multiplier L − D and offset D: `lightHex` /
+  `darkHex` give the same bytes back.
+
+### The stage poses an opened rig through the runtime
+
+An opened rig relies on what the editor's pose does not do: meshes, weights, deform keys,
+inherit modes, transform, path, physics and slider constraints, clipping, draw order keys.
+`posedSymbol` (`core/spine/spinePose.ts`) runs `evaluateSymbol`, gives spine-core each
+bone's local transform and each slot's attachment and colour, applies the carried
+timelines at the frame, and reads back world matrices, attachments, colours, the draw
+order, clipping and every region's and mesh's world vertices (`PoseEntry.spine`,
+`PoseEntry.clip`). `SceneRenderer.drawSpineEntries` draws a region as one affine image and
+a mesh triangle by triangle, and clips the way `SkeletonClipping` does: one clip at a time,
+through its end slot. `entryBox` and the hit test use the same vertices, so outlines and
+picking follow the mesh. Picking an attachment picks the bone it rides.
+
+The skeleton is `exportSpine(…, { setupOnly: true })`, the file the export writes, less its
+generated keys, over one untrimmed page of library images. It is rebuilt only when the
+structure changes (`structureKey`). Posing spineboy-pro or celestial-circus takes 0.3 ms.
+Physics is posed at rest (`Physics.reset`), because a seek has no frames before it to
+simulate from. A rig whose default skin draws nothing shows its first other skin, on the
+stage and in the Preview (`stageSkinOf`). "Fit to Stage" frames the rig, and the Preview
+draws no stage box for it: an opened rig sits about its own origin, not on a stage.
+
+**Tests.** `tests/spineImport.test.ts` plays `export(import(x))` against `x` in spine-core
+for all 16 JSON samples in M0-Animation2D. At every whole frame it compares each bone's
+world matrix, the draw order, each slot's attachment, colour and dark colour, and every
+region's and mesh's world vertices. The worst difference is 0.02 px. It also pins each
+rig's frame-by-frame count. `tests/spinePose.test.ts` checks that the stage equals the
+export as the preview seeks it (worst 0.0011 px). `tests/spineImportRules.test.ts` covers
+the rules one at a time. Fourteen deliberate bugs each fail at least one of them. In the
+browser, the original files and the re-exported ones rendered by spine-pixi agree on
+99.6% of spineboy-pro's pixels; the rest are one-pixel region edges, where the original
+packer bleeds colour into the transparent border.
 
 ## The DragonBones 5.5 contract
 
@@ -1774,7 +1862,8 @@ Selection tool — pressing H and dragging marquee-selects instead of panning. B
 exist by another route: panning is space+drag or the middle button, zooming is the wheel and ⌘±.
 What is missing is the two tool classes, not the behaviour.
 
-Vector drawing tools, mesh deformation.
+Vector drawing tools, mesh editing. Meshes opened from a Spine file are drawn and
+written back, not edited (Opening Spine files).
 
 Vector shapes have no home in the format: `_getDisplayType` is `image`, `armature`, `mesh`,
 `boundingBox`, `path` — and `path` is `PathDisplayData` for `PathConstraint`, which nothing

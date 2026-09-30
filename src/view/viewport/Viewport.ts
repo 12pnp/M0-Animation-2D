@@ -4,7 +4,8 @@ import { contentMatrixOf, SceneRenderer } from "./SceneRenderer";
 import { type Guide, Overlay, RULER } from "./Overlay";
 import type { Store } from "@/app/Store";
 import type { AssetStore } from "@/app/AssetStore";
-import { entryBox, evaluateSymbol, type FrameContext, type Pose } from "@/core/doc/pose";
+import { entryBox, type FrameContext, type Pose, spinePixelAt } from "@/core/doc/pose";
+import { posedSymbol, spineBounds } from "@/core/spine/spinePose";
 import type { NodeId } from "@/core/doc/ids";
 import { applyInverse, invert, mat, matOf, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { polygonContains, type Rect, rectContains, transformCorners } from "@/core/math/geom";
@@ -344,11 +345,11 @@ export class Viewport {
       const store = this.store;
       const anim = store.currentAnimation;
       const sym = store.currentSymbol;
-      const out: PoseAt[] = [{ pose: evaluateSymbol(sym, anim, ctx.frame, ctx.mode), when: ctx }];
+      const out: PoseAt[] = [{ pose: posedSymbol(store.project, sym, anim, ctx.frame, ctx.mode), when: ctx }];
       if (anim && store.ui.editMultipleFrames && ctx.mode === "animate" && !store.ui.playMode) {
         const span = store.onionSpan;
         for (let f = span.start; f <= span.end; f++) {
-          if (f !== ctx.frame) out.push({ pose: evaluateSymbol(sym, anim, f, "animate"), when: { ...ctx, frame: f } });
+          if (f !== ctx.frame) out.push({ pose: posedSymbol(store.project, sym, anim, f, "animate"), when: { ...ctx, frame: f } });
         }
       }
       return out;
@@ -390,6 +391,15 @@ export class Viewport {
         const e = pose.entries[i]!;
         if (!e.visible || e.node.kind === "bone") continue;
         if (exclude?.has(e.nodeId)) continue;
+        if (e.spine) {
+          // Posed by the runtime: its triangles, and the pixel under them.
+          const px = spinePixelAt(e, wx, wy);
+          const item = project.items[e.spine.itemId];
+          if (!px || !isImage(item) || assets.alphaAt(item.assetId, px.x, px.y) < 8) continue;
+          // A slot has no transform of its own: the bone it rides is what
+          // moves it, as picking an attachment in Spine picks its bone.
+          return e.node.slotBone ?? e.nodeId;
+        }
         const box = entryBox(project, e, when);
         if (!box || !e.display) continue;
 
@@ -941,7 +951,15 @@ export class Viewport {
     const s = this.store.project.stage;
     this.fitPending = this.camera.width < 100 || this.camera.height < 100;
     if (this.fitPending) return;
-    this.camera.fit({ x: 0, y: 0, w: s.width, h: s.height });
+    // An opened Spine rig sits about its own origin, not on a stage: frame it.
+    const sym = this.store.currentSymbol;
+    const rig = sym.spine ? spineBounds(this.store.project, sym) : null;
+    if (rig) {
+      const m = Math.max(rig.w, rig.h) * 0.08;
+      this.camera.fit({ x: rig.x - m, y: rig.y - m, w: rig.w + 2 * m, h: rig.h + 2 * m });
+    } else {
+      this.camera.fit({ x: 0, y: 0, w: s.width, h: s.height });
+    }
     this.store.setUi({ zoom: this.camera.zoom }, "ui");
     this.invalidate();
   }

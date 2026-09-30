@@ -49,6 +49,7 @@ export const COMMANDS: CommandDef[] = [
   c("File", "file.save", "Save", ["Mod+S"], true),
   c("File", "file.saveAs", "Save As…", ["Mod+Shift+S"], true),
   c("File", "file.importImages", "Import Images…", ["Mod+R"]),
+  c("File", "file.openSpine", "Open Spine…"),
   c("File", "file.importPsd", "Import PSD…"),
   c("File", "file.export", "Export Spine…", ["Mod+Alt+E"]),
   c("File", "file.exportFolder", "Export to Folder…"),

@@ -1,7 +1,6 @@
 import type { Store } from "./Store";
 import type { AssetStore } from "./AssetStore";
 import { createProject } from "@/core/doc/defaults";
-import { reseed } from "@/core/doc/ids";
 import { invalidateBounds } from "@/core/doc/pose";
 import type { Diagnostic } from "@/core/doc/schema";
 import { deserializeProject, PROJECT_EXTENSION, serializeProject, } from "@/io/project/ProjectFile";
@@ -16,6 +15,9 @@ import {
 import { clearRecents, listRecents, type RecentEntry, rememberRecent, } from "@/io/project/Recents";
 import { Autosaver, type AutosaveRecord, clearAutosave, readAutosave, } from "@/io/project/Autosave";
 import { type RunBusy, runQuietly } from "./busy";
+import { cutRegions, readSpineFiles } from "@/io/import/spineFiles";
+import { type AtlasImage, importSpine } from "@/core/spine/importSpine";
+import { type AssetId, newAssetId, reseed } from "@/core/doc/ids";
 
 export interface ProjectServiceEvents {
   onLoaded?(diagnostics: Diagnostic[]): void;
@@ -213,6 +215,59 @@ export class ProjectService {
       return true;
     } catch (err) {
       this.events.onStatus?.(`Could not open: ${message(err)}`, true);
+      return false;
+    }
+  }
+
+  // ── Spine ──────────────────────────────────────────────────────────────
+
+  /**
+   * Open a Spine export (skeleton JSON, atlas, page images; or a zip of
+   * them) as a new, unsaved project. Everything is read and checked before
+   * the current project is let go, so a file that cannot be opened costs
+   * nothing.
+   */
+  async openSpine(picked: File[]): Promise<boolean> {
+    if (!(await this.confirmDiscard())) return false;
+    try {
+      const { project, diagnostics, name } = await this.busy("Opening Spine files", async (report) => {
+        const files = await readSpineFiles(picked);
+        const warnings: string[] = [];
+        report(0.1);
+        const regions = await cutRegions(files, (m) => warnings.push(m));
+        report(0.6);
+        // A dry run with stand-in images: the importer's refusals, before
+        // anything of the open project is touched.
+        const stand = new Map<string, AtlasImage>(regions.map((r) => [r.name, { name: r.name, width: r.width, height: r.height, assetId: "" as AssetId }]));
+        importSpine(files.json, files.name, stand);
+
+        reseed();
+        this.assets.clear();
+        // Side by side, ids handed out in atlas order first.
+        const ids = regions.map(() => newAssetId());
+        const images = new Map<string, AtlasImage>();
+        await Promise.all(regions.map((r, i) => this.assets.addWithId(ids[i]!, r.png, r.name)));
+        regions.forEach((r, i) => images.set(r.name, { name: r.name, width: r.width, height: r.height, assetId: ids[i]! }));
+        report(0.9);
+        const imported = importSpine(files.json, files.name, images);
+        const all = [...warnings, ...imported.diagnostics.map((d) => d.message)];
+        return {
+          project: imported.project,
+          diagnostics: all.map((message): Diagnostic => ({ path: files.name, message, severity: "warning" })),
+          name: files.name,
+        };
+      });
+      invalidateBounds();
+      this.store.replaceProject(project);
+      // Unsaved: it is a new document made from those files, not one of them.
+      this.ref = null;
+      this.store.history.markDirty();
+      this.onProjectReplaced();
+      this.events.onLoaded?.(diagnostics);
+      this.events.onStatus?.(diagnostics.length ? `Opened ${name} with ${diagnostics.length} note(s)` : `Opened ${name}`);
+      return true;
+    } catch (err) {
+      this.events.onStatus?.(`Could not open the Spine files: ${message(err)}`, true);
       return false;
     }
   }

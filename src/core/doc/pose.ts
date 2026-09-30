@@ -6,7 +6,7 @@ import type { Animation, ColorTransform, DisplayRef, Node, Project, SymbolItem }
 import { DEFAULT_COLOR, isImage, isSymbol } from "./types";
 import type { ItemId, NodeId } from "./ids";
 import { sampleColorRaw, sampleTransformRaw, spanIndexAt } from "./timeline";
-import { displayAt } from "./displays";
+import { anchorOf, displayAt } from "./displays";
 
 /**
  * One node, resolved for a given frame. This is the single description that
@@ -33,6 +33,31 @@ export interface PoseEntry {
   visible: boolean;
   /** Back-to-front paint order; also the DragonBones slot index. */
   drawIndex: number;
+  /** Posed by the Spine runtime (`core/spine/spinePose.ts`): what the slot
+   *  draws, world geometry included. The renderer draws this instead of
+   *  `display` about `world`. */
+  spine?: SpineDraw;
+  /** Posed by the Spine runtime: a clipping attachment, clipping every
+   *  slot drawn after it up to and including `until` (to the end when
+   *  null). */
+  clip?: { polygon: number[]; until: NodeId | null };
+}
+
+/**
+ * An attachment as the runtime places it: textured triangles over an image.
+ * Coordinates are the symbol's (y down).
+ */
+export interface SpineDraw {
+  itemId: ItemId;
+  /** World x, y per vertex. */
+  vertices: number[];
+  /** The image pixel each vertex shows. */
+  uvs: number[];
+  /** Vertex indices, three per triangle. */
+  triangles: number[];
+  /** A region: four vertices (bottom-left, top-left, top-right,
+   *  bottom-right of the image), one affine image. */
+  quad: boolean;
 }
 
 export interface Pose {
@@ -127,7 +152,7 @@ export function localAt(
     // yet is a different case, handled below, and is genuinely not on stage.)
     return {
       transform: cloneTf(node.bind),
-      displayIndex: 0,
+      displayIndex: node.setupDisplay ?? 0,
       color: bindColor,
       onTrack: true,
       since: 0,
@@ -221,7 +246,7 @@ export function evaluateSymbol(
     resolving.add(entry.nodeId);
 
     const local = toMatrix(mat(), entry.local);
-    const parentId = entry.node.parentId;
+    const parentId = anchorOf(entry.node);
     const parent = parentId ? byNode.get(parentId) : undefined;
     if (parent) {
       resolve(parent);
@@ -262,7 +287,7 @@ function applyIk(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>): void {
 
   const children = new Map<NodeId, PoseEntry[]>();
   for (const e of byNode.values()) {
-    const parentId = e.node.parentId;
+    const parentId = anchorOf(e.node);
     if (!parentId) continue;
     const list = children.get(parentId);
     if (list) list.push(e);
@@ -272,8 +297,10 @@ function applyIk(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>): void {
   // Solved local transforms; the pose's own `local` stays what was keyed.
   const solved = new Map<NodeId, Transform>();
   const localOf = (e: PoseEntry): Transform => solved.get(e.nodeId) ?? e.local;
-  const parentWorld = (e: PoseEntry): Matrix2D =>
-    (e.node.parentId ? byNode.get(e.node.parentId)?.world : undefined) ?? mat();
+  const parentWorld = (e: PoseEntry): Matrix2D => {
+    const parentId = anchorOf(e.node);
+    return (parentId ? byNode.get(parentId)?.world : undefined) ?? mat();
+  };
 
   /** Re-compose a subtree after the solver moved its root. */
   const recompose = (id: NodeId): void => {
@@ -369,8 +396,41 @@ export function shownDisplay(e: PoseEntry): { index: number; pivot: { x: number;
 export function entryBox(
   project: Project, e: PoseEntry, ctx: FrameContext = SETUP_CONTEXT,
 ): { x: number; y: number; w: number; h: number } | null {
+  if (e.spine) return spineBox(e);
   if (!e.display) return null;
   return localBox(project, e.display.itemId, e.display.pivot, displayContext(ctx, e.displaySince));
+}
+
+/** What the runtime drew for an entry, boxed in the entry's own space. */
+function spineBox(e: PoseEntry): { x: number; y: number; w: number; h: number } | null {
+  const v = e.spine!.vertices, p = { x: 0, y: 0 };
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  for (let i = 0; i < v.length; i += 2) {
+    if (!applyInverse(p, e.world, v[i]!, v[i + 1]!)) return null;
+    x0 = Math.min(x0, p.x); y0 = Math.min(y0, p.y); x1 = Math.max(x1, p.x); y1 = Math.max(y1, p.y);
+  }
+  return x0 <= x1 ? { x: x0, y: y0, w: x1 - x0, h: y1 - y0 } : null;
+}
+
+/**
+ * The image pixel the runtime drew at a point of the symbol's space, for
+ * an entry it posed; null outside its triangles.
+ */
+export function spinePixelAt(e: PoseEntry, x: number, y: number): { x: number; y: number } | null {
+  const s = e.spine;
+  if (!s) return null;
+  const v = s.vertices, uv = s.uvs, t = s.triangles;
+  for (let i = 0; i < t.length; i += 3) {
+    const a = t[i]! * 2, b = t[i + 1]! * 2, c = t[i + 2]! * 2;
+    const d = (v[b + 1]! - v[c + 1]!) * (v[a]! - v[c]!) + (v[c]! - v[b]!) * (v[a + 1]! - v[c + 1]!);
+    if (Math.abs(d) < 1e-12) continue;
+    const l0 = ((v[b + 1]! - v[c + 1]!) * (x - v[c]!) + (v[c]! - v[b]!) * (y - v[c + 1]!)) / d;
+    const l1 = ((v[c + 1]! - v[a + 1]!) * (x - v[c]!) + (v[a]! - v[c]!) * (y - v[c + 1]!)) / d;
+    const l2 = 1 - l0 - l1;
+    if (l0 < 0 || l1 < 0 || l2 < 0) continue;
+    return { x: l0 * uv[a]! + l1 * uv[b]! + l2 * uv[c]!, y: l0 * uv[a + 1]! + l1 * uv[b + 1]! + l2 * uv[c + 1]! };
+  }
+  return null;
 }
 
 /** On-stage footprint of a symbol that has nothing in it yet. */

@@ -6,9 +6,14 @@
  * of the runtime's own parser (`SkeletonJson.readSkeletonData` in
  * @esotericsoftware/spine-core 4.3.13, the core of the spine-pixi-v8 build
  * the preview runs), not from documentation. The notes record what fails
- * SILENTLY when it is guessed wrong. Only what the exporter needs is typed;
- * meshes, paths, physics and sliders arrive with the importer.
+ * SILENTLY when it is guessed wrong. What the editor writes is typed; what
+ * an opened file carries through untouched (meshes, paths, physics, sliders,
+ * deform keys …) is `SpineRaw`, checked only for the names it references
+ * (`carry.ts`).
  */
+
+/** JSON the editor carries without modelling it. */
+export type SpineRaw = Record<string, unknown>;
 
 /**
  * spine-unity accepts a JSON file when the MAJOR.MINOR of `skeleton.spine`
@@ -46,6 +51,8 @@ export interface SpineHeader {
   /** The editor's frame rate. Metadata only: every time is in SECONDS. */
   fps?: number;
   images?: string;
+  /** Carried from an opened file: audio, referenceScale … */
+  [field: string]: unknown;
 }
 
 /**
@@ -100,7 +107,8 @@ export interface SpineSlot {
   visible?: boolean;
 }
 
-export type SpineConstraint = SpineIkConstraint;
+/** The IK the editor writes, or any constraint carried from an opened file. */
+export type SpineConstraint = SpineIkConstraint | (SpineRaw & { type: string; name: string });
 
 export interface SpineIkConstraint {
   type: "ik";
@@ -124,9 +132,15 @@ export interface SpineSkin {
   name: string;
   /** slot name → attachment key → attachment. */
   attachments?: Record<string, Record<string, SpineAttachment>>;
+  /** Bones and constraints only this skin enables, by name. */
+  bones?: string[];
+  constraints?: string[];
+  color?: string;
 }
 
-export type SpineAttachment = SpineRegionAttachment | SpineClippingAttachment;
+/** Mesh, linked mesh, path, point and bounding box attachments arrive only
+ *  from opened files, carried as they came. */
+export type SpineAttachment = SpineRegionAttachment | SpineClippingAttachment | SpineRaw;
 
 /**
  * An image. `x`/`y` place the image's CENTRE in the bone's space (y up);
@@ -203,6 +217,8 @@ export interface SpineBoneTimelines {
   translate?: SpineTranslateKey[];
   scale?: SpineScaleKey[];
   shear?: SpineShearKey[];
+  /** Carried from an opened file: translatex, inherit … */
+  [timeline: string]: unknown;
 }
 
 /** No curve: attachments switch. `name` null hides the slot's attachment. */
@@ -215,6 +231,8 @@ export interface SpineSlotTimelines {
   attachment?: SpineAttachmentKey[];
   rgba?: SpineRgbaKey[];
   rgba2?: SpineRgba2Key[];
+  /** Carried from an opened file: sequence … */
+  [timeline: string]: unknown;
 }
 
 /** Absolute, not relative. Curve channels: mix, softness. */
@@ -251,4 +269,7 @@ export interface SpineAnimation {
   ik?: Record<string, SpineIkKey[]>;
   drawOrder?: SpineDrawOrderKey[];
   events?: SpineEventKey[];
+  /** Carried from an opened file: attachments (deform, sequence),
+   *  transform, path, physics and slider keys. */
+  [group: string]: unknown;
 }

@@ -151,6 +151,18 @@ export function validateProject(raw: unknown): ValidationResult {
         if (extras.length) node.extraDisplays = extras;
         else delete node.extraDisplays;
       }
+      if (node.slotBone !== undefined && (node.slotBone === node.id || item.nodes[node.slotBone]?.kind !== "bone")) {
+        delete node.slotBone;
+        diagnostics.push({
+          path: `items.${itemId}.nodes.${node.id}`,
+          message: `"${node.name}" was a slot on a bone that is not in the file; it has its own transform now`,
+          severity: "warning",
+        });
+      }
+      if (node.setupDisplay !== undefined) {
+        const d = Number(node.setupDisplay);
+        if (!Number.isInteger(d) || d < -1 || d >= Math.max(1, displaysOf(node).length) || d === 0) delete node.setupDisplay;
+      }
       if (node.motionBlur !== undefined) {
         const m = Number(node.motionBlur);
         if (!Number.isFinite(m) || m === 1) delete node.motionBlur;
@@ -321,6 +333,18 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // 6 -> 7: `Project.exportSettings`. Additive; an older build would export
   // at its own defaults and drop the settings on save.
   6: (p) => ({ ...p, version: 7 }),
+  // 7 -> 8: Spine files opened for editing (`SymbolItem.spine`, slots on
+  // bones, `Animation.endsAtLastFrame`). The DragonBones-era inherit flags,
+  // which nothing drew or exported, give way to Spine's `inherit`.
+  7: (p) => {
+    for (const item of Object.values((p.items ?? {}) as Record<string, { nodes?: Record<string, Record<string, unknown>> }>)) {
+      for (const node of Object.values(item?.nodes ?? {})) {
+        delete node.inheritRotation;
+        delete node.inheritScale;
+      }
+    }
+    return { ...p, version: 8 };
+  },
 };
 
 /** A tween read from disk, or null when it is not one this build knows. */

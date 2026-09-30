@@ -33,11 +33,11 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@esotericsoftware/spine-core": "4.3.13",
     "ag-psd": "^31.0.2",
     "fflate": "^0.8.2"
   },
   "devDependencies": {
-    "@esotericsoftware/spine-core": "4.3.13",
     "@types/node": "^26.4.1",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",

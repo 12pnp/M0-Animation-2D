@@ -71,6 +71,35 @@ images, turns `curve` values into per-property easing, and lists everything it c
 represent. The round-trip test is `export(import(x))`, loaded by spine-pixi and compared
 bone by bone against `x` over the M0 sample skeletons.
 
+**What phase 7 built** (ARCHITECTURE ▸ Opening Spine files):
+
+- **Modelled, editable:** bones (setup pose, length, inherit mode), slots as layers in
+  Spine's draw order riding their bones (`Node.slotBone`), the default skin's regions and
+  meshes as displays, slot colour and two-colour tint, blend, IK (one or two bones), and
+  bone transform, colour and attachment keys. Keys land on whole frames at the file's
+  rate, or the first multiple of it up to 120 that puts every key on a frame.
+- **Carried as they came:** other constraints (transform, path, physics, slider, IK the
+  editor cannot hold) in the file's order, other skins, bounding boxes, points, paths and
+  clipping, deform and sequence keys, draw order and event keys, inherit and constraint
+  keys, the header. The export refuses, naming it, when an edit breaks a name they need.
+- **The stage poses an opened rig through spine-core** instead of transcribing Spine's
+  vertex maths as planned: the document's pose goes in, and worlds, attachments, draw order,
+  clipping and mesh vertices come out. Spine's constraints, inherit modes and deform
+  keys are then shown exactly, and nothing has to be written twice.
+- **Exact at every whole frame, curves where they can be.** An interval the editor's
+  eases cannot play as Spine does is written frame by frame, exact. The per-rig counts
+  are pinned in `tests/spineImport.test.ts` so they only go down. That happens for x and y
+  with different curves in one key (the editor has one position ease), and for a piece of
+  a curve that another channel's key cuts, when the piece played alone drifts from the
+  whole by more than 0.001.
+
+**Not yet:** binary `.skel` (export JSON from Spine instead); choosing the skin shown
+(the stage and Preview show "default", or the first skin when "default" draws nothing);
+editing meshes, weights, deform keys and the carried constraints; per-axis position and
+scale eases (which would remove most frame-by-frame intervals); physics simulation on the
+stage (posed at rest; the Preview plays it). spine-core now ships in the app bundle
+(+168 KB, 52 KB gzipped).
+
 ## AI control
 
 The editor's command layer is already the API: every edit is an undoable `Command`. An
@@ -94,7 +123,7 @@ one, and the AI checks its own result against the runtime. Two ways to connect:
 | 4 | **Done.** Stage eases evaluated as Spine plays them, exported as native beziers (frog `body` 107 KB → 7.5 KB); IK solver replaced by a transcription of Spine's | parity on a three-segment curve, every quad ease, 7 targeted and 60 random IK rigs; the old solver failed 3 of the 7 |
 | 5 | **Done.** Symbol instances flattened into one skeleton: content bones at −pivot, slots in the instance's place, the child's own looping timeline laid run by run onto the exported animation, alpha cascaded, IK inside carried | the nested rig, all 11 frog symbols and the real preview match the stage frame by frame; 8 deliberate flattening bugs each fail a test |
 | 6 | **Done.** Masks as clipping attachments (outline traced from the mask's alpha), colour offsets as two-colour tint | parity checks clips and dark colours every frame; in the preview, clipping and tint measured to the pixel; 7 deliberate bugs each fail |
-| 7 | Import, stage 1 (meshes shown and carried through) | round trip over the M0 samples |
+| 7 | **Done.** File ▸ Open Spine (JSON + atlas + pages, or a zip): bones, slots, regions, meshes, IK and keys become the document, everything else is carried; the stage poses opened rigs through spine-core | all 16 JSON samples round-trip frame by frame (worst 0.02 px), the stage equals the export on all 16 (worst 0.0011 px), pixels match the original files in the real preview; 14 deliberate bugs each fail |
 | 8 | Unity check: exports imported in M0 `Assets/AnimoTest/Spine` | spine-unity 4.3 plays them |
 | 9 | AgentApi, then the prompt panel and MCP | an AI-made walk cycle can be undone and matches the preview |
 

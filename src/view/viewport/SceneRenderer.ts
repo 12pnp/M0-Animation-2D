@@ -12,6 +12,7 @@ import {
     SETUP_CONTEXT,
 } from "@/core/doc/pose";
 import { maskGroups } from "@/core/doc/layerTree";
+import { posedSymbol, stageSkinOf } from "@/core/spine/spinePose";
 import type { AssetStore } from "@/app/AssetStore";
 
 /**
@@ -63,9 +64,10 @@ export class SceneRenderer {
     frame: number,
     mode: "setup" | "animate",
     view: Matrix2D,
-    opts: { alpha?: number; hiddenLayers?: Set<string> } = {},
+    opts: { alpha?: number; hiddenLayers?: Set<string>; skin?: string | null } = {},
   ): Pose {
-    const pose = evaluateSymbol(symbol, animation, frame, mode);
+    const skin = opts.skin === undefined ? stageSkinOf(symbol) : opts.skin;
+    const pose = posedSymbol(this.project(), symbol, animation, frame, mode, skin);
     const when: FrameContext = { animationName: animation?.name ?? null, frame, mode };
 
     ctx.save();
@@ -93,6 +95,10 @@ export class SceneRenderer {
     hiddenLayers?: Set<string>,
   ): void {
     const world = mat();
+    if (symbol.spine && entries.some((e) => e.spine || e.clip)) {
+      this.drawSpineEntries(ctx, entries, base, hiddenLayers);
+      return;
+    }
     const groups = maskGroups(symbol);
 
     if (groups.size === 0) {
@@ -178,6 +184,122 @@ export class SceneRenderer {
       ctx.drawImage(scratch, 0, 0);
       ctx.restore();
     }
+  }
+
+  /**
+   * A symbol the Spine runtime posed (`spinePose.ts`): its slots in the
+   * runtime's draw order, each the geometry the runtime computed. A clipping
+   * attachment clips from the next slot through its end slot, one at a time,
+   * as `SkeletonClipping` does: a clip met while another is on is ignored.
+   */
+  private drawSpineEntries(
+    ctx: CanvasRenderingContext2D, entries: PoseEntry[], base: Matrix2D, hiddenLayers?: Set<string>,
+  ): void {
+    let clipUntil: string | null | undefined;   // undefined: not clipping
+    for (const e of entries) {
+      if (e.clip && e.visible && clipUntil === undefined && !hiddenLayers?.has(e.nodeId)) {
+        ctx.save();
+        ctx.beginPath();
+        const p = e.clip.polygon;
+        for (let i = 0; i < p.length; i += 2) {
+          const x = base.a * p[i]! + base.c * p[i + 1]! + base.tx, y = base.b * p[i]! + base.d * p[i + 1]! + base.ty;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.clip();
+        clipUntil = e.clip.until;
+      } else if (e.spine && e.visible && !hiddenLayers?.has(e.nodeId)) {
+        this.drawSpine(ctx, e, base);
+      }
+      if (clipUntil !== undefined && clipUntil === e.nodeId) { ctx.restore(); clipUntil = undefined; }
+    }
+    if (clipUntil !== undefined) ctx.restore();
+  }
+
+  /** One region or mesh as the runtime placed it, `base` taking the
+   *  symbol's space to the screen. */
+  private drawSpine(ctx: CanvasRenderingContext2D, e: PoseEntry, base: Matrix2D): void {
+    const draw = e.spine!;
+    const item = this.project().items[draw.itemId];
+    if (!isImage(item)) return;
+    const asset = this.assets.get(item.assetId);
+    if (!asset) return;
+    const source = this.sourceFor(asset.bitmap as CanvasImageSource, item.width, item.height, e.color);
+    const v = draw.vertices, n = v.length / 2;
+    const sx = new Float64Array(n), sy = new Float64Array(n);
+    for (let i = 0; i < n; i++) {
+      sx[i] = base.a * v[i * 2]! + base.c * v[i * 2 + 1]! + base.tx;
+      sy[i] = base.b * v[i * 2]! + base.d * v[i * 2 + 1]! + base.ty;
+    }
+    const alpha = Math.max(0, Math.min(1, e.color.aM / 100));
+    const blend = e.node.blendMode ? COMPOSITE[e.node.blendMode] : "source-over";
+
+    if (draw.quad) {
+      // Bottom-left, top-left, top-right: the image's y and x axes.
+      const w = item.width, h = item.height;
+      ctx.save();
+      ctx.globalAlpha *= alpha;
+      ctx.globalCompositeOperation = blend;
+      ctx.imageSmoothingQuality = "high";
+      ctx.setTransform((sx[2]! - sx[1]!) / w, (sy[2]! - sy[1]!) / w, (sx[0]! - sx[1]!) / h, (sy[0]! - sy[1]!) / h, sx[1]!, sy[1]!);
+      ctx.drawImage(source, 0, 0, w, h);
+      ctx.restore();
+      return;
+    }
+
+    // Triangle by triangle, each its own affine image clipped to it. Their
+    // edges are pushed out half a pixel so no seam shows; where that would
+    // double a translucent or blended edge, the mesh is flattened first.
+    const flat = alpha < 1 || blend !== "source-over";
+    const target = flat ? this.meshScratch(ctx.canvas.width, ctx.canvas.height) : ctx;
+    if (!target) return;
+    if (flat) { target.setTransform(1, 0, 0, 1, 0, 0); target.clearRect(0, 0, target.canvas.width, target.canvas.height); }
+    const uv = draw.uvs, tri = draw.triangles;
+    for (let t = 0; t < tri.length; t += 3) {
+      const i0 = tri[t]!, i1 = tri[t + 1]!, i2 = tri[t + 2]!;
+      const u0 = uv[i0 * 2]!, v0 = uv[i0 * 2 + 1]!, u1 = uv[i1 * 2]!, v1 = uv[i1 * 2 + 1]!, u2 = uv[i2 * 2]!, v2 = uv[i2 * 2 + 1]!;
+      const det = (u1 - u0) * (v2 - v0) - (u2 - u0) * (v1 - v0);
+      if (Math.abs(det) < 1e-9) continue;
+      const x0 = sx[i0]!, y0 = sy[i0]!, x1 = sx[i1]!, y1 = sy[i1]!, x2 = sx[i2]!, y2 = sy[i2]!;
+      const a = ((x1 - x0) * (v2 - v0) - (x2 - x0) * (v1 - v0)) / det;
+      const c = ((x2 - x0) * (u1 - u0) - (x1 - x0) * (u2 - u0)) / det;
+      const b = ((y1 - y0) * (v2 - v0) - (y2 - y0) * (v1 - v0)) / det;
+      const d = ((y2 - y0) * (u1 - u0) - (y1 - y0) * (u2 - u0)) / det;
+      const cx = (x0 + x1 + x2) / 3, cy = (y0 + y1 + y2) / 3;
+      const grow = (x: number, y: number): [number, number] => {
+        const dx = x - cx, dy = y - cy, len = Math.hypot(dx, dy) || 1;
+        return [x + (dx / len) * 0.5, y + (dy / len) * 0.5];
+      };
+      target.save();
+      target.setTransform(1, 0, 0, 1, 0, 0);
+      target.beginPath();
+      target.moveTo(...grow(x0, y0));
+      target.lineTo(...grow(x1, y1));
+      target.lineTo(...grow(x2, y2));
+      target.closePath();
+      target.clip();
+      target.setTransform(a, b, c, d, x0 - a * u0 - c * v0, y0 - b * u0 - d * v0);
+      target.drawImage(source, 0, 0, item.width, item.height);
+      target.restore();
+    }
+    if (flat) {
+      ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.globalAlpha *= alpha;
+      ctx.globalCompositeOperation = blend;
+      ctx.drawImage(target.canvas, 0, 0);
+      ctx.restore();
+    }
+  }
+
+  private meshCanvas: HTMLCanvasElement | null = null;
+
+  private meshScratch(w: number, h: number): CanvasRenderingContext2D | null {
+    if (w === 0 || h === 0) return null;
+    const c = (this.meshCanvas ??= document.createElement("canvas"));
+    if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+    return c.getContext("2d");
   }
 
   /**

@@ -6,8 +6,8 @@ A Flash-style animation editor for **Spine 4.3**, built from
 Animo has a timeline, layers, keyframes, symbols, bones and IK, masks and PSD
 import, and it exports DragonBones. Amino Spine2D keeps the editor and changes
 what it writes to Spine: a skeleton `.json`, a `.atlas` and its pages, played in
-the editor by the official Spine runtime. Later it will also open existing Spine
-files, and let an AI drive the editor.
+the editor by the official Spine runtime. It also opens existing Spine files for
+editing. Later an AI will be able to drive the editor.
 
 ```mermaid
 flowchart LR
@@ -21,13 +21,15 @@ flowchart LR
 
 ## Status
 
-**Phases 0–6 of [docs/PLAN.md](docs/PLAN.md) are done.** The editor works as
+**Phases 0–7 of [docs/PLAN.md](docs/PLAN.md) are done.** The editor works as
 Animo's does; **File ▸ Export Spine** writes `<name>.json`, `<name>.atlas` and
 the atlas pages for Spine 4.3; and the **Preview panel and Play mode run the
 official Spine runtime** (spine-pixi-v8) on those exact files, matching the stage
 frame by frame: eases, IK, nested symbols, masks (as Spine clipping) and colour
-offsets (as two-colour tint) included. Next: opening existing Spine files (phase 7). Until then the
-export warns about each of those it meets.
+offsets (as two-colour tint) included. **File ▸ Open Spine** opens a Spine 4.3
+JSON export (with its atlas and pages, or a zip of them) for editing. Meshes,
+constraints, physics and other skins are shown through the Spine runtime and
+written back unchanged. Next: checking the exports in Unity (phase 8).
 
 ## Quick start
 

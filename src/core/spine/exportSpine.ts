@@ -11,6 +11,7 @@ import type { Transform } from "@/core/math/Transform";
 import { type EaseSegment, easeOf, easeSegments, type TweenChannel, type TweenSpec } from "@/core/math/easing";
 import type { ExportDiagnostic } from "@/core/export/diagnostics";
 import { isAtlasName } from "./atlas";
+import { animationRefs, bonesToIndices, type CarriedRef, constraintRefs, lastTime, regionsOf, skinRefs } from "./carry";
 import { keyTime, keyValues, regionCentre, type SpineKeyValues, type SpineLocal, toSpineLocal } from "./transform";
 import {
   SPINE_VERSION,
@@ -21,8 +22,12 @@ import {
   type SpineAttachment,
   type SpineBoneTimelines,
   type SpineClippingAttachment,
+  type SpineConstraint,
   type SpineCurve,
+  type SpineDrawOrderKey,
   type SpineIkConstraint,
+  type SpineRaw,
+  type SpineSkin,
   type SpineRegionAttachment,
   type SpineRgba2Key,
   type SpineRgbaKey,
@@ -45,6 +50,12 @@ export interface SpineExport {
    * the display index showing the symbol, `>` and the node's id.
    */
   paths: Map<string, string>;
+  /** Every exported slot by its node's path. A slot on a bone
+   *  (`Node.slotBone`) is here and not in `paths`: it has no bone. */
+  slots: Map<string, string>;
+  /** Per slot (by its node's path), the skin key each display index was
+   *  written under. */
+  displayKeys: Map<string, Map<number, string>>;
 }
 
 /** The bone every top-level node hangs from. Spine does not require one,
@@ -125,6 +136,10 @@ export interface ExportOptions {
    * rectangle.
    */
   maskShape?: (item: ImageItem) => Contour;
+  /** The skeleton without the editor's keys: what the stage's Spine pose
+   *  needs (`spinePose.ts`), which sets the keyed pose itself. Carried
+   *  timelines are still written. */
+  setupOnly?: boolean;
 }
 
 function rectangleShape(item: ImageItem): Contour {
@@ -140,7 +155,7 @@ export function exportSpine(
   const sym = project.items[symbolId];
   if (!isSymbol(sym)) {
     diagnostics.push({ severity: "error", message: "There is no symbol to export." });
-    return { skeleton: { skeleton: { spine: SPINE_VERSION }, bones: [] }, diagnostics, usedImages: [], names: new Map(), paths: new Map() };
+    return { skeleton: { skeleton: { spine: SPINE_VERSION }, bones: [] }, diagnostics, usedImages: [], names: new Map(), paths: new Map(), slots: new Map(), displayKeys: new Map() };
   }
   const fps = project.frameRate;
 
@@ -152,8 +167,13 @@ export function exportSpine(
     });
   }
 
-  const bones: SpineBone[] = [{ name: ROOT_BONE }];
+  // An opened Spine file brings its own root bone, whatever it is called;
+  // a bone named "root" at the top is one too. Otherwise one is added.
+  const ownRoot = rootBoneOf(sym);
+  const bones: SpineBone[] = ownRoot ? [] : [{ name: ROOT_BONE }];
   const slots: SpineSlot[] = [];
+  const slotPaths = new Map<string, string>();
+  const displayKeys = new Map<string, Map<number, string>>();
   const attachments: Record<string, Record<string, SpineAttachment>> = {};
   const constraints: SpineIkConstraint[] = [];
   const setups = new Map<string, SpineLocal>();
@@ -163,7 +183,6 @@ export function exportSpine(
   const maskShape = options.maskShape ?? rectangleShape;
   const boneNodes: Array<{ scope: Scope; node: Node; name: string }> = [];
   const offsetWarned = new Set<NodeId>();
-  const ignoredInherit = new Set<string>();
 
   const rootFrames = new Map<string, FrameAt[]>();
   const rootAlpha = new Map<string, number[]>();
@@ -176,7 +195,7 @@ export function exportSpine(
    *  instances recursing where they sit. */
   const emitScope = (scope: Scope): void => {
     const s = scope.sym;
-    const local = uniqueNames(s, diagnostics, scope.depth === 0);
+    const local = uniqueNames(s, diagnostics, scope.depth === 0, scope.depth === 0 ? ownRoot : undefined);
     const nameOf = (id: NodeId) => scope.prefix + local.get(id)!;
     const pathOf = (id: NodeId) => (scope.key ? `${scope.key}>${id}` : id);
     const skipped = excludedNodes(s);
@@ -199,15 +218,17 @@ export function exportSpine(
     const maskIds = new Set(s.layers.filter((l) => l.isMask).map((l) => l.id));
 
     for (const node of nodesInHierarchyOrder(s)) {
-      if (dropped(node.id)) continue;
+      if (dropped(node.id) || rides(s, node)) continue;
       const setup = toSpineLocal(node.bind);
       const name = nameOf(node.id);
       setups.set(name, setup);
       paths.set(pathOf(node.id), name);
-      const parent = node.parentId && !dropped(node.parentId) ? nameOf(node.parentId) : scope.parentBone;
-      const bone: SpineBone = { name, parent, ...withoutDefaults(setup) };
+      const parent = node === ownRoot ? undefined
+        : node.parentId && !dropped(node.parentId) ? nameOf(node.parentId) : scope.parentBone;
+      const bone: SpineBone = parent === undefined ? { name, ...withoutDefaults(setup) } : { name, parent, ...withoutDefaults(setup) };
       if (node.kind === "bone" && node.boneLength) bone.length = node.boneLength;
-      if (node.inheritRotation === false || node.inheritScale === false) ignoredInherit.add(node.name);
+      if (node.inherit && node.inherit !== "normal") bone.inherit = node.inherit;
+      if (node.spine?.bone) Object.assign(bone, node.spine.bone);
       bones.push(bone);
       boneNodes.push({ scope, node, name });
     }
@@ -228,6 +249,7 @@ export function exportSpine(
       // The y flip mirrors the rig, and a mirrored two-bone chain bends the
       // other way: the editor's positive bend (y down) is Spine's negative.
       if (k.bendPositive) ik.bendPositive = false;
+      if (k.spine) Object.assign(ik, k.spine);
       constraints.push(ik);
     }
 
@@ -235,8 +257,9 @@ export function exportSpine(
       const node = s.nodes[layer.nodeId];
       if (!node || !producesSlot(node) || skipped.has(node.id)) return;
       const name = nameOf(node.id);
+      const riding = rides(s, node);
       const keys = new Map<number, string>();
-      const slotAttachments: Record<string, SpineRegionAttachment> = {};
+      const slotAttachments: Record<string, SpineAttachment> = {};
       const taken = new Set<string>();
       const symbolDisplays: Array<[number, DisplayRef]> = [];
       for (const [index, ref] of exportedDisplays(s, node)) {
@@ -247,6 +270,17 @@ export function exportSpine(
           continue;
         }
         usedImages.add(item.id);
+        if (ref.attachment) {
+          // As the file had it, drawing the image the display names now.
+          const key = ref.attachment.name;
+          if (taken.has(key)) continue;
+          taken.add(key);
+          keys.set(index, key);
+          const data = { ...ref.attachment.data };
+          if ((regionsOf(data, key)[0] ?? key) !== item.name) data.path = item.name;
+          slotAttachments[key] = data;
+          continue;
+        }
         let key = item.name;
         for (let n = 2; taken.has(key); n++) key = `${item.name} (${n})`;
         taken.add(key);
@@ -259,10 +293,12 @@ export function exportSpine(
         slotAttachments[key] = region;
       }
 
-      if (keys.size) {
-        attachments[name] = slotAttachments;
-        const slot: SpineSlot = { name, bone: name };
-        const setupName = scope.setupVisible ? keys.get(0) ?? null : null;
+      if (keys.size || riding) {
+        if (keys.size) attachments[name] = slotAttachments;
+        slotPaths.set(pathOf(node.id), name);
+        displayKeys.set(pathOf(node.id), keys);
+        const slot: SpineSlot = { name, bone: riding ? nameOf(node.slotBone!) : name };
+        const setupName = scope.setupVisible ? keys.get(node.setupDisplay ?? 0) ?? null : null;
         const twoColor = hasOffsets(node.color)
           || s.animations.some((a) => a.tracks[node.id]?.keys.some((k) => hasOffsets(k.color)));
         const bindColor = scaleAlpha(node.color ?? DEFAULT_COLOR, scope.setupAlpha);
@@ -278,6 +314,7 @@ export function exportSpine(
         const blend = blendOf(node, diagnostics);
         if (blend) slot.blend = blend;
         if (setupName) slot.attachment = setupName;
+        if (node.spine?.slot) Object.assign(slot, node.spine.slot);
         slots.push(slot);
         plans.push({ scope, node, name, displays: keys, setupName, twoColor });
       }
@@ -449,19 +486,11 @@ export function exportSpine(
   };
 
   const root: Scope = {
-    sym, depth: 0, key: "", prefix: "", parentBone: ROOT_BONE,
+    // `uniqueNames` names an own root first, so it keeps its name.
+    sym, depth: 0, key: "", prefix: "", parentBone: ownRoot ? ownRoot.name.trim() || ownRoot.kind : ROOT_BONE,
     frames: rootFrames, alpha: rootAlpha, setupVisible: true, setupAlpha: 1, path: [sym.id],
   };
   emitScope(root);
-
-  if (ignoredInherit.size) {
-    diagnostics.push({
-      severity: "warning",
-      message:
-        `${[...ignoredInherit].map((n) => `"${n}"`).join(", ")} ${ignoredInherit.size === 1 ? "has" : "have"} ` +
-        "inheritance switched off in the file. The stage always inherits, so the export does too.",
-    });
-  }
 
   const allNames = new Set<string>();
   for (const b of bones) {
@@ -474,6 +503,10 @@ export function exportSpine(
   for (const anim of sym.animations) {
     const out: SpineAnimation = {};
     let lastFrame = 0;
+    if (options.setupOnly) {
+      animations[anim.name] = { ...(anim.spine ?? {}) } as SpineAnimation;
+      continue;
+    }
     for (const { scope, node, name } of boneNodes) {
       const runs = runsOf(scope.frames.get(anim.name)!);
       if (runs.length === 0) continue;
@@ -490,10 +523,27 @@ export function exportSpine(
         lastFrame = Math.max(lastFrame, st.lastFrame);
       }
     }
+    // Carried timelines (an opened file's) join the generated ones.
+    const carried = anim.spine ?? {};
+    for (const [group, value] of Object.entries(carried)) {
+      if ((group === "bones" || group === "slots") && value && typeof value === "object") {
+        const into = (out[group] ??= {}) as Record<string, Record<string, unknown>>;
+        for (const [owner, timelines] of Object.entries(value as Record<string, Record<string, unknown>>)) {
+          into[owner] = { ...into[owner], ...timelines };
+        }
+      } else out[group] = value;
+    }
     // Spine has no length field: the animation ends at its last key. A key
-    // at the end holds it open; an unchanged draw order is the one timeline
-    // that key cannot affect.
-    if (anim.duration > lastFrame) out.drawOrder = [{ time: keyTime(anim.duration, fps) }];
+    // at the end holds it open; a draw order key that changes nothing is
+    // the one key that cannot affect anything else. Flash's timing ends
+    // after the last frame, Spine's (`endsAtLastFrame`) on it.
+    const end = anim.endsAtLastFrame ? anim.duration - 1 : anim.duration;
+    const reached = Math.max(lastFrame, Math.round(lastTime(carried) * fps - 1e-6));
+    if (end > reached) {
+      const order = (out.drawOrder as SpineDrawOrderKey[] | undefined) ?? [];
+      const held = order.length ? order[order.length - 1]!.offsets : undefined;
+      out.drawOrder = [...order, held ? { time: keyTime(end, fps), offsets: held } : { time: keyTime(end, fps) }];
+    }
     if (animations[anim.name]) {
       diagnostics.push({ severity: "error", message: `Two animations in "${sym.name}" are called "${anim.name}".` });
     }
@@ -502,18 +552,58 @@ export function exportSpine(
 
   reportImageNames(project, [...usedImages], diagnostics);
 
-  const skeleton: SpineSkeletonFile = { skeleton: { spine: SPINE_VERSION, fps }, bones };
+  const carry = sym.spine;
+  const skeleton: SpineSkeletonFile = { skeleton: { ...carry?.header, spine: SPINE_VERSION, fps }, bones };
   if (slots.length) skeleton.slots = slots;
-  if (constraints.length) skeleton.constraints = constraints;
-  skeleton.skins = [{ name: "default", attachments }];
+  const allConstraints: SpineConstraint[] = [...constraints, ...(carry?.constraints ?? []) as SpineConstraint[]];
+  if (carry) {
+    // Spine applies constraints in list order: the file's, new ones last.
+    const rank = new Map(carry.constraintOrder.map((n, i) => [n, i]));
+    allConstraints.sort((a, b) => (rank.get(a.name) ?? Infinity) - (rank.get(b.name) ?? Infinity));
+  }
+  if (allConstraints.length) skeleton.constraints = allConstraints;
+  const skins: SpineSkin[] = [{ name: "default", attachments }];
+  for (const raw of carry?.skins ?? []) {
+    const skin = raw as unknown as SpineSkin;
+    // Copied down to the slot maps: the pass below rewrites entries, and the
+    // document must not change under an export.
+    const own = Object.fromEntries(Object.entries(skin.attachments ?? {}).map(([slot, byKey]) => [slot, { ...byKey }]));
+    if (skin.name !== "default") { skins.push({ ...skin, attachments: own }); continue; }
+    const merged: Record<string, Record<string, SpineAttachment>> = { ...attachments };
+    for (const [slot, byKey] of Object.entries(own)) merged[slot] = { ...byKey, ...merged[slot] };
+    skins[0] = { ...skin, attachments: merged };
+  }
+  // Weighted vertices name their bones in the document; the file indexes
+  // the bone list just written. Every image a carried skin draws is packed.
+  const boneIndex = new Map(bones.map((bone, i) => [bone.name, i]));
+  const imageNamed = new Map<string, ItemId>();
+  for (const item of Object.values(project.items)) if (isImage(item)) imageNamed.set(item.name, item.id);
+  for (const skin of skins) {
+    for (const [slot, byKey] of Object.entries(skin.attachments ?? {})) {
+      for (const [key, att] of Object.entries(byKey)) {
+        byKey[key] = bonesToIndices(att as SpineRaw, boneIndex, (bone) => diagnostics.push({
+          severity: "error",
+          message: `"${slot}" ▸ "${key}" in skin "${skin.name}" is weighted to a bone "${bone}" the skeleton no longer has.`,
+        }));
+        for (const region of regionsOf(att as SpineRaw, key)) {
+          const id = imageNamed.get(region);
+          if (id) usedImages.add(id);
+          else diagnostics.push({ severity: "error", message: `"${slot}" ▸ "${key}" in skin "${skin.name}" draws the image "${region}", which is not in the library.` });
+        }
+      }
+    }
+  }
+  if (carry?.events) skeleton.events = carry.events as SpineSkeletonFile["events"];
+  skeleton.skins = skins;
   if (Object.keys(animations).length) skeleton.animations = animations;
+  if (carry) checkCarried(skeleton, sym, diagnostics);
 
   const names = new Map<NodeId, string>();
   for (const [key, name] of paths) if (!key.includes(">")) names.set(key as NodeId, name);
   // A symbol instanced twice reports its own problems twice.
   const seen = new Set<string>();
   const unique = diagnostics.filter((d) => !seen.has(d.message) && seen.add(d.message));
-  return { skeleton, diagnostics: unique, usedImages: [...usedImages], names, paths };
+  return { skeleton, diagnostics: unique, usedImages: [...usedImages], names, paths, slots: slotPaths, displayKeys };
 }
 
 /** Consecutive frames on one animation, advancing one frame per frame. */
@@ -940,6 +1030,8 @@ function blendOf(node: Node, diags: ExportDiagnostic[]): SpineBlendMode | undefi
  */
 function exportedDisplays(sym: SymbolItem, node: Node): Array<[number, DisplayRef]> {
   const all = displaysOf(node);
+  // An opened slot's skin keeps every attachment, keyed or not.
+  if (all.some((d) => d.attachment)) return all.map((d, i) => [i, d]);
   const used = new Set<number>([0]);
   for (const anim of sym.animations) {
     for (const k of anim.tracks[node.id]?.keys ?? []) {
@@ -1025,29 +1117,40 @@ function nodesInHierarchyOrder(sym: SymbolItem): Node[] {
   return out;
 }
 
-/** Bones and slots are found by name, so names are unique within a symbol;
- *  "root" is taken at the top, where the root bone lives. */
-function uniqueNames(sym: SymbolItem, diags: ExportDiagnostic[], top: boolean): Map<NodeId, string> {
+/**
+ * Bones and slots are found by name, so names are unique within a symbol;
+ * "root" is taken at the top, where the root bone lives, unless `ownRoot`
+ * is that bone. A layer is a bone and a slot of one name; a slot on a bone
+ * (`slotBone`) is only a slot, and slots and bones are named apart in
+ * Spine, so it only has to differ from the other slots.
+ */
+function uniqueNames(sym: SymbolItem, diags: ExportDiagnostic[], top: boolean, ownRoot?: Node): Map<NodeId, string> {
   const map = new Map<NodeId, string>();
-  const taken = new Set<string>(top ? [ROOT_BONE] : []);
+  const bonesTaken = new Set<string>(top && !ownRoot ? [ROOT_BONE] : []);
+  const slotsTaken = new Set<string>();
   const assign = (node: Node): void => {
+    const riding = rides(sym, node);
+    const bone = !riding, slot = riding || producesSlot(node);
+    const free = (n: string) => !(bone && bonesTaken.has(n)) && !(slot && slotsTaken.has(n));
     let name = node.name.trim() || node.kind;
-    if (taken.has(name)) {
+    if (!free(name)) {
       const original = name;
-      for (let i = 2; taken.has(name); i++) name = `${original}_${i}`;
+      for (let i = 2; !free(name); i++) name = `${original}_${i}`;
       diags.push({
         severity: "warning",
-        message: original === ROOT_BONE
+        message: original === ROOT_BONE && bone
           ? `"${ROOT_BONE}" is the name of the skeleton's root bone in Spine; exported "${node.name}" in "${sym.name}" as "${name}".`
           : `Two objects in "${sym.name}" are called "${original}"; exported the second as "${name}".`,
       });
     }
-    taken.add(name);
+    if (bone) bonesTaken.add(name);
+    if (slot) slotsTaken.add(name);
     map.set(node.id, name);
   };
+  if (ownRoot) assign(ownRoot);
   for (const layer of sym.layers) {
     const node = sym.nodes[layer.nodeId];
-    if (node) assign(node);
+    if (node && !map.has(node.id)) assign(node);
   }
   for (const node of Object.values(sym.nodes)) if (!map.has(node.id)) assign(node);
   return map;
@@ -1076,4 +1179,46 @@ function nonZero<T extends Record<string, number>>(o: T): Partial<T> {
  *  move them again. */
 export function spineJson(file: SpineSkeletonFile, minify = false): string {
   return JSON.stringify(file, (_k, v) => (typeof v === "number" && Object.is(v, -0) ? 0 : v), minify ? undefined : 2);
+}
+
+/** A slot on a bone of its own symbol: exported with no bone of its own. */
+function rides(sym: SymbolItem, node: Node): boolean {
+  return !!node.slotBone && sym.nodes[node.slotBone]?.kind === "bone";
+}
+
+/**
+ * Every name the carried JSON of an opened file relies on must still be in
+ * the skeleton: a renamed or deleted bone, slot, constraint or skin would
+ * otherwise make the runtime throw, or quietly skip it. An error each, so
+ * the export refuses.
+ */
+function checkCarried(file: SpineSkeletonFile, sym: SymbolItem, diags: ExportDiagnostic[]): void {
+  const have: Record<CarriedRef["kind"], Set<string>> = {
+    bone: new Set(file.bones.map((b) => b.name)),
+    slot: new Set((file.slots ?? []).map((sl) => sl.name)),
+    constraint: new Set((file.constraints ?? []).map((c) => c.name)),
+    skin: new Set((file.skins ?? []).map((sk) => sk.name)),
+    attachment: new Set(),
+    event: new Set(Object.keys(file.events ?? {})),
+  };
+  const refs: CarriedRef[] = [];
+  for (const c of sym.spine?.constraints ?? []) refs.push(...constraintRefs(c));
+  for (const skin of sym.spine?.skins ?? []) refs.push(...skinRefs(skin));
+  for (const anim of sym.animations) if (anim.spine) refs.push(...animationRefs(anim.spine, anim.name));
+  const reported = new Set<string>();
+  for (const r of refs) {
+    if (have[r.kind].has(r.name)) continue;
+    const message = `${r.where} needs the ${r.kind} "${r.name}", which the skeleton no longer has; rename it back or remove what needs it.`;
+    if (!reported.has(message)) diags.push({ severity: "error", message });
+    reported.add(message);
+  }
+}
+
+/** The symbol's own root bone: the one top-level bone of an opened Spine
+ *  file, or a top-level bone called "root". */
+function rootBoneOf(sym: SymbolItem): Node | undefined {
+  const skipped = excludedNodes(sym);
+  const tops = Object.values(sym.nodes).filter((n) => n.kind === "bone" && !n.parentId && !skipped.has(n.id));
+  if (sym.spine && tops.length === 1) return tops[0];
+  return tops.find((n) => n.name === ROOT_BONE);
 }

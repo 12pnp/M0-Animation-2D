@@ -1,10 +1,11 @@
 import type { Transform } from "@/core/math/Transform";
 import type { ExportSettings } from "@/core/export/settings";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
+import type { SpineInherit } from "@/core/spine/types";
 import type { AnimId, AssetId, FolderId, IkId, ItemId, LayerId, NodeId } from "./ids";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 7;
+export const DOC_VERSION = 8;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -68,6 +69,32 @@ export interface SymbolItem {
   animations: Animation[];
   /** The library folder holding it; absent: the top level. */
   folderId?: FolderId;
+  /** Opened from a Spine file: what the model does not hold, carried to the
+   *  export as it came. The stage poses such a symbol through the runtime
+   *  (`core/spine/spinePose.ts`), so what it carries is also what it shows. */
+  spine?: SpineCarry;
+}
+
+/**
+ * The parts of an opened Spine skeleton the editor does not model, kept so
+ * the export writes them back: constraints other than the IK it solves,
+ * attachments that are not displays (every skin but the default one whole),
+ * events. Bones and slots are named, never indexed: weighted vertices hold
+ * bone NAMES here (`core/spine/carry.ts`), and the export checks that every
+ * name still exists.
+ */
+export interface SpineCarry {
+  /** Header fields other than `spine` and `fps`: hash, bounds, images, audio, referenceScale. */
+  header: Record<string, unknown>;
+  /** Constraints kept as the file has them. */
+  constraints: Array<Record<string, unknown>>;
+  /** Every constraint's name, the model's IK included, in the file's order:
+   *  the order Spine applies them in. */
+  constraintOrder: string[];
+  /** Skins as the file has them, less the default skin's displays. */
+  skins: Array<Record<string, unknown>>;
+  /** Event definitions, by name. */
+  events?: Record<string, unknown>;
 }
 
 export type LibraryItem = ImageItem | SymbolItem;
@@ -128,14 +155,44 @@ export interface Node {
   motionBlur?: number;
   /** Bone length in px — display only, for the bone overlay. */
   boneLength?: number;
-  inheritRotation?: boolean;
-  inheritScale?: boolean;
+  /** What the bone takes from its parent, Spine's `inherit`. Absent: all of
+   *  it. Only the Spine pose applies the other modes (`spinePose.ts`). */
+  inherit?: SpineInherit;
+  /**
+   * Spine's slot on a bone: this layer draws on the bone node named here and
+   * has no transform of its own (its bind stays identity, it is never keyed
+   * for transform). Its `parentId` is null, so the layer list can hold
+   * Spine's draw order, which does not follow the bone tree the way layers
+   * do. Exports as a slot on that bone, and no bone of its own.
+   */
+  slotBone?: NodeId;
+  /** The display the bind pose shows; -1 none. Absent: 0. */
+  setupDisplay?: number;
+  /** Display 0's Spine attachment, when opened from a Spine file. */
+  attachment?: SpineAttachmentRef;
+  /** Fields of an opened Spine bone or slot the model has no place for,
+   *  merged into what the export writes. */
+  spine?: { bone?: Record<string, unknown>; slot?: Record<string, unknown> };
 }
 
 /** One entry of a node's display list: an item and its own transform point. */
 export interface DisplayRef {
   itemId: ItemId;
   pivot: { x: number; y: number };
+  /** The Spine attachment it came from, opened from a Spine file. */
+  attachment?: SpineAttachmentRef;
+}
+
+/**
+ * An attachment of an opened Spine file, written back as it came: a region
+ * keeps its own offset, rotation and size, a mesh its vertices, weights and
+ * triangles. `itemId` is the image its `path` (or name) names.
+ */
+export interface SpineAttachmentRef {
+  /** Its key in the skin: what attachment keys name. */
+  name: string;
+  /** The attachment's JSON; weighted vertices name their bones. */
+  data: Record<string, unknown>;
 }
 
 export interface Layer {
@@ -176,6 +233,10 @@ export interface IkConstraint {
   chain: 0 | 1;
   bendPositive: boolean;
   weight: number;
+  /** Fields of an opened Spine IK constraint the editor does not solve
+   *  (softness, stretch, compress, uniform, skin), merged into the export.
+   *  The Spine pose applies them. */
+  spine?: Record<string, unknown>;
 }
 
 /* ── Animation ────────────────────────────────────────────────────────────
@@ -229,6 +290,17 @@ export interface Animation {
   /** 0 loops forever, matching DragonBones `playTimes`. */
   playTimes: number;
   tracks: Record<NodeId, Track>;
+  /**
+   * Spine's timing: the animation ends AT its last frame, `duration − 1`,
+   * where a loop wraps back to frame 0, rather than after it. A Spine loop
+   * keys its last pose there, and tweens into it. Opened animations have it;
+   * absent, the export pads a held last frame (Flash's timing).
+   */
+  endsAtLastFrame?: true;
+  /** Timelines of an opened Spine animation the model does not hold
+   *  (deform, sequence, draw order, events, constraint and inherit keys),
+   *  in Spine's layout, merged into the export. */
+  spine?: Record<string, unknown>;
 }
 
 /* ── Document ─────────────────────────────────────────────────────────────*/

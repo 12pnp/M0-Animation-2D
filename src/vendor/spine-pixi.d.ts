@@ -57,6 +57,7 @@ declare namespace spine {
     readonly animations: Animation[];
     readonly fps: number;
     findAnimation(name: string): Animation | null;
+    findSkin(name: string): unknown;
   }
   interface BonePose { a: number; b: number; c: number; d: number; worldX: number; worldY: number }
   interface Bone { readonly data: { readonly name: string }; readonly appliedPose: BonePose }
@@ -70,6 +71,7 @@ declare namespace spine {
     readonly slots: Slot[];
     readonly drawOrder: { readonly appliedPose: Slot[] };
     setupPose(): void;
+    setSkin(name: string): void;
   }
   interface TrackEntry {
     loop: boolean;

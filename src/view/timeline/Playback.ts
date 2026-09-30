@@ -84,13 +84,16 @@ export class Playback {
       this.accumulator -= advance;
       let frame = this.store.ui.frame + advance;
       const last = this.store.maxFrame;
+      // Spine's timing (`endsAtLastFrame`): the last frame IS the next
+      // loop's first, so a loop wraps onto 0 there instead of showing both.
+      const period = anim.endsAtLastFrame && last > 0 ? last : last + 1;
 
-      if (frame > last) {
+      if (frame >= period) {
         const loop = this.store.ui.loop && anim.playTimes === 0;
-        this.loopsDone++;
-        if (loop || (anim.playTimes > 0 && this.loopsDone < anim.playTimes)) {
-          frame = last > 0 ? frame % (last + 1) : 0;
-        } else {
+        if (loop || (anim.playTimes > 0 && this.loopsDone + 1 < anim.playTimes)) {
+          this.loopsDone++;
+          frame = frame % period;
+        } else if (frame > last) {
           frame = last;
           this.store.setFrame(frame);
           this.onFrame(frame);

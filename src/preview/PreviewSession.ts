@@ -3,6 +3,7 @@ import type { AssetStore } from "@/app/AssetStore";
 import type { PreviewHost } from "./previewHost";
 import { buildExports, type ExportResult } from "@/io/export/ExportBundle";
 import { symbolBounds } from "@/core/doc/pose";
+import { spineBounds, stageSkinOf } from "@/core/spine/spinePose";
 import { isSymbol, type SymbolItem } from "@/core/doc/types";
 import type { ItemId } from "@/core/doc/ids";
 
@@ -257,8 +258,10 @@ export class PreviewSession {
         debugDraw: opts.debugDraw,
         play: opts.play,
         frame: target.frame,
-        stage: opts.showStage ? { ...this.store.project.stage } : undefined,
+        // An opened Spine rig has no stage: it is framed on its own.
+        stage: opts.showStage && !target.spine ? { ...this.store.project.stage } : undefined,
         fit: target.fit,
+        ...(target.skin ? { skin: target.skin } : {}),
       },
     );
   }
@@ -286,7 +289,7 @@ export class PreviewSession {
    */
   private targetFor(
     scope: PreviewScope,
-  ): { animation?: string; frame: number; fit: { x: number; y: number; w: number; h: number } } {
+  ): { animation?: string; frame: number; fit: { x: number; y: number; w: number; h: number }; skin?: string; spine: boolean } {
     const project = this.store.project;
     const edited = this.store.currentSymbol;
     const root = project.items[project.rootSymbolId];
@@ -296,12 +299,16 @@ export class PreviewSession {
     const animation = here
       ? this.store.currentAnimation?.name
       : sym.animations[0]?.name;
-    // The editor knows the rig's extent; Pixi cannot measure it.
-    const b = symbolBounds(project, sym.id);
+    // The editor knows the rig's extent; Pixi cannot measure it. An opened
+    // Spine rig is measured as the runtime draws it (meshes included).
+    const skin = sym.spine ? stageSkinOf(sym) : null;
+    const b = (sym.spine ? spineBounds(project, sym, skin) : null) ?? symbolBounds(project, sym.id);
     return {
       animation,
       frame: here ? this.store.ui.frame : 0,
       fit: { x: b.x, y: b.y, w: b.w, h: b.h },
+      ...(skin ? { skin } : {}),
+      spine: !!sym.spine,
     };
   }
 

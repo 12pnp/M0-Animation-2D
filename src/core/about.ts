@@ -72,6 +72,13 @@ export const CREDITS: readonly Credit[] = Object.freeze([
     what: "The Spine runtime. Included so the Preview plays your animation for real.",
   },
   {
+    name: "spine-core",
+    version: "4.3.13",
+    license: "Spine Runtimes License",
+    url: "https://github.com/EsotericSoftware/spine-runtimes",
+    what: "The same runtime's core. Poses opened Spine files on the stage, meshes and constraints included.",
+  },
+  {
     name: "PixiJS",
     version: "8.21.0",
     license: "MIT",
