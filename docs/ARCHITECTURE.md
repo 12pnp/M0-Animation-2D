@@ -15,7 +15,7 @@
 > contract" (phase 1) and "The Spine exporter" (phases 2 and 5) are new; "The preview is
 > ground truth" and "Vendored runtime" describe the Spine preview (phase 3); "Colour,
 > alpha and blend mode" and "Mask layers" describe Spine's tint and clipping (phase 6);
-> "Opening Spine files" is new (phase 7).
+> "Opening Spine files" is new (phase 7), "Checked in Unity" (phase 8).
 
 How Animo is built, and — mostly — the things in it that fail **silently** when
 you get them wrong. This is not a style guide: it is the record of decisions
@@ -904,6 +904,20 @@ the rules one at a time. Fourteen deliberate bugs each fail at least one of them
 browser, the original files and the re-exported ones rendered by spine-pixi agree on
 99.6% of spineboy-pro's pixels; the rest are one-pixel region edges, where the original
 packer bleeds colour into the transparent border.
+
+## Checked in Unity
+
+Phase 8 put five exports into M0-Animation2D (`Assets/AnimoTest/Spine`) and compared
+spine-unity 4.3 with the preview's runtime, frame by frame (`scripts/unity-check/README.md`,
+`tests/unityParity.test.ts`). They agree within 0.00064 px. Two differences between the
+runtimes matter to the exporter:
+
+- **spine-csharp requires `skeleton.hash`** and throws without it (`SkeletonJson` has no
+  default for it), where spine-core ignores it. `exportSpine` always writes one: a 64-bit FNV-1a
+  of the file's own JSON (`contentHash`), which spine-unity uses to tell that a re-export
+  changed.
+- **Unity does not import `.atlas` as text.** Export Settings ▸ Files ▸ "Atlas as .atlas.txt
+  (Unity)" names it the way spine-unity's importer looks for it.
 
 ## The DragonBones 5.5 contract
 

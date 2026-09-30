@@ -42,6 +42,8 @@ export interface SpineSkeletonFile {
 
 export interface SpineHeader {
   spine: string;
+  /** REQUIRED by spine-csharp 4.3.40 (`SkeletonJson` reads it without a
+   *  default and throws), though spine-core does not care. */
   hash?: string;
   /** Bounds of the setup pose, for tools; the runtime does not use them. */
   x?: number;

@@ -23,6 +23,8 @@ export interface ExportResult {
   diagnostics: ExportDiagnostic[];
   /** Write the JSON without indentation. */
   minifyJson?: boolean;
+  /** Name the atlas `.atlas.txt`, for Unity. */
+  atlasTxt?: boolean;
 }
 
 /**
@@ -68,7 +70,7 @@ export async function buildExports(
     ? await buildAtlas(items, assets, fileBase, fileBase, opts, onProgress)
     : [];
   const atlas = atlasText(pages.map((p) => p.info));
-  const minifyJson = exportSettingsOf(project).minifyJson;
+  const { minifyJson, atlasTxt } = exportSettingsOf(project);
 
   const out = new Map<ItemId, ExportResult>();
   for (const [id, e] of exported) {
@@ -76,7 +78,7 @@ export async function buildExports(
     if (e.usedImages.length === 0) {
       diagnostics.push({ severity: "warning", message: "No images are used on the stage, so the atlas is empty." });
     }
-    out.set(id, { fileBase, skeleton: e.skeleton, atlas, pages, diagnostics, minifyJson });
+    out.set(id, { fileBase, skeleton: e.skeleton, atlas, pages, diagnostics, minifyJson, atlasTxt });
   }
   return out;
 }
@@ -124,7 +126,7 @@ export function exportSettingsOf(project: Project): ExportSettings {
 export async function exportFiles(result: ExportResult): Promise<Record<string, Uint8Array>> {
   const files: Record<string, Uint8Array> = {};
   files[`${result.fileBase}.json`] = strToU8(spineJson(result.skeleton, result.minifyJson === true));
-  files[`${result.fileBase}.atlas`] = strToU8(result.atlas);
+  files[`${result.fileBase}.${result.atlasTxt ? "atlas.txt" : "atlas"}`] = strToU8(result.atlas);
   for (const page of result.pages) {
     files[`${page.fileStem}.${page.ext}`] = new Uint8Array(await page.blob.arrayBuffer());
   }

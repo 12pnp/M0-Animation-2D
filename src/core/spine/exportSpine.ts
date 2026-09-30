@@ -597,6 +597,12 @@ export function exportSpine(
   skeleton.skins = skins;
   if (Object.keys(animations).length) skeleton.animations = animations;
   if (carry) checkCarried(skeleton, sym, diagnostics);
+  // spine-csharp refuses a file without one; it is how spine-unity tells a
+  // re-exported skeleton changed. Written first, as Spine does.
+  if (!options.setupOnly) {
+    const { hash: _old, ...header } = skeleton.skeleton;
+    skeleton.skeleton = { hash: contentHash(spineJson({ ...skeleton, skeleton: header })), ...header };
+  }
 
   const names = new Map<NodeId, string>();
   for (const [key, name] of paths) if (!key.includes(">")) names.set(key as NodeId, name);
@@ -1172,6 +1178,20 @@ function nonZero<T extends Record<string, number>>(o: T): Partial<T> {
   const out: Partial<T> = {};
   for (const k of Object.keys(o) as Array<keyof T>) if (o[k] !== 0) out[k] = o[k];
   return out;
+}
+
+/**
+ * A skeleton's hash: 64-bit FNV-1a over its JSON, as 11 base64 characters,
+ * the shape Spine writes. Only equality matters to the runtimes.
+ */
+export function contentHash(text: string): string {
+  let h = 0xcbf29ce484222325n;
+  for (let i = 0; i < text.length; i++) {
+    h ^= BigInt(text.charCodeAt(i));
+    h = (h * 0x100000001b3n) & 0xffffffffffffffffn;
+  }
+  const bytes = Array.from({ length: 8 }, (_, i) => Number((h >> BigInt(56 - i * 8)) & 0xffn));
+  return btoa(String.fromCharCode(...bytes)).replace(/=+$/, "");
 }
 
 /** Spine JSON as text. Numbers are written exactly: key times are float32

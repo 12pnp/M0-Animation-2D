@@ -73,8 +73,16 @@ function load(project: Project): Skeleton {
 describe("skeleton structure", () => {
   it("writes the 4.3 header spine-unity checks, and the frame rate", () => {
     const { project } = scene(["a"]);
-    expect(file(project).skeleton).toEqual({ spine: SPINE_VERSION, fps: 24 });
+    expect(file(project).skeleton).toEqual({ hash: expect.stringMatching(/^[A-Za-z0-9+/]{11}$/), spine: SPINE_VERSION, fps: 24 });
     expect(SPINE_VERSION.split(".").slice(0, 2)).toEqual(["4", "3"]);
+  });
+
+  it("hashes the content, as spine-csharp requires: the same file the same hash", () => {
+    const { project, sym } = scene(["a"]);
+    const first = file(project).skeleton.hash;
+    expect(file(project).skeleton.hash).toBe(first);
+    nodeNamed(sym, "a").bind.x += 1;
+    expect(file(project).skeleton.hash).not.toBe(first);
   });
 
   it("hangs every top-level node from a root bone, parents before children", () => {

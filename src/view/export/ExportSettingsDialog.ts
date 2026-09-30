@@ -74,6 +74,7 @@ const SECTIONS: Array<{ title: string; rows: Row[] }> = [
       { kind: "number", key: "imageQuality", label: "WebP quality", unit: "%", percent: true,
         enabled: (s) => s.image === "webp" },
       { kind: "check", key: "minifyJson", label: "Minify JSON" },
+      { kind: "check", key: "atlasTxt", label: "Atlas as .atlas.txt (Unity)" },
     ],
   },
 ];

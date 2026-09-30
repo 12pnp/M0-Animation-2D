@@ -51,6 +51,10 @@ export interface ExportSettings {
   imageQuality: number;
   /** Skeleton and atlas JSON without indentation. */
   minifyJson: boolean;
+  /** Name the atlas `<name>.atlas.txt`, the extension spine-unity imports
+   *  (Unity does not read `.atlas` as text). Spine's own exporter has the
+   *  same switch. */
+  atlasTxt: boolean;
 }
 
 export const DEFAULT_EXPORT_SETTINGS: Readonly<ExportSettings> = Object.freeze({
@@ -69,6 +73,7 @@ export const DEFAULT_EXPORT_SETTINGS: Readonly<ExportSettings> = Object.freeze({
   image: "png",
   imageQuality: 0.9,
   minifyJson: false,
+  atlasTxt: false,
 });
 
 /** Ranges for the numbers, shared by the sanitizer and the dialog's fields. */

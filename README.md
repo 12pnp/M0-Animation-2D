@@ -21,7 +21,7 @@ flowchart LR
 
 ## Status
 
-**Phases 0–7 of [docs/PLAN.md](docs/PLAN.md) are done.** The editor works as
+**Phases 0–8 of [docs/PLAN.md](docs/PLAN.md) are done.** The editor works as
 Animo's does; **File ▸ Export Spine** writes `<name>.json`, `<name>.atlas` and
 the atlas pages for Spine 4.3; and the **Preview panel and Play mode run the
 official Spine runtime** (spine-pixi-v8) on those exact files, matching the stage
@@ -29,7 +29,9 @@ frame by frame: eases, IK, nested symbols, masks (as Spine clipping) and colour
 offsets (as two-colour tint) included. **File ▸ Open Spine** opens a Spine 4.3
 JSON export (with its atlas and pages, or a zip of them) for editing. Meshes,
 constraints, physics and other skins are shown through the Spine runtime and
-written back unchanged. Next: checking the exports in Unity (phase 8).
+written back unchanged. The exports play in Unity through spine-unity 4.3 exactly as in the
+Preview (checked frame by frame; turn on Export Settings ▸ "Atlas as .atlas.txt" for Unity).
+Next: letting an AI drive the editor (phase 9).
 
 ## Quick start
 

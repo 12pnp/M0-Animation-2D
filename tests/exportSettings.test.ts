@@ -138,3 +138,22 @@ describe("atlas options and page names", () => {
       .toEqual(["rig_tex_arm_left", "rig_tex_arm_left_2", "rig_tex_head"]);
   });
 });
+
+describe("the atlas file name", () => {
+  const result = (atlasTxt?: boolean) => ({
+    fileBase: "rig", skeleton: { skeleton: { spine: "4.3.0" }, bones: [] }, atlas: "p.png\n", pages: [], diagnostics: [],
+    ...(atlasTxt === undefined ? {} : { atlasTxt }),
+  });
+
+  it("is <name>.atlas, as Spine writes it, unless asked for Unity's .atlas.txt", async () => {
+    const { exportFiles } = await import("@/io/export/ExportBundle");
+    expect(Object.keys(await exportFiles(result())).sort()).toEqual(["rig.atlas", "rig.json"]);
+    expect(Object.keys(await exportFiles(result(true))).sort()).toEqual(["rig.atlas.txt", "rig.json"]);
+  });
+
+  it("keeps the switch through a save", async () => {
+    const { sanitizeExportSettings } = await import("@/core/export/settings");
+    expect(sanitizeExportSettings({ atlasTxt: true }).atlasTxt).toBe(true);
+    expect(sanitizeExportSettings({ atlasTxt: "yes" }).atlasTxt).toBe(false);
+  });
+});
