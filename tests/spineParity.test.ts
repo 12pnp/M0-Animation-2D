@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import {
-  AtlasAttachmentLoader, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
+  AtlasAttachmentLoader, ClippingAttachment, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
 } from "@esotericsoftware/spine-core";
 import { newIkId, reseed, type AssetId, type ItemId } from "@/core/doc/ids";
+import { maskGroups } from "@/core/doc/layerTree";
 import { createAnimation, createImageItem, createLayer, createNode, createProject, createSymbol } from "@/core/doc/defaults";
 import { isImage, isSymbol, type Keyframe, type Node, type Project, type SymbolItem } from "@/core/doc/types";
 import { childFrame, displayContext, evaluateSymbol, type FrameContext, type PoseEntry } from "@/core/doc/pose";
@@ -73,33 +74,59 @@ interface Drawn {
   entry: PoseEntry;
   /** Alpha multiplied down from the instances above. */
   alpha: number;
+  /** A mask: clips `group` (every key drawn inside it) where it is shown. */
+  clip?: { group: string[] };
 }
 
 /**
- * The stage's pose, flattened the way `SceneRenderer.drawEntry` draws it:
- * each shown instance evaluates its symbol at `childFrame(displayContext)`,
- * hangs it off its world at −pivot, multiplies its alpha down, and hands its
- * own animation and frame to the next level (`innerContext`). Paint order;
- * keys are the export's paths (`SpineExport.paths`). Mask layers are left
- * out, as the export leaves them out for now.
+ * The stage's pose, flattened the way `SceneRenderer.drawEntries` /
+ * `drawEntry` draw it: a mask's layers drawn together where the first of
+ * them is, the mask itself not drawn but clipping them while it shows; each
+ * shown instance evaluating its symbol at `childFrame(displayContext)`,
+ * hanging it off its world at −pivot, multiplying its alpha down, and
+ * handing its own animation and frame to the next level. Paint order; keys
+ * are the export's paths (`SpineExport.paths`).
  */
 function stagePose(project: Project, sym: SymbolItem, ctx: FrameContext, depth = 0, key = "", base = mat(), alpha = 1, shownAbove = true): Drawn[] {
   const here = depth === 0 ? { animation: sym.animations.find((a) => a.name === ctx.animationName) ?? null, frame: ctx.frame } : childFrame(sym, ctx);
   const pose = evaluateSymbol(sym, here.animation, here.frame, "animate");
   const inner: FrameContext = { animationName: here.animation?.name ?? null, frame: here.frame, mode: "animate" };
-  const out: Drawn[] = [];
-  for (const e of pose.entries) {
-    const layer = sym.layers.find((l) => l.nodeId === e.nodeId)!;
-    if (layer.isMask) continue;
-    const k = key ? `${key}>${e.nodeId}` : e.nodeId;
-    const shown = shownAbove && (e.visible || (!layer.visible && e.displayIndex >= 0 && e.display !== null));
-    out.push({ key: k, world: mul(mat(), base, e.world), shown, entry: e, alpha });
+  const layerOf = (e: PoseEntry) => sym.layers.find((l) => l.nodeId === e.nodeId)!;
+  const keyOf = (e: PoseEntry) => (key ? `${key}>${e.nodeId}` : e.nodeId);
+  const shownOf = (e: PoseEntry) => shownAbove && (e.visible || (!layerOf(e).visible && e.displayIndex >= 0 && e.display !== null));
+  const groups = maskGroups(sym);
+
+  const one = (e: PoseEntry): Drawn[] => {
+    const k = keyOf(e), shown = shownOf(e);
+    const world = mul(mat(), base, e.world);
+    const out: Drawn[] = [{ key: k, world, shown, entry: e, alpha }];
     const item = e.display ? project.items[e.display.itemId] : undefined;
     if (shown && isSymbol(item) && depth + 1 < 10) {
       const at = displayContext(inner, e.displaySince);
-      const content = mul(mat(), mul(mat(), base, e.world), translate(mat(), -e.display!.pivot.x, -e.display!.pivot.y));
+      const content = mul(mat(), world, translate(mat(), -e.display!.pivot.x, -e.display!.pivot.y));
       out.push(...stagePose(project, item, at, depth + 1, `${k}#${e.displayIndex}`, content, alpha * e.color.aM / 100, true));
     }
+    return out;
+  };
+
+  const out: Drawn[] = [];
+  const done = new Set<string>();
+  for (const e of pose.entries) {
+    const layer = layerOf(e);
+    if (layer.isMask || done.has(e.nodeId)) continue;
+    const group = layer.maskedBy ? groups.get(layer.maskedBy) : undefined;
+    if (!group) { out.push(...one(e)); continue; }
+    const members = pose.entries.filter((g) => group.some((l) => l.nodeId === g.nodeId));
+    members.forEach((g) => done.add(g.nodeId));
+    const drawn = members.flatMap(one);
+    const maskEntry = pose.byNode.get(sym.layers.find((l) => l.id === layer.maskedBy)!.nodeId);
+    if (maskEntry) {
+      out.push({
+        key: keyOf(maskEntry), world: mul(mat(), base, maskEntry.world), shown: shownOf(maskEntry),
+        entry: maskEntry, alpha, clip: { group: drawn.map((d) => d.key) },
+      });
+    }
+    out.push(...drawn);
   }
   return out;
 }
@@ -147,6 +174,30 @@ function checkParity(project: Project, symbolId: ItemId): Worst {
           continue;
         }
         const entry = d.entry;
+        if (d.clip) {
+          // The clip slot: clipping while the stage's mask shows an image,
+          // from right before the group through the group's last slot, the
+          // polygon (the rectangle here: no traced shape) on the mask.
+          const item = entry.display ? project.items[entry.display.itemId] : undefined;
+          const clips = isImage(item);
+          if ((attachment instanceof ClippingAttachment) !== clips) fail(where, `clip "${name}" ${attachment ? "clips" : "does not clip"}, the stage ${clips ? "does" : "does not"}`);
+          if (attachment instanceof ClippingAttachment && isImage(item)) {
+            const groupSlots = d.clip.group.map((k) => exported.paths.get(k)).filter((n): n is string => !!n && slotNames.has(n));
+            const order = skeleton.drawOrder.appliedPose.map((sl) => sl.data.name);
+            if (order[order.indexOf(name) + 1] !== groupSlots[0]) fail(where, `clip "${name}" is not right before its group`);
+            if (attachment.endSlot?.name !== groupSlots[groupSlots.length - 1]) fail(where, `clip "${name}" ends at ${attachment.endSlot?.name}, the group at ${groupSlots[groupSlots.length - 1]}`);
+            const verts = new Array<number>(8);
+            attachment.computeWorldVertices(skeleton, slot!, 0, 8, verts, 0, 2);
+            const m = mul(mat(), d.world, translate(mat(), -entry.display!.pivot.x, -entry.display!.pivot.y));
+            const corners = [[0, 0], [item.width, 0], [item.width, item.height], [0, item.height]].map(([x, y]) => apply({ x: 0, y: 0 }, m, x!, y!));
+            corners.forEach((pt, i) => {
+              const diff = Math.max(Math.abs(verts[i * 2]! - pt.x), Math.abs(verts[i * 2 + 1]! + pt.y));
+              worst.corner = Math.max(worst.corner, diff);
+              if (diff > 1e-3) fail(where, `clip "${name}" vertex ${i}: ${verts.slice(i * 2, i * 2 + 2)} vs ${[pt.x, -pt.y]}`);
+            });
+          }
+          continue;
+        }
         const p = bone!.appliedPose;
         const actual = [p.a, p.b, p.c, p.d, p.worldX, p.worldY];
         const expected = flipped(d.world);
@@ -169,12 +220,20 @@ function checkParity(project: Project, symbolId: ItemId): Worst {
           fail(where, `slot "${name}" shows ${attachment?.name ?? "nothing"}, the stage ${expectShown ? item!.name : "nothing"}`);
         }
 
-        const c = slot.appliedPose.color;
+        // The stage draws clamp(c·M + O); Spine (1 − c)·dark + c·light. So
+        // light is what a white texel shows, dark what a black one shows.
+        const c = slot.appliedPose.color, dark = slot.appliedPose.darkColor;
         const ec = entry.color;
-        for (const [got, want] of [[c.r, ec.rM], [c.g, ec.gM], [c.b, ec.bM], [c.a, ec.aM * d.alpha]] as const) {
-          const diff = Math.abs(got - want / 100);
+        const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
+        const wants: Array<[number, number]> = [
+          [c.r, clamp01(ec.rM / 100 + ec.rO / 255)], [c.g, clamp01(ec.gM / 100 + ec.gO / 255)],
+          [c.b, clamp01(ec.bM / 100 + ec.bO / 255)], [c.a, clamp01(ec.aM / 100) * d.alpha],
+          [dark?.r ?? 0, clamp01(ec.rO / 255)], [dark?.g ?? 0, clamp01(ec.gO / 255)], [dark?.b ?? 0, clamp01(ec.bO / 255)],
+        ];
+        for (const [got, want] of wants) {
+          const diff = Math.abs(got - want);
           worst.color = Math.max(worst.color, diff);
-          if (diff > 0.5 / 255 + 1e-6) fail(where, `slot "${name}" colour ${[c.r, c.g, c.b, c.a]} vs ${[ec.rM, ec.gM, ec.bM, ec.aM * d.alpha]}`);
+          if (diff > 0.5 / 255 + 1e-6) fail(where, `slot "${name}" colour ${wants.map((w) => w[0])} vs ${wants.map((w) => w[1])}`);
         }
 
         if (attachment instanceof RegionAttachment && isImage(item)) {
@@ -227,6 +286,7 @@ function featureRig(): { project: Project; sym: SymbolItem } {
   hand.color = { rM: 90, gM: 80, bM: 100, aM: 100, rO: 0, gO: 0, bO: 0, aO: 0 };
   const late = add(createNode("image", "late", { itemId: c.id, x: 300, y: 50, pivotX: 10, pivotY: 25 }));
   const spin = add(createNode("image", "spin", { itemId: b.id, x: 200, y: 200, pivotX: 15, pivotY: 15 }));
+  spin.color = { rM: 50, gM: 100, bM: 70, aM: 100, rO: 100, gO: 0, bO: 40, aO: 0 };
   spin.bind = tf(200, 200, 30, 10, 1.5, 0.8);
 
   const anim = sym.animations[0]!;
@@ -248,7 +308,7 @@ function featureRig(): { project: Project; sym: SymbolItem } {
       key(8, tf(60, 10, 10, 10, 2, 0.5), { displayIndex: 1, tween: { kind: "none" } }),
       key(12, tf(60, 10, 10, 10, 2, 0.5), { displayIndex: -1, tween: { kind: "none" } }),
       key(16, tf(30, -10, -30, -40), {
-        displayIndex: 2, color: { rM: 50, gM: 100, bM: 20, aM: 70, rO: 0, gO: 0, bO: 0, aO: 0 },
+        displayIndex: 2, color: { rM: 50, gM: 100, bM: 20, aM: 70, rO: 60, gO: 0, bO: 120, aO: 0 },
         eases: { color: { kind: "preset", family: "bounce", dir: "out" } },
       }),
       key(24, tf(40, 0), { color: { rM: 100, gM: 40, bM: 100, aM: 100, rO: 0, gO: 0, bO: 0, aO: 0 }, tween: { kind: "ease", value: -1 } }),
@@ -260,6 +320,19 @@ function featureRig(): { project: Project; sym: SymbolItem } {
     nodeId: late.id, endFrame: 20, keys: [
       key(5, tf(300, 50, 0, 0, 0.5, 0.5)),
       key(15, tf(320, 80, 90, 90)),
+    ],
+  };
+  // A mask over "hand" and "spin", with "late" between them in the layer
+  // list: moving, blanked for frames 12–17, then back.
+  const cover = add(createNode("image", "cover", { itemId: c.id, x: 150, y: 150, pivotX: 10, pivotY: 25 }));
+  const coverLayer = sym.layers.find((l) => l.nodeId === cover.id)!;
+  coverLayer.isMask = true;
+  for (const n of [hand, spin]) sym.layers.find((l) => l.nodeId === n.id)!.maskedBy = coverLayer.id;
+  anim.tracks[cover.id] = {
+    nodeId: cover.id, endFrame: 29, keys: [
+      key(0, tf(150, 150, 0, 0, 3, 3)),
+      key(12, tf(170, 140, 20, 20, 3, 3), { displayIndex: -1, tween: { kind: "none" } }),
+      key(18, tf(160, 160, 10, 10, 4, 2)),
     ],
   };
   anim.tracks[spin.id] = {

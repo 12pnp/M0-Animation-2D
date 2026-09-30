@@ -258,10 +258,34 @@ describe("colour and blend", () => {
     expect(file(project).animations!.animation!.slots).toBeUndefined();
   });
 
-  it("warns that colour offsets are not carried yet", () => {
+  it("writes colour offsets as two-colour tint: dark = offset, light = multiplier + offset", () => {
     const { project, sym } = scene(["a"]);
-    nodeNamed(sym, "a").color = { ...neutral, rO: 40 };
-    expect(messages(project).some((m) => m.includes("colour offsets"))).toBe(true);
+    nodeNamed(sym, "a").color = { ...neutral, rM: 50, rO: 60, gM: 80, gO: 20 };
+    const slot = file(project).slots![0]!;
+    expect(slot.dark).toBe("3c1400");
+    // r: 0.5 + 60/255 = 0.7353 -> 187.5 -> bc; g: 0.8 + 20/255 = 0.8784 -> e0.
+    expect(slot.color).toBe("bce0ffff");
+    expect(messages(project)).toEqual([]);
+  });
+
+  it("keys offsets on an rgba2 timeline, curves over all seven channels", () => {
+    const { project, sym } = scene(["a"]);
+    track(sym, "a", [
+      key(0, tf(), { color: { ...neutral, rM: 40, rO: 100 }, tween: { kind: "ease", value: 1 } }),
+      key(6, tf(), { color: { ...neutral, bM: 50, bO: 50 } }),
+    ], undefined, 7);
+    const tl = file(project).animations!.animation!.slots!.a!;
+    expect(tl.rgba).toBeUndefined();
+    expect(tl.rgba2!.map((k) => [k.light, k.dark])).toEqual([["caffffff", "640000"], ["ffffb2ff", "000032"]]);
+    expect((tl.rgba2![0]!.curve as number[]).length).toBe(28);
+  });
+
+  it("warns about offsets the tint cannot draw exactly, and clamps them", () => {
+    const { project, sym } = scene(["a", "b"]);
+    nodeNamed(sym, "a").color = { ...neutral, rO: 40 };          // 1 + 40/255 > 1
+    nodeNamed(sym, "b").color = { ...neutral, rM: 50, gO: -30 }; // negative
+    const warnings = messages(project).filter((m) => m.includes("two-colour tint"));
+    expect(warnings).toHaveLength(2);
   });
 
   it("maps the blend modes Spine has, and warns for the rest", () => {
@@ -427,11 +451,56 @@ describe("what does not reach the file", () => {
     expect(messages(project)).toEqual([]);
   });
 
-  it("warns that masks are not carried yet", () => {
-    const { project, sym } = scene(["art", "mask"]);
-    sym.layers.find((l) => l.name === "mask")!.isMask = true;
-    expect(messages(project).join("\n")).toContain("mask layers");
-    expect(file(project).slots!.map((s) => s.name)).toEqual(["art"]);
+  it("clips a mask's layers with a clip slot right before them, through the last", () => {
+    const { project, sym } = scene(["under", "a", "b", "mask"]);   // layers: mask, b, a, under
+    const mask = sym.layers.find((l) => l.name === "mask")!;
+    mask.isMask = true;
+    for (const n of ["a", "b"]) sym.layers.find((l) => l.name === n)!.maskedBy = mask.id;
+    const f = file(project);
+    expect(f.slots!.map((s) => s.name)).toEqual(["under", "mask", "a", "b"]);
+    const clip = f.skins![0]!.attachments!.mask!.mask as { type: string; end: string; vertexCount: number };
+    expect(clip).toMatchObject({ type: "clipping", end: "b", vertexCount: 4 });
+    expect(f.slots!.find((s) => s.name === "mask")!.attachment).toBe("mask");
+  });
+
+  it("draws a mask's layers together where the first is, as the stage does", () => {
+    const { project, sym } = scene(["a", "between", "b", "mask"]);   // layers: mask, b, between, a
+    const mask = sym.layers.find((l) => l.name === "mask")!;
+    mask.isMask = true;
+    for (const n of ["a", "b"]) sym.layers.find((l) => l.name === n)!.maskedBy = mask.id;
+    expect(file(project).slots!.map((s) => s.name)).toEqual(["mask", "a", "b", "between"]);
+  });
+
+  it("drops the clip of an excluded mask, leaving its layers unclipped", () => {
+    const { project, sym } = scene(["a", "mask"]);
+    const mask = sym.layers.find((l) => l.name === "mask")!;
+    mask.isMask = true;
+    sym.layers.find((l) => l.name === "a")!.maskedBy = mask.id;
+    mask.excludeFromExport = true;
+    expect(file(project).slots!.map((s) => s.name)).toEqual(["a"]);
+  });
+
+  it("clips with the traced outline, placed about the mask's transform point", () => {
+    const { project, sym } = scene(["a", "mask"], [40, 20]);
+    const mask = sym.layers.find((l) => l.name === "mask")!;
+    mask.isMask = true;
+    sym.layers.find((l) => l.name === "a")!.maskedBy = mask.id;
+    nodeNamed(sym, "mask").pivot = { x: 10, y: 5 };
+    const out = exportSpine(project, undefined, {
+      maskShape: () => ({ points: [0, 0, 40, 0, 20, 20], islands: 0, holes: 0, soft: true }),
+    });
+    const clip = out.skeleton.skins![0]!.attachments!.mask!.mask as { vertices: number[] };
+    expect(clip.vertices).toEqual([-10, 5, 30, 5, 10, -15]);
+    expect(out.diagnostics.some((d) => d.message.includes("soft edges"))).toBe(true);
+  });
+
+  it("warns about a mask that shows a symbol, or is partly transparent", () => {
+    const { project, sym } = scene(["a", "mask"]);
+    const mask = sym.layers.find((l) => l.name === "mask")!;
+    mask.isMask = true;
+    sym.layers.find((l) => l.name === "a")!.maskedBy = mask.id;
+    nodeNamed(sym, "mask").color = { rM: 100, gM: 100, bM: 100, aM: 50, rO: 0, gO: 0, bO: 0, aO: 0 };
+    expect(messages(project).some((m) => m.includes("partly transparent"))).toBe(true);
   });
 });
 

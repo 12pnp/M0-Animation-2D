@@ -1,7 +1,9 @@
-import type { Animation, ColorTransform, DisplayRef, Layer, Node, Project, SymbolItem, Track } from "@/core/doc/types";
+import type { Animation, ColorTransform, DisplayRef, ImageItem, Layer, Node, Project, SymbolItem, Track } from "@/core/doc/types";
 import { DEFAULT_COLOR, isImage, isSymbol, producesSlot } from "@/core/doc/types";
 import type { ItemId, NodeId } from "@/core/doc/ids";
-import { descendantsOf } from "@/core/doc/layerTree";
+import { descendantsOf, maskGroups } from "@/core/doc/layerTree";
+import type { Contour } from "@/core/atlas/contour";
+import { nz } from "@/core/math/angle";
 import { displaysOf } from "@/core/doc/displays";
 import { childFrame, displayContext, localAt } from "@/core/doc/pose";
 import { rotationDelta, sampleColorRaw, sampleTransformRaw } from "@/core/doc/timeline";
@@ -16,10 +18,13 @@ import {
   type SpineAttachmentKey,
   type SpineBlendMode,
   type SpineBone,
+  type SpineAttachment,
   type SpineBoneTimelines,
+  type SpineClippingAttachment,
   type SpineCurve,
   type SpineIkConstraint,
   type SpineRegionAttachment,
+  type SpineRgba2Key,
   type SpineRgbaKey,
   type SpineSkeletonFile,
   type SpineSlot,
@@ -83,7 +88,13 @@ interface Scope {
 }
 
 /** One slot's worth of bookkeeping for the animation pass. */
-interface SlotPlan { scope: Scope; node: Node; name: string; displays: Map<number, string>; setupName: string | null }
+interface SlotPlan {
+  scope: Scope; node: Node; name: string; displays: Map<number, string>; setupName: string | null;
+  /** Colour offsets somewhere: Spine's two-colour tint (`dark`, `rgba2`). */
+  twoColor: boolean;
+  /** A mask's clip slot: attachments only, no colour. */
+  clip?: boolean;
+}
 
 /**
  * One symbol as a Spine 4.3 skeleton: the scene for File ▸ Export, the
@@ -103,10 +114,27 @@ interface SlotPlan { scope: Scope; node: Node; name: string; displays: Map<numbe
  * cut in the middle of a tween baked frame by frame. The instance's alpha
  * multiplies down, as on the stage; its tint and blend do not.
  *
- * Not yet carried, each said out loud: mask layers and colour offsets
- * (phase 6), motion blur.
+ * A mask layer becomes a clip slot before the layers it clips (`clipSlot`);
+ * colour offsets become two-colour tint (`lightHex`, `darkHex`). Not
+ * carried, said out loud: blend modes Spine lacks, motion blur.
  */
-export function exportSpine(project: Project, symbolId: ItemId = project.rootSymbolId): SpineExport {
+export interface ExportOptions {
+  /**
+   * The outline a mask image clips with, in its pixels (`traceContour`).
+   * The io layer traces the decoded image; without it, the image's
+   * rectangle.
+   */
+  maskShape?: (item: ImageItem) => Contour;
+}
+
+function rectangleShape(item: ImageItem): Contour {
+  const w = item.width, h = item.height;
+  return { points: [0, 0, w, 0, w, h, 0, h], islands: 0, holes: 0, soft: false };
+}
+
+export function exportSpine(
+  project: Project, symbolId: ItemId = project.rootSymbolId, options: ExportOptions = {},
+): SpineExport {
   const diagnostics: ExportDiagnostic[] = [];
   const usedImages = new Set<ItemId>();
   const sym = project.items[symbolId];
@@ -126,11 +154,13 @@ export function exportSpine(project: Project, symbolId: ItemId = project.rootSym
 
   const bones: SpineBone[] = [{ name: ROOT_BONE }];
   const slots: SpineSlot[] = [];
-  const attachments: Record<string, Record<string, SpineRegionAttachment>> = {};
+  const attachments: Record<string, Record<string, SpineAttachment>> = {};
   const constraints: SpineIkConstraint[] = [];
   const setups = new Map<string, SpineLocal>();
   const paths = new Map<string, string>();
   const plans: SlotPlan[] = [];
+  let clipCount = 0;
+  const maskShape = options.maskShape ?? rectangleShape;
   const boneNodes: Array<{ scope: Scope; node: Node; name: string }> = [];
   const offsetWarned = new Set<NodeId>();
   const ignoredInherit = new Set<string>();
@@ -163,9 +193,10 @@ export function exportSpine(project: Project, symbolId: ItemId = project.rootSym
     }
     const dropped = (id: NodeId): boolean => skipped.has(id) && !boneOnly.has(id);
 
-    const maskLayers = s.layers.filter((l) => l.isMask && !skipped.has(l.nodeId));
-    reportMasks(s, maskLayers, diagnostics);
-    const noSlot = new Set<NodeId>(maskLayers.map((l) => l.nodeId));
+    // Mask layers: their art is never drawn; each clips the layers linked
+    // to it (`maskGroups`), drawn together where the first of them is.
+    const groups = maskGroups(s);
+    const maskIds = new Set(s.layers.filter((l) => l.isMask).map((l) => l.id));
 
     for (const node of nodesInHierarchyOrder(s)) {
       if (dropped(node.id)) continue;
@@ -200,10 +231,9 @@ export function exportSpine(project: Project, symbolId: ItemId = project.rootSym
       constraints.push(ik);
     }
 
-    // layers[0] is the TOP layer; Spine draws slot 0 first, at the back.
-    for (const layer of [...s.layers].reverse()) {
+    const emitLayer = (layer: Layer): void => {
       const node = s.nodes[layer.nodeId];
-      if (!node || !producesSlot(node) || skipped.has(node.id) || noSlot.has(node.id)) continue;
+      if (!node || !producesSlot(node) || skipped.has(node.id)) return;
       const name = nameOf(node.id);
       const keys = new Map<number, string>();
       const slotAttachments: Record<string, SpineRegionAttachment> = {};
@@ -233,14 +263,23 @@ export function exportSpine(project: Project, symbolId: ItemId = project.rootSym
         attachments[name] = slotAttachments;
         const slot: SpineSlot = { name, bone: name };
         const setupName = scope.setupVisible ? keys.get(0) ?? null : null;
-        const setupColor = colorHex(scaleAlpha(node.color ?? DEFAULT_COLOR, scope.setupAlpha));
-        if (setupColor) slot.color = setupColor;
-        if (hasOffsets(node.color)) warnOffsets(node, offsetWarned, diagnostics);
+        const twoColor = hasOffsets(node.color)
+          || s.animations.some((a) => a.tracks[node.id]?.keys.some((k) => hasOffsets(k.color)));
+        const bindColor = scaleAlpha(node.color ?? DEFAULT_COLOR, scope.setupAlpha);
+        if (twoColor) {
+          slot.color = lightHex(bindColor);
+          slot.dark = darkHex(bindColor);
+          const colors = [node.color, ...s.animations.flatMap((a) => a.tracks[node.id]?.keys.map((k) => k.color) ?? [])];
+          if (colors.some((c) => c && !tintExact(c))) warnOffsets(node, offsetWarned, diagnostics);
+        } else {
+          const setupColor = colorHex(bindColor);
+          if (setupColor) slot.color = setupColor;
+        }
         const blend = blendOf(node, diagnostics);
         if (blend) slot.blend = blend;
         if (setupName) slot.attachment = setupName;
         slots.push(slot);
-        plans.push({ scope, node, name, displays: keys, setupName });
+        plans.push({ scope, node, name, displays: keys, setupName, twoColor });
       }
 
       // Each symbol this node shows is flattened here, in the draw order.
@@ -264,7 +303,102 @@ export function exportSpine(project: Project, symbolId: ItemId = project.rootSym
         const inner = childScope(scope, node, index, child);
         emitScope({ ...inner, prefix: `${content}/`, parentBone: content, key: `${pathOf(node.id)}#${index}` });
       }
+    };
+
+    /**
+     * A clip slot for the mask, then the layers it clips. Spine clips from
+     * the clipping attachment's slot through its `end` slot, so the slot goes
+     * right before the group and `end` names the group's last slot, nested
+     * content included. The clip follows the mask's bone and, through the
+     * attachment timeline, its visibility: a mask not showing clips nothing,
+     * as on the stage.
+     */
+    const emitMasked = (maskLayer: Layer | undefined, members: Layer[]): void => {
+      const maskNode = maskLayer ? s.nodes[maskLayer.nodeId] : undefined;
+      let clip: { index: number; name: string; atts: SpineClippingAttachment[]; plan: SlotPlan } | null = null;
+      if (maskNode && !skipped.has(maskNode.id) && producesSlot(maskNode)) {
+        clip = clipSlot(scope, maskNode, nameOf(maskNode.id));
+      }
+      const before = slots.length, clipsBefore = clipCount;
+      for (const m of members) emitLayer(m);
+      if (!clip) return;
+      if (slots.length === before || clip.atts.length === 0) {
+        slots.splice(clip.index, 1);
+        delete attachments[clip.name];
+        plans.splice(plans.indexOf(clip.plan), 1);
+        clipCount--;
+        return;
+      }
+      for (const att of clip.atts) att.end = slots[slots.length - 1]!.name;
+      if (clipCount > clipsBefore + 1) {
+        diagnostics.push({
+          severity: "warning",
+          message: `"${maskNode!.name}" clips layers that hold another mask; Spine clips one mask at a time, so the inner one is ignored inside it.`,
+        });
+      }
+    };
+
+    // layers[0] is the TOP layer; Spine draws slot 0 first, at the back.
+    const done = new Set<string>();
+    for (const layer of [...s.layers].reverse()) {
+      if (done.has(layer.id) || maskIds.has(layer.id)) continue;
+      const group = layer.maskedBy ? groups.get(layer.maskedBy) : undefined;
+      if (!group) { emitLayer(layer); continue; }
+      const members = [...group].reverse();
+      for (const m of members) done.add(m.id);
+      emitMasked(s.layers.find((l) => l.id === layer.maskedBy), members);
     }
+  };
+
+  /** The clip slot of a mask node: one clipping attachment per image it
+   *  shows, the polygon traced from the image (`maskShape`) and placed in
+   *  the bone's space about its transform point. */
+  const clipSlot = (scope: Scope, node: Node, name: string) => {
+    const keys = new Map<number, string>();
+    const slotAtts: Record<string, SpineClippingAttachment> = {};
+    const atts: SpineClippingAttachment[] = [];
+    const taken = new Set<string>();
+    const warn = (message: string) => diagnostics.push({ severity: "warning", message });
+    for (const [index, ref] of exportedDisplays(scope.sym, node)) {
+      const item = project.items[ref.itemId];
+      if (isSymbol(item)) {
+        warn(`Mask "${node.name}" shows the symbol "${item.name}" at some keys; Spine clips with an image's outline, so it does not clip there.`);
+        continue;
+      }
+      if (!isImage(item)) continue;
+      const shape = maskShape(item);
+      if (shape.points.length < 6) {
+        warn(`Mask "${node.name}": the image "${item.name}" has nothing opaque enough to clip with.`);
+        continue;
+      }
+      if (shape.soft) warn(`Mask "${node.name}": "${item.name}" has soft edges; Spine clips with a hard outline at half opacity.`);
+      if (shape.islands > 0.02) warn(`Mask "${node.name}": "${item.name}" has several separate shapes; Spine clips with one outline, the largest.`);
+      if (shape.holes > 0.01) warn(`Mask "${node.name}": "${item.name}" has holes; Spine clips with one outline, so they are filled.`);
+      let key = item.name;
+      for (let n = 2; taken.has(key); n++) key = `${item.name} (${n})`;
+      taken.add(key);
+      keys.set(index, key);
+      const vertices: number[] = [];
+      for (let i = 0; i < shape.points.length; i += 2) {
+        vertices.push(nz(shape.points[i]! - ref.pivot.x), nz(-(shape.points[i + 1]! - ref.pivot.y)));
+      }
+      const att: SpineClippingAttachment = { type: "clipping", end: "", vertexCount: vertices.length / 2, vertices };
+      slotAtts[key] = att;
+      atts.push(att);
+    }
+    const colors = [node.color, ...scope.sym.animations.flatMap((a) => a.tracks[node.id]?.keys.map((k) => k.color) ?? [])];
+    if (colors.some((c) => c && c.aM < 100)) {
+      warn(`Mask "${node.name}" is partly transparent; Spine's clip is all or nothing.`);
+    }
+    attachments[name] = slotAtts;
+    const setupName = scope.setupVisible ? keys.get(0) ?? null : null;
+    const slot: SpineSlot = { name, bone: name };
+    if (setupName) slot.attachment = setupName;
+    slots.push(slot);
+    const plan: SlotPlan = { scope, node, name, displays: keys, setupName, twoColor: false, clip: true };
+    plans.push(plan);
+    clipCount++;
+    return { index: slots.length - 1, name, atts, plan };
   };
 
   /** Where an instance's symbol is, frame by frame, by the stage's rules. */
@@ -350,7 +484,7 @@ export function exportSpine(project: Project, symbolId: ItemId = project.rootSym
       }
     }
     for (const plan of plans) {
-      const st = slotTimelines(plan, anim.name, fps, offsetWarned, diagnostics);
+      const st = slotTimelines(plan, anim.name, fps);
       if (st) {
         (out.slots ??= {})[plan.name] = st.timelines;
         lastFrame = Math.max(lastFrame, st.lastFrame);
@@ -643,7 +777,7 @@ function boneTimelines(
  * baked frame by frame.
  */
 function slotTimelines(
-  plan: SlotPlan, animName: string, fps: number, offsetWarned: Set<NodeId>, diags: ExportDiagnostic[],
+  plan: SlotPlan, animName: string, fps: number,
 ): { timelines: SpineSlotTimelines; lastFrame: number } | null {
   const { scope, node, displays, setupName } = plan;
   const frames = scope.frames.get(animName)!;
@@ -670,9 +804,8 @@ function slotTimelines(
   }
   if (changes.length > 1 || (changes.length === 1 && changes[0]!.name !== setupName)) out.attachment = changes;
 
+  if (plan.clip) return Object.keys(out).length ? { timelines: out, lastFrame } : null;
   const runs = runsOf(frames);
-  const tracks = runs.map((r) => r.anim?.tracks[node.id]).filter((t): t is Track => !!t);
-  if (!offsetWarned.has(node.id) && tracks.some((t) => t.keys.some((k) => hasOffsets(k.color)))) warnOffsets(node, offsetWarned, diags);
   const bind = node.color ?? DEFAULT_COLOR;
   const shown = alpha.filter((_, f) => frames[f]);
   const constant = shown.every((a) => Math.abs(a - shown[0]!) < 1e-12) ? (shown[0] ?? scope.setupAlpha) : null;
@@ -694,13 +827,22 @@ function slotTimelines(
       rows.push({ frame: f, t: scaleAlpha(c, alpha[f]!), stepped: false });
     });
   }
-  const setupHex = colorHex(scaleAlpha(bind, scope.setupAlpha)) ?? "ffffffff";
-  if (rows.some((r) => (colorHex(r.t) ?? "ffffffff") !== setupHex)) {
-    // The runtime's frame colours are the 8-bit ones the file holds, so a
-    // curve's control values are mixed from those.
-    const channels = (c: ColorTransform) => [c.rM, c.gM, c.bM, c.aM].map((m) => Math.max(0, Math.min(255, Math.round((m / 100) * 255))) / 255);
-    lastFrame = Math.max(lastFrame, ...rows.map((r) => r.frame));
-    out.rgba = rows.map((r): SpineRgbaKey => ({ ...keyBase(r, fps, channels), color: colorHex(r.t) ?? "ffffffff" }));
+  // The runtime's frame colours are the 8-bit ones the file holds, so a
+  // curve's control values are mixed from those.
+  const setupBind = scaleAlpha(bind, scope.setupAlpha);
+  if (plan.twoColor) {
+    const key = (c: ColorTransform) => lightHex(c) + darkHex(c);
+    if (rows.some((r) => key(r.t) !== key(setupBind))) {
+      lastFrame = Math.max(lastFrame, ...rows.map((r) => r.frame));
+      out.rgba2 = rows.map((r): SpineRgba2Key => ({ ...keyBase(r, fps, tintChannels), light: lightHex(r.t), dark: darkHex(r.t) }));
+    }
+  } else {
+    const setupHex = colorHex(setupBind) ?? "ffffffff";
+    if (rows.some((r) => (colorHex(r.t) ?? "ffffffff") !== setupHex)) {
+      const channels = (c: ColorTransform) => [c.rM, c.gM, c.bM, c.aM].map((m) => byte(m / 100) / 255);
+      lastFrame = Math.max(lastFrame, ...rows.map((r) => r.frame));
+      out.rgba = rows.map((r): SpineRgbaKey => ({ ...keyBase(r, fps, channels), color: colorHex(r.t) ?? "ffffffff" }));
+    }
   }
 
   return Object.keys(out).length ? { timelines: out, lastFrame } : null;
@@ -716,6 +858,9 @@ function lerpColor(a: ColorTransform, b: ColorTransform, s: number): ColorTransf
 
 /* ── colour and blend ────────────────────────────────────────────────────── */
 
+const byte = (v: number) => Math.max(0, Math.min(255, Math.round(v * 255)));
+const hex2 = (v: number) => byte(v).toString(16).padStart(2, "0");
+
 /**
  * The multipliers as "rrggbbaa", or undefined when neutral. The runtime's
  * slot colour multiplies the texture exactly as the stage's multipliers do,
@@ -723,13 +868,40 @@ function lerpColor(a: ColorTransform, b: ColorTransform, s: number): ColorTransf
  */
 export function colorHex(c: ColorTransform | undefined): string | undefined {
   if (!c) return undefined;
-  const ch = (m: number) => Math.max(0, Math.min(255, Math.round((m / 100) * 255))).toString(16).padStart(2, "0");
-  const hex = ch(c.rM) + ch(c.gM) + ch(c.bM) + ch(c.aM);
+  const hex = hex2(c.rM / 100) + hex2(c.gM / 100) + hex2(c.bM / 100) + hex2(c.aM / 100);
   return hex === "ffffffff" ? undefined : hex;
 }
 
+/**
+ * Colour offsets as Spine's two-colour tint. The stage draws
+ * `clamp(c·M + O)` per channel; spine-pixi's dark-tint shader draws
+ * `(1 − c)·dark + c·light` (straight colour; the batcher scales dark by the
+ * slot's alpha and gives it alpha 1). They are equal for every texel c when
+ * `dark = O` and `light = M + O`, as long as O is not negative and M + O
+ * does not pass full (`tintExact`). The alpha offset is not drawn by the
+ * stage either.
+ */
+export function lightHex(c: ColorTransform): string {
+  return hex2(c.rM / 100 + c.rO / 255) + hex2(c.gM / 100 + c.gO / 255) + hex2(c.bM / 100 + c.bO / 255) + hex2(c.aM / 100);
+}
+
+export function darkHex(c: ColorTransform): string {
+  return hex2(c.rO / 255) + hex2(c.gO / 255) + hex2(c.bO / 255);
+}
+
+/** The seven values an rgba2 curve carries, light rgba then dark rgb. */
+function tintChannels(c: ColorTransform): number[] {
+  const h = lightHex(c) + darkHex(c);
+  return Array.from({ length: 7 }, (_, i) => parseInt(h.slice(i * 2, i * 2 + 2), 16) / 255);
+}
+
+export function tintExact(c: ColorTransform): boolean {
+  return ([["rM", "rO"], ["gM", "gO"], ["bM", "bO"]] as const).every(([m, o]) =>
+    c[o] >= 0 && c[m] / 100 + c[o] / 255 <= 1 + 1e-9);
+}
+
 function hasOffsets(c: ColorTransform | undefined): boolean {
-  return !!c && (c.aO !== 0 || c.rO !== 0 || c.gO !== 0 || c.bO !== 0);
+  return !!c && (c.rO !== 0 || c.gO !== 0 || c.bO !== 0);
 }
 
 function warnOffsets(node: Node, warned: Set<NodeId>, diags: ExportDiagnostic[]): void {
@@ -737,7 +909,9 @@ function warnOffsets(node: Node, warned: Set<NodeId>, diags: ExportDiagnostic[])
   warned.add(node.id);
   diags.push({
     severity: "warning",
-    message: `"${node.name}" uses colour offsets, which the Spine export does not carry yet: only the multipliers reach the file.`,
+    message:
+      `"${node.name}" uses colour offsets Spine's two-colour tint cannot draw exactly (a negative offset, ` +
+      "or multiplier plus offset past full): the export clamps them.",
   });
 }
 
@@ -802,15 +976,6 @@ function reportExcluded(sym: SymbolItem, skipped: Set<NodeId>, diags: ExportDiag
   });
 }
 
-function reportMasks(sym: SymbolItem, masks: Layer[], diags: ExportDiagnostic[]): void {
-  if (masks.length === 0) return;
-  diags.push({
-    severity: "warning",
-    message:
-      `"${sym.name}" has mask layers (${masks.map((l) => `"${l.name}"`).join(", ")}), which the Spine export ` +
-      "does not carry yet: the mask artwork is left out and the layers it clips draw unclipped.",
-  });
-}
 
 /**
  * The runtime finds atlas regions by name, so two images with one name

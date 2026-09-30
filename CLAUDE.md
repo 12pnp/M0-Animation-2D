@@ -5,13 +5,15 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 Amino Spine2D is Animo (github.com/justmorenoise/animo) retargeted from
 DragonBones 5.5 to **Spine 4.3**. [docs/PLAN.md](docs/PLAN.md) is the plan: the
 phases, the DragonBones→Spine mapping, and the checklist of export tests to
-rebuild. Phases 0–5 are done: DragonBones is gone, `src/core/spine/` holds the
+rebuild. Phases 0–6 are done: DragonBones is gone, `src/core/spine/` holds the
 Spine 4.3 contract, the transform mapping and the exporter (ARCHITECTURE ▸ The
 Spine 4.3 contract, The Spine exporter), File ▸ Export writes Spine files, and
 the Preview panel and Play mode run spine-pixi-v8 (ARCHITECTURE ▸ The preview is
 ground truth, Vendored runtime), and the stage's eases and IK are Spine's own
 (ARCHITECTURE ▸ Easing, Bones and IK). Nested symbols are flattened into the one
-skeleton (ARCHITECTURE ▸ The Spine exporter ▸ Nested symbols are flattened). An exporter change must keep
+skeleton (ARCHITECTURE ▸ The Spine exporter ▸ Nested symbols are flattened), masks
+are clipping attachments and colour offsets two-colour tint (ARCHITECTURE ▸ Mask
+layers, Colour, alpha and blend mode). An exporter change must keep
 `tests/spineParity.test.ts` passing: it plays every fixture through spine-core
 and compares it with the stage frame by frame. Check Spine behaviour against
 `@esotericsoftware/spine-core` in a test, the way `tests/spineTransform.test.ts`

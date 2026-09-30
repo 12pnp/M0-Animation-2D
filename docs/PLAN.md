@@ -93,7 +93,7 @@ one, and the AI checks its own result against the runtime. Two ways to connect:
 | 3 | **Done.** Preview and Play mode on spine-pixi-v8 4.3.13 / PixiJS 8.21; one build per edit, per-symbol skeletons over one atlas | every stickman bone (IK included) matches the stage on every frame through the real preview, 3.5e-5 px; found and fixed the IK bend inversion |
 | 4 | **Done.** Stage eases evaluated as Spine plays them, exported as native beziers (frog `body` 107 KB → 7.5 KB); IK solver replaced by a transcription of Spine's | parity on a three-segment curve, every quad ease, 7 targeted and 60 random IK rigs; the old solver failed 3 of the 7 |
 | 5 | **Done.** Symbol instances flattened into one skeleton: content bones at −pivot, slots in the instance's place, the child's own looping timeline laid run by run onto the exported animation, alpha cascaded, IK inside carried | the nested rig, all 11 frog symbols and the real preview match the stage frame by frame; 8 deliberate flattening bugs each fail a test |
-| 6 | Clipping, two-colour tint, blend modes, loss warnings | mask rigs match the preview |
+| 6 | **Done.** Masks as clipping attachments (outline traced from the mask's alpha), colour offsets as two-colour tint | parity checks clips and dark colours every frame; in the preview, clipping and tint measured to the pixel; 7 deliberate bugs each fail |
 | 7 | Import, stage 1 (meshes shown and carried through) | round trip over the M0 samples |
 | 8 | Unity check: exports imported in M0 `Assets/AnimoTest/Spine` | spine-unity 4.3 plays them |
 | 9 | AgentApi, then the prompt panel and MCP | an AI-made walk cycle can be undone and matches the preview |
@@ -181,7 +181,7 @@ Phase 0 removed 79 tests that read DragonBones output. Each rule is now a Spine 
 - [x] exclude from export > removes the bone, the slot, the timeline and the image — ported: `spineExport.test.ts`
 - [x] exclude from export > does not export the armature or the art of a symbol only an excluded layer uses — ported: `spineExport.test.ts` ▸ nested symbols
 - [x] exclude from export > still exports a symbol that a kept layer uses too — ported: `spineExport.test.ts` ▸ nested symbols
-- [ ] exclude from export > drops an excluded mask, and an excluded target, from the sidecar — deferred to phase 6 (masks)
+- [x] exclude from export > drops an excluded mask, and an excluded target, from the sidecar — ported: `spineExport.test.ts` (an excluded mask leaves its layers unclipped)
 - [x] empty layers > export as nothing at all — no bone, no slot, no timeline — ported: `spineExport.test.ts`
 - [x] empty layers > keeps its bone when a kept node is parented under it — ported: `spineExport.test.ts`
 - [x] exclude from export > takes the whole subtree of an excluded group with it — ported: `spineExport.test.ts`
@@ -189,9 +189,9 @@ Phase 0 removed 79 tests that read DragonBones output. Each rule is now a Spine 
 
 ### `masks.test.ts`
 
-- [ ] mask export > writes mask links as slot names, not as anything in the skeleton — deferred to phase 6 (masks)
-- [ ] mask export > warns and skips a mask layer with no artwork to clip with — deferred to phase 6 (masks)
-- [ ] mask export > carries several targets under one mask — deferred to phase 6 (masks)
+- [x] mask export > writes mask links as slot names, not as anything in the skeleton — replaced: masks are Spine clipping attachments, `spineExport.test.ts` and `spineParity.test.ts`
+- [x] mask export > warns and skips a mask layer with no artwork to clip with — ported: warns for nothing opaque, a symbol, soft edges, islands, holes, transparency
+- [x] mask export > carries several targets under one mask — ported: one clip slot through the group's last slot, gathered as the stage draws it
 
 ### `nestedSymbols.test.ts`
 

@@ -13,7 +13,8 @@
 > since replaced by Spine's.
 > Rewrite each section when the phase that replaces it lands. "The Spine 4.3
 > contract" (phase 1) and "The Spine exporter" (phases 2 and 5) are new; "The preview is
-> ground truth" and "Vendored runtime" describe the Spine preview (phase 3).
+> ground truth" and "Vendored runtime" describe the Spine preview (phase 3); "Colour,
+> alpha and blend mode" and "Mask layers" describe Spine's tint and clipping (phase 6).
 
 How Animo is built, and — mostly — the things in it that fail **silently** when
 you get them wrong. This is not a style guide: it is the record of decisions
@@ -768,8 +769,8 @@ flowchart LR
   attachment and colour, and the four corners of each image with `evaluateSymbol`.
   Worst differences: matrices 1.5e-6, positions and corners 1.5e-4 px, IK chains
   included.
-- **Not carried yet, said out loud:** mask layers and colour offsets (phase 6), blend
-  modes other than normal, add, multiply and screen, motion blur.
+- **Not carried, said out loud:** blend modes other than normal, add, multiply and
+  screen; motion blur. Masks and colour offsets: see Mask layers and Colour.
 
 ### Nested symbols are flattened
 
@@ -1607,30 +1608,24 @@ flowchart LR
 
 ## Colour, alpha and blend mode
 
-Both are SETUP-pose properties with an animated counterpart only for colour, and both are
-constrained by what `PixiSlot` actually applies — not by what the format can express.
+The stage bakes RGB as `clamp(c·M + O)` per channel (`SceneRenderer.sourceFor`) and applies
+alpha as `globalAlpha` from `aM` alone; the alpha offset is drawn by nothing.
 
-- **Only the multipliers survive.** `_updateColor` puts `alphaMultiplier` into `display.alpha`
-  and packs `red/green/blueMultiplier` into `display.tint`. The four OFFSETS (`aO/rO/gO/bO`) are
-  parsed, tweened and stored on `_colorTransform`, and never read. So Flash's additive Tint
-  (`out = c·(1−amt) + tint·amt`, which needs `rM = 100−amt` *plus* `rO = tintR·amt`) is not
-  reproducible: it would look right on the stage, which bakes offsets in `sourceFor`, and vanish
-  in the preview. The Properties panel exposes multipliers only; `exportSkeleton` warns if a
-  document carries offsets anyway.
-- **Colour tweens, and the editor must tween it too.** `buildSlotTimeline` emits `colorFrame`
-  WITH `tweenEasing`, so `pose.localAt` samples colour through `sampleColorRaw` rather than
-  reading the governing keyframe. Taking it stepwise showed a hard cut where the runtime faded.
-- **An authored colour anywhere means the timeline governs**, even a neutral one. `usesColor` is
-  `k.color !== undefined`, not "differs from neutral": with a non-default `slot.color` in the
-  setup pose, a keyframe returning to neutral must still be emitted or the runtime keeps the bind
-  tint. `sampleColorRaw` gates on the same rule, which is what keeps the two ends agreeing.
-- **Blend mode cannot be keyed.** There is no blendMode timeline; `Slot.init` reads it once from
-  `_slotData`. `BlendMode` lists only the nine `_updateBlendMode` actually maps — the parser knows
-  fourteen, and `alpha`, `erase`, `invert`, `layer` and `subtract` hit its `default: break`.
-- **Neither tint nor blend reaches a symbol instance.** Both are guarded by
-  `instanceof PIXI.Sprite`, and a child armature's display is a Container. Alpha still cascades
-  through `_globalAlpha`. The panel offers instances Alpha only; the exporter warns.
-- `SceneRenderer` sets `globalCompositeOperation` on the FINAL draw, never on the tint bake.
+- **Multipliers** go out as the slot colour, `rrggbbaa` (8 bits a channel, 1/510 at worst).
+- **Offsets** go out as Spine's two-colour tint: the slot's `dark` colour and `rgba2`
+  keys (seven curve channels: light r g b a, dark r g b). spine-pixi's dark-tint shader
+  draws `(1 − c)·dark + c·light` in straight colour (its batcher scales dark by the
+  slot's alpha and gives it alpha 1), which equals the stage for EVERY texel when
+  `dark = O` and `light = M + O`. That holds while O is not negative and M + O does
+  not pass full (`tintExact`); outside, the export clamps and warns. Measured in the
+  preview on a grey square with red ×0.5 + 100, green ×0.8 + 20: (164, 122) exactly.
+- **An authored colour anywhere means the timeline governs**, even a neutral one
+  (`sampleColorRaw`'s rule): with a non-default bind colour, a key returning to neutral
+  must still be written.
+- **Blend mode cannot be keyed** (Spine has no blend timeline), and Spine has four:
+  normal, additive, multiply, screen. The rest export as normal, with a warning.
+- **Neither tint nor blend reaches inside a symbol instance** on the stage; its alpha does,
+  and the flattening multiplies it down (ARCHITECTURE ▸ The Spine exporter).
 
 ## Export settings
 
@@ -1729,105 +1724,46 @@ Measured before moving anything; what blocked the page and where it went:
 - WASM was not worth it: the loops are typed-array code already close to native,
   and without a worker a faster loop still freezes the page.
 
-## Runtime extensions
+## Runtime extensions and motion blur
 
-What DragonBones 5.5 cannot carry ships beside the skeleton as `<name>_ext.json`, a manifest
-shaped like glTF's extensions (`extensionsUsed`, `extensionsRequired`, `extensions`), applied by
-**one** file, `src/runtime/animo-pixi.js`. It is plain JavaScript because it ships
-byte for byte in the export (Vite `?raw`) and is the same module the preview imports, so the
-preview stays ground truth. `core/export/extensions.ts` builds the manifest and the `README.md`
-that goes in the zip; `ExportBundle.exportFiles` is the one list of files, used by both the zip
-and Export to Folder (which used to drop the mask sidecar). Game code:
-`installExtensions(display, manifest, { PIXI, ticker })` after `buildArmatureDisplay`.
-
-- **Required vs optional is a real distinction.** `ANIMO_masks` is required: without it artwork
-  meant to be hidden is drawn. `ANIMO_motion_blur` is optional: without it the animation is just
-  sharp. An unknown REQUIRED name warns.
-- **The manifest stores intent, not a Pixi setup** (a shutter angle, not a filter), so another
-  runtime, or a future video/spritesheet export doing exact temporal supersampling, can honour it.
-- **The app explains them.** `EXTENSION_DOCS` and `extensionSnippet` in
-  `core/export/extensions.ts` are the one copy of the prose and the wiring
-  example: the zip's README renders them, and so does `view/help/ExtensionHelp.ts`
-  — the Preview panel's badge is a button that opens it, and Help ▸ Runtime
-  Extensions lists one row per documented extension. The badge used to say "see
-  README.md", a file nobody using the published app can reach.
-- With `ticker`, `update` runs at `UPDATE_PRIORITY.LOW`: the DragonBones factory hooks
-  `Ticker.shared` at NORMAL, so the armature is already posed. A host that owns the clock (the
-  preview does) calls `update()` right after `PixiFactory.advanceTime`.
-
-## Motion blur
-
-`Project.motionBlur` (enabled, shutter°, maxLength) and `Node.motionBlur` (0–2 multiplier,
-absent = 1, on a symbol instance it scales everything inside) — schema v4. Drawn only by the
-runtime extension, so it shows in Play mode and the Preview, never on the Canvas2D stage.
-
-- **Pixel motion, not bone origin.** A foot rotating about its ankle has a still origin. Per
-  sprite, `A = W·P⁻¹` (world matrix now over one update ago) and the filter averages along
-  `δ(g) = k·(A − I)·g`, an affine field: zero at a rotation's pivot, largest at the tip.
-- **`k` comes from the ANIMATION clock**: `(shutter/360)/fps / Δ(state.currentTime)`. Dividing
-  by render Δt would halve the trail at 120 Hz; the animation clock also makes a paused or
-  timeScale-0 armature unblurred for free. Time going backwards (loop wrap, seek) holds the
-  previous `k` for one update instead of streaking across the jump; a texture swap resets.
-- `getGlobalTransform(matrix)` REQUIRES the matrix argument in Pixi 8.9.2 — without it it throws
-  inside `appendFrom`. `worldTransform` is only refreshed during render, so it is stale in the
-  ticker; `getGlobalTransform` recomputes.
-- The filter's bounds exist only while rendering. `apply` gets the input-UV→world map from
-  `calculateSpriteMatrix` with an identity 1×1 fake sprite (public API only) and re-expresses the
-  field in UV (`displacementToUv`). `padding` follows the trail or the blur is cut at the edges.
-- Sizes are in ARMATURE px (divided by the display's own scale), so zooming does not change the
-  amount. On/off uses hysteresis (on above threshold, off below half). Mask sprites are never
-  filtered — that would blur the clip; masked targets are, and stay clipped (checked on
-  `eye_left` mid-blink).
-- GLSL only: on a WebGPU renderer Pixi skips the filter, which is why the extension is optional.
+Animo shipped masks and motion blur beside the DragonBones skeleton as runtime extensions
+(`animo-pixi.js`, `<name>_ext.json`). Spine carries masks itself (Mask layers), so the
+extension file is gone. Motion blur has no Spine counterpart and nothing draws it: the
+document keeps `Project.motionBlur` and `Node.motionBlur`, the Properties panel still edits
+them, and the export warns while it is on.
 
 ## Mask layers
 
-**DragonBones has no mask.** Not in the format, not in the parser, not in `PixiSlot`: every
-"Mask" in the runtime is `boneMask`, the per-bone filter for blending animation states, and
-`grep '\.mask'` over the bundle returns nothing. So this is an editor + Pixi-host feature —
-the stage clips, `exportSkeleton` collects links into `SkeletonResult.masks`, and they ship as
-the required `ANIMO_masks` runtime extension (see Runtime extensions). A stock DragonBones player
-(the official one, Cocos, Unity) ignores masks entirely, which the export diagnostics say out
-loud. `userData` is not a way round this: the key exists as a parser constant but is never read.
+A mask layer clips the layers linked to it (`Layer.isMask`, `Layer.maskedBy`); its own art
+is never drawn. The document side lives in `core/doc/layerTree.ts`: `maskRepairs` (pure) and
+`normalizeMasks` drop links whose mask has been deleted, demoted, or has ended up BELOW what
+it clips (`layers[0]` is the TOP row, so "above" is a smaller index). It never re-orders —
+dragging a layer out from under its mask is a legitimate way to unlink it. A mask with
+nothing linked to it is demoted.
 
-Measured against Pixi 8.9.2, not assumed — all three matter:
+**On the stage** (`SceneRenderer.drawEntries`, for the top level and every nested instance):
+the linked layers are drawn TOGETHER where the first of them is in paint order, into a
+scratch canvas per nesting depth, and the mask's alpha punches them with `destination-in`.
+A mask not showing (blank key, outside its span, eye off) leaves them unclipped.
 
-- **One mask display can clip several targets.** Sharing is safe, so masked slots do not have to
-  be wrapped in a symbol to get their own container.
-- **`.mask` survives z-order.** `_updateZOrder` only calls `addChildAt`, and the runtime never
-  reads or writes `.mask`. What does NOT survive is the white texture — `_updateFrame` puts the
-  atlas one back whenever the slot's display data changes, including a mask coming back from a
-  blank key — and a target's `.mask` when it swaps between an image and a symbol display, which
-  swaps the Pixi object. `ANIMO_masks.update` re-checks both every frame (reference compares),
-  and `armaturesOf` also walks the child armatures of displays not showing yet.
-- **Pixi clips on `alpha × red`, Flash on alpha.** The mask shader is
-  `a = masky.a * masky.r`, so a mask authored as a BLACK silhouette — the natural way to draw one,
-  and what the stage clips with perfectly via `destination-in` — has red = 0 and clips its targets
-  away completely. Nothing warns. `ANIMO_masks` therefore repaints each mask slot's texture white
-  (alpha untouched, one canvas copy per atlas page, frame/orig/trim/rotate preserved) before
-  assigning it; the mask's own artwork is never drawn, so this is invisible and turns the clip
-  into the pure alpha clip the stage shows. A **Container wrapper is the wrong fix**: it takes
-  Pixi's render-to-texture mask path, where a Sprite child comes out as a flat opaque rectangle
-  and every mask ends up square.
-- **`maskDisplay.visible = false` DISABLES the clip**, revealing the whole target rather than
-  hiding it. Never hide a mask slot; hide the slots it clips. The stage deliberately matches
-  this, because it is also what Flash does while authoring.
-- **The preview says so.** `PreviewPanel` shows a badge per extension whenever the export
-  carries one, because the preview is the only place that reveals a feature a stock
-  DragonBones player will ignore.
+**In the export** it is a Spine clipping attachment (`exportSpine`, `clipSlot`):
 
-The document side lives in `core/doc/layerTree.ts`: `Layer.isMask` and `Layer.maskedBy`, with
-`maskRepairs` (pure) and `normalizeMasks` (applies them, returns the inverse; see Undo)
-dropping links whose mask has been deleted, demoted, or has ended up BELOW what it clips
-(`layers[0]` is the TOP row, so "above" is a smaller index). It never re-orders —
-dragging a layer out from under its mask is a legitimate way to unlink it. A mask with nothing
-linked to it is demoted, or its artwork would stay invisible for no visible reason.
-
-`SceneRenderer.drawEntries` handles the clip for the top level AND for every nested instance,
-because a mask inside a symbol is the ordinary case: an eye whose circular mask clips a moving
-eyelid has to keep working while the whole eye moves. It flattens the group into a scratch canvas
-— one per nesting depth, since depth 0's layer must survive while depth 1 is built — and punches
-it with `destination-in`. Verified pixel-identical against the runtime for exactly that rig.
+- The group is gathered where the stage draws it, and a CLIP SLOT on the mask's bone goes
+  right before it; the attachment's `end` names the group's last slot, nested content
+  included (Spine clips from the clipping slot through `end`).
+- One clipping attachment per image the mask shows, and an attachment timeline following
+  the mask's visibility, so a hidden mask clips nothing, as on the stage.
+- The polygon is the image's alpha at 50%, traced along pixel edges and simplified to 1 px
+  (`core/atlas/contour.ts`, `traceContour`; on a worker, `io/workers/contour.ts`), placed
+  about the mask's transform point in the bone's y-up space. Without decoded pixels
+  (tests) it is the image's rectangle.
+- **What a polygon cannot carry is said out loud**: a soft edge (Spine clips hard), other
+  islands (only the largest clips), holes (filled), a partly transparent mask (the clip is
+  all or nothing), a mask showing a symbol (no clip there), and a mask inside a masked
+  group (Spine clips one mask at a time).
+- Measured in the preview on a red square under a 30 px circle: red 25 px from the
+  centre, the background at 35 px. `tests/spineParity.test.ts` checks each clip's place in
+  the draw order, its `end`, when it is on, and its polygon in the world, every frame.
 
 ## Not built yet
 

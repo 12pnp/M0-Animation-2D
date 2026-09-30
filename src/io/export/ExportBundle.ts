@@ -1,7 +1,10 @@
 import { strToU8 } from "fflate";
 import { zipFiles } from "@/io/zip";
 import type { Project } from "@/core/doc/types";
-import { type ImageItem, isImage } from "@/core/doc/types";
+import { type ImageItem, isImage, isSymbol } from "@/core/doc/types";
+import { displaysOf } from "@/core/doc/displays";
+import type { Contour } from "@/core/atlas/contour";
+import { contourOffThread } from "@/io/workers/contour";
 import type { ItemId } from "@/core/doc/ids";
 import type { AssetStore } from "@/app/AssetStore";
 import type { ExportDiagnostic } from "@/core/export/diagnostics";
@@ -50,7 +53,8 @@ export async function buildExports(
   opts: AtlasOptions = atlasOptionsFor(exportSettingsOf(project)),
   onProgress?: (fraction: number) => void,
 ): Promise<Map<ItemId, ExportResult>> {
-  const exported = [...new Set(symbolIds)].map((id) => [id, exportSpine(project, id)] as const);
+  const maskShape = await maskShapes(project, assets);
+  const exported = [...new Set(symbolIds)].map((id) => [id, exportSpine(project, id, { maskShape })] as const);
   const used = new Set<ItemId>();
   for (const [, e] of exported) for (const id of e.usedImages) used.add(id);
   const items = [...used]
@@ -75,6 +79,40 @@ export async function buildExports(
     out.set(id, { fileBase, skeleton: e.skeleton, atlas, pages, diagnostics, minifyJson });
   }
   return out;
+}
+
+/**
+ * The outline each mask image clips with, traced from its pixels (on a
+ * worker), for `exportSpine`: every image a mask layer shows anywhere in the
+ * document. An image whose pixels are not decoded yet, or which has been
+ * replaced by one of another size, is scaled to the item or, failing that,
+ * clips with its rectangle.
+ */
+async function maskShapes(project: Project, assets: AssetStore): Promise<(item: ImageItem) => Contour> {
+  const items = new Set<ImageItem>();
+  for (const sym of Object.values(project.items)) {
+    if (!isSymbol(sym)) continue;
+    for (const layer of sym.layers) {
+      if (!layer.isMask) continue;
+      const node = sym.nodes[layer.nodeId];
+      if (!node) continue;
+      for (const ref of displaysOf(node)) {
+        const item = project.items[ref.itemId];
+        if (isImage(item)) items.add(item);
+      }
+    }
+  }
+  const shapes = new Map<ImageItem, Contour>();
+  await Promise.all([...items].map(async (item) => {
+    const pixels = assets.pixels(item.assetId);
+    if (!pixels) return;
+    const c = await contourOffThread(pixels);
+    const sx = item.width / pixels.width, sy = item.height / pixels.height;
+    shapes.set(item, sx === 1 && sy === 1 ? c : { ...c, points: c.points.map((v, i) => v * (i % 2 ? sy : sx)) });
+  }));
+  return (item) => shapes.get(item) ?? {
+    points: [0, 0, item.width, 0, item.width, item.height, 0, item.height], islands: 0, holes: 0, soft: false,
+  };
 }
 
 /** The document's export settings, the defaults when it has none. */
