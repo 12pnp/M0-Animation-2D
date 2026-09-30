@@ -1,8 +1,9 @@
-import type { ColorTransform, DisplayRef, Keyframe, Layer, Node, Project, SymbolItem, Track } from "@/core/doc/types";
+import type { Animation, ColorTransform, DisplayRef, Layer, Node, Project, SymbolItem, Track } from "@/core/doc/types";
 import { DEFAULT_COLOR, isImage, isSymbol, producesSlot } from "@/core/doc/types";
 import type { ItemId, NodeId } from "@/core/doc/ids";
 import { descendantsOf } from "@/core/doc/layerTree";
 import { displaysOf } from "@/core/doc/displays";
+import { childFrame, displayContext, localAt } from "@/core/doc/pose";
 import { rotationDelta, sampleColorRaw, sampleTransformRaw } from "@/core/doc/timeline";
 import type { Transform } from "@/core/math/Transform";
 import { type EaseSegment, easeOf, easeSegments, type TweenChannel, type TweenSpec } from "@/core/math/easing";
@@ -30,13 +31,59 @@ export interface SpineExport {
   diagnostics: ExportDiagnostic[];
   /** Library images the skeleton draws, so the atlas packs only those. */
   usedImages: ItemId[];
-  /** Each exported node's bone name, which is also its slot's name. */
+  /** Each exported node of the symbol itself: its bone name, which is also
+   *  its slot's name. */
   names: Map<NodeId, string>;
+  /**
+   * Every exported bone, nested content included, by its PATH: a node of the
+   * symbol is its id; a node inside an instance is the instance's path, `#`
+   * the display index showing the symbol, `>` and the node's id.
+   */
+  paths: Map<string, string>;
 }
 
 /** The bone every top-level node hangs from. Spine does not require one,
  *  but spine-unity's tooling and most game code assume it. */
 export const ROOT_BONE = "root";
+
+/** The deepest nesting the stage draws (`SceneRenderer.drawEntry`). */
+const MAX_DEPTH = 10;
+
+/**
+ * Where in time a symbol's contents are, at each frame of one exported
+ * (root) animation: its own animation and frame, or null where it is not
+ * on screen. The root symbol is at its own frame throughout; a nested one
+ * follows the stage's rules (`localAt`, `displayContext`, `childFrame`).
+ */
+type FrameAt = { anim: Animation | null; frame: number } | null;
+
+/** Consecutive root frames where a symbol's frame advances one per frame:
+ *  [start, end) in root frames, `local0` the symbol's frame at `start`. */
+export interface Run { start: number; end: number; anim: Animation | null; local0: number }
+
+/** One symbol's contents inside the export: the root, or a nested instance. */
+interface Scope {
+  sym: SymbolItem;
+  depth: number;
+  /** The path of this scope's nodes (see `SpineExport.paths`), "" at the root. */
+  key: string;
+  /** Prefix of every bone name here, "" at the root. */
+  prefix: string;
+  /** The bone this symbol's top-level nodes hang from. */
+  parentBone: string;
+  /** Per exported animation, the frames of `FrameAt`. */
+  frames: Map<string, FrameAt[]>;
+  /** Per exported animation, the instances' alpha multiplied down to here. */
+  alpha: Map<string, number[]>;
+  /** Shown in the setup pose (every instance above shows it as display 0). */
+  setupVisible: boolean;
+  setupAlpha: number;
+  /** Symbols above, for the cycle guard. */
+  path: ItemId[];
+}
+
+/** One slot's worth of bookkeeping for the animation pass. */
+interface SlotPlan { scope: Scope; node: Node; name: string; displays: Map<number, string>; setupName: string | null }
 
 /**
  * One symbol as a Spine 4.3 skeleton: the scene for File ▸ Export, the
@@ -45,13 +92,19 @@ export const ROOT_BONE = "root";
  * Every node is a bone; every image layer is also a slot on its own bone,
  * named like it. Values are the stage's own: keys come from
  * `sampleTransformRaw` / `sampleColorRaw`, the functions the stage draws
- * with, so the two cannot disagree at a whole frame. A hold is a stepped
- * key, a linear tween one linear key, and an eased interval a linear key on
- * every frame (exact at every frame whatever the ease; Spine curves are a
- * later refinement).
+ * with, so the two cannot disagree at a whole frame.
  *
- * Not yet carried, each said out loud: nested symbol instances (phase 5),
- * mask layers and colour offsets (phase 6).
+ * A symbol instance is FLATTENED: Spine has no skeleton inside a skeleton.
+ * The instance gets a content bone at −pivot for each symbol it shows, the
+ * symbol's own bones hang from it (names prefixed with the path), its slots
+ * take the instance's place in the draw order, and its timeline — which
+ * loops on its own clock and restarts when swapped in — is laid onto the
+ * exported animation run by run (`Run`), keys and curves copied, only a run
+ * cut in the middle of a tween baked frame by frame. The instance's alpha
+ * multiplies down, as on the stage; its tint and blend do not.
+ *
+ * Not yet carried, each said out loud: mask layers and colour offsets
+ * (phase 6), motion blur.
  */
 export function exportSpine(project: Project, symbolId: ItemId = project.rootSymbolId): SpineExport {
   const diagnostics: ExportDiagnostic[] = [];
@@ -59,28 +112,9 @@ export function exportSpine(project: Project, symbolId: ItemId = project.rootSym
   const sym = project.items[symbolId];
   if (!isSymbol(sym)) {
     diagnostics.push({ severity: "error", message: "There is no symbol to export." });
-    return { skeleton: { skeleton: { spine: SPINE_VERSION }, bones: [] }, diagnostics, usedImages: [], names: new Map() };
+    return { skeleton: { skeleton: { spine: SPINE_VERSION }, bones: [] }, diagnostics, usedImages: [], names: new Map(), paths: new Map() };
   }
-
   const fps = project.frameRate;
-  const names = uniqueNames(sym, diagnostics);
-  const skipped = excludedNodes(sym);
-  reportExcluded(sym, skipped, diagnostics);
-
-  // A skipped node that still has a KEPT descendant keeps its bone — never a
-  // slot — or the descendant would reparent to the root and move.
-  const boneOnly = new Set<NodeId>();
-  for (const node of Object.values(sym.nodes)) {
-    if (skipped.has(node.id)) continue;
-    for (let p = node.parentId; p; p = sym.nodes[p]?.parentId ?? null) {
-      if (skipped.has(p)) boneOnly.add(p);
-    }
-  }
-  const dropped = (id: NodeId): boolean => skipped.has(id) && !boneOnly.has(id);
-
-  const maskLayers = sym.layers.filter((l) => l.isMask && !skipped.has(l.nodeId));
-  reportMasks(sym, maskLayers, diagnostics);
-  const noSlot = new Set<NodeId>(maskLayers.map((l) => l.nodeId));
 
   // Only the DragonBones runtime extension ever drew it; nothing does now.
   if (project.motionBlur?.enabled) {
@@ -90,117 +124,215 @@ export function exportSpine(project: Project, symbolId: ItemId = project.rootSym
     });
   }
 
-  const nested = Object.values(sym.nodes).filter((n) => n.kind === "symbol" && !skipped.has(n.id));
-  if (nested.length) {
-    diagnostics.push({
-      severity: "warning",
-      message:
-        `"${sym.name}" contains symbol instances (${nested.map((n) => `"${n.name}"`).join(", ")}), ` +
-        "which the Spine export does not carry yet: they are left out of the file and the Preview.",
-    });
+  const bones: SpineBone[] = [{ name: ROOT_BONE }];
+  const slots: SpineSlot[] = [];
+  const attachments: Record<string, Record<string, SpineRegionAttachment>> = {};
+  const constraints: SpineIkConstraint[] = [];
+  const setups = new Map<string, SpineLocal>();
+  const paths = new Map<string, string>();
+  const plans: SlotPlan[] = [];
+  const boneNodes: Array<{ scope: Scope; node: Node; name: string }> = [];
+  const offsetWarned = new Set<NodeId>();
+  const ignoredInherit = new Set<string>();
+
+  const rootFrames = new Map<string, FrameAt[]>();
+  const rootAlpha = new Map<string, number[]>();
+  for (const anim of sym.animations) {
+    rootFrames.set(anim.name, Array.from({ length: anim.duration }, (_, f) => ({ anim, frame: f })));
+    rootAlpha.set(anim.name, new Array(anim.duration).fill(1));
   }
 
-  /* ── bones ── */
-  const bones: SpineBone[] = [{ name: ROOT_BONE }];
-  const setups = new Map<NodeId, SpineLocal>();
-  const ignoredInherit: string[] = [];
-  for (const node of nodesInHierarchyOrder(sym)) {
-    if (dropped(node.id)) continue;
-    const setup = toSpineLocal(node.bind);
-    setups.set(node.id, setup);
-    const parent = node.parentId && !dropped(node.parentId) ? names.get(node.parentId)! : ROOT_BONE;
-    const bone: SpineBone = { name: names.get(node.id)!, parent, ...withoutDefaults(setup) };
-    if (node.kind === "bone" && node.boneLength) bone.length = node.boneLength;
-    if (node.inheritRotation === false || node.inheritScale === false) ignoredInherit.push(node.name);
-    bones.push(bone);
-  }
-  if (ignoredInherit.length) {
+  /** Bones, slots, skin entries and constraints of one scope, in draw order,
+   *  instances recursing where they sit. */
+  const emitScope = (scope: Scope): void => {
+    const s = scope.sym;
+    const local = uniqueNames(s, diagnostics, scope.depth === 0);
+    const nameOf = (id: NodeId) => scope.prefix + local.get(id)!;
+    const pathOf = (id: NodeId) => (scope.key ? `${scope.key}>${id}` : id);
+    const skipped = excludedNodes(s);
+    reportExcluded(s, skipped, diagnostics);
+
+    // A skipped node that still has a KEPT descendant keeps its bone — never
+    // a slot — or the descendant would reparent to the root and move.
+    const boneOnly = new Set<NodeId>();
+    for (const node of Object.values(s.nodes)) {
+      if (skipped.has(node.id)) continue;
+      for (let p = node.parentId; p; p = s.nodes[p]?.parentId ?? null) {
+        if (skipped.has(p)) boneOnly.add(p);
+      }
+    }
+    const dropped = (id: NodeId): boolean => skipped.has(id) && !boneOnly.has(id);
+
+    const maskLayers = s.layers.filter((l) => l.isMask && !skipped.has(l.nodeId));
+    reportMasks(s, maskLayers, diagnostics);
+    const noSlot = new Set<NodeId>(maskLayers.map((l) => l.nodeId));
+
+    for (const node of nodesInHierarchyOrder(s)) {
+      if (dropped(node.id)) continue;
+      const setup = toSpineLocal(node.bind);
+      const name = nameOf(node.id);
+      setups.set(name, setup);
+      paths.set(pathOf(node.id), name);
+      const parent = node.parentId && !dropped(node.parentId) ? nameOf(node.parentId) : scope.parentBone;
+      const bone: SpineBone = { name, parent, ...withoutDefaults(setup) };
+      if (node.kind === "bone" && node.boneLength) bone.length = node.boneLength;
+      if (node.inheritRotation === false || node.inheritScale === false) ignoredInherit.add(node.name);
+      bones.push(bone);
+      boneNodes.push({ scope, node, name });
+    }
+
+    for (const k of s.ik) {
+      const effector = dropped(k.boneId) ? undefined : s.nodes[k.boneId];
+      const target = dropped(k.targetId) ? undefined : s.nodes[k.targetId];
+      if (!effector || !target) {
+        diagnostics.push({ severity: "warning", message: `IK "${k.name}" references a missing bone; skipped.` });
+        continue;
+      }
+      // A chain of 1 on a bone with a parent is the two-bone solve rooted at
+      // that parent (the stage's rule, `applyIk`).
+      const parent = effector.parentId && !dropped(effector.parentId) ? effector.parentId : null;
+      const chain = k.chain > 0 && parent ? [nameOf(parent), nameOf(effector.id)] : [nameOf(effector.id)];
+      const ik: SpineIkConstraint = { type: "ik", name: scope.prefix + k.name, bones: chain, target: nameOf(target.id) };
+      if (k.weight !== 1) ik.mix = k.weight;
+      // The y flip mirrors the rig, and a mirrored two-bone chain bends the
+      // other way: the editor's positive bend (y down) is Spine's negative.
+      if (k.bendPositive) ik.bendPositive = false;
+      constraints.push(ik);
+    }
+
+    // layers[0] is the TOP layer; Spine draws slot 0 first, at the back.
+    for (const layer of [...s.layers].reverse()) {
+      const node = s.nodes[layer.nodeId];
+      if (!node || !producesSlot(node) || skipped.has(node.id) || noSlot.has(node.id)) continue;
+      const name = nameOf(node.id);
+      const keys = new Map<number, string>();
+      const slotAttachments: Record<string, SpineRegionAttachment> = {};
+      const taken = new Set<string>();
+      const symbolDisplays: Array<[number, DisplayRef]> = [];
+      for (const [index, ref] of exportedDisplays(s, node)) {
+        const item = project.items[ref.itemId];
+        if (isSymbol(item)) { symbolDisplays.push([index, ref]); continue; }
+        if (!isImage(item)) {
+          diagnostics.push({ severity: "warning", message: `"${node.name}" points at a library item that no longer exists.` });
+          continue;
+        }
+        usedImages.add(item.id);
+        let key = item.name;
+        for (let n = 2; taken.has(key); n++) key = `${item.name} (${n})`;
+        taken.add(key);
+        keys.set(index, key);
+        const centre = regionCentre(item.width, item.height, ref.pivot);
+        const region: SpineRegionAttachment = { width: item.width, height: item.height };
+        if (key !== item.name) region.path = item.name;
+        if (centre.x !== 0) region.x = centre.x;
+        if (centre.y !== 0) region.y = centre.y;
+        slotAttachments[key] = region;
+      }
+
+      if (keys.size) {
+        attachments[name] = slotAttachments;
+        const slot: SpineSlot = { name, bone: name };
+        const setupName = scope.setupVisible ? keys.get(0) ?? null : null;
+        const setupColor = colorHex(scaleAlpha(node.color ?? DEFAULT_COLOR, scope.setupAlpha));
+        if (setupColor) slot.color = setupColor;
+        if (hasOffsets(node.color)) warnOffsets(node, offsetWarned, diagnostics);
+        const blend = blendOf(node, diagnostics);
+        if (blend) slot.blend = blend;
+        if (setupName) slot.attachment = setupName;
+        slots.push(slot);
+        plans.push({ scope, node, name, displays: keys, setupName });
+      }
+
+      // Each symbol this node shows is flattened here, in the draw order.
+      const taken2 = new Set<string>();
+      for (const [index, ref] of symbolDisplays) {
+        const child = project.items[ref.itemId] as SymbolItem;
+        if (scope.path.includes(child.id)) {
+          diagnostics.push({ severity: "error", message: `Symbols contain each other: ${[...scope.path, child.id].map((id) => project.items[id]?.name ?? id).join(" -> ")}` });
+          continue;
+        }
+        if (scope.depth + 1 >= MAX_DEPTH) {
+          diagnostics.push({ severity: "warning", message: `"${child.name}" is nested more than ${MAX_DEPTH - 1} deep; the stage does not draw it, and neither does the export.` });
+          continue;
+        }
+        let content = `${name}/${child.name}`;
+        for (let n = 2; taken2.has(content); n++) content = `${name}/${child.name} (${n})`;
+        taken2.add(content);
+        const offset = toSpineLocal({ x: -ref.pivot.x, y: -ref.pivot.y, skewX: 0, skewY: 0, scaleX: 1, scaleY: 1 });
+        bones.push({ name: content, parent: name, ...withoutDefaults(offset) });
+        setups.set(content, offset);
+        const inner = childScope(scope, node, index, child);
+        emitScope({ ...inner, prefix: `${content}/`, parentBone: content, key: `${pathOf(node.id)}#${index}` });
+      }
+    }
+  };
+
+  /** Where an instance's symbol is, frame by frame, by the stage's rules. */
+  const childScope = (parent: Scope, node: Node, displayIndex: number, child: SymbolItem): Omit<Scope, "prefix" | "parentBone" | "key"> => {
+    const frames = new Map<string, FrameAt[]>();
+    const alpha = new Map<string, number[]>();
+    for (const [animName, parentFrames] of parent.frames) {
+      const parentAlpha = parent.alpha.get(animName)!;
+      const out: FrameAt[] = [];
+      const a: number[] = [];
+      parentFrames.forEach((pf, f) => {
+        if (!pf) { out.push(null); a.push(0); return; }
+        const st = localAt(node, pf.anim, pf.frame, "animate");
+        if (!st.onTrack || st.displayIndex !== displayIndex) { out.push(null); a.push(0); return; }
+        const at = displayContext({ animationName: pf.anim?.name ?? null, frame: pf.frame, mode: "animate" }, st.since);
+        const here = childFrame(child, at);
+        out.push({ anim: here.animation, frame: here.frame });
+        a.push(parentAlpha[f]! * st.color.aM / 100);
+      });
+      frames.set(animName, out);
+      alpha.set(animName, a);
+      // A loop longer than the animation it plays in only shows its start,
+      // restarted on every loop; the stage does the same, but it is rarely
+      // what was meant (DragonBones ran a child on its own clock).
+      const played = new Set(out.filter((x): x is NonNullable<FrameAt> => !!x).map((x) => x.anim).filter((x): x is Animation => !!x));
+      for (const childAnim of played) {
+        const moves = Object.values(childAnim.tracks).some((t) => t.keys.length > 1);
+        if (moves && childAnim.duration > out.length) {
+          diagnostics.push({
+            severity: "warning",
+            message:
+              `"${node.name}" plays "${child.name}" ▸ "${childAnim.name}" (${childAnim.duration} frames) inside ` +
+              `"${animName}", which lasts ${out.length}: only its first ${out.length} reach the file, restarting on ` +
+              `every loop. Lengthen "${animName}" to ${childAnim.duration} frames to export all of it.`,
+          });
+        }
+      }
+    }
+    return {
+      sym: child,
+      depth: parent.depth + 1,
+      frames,
+      alpha,
+      setupVisible: parent.setupVisible && displayIndex === 0,
+      setupAlpha: parent.setupAlpha * (node.color?.aM ?? 100) / 100,
+      path: [...parent.path, child.id],
+    };
+  };
+
+  const root: Scope = {
+    sym, depth: 0, key: "", prefix: "", parentBone: ROOT_BONE,
+    frames: rootFrames, alpha: rootAlpha, setupVisible: true, setupAlpha: 1, path: [sym.id],
+  };
+  emitScope(root);
+
+  if (ignoredInherit.size) {
     diagnostics.push({
       severity: "warning",
       message:
-        `${ignoredInherit.map((n) => `"${n}"`).join(", ")} ${ignoredInherit.length === 1 ? "has" : "have"} ` +
+        `${[...ignoredInherit].map((n) => `"${n}"`).join(", ")} ${ignoredInherit.size === 1 ? "has" : "have"} ` +
         "inheritance switched off in the file. The stage always inherits, so the export does too.",
     });
   }
 
-  /* ── slots, skin ── */
-  const slots: SpineSlot[] = [];
-  const attachments: Record<string, Record<string, SpineRegionAttachment>> = {};
-  // Per slot node: a key's displayIndex → attachment key (absent: hidden).
-  const slotDisplays = new Map<NodeId, Map<number, string>>();
-  const offsetWarned = new Set<NodeId>();
-
-  // layers[0] is the TOP layer; Spine draws slot 0 first, at the back.
-  const drawOrder: Layer[] = [...sym.layers].reverse();
-  for (const layer of drawOrder) {
-    const node = sym.nodes[layer.nodeId];
-    if (!node || !producesSlot(node) || skipped.has(node.id) || noSlot.has(node.id)) continue;
-    if (node.kind === "symbol") continue;          // reported above
-    const name = names.get(node.id)!;
-
-    const exported = exportedDisplays(sym, node);
-    const keys = new Map<number, string>();
-    const slotAttachments: Record<string, SpineRegionAttachment> = {};
-    const taken = new Set<string>();
-    for (const [index, ref] of exported) {
-      const item = project.items[ref.itemId];
-      if (isSymbol(item)) {
-        diagnostics.push({
-          severity: "warning",
-          message: `"${node.name}" switches to the symbol "${item.name}" at some keys; symbols are not exported yet, so it shows nothing there.`,
-        });
-        continue;
-      }
-      if (!isImage(item)) {
-        diagnostics.push({ severity: "warning", message: `"${node.name}" points at a library item that no longer exists.` });
-        continue;
-      }
-      usedImages.add(item.id);
-      let key = item.name;
-      for (let n = 2; taken.has(key); n++) key = `${item.name} (${n})`;
-      taken.add(key);
-      keys.set(index, key);
-      const centre = regionCentre(item.width, item.height, ref.pivot);
-      const region: SpineRegionAttachment = { width: item.width, height: item.height };
-      if (key !== item.name) region.path = item.name;
-      if (centre.x !== 0) region.x = centre.x;
-      if (centre.y !== 0) region.y = centre.y;
-      slotAttachments[key] = region;
-    }
-    slotDisplays.set(node.id, keys);
-    if (Object.keys(slotAttachments).length) attachments[name] = slotAttachments;
-
-    const slot: SpineSlot = { name, bone: name };
-    const setupColor = colorHex(node.color);
-    if (setupColor) slot.color = setupColor;
-    if (hasOffsets(node.color)) warnOffsets(node, offsetWarned, diagnostics);
-    const blend = blendOf(node, diagnostics);
-    if (blend) slot.blend = blend;
-    const shown = keys.get(0);
-    if (shown) slot.attachment = shown;
-    slots.push(slot);
-  }
-
-  /* ── IK ── */
-  const constraints: SpineIkConstraint[] = [];
-  for (const k of sym.ik) {
-    const effector = dropped(k.boneId) ? undefined : sym.nodes[k.boneId];
-    const target = dropped(k.targetId) ? undefined : sym.nodes[k.targetId];
-    if (!effector || !target) {
-      diagnostics.push({ severity: "warning", message: `IK "${k.name}" references a missing bone; skipped.` });
-      continue;
-    }
-    // The stage's rule (the runtime's, in DragonBones): a chain of 1 on a
-    // bone with a parent is the two-bone solve rooted at that parent.
-    const parent = effector.parentId && !dropped(effector.parentId) ? effector.parentId : null;
-    const chain = k.chain > 0 && parent ? [names.get(parent)!, names.get(effector.id)!] : [names.get(effector.id)!];
-    const ik: SpineIkConstraint = { type: "ik", name: k.name, bones: chain, target: names.get(target.id)! };
-    if (k.weight !== 1) ik.mix = k.weight;
-    // The y flip mirrors the rig, and a mirrored two-bone chain bends the
-    // other way: the editor's positive bend (y down) is Spine's negative
-    // (y up). Written as keyed, every chain bent backwards in the runtime.
-    if (k.bendPositive) ik.bendPositive = false;
-    constraints.push(ik);
+  const allNames = new Set<string>();
+  for (const b of bones) {
+    if (allNames.has(b.name)) diagnostics.push({ severity: "error", message: `Two bones would be called "${b.name}"; rename one of the layers or instances.` });
+    allNames.add(b.name);
   }
 
   /* ── animations ── */
@@ -208,23 +340,20 @@ export function exportSpine(project: Project, symbolId: ItemId = project.rootSym
   for (const anim of sym.animations) {
     const out: SpineAnimation = {};
     let lastFrame = 0;
-    for (const node of Object.values(sym.nodes)) {
-      const track = anim.tracks[node.id];
-      if (!track || track.keys.length === 0 || dropped(node.id)) continue;
-      const name = names.get(node.id)!;
-
-      const bt = boneTimelines(track, setups.get(node.id)!, fps, node, diagnostics);
+    for (const { scope, node, name } of boneNodes) {
+      const runs = runsOf(scope.frames.get(anim.name)!);
+      if (runs.length === 0) continue;
+      const bt = boneTimelines(node, runs, setups.get(name)!, fps, diagnostics);
       if (bt) {
         (out.bones ??= {})[name] = bt.timelines;
         lastFrame = Math.max(lastFrame, bt.lastFrame);
       }
-      const displays = slotDisplays.get(node.id);
-      if (displays) {
-        const st = slotTimelines(track, anim.duration, displays, node, fps, offsetWarned, diagnostics);
-        if (st) {
-          (out.slots ??= {})[name] = st.timelines;
-          lastFrame = Math.max(lastFrame, st.lastFrame);
-        }
+    }
+    for (const plan of plans) {
+      const st = slotTimelines(plan, anim.name, fps, offsetWarned, diagnostics);
+      if (st) {
+        (out.slots ??= {})[plan.name] = st.timelines;
+        lastFrame = Math.max(lastFrame, st.lastFrame);
       }
     }
     // Spine has no length field: the animation ends at its last key. A key
@@ -239,19 +368,37 @@ export function exportSpine(project: Project, symbolId: ItemId = project.rootSym
 
   reportImageNames(project, [...usedImages], diagnostics);
 
-  const skeleton: SpineSkeletonFile = {
-    skeleton: { spine: SPINE_VERSION, fps },
-    bones,
-  };
+  const skeleton: SpineSkeletonFile = { skeleton: { spine: SPINE_VERSION, fps }, bones };
   if (slots.length) skeleton.slots = slots;
   if (constraints.length) skeleton.constraints = constraints;
   skeleton.skins = [{ name: "default", attachments }];
   if (Object.keys(animations).length) skeleton.animations = animations;
-  const exportedNames = new Map([...names].filter(([id]) => !dropped(id)));
-  return { skeleton, diagnostics, usedImages: [...usedImages], names: exportedNames };
+
+  const names = new Map<NodeId, string>();
+  for (const [key, name] of paths) if (!key.includes(">")) names.set(key as NodeId, name);
+  // A symbol instanced twice reports its own problems twice.
+  const seen = new Set<string>();
+  const unique = diagnostics.filter((d) => !seen.has(d.message) && seen.add(d.message));
+  return { skeleton, diagnostics: unique, usedImages: [...usedImages], names, paths };
 }
 
-/* ── bone timelines ──────────────────────────────────────────────────────── */
+/** Consecutive frames on one animation, advancing one frame per frame. */
+function runsOf(frames: FrameAt[]): Run[] {
+  const runs: Run[] = [];
+  frames.forEach((fa, f) => {
+    if (!fa) return;
+    const last = runs[runs.length - 1];
+    if (last && last.end === f && last.anim === fa.anim && last.local0 + (f - last.start) === fa.frame) last.end = f + 1;
+    else runs.push({ start: f, end: f + 1, anim: fa.anim, local0: fa.frame });
+  });
+  return runs;
+}
+
+function scaleAlpha(c: ColorTransform, k: number): ColorTransform {
+  return k === 1 ? c : { ...c, aM: c.aM * k };
+}
+
+/* ── rows ────────────────────────────────────────────────────────────────── */
 
 /**
  * The bezier leaving a key, as Spine takes it: the segment's control points
@@ -260,7 +407,12 @@ export function exportSpine(project: Project, symbolId: ItemId = project.rootSym
  * linear in their values, so this is exact).
  */
 interface RowCurve { seg: EaseSegment; frame0: number; span: number }
-type Row<T> = { frame: number; t: T; stepped: boolean; curve?: RowCurve & { from: T; to: T } };
+/** One key. `sub` marks a curve segment starting inside its interval (not
+ *  where an interval starts). */
+export type Row<T> = { frame: number; t: T; stepped: boolean; sub?: boolean; curve?: RowCurve & { from: T; to: T } };
+
+/** A channel of one track: its keys, and the stage's value at any frame. */
+export interface Channel<T> { rows: Row<T>[]; at: (frame: number) => T }
 
 /**
  * The keys an interval needs, per channel ease: a hold one stepped key, a
@@ -280,21 +432,23 @@ function intervalRows<T>(
   if (!segs) {
     return Array.from({ length: span }, (_, i) => ({ frame: frame0 + i, t: at(frame0 + i), stepped: false }));
   }
-  return segs.map((seg) => ({
+  return segs.map((seg, i) => ({
     frame: frame0 + seg.x0 * span,
     t: seg.y0 === 0 ? from : lerp(from, to, seg.y0),
     stepped: false,
+    ...(i > 0 ? { sub: true } : {}),
     curve: { seg, frame0, span, from, to },
   }));
 }
 
 /**
- * The keys a channel needs, with angles unwrapped across keys so direction
+ * A transform channel of a track, angles unwrapped across keys so direction
  * and extra turns survive (the stage restarts each interval from the keyed
  * angle, a whole number of turns away: the same matrix, but Spine
- * interpolates the numbers).
+ * interpolates the numbers). No track: the bind pose, held.
  */
-function channelRows(track: Track, bind: Transform, channel: TweenChannel): Row<Transform>[] {
+function transformChannel(track: Track | undefined, bind: Transform, channel: TweenChannel): Channel<Transform> {
+  if (!track || track.keys.length === 0) return { rows: [{ frame: 0, t: bind, stepped: false }], at: () => bind };
   const keys = track.keys;
   const turn: number[] = [0];
   for (let i = 1; i < keys.length; i++) {
@@ -304,20 +458,42 @@ function channelRows(track: Track, bind: Transform, channel: TweenChannel): Row<
   }
   const shifted = (t: Transform, by: number): Transform =>
     by === 0 ? t : { ...t, skewX: t.skewX + by, skewY: t.skewY + by };
+  const governing = (f: number): number => {
+    let i = 0;
+    while (i + 1 < keys.length && keys[i + 1]!.frame <= f) i++;
+    return i;
+  };
+  // Before its first key the stage composes the node at its bind pose.
+  const at = (f: number): Transform => (f < keys[0]!.frame ? bind : shifted(sampleTransformRaw(track, f)!, turn[governing(f)]!));
 
   const rows: Row<Transform>[] = [];
-  // Before its first key the stage composes the node at its bind pose.
   if (keys[0]!.frame > 0) rows.push({ frame: 0, t: bind, stepped: true });
   keys.forEach((k, i) => {
     const next = keys[i + 1];
     const t = shifted(k.transform, turn[i]!);
     if (!next) { rows.push({ frame: k.frame, t, stepped: false }); return; }
-    rows.push(...intervalRows(
-      k.frame, next.frame, t, shifted(next.transform, turn[i + 1]!), easeOf(k, channel),
-      (f) => shifted(sampleTransformRaw(track, f)!, turn[i]!), lerpTransform,
-    ));
+    rows.push(...intervalRows(k.frame, next.frame, t, shifted(next.transform, turn[i + 1]!), easeOf(k, channel), at, lerpTransform));
   });
-  return rows;
+  return { rows, at };
+}
+
+/** The colour channel of a track: an AUTHORED colour anywhere means the
+ *  timeline governs (`sampleColorRaw`'s rule); otherwise the bind colour. */
+function colorChannel(track: Track | undefined, bind: ColorTransform): Channel<ColorTransform> {
+  if (!track || !track.keys.some((k) => k.color !== undefined)) {
+    return { rows: [{ frame: 0, t: bind, stepped: false }], at: () => bind };
+  }
+  const keys = track.keys;
+  const at = (f: number): ColorTransform => sampleColorRaw(track, f) ?? bind;
+  const rows: Row<ColorTransform>[] = [];
+  if (keys[0]!.frame > 0) rows.push({ frame: 0, t: bind, stepped: true });
+  keys.forEach((k, i) => {
+    const next = keys[i + 1];
+    const c = k.color ?? DEFAULT_COLOR;
+    if (!next) { rows.push({ frame: k.frame, t: c, stepped: false }); return; }
+    rows.push(...intervalRows(k.frame, next.frame, c, next.color ?? DEFAULT_COLOR, easeOf(k, "color"), at, lerpColor));
+  });
+  return { rows, at };
 }
 
 function lerpTransform(a: Transform, b: Transform, s: number): Transform {
@@ -326,6 +502,67 @@ function lerpTransform(a: Transform, b: Transform, s: number): Transform {
     x: l(a.x, b.x), y: l(a.y, b.y), skewX: l(a.skewX, b.skewX), skewY: l(a.skewY, b.skewY),
     scaleX: l(a.scaleX, b.scaleX), scaleY: l(a.scaleY, b.scaleY),
   };
+}
+
+/**
+ * A symbol's keys laid onto the exported animation, run by run. Inside a
+ * run the keys and their curves are copied, shifted in time. Where a run
+ * starts inside an interval, the frames up to the next key are baked (the
+ * stage's value per frame, straight between); where one ends inside an
+ * interval, its tail is baked the same way, so no curve reaches past the
+ * run — except a tween whose end key lands exactly on the run's end with
+ * nothing starting there, which keeps its curve and ends on that key (a
+ * key at the animation's end is how its length is written anyway). A run's
+ * last key is stepped when another run follows: a loop restarting, a swap.
+ */
+export function sliceRuns<T>(runs: Run[], channelFor: (anim: Animation | null) => Channel<T>): Row<T>[] {
+  const out: Row<T>[] = [];
+  runs.forEach((run, ri) => {
+    const { rows, at } = channelFor(run.anim);
+    const l0 = run.local0, l1 = run.local0 + (run.end - run.start);
+    const shift = run.start - l0;
+    const starts = rows.map((r, i) => (r.sub ? -1 : i)).filter((i) => i >= 0);
+    const nextStart = (i: number) => starts.find((j) => j > i);
+    const bake = (from: number, to: number) => {
+      for (let f = from; f < to; f++) out.push({ frame: f + shift, t: at(f), stepped: false });
+    };
+    const runOut = out.length;
+
+    // The interval governing l0.
+    let g = -1;
+    for (const i of starts) if (rows[i]!.frame <= l0) g = i;
+    let j: number;
+    if (g >= 0 && rows[g]!.frame === l0) j = g;
+    else {
+      const n = g >= 0 ? nextStart(g) : starts[0];
+      const stop = Math.min(l1, n === undefined ? l1 : Math.ceil(rows[n]!.frame));
+      bake(l0, stop);
+      j = n === undefined || rows[n]!.frame >= l1 ? rows.length : n;
+    }
+    for (; j < rows.length && rows[j]!.frame < l1; j++) {
+      const r = rows[j]!;
+      out.push({ ...r, frame: r.frame + shift, ...(r.curve ? { curve: { ...r.curve, frame0: r.curve.frame0 + shift } } : {}) });
+    }
+    // The last interval started in the run, if it reaches past it.
+    let last = -1;
+    for (const i of starts) if (rows[i]!.frame < l1 && rows[i]!.frame >= l0) last = i;
+    const later = runs[ri + 1];
+    if (last >= 0) {
+      const n = nextStart(last);
+      if (n !== undefined && rows[n]!.frame >= l1 && !rows[last]!.stepped) {
+        if (rows[n]!.frame === l1 && later?.start !== run.end) {
+          const end = rows[n]!;
+          out.push({ frame: end.frame + shift, t: end.t, stepped: false });
+        } else {
+          const from = rows[last]!.frame + shift;
+          while (out.length > runOut && out[out.length - 1]!.frame >= from) out.pop();
+          bake(rows[last]!.frame, l1);
+        }
+      }
+    }
+    if (later && out.length > runOut) out[out.length - 1] = { ...out[out.length - 1]!, stepped: true, curve: undefined };
+  });
+  return out;
 }
 
 /**
@@ -346,13 +583,16 @@ function keyBase<T>(r: Row<T>, fps: number, channels: (t: T) => number[]): { tim
   return k;
 }
 
+/* ── bone timelines ──────────────────────────────────────────────────────── */
+
 function boneTimelines(
-  track: Track, setup: SpineLocal, fps: number, node: Node, diags: ExportDiagnostic[],
+  node: Node, runs: Run[], setup: SpineLocal, fps: number, diags: ExportDiagnostic[],
 ): { timelines: SpineBoneTimelines; lastFrame: number } | null {
   const out: SpineBoneTimelines = {};
   let lastFrame = 0;
   const kv = (t: Transform) => keyValues(toSpineLocal(t), setup);
-  const values = (rows: Row<Transform>[]) => rows.map((r) => ({ r, v: kv(r.t) }));
+  const rowsOf = (channel: TweenChannel) =>
+    sliceRuns(runs, (anim) => transformChannel(anim?.tracks[node.id], node.bind, channel)).map((r) => ({ r, v: kv(r.t) }));
   const base = (r: Row<Transform>, channels: (v: SpineKeyValues) => number[]) => {
     lastFrame = Math.max(lastFrame, r.frame);
     return keyBase(r, fps, (t) => channels(kv(t)));
@@ -360,12 +600,12 @@ function boneTimelines(
   const moves = (vs: Array<{ v: SpineKeyValues }>, pick: (v: SpineKeyValues) => number[], rest: number) =>
     vs.some(({ v }) => pick(v).some((x) => Math.abs(x - rest) > 1e-9));
 
-  const pos = values(channelRows(track, node.bind, "position"));
+  const pos = rowsOf("position");
   if (moves(pos, (v) => [v.x, v.y], 0)) {
     out.translate = pos.map(({ r, v }) => ({ ...base(r, (w) => [w.x, w.y]), ...nonZero({ x: v.x, y: v.y }) }));
   }
 
-  const rot = values(channelRows(track, node.bind, "rotation"));
+  const rot = rowsOf("rotation");
   if (moves(rot, (v) => [v.rotate], 0)) {
     out.rotate = rot.map(({ r, v }) => ({ ...base(r, (w) => [w.rotate]), ...nonZero({ value: v.rotate }) }));
   }
@@ -373,7 +613,7 @@ function boneTimelines(
     out.shear = rot.map(({ r, v }) => ({ ...base(r, (w) => [w.shearX, w.shearY]), ...nonZero({ x: v.shearX, y: v.shearY }) }));
   }
 
-  const scl = values(channelRows(track, node.bind, "scale"));
+  const scl = rowsOf("scale");
   if (scl.some(({ v }) => v.scaleX === null || v.scaleY === null)) {
     diags.push({
       severity: "error",
@@ -393,11 +633,21 @@ function boneTimelines(
 
 /* ── slot timelines ──────────────────────────────────────────────────────── */
 
+/**
+ * Which attachment a slot shows and in what colour, over one exported
+ * animation. Attachments frame by frame from the stage's own `localAt`
+ * (nothing outside a track's span, nothing while the instance above is not
+ * showing its symbol), written where they change. Colour: the slot's own
+ * keys, times the alpha of the instances above; while that alpha is one
+ * number the keys are scaled exactly, and while it moves the colour is
+ * baked frame by frame.
+ */
 function slotTimelines(
-  track: Track, duration: number, displays: Map<number, string>, node: Node, fps: number,
-  offsetWarned: Set<NodeId>, diags: ExportDiagnostic[],
+  plan: SlotPlan, animName: string, fps: number, offsetWarned: Set<NodeId>, diags: ExportDiagnostic[],
 ): { timelines: SpineSlotTimelines; lastFrame: number } | null {
-  const keys = track.keys;
+  const { scope, node, displays, setupName } = plan;
+  const frames = scope.frames.get(animName)!;
+  const alpha = scope.alpha.get(animName)!;
   const out: SpineSlotTimelines = {};
   let lastFrame = 0;
   const time = (frame: number) => {
@@ -405,37 +655,50 @@ function slotTimelines(
     return frame === 0 ? {} : { time: keyTime(frame, fps) };
   };
 
-  // Outside its span the stage shows nothing (`localAt`): before the first
-  // key, and after `endFrame`.
-  const startsLate = keys[0]!.frame > 0;
-  const endsEarly = track.endFrame + 1 < duration;
-  const shows = (k: Keyframe): string | null => (k.displayIndex < 0 ? null : displays.get(k.displayIndex) ?? null);
-  if (startsLate || endsEarly || keys.some((k) => shows(k) !== displays.get(0))) {
-    const rows: SpineAttachmentKey[] = [];
-    if (startsLate) rows.push({ ...time(0), name: null });
-    for (const k of keys) rows.push({ ...time(k.frame), name: shows(k) });
-    if (endsEarly) rows.push({ ...time(track.endFrame + 1), name: null });
-    out.attachment = rows;
+  const shownAt = (f: number): string | null => {
+    const fa = frames[f];
+    if (!fa) return null;
+    const st = localAt(node, fa.anim, fa.frame, "animate");
+    return st.onTrack && st.displayIndex >= 0 ? displays.get(st.displayIndex) ?? null : null;
+  };
+  const changes: SpineAttachmentKey[] = [];
+  let prev: string | null | undefined;
+  for (let f = 0; f < frames.length; f++) {
+    const name = shownAt(f);
+    if (name !== prev) changes.push({ ...time(f), name });
+    prev = name;
   }
+  if (changes.length > 1 || (changes.length === 1 && changes[0]!.name !== setupName)) out.attachment = changes;
 
-  // An AUTHORED colour anywhere means the timeline governs, even a neutral
-  // one (the rule `sampleColorRaw` applies on the stage).
-  if (keys.some((k) => k.color !== undefined)) {
-    if (!offsetWarned.has(node.id) && keys.some((k) => hasOffsets(k.color))) warnOffsets(node, offsetWarned, diags);
+  const runs = runsOf(frames);
+  const tracks = runs.map((r) => r.anim?.tracks[node.id]).filter((t): t is Track => !!t);
+  if (!offsetWarned.has(node.id) && tracks.some((t) => t.keys.some((k) => hasOffsets(k.color)))) warnOffsets(node, offsetWarned, diags);
+  const bind = node.color ?? DEFAULT_COLOR;
+  const shown = alpha.filter((_, f) => frames[f]);
+  const constant = shown.every((a) => Math.abs(a - shown[0]!) < 1e-12) ? (shown[0] ?? scope.setupAlpha) : null;
+  let rows: Row<ColorTransform>[];
+  if (constant !== null) {
+    rows = sliceRuns(runs, (anim) => {
+      const ch = colorChannel(anim?.tracks[node.id], bind);
+      const scale = (c: ColorTransform) => scaleAlpha(c, constant);
+      return {
+        rows: ch.rows.map((r) => ({ ...r, t: scale(r.t), ...(r.curve ? { curve: { ...r.curve, from: scale(r.curve.from), to: scale(r.curve.to) } } : {}) })),
+        at: (f) => scale(ch.at(f)),
+      };
+    });
+  } else {
+    rows = [];
+    frames.forEach((fa, f) => {
+      if (!fa) return;
+      const c = colorChannel(fa.anim?.tracks[node.id], bind).at(fa.frame);
+      rows.push({ frame: f, t: scaleAlpha(c, alpha[f]!), stepped: false });
+    });
+  }
+  const setupHex = colorHex(scaleAlpha(bind, scope.setupAlpha)) ?? "ffffffff";
+  if (rows.some((r) => (colorHex(r.t) ?? "ffffffff") !== setupHex)) {
     // The runtime's frame colours are the 8-bit ones the file holds, so a
     // curve's control values are mixed from those.
     const channels = (c: ColorTransform) => [c.rM, c.gM, c.bM, c.aM].map((m) => Math.max(0, Math.min(255, Math.round((m / 100) * 255))) / 255);
-    const rows: Row<ColorTransform>[] = [];
-    if (startsLate) rows.push({ frame: 0, t: node.color ?? DEFAULT_COLOR, stepped: true });
-    keys.forEach((k, i) => {
-      const next = keys[i + 1];
-      const c = k.color ?? DEFAULT_COLOR;
-      if (!next) { rows.push({ frame: k.frame, t: c, stepped: false }); return; }
-      rows.push(...intervalRows(
-        k.frame, next.frame, c, next.color ?? DEFAULT_COLOR, easeOf(k, "color"),
-        (f) => sampleColorRaw(track, f)!, lerpColor,
-      ));
-    });
     lastFrame = Math.max(lastFrame, ...rows.map((r) => r.frame));
     out.rgba = rows.map((r): SpineRgbaKey => ({ ...keyBase(r, fps, channels), color: colorHex(r.t) ?? "ffffffff" }));
   }
@@ -597,10 +860,11 @@ function nodesInHierarchyOrder(sym: SymbolItem): Node[] {
   return out;
 }
 
-/** Bones and slots are found by name, so names are unique; "root" is taken. */
-function uniqueNames(sym: SymbolItem, diags: ExportDiagnostic[]): Map<NodeId, string> {
+/** Bones and slots are found by name, so names are unique within a symbol;
+ *  "root" is taken at the top, where the root bone lives. */
+function uniqueNames(sym: SymbolItem, diags: ExportDiagnostic[], top: boolean): Map<NodeId, string> {
   const map = new Map<NodeId, string>();
-  const taken = new Set<string>([ROOT_BONE]);
+  const taken = new Set<string>(top ? [ROOT_BONE] : []);
   const assign = (node: Node): void => {
     let name = node.name.trim() || node.kind;
     if (taken.has(name)) {

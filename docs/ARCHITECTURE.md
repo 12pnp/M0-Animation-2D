@@ -12,7 +12,7 @@
 > phase 4: the ease sampler ("Easing") and the IK solver ("Bones and IK"), both
 > since replaced by Spine's.
 > Rewrite each section when the phase that replaces it lands. "The Spine 4.3
-> contract" (phase 1) and "The Spine exporter" (phase 2) are new; "The preview is
+> contract" (phase 1) and "The Spine exporter" (phases 2 and 5) are new; "The preview is
 > ground truth" and "Vendored runtime" describe the Spine preview (phase 3).
 
 How Animo is built, and — mostly — the things in it that fail **silently** when
@@ -768,9 +768,53 @@ flowchart LR
   attachment and colour, and the four corners of each image with `evaluateSymbol`.
   Worst differences: matrices 1.5e-6, positions and corners 1.5e-4 px, IK chains
   included.
-- **Not carried yet, said out loud:** nested symbol instances (phase 5), mask layers
-  and colour offsets (phase 6), blend modes other than normal, add, multiply and
-  screen, motion blur.
+- **Not carried yet, said out loud:** mask layers and colour offsets (phase 6), blend
+  modes other than normal, add, multiply and screen, motion blur.
+
+### Nested symbols are flattened
+
+Spine has no skeleton inside a skeleton, so a symbol instance is laid into the one being
+exported. `exportSpine` recurses through `Scope`s: the root symbol, then each symbol an
+instance shows, per display.
+
+```mermaid
+flowchart TD
+    S["Scope: the exported symbol<br/>frames: its own, 0 … D−1"] --> N["instance node<br/>(a bone, as any node)"]
+    N --> C["content bone 'inst/Sym'<br/>at −pivot"]
+    C --> K["Scope: the symbol shown<br/>frames: localAt + displayContext + childFrame,<br/>per root frame"]
+    K --> R["runsOf → Run[]<br/>root frames where its frame advances by one"]
+    R --> SL["sliceRuns: keys and curves copied per run,<br/>cut tweens baked, run ends stepped"]
+```
+
+- **Where a nested symbol is in time comes from the stage's own functions**, frame by
+  frame over each exported animation: `localAt` (is the instance on, showing this
+  display, since when), `displayContext` (a display swapped in later restarts on the
+  symbol's first animation), `childFrame` (the animation by name, else the first; the
+  frame wrapped by its length). Grandchildren take the child's animation and frame, as
+  `innerContext` does. `FrameAt[]` per exported animation is the result, null where
+  the content is not on screen.
+- **Runs** (`runsOf`) are the stretches where that frame advances by one per frame; a
+  wrap, a restart or a gap ends one. `sliceRuns` lays the symbol's keys onto each run:
+  copied with their curves, baked frame by frame only where a run cuts a tween, the last
+  key of a run stepped when another follows, and a tween ending exactly on a run's end
+  kept. The stage never starts a run inside a tween today (showing an instance again
+  restarts it), so the bake at a run's START is only exercised by unit tests.
+- **Names are paths**: `inst/Sym/node`, content bones `inst/Sym`, IK constraints
+  prefixed the same way. `SpineExport.paths` maps `nodeId#display>nodeId…` to them; the
+  parity test walks the stage the way `SceneRenderer.drawEntry` does and compares by
+  those keys. Every bone name is checked for clashes.
+- **Draw order**: a symbol's slots take its instance's place, recursively.
+- **Colour**: the instance's alpha multiplies down (the stage's `globalAlpha`); its tint
+  and blend do not reach inside, as on the stage. A constant alpha scales the child's
+  colour keys exactly; an animated one is baked frame by frame.
+- **Setup pose**: a nested slot shows its attachment only if every instance above shows
+  that symbol as display 0.
+- **A loop longer than the animation it plays in** shows only its start and restarts on
+  every loop, on the stage and in the file alike; the export warns and names the length
+  that would carry it all. DragonBones ran a child on its own clock, so a one-frame
+  scene holding a looping symbol (the frog) moved there and is frozen here.
+- Depth stops at 10, as `SceneRenderer.drawEntry` does; symbols containing each other
+  are an error.
 
 ## The DragonBones 5.5 contract
 

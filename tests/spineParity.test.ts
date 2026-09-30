@@ -3,9 +3,9 @@ import {
   AtlasAttachmentLoader, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
 } from "@esotericsoftware/spine-core";
 import { newIkId, reseed, type AssetId, type ItemId } from "@/core/doc/ids";
-import { createImageItem, createLayer, createNode, createProject } from "@/core/doc/defaults";
+import { createAnimation, createImageItem, createLayer, createNode, createProject, createSymbol } from "@/core/doc/defaults";
 import { isImage, isSymbol, type Keyframe, type Node, type Project, type SymbolItem } from "@/core/doc/types";
-import { evaluateSymbol } from "@/core/doc/pose";
+import { childFrame, displayContext, evaluateSymbol, type FrameContext, type PoseEntry } from "@/core/doc/pose";
 import { apply, type Matrix2D, mat, mul, translate } from "@/core/math/Matrix2D";
 import { tf, type Transform } from "@/core/math/Transform";
 import type { PackedPage } from "@/core/atlas/packed";
@@ -63,6 +63,47 @@ function flipped(m: Matrix2D): number[] {
 
 interface Worst { matrix: number; position: number; corner: number; color: number; checks: number }
 
+/** One node as the stage draws it, nested content included. */
+interface Drawn {
+  key: string;
+  world: Matrix2D;
+  /** Drawn, ancestors included (a hidden LAYER counts as shown: the export
+   *  ignores the editor's eye toggle). */
+  shown: boolean;
+  entry: PoseEntry;
+  /** Alpha multiplied down from the instances above. */
+  alpha: number;
+}
+
+/**
+ * The stage's pose, flattened the way `SceneRenderer.drawEntry` draws it:
+ * each shown instance evaluates its symbol at `childFrame(displayContext)`,
+ * hangs it off its world at −pivot, multiplies its alpha down, and hands its
+ * own animation and frame to the next level (`innerContext`). Paint order;
+ * keys are the export's paths (`SpineExport.paths`). Mask layers are left
+ * out, as the export leaves them out for now.
+ */
+function stagePose(project: Project, sym: SymbolItem, ctx: FrameContext, depth = 0, key = "", base = mat(), alpha = 1, shownAbove = true): Drawn[] {
+  const here = depth === 0 ? { animation: sym.animations.find((a) => a.name === ctx.animationName) ?? null, frame: ctx.frame } : childFrame(sym, ctx);
+  const pose = evaluateSymbol(sym, here.animation, here.frame, "animate");
+  const inner: FrameContext = { animationName: here.animation?.name ?? null, frame: here.frame, mode: "animate" };
+  const out: Drawn[] = [];
+  for (const e of pose.entries) {
+    const layer = sym.layers.find((l) => l.nodeId === e.nodeId)!;
+    if (layer.isMask) continue;
+    const k = key ? `${key}>${e.nodeId}` : e.nodeId;
+    const shown = shownAbove && (e.visible || (!layer.visible && e.displayIndex >= 0 && e.display !== null));
+    out.push({ key: k, world: mul(mat(), base, e.world), shown, entry: e, alpha });
+    const item = e.display ? project.items[e.display.itemId] : undefined;
+    if (shown && isSymbol(item) && depth + 1 < 10) {
+      const at = displayContext(inner, e.displaySince);
+      const content = mul(mat(), mul(mat(), base, e.world), translate(mat(), -e.display!.pivot.x, -e.display!.pivot.y));
+      out.push(...stagePose(project, item, at, depth + 1, `${k}#${e.displayIndex}`, content, alpha * e.color.aM / 100, true));
+    }
+  }
+  return out;
+}
+
 /**
  * Every frame of every animation of `symbolId`. Throws on the first
  * mismatch with enough context to find it; returns the largest differences.
@@ -83,48 +124,57 @@ function checkParity(project: Project, symbolId: ItemId): Worst {
       skeleton.setupPose();
       animation!.apply(skeleton, 0, f / fps, false, null, 1, MixFrom.setup, false, false, false);
       skeleton.updateWorldTransform(Physics.none);
-      const pose = evaluateSymbol(sym, anim, f, "animate");
+      const drawnAll = stagePose(project, sym, { animationName: anim.name, frame: f, mode: "animate" });
       const slotNames = new Set(skeleton.slots.map((sl) => sl.data.name));
-      const painted = pose.entries.map((e) => exported.names.get(e.nodeId)).filter((n): n is string => !!n && slotNames.has(n));
-      const drawn = skeleton.drawOrder.appliedPose.map((sl) => sl.data.name);
-      if (drawn.join("|") !== painted.join("|")) fail(where, `draw order ${drawn} vs the stage's ${painted}`);
+      const painted = drawnAll.map((d) => exported.paths.get(d.key)).filter((n): n is string => !!n && slotNames.has(n));
+      const drawnOrder = skeleton.drawOrder.appliedPose.map((sl) => sl.data.name);
+      // Slots of content not on screen are in the file but not in this
+      // frame's stage pose; compare the order of what both have.
+      const both = new Set(painted);
+      const runtimeOrder = drawnOrder.filter((n) => both.has(n));
+      if (runtimeOrder.join("|") !== painted.join("|")) fail(where, `draw order ${runtimeOrder} vs the stage's ${painted}`);
 
-      for (const [nodeId, name] of exported.names) {
-        const entry = pose.byNode.get(nodeId);
+      const byKey = new Map(drawnAll.map((d) => [d.key, d]));
+      for (const [key, name] of exported.paths) {
+        const d = byKey.get(key);
         const bone = skeleton.findBone(name);
-        if (!entry || !bone) fail(where, `no bone or entry for "${name}"`);
+        if (!bone) fail(where, `no bone "${name}"`);
+        const slot = skeleton.findSlot(name);
+        const attachment = slot?.appliedPose.getAttachment() ?? null;
+        if (!d || !d.shown) {
+          // Not on the stage at this frame: nothing of it may be drawn.
+          if (attachment) fail(where, `slot "${name}" shows ${attachment.name}, the stage nothing`);
+          continue;
+        }
+        const entry = d.entry;
         const p = bone!.appliedPose;
         const actual = [p.a, p.b, p.c, p.d, p.worldX, p.worldY];
-        const expected = flipped(entry!.world);
+        const expected = flipped(d.world);
         for (let i = 0; i < 4; i++) {
-          const d = Math.abs(actual[i]! - expected[i]!);
-          worst.matrix = Math.max(worst.matrix, d);
-          if (d > 2e-5) fail(where, `bone "${name}" matrix ${actual} vs ${expected}`);
+          const diff = Math.abs(actual[i]! - expected[i]!);
+          worst.matrix = Math.max(worst.matrix, diff);
+          if (diff > 2e-5) fail(where, `bone "${name}" matrix ${actual} vs ${expected}`);
         }
         for (let i = 4; i < 6; i++) {
-          const d = Math.abs(actual[i]! - expected[i]!);
-          worst.position = Math.max(worst.position, d);
-          if (d > 1e-3) fail(where, `bone "${name}" position ${actual.slice(4)} vs ${expected.slice(4)}`);
+          const diff = Math.abs(actual[i]! - expected[i]!);
+          worst.position = Math.max(worst.position, diff);
+          if (diff > 1e-3) fail(where, `bone "${name}" position ${actual.slice(4)} vs ${expected.slice(4)}`);
         }
         worst.checks++;
 
-        const slot = skeleton.findSlot(name);
         if (!slot) continue;
-        const layer = sym.layers.find((l) => l.nodeId === nodeId)!;
-        const shown = entry!.visible || (!layer.visible && entry!.displayIndex >= 0 && entry!.display !== null);
-        const attachment = slot.appliedPose.getAttachment();
-        const item = entry!.display ? project.items[entry!.display.itemId] : undefined;
-        const expectShown = shown && isImage(item);
+        const item = entry.display ? project.items[entry.display.itemId] : undefined;
+        const expectShown = isImage(item);
         if (!!attachment !== expectShown) {
           fail(where, `slot "${name}" shows ${attachment?.name ?? "nothing"}, the stage ${expectShown ? item!.name : "nothing"}`);
         }
 
         const c = slot.appliedPose.color;
-        const ec = entry!.color;
-        for (const [got, want] of [[c.r, ec.rM], [c.g, ec.gM], [c.b, ec.bM], [c.a, ec.aM]] as const) {
-          const d = Math.abs(got - want / 100);
-          worst.color = Math.max(worst.color, d);
-          if (d > 0.5 / 255 + 1e-6) fail(where, `slot "${name}" colour ${[c.r, c.g, c.b, c.a]} vs ${[ec.rM, ec.gM, ec.bM, ec.aM]}`);
+        const ec = entry.color;
+        for (const [got, want] of [[c.r, ec.rM], [c.g, ec.gM], [c.b, ec.bM], [c.a, ec.aM * d.alpha]] as const) {
+          const diff = Math.abs(got - want / 100);
+          worst.color = Math.max(worst.color, diff);
+          if (diff > 0.5 / 255 + 1e-6) fail(where, `slot "${name}" colour ${[c.r, c.g, c.b, c.a]} vs ${[ec.rM, ec.gM, ec.bM, ec.aM * d.alpha]}`);
         }
 
         if (attachment instanceof RegionAttachment && isImage(item)) {
@@ -133,13 +183,13 @@ function checkParity(project: Project, symbolId: ItemId): Worst {
           // `computeUVs` writes left-bottom, left-top, right-top, right-bottom
           // in its y-up space (the "br, bl, ul" comment in computeWorldVertices
           // does not describe it); bottom is the image's y = h in the editor.
-          const m = mul(mat(), entry!.world, translate(mat(), -entry!.display!.pivot.x, -entry!.display!.pivot.y));
+          const m = mul(mat(), d.world, translate(mat(), -entry.display!.pivot.x, -entry.display!.pivot.y));
           const w = item.width, h = item.height;
           const corners = [[0, h], [0, 0], [w, 0], [w, h]].map(([x, y]) => apply({ x: 0, y: 0 }, m, x!, y!));
           corners.forEach((pt, i) => {
-            const d = Math.max(Math.abs(verts[i * 2]! - pt.x), Math.abs(verts[i * 2 + 1]! + pt.y));
-            worst.corner = Math.max(worst.corner, d);
-            if (d > 1e-3) fail(where, `slot "${name}" corner ${i}: ${verts.slice(i * 2, i * 2 + 2)} vs ${[pt.x, -pt.y]}`);
+            const diff = Math.max(Math.abs(verts[i * 2]! - pt.x), Math.abs(verts[i * 2 + 1]! + pt.y));
+            worst.corner = Math.max(worst.corner, diff);
+            if (diff > 1e-3) fail(where, `slot "${name}" corner ${i}: ${verts.slice(i * 2, i * 2 + 2)} vs ${[pt.x, -pt.y]}`);
           });
         }
       }
@@ -302,11 +352,113 @@ function randomIkRig(seed: number): Project {
   return project;
 }
 
+/**
+ * Nesting, every rule the flattening follows: a child looping several times
+ * inside the root animation; an instance blanked then shown again (restarted
+ * on its first animation); a symbol reached through an extra display from
+ * frame 10; an animated instance alpha (baked) and a constant 50% one
+ * (scaled); a grandchild matched by an animation name its parent lacks;
+ * IK inside a nested symbol; transform points on every instance.
+ */
+function nestedRig(): Project {
+  const project = createProject("Nested");
+  const scene = project.items[project.rootSymbolId] as SymbolItem;
+  const image = (name: string, w: number, h: number) => {
+    const item = createImageItem(name, `asset_${name}` as AssetId, w, h);
+    project.items[item.id] = item;
+    return item;
+  };
+  const symbol = (name: string) => {
+    const s = createSymbol(name);
+    project.items[s.id] = s;
+    return s;
+  };
+  const add = (s: SymbolItem, node: Node): Node => {
+    s.nodes[node.id] = node;
+    s.layers.unshift(createLayer(node.id, node.name, s.layers.length));
+    return node;
+  };
+  const lidArt = image("lid", 40, 20), ballArt = image("ball", 30, 30), boxArt = image("box", 50, 40);
+
+  // Blink: "idle" (7 frames) first, then "walk" (12): the scene's "walk"
+  // picks the second by name; Spin's "spin" finds nothing and takes "idle".
+  const blink = symbol("Blink");
+  const lid = add(blink, createNode("image", "lid", { itemId: lidArt.id, x: 5, y: 3, pivotX: 20, pivotY: 10 }));
+  blink.animations[0]!.name = "idle";
+  blink.animations[0]!.duration = 7;
+  blink.animations[0]!.tracks[lid.id] = {
+    nodeId: lid.id, endFrame: 6, keys: [key(0, tf(0, 0, 0, 0, 1.5, 1.5)), key(6, tf(0, 0, 45, 45))],
+  };
+  blink.animations.push({ ...createAnimation("walk", 12) });
+  blink.animations[1]!.tracks[lid.id] = {
+    nodeId: lid.id, endFrame: 11, keys: [
+      key(0, tf(5, 3), { tween: { kind: "ease", value: 2 } }),
+      key(5, tf(5, 13, 20, 20, 1, 0.3), { tween: { kind: "curve", curve: [0.2, 0.9, 0.5, 1.2, 0.6, 1.1, 0.8, 1.3, 0.9, 1] } }),
+      key(9, tf(8, 3, -10, -10), { tween: { kind: "none" }, color: { rM: 100, gM: 60, bM: 60, aM: 100, rO: 0, gO: 0, bO: 0, aO: 0 } }),
+    ],
+  };
+
+  // Spin: "spin" (9 frames), a two-bone IK chain, and Blink inside it.
+  const spin = symbol("Spin");
+  const hub = add(spin, createNode("image", "hub", { itemId: ballArt.id, pivotX: 15, pivotY: 15 }));
+  const upper = add(spin, createNode("bone", "upper", { parentId: hub.id, x: 10, y: 0 }));
+  upper.boneLength = 30;
+  const lower = add(spin, createNode("bone", "lower", { parentId: upper.id, x: 30, y: 0 }));
+  lower.boneLength = 25;
+  const tip = add(spin, createNode("bone", "tip", { x: 40, y: 20 }));
+  spin.ik.push({ id: newIkId(), name: "arm", boneId: lower.id, targetId: tip.id, chain: 1, bendPositive: true, weight: 0.7 });
+  const inner = add(spin, createNode("symbol", "inner", { itemId: blink.id, parentId: lower.id, x: 25, y: 0, pivotX: 4, pivotY: 2 }));
+  void inner;
+  spin.animations[0]!.name = "spin";
+  spin.animations[0]!.duration = 9;
+  spin.animations[0]!.tracks[hub.id] = {
+    nodeId: hub.id, endFrame: 8, keys: [
+      key(0, tf(0, 0), { rotateDir: "cw", rotateTurns: 1, eases: { scale: { kind: "preset", family: "bounce", dir: "out" } } }),
+      key(8, tf(0, 0, 30, 30, 1.4, 1.4)),
+    ],
+  };
+  spin.animations[0]!.tracks[tip.id] = {
+    nodeId: tip.id, endFrame: 8, keys: [key(0, tf(40, 20)), key(8, tf(20, -30))],
+  };
+
+  // The scene: "walk", 40 frames.
+  const anim = scene.animations[0]!;
+  anim.name = "walk";
+  anim.duration = 40;
+  const a = add(scene, createNode("symbol", "a", { itemId: blink.id, x: 100, y: 100, pivotX: 10, pivotY: 5 }));
+  anim.tracks[a.id] = {
+    nodeId: a.id, endFrame: 39, keys: [
+      key(0, tf(100, 100), { color: { rM: 100, gM: 100, bM: 100, aM: 100, rO: 0, gO: 0, bO: 0, aO: 0 } }),
+      key(20, tf(140, 90, 15, 15), { color: { rM: 100, gM: 100, bM: 100, aM: 40, rO: 0, gO: 0, bO: 0, aO: 0 } }),
+      key(25, tf(140, 90, 15, 15), { displayIndex: -1, tween: { kind: "none" } }),
+      key(30, tf(120, 110), { tween: { kind: "none" } }),
+    ],
+  };
+  const b = add(scene, createNode("image", "b", { itemId: boxArt.id, x: 250, y: 150, pivotX: 25, pivotY: 20 }));
+  b.extraDisplays = [{ itemId: spin.id, pivot: { x: -5, y: 8 } }];
+  b.color = { rM: 100, gM: 100, bM: 100, aM: 50, rO: 0, gO: 0, bO: 0, aO: 0 };
+  anim.tracks[b.id] = {
+    nodeId: b.id, endFrame: 39, keys: [
+      key(0, tf(250, 150)),
+      key(10, tf(260, 150, 10, 10), { displayIndex: 1 }),
+      key(33, tf(250, 160), { tween: { kind: "none" } }),
+      key(34, tf(250, 160), { displayIndex: 0 }),
+    ],
+  };
+  return project;
+}
+
 describe("the Spine runtime plays the export the way the stage draws it", () => {
   it("a rig using every tween, display switch, blank key, partial span and colour the export handles", () => {
     const { project } = featureRig();
     const worst = checkParity(project, project.rootSymbolId);
     expect(worst.checks).toBeGreaterThan(100);
+  });
+
+  it("nested symbols: loops, restarts, swaps, alpha, a grandchild and IK inside", () => {
+    const project = nestedRig();
+    const worst = checkParity(project, project.rootSymbolId);
+    expect(worst.checks).toBeGreaterThan(200);
   });
 
   it("every symbol of the frog fixture", async () => {

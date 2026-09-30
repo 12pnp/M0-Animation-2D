@@ -12,6 +12,7 @@ import {
 import { History } from "@/core/history/History";
 import { RenameLibraryItem, SetBindTransform } from "@/core/history/commands";
 import type { AssetId } from "@/core/doc/ids";
+import { exportSpine } from "@/core/spine/exportSpine";
 
 beforeEach(() => { reseed(); invalidateBounds(); });
 
@@ -59,6 +60,16 @@ describe("ConvertToSymbol", () => {
     const sym = cmd.symbol!;
     expect(Object.keys(sym.nodes).length).toBe(2);
     expect(sym.layers.map((l) => l.name).sort()).toEqual(["a", "b"]);
+  });
+
+  it("exports the instance flattened, its slots in its place", () => {
+    const { project, root, a, b } = scene();
+    new ConvertToSymbol(root.id, [a.id, b.id], "Arms").apply(project);
+    const { skeleton, diagnostics } = exportSpine(project);
+    expect(diagnostics).toEqual([]);
+    expect(skeleton.slots!.map((s) => s.name).sort()).toEqual(["Arms/Arms/a", "Arms/Arms/b", "outside"]);
+    expect(skeleton.bones.find((x) => x.name === "Arms/Arms")!.parent).toBe("Arms");
+    expect(skeleton.bones.find((x) => x.name === "Arms/Arms/a")!.parent).toBe("Arms/Arms");
   });
 
   it("keeps the artwork exactly where it was", () => {

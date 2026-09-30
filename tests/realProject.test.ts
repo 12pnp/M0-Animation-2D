@@ -60,6 +60,11 @@ describe("the fixture itself", () => {
   let fx: Fixture;
   beforeEach(async () => { fx = await loadFixture(); });
 
+  it("says that the scene's one-frame animation freezes the looping frog inside it", () => {
+    const warnings = exportSpine(fx.project).diagnostics.map((d) => d.message);
+    expect(warnings.some((m) => m.includes('"frog_green_1_1_rest"') && m.includes("which lasts 1") && m.includes("to 120 frames"))).toBe(true);
+  });
+
   it("exports every symbol without errors", () => {
     for (const item of Object.values(fx.project.items)) {
       if (!isSymbol(item)) continue;
@@ -602,6 +607,15 @@ describe("Swap Instance on a real node", () => {
     // inside pupil_2 is a cycle — the guard every entry point must call.
     expect(wouldCreateCycle(fx.project, fx.itemId(RIG.pupil2), fx.symbol(RIG.eyeLeft).id)).toBe(true);
     expect(wouldCreateCycle(fx.project, fx.symbol(RIG.eyeLeft).id, fx.itemId(RIG.pupil2))).toBe(false);
+  });
+
+  it("swaps an image for a symbol, and the export flattens it there", () => {
+    const node = nodeOf(sym, "Layer 6");
+    fx.store.apply(new SetNodeItem(sym.id, new Map([[node.id, { itemId: fx.itemId(RIG.pupil2), kind: "symbol" }]])));
+    const { skeleton } = exportOf(fx, RIG.eyeLeft);
+    const names = skeleton.slots!.map((s) => s.name);
+    expect(names).not.toContain("Layer 6");
+    expect(names.some((n) => n.startsWith(`Layer 6/${RIG.pupil2}/`))).toBe(true);
   });
 
   it("fills an empty layer in place, keeping its row and its id", () => {

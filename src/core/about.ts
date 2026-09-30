@@ -45,8 +45,8 @@ export const SPINE_NOTE =
   "Amino Spine2D exports the Spine 4.3 format: a skeleton .json, a .atlas and "
   + "its pages, which any Spine 4.3 runtime plays. The Preview panel and Play "
   + "mode run the official Spine runtime on those exact files: what you see there "
-  + "is what your game will show. Nested symbols and masks are still being "
-  + "built; the plan is docs/PLAN.md in the source.";
+  + "is what your game will show. Masks are still being built; the plan is "
+  + "docs/PLAN.md in the source.";
 
 export interface Credit {
   name: string;

@@ -3,6 +3,7 @@ import {
   AtlasAttachmentLoader, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
 } from "@esotericsoftware/spine-core";
 import { reseed, newIkId, type AssetId, type NodeId } from "@/core/doc/ids";
+import { createSymbol } from "@/core/doc/defaults";
 import { createImageItem, createLayer, createNode, createProject } from "@/core/doc/defaults";
 import { isSymbol, type Keyframe, type Node, type Project, type SymbolItem } from "@/core/doc/types";
 import { History } from "@/core/history/History";
@@ -10,7 +11,7 @@ import { SetLayerExcluded, SetParent } from "@/core/history/commands";
 import { tf, type Transform } from "@/core/math/Transform";
 import type { PackedPage } from "@/core/atlas/packed";
 import { atlasText } from "@/core/spine/atlas";
-import { colorHex, exportSpine, ROOT_BONE, spineJson } from "@/core/spine/exportSpine";
+import { type Channel, colorHex, exportSpine, ROOT_BONE, sliceRuns, spineJson } from "@/core/spine/exportSpine";
 import { keyTime } from "@/core/spine/transform";
 import { SPINE_VERSION, type SpineSkeletonFile } from "@/core/spine/types";
 
@@ -321,15 +322,20 @@ describe("displays", () => {
     expect(slot["a (2)"]).toEqual({ path: "a", width: 40, height: 30, x: -20, y: 15 });
   });
 
-  it("warns about a symbol reached through an extra display, and hides the slot there", () => {
+  it("hides the slot where an extra display shows a symbol, and flattens the symbol there", () => {
     const { project, sym } = scene(["a"]);
-    const inner = scene(["x"]).sym;
-    inner.name = "Inner";
-    project.items[inner.id] = inner;
-    nodeNamed(sym, "a").extraDisplays = [{ itemId: inner.id, pivot: { x: 0, y: 0 } }];
+    const inner = scene(["x"]);
+    inner.sym.name = "Inner";
+    for (const [id, item] of Object.entries(inner.project.items)) if (item.kind === "image") project.items[id as never] = item;
+    project.items[inner.sym.id] = inner.sym;
+    nodeNamed(sym, "a").extraDisplays = [{ itemId: inner.sym.id, pivot: { x: 0, y: 0 } }];
     track(sym, "a", [key(0, tf()), key(4, tf(), { displayIndex: 1 })], undefined, 5);
-    expect(messages(project).some((m) => m.includes('"Inner"'))).toBe(true);
-    expect(file(project).animations!.animation!.slots!.a!.attachment!.map((k) => k.name)).toEqual(["a", null]);
+    const f = file(project);
+    expect(f.animations!.animation!.slots!.a!.attachment!.map((k) => k.name)).toEqual(["a", null]);
+    const x = "a/Inner/x";
+    expect(f.slots!.map((s) => s.name)).toEqual(["a", x]);
+    expect(f.slots!.find((s) => s.name === x)!.attachment).toBeUndefined();   // not display 0: hidden in the setup pose
+    expect(f.animations!.animation!.slots![x]!.attachment!.map((k) => k.name)).toEqual([null, "x"]);
   });
 });
 
@@ -421,16 +427,74 @@ describe("what does not reach the file", () => {
     expect(messages(project)).toEqual([]);
   });
 
-  it("warns that nested symbols and masks are not carried yet", () => {
+  it("warns that masks are not carried yet", () => {
     const { project, sym } = scene(["art", "mask"]);
     sym.layers.find((l) => l.name === "mask")!.isMask = true;
-    const inner = scene(["x"]).sym;
-    project.items[inner.id] = inner;
-    add(sym, createNode("symbol", "instance", { itemId: inner.id }));
-    const text = messages(project).join("\n");
-    expect(text).toContain("mask layers");
-    expect(text).toContain("symbol instances");
+    expect(messages(project).join("\n")).toContain("mask layers");
     expect(file(project).slots!.map((s) => s.name)).toEqual(["art"]);
+  });
+});
+
+describe("nested symbols", () => {
+  /** A scene holding one instance of a symbol with one image. */
+  function withInstance(pivot = { x: 0, y: 0 }) {
+    const { project, sym } = scene(["x"]);
+    const inner = createSymbol("Inner");
+    const xNode = nodeNamed(sym, "x");
+    // Move the image into the symbol.
+    delete sym.nodes[xNode.id];
+    sym.layers = sym.layers.filter((l) => l.nodeId !== xNode.id);
+    inner.nodes[xNode.id] = xNode;
+    inner.layers.push(createLayer(xNode.id, "x", 0));
+    project.items[inner.id] = inner;
+    const inst = add(sym, createNode("symbol", "inst", { itemId: inner.id, x: 50, y: 60, pivotX: pivot.x, pivotY: pivot.y }));
+    return { project, sym, inner, inst };
+  }
+
+  it("hangs the symbol's contents off a content bone at −pivot, leaving bones on the instance alone", () => {
+    const { project, sym, inst } = withInstance({ x: 10, y: 20 });
+    add(sym, createNode("bone", "hand", { parentId: inst.id, x: 5 }));
+    const bones = file(project).bones;
+    expect(bones.find((b) => b.name === "inst/Inner")).toEqual({ name: "inst/Inner", parent: "inst", x: -10, y: 20 });
+    expect(bones.find((b) => b.name === "inst/Inner/x")!.parent).toBe("inst/Inner");
+    expect(bones.find((b) => b.name === "hand")!.parent).toBe("inst");
+  });
+
+  it("writes no offset when the transform point is at the origin", () => {
+    const { project } = withInstance();
+    expect(file(project).bones.find((b) => b.name === "inst/Inner")).toEqual({ name: "inst/Inner", parent: "inst" });
+  });
+
+  it("leaves out a symbol only an excluded layer shows, art and all", () => {
+    const { project, sym } = withInstance();
+    sym.layers.find((l) => l.name === "inst")!.excludeFromExport = true;
+    const out = exportSpine(project);
+    expect(out.skeleton.bones.map((b) => b.name)).toEqual([ROOT_BONE]);
+    expect(out.usedImages).toEqual([]);
+  });
+
+  it("still exports a symbol a kept layer shows too", () => {
+    const { project, sym, inner } = withInstance();
+    add(sym, createNode("symbol", "second", { itemId: inner.id }));
+    sym.layers.find((l) => l.name === "inst")!.excludeFromExport = true;
+    expect(file(project).slots!.map((s) => s.name)).toEqual(["second/Inner/x"]);
+  });
+
+  it("refuses symbols that contain each other instead of recursing", () => {
+    const { project, inner } = withInstance();
+    const back = createNode("symbol", "back", { itemId: project.rootSymbolId });
+    inner.nodes[back.id] = back;
+    inner.layers.unshift(createLayer(back.id, "back", 1));
+    expect(messages(project).some((m) => m.startsWith("error") && m.includes("contain each other"))).toBe(true);
+  });
+
+  it("names every bone uniquely, the path in the name", () => {
+    const { project, sym, inner } = withInstance();
+    add(sym, createNode("symbol", "inst2", { itemId: inner.id }));
+    const names = file(project).bones.map((b) => b.name);
+    expect(names).toContain("inst/Inner/x");
+    expect(names).toContain("inst2/Inner/x");
+    expect(new Set(names).size).toBe(names.length);
   });
 });
 
@@ -532,5 +596,47 @@ describe("symbol choice", () => {
     project.items[inner.id] = inner;
     expect(isSymbol(project.items[inner.id])).toBe(true);
     expect(exportSpine(project, inner.id).skeleton.slots!.map((s) => s.name)).toEqual(["x", "y"]);
+  });
+});
+
+/**
+ * `sliceRuns` on its own: the stage's rules always start a nested run at
+ * local frame 0, where a key sits, so a run starting inside a tween cannot
+ * come from a document today. The path is kept for when it can.
+ */
+describe("laying a symbol's keys onto runs", () => {
+  // One value, keyed 0 → 10 at frames 0 and 10, linear; the stage's value
+  // at f is f.
+  const channel: Channel<number> = {
+    rows: [{ frame: 0, t: 0, stepped: false }, { frame: 10, t: 10, stepped: false }],
+    at: (f) => Math.min(10, f),
+  };
+  const anim = {} as never;
+
+  it("bakes from a start inside a tween up to the next key, then copies", () => {
+    // Symbol frames 4..11 at root frames 0..7: 4..9 baked, the key at 10
+    // copied (root frame 6), held after.
+    const rows = sliceRuns([{ start: 0, end: 8, anim, local0: 4 }], () => channel);
+    expect(rows.map((r) => [r.frame, r.t])).toEqual([[0, 4], [1, 5], [2, 6], [3, 7], [4, 8], [5, 9], [6, 10]]);
+  });
+
+  it("copies whole intervals, steps the last key before another run, and ends a tween on a key at the run's end", () => {
+    const rows = sliceRuns([
+      { start: 0, end: 10, anim, local0: 0 },
+      { start: 12, end: 22, anim, local0: 0 },
+    ], () => channel);
+    expect(rows.map((r) => [r.frame, r.t, r.stepped])).toEqual([
+      [0, 0, false], [10, 10, true], [12, 0, false], [22, 10, false],
+    ]);
+  });
+
+  it("bakes a tween cut by the next run starting right where it ends", () => {
+    const rows = sliceRuns([
+      { start: 0, end: 5, anim, local0: 0 },
+      { start: 5, end: 15, anim, local0: 0 },
+    ], () => channel);
+    expect(rows.slice(0, 5).map((r) => [r.frame, r.t])).toEqual([[0, 0], [1, 1], [2, 2], [3, 3], [4, 4]]);
+    expect(rows[4]!.stepped).toBe(true);
+    expect(rows[5]).toMatchObject({ frame: 5, t: 0 });
   });
 });

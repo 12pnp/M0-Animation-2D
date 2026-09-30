@@ -92,7 +92,7 @@ one, and the AI checks its own result against the runtime. Two ways to connect:
 | 2 | **Done.** `core/spine/exportSpine.ts` and `core/spine/atlas.ts`; File ▸ Export writes `.json`, `.atlas`, pages | spine-core plays every fixture symbol as the stage draws it, every frame; the real packer's output loads in the browser |
 | 3 | **Done.** Preview and Play mode on spine-pixi-v8 4.3.13 / PixiJS 8.21; one build per edit, per-symbol skeletons over one atlas | every stickman bone (IK included) matches the stage on every frame through the real preview, 3.5e-5 px; found and fixed the IK bend inversion |
 | 4 | **Done.** Stage eases evaluated as Spine plays them, exported as native beziers (frog `body` 107 KB → 7.5 KB); IK solver replaced by a transcription of Spine's | parity on a three-segment curve, every quad ease, 7 targeted and 60 random IK rigs; the old solver failed 3 of the 7 |
-| 5 | Flatten nested symbols | a PSD import previews the same as the stage |
+| 5 | **Done.** Symbol instances flattened into one skeleton: content bones at −pivot, slots in the instance's place, the child's own looping timeline laid run by run onto the exported animation, alpha cascaded, IK inside carried | the nested rig, all 11 frog symbols and the real preview match the stage frame by frame; 8 deliberate flattening bugs each fail a test |
 | 6 | Clipping, two-colour tint, blend modes, loss warnings | mask rigs match the preview |
 | 7 | Import, stage 1 (meshes shown and carried through) | round trip over the M0 samples |
 | 8 | Unity check: exports imported in M0 `Assets/AnimoTest/Spine` | spine-unity 4.3 plays them |
@@ -117,7 +117,7 @@ Phase 0 removed 79 tests that read DragonBones output. Each rule is now a Spine 
 - [x] exportSkeleton > normalises the pivot against the untrimmed image size — ported: region centre in `spineExport.test.ts`; trimmed and half-scale atlas placement too
 - [x] exportSkeleton > writes 5.5 with a matching compatible version — ported: 4.3 header in `spineExport.test.ts`
 - [x] exportSkeleton > renames colliding bones rather than emitting an ambiguous rig — ported: `spineExport.test.ts`
-- [ ] exportSkeleton > reports symbols that contain each other instead of recursing — deferred to phase 5 (nested symbols)
+- [x] exportSkeleton > reports symbols that contain each other instead of recursing — ported: `spineExport.test.ts` ▸ nested symbols
 - [x] exportSkeleton > gives nested symbols a default action, so they are not left frozen — dropped: Spine has no child skeletons; phase 5 flattens instead
 - [x] frameSplit > emits offsets from the bind pose, not absolute values — ported: `spineExport.test.ts`
 - [x] frameSplit > puts the SHEAR delta in `skew`, not the raw skewX delta — ported: shearY in `spineExport.test.ts`
@@ -143,7 +143,7 @@ Phase 0 removed 79 tests that read DragonBones output. Each rule is now a Spine 
 - [x] partial spans > emits no display timeline for a track that covers the whole animation — ported: `spineExport.test.ts`
 - [x] partial spans > agrees with the stage frame by frame on a layer that ends early — ported: `spineParity.test.ts`
 - [x] library names the runtime looks things up by > refuses two images with one name, which would share one SubTexture — ported: `spineExport.test.ts`
-- [ ] library names the runtime looks things up by > refuses two exported symbols with one name, which would share one armature — deferred to phase 5 (nested symbols)
+- [x] library names the runtime looks things up by > refuses two exported symbols with one name, which would share one armature — dropped: symbols are flattened, not looked up by name; every bone name is checked for clashes instead
 - [x] library names the runtime looks things up by > says nothing about a clash nothing on the stage uses — ported: `spineExport.test.ts`
 
 ### `extensions.test.ts` (whole file)
@@ -169,7 +169,7 @@ Phase 0 removed 79 tests that read DragonBones output. Each rule is now a Spine 
 
 - [x] export > writes every used display, each with its own pivot — ported: `spineExport.test.ts` and `spineParity.test.ts`
 - [x] export > leaves out a display no key uses, remapping the ones after it — ported: `spineExport.test.ts`
-- [ ] export > exports a symbol reached only through an extra display — deferred to phase 5 (nested symbols); warns now (`spineExport.test.ts`)
+- [x] export > exports a symbol reached only through an extra display — ported: flattened where the display shows it, `spineExport.test.ts` and the nested rig in `spineParity.test.ts`
 
 ### `ik.test.ts`
 
@@ -179,8 +179,8 @@ Phase 0 removed 79 tests that read DragonBones output. Each rule is now a Spine 
 ### `layers.test.ts`
 
 - [x] exclude from export > removes the bone, the slot, the timeline and the image — ported: `spineExport.test.ts`
-- [ ] exclude from export > does not export the armature or the art of a symbol only an excluded layer uses — deferred to phase 5 (nested symbols)
-- [ ] exclude from export > still exports a symbol that a kept layer uses too — deferred to phase 5 (nested symbols)
+- [x] exclude from export > does not export the armature or the art of a symbol only an excluded layer uses — ported: `spineExport.test.ts` ▸ nested symbols
+- [x] exclude from export > still exports a symbol that a kept layer uses too — ported: `spineExport.test.ts` ▸ nested symbols
 - [ ] exclude from export > drops an excluded mask, and an excluded target, from the sidecar — deferred to phase 6 (masks)
 - [x] empty layers > export as nothing at all — no bone, no slot, no timeline — ported: `spineExport.test.ts`
 - [x] empty layers > keeps its bone when a kept node is parented under it — ported: `spineExport.test.ts`
@@ -195,8 +195,8 @@ Phase 0 removed 79 tests that read DragonBones output. Each rule is now a Spine 
 
 ### `nestedSymbols.test.ts`
 
-- [ ] exporting a symbol instance's transform point > puts it on the display, where it moves the slot and not the bone — deferred to phase 5 (nested symbols)
-- [ ] exporting a symbol instance's transform point > writes no display transform when the point is where it started — deferred to phase 5 (nested symbols)
+- [x] exporting a symbol instance's transform point > puts it on the display, where it moves the slot and not the bone — ported: a content bone at −pivot, bones on the instance untouched, `spineExport.test.ts`
+- [x] exporting a symbol instance's transform point > writes no display transform when the point is where it started — ported: no offset on the content bone, `spineExport.test.ts`
 
 ### `project.test.ts`
 
@@ -209,7 +209,7 @@ Phase 0 removed 79 tests that read DragonBones output. Each rule is now a Spine 
 - [x] empty layers and Exclude from Export on the real rig > excluding the mask layer removes its bone, slot and mask link — ported (bone, slot, image): `realProject.test.ts`; the link in phase 6
 - [x] empty layers and Exclude from Export on the real rig > is undoable, byte for byte — ported: `realProject.test.ts`
 - [x] empty layers and Exclude from Export on the real rig > leaves the other rows of the same symbol named exactly as they were — ported: `realProject.test.ts`
-- [ ] Swap Instance on a real node > swaps an image for a symbol, and the export follows — deferred to phase 5 (nested symbols)
+- [x] Swap Instance on a real node > swaps an image for a symbol, and the export follows — ported: `realProject.test.ts`
 - [x] Replace Image on an image used by several rows > re-anchors the exported pivot, exactly as the toast warns — ported: region centre after Replace Image, `realProject.test.ts`
 
 ### `stickmanRig.test.ts`
@@ -218,7 +218,7 @@ Phase 0 removed 79 tests that read DragonBones output. Each rule is now a Spine 
 
 ### `symbols.test.ts`
 
-- [ ] ConvertToSymbol > exports the instance as a child armature — deferred to phase 5 (nested symbols)
+- [x] ConvertToSymbol > exports the instance as a child armature — ported (flattened): `symbols.test.ts`
 
 ### `easing.test.ts`
 
