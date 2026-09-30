@@ -11,7 +11,7 @@
 > halves of "Motion blur" and "Mask layers"). Still DragonBones-faithful until
 > phase 4: the ease sampler ("Easing") and the IK solver ("Bones and IK").
 > Rewrite each section when the phase that replaces it lands. "The Spine 4.3
-> contract" is new (phase 1).
+> contract" (phase 1) and "The Spine exporter" (phase 2) are new.
 
 How Animo is built, and — mostly — the things in it that fail **silently** when
 you get them wrong. This is not a style guide: it is the record of decisions
@@ -721,8 +721,8 @@ flowchart LR
 - **Key times are float32 in the runtime** and a key applies once
   `time >= key`. float32(1/60) is after 1/60, so seeking to frame 1 showed
   frame 0 at 60 fps. `keyTime` writes the largest float32 not after
-  `frame / fps`; the JSON must carry it unrounded (`canonicalJson`'s 4
-  decimals would move it again).
+  `frame / fps`; the JSON must carry it unrounded, so `spineJson` rounds
+  nothing.
 - **Duration is the last key's time.** The format has no length field, so an
   animation ending on a hold needs a key at its end.
 - **Bones are parents first.** A parent listed after its child is not an
@@ -734,6 +734,52 @@ flowchart LR
   normal, additive, multiply and screen.
 - spine-unity accepts `skeleton.spine` when major.minor match its own
   (`SkeletonDataCompatibility`); `SPINE_VERSION` is `"4.3.0"`.
+
+## The Spine exporter
+
+`core/spine/exportSpine.ts` turns ONE symbol into a skeleton (`exportSpine(project,
+symbolId)`): the scene for File ▸ Export, the edited symbol for the preview.
+`core/spine/atlas.ts` writes the `.atlas`; `io/export/ExportBundle.ts` packs the pages
+and names the files `<name>.json`, `<name>.atlas` and the page images.
+
+```mermaid
+flowchart LR
+    SYM["SymbolItem"] --> EX["exportSpine"]
+    ST["sampleTransformRaw<br/>sampleColorRaw<br/>(the stage's samplers)"] --> EX
+    EX --> J["spineJson → name.json"]
+    EX -->|usedImages| AB["buildAtlas → PackedPage[]"]
+    AB --> AT["atlasText → name.atlas"]
+    AB --> PNG["page images"]
+    J & AT --> RT["spine-core in tests/spineParity.test.ts"]
+```
+
+- **Values are the stage's.** A hold is a stepped key, a linear interval one linear
+  key, and an EASED interval a linear key on every frame, sampled with
+  `sampleTransformRaw` / `sampleColorRaw`. So the runtime equals the stage at every
+  whole frame whatever the ease; curves that Spine can express natively are a later
+  refinement (phase 4), and must keep `tests/spineParity.test.ts` passing.
+- **Angles are unwrapped across keys** (`channelRows`): the stage restarts each
+  interval from the keyed angle, a whole number of turns from where the last one
+  ended, which draws the same matrix; Spine interpolates the numbers, so the exporter
+  carries the turns through.
+- Every node is a bone under a synthetic `root` bone; every image layer is also a
+  slot on its own bone, same name. Slots are the layer list reversed.
+- Before a late first key the bone holds its bind pose with a stepped key. The
+  runtime would apply the setup pose there anyway when seeking, but a game blending
+  with `AnimationState` keeps the previous pose instead.
+- An animation that ends on a hold gets a draw-order key at its duration: Spine has
+  no length field, and an unchanged draw order is the one timeline such a key cannot
+  affect.
+- Colour multipliers go out as `rrggbbaa` (8 bits per channel, 1/510 at worst).
+- **Parity is tested, not assumed.** `tests/spineParity.test.ts` loads each export
+  into spine-core with its atlas and compares, at every frame of every animation of
+  every fixture symbol, each bone's world matrix, the draw order, each slot's
+  attachment and colour, and the four corners of each image with `evaluateSymbol`.
+  Worst differences: matrices 1.5e-6, positions and corners 1.5e-4 px. Bones an IK
+  constraint moves are skipped until phase 4 ports Spine's solver.
+- **Not carried yet, said out loud:** nested symbol instances (phase 5), mask layers
+  and colour offsets (phase 6), blend modes other than normal, add, multiply and
+  screen, motion blur.
 
 ## The DragonBones 5.5 contract
 

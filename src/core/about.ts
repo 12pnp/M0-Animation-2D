@@ -42,9 +42,10 @@ export const TRADEMARK_NOTE =
 
 /** How the editor relates to the runtime it exports for. */
 export const SPINE_NOTE =
-  "Amino Spine2D is being retargeted from DragonBones to the Spine 4.3 format. "
-  + "Export and the runtime preview are not built yet; the plan is docs/PLAN.md "
-  + "in the source.";
+  "Amino Spine2D exports the Spine 4.3 format: a skeleton .json, a .atlas and "
+  + "its pages, which any Spine 4.3 runtime plays. The runtime preview, nested "
+  + "symbols and masks are still being built; the plan is docs/PLAN.md in the "
+  + "source.";
 
 export interface Credit {
   name: string;

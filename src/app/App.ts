@@ -22,9 +22,7 @@ import { openAbout } from "@/view/help/AboutDialog";
 import { APP_NAME } from "@/core/about";
 import { StagePlay } from "@/view/viewport/StagePlay";
 import { TimelinePanel } from "@/view/timeline/TimelinePanel";
-import {
-  buildExport, bundleZip, EXPORT_NOT_BUILT, EXPORT_READY, exportFiles, exportSettingsOf, safeFileName,
-} from "@/io/export/ExportBundle";
+import { buildExport, bundleZip, exportFiles, exportSettingsOf, safeFileName } from "@/io/export/ExportBundle";
 import {
     type FileRef,
     hasDirectoryPicker,
@@ -775,7 +773,6 @@ export class App {
   }
 
   async exportProject(): Promise<void> {
-    if (!EXPORT_READY) { this.toast.show(EXPORT_NOT_BUILT, true); return; }
     const suggested = `${safeFileName(this.store.project.name)}_spine.zip`;
     let target: FileRef | null;
     if (hasNativeFiles()) {
@@ -810,7 +807,6 @@ export class App {
    * only because the exporter insisted on a zip.
    */
   async exportToFolder(): Promise<void> {
-    if (!EXPORT_READY) { this.toast.show(EXPORT_NOT_BUILT, true); return; }
     if (!hasDirectoryPicker()) {
       this.toast.show("This browser cannot choose a folder. Use Export Spine to get a zip instead.", true);
       return;

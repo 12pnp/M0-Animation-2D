@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { reseed, type NodeId, type ItemId } from "@/core/doc/ids";
 import { createNode, createLayer } from "@/core/doc/defaults";
 import { DOC_VERSION, isImage, isSymbol, type SymbolItem, type Track } from "@/core/doc/types";
+import { exportSpine, spineJson } from "@/core/spine/exportSpine";
 import { sampleTransformRaw } from "@/core/doc/timeline";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { AddNode, ReplaceImageAsset, SetLayerExcluded, SetNodeItem } from "@/core/history/commands";
@@ -50,10 +51,22 @@ function selectAllFrames(store: Store, nodeIds: NodeId[]): void {
 const keyFrames = (track: Track | undefined) => (track?.keys ?? []).map((k) => k.frame);
 const nodeOf = (sym: SymbolItem, layerName: string) =>
   sym.nodes[sym.layers.find((l) => l.name === layerName)!.nodeId]!;
+/** A symbol of the fixture exported on its own, as the preview asks for it. */
+const exportOf = (fx: Fixture, name: string) =>
+  exportSpine(fx.project, fx.itemId(name));
+const fileOf = (fx: Fixture, name: string) => spineJson(exportOf(fx, name).skeleton);
 
 describe("the fixture itself", () => {
   let fx: Fixture;
   beforeEach(async () => { fx = await loadFixture(); });
+
+  it("exports every symbol without errors", () => {
+    for (const item of Object.values(fx.project.items)) {
+      if (!isSymbol(item)) continue;
+      const errors = exportSpine(fx.project, item.id).diagnostics.filter((d) => d.severity === "error");
+      expect(errors, item.name).toEqual([]);
+    }
+  });
 
   it("opens a v2 file and migrates it to the current version", () => {
     // The file on disk is version 2 — written before `excludeFromExport` and
@@ -492,6 +505,46 @@ describe("empty layers and Exclude from Export on the real rig", () => {
     sym = fx.open(RIG.eyeLeft);
   });
 
+  it("an empty layer changes nothing about the exported file", () => {
+    const before = fileOf(fx, RIG.eyeLeft);
+    addEmptyLayer(fx.store, "Layer 7", 0);
+    expect(fileOf(fx, RIG.eyeLeft)).toBe(before);
+  });
+
+  it("excluding the mask layer removes its bone, slot and image", () => {
+    const layer = sym.layers.find((l) => l.name === "eyelid_mask")!;
+    const image = sym.nodes[layer.nodeId]!.itemId!;
+    expect(exportOf(fx, RIG.eyeLeft).skeleton.bones.map((b) => b.name)).toContain("eyelid_mask");
+
+    fx.store.apply(new SetLayerExcluded(sym.id, [layer.id], true));
+
+    const result = exportOf(fx, RIG.eyeLeft);
+    expect(result.skeleton.slots!.map((s) => s.name)).not.toContain("eyelid_mask");
+    expect(result.skeleton.bones.map((b) => b.name)).not.toContain("eyelid_mask");
+    expect(Object.keys(result.skeleton.animations!.animation!.bones ?? {})).not.toContain("eyelid_mask");
+    expect(result.usedImages).not.toContain(image);
+    expect(result.diagnostics.some((d) => d.message.includes("eyelid_mask"))).toBe(true);
+  });
+
+  it("is undoable, byte for byte", () => {
+    const before = fileOf(fx, RIG.eyeLeft);
+    const layer = sym.layers.find((l) => l.name === "eyelid_bottom")!;
+    fx.store.apply(new SetLayerExcluded(sym.id, [layer.id], true));
+    expect(fileOf(fx, RIG.eyeLeft)).not.toBe(before);
+
+    fx.store.undo();
+    expect("excludeFromExport" in layer).toBe(false);
+    expect(fileOf(fx, RIG.eyeLeft)).toBe(before);
+  });
+
+  it("leaves the other rows of the same symbol named exactly as they were", () => {
+    const slotNames = () => (exportOf(fx, RIG.eyeLeft).skeleton.slots ?? []).map((s) => s.name);
+    const before = slotNames().filter((n) => n !== "eyelid_bottom");
+    const layer = sym.layers.find((l) => l.name === "eyelid_bottom")!;
+    fx.store.apply(new SetLayerExcluded(sym.id, [layer.id], true));
+    expect(slotNames()).toEqual(before);
+  });
+
   it("survives a save and reload", async () => {
     const layer = sym.layers.find((l) => l.name === "Layer 6")!;
     fx.store.apply(new SetLayerExcluded(sym.id, [layer.id], true));
@@ -561,6 +614,7 @@ describe("Swap Instance on a real node", () => {
 
     expect(sym.layers[1]!.id).toBe(layerId);           // same row, same z-order
     expect(sym.layers[1]!.nodeId).toBe(emptyId);
+    expect(exportOf(fx, RIG.eyeLeft).skeleton.slots!.map((s) => s.name)).toContain("Layer 7");
   });
 });
 
@@ -570,6 +624,28 @@ describe("Replace Image on an image used by several rows", () => {
   let fx: Fixture;
 
   beforeEach(async () => { fx = await loadFixture(); });
+
+  it("re-places the exported image about the same pixel, exactly as the toast warns", () => {
+    // The transform point is stored in PIXELS, so a resize keeps the pixel
+    // and moves the image's centre off it: the shift the user is told about
+    // instead of discovering it in game.
+    const sym = fx.open(RIG.eyeLeft);
+    const node = nodeOf(sym, "eyelid_top");
+    const itemId = node.itemId!;
+    // The slot's only attachment, keyed by the image's name.
+    const regionOf = () => Object.values(exportOf(fx, RIG.eyeLeft).skeleton.skins![0]!.attachments!.eyelid_top!)[0];
+    expect(node.pivot).toEqual({ x: 70, y: 40 });
+    expect(regionOf()).toEqual({ width: 140, height: 80 });   // pivot dead centre
+
+    fx.store.apply(new ReplaceImageAsset(
+      itemId, { assetId: "asset_new" as never, width: 240, height: 180 }, [sym.id]));
+
+    expect(node.pivot).toEqual({ x: 70, y: 40 });            // untouched, by design
+    expect(regionOf()).toEqual({ width: 240, height: 180, x: 50, y: -50 });
+
+    fx.store.undo();
+    expect(regionOf()).toEqual({ width: 140, height: 80 });
+  });
 
   it("keeps the ItemId, so every instance, pivot and track survives", () => {
     const sym = fx.open(RIG.eyeLeft);

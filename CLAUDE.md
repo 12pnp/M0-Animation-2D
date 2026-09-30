@@ -5,10 +5,12 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 Amino Spine2D is Animo (github.com/justmorenoise/animo) retargeted from
 DragonBones 5.5 to **Spine 4.3**. [docs/PLAN.md](docs/PLAN.md) is the plan: the
 phases, the DragonBones→Spine mapping, and the checklist of export tests to
-rebuild. Phases 0 and 1 are done: DragonBones is gone, `buildExport` refuses
-with `EXPORT_NOT_BUILT` (export and the preview are off until phases 2 and 3),
-and `src/core/spine/` holds the Spine 4.3 contract and the transform mapping
-(ARCHITECTURE ▸ The Spine 4.3 contract). Check Spine behaviour against
+rebuild. Phases 0–2 are done: DragonBones is gone, `src/core/spine/` holds the
+Spine 4.3 contract, the transform mapping and the exporter (ARCHITECTURE ▸ The
+Spine 4.3 contract, The Spine exporter), and File ▸ Export writes Spine files.
+The preview is off until phase 3. An exporter change must keep
+`tests/spineParity.test.ts` passing: it plays every fixture through spine-core
+and compares it with the stage frame by frame. Check Spine behaviour against
 `@esotericsoftware/spine-core` in a test, the way `tests/spineTransform.test.ts`
 does, rather than against documentation.
 

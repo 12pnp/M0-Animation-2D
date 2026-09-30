@@ -1,47 +1,60 @@
 import { strToU8 } from "fflate";
 import { zipFiles } from "@/io/zip";
 import type { Project } from "@/core/doc/types";
+import { type ImageItem, isImage } from "@/core/doc/types";
+import type { ItemId } from "@/core/doc/ids";
 import type { AssetStore } from "@/app/AssetStore";
 import type { ExportDiagnostic } from "@/core/export/diagnostics";
-import { type AtlasOptions, atlasOptionsFor, type AtlasPage } from "@/io/atlas/AtlasBuilder";
+import { type AtlasOptions, atlasOptionsFor, type AtlasPage, buildAtlas } from "@/io/atlas/AtlasBuilder";
 import { DEFAULT_EXPORT_SETTINGS, type ExportSettings } from "@/core/export/settings";
+import { exportSpine, spineJson } from "@/core/spine/exportSpine";
+import { atlasText } from "@/core/spine/atlas";
+import type { SpineSkeletonFile } from "@/core/spine/types";
 
 export interface ExportResult {
   fileBase: string;
-  /** The Spine skeleton JSON; null until the Spine exporter exists (phase 2). */
-  skeleton: null;
+  skeleton: SpineSkeletonFile;
+  /** The `.atlas` text for `pages`. */
+  atlas: string;
   pages: AtlasPage[];
   diagnostics: ExportDiagnostic[];
-  /** Write the JSON files without indentation. */
+  /** Write the JSON without indentation. */
   minifyJson?: boolean;
 }
 
-export const EXPORT_NOT_BUILT = "Spine export is not built yet.";
-
 /**
- * False until the Spine exporter lands. The export commands check it before
- * asking where to save: they have to ask before building (the save picker
- * needs the click's user activation), and choosing a file only to be told
- * nothing can be written is worse than being told at once.
- */
-export const EXPORT_READY = false;
-
-/**
- * Produces everything a Spine runtime needs. Until the Spine exporter lands
- * this refuses with one error, before any atlas work, so neither an export
- * nor the preview does work it then throws away.
+ * Everything a Spine runtime needs: `<name>.json`, `<name>.atlas` and its
+ * page images. `symbolId` picks the symbol to export (the scene when
+ * absent); the preview asks for the one being edited.
  */
 export async function buildExport(
   project: Project,
-  _assets: AssetStore,
-  _opts: AtlasOptions = atlasOptionsFor(exportSettingsOf(project)),
-  _onProgress?: (fraction: number) => void,
+  assets: AssetStore,
+  opts: AtlasOptions = atlasOptionsFor(exportSettingsOf(project)),
+  onProgress?: (fraction: number) => void,
+  symbolId?: ItemId,
 ): Promise<ExportResult> {
+  const exported = exportSpine(project, symbolId);
+  const { skeleton, diagnostics, usedImages } = exported;
+  const items = usedImages
+    .map((id) => project.items[id])
+    .filter((i): i is ImageItem => isImage(i));
+
+  const fileBase = safeFileName(project.name);
+  // An atlas region name the file cannot hold is already an error; packing
+  // would only throw on it.
+  const refused = diagnostics.some((d) => d.severity === "error");
+  const pages = refused ? [] : await buildAtlas(items, assets, fileBase, fileBase, opts, onProgress);
+  if (items.length === 0) {
+    diagnostics.push({ severity: "warning", message: "No images are used on the stage, so the atlas is empty." });
+  }
+
   return {
-    fileBase: safeFileName(project.name),
-    skeleton: null,
-    pages: [],
-    diagnostics: [{ severity: "error", message: EXPORT_NOT_BUILT }],
+    fileBase,
+    skeleton,
+    atlas: atlasText(pages.map((p) => p.info)),
+    pages,
+    diagnostics,
     minifyJson: exportSettingsOf(project).minifyJson,
   };
 }
@@ -51,22 +64,11 @@ export function exportSettingsOf(project: Project): ExportSettings {
   return project.exportSettings ?? { ...DEFAULT_EXPORT_SETTINGS };
 }
 
-/** Canonical JSON: stable key order and fixed rounding, so exports diff cleanly. */
-export function canonicalJson(value: unknown, minify = false): string {
-  return JSON.stringify(value, (_k, v) => {
-    if (typeof v === "number") {
-      const r = Math.round(v * 10000) / 10000;
-      return Object.is(r, -0) ? 0 : r;
-    }
-    return v;
-  }, minify ? undefined : 2);
-}
-
 /** Every exported file by name, shared by the zip and the folder export. */
 export async function exportFiles(result: ExportResult): Promise<Record<string, Uint8Array>> {
-  if (result.skeleton === null) throw new Error(EXPORT_NOT_BUILT);
   const files: Record<string, Uint8Array> = {};
-  files[`${result.fileBase}.json`] = strToU8(canonicalJson(result.skeleton, result.minifyJson === true));
+  files[`${result.fileBase}.json`] = strToU8(spineJson(result.skeleton, result.minifyJson === true));
+  files[`${result.fileBase}.atlas`] = strToU8(result.atlas);
   for (const page of result.pages) {
     files[`${page.fileStem}.${page.ext}`] = new Uint8Array(await page.blob.arrayBuffer());
   }

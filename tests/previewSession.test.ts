@@ -22,7 +22,8 @@ const built = vi.mocked(buildExport);
 function result(tag: number): ExportResult {
   return {
     fileBase: "p",
-    skeleton: { tag, armature: [{ name: "Scene 1", slot: [{ name: "s" }] }] } as never,
+    skeleton: { tag, skeleton: { spine: "4.3.0" }, bones: [], slots: [{ name: "s", bone: "root" }] } as never,
+    atlas: "",
     pages: [],
     diagnostics: [],
   };
@@ -32,7 +33,8 @@ function result(tag: number): ExportResult {
 function empty(): ExportResult {
   return {
     fileBase: "p",
-    skeleton: null,
+    skeleton: { skeleton: { spine: "4.3.0" }, bones: [] },
+    atlas: "",
     pages: [],
     diagnostics: [],
   };

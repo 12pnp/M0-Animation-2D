@@ -9,6 +9,7 @@ import {
   ReorderLayer, RemoveNodes, SetLayerExcluded, SetNodeItem, SetParent,
 } from "@/core/history/commands";
 import { indexAbove } from "@/core/doc/layerTree";
+import { exportSpine } from "@/core/spine/exportSpine";
 
 beforeEach(() => reseed());
 
@@ -226,6 +227,7 @@ describe("empty layers", () => {
     expect(sym.nodes[empty.id]!.kind).toBe("image");
     expect(sym.nodes[empty.id]!.itemId).toBe(itemId);
     expect(sym.animations[0]!.tracks[empty.id]).toBe(track);
+    expect(exportSpine(project).skeleton.slots!.map((s) => s.name).sort()).toEqual(["Layer 1", "art"]);
 
     history.undo();
     expect(sym.nodes[empty.id]!.kind).toBe("empty");
@@ -243,5 +245,6 @@ describe("layer order stays depth first", () => {
     history.apply(new SetParent(sym.id, [child.id as NodeId], group.id));
 
     expect(sym.layers.map((l) => l.name)).toEqual(["rig", "child"]);
+    expect(exportSpine(project).skeleton.bones.find((b) => b.name === "child")!.parent).toBe("rig");
   });
 });

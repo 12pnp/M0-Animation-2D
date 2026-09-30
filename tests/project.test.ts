@@ -5,6 +5,7 @@ import { isSymbol, DOC_VERSION, type Project, type SymbolItem } from "@/core/doc
 import { tf } from "@/core/math/Transform";
 import { TWEEN_LINEAR } from "@/core/math/easing";
 import { serializeProject, deserializeProject } from "@/io/project/ProjectFile";
+import { exportSpine, spineJson } from "@/core/spine/exportSpine";
 import { validateProject, migrate } from "@/core/doc/schema";
 import type { AssetStore } from "@/app/AssetStore";
 
@@ -76,6 +77,18 @@ function richProject(assets: ReturnType<typeof fakeAssets>): Project {
 }
 
 describe("project round trip", () => {
+  it("produces a byte-identical export after a round trip", async () => {
+    // If saving and loading altered anything the runtime cares about, the
+    // two skeletons diverge.
+    const assets = fakeAssets();
+    const project = richProject(assets);
+    const before = spineJson(exportSpine(project).skeleton);
+
+    const blob = await serializeProject(project, assets.store);
+    const { project: loaded } = await deserializeProject(await blob.arrayBuffer(), assets.store);
+    expect(spineJson(exportSpine(loaded).skeleton)).toBe(before);
+  });
+
   it("preserves the document exactly", async () => {
     const assets = fakeAssets();
     const project = richProject(assets);

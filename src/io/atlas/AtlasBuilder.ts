@@ -7,6 +7,7 @@ import type { ImageItem } from "@/core/doc/types";
 import { type AtlasLayout, type ExportSettings, type ImageFormat, pageLimit, type Resample } from "@/core/export/settings";
 import { scaledSize } from "@/core/atlas/resample";
 import { resampleOffThread } from "@/io/workers/resample";
+import type { PackedPage, PackedRegion } from "@/core/atlas/packed";
 
 export interface AtlasOptions extends PackOptions {
   /** Duplicate edge pixels into the padding gap to stop bilinear bleeding. */
@@ -54,38 +55,6 @@ export function atlasOptionsFor(s: ExportSettings): AtlasOptions {
     image: s.image,
     imageQuality: s.imageQuality,
   };
-}
-
-/**
- * One image placed on a page, in page pixels with a top-left origin. The
- * format writers (the Spine `.atlas` from phase 2) serialise this; it holds
- * everything a trimmed region needs and names no runtime.
- */
-export interface PackedRegion {
-  name: string;
-  x: number;
-  y: number;
-  /** The TRIMMED size, as drawn on the page. */
-  width: number;
-  height: number;
-  /** What trimming cut off the left and top edges; 0 when untrimmed. */
-  offsetX: number;
-  offsetY: number;
-  /** The UNTRIMMED size. */
-  originalWidth: number;
-  originalHeight: number;
-  rotated: boolean;
-}
-
-export interface PackedPage {
-  /** The shared atlas name every page carries. */
-  name: string;
-  imagePath: string;
-  width: number;
-  height: number;
-  /** Texture resolution; 1 at full size. */
-  scale: number;
-  regions: PackedRegion[];
 }
 
 export interface AtlasPage {

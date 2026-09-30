@@ -31,9 +31,9 @@ export interface PreviewView {
   onStatus(text: string, isError?: boolean): void;
 }
 
-/** No skeleton: there is nothing to render. */
+/** No slots and no atlas: there is nothing to render. */
 function isEmpty(result: ExportResult): boolean {
-  return result.skeleton === null;
+  return result.pages.length === 0 && !result.skeleton.slots?.length;
 }
 
 /**
@@ -176,9 +176,7 @@ export class PreviewSession {
     this.status("Building…");
     try {
       const result = await buildExport(this.store.project, this.assets);
-      // Until the Spine exporter exists every build refuses; saying so in the
-      // console on each edit would bury everything else logged there.
-      if (result.skeleton !== null) reportDiagnostics(result.diagnostics);
+      reportDiagnostics(result.diagnostics);
       this.result = result;
 
       this.loadAll(result);
@@ -208,8 +206,7 @@ export class PreviewSession {
     // status line saying there was nothing to show.
     if (isEmpty(result)) {
       view.host.clear();
-      view.onStatus(result.diagnostics.find((d) => d.severity === "error")?.message
-        ?? "Nothing on the stage to preview yet.");
+      view.onStatus("Nothing on the stage to preview yet.");
       return;
     }
 

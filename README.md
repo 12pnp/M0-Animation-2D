@@ -21,11 +21,13 @@ flowchart LR
 
 ## Status
 
-**Phase 0 of [docs/PLAN.md](docs/PLAN.md) is done:** DragonBones has been
-taken out. Everything in the editor still works: drawing, rigging, animating,
-undo, saving `.animo` projects, and PSD import. Export and the runtime preview
-say "not built yet" until the Spine exporter (phase 2) and the Spine preview
-(phase 3) land.
+**Phases 0–2 of [docs/PLAN.md](docs/PLAN.md) are done.** The editor works as
+Animo's does, and **File ▸ Export Spine** writes `<name>.json`, `<name>.atlas`
+and the atlas pages for Spine 4.3. The Spine runtime plays them as the stage draws
+them, checked frame by frame in the tests. Still to come: the runtime preview
+(phase 3), Spine's own IK solver and ease curves (phase 4), nested symbols
+(phase 5), and masks and colour offsets (phase 6). Until then the export warns
+about each of those it meets.
 
 ## Quick start
 

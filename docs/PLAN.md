@@ -89,7 +89,7 @@ one, and the AI checks its own result against the runtime. Two ways to connect:
 |---|---|---|
 | 0 | **Done.** Clean copy, new git repo, DragonBones vendor, exporter and extensions removed, branding renamed | 631 tests green (79 export tests listed below), build clean |
 | 1 | **Done.** `core/spine/types.ts` (contract read from spine-core 4.3.13), `core/spine/transform.ts` (mapping, relative keys, `keyTime`, `regionCentre`) | checked against the real runtime; 8 deliberate bugs each fail |
-| 2 | Flat exporter and `.atlas` writer | spine-pixi loads the export |
+| 2 | **Done.** `core/spine/exportSpine.ts` and `core/spine/atlas.ts`; File ▸ Export writes `.json`, `.atlas`, pages | spine-core plays every fixture symbol as the stage draws it, every frame; the real packer's output loads in the browser |
 | 3 | Preview on spine-pixi-v8 (load, seek, tick) | editor and runtime bone world matrices agree at keys and mid-tween |
 | 4 | Stage fidelity: bezier sampler and IK solver | ports tested against the vendored spine JS |
 | 5 | Flatten nested symbols | a PSD import previews the same as the stage |
@@ -109,119 +109,119 @@ one, and the AI checks its own result against the runtime. Two ways to connect:
 
 ## Tests to rebuild on the Spine exporter
 
-Phase 0 removed 79 tests that read DragonBones output. They are the checklist for phase 2 (and 5 and 6 for symbols and masks): each rule becomes a Spine test, or is dropped here with a reason. Three more (`layers`: SetNodeItem on an empty layer, inserting above a group child; `realProject`: filling an empty layer in place) were kept with only their export assertion removed; phase 2 puts it back.
+Phase 0 removed 79 tests that read DragonBones output. Each rule is now a Spine test (ported or replaced), dropped with a reason, or deferred to the phase that brings the feature back. The three tests that kept everything but their export assertion have it back (phase 2).
 
 ### `export.test.ts` (whole file)
 
-- [ ] exportSkeleton > emits slots in reverse layer order, so the top layer draws in front
-- [ ] exportSkeleton > normalises the pivot against the untrimmed image size
-- [ ] exportSkeleton > writes 5.5 with a matching compatible version
-- [ ] exportSkeleton > renames colliding bones rather than emitting an ambiguous rig
-- [ ] exportSkeleton > reports symbols that contain each other instead of recursing
-- [ ] exportSkeleton > gives nested symbols a default action, so they are not left frozen
-- [ ] frameSplit > emits offsets from the bind pose, not absolute values
-- [ ] frameSplit > puts the SHEAR delta in `skew`, not the raw skewX delta
-- [ ] frameSplit > emits scale as a MULTIPLIER of the bind scale
-- [ ] frameSplit > omits tweenEasing entirely for a hold, and writes 0 for linear
-- [ ] frameSplit > durations accumulate to the animation length and end with a zero frame
-- [ ] frameSplit > returns null for a track that never leaves its bind pose
-- [ ] frameSplit > subdivides a rotation wider than half a turn
-- [ ] frameSplit > exports a counter-clockwise tween as the long way round, subdivided
-- [ ] frameSplit > never turns a held wide rotation into a slide
-- [ ] frameSplit > carries 'Rotate CW x N' through as extra whole turns
-- [ ] colour > emits a colorFrame timeline with multipliers as 0..100 percentages
-- [ ] colour > emits a timeline even when every authored colour is neutral
-- [ ] colour > emits nothing when no keyframe carries a colour at all
-- [ ] colour > tweens colour on the stage the same way the export does
-- [ ] colour > holds colour across a span with no tween
-- [ ] colour > falls back to the bind colour when the track carries none
-- [ ] colour > writes a non-neutral bind colour as slot.color
-- [ ] colour > warns that colour offsets are dropped by the Pixi runtime
-- [ ] colour > exports a blend mode on an image slot
-- [ ] partial spans > keeps a late track's keys on their own frames, holding the bind pose before them
-- [ ] partial spans > hides the slot before the first key and after the span ends, as the stage does
-- [ ] partial spans > emits no display timeline for a track that covers the whole animation
-- [ ] partial spans > agrees with the stage frame by frame on a layer that ends early
-- [ ] library names the runtime looks things up by > refuses two images with one name, which would share one SubTexture
-- [ ] library names the runtime looks things up by > refuses two exported symbols with one name, which would share one armature
-- [ ] library names the runtime looks things up by > says nothing about a clash nothing on the stage uses
+- [x] exportSkeleton > emits slots in reverse layer order, so the top layer draws in front — ported: `spineExport.test.ts`, and draw order in `spineParity.test.ts`
+- [x] exportSkeleton > normalises the pivot against the untrimmed image size — ported: region centre in `spineExport.test.ts`; trimmed and half-scale atlas placement too
+- [x] exportSkeleton > writes 5.5 with a matching compatible version — ported: 4.3 header in `spineExport.test.ts`
+- [x] exportSkeleton > renames colliding bones rather than emitting an ambiguous rig — ported: `spineExport.test.ts`
+- [ ] exportSkeleton > reports symbols that contain each other instead of recursing — deferred to phase 5 (nested symbols)
+- [x] exportSkeleton > gives nested symbols a default action, so they are not left frozen — dropped: Spine has no child skeletons; phase 5 flattens instead
+- [x] frameSplit > emits offsets from the bind pose, not absolute values — ported: `spineExport.test.ts`
+- [x] frameSplit > puts the SHEAR delta in `skew`, not the raw skewX delta — ported: shearY in `spineExport.test.ts`
+- [x] frameSplit > emits scale as a MULTIPLIER of the bind scale — ported: `spineExport.test.ts`
+- [x] frameSplit > omits tweenEasing entirely for a hold, and writes 0 for linear — ported: stepped vs linear in `spineExport.test.ts`
+- [x] frameSplit > durations accumulate to the animation length and end with a zero frame — ported: runtime duration in `spineExport.test.ts` ("animation length")
+- [x] frameSplit > returns null for a track that never leaves its bind pose — ported: `spineExport.test.ts`
+- [x] frameSplit > subdivides a rotation wider than half a turn — replaced: 720° in one key, `spineExport.test.ts` (Spine interpolates raw degrees)
+- [x] frameSplit > exports a counter-clockwise tween as the long way round, subdivided — ported: `spineExport.test.ts` and `spineParity.test.ts`
+- [x] frameSplit > never turns a held wide rotation into a slide — ported: stepped holds in `spineExport.test.ts`, and `spineParity.test.ts`
+- [x] frameSplit > carries 'Rotate CW x N' through as extra whole turns — ported: `spineExport.test.ts` and `spineParity.test.ts`
+- [x] colour > emits a colorFrame timeline with multipliers as 0..100 percentages — ported: rrggbbaa in `spineExport.test.ts`
+- [x] colour > emits a timeline even when every authored colour is neutral — ported: `spineExport.test.ts`
+- [x] colour > emits nothing when no keyframe carries a colour at all — ported: `spineExport.test.ts`
+- [x] colour > tweens colour on the stage the same way the export does — ported: `spineParity.test.ts`, frame by frame
+- [x] colour > holds colour across a span with no tween — ported: `spineParity.test.ts`
+- [x] colour > falls back to the bind colour when the track carries none — ported: `spineParity.test.ts`
+- [x] colour > writes a non-neutral bind colour as slot.color — ported: `spineExport.test.ts`
+- [x] colour > warns that colour offsets are dropped by the Pixi runtime — ported: `spineExport.test.ts`; carried in phase 6 (two-colour tint)
+- [x] colour > exports a blend mode on an image slot — ported: `spineExport.test.ts`, with the unsupported-mode warning
+- [x] partial spans > keeps a late track's keys on their own frames, holding the bind pose before them — ported: `spineExport.test.ts`
+- [x] partial spans > hides the slot before the first key and after the span ends, as the stage does — ported: `spineExport.test.ts` and `spineParity.test.ts`
+- [x] partial spans > emits no display timeline for a track that covers the whole animation — ported: `spineExport.test.ts`
+- [x] partial spans > agrees with the stage frame by frame on a layer that ends early — ported: `spineParity.test.ts`
+- [x] library names the runtime looks things up by > refuses two images with one name, which would share one SubTexture — ported: `spineExport.test.ts`
+- [ ] library names the runtime looks things up by > refuses two exported symbols with one name, which would share one armature — deferred to phase 5 (nested symbols)
+- [x] library names the runtime looks things up by > says nothing about a clash nothing on the stage uses — ported: `spineExport.test.ts`
 
 ### `extensions.test.ts` (whole file)
 
-- [ ] extension manifest > is null for a project that needs nothing beyond the skeleton
-- [ ] extension manifest > marks masks REQUIRED and motion blur optional
-- [ ] extension manifest > leaves motion blur out when disabled or with a closed shutter
-- [ ] extension manifest > writes only multipliers other than 1, by slot name, and skips excluded layers
-- [ ] extension manifest > documents the required and optional extensions in the README
-- [ ] motion blur in the document > is undoable at both levels, leaving no key behind
-- [ ] motion blur in the document > survives a round trip through migration and validation, repaired
-- [ ] motion blur maths > affine helpers invert and compose
-- [ ] motion blur maths > turns elapsed animation time into the shutter fraction of a frame
-- [ ] motion blur maths > gives the same trail at 60 Hz and 120 Hz for the same motion
-- [ ] motion blur maths > blurs nothing at the pivot of a pure rotation and most at the tip
-- [ ] motion blur maths > re-expresses the field in filter UV space consistently
-- [ ] motion blur maths > switches with hysteresis rather than at one cut-off
-- [ ] installExtensions > warns about an unknown REQUIRED extension and stays quiet about an optional one
-- [ ] installExtensions > re-links a mask when a target swaps its display object
-- [ ] installExtensions > ignores something that is not a manifest
+- [x] extension manifest > is null for a project that needs nothing beyond the skeleton — dropped: no extension manifest; masks become clipping in phase 6
+- [x] extension manifest > marks masks REQUIRED and motion blur optional — dropped: no extension manifest; masks become clipping in phase 6
+- [x] extension manifest > leaves motion blur out when disabled or with a closed shutter — dropped: no extension manifest; masks become clipping in phase 6
+- [x] extension manifest > writes only multipliers other than 1, by slot name, and skips excluded layers — dropped: no extension manifest; masks become clipping in phase 6
+- [x] extension manifest > documents the required and optional extensions in the README — dropped: no extension manifest; masks become clipping in phase 6
+- [x] motion blur in the document > is undoable at both levels, leaving no key behind — dropped with motion blur (plan: dropped in v1); the document field is untouched
+- [x] motion blur in the document > survives a round trip through migration and validation, repaired — dropped with motion blur (plan: dropped in v1); the document field is untouched
+- [x] motion blur maths > affine helpers invert and compose — dropped with motion blur
+- [x] motion blur maths > turns elapsed animation time into the shutter fraction of a frame — dropped with motion blur
+- [x] motion blur maths > gives the same trail at 60 Hz and 120 Hz for the same motion — dropped with motion blur
+- [x] motion blur maths > blurs nothing at the pivot of a pure rotation and most at the tip — dropped with motion blur
+- [x] motion blur maths > re-expresses the field in filter UV space consistently — dropped with motion blur
+- [x] motion blur maths > switches with hysteresis rather than at one cut-off — dropped with motion blur
+- [x] installExtensions > warns about an unknown REQUIRED extension and stays quiet about an optional one — dropped: no runtime extension file
+- [x] installExtensions > re-links a mask when a target swaps its display object — dropped: no runtime extension file
+- [x] installExtensions > ignores something that is not a manifest — dropped: no runtime extension file
 
 ### `displays.test.ts`
 
-- [ ] export > writes every used display, each with its own pivot
-- [ ] export > leaves out a display no key uses, remapping the ones after it
-- [ ] export > exports a symbol reached only through an extra display
+- [x] export > writes every used display, each with its own pivot — ported: `spineExport.test.ts` and `spineParity.test.ts`
+- [x] export > leaves out a display no key uses, remapping the ones after it — ported: `spineExport.test.ts`
+- [ ] export > exports a symbol reached only through an extra display — deferred to phase 5 (nested symbols); warns now (`spineExport.test.ts`)
 
 ### `ik.test.ts`
 
-- [ ] IK in the export > writes ik[] the way the parser reads it
-- [ ] IK in the export > leaves out what the parser already defaults
+- [x] IK in the export > writes ik[] the way the parser reads it — ported: `spineExport.test.ts`, loaded by spine-core
+- [x] IK in the export > leaves out what the parser already defaults — ported: `spineExport.test.ts`
 
 ### `layers.test.ts`
 
-- [ ] exclude from export > removes the bone, the slot, the timeline and the image
-- [ ] exclude from export > does not export the armature or the art of a symbol only an excluded layer uses
-- [ ] exclude from export > still exports a symbol that a kept layer uses too
-- [ ] exclude from export > drops an excluded mask, and an excluded target, from the sidecar
-- [ ] empty layers > export as nothing at all — no bone, no slot, no timeline
-- [ ] empty layers > keeps its bone when a kept node is parented under it
-- [ ] exclude from export > takes the whole subtree of an excluded group with it
-- [ ] exclude from export > leaves the names of the layers it keeps alone
+- [x] exclude from export > removes the bone, the slot, the timeline and the image — ported: `spineExport.test.ts`
+- [ ] exclude from export > does not export the armature or the art of a symbol only an excluded layer uses — deferred to phase 5 (nested symbols)
+- [ ] exclude from export > still exports a symbol that a kept layer uses too — deferred to phase 5 (nested symbols)
+- [ ] exclude from export > drops an excluded mask, and an excluded target, from the sidecar — deferred to phase 6 (masks)
+- [x] empty layers > export as nothing at all — no bone, no slot, no timeline — ported: `spineExport.test.ts`
+- [x] empty layers > keeps its bone when a kept node is parented under it — ported: `spineExport.test.ts`
+- [x] exclude from export > takes the whole subtree of an excluded group with it — ported: `spineExport.test.ts`
+- [x] exclude from export > leaves the names of the layers it keeps alone — ported: `spineExport.test.ts`, and on the real rig in `realProject.test.ts`
 
 ### `masks.test.ts`
 
-- [ ] mask export > writes mask links as slot names, not as anything in the skeleton
-- [ ] mask export > warns and skips a mask layer with no artwork to clip with
-- [ ] mask export > carries several targets under one mask
+- [ ] mask export > writes mask links as slot names, not as anything in the skeleton — deferred to phase 6 (masks)
+- [ ] mask export > warns and skips a mask layer with no artwork to clip with — deferred to phase 6 (masks)
+- [ ] mask export > carries several targets under one mask — deferred to phase 6 (masks)
 
 ### `nestedSymbols.test.ts`
 
-- [ ] exporting a symbol instance's transform point > puts it on the display, where it moves the slot and not the bone
-- [ ] exporting a symbol instance's transform point > writes no display transform when the point is where it started
+- [ ] exporting a symbol instance's transform point > puts it on the display, where it moves the slot and not the bone — deferred to phase 5 (nested symbols)
+- [ ] exporting a symbol instance's transform point > writes no display transform when the point is where it started — deferred to phase 5 (nested symbols)
 
 ### `project.test.ts`
 
-- [ ] project round trip > produces a byte-identical export after a round trip
+- [x] project round trip > produces a byte-identical export after a round trip — ported: `project.test.ts`
 
 ### `realProject.test.ts`
 
-- [ ] the fixture itself > exports without errors, with the mask link the rig carries
-- [ ] empty layers and Exclude from Export on the real rig > an empty layer changes nothing about the exported file
-- [ ] empty layers and Exclude from Export on the real rig > excluding the mask layer removes its bone, slot and mask link
-- [ ] empty layers and Exclude from Export on the real rig > is undoable, byte for byte
-- [ ] empty layers and Exclude from Export on the real rig > leaves the other rows of the same symbol named exactly as they were
-- [ ] Swap Instance on a real node > swaps an image for a symbol, and the export follows
-- [ ] Replace Image on an image used by several rows > re-anchors the exported pivot, exactly as the toast warns
+- [x] the fixture itself > exports without errors, with the mask link the rig carries — ported: every symbol exports without errors, `realProject.test.ts`; the mask link in phase 6
+- [x] empty layers and Exclude from Export on the real rig > an empty layer changes nothing about the exported file — ported: `realProject.test.ts`
+- [x] empty layers and Exclude from Export on the real rig > excluding the mask layer removes its bone, slot and mask link — ported (bone, slot, image): `realProject.test.ts`; the link in phase 6
+- [x] empty layers and Exclude from Export on the real rig > is undoable, byte for byte — ported: `realProject.test.ts`
+- [x] empty layers and Exclude from Export on the real rig > leaves the other rows of the same symbol named exactly as they were — ported: `realProject.test.ts`
+- [ ] Swap Instance on a real node > swaps an image for a symbol, and the export follows — deferred to phase 5 (nested symbols)
+- [x] Replace Image on an image used by several rows > re-anchors the exported pivot, exactly as the toast warns — ported: region centre after Replace Image, `realProject.test.ts`
 
 ### `stickmanRig.test.ts`
 
-- [ ] stickman rig > exports one clean armature with both animations
+- [x] stickman rig > exports one clean armature with both animations — ported: `stickmanRig.test.ts`
 
 ### `symbols.test.ts`
 
-- [ ] ConvertToSymbol > exports the instance as a child armature
+- [ ] ConvertToSymbol > exports the instance as a child armature — deferred to phase 5 (nested symbols)
 
 ### `easing.test.ts`
 
-- [ ] per-property eases > a hold holds every channel, whatever the overrides say
-- [ ] per-property eases > the override reaches only its own timeline
-- [ ] per-property eases > an eased turn past half a revolution is cut at every frame, on the stage's values
+- [x] per-property eases > a hold holds every channel, whatever the overrides say — ported: `spineExport.test.ts`
+- [x] per-property eases > the override reaches only its own timeline — ported: `spineExport.test.ts`
+- [x] per-property eases > an eased turn past half a revolution is cut at every frame, on the stage's values — replaced: eased intervals are baked per frame (`spineExport.test.ts`) and checked by `spineParity.test.ts`
