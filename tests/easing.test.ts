@@ -1,10 +1,8 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { RotateTimeline } from "@esotericsoftware/spine-core";
 import {
-  EASE_FAMILIES, applyTween, curveToJson, easeFunction, easeLabel, presetCurve,
-  sampleCurve, sampleRuntimeCurve, splitTween, tweenToJson, type EaseDir, type EaseSpec,
-  type TweenSpec,
+  EASE_FAMILIES, applyTween, easeFunction, exportNote, easeLabel, easeSegments, idealEase, readPolyline, spinePolyline,
+  splitTween, type EaseDir, type EaseSegment, type EaseSpec,
 } from "@/core/math/easing";
 import {
   anchorsOf, constrain, curveValueAt, insertAnchor, moveAnchor, moveHandle, removeAnchor, toCorner,
@@ -19,64 +17,93 @@ import { createProject, createLayer, createNode } from "@/core/doc/defaults";
 beforeEach(() => reseed());
 
 /**
- * The runtime's own `_samplingEasingCurve` and `_getCurvePoint`, cut out of
- * the vendored build and run as they are — so the port in easing.ts is
- * checked against the bytes that ship, not against a re-reading of them.
+ * The runtime's own evaluation of one bezier segment: a two-key
+ * RotateTimeline from spine-core 4.3.13 with `setBezier` on it, read with
+ * `getCurveValue`. Absolute units, as a file carries them.
  */
-function vendoredSampler(): (curve: number[], samples: number[]) => void {
-  const src = readFileSync(resolve(__dirname, "reference/dragonBones.min.js"), "utf8");
-  const method = (name: string, params: string) => {
-    const start = src.indexOf(`${name}(${params}){`);
-    if (start < 0) throw new Error(`${name} not found in the vendored runtime`);
-    let i = src.indexOf("{", start), depth = 0;
-    for (; i < src.length; i++) {
-      if (src[i] === "{") depth++;
-      else if (src[i] === "}" && --depth === 0) break;
-    }
-    return src.slice(start, i + 1);
-  };
-  const body = `return class { constructor(){ this._helpPoint = {x:0,y:0}; } ${method("_getCurvePoint", "t,e,a,i,s,r,n,o,l,h")} ${method("_samplingEasingCurve", "n,o")} }`;
-  const Cls = new Function(body)() as new () => { _samplingEasingCurve(c: number[], s: number[]): boolean };
-  const inst = new Cls();
-  return (curve, samples) => { inst._samplingEasingCurve(curve, samples); };
+function runtimeCurve(seg: EaseSegment, t0: number, t1: number, v0: number, v1: number): (time: number) => number {
+  const tl = new RotateTimeline(2, 1, 0);
+  const tx = (x: number) => t0 + x * (t1 - t0), vy = (y: number) => v0 + y * (v1 - v0);
+  tl.setFrame(0, tx(seg.x0), vy(seg.y0));
+  tl.setFrame(1, tx(seg.x1), vy(seg.y1));
+  tl.setBezier(0, 0, 0, tx(seg.x0), vy(seg.y0), tx(seg.c1x), vy(seg.c1y), tx(seg.c2x), vy(seg.c2y), tx(seg.x1), vy(seg.y1));
+  return (time) => tl.getCurveValue(time);
 }
 
-function runtimeTable(json: number[], frameCount: number): number[] {
-  const samples = new Array<number>(frameCount + 1).fill(0);
-  vendoredSampler()(json, samples);
-  return samples.map((v) => (Math.round(v * 1e4) << 16) >> 16);
+function randomSegments(n: number): EaseSegment[] {
+  let seed = 7;
+  const r = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  return Array.from({ length: n }, () => {
+    const c1x = r(), c2x = r();
+    return { x0: 0, y0: 0, c1x, c1y: (r() - 0.3) * 3, c2x: Math.max(c1x, c2x), c2y: (r() - 0.3) * 3, x1: 1, y1: 1 };
+  });
 }
 
 const DIRS: EaseDir[] = ["in", "out", "inOut"];
 
 describe("the runtime's curve sampler", () => {
-  it("the port matches the vendored build on a single segment", () => {
-    const curve = [0.42, 0, 0.58, 1];
-    expect([...sampleRuntimeCurve(curve, 12)]).toEqual(runtimeTable(curve, 12));
-  });
-
-  it("the port matches the vendored build on a padded multi-segment curve", () => {
-    const json = curveToJson([0.1, 0.4, 0.2, 0.6, 0.3, 0.7, 0.45, 0.8, 0.6, 0.9]);
-    for (const n of [3, 10, 47]) {
-      expect([...sampleRuntimeCurve(json, n)]).toEqual(runtimeTable(json, n));
+  it("the port reads a segment as spine-core does, in any units", () => {
+    for (const seg of randomSegments(60)) {
+      const pts = spinePolyline(seg);
+      for (const [t0, t1, v0, v1] of [[0, 1, 0, 1], [0.5, 1.25, 30, -210], [2, 2.0416667, 5, 5.5]] as const) {
+        const rt = runtimeCurve(seg, t0, t1, v0, v1);
+        for (let i = 0; i <= 40; i++) {
+          const x = i / 40;
+          const want = rt(t0 + x * (t1 - t0));
+          const got = v0 + readPolyline(pts, x) * (v1 - v0);
+          // Float32 frames and curves in the runtime.
+          expect(Math.abs(got - want)).toBeLessThan(2e-4 * Math.max(1, Math.abs(v1 - v0)));
+        }
+      }
     }
   });
 
-  it("the padding is what makes a multi-segment curve read correctly", () => {
-    // Unpadded, the runtime evaluates the first segment towards (1,1) and
-    // the last one from (0,0): the samples land nowhere near the curve.
-    const curve = [0.1, 0.4, 0.2, 0.6, 0.3, 0.7, 0.45, 0.8, 0.6, 0.9];
-    const padded = sampleRuntimeCurve(curveToJson(curve), 20);
-    const n = padded.length;
-    for (let i = 0; i < n; i++) {
-      expect(padded[i]! / 1e4).toBeCloseTo(curveValueAt(curve, (i + 1) / (n + 1)), 2);
+  it("is the polyline through the curve at parameter 0.1 … 0.9, not the curve", () => {
+    const seg = easeSegments({ kind: "curve", curve: [0.9, 0, 0.1, 1] })![0]!;
+    const pts = spinePolyline(seg);
+    // At a sample point the two agree; half way between, the chord is off.
+    expect(readPolyline(pts, pts[10]!)).toBeCloseTo(idealEase({ kind: "curve", curve: [0.9, 0, 0.1, 1] }, pts[10]!), 9);
+    const mid = (pts[10]! + pts[12]!) / 2;
+    expect(Math.abs(readPolyline(pts, mid) - idealEase({ kind: "curve", curve: [0.9, 0, 0.1, 1] }, mid))).toBeGreaterThan(1e-3);
+  });
+});
+
+describe("the Ease dialog's note on what the export writes", () => {
+  it("names keys and beziers, per kind", () => {
+    expect(exportNote({ kind: "linear" }, 12)).toBe("12 frames · one straight key");
+    expect(exportNote({ kind: "ease", value: 1 }, 12)).toBe("12 frames · 1 bezier, which Spine plays as 10 straight pieces");
+    expect(exportNote({ kind: "curve", curve: [0.1, 0.4, 0.2, 0.6, 0.3, 0.7, 0.45, 0.8, 0.6, 0.9] }, 1))
+      .toBe("1 frame · 2 beziers, which Spine plays as 20 straight pieces");
+    expect(exportNote({ kind: "preset", family: "bounce", dir: "out" }, 30)).toBe("30 frames · no bezier holds this ease: 30 keys, one per frame");
+  });
+});
+
+describe("the quad eases are cubics", () => {
+  it("whose curve is exactly their polynomial", () => {
+    for (const value of [-2, -1, -0.4, 0.3, 1, 1.5, 2]) {
+      const seg = easeSegments({ kind: "ease", value })![0]!;
+      for (let i = 0; i <= 20; i++) {
+        const t = i / 20, l = 1 - t;
+        const x = 3 * l * l * t * seg.c1x + 3 * l * t * t * seg.c2x + t * t * t;
+        const y = 3 * l * l * t * seg.c1y + 3 * l * t * t * seg.c2y + t * t * t;
+        expect(x).toBeCloseTo(t, 12);
+        expect(y).toBeCloseTo(idealEase({ kind: "ease", value }, t), 12);
+      }
     }
-    const raw = sampleRuntimeCurve(curve, 20);
-    expect(raw.some((v, i) => Math.abs(v / 1e4 - curveValueAt(curve, (i + 1) / (n + 1))) > 0.05)).toBe(true);
   });
 
-  it("wraps past the Int16 range exactly as the typed array does", () => {
-    expect([...sampleRuntimeCurve([0.3, 5, 0.6, 5], 4)]).toEqual(runtimeTable([0.3, 5, 0.6, 5], 4));
+  it("in pulls away slowly, out arrives slowly, in-out does both", () => {
+    expect(applyTween({ kind: "ease", value: -1 }, 0.25, 10)).toBeLessThan(0.25);
+    expect(applyTween({ kind: "ease", value: 1 }, 0.25, 10)).toBeGreaterThan(0.25);
+    const io = { kind: "ease", value: 2 } as const;
+    expect(applyTween(io, 0.25, 10)).toBeLessThan(0.25);
+    expect(applyTween(io, 0.75, 10)).toBeGreaterThan(0.75);
+    expect(applyTween(io, 0.5, 10)).toBeCloseTo(0.5, 9);
+  });
+
+  it("a multi-segment custom curve is one bezier per segment", () => {
+    const segs = easeSegments({ kind: "curve", curve: [0.1, 0.4, 0.2, 0.6, 0.3, 0.7, 0.45, 0.8, 0.6, 0.9] })!;
+    expect(segs.map((x) => [x.x0, x.y0, x.x1, x.y1])).toEqual([[0, 0, 0.3, 0.7], [0.3, 0.7, 1, 1]]);
   });
 });
 
@@ -102,45 +129,22 @@ describe("preset eases", () => {
     for (let p = 0; p <= 1; p += 0.05) expect(f(p)).toBeCloseTo(penner(p), 6);
   });
 
-  it("the runtime's table holds the ease's own values at its sample points", () => {
+  it("the stage shows the exact ease at every whole frame, straight between", () => {
     for (const fam of EASE_FAMILIES) {
       for (const dir of DIRS) {
-        const spec = { family: fam.id, dir };
+        const spec = { kind: "preset" as const, family: fam.id, dir };
         const f = easeFunction(spec);
-        for (const n of [5, 24, 90]) {
-          const table = runtimeTable(tweenToJson({ kind: "preset", ...spec }, n).curve!, n);
-          table.forEach((v, i) => {
-            expect(Math.abs(v / 1e4 - f((i + 1) / (n + 2)))).toBeLessThan(1.5e-3);
-          });
+        for (const n of [5, 24]) {
+          for (let k = 0; k <= n; k++) expect(applyTween(spec, k / n, n)).toBeCloseTo(k === 0 ? 0 : k === n ? 1 : f(k / n), 12);
+          const half = applyTween(spec, 2.5 / n, n);
+          expect(half).toBeCloseTo((f(2 / n) + f(3 / n)) / 2, 12);
         }
       }
     }
   });
 
-  it("keeps y inside the Int16 range even at extreme settings", () => {
-    const curve = presetCurve({ family: "back", dir: "inOut", amount: 4 }, 30);
-    for (let i = 1; i < curve.length; i += 2) expect(Math.abs(curve[i]!)).toBeLessThanOrEqual(3.2767);
-  });
-
-  it("drops collinear anchors, so a flat tail costs nothing", () => {
-    expect(presetCurve({ family: "pow", dir: "in", amount: 8 }, 400).length)
-      .toBeLessThan(4 + 6 * 401);
-    expect(tweenToJson({ kind: "linear" })).toEqual({ tweenEasing: 0 });
-  });
-
-  it("the stage evaluates a preset through the exported curve", () => {
-    const spec: TweenSpec = { kind: "preset", family: "elastic", dir: "out" };
-    const n = 18;
-    const table = runtimeTable(tweenToJson(spec, n).curve!, n);
-    for (let i = 0; i <= 50; i++) {
-      const p = i / 50;
-      const seg = n + 2;
-      const k = Math.min(seg - 1, Math.floor(p * seg));
-      const a = k === 0 ? 0 : table[k - 1]!;
-      const b = k === seg - 1 ? 10000 : table[k]!;
-      const expected = p >= 1 ? 1 : (a + (b - a) * (p * seg - k)) * 1e-4;
-      expect(applyTween(spec, p, n)).toBeCloseTo(expected, 9);
-    }
+  it("has no cubic, so the file carries a key per frame", () => {
+    expect(easeSegments({ kind: "preset", family: "bounce", dir: "out" })).toBeNull();
   });
 
   it("labels", () => {
@@ -178,21 +182,19 @@ describe("cutting an eased interval", () => {
     }
   });
 
-  it("keeps a quad a scalar when the file's hundredths can carry it", () => {
-    expect(splitTween({ kind: "ease", value: -1 }, 20, 5)).toEqual([
-      { kind: "ease", value: -1 },
-      { kind: "ease", value: -0.6 },
-    ]);
-    expect(splitTween({ kind: "ease", value: -1 }, 20, 9)!.map((e) => e.kind)).toEqual(["curve", "curve"]);
+  it("cuts into straight pieces, which Spine plays exactly", () => {
+    const [a, b] = splitTween({ kind: "ease", value: -1 }, 20, 5)!;
+    expect(a.kind).toBe("curve");
+    expect(b.kind).toBe("curve");
     expect(splitTween({ kind: "linear" }, 20, 9)).toEqual([{ kind: "linear" }, { kind: "linear" }]);
   });
 
-  it("refuses a cut the file cannot express", () => {
-    // Elastic out has already overshot 1 here: the second half would need
-    // values far past the Int16 table's ±3.27.
-    expect(splitTween({ kind: "preset", family: "elastic", dir: "out" }, 20, 5)).toBeNull();
+  it("refuses a cut with no progress on one side, or past the curve range", () => {
     // Anticipation back to the start: no progress at all in the first half.
     expect(splitTween({ kind: "ease", value: -2 }, 2, 1)).toBeNull();
+    // Elastic out has already overshot 1 here: the second half would need
+    // values far past the document's ±3.27.
+    expect(splitTween({ kind: "preset", family: "elastic", dir: "out" }, 20, 5)).toBeNull();
   });
 });
 
@@ -206,7 +208,11 @@ describe("custom curve editing", () => {
     for (let x = 0.02; x < 1; x += 0.05) {
       expect(curveValueAt(curve, x)).toBeCloseTo(curveValueAt(base, x), 4);
     }
-    expect([...sampleCurve(curve, 30)].every((v, i) => Math.abs(v - sampleCurve(base, 30)[i]!) <= 3)).toBe(true);
+    // The runtime reads each segment through its own ten pieces, so two
+    // segments read finer than one: close, not identical.
+    for (let x = 0.02; x < 1; x += 0.05) {
+      expect(Math.abs(applyTween({ kind: "curve", curve }, x, 30) - applyTween({ kind: "curve", curve: base }, x, 30))).toBeLessThan(0.01);
+    }
   });
 
   it("removing it goes back to one segment", () => {

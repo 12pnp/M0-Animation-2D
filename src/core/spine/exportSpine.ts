@@ -5,7 +5,7 @@ import { descendantsOf } from "@/core/doc/layerTree";
 import { displaysOf } from "@/core/doc/displays";
 import { rotationDelta, sampleColorRaw, sampleTransformRaw } from "@/core/doc/timeline";
 import type { Transform } from "@/core/math/Transform";
-import { easeOf, type TweenChannel } from "@/core/math/easing";
+import { type EaseSegment, easeOf, easeSegments, type TweenChannel, type TweenSpec } from "@/core/math/easing";
 import type { ExportDiagnostic } from "@/core/export/diagnostics";
 import { isAtlasName } from "./atlas";
 import { keyTime, keyValues, regionCentre, type SpineKeyValues, type SpineLocal, toSpineLocal } from "./transform";
@@ -16,6 +16,7 @@ import {
   type SpineBlendMode,
   type SpineBone,
   type SpineBoneTimelines,
+  type SpineCurve,
   type SpineIkConstraint,
   type SpineRegionAttachment,
   type SpineRgbaKey,
@@ -80,6 +81,14 @@ export function exportSpine(project: Project, symbolId: ItemId = project.rootSym
   const maskLayers = sym.layers.filter((l) => l.isMask && !skipped.has(l.nodeId));
   reportMasks(sym, maskLayers, diagnostics);
   const noSlot = new Set<NodeId>(maskLayers.map((l) => l.nodeId));
+
+  // Only the DragonBones runtime extension ever drew it; nothing does now.
+  if (project.motionBlur?.enabled) {
+    diagnostics.push({
+      severity: "warning",
+      message: "Motion blur is on for this document, but the Spine export does not carry it: nothing will draw it.",
+    });
+  }
 
   const nested = Object.values(sym.nodes).filter((n) => n.kind === "symbol" && !skipped.has(n.id));
   if (nested.length) {
@@ -244,15 +253,48 @@ export function exportSpine(project: Project, symbolId: ItemId = project.rootSym
 
 /* ── bone timelines ──────────────────────────────────────────────────────── */
 
-type Row = { frame: number; t: Transform; stepped: boolean };
+/**
+ * The bezier leaving a key, as Spine takes it: the segment's control points
+ * in the INTERVAL's 0..1 space, and the interval's two ends, so each
+ * channel's control values follow from its values there (timelines are
+ * linear in their values, so this is exact).
+ */
+interface RowCurve { seg: EaseSegment; frame0: number; span: number }
+type Row<T> = { frame: number; t: T; stepped: boolean; curve?: RowCurve & { from: T; to: T } };
 
 /**
- * The frames a channel needs a key on, and the transform there, with angles
- * unwrapped across keys so direction and extra turns survive (the stage
- * restarts each interval from the keyed angle, a whole number of turns away:
- * the same matrix, but Spine interpolates the numbers).
+ * The keys an interval needs, per channel ease: a hold one stepped key, a
+ * linear tween one key, an ease or custom curve one key per bezier segment
+ * carrying its curve, and a preset (no cubic holds it) one key per frame of
+ * the stage's own values. `at(f)` is the stage's value at frame f,
+ * `lerp(a, b, s)` a value part way (a segment starting inside the interval).
  */
-function channelRows(track: Track, bind: Transform, channel: TweenChannel): Row[] {
+function intervalRows<T>(
+  frame0: number, next: number, from: T, to: T, ease: TweenSpec,
+  at: (f: number) => T, lerp: (a: T, b: T, s: number) => T,
+): Row<T>[] {
+  if (ease.kind === "none") return [{ frame: frame0, t: from, stepped: true }];
+  if (ease.kind === "linear") return [{ frame: frame0, t: from, stepped: false }];
+  const span = next - frame0;
+  const segs = easeSegments(ease);
+  if (!segs) {
+    return Array.from({ length: span }, (_, i) => ({ frame: frame0 + i, t: at(frame0 + i), stepped: false }));
+  }
+  return segs.map((seg) => ({
+    frame: frame0 + seg.x0 * span,
+    t: seg.y0 === 0 ? from : lerp(from, to, seg.y0),
+    stepped: false,
+    curve: { seg, frame0, span, from, to },
+  }));
+}
+
+/**
+ * The keys a channel needs, with angles unwrapped across keys so direction
+ * and extra turns survive (the stage restarts each interval from the keyed
+ * angle, a whole number of turns away: the same matrix, but Spine
+ * interpolates the numbers).
+ */
+function channelRows(track: Track, bind: Transform, channel: TweenChannel): Row<Transform>[] {
   const keys = track.keys;
   const turn: number[] = [0];
   for (let i = 1; i < keys.length; i++) {
@@ -263,21 +305,45 @@ function channelRows(track: Track, bind: Transform, channel: TweenChannel): Row[
   const shifted = (t: Transform, by: number): Transform =>
     by === 0 ? t : { ...t, skewX: t.skewX + by, skewY: t.skewY + by };
 
-  const rows: Row[] = [];
+  const rows: Row<Transform>[] = [];
   // Before its first key the stage composes the node at its bind pose.
   if (keys[0]!.frame > 0) rows.push({ frame: 0, t: bind, stepped: true });
   keys.forEach((k, i) => {
     const next = keys[i + 1];
-    const hold = k.tween.kind === "none";
     const t = shifted(k.transform, turn[i]!);
-    if (!next || hold) { rows.push({ frame: k.frame, t, stepped: hold && !!next }); return; }
-    const ease = easeOf(k, channel);
-    if (ease.kind === "linear") { rows.push({ frame: k.frame, t, stepped: false }); return; }
-    for (let f = k.frame; f < next.frame; f++) {
-      rows.push({ frame: f, t: shifted(sampleTransformRaw(track, f)!, turn[i]!), stepped: false });
-    }
+    if (!next) { rows.push({ frame: k.frame, t, stepped: false }); return; }
+    rows.push(...intervalRows(
+      k.frame, next.frame, t, shifted(next.transform, turn[i + 1]!), easeOf(k, channel),
+      (f) => shifted(sampleTransformRaw(track, f)!, turn[i]!), lerpTransform,
+    ));
   });
   return rows;
+}
+
+function lerpTransform(a: Transform, b: Transform, s: number): Transform {
+  const l = (p: number, q: number) => p + (q - p) * s;
+  return {
+    x: l(a.x, b.x), y: l(a.y, b.y), skewX: l(a.skewX, b.skewX), skewY: l(a.skewY, b.skewY),
+    scaleX: l(a.scaleX, b.scaleX), scaleY: l(a.scaleY, b.scaleY),
+  };
+}
+
+/**
+ * A key's time and curve. `channels` gives the timeline's values, in its
+ * order, for any row value; a bezier's control values are those at the
+ * interval's ends, mixed by the control's y.
+ */
+function keyBase<T>(r: Row<T>, fps: number, channels: (t: T) => number[]): { time?: number; curve?: SpineCurve } {
+  const k: { time?: number; curve?: SpineCurve } = {};
+  if (r.frame !== 0) k.time = keyTime(r.frame, fps);
+  if (r.stepped) k.curve = "stepped";
+  else if (r.curve) {
+    const { seg, frame0, span, from, to } = r.curve;
+    const a = channels(from), b = channels(to);
+    const t1 = (frame0 + seg.c1x * span) / fps, t2 = (frame0 + seg.c2x * span) / fps;
+    k.curve = a.flatMap((v, i) => [t1, v + (b[i]! - v) * seg.c1y, t2, v + (b[i]! - v) * seg.c2y]);
+  }
+  return k;
 }
 
 function boneTimelines(
@@ -285,28 +351,26 @@ function boneTimelines(
 ): { timelines: SpineBoneTimelines; lastFrame: number } | null {
   const out: SpineBoneTimelines = {};
   let lastFrame = 0;
-  const values = (rows: Row[]) => rows.map((r) => ({ r, v: keyValues(toSpineLocal(r.t), setup) }));
-  const base = (r: Row) => {
-    const k: { time?: number; curve?: "stepped" } = {};
-    if (r.frame !== 0) k.time = keyTime(r.frame, fps);
-    if (r.stepped) k.curve = "stepped";
+  const kv = (t: Transform) => keyValues(toSpineLocal(t), setup);
+  const values = (rows: Row<Transform>[]) => rows.map((r) => ({ r, v: kv(r.t) }));
+  const base = (r: Row<Transform>, channels: (v: SpineKeyValues) => number[]) => {
     lastFrame = Math.max(lastFrame, r.frame);
-    return k;
+    return keyBase(r, fps, (t) => channels(kv(t)));
   };
   const moves = (vs: Array<{ v: SpineKeyValues }>, pick: (v: SpineKeyValues) => number[], rest: number) =>
     vs.some(({ v }) => pick(v).some((x) => Math.abs(x - rest) > 1e-9));
 
   const pos = values(channelRows(track, node.bind, "position"));
   if (moves(pos, (v) => [v.x, v.y], 0)) {
-    out.translate = pos.map(({ r, v }) => ({ ...base(r), ...nonZero({ x: v.x, y: v.y }) }));
+    out.translate = pos.map(({ r, v }) => ({ ...base(r, (w) => [w.x, w.y]), ...nonZero({ x: v.x, y: v.y }) }));
   }
 
   const rot = values(channelRows(track, node.bind, "rotation"));
   if (moves(rot, (v) => [v.rotate], 0)) {
-    out.rotate = rot.map(({ r, v }) => ({ ...base(r), ...nonZero({ value: v.rotate }) }));
+    out.rotate = rot.map(({ r, v }) => ({ ...base(r, (w) => [w.rotate]), ...nonZero({ value: v.rotate }) }));
   }
   if (moves(rot, (v) => [v.shearX, v.shearY], 0)) {
-    out.shear = rot.map(({ r, v }) => ({ ...base(r), ...nonZero({ x: v.shearX, y: v.shearY }) }));
+    out.shear = rot.map(({ r, v }) => ({ ...base(r, (w) => [w.shearX, w.shearY]), ...nonZero({ x: v.shearX, y: v.shearY }) }));
   }
 
   const scl = values(channelRows(track, node.bind, "scale"));
@@ -317,7 +381,7 @@ function boneTimelines(
     });
   } else if (moves(scl, (v) => [v.scaleX!, v.scaleY!], 1)) {
     out.scale = scl.map(({ r, v }) => {
-      const k: { time?: number; curve?: "stepped"; x?: number; y?: number } = base(r);
+      const k: { time?: number; curve?: SpineCurve; x?: number; y?: number } = base(r, (w) => [w.scaleX!, w.scaleY!]);
       if (v.scaleX !== 1) k.x = v.scaleX!;
       if (v.scaleY !== 1) k.y = v.scaleY!;
       return k;
@@ -358,25 +422,33 @@ function slotTimelines(
   // one (the rule `sampleColorRaw` applies on the stage).
   if (keys.some((k) => k.color !== undefined)) {
     if (!offsetWarned.has(node.id) && keys.some((k) => hasOffsets(k.color))) warnOffsets(node, offsetWarned, diags);
-    const rows: SpineRgbaKey[] = [];
-    const push = (frame: number, c: ColorTransform, stepped: boolean) => {
-      const k: SpineRgbaKey = { ...time(frame), color: colorHex(c) ?? "ffffffff" };
-      if (stepped) k.curve = "stepped";
-      rows.push(k);
-    };
-    if (startsLate) push(0, node.color ?? DEFAULT_COLOR, true);
+    // The runtime's frame colours are the 8-bit ones the file holds, so a
+    // curve's control values are mixed from those.
+    const channels = (c: ColorTransform) => [c.rM, c.gM, c.bM, c.aM].map((m) => Math.max(0, Math.min(255, Math.round((m / 100) * 255))) / 255);
+    const rows: Row<ColorTransform>[] = [];
+    if (startsLate) rows.push({ frame: 0, t: node.color ?? DEFAULT_COLOR, stepped: true });
     keys.forEach((k, i) => {
       const next = keys[i + 1];
-      const hold = k.tween.kind === "none";
       const c = k.color ?? DEFAULT_COLOR;
-      if (!next || hold) { push(k.frame, c, hold && !!next); return; }
-      if (easeOf(k, "color").kind === "linear") { push(k.frame, c, false); return; }
-      for (let f = k.frame; f < next.frame; f++) push(f, sampleColorRaw(track, f)!, false);
+      if (!next) { rows.push({ frame: k.frame, t: c, stepped: false }); return; }
+      rows.push(...intervalRows(
+        k.frame, next.frame, c, next.color ?? DEFAULT_COLOR, easeOf(k, "color"),
+        (f) => sampleColorRaw(track, f)!, lerpColor,
+      ));
     });
-    out.rgba = rows;
+    lastFrame = Math.max(lastFrame, ...rows.map((r) => r.frame));
+    out.rgba = rows.map((r): SpineRgbaKey => ({ ...keyBase(r, fps, channels), color: colorHex(r.t) ?? "ffffffff" }));
   }
 
   return Object.keys(out).length ? { timelines: out, lastFrame } : null;
+}
+
+function lerpColor(a: ColorTransform, b: ColorTransform, s: number): ColorTransform {
+  const l = (p: number, q: number) => p + (q - p) * s;
+  return {
+    rM: l(a.rM, b.rM), gM: l(a.gM, b.gM), bM: l(a.bM, b.bM), aM: l(a.aM, b.aM),
+    rO: l(a.rO, b.rO), gO: l(a.gO, b.gO), bO: l(a.bO, b.bO), aO: l(a.aO, b.aO),
+  };
 }
 
 /* ── colour and blend ────────────────────────────────────────────────────── */

@@ -1,25 +1,25 @@
 /**
- * Tween easing, replicating DragonBones 6.0.2 EXACTLY.
+ * Tween easing, evaluated the way the Spine 4.3 runtime plays it.
  *
- * This file is deliberately a port, not an improvement. If the editor
- * evaluated the "correct" cubic bezier while the runtime evaluates a sampled
- * approximation, the two would agree at every keyframe and disagree
- * everywhere in between — the worst possible failure mode, invisible to
- * casual testing. So we reproduce the runtime's sampling, including its
- * quantisation, and let the parity harness prove it.
+ * The stage must show what the runtime shows at every whole frame, so this
+ * file reproduces the runtime rather than the ideal curve. Spine carries
+ * one cubic bezier per key interval and does not evaluate it exactly:
+ * `CurveTimeline.setBezier` samples it at parameter 0.1 … 0.9 and
+ * `getBezierValue` reads the 10-segment polyline through those points and
+ * the two keys, by time. `spinePolyline` / `readPolyline` are that, and
+ * `tests/easing.test.ts` checks them against spine-core itself.
  *
- * Sources (DragonBonesJS master):
- *   ObjectDataParser._samplingEasingCurve  — builds the sample table
- *   TweenTimelineState._getEasingValue     — scalar easing
- *   TweenTimelineState._getEasingCurveValue— evaluates the table
- *
- * The format has two encodings and nothing else: the scalar `tweenEasing`
- * (quad in / out / in-out) and `curve`. Every other ease — sine, back,
- * bounce, a hand-drawn curve — therefore travels as a `curve`, and the
- * editor evaluates it through the very bytes the exporter writes
- * (`curveToJson` → `sampleRuntimeCurve`), so the stage cannot drift from the
- * runtime.
+ * What each ease is, in Spine:
+ *   linear            no curve
+ *   ease (quad in/out, in-out)  ONE cubic, exactly: p + e·(g(p) − p) with
+ *                     g = p², 2p − p² or the smoothstep 3p² − 2p³
+ *   curve (custom)    its own cubic segments, one key per anchor
+ *   preset (sine, back, bounce …)  no cubic holds them: the exact function
+ *                     at every whole frame, a key per frame in the file,
+ *                     straight between them
  */
+
+import { curveValueAt } from "./easeCurve";
 
 export type EaseFamily = "pow" | "sine" | "circ" | "expo" | "back" | "elastic" | "bounce";
 export type EaseDir = "in" | "out" | "inOut";
@@ -39,35 +39,6 @@ export type EaseSpec = Exclude<TweenSpec, { kind: "none" }>;
 export const TWEEN_NONE: TweenSpec = { kind: "none" };
 export const TWEEN_LINEAR: TweenSpec = { kind: "linear" };
 export const DEFAULT_CUSTOM_CURVE: readonly number[] = [0.42, 0, 0.58, 1];
-
-/* ── Scalar easing ─────────────────────────────────────────────────────────
-   The runtime stores the magnitude as round(|e| * 100) and multiplies by
-   0.01 on read, so the effective value is quantised to two decimals. We
-   quantise identically rather than pretending we have more precision.      */
-
-export function easeScalar(progress: number, tweenEasing: number): number {
-  if (tweenEasing === 0) return progress;
-
-  let value: number;
-  let easing: number;
-
-  if (tweenEasing < 0) {
-    // QuadIn
-    value = progress * progress;
-    easing = Math.round(-tweenEasing * 100) * 0.01;
-  } else if (tweenEasing <= 1) {
-    // QuadOut
-    const inv = 1 - progress;
-    value = 1 - inv * inv;
-    easing = Math.round(tweenEasing * 100) * 0.01;
-  } else {
-    // QuadInOut
-    value = 0.5 * (1 - Math.cos(progress * Math.PI));
-    easing = Math.round(tweenEasing * 100 - 100) * 0.01;
-  }
-
-  return (value - progress) * easing + progress;
-}
 
 /* ── Preset families ──────────────────────────────────────────────────────*/
 
@@ -153,125 +124,197 @@ export function easeFunction(spec: { family: EaseFamily; dir: EaseDir; amount?: 
   }
 }
 
-/* ── Bezier curve ─────────────────────────────────────────────────────────*/
+/* ── Bezier segments ──────────────────────────────────────────────────────*/
 
-/** The runtime stores each sample in an Int16Array: y past ±3.2767 wraps. */
+/**
+ * How far a custom curve's y may go. Spine has no limit (floats); this is
+ * the range the document has always kept, from the DragonBones Int16 table.
+ */
 export const CURVE_Y_LIMIT = 3.2767;
 
-function curvePoint(
-  x1: number, y1: number, x2: number, y2: number,
-  x3: number, y3: number, x4: number, y4: number,
-  t: number,
-): { x: number; y: number } {
-  const l = 1 - t;
-  const l3 = l * l * l;
-  const l2t3 = 3 * l * l * t;
-  const lt23 = 3 * l * t * t;
-  const t3 = t * t * t;
-  return {
-    x: l3 * x1 + l2t3 * x2 + lt23 * x3 + t3 * x4,
-    y: l3 * y1 + l2t3 * y2 + lt23 * y3 + t3 * y4,
-  };
+/** One cubic bezier from (x0,y0) to (x1,y1), in the interval's 0..1 space:
+ *  x is progress through the interval, y through the change. */
+export interface EaseSegment {
+  x0: number; y0: number;
+  c1x: number; c1y: number; c2x: number; c2y: number;
+  x1: number; y1: number;
 }
 
 /**
- * `_samplingEasingCurve`, the `length % 3 === 1` branch, verbatim — quirk
- * included: the FIRST segment is evaluated from (0,0) to (1,1) rather than to
- * its anchor, and the LAST one from (0,0) rather than from its anchor. Only
- * the middle segments are what they look like. `curveToJson` pads a
- * multi-segment curve with zero-width segments at both ends so that every
- * real segment is a middle one.
- *
- * Samples sit at t = (i+1)/(frameCount+2), `frameCount + 1` of them, each
- * `round(y * 10000)` as an Int16.
+ * The cubic segments an ease is made of, or null for linear, a hold and the
+ * presets. The quad eases are polynomials in p with x = p, so their controls
+ * sit at x = 1/3 and 2/3 and y from the end slopes: y1 = y'(0)/3,
+ * y2 = 1 − y'(1)/3.
  */
-export function sampleRuntimeCurve(curve: readonly number[], frameCount: number): Int32Array {
-  const sampleCount = frameCount + 1;
-  const out = new Int32Array(sampleCount);
-  const l = curve.length;
-  let r = -2;
-  for (let i = 0; i < sampleCount; i++) {
-    const t = (i + 1) / (sampleCount + 1);
-    while ((r + 6 < l ? curve[r + 6]! : 1) < t) r += 6;
-    const inCurve = r >= 0 && r + 6 < l;
-    const x1 = inCurve ? curve[r]! : 0;
-    const y1 = inCurve ? curve[r + 1]! : 0;
-    const x4 = inCurve ? curve[r + 6]! : 1;
-    const y4 = inCurve ? curve[r + 7]! : 1;
-    const x2 = curve[r + 2]!, y2 = curve[r + 3]!, x3 = curve[r + 4]!, y3 = curve[r + 5]!;
-
-    let lower = 0;
-    let higher = 1;
-    let p = curvePoint(x1, y1, x2, y2, x3, y3, x4, y4, 0.5);
-    while (higher - lower > 0.0001) {
-      const percentage = (higher + lower) * 0.5;
-      p = curvePoint(x1, y1, x2, y2, x3, y3, x4, y4, percentage);
-      if (t - p.x > 0) lower = percentage;
-      else higher = percentage;
+export function easeSegments(spec: TweenSpec): EaseSegment[] | null {
+  const seg = (y1: number, y2: number): EaseSegment[] =>
+    [{ x0: 0, y0: 0, c1x: 1 / 3, c1y: y1, c2x: 2 / 3, c2y: y2, x1: 1, y1: 1 }];
+  switch (spec.kind) {
+    case "none":
+    case "linear":
+    case "preset":
+      return null;
+    case "ease": {
+      const v = spec.value;
+      if (v < 0) { const e = -v; return seg((1 - e) / 3, (2 - e) / 3); }       // in:  p + e(p² − p)
+      if (v <= 1) return seg((1 + v) / 3, (2 + v) / 3);                          // out: p + e(p − p²)
+      const e = v - 1;                                                           // in-out: smoothstep
+      return seg((1 - e) / 3, (2 + e) / 3);
     }
-    // Int16 truncation, as the typed array would do it.
-    out[i] = (Math.round(p.y * 10000) << 16) >> 16;
+    case "curve": {
+      const c = spec.curve;
+      const out: EaseSegment[] = [];
+      let x0 = 0, y0 = 0;
+      for (let i = 0; i + 3 < c.length; i += 6) {
+        const last = i + 4 >= c.length;
+        const x1 = last ? 1 : c[i + 4]!, y1 = last ? 1 : c[i + 5]!;
+        out.push({ x0, y0, c1x: c[i]!, c1y: c[i + 1]!, c2x: c[i + 2]!, c2y: c[i + 3]!, x1, y1 });
+        x0 = x1; y0 = y1;
+      }
+      return out;
+    }
+  }
+}
+
+/**
+ * The polyline `CurveTimeline.setBezier` builds for a segment: its two ends
+ * and the curve at parameter 0.1 … 0.9, as [x0,y0, x1,y1, …] (11 points).
+ * The runtime gets the inner points by forward differencing; evaluating
+ * the cubic directly gives the same points to rounding.
+ */
+export function spinePolyline(s: EaseSegment): Float64Array {
+  const out = new Float64Array(22);
+  for (let i = 0; i <= 10; i++) {
+    const t = i / 10, l = 1 - t;
+    const a = l * l * l, b = 3 * l * l * t, c = 3 * l * t * t, d = t * t * t;
+    out[i * 2] = i === 0 ? s.x0 : i === 10 ? s.x1 : a * s.x0 + b * s.c1x + c * s.c2x + d * s.x1;
+    out[i * 2 + 1] = i === 0 ? s.y0 : i === 10 ? s.y1 : a * s.y0 + b * s.c1y + c * s.c2y + d * s.y1;
   }
   return out;
 }
 
-/** Sample table of a curve in the editor's own form (see `TweenSpec`). */
-export function sampleCurve(curve: readonly number[], frameCount: number): Int32Array {
-  return sampleRuntimeCurve(curveToJson(curve), frameCount);
+/** `getBezierValue`: the first point past `x`, read linearly from the one
+ *  before it. */
+export function readPolyline(pts: Float64Array, x: number): number {
+  for (let i = 2; i < pts.length; i += 2) {
+    if (pts[i]! >= x || i === pts.length - 2) {
+      const x0 = pts[i - 2]!, y0 = pts[i - 1]!, x1 = pts[i]!, y1 = pts[i + 1]!;
+      return x1 === x0 ? y1 : y0 + ((x - x0) / (x1 - x0)) * (y1 - y0);
+    }
+  }
+  return pts[pts.length - 1]!;
 }
 
-/** Evaluate a sample table — the piecewise-linear read the runtime does. */
-export function easeCurveSampled(progress: number, samples: Int32Array): number {
-  if (progress <= 0) return 0;
-  if (progress >= 1) return 1;
+/* ── Evaluation ───────────────────────────────────────────────────────────
+   Playback samples every tweened node on every frame, so each spec's
+   polylines are built once (specs are replaced, never mutated).           */
 
-  const count = samples.length;
-  const segmentCount = count + 1;
-  const valueIndex = Math.floor(progress * segmentCount);
-  const fromValue = valueIndex === 0 ? 0 : samples[valueIndex - 1]!;
-  const toValue = valueIndex === segmentCount - 1 ? 10000 : samples[valueIndex]!;
+const polyCache = new WeakMap<object, Array<{ x0: number; x1: number; pts: Float64Array }>>();
 
-  return (fromValue + (toValue - fromValue) * (progress * segmentCount - valueIndex)) * 0.0001;
-}
-
-const round6 = (v: number) => Math.round(v * 1e6) / 1e6;
-
-/**
- * The editor's curve as the file carries it. A single segment is already
- * safe; more than one gets a zero-width segment at each end — an anchor at
- * (0,0) and one at (1,1) — so the runtime's first/last-segment quirk only
- * ever lands on segments no sample can reach (every t is strictly inside
- * (0,1)).
- */
-export function curveToJson(curve: readonly number[]): number[] {
-  if (curve.length <= 4) return curve.map(round6);
-  return [0, 0, 0, 0, 0, 0, ...curve.map(round6), 1, 1, 1, 1, 1, 1];
+function polylinesOf(spec: Extract<TweenSpec, { kind: "ease" | "curve" }>) {
+  let polys = polyCache.get(spec);
+  if (!polys) {
+    polys = easeSegments(spec)!.map((s) => ({ x0: s.x0, x1: s.x1, pts: spinePolyline(s) }));
+    polyCache.set(spec, polys);
+  }
+  return polys;
 }
 
 /**
- * A preset as a polyline through the ease at exactly the points the runtime
- * samples, so the runtime's table holds the ease's own values. Anchors that
- * lie on the line through their neighbours (within half a quantisation
- * step) are dropped, which keeps long flat tails from bloating the file.
+ * Map a linear 0..1 progress across a span of `frameCount` frames through a
+ * tween spec, the way the Spine runtime plays the export: the bezier's
+ * polyline for the eases Spine carries, and for a preset the exact ease at
+ * the whole frames either side, straight between (one key per frame in the
+ * file). `none` holds at the start value. At a whole frame this is what the
+ * stage shows.
  */
-export function presetCurve(
-  spec: { family: EaseFamily; dir: EaseDir; amount?: number },
-  frameCount: number,
-): number[] {
-  const clampY = (y: number) => Math.min(CURVE_Y_LIMIT, Math.max(-CURVE_Y_LIMIT, y));
-  const f = easeFunction(spec);
-  const nodes = frameCount + 2;
-  return polylineCurve(Array.from({ length: nodes + 1 }, (_, j) =>
-    (j === 0 ? 0 : j === nodes ? 1 : clampY(f(j / nodes)))));
+export function applyTween(spec: TweenSpec, progress: number, frameCount: number): number {
+  switch (spec.kind) {
+    case "none":   return 0;
+    case "linear": return progress;
+    case "preset": {
+      if (progress <= 0) return 0;
+      if (progress >= 1) return 1;
+      const f = easeFunction(spec);
+      const at = progress * frameCount, k = Math.floor(at + 1e-9);
+      const a = f(k / frameCount);
+      return at - k < 1e-9 ? a : a + (f((k + 1) / frameCount) - a) * (at - k);
+    }
+    case "ease":
+    case "curve": {
+      if (progress <= 0) return 0;
+      if (progress >= 1) return 1;
+      const polys = polylinesOf(spec);
+      const seg = polys.find((s) => progress <= s.x1) ?? polys[polys.length - 1]!;
+      return readPolyline(seg.pts, progress);
+    }
+  }
 }
 
-/** A polyline through `values`, evenly spaced over 0..1: the runtime's
- *  sample points when there are `frameCount + 3` of them. */
+/** The curve as authored, drawn dashed behind what the runtime plays. The
+ *  quad eases have x = p, so they are their polynomials. */
+export function idealEase(spec: TweenSpec, p: number): number {
+  switch (spec.kind) {
+    case "none":   return 0;
+    case "linear": return p;
+    case "preset": return easeFunction(spec)(p);
+    case "curve":  return curveValueAt(spec.curve, p);
+    case "ease": {
+      const v = spec.value;
+      if (v < 0) return p + -v * (p * p - p);
+      if (v <= 1) return p + v * (p - p * p);
+      return p + (v - 1) * (3 * p * p - 2 * p * p * p - p);
+    }
+  }
+}
+
+/** What the export writes for an ease over `span` frames, in words. */
+export function exportNote(spec: TweenSpec, span: number): string {
+  const frames = `${span} frame${span === 1 ? "" : "s"}`;
+  switch (spec.kind) {
+    case "none":   return `${frames} · a hold: one stepped key`;
+    case "linear": return `${frames} · one straight key`;
+    case "preset": return `${frames} · no bezier holds this ease: ${span} keys, one per frame`;
+    case "ease":
+    case "curve": {
+      const n = easeSegments(spec)!.length;
+      return `${frames} · ${n} bezier${n === 1 ? "" : "s"}, which Spine plays as ${n * 10} straight pieces`;
+    }
+  }
+}
+
+/* ── Cutting an interval ──────────────────────────────────────────────────*/
+
+/**
+ * The eases of the two halves of an interval of `span` frames cut `at`
+ * frames in, each reproducing the part of the original motion it now
+ * governs at every whole frame. F6 does not do this — it gives both halves
+ * the whole ease — so whatever must stay put across a cut (Edit Multiple
+ * Frames) goes through here.
+ *
+ * Each half is a custom curve made of straight segments through the
+ * original's value at each of its whole frames: Spine's polyline of a
+ * straight bezier is the straight line, so every frame lands exactly. Null
+ * when the cut shows no progress on one side.
+ */
+export function splitTween(spec: EaseSpec, span: number, at: number): [EaseSpec, EaseSpec] | null {
+  if (spec.kind === "linear") return [spec, spec];
+  const u = at / span;
+  const E = (p: number) => applyTween(spec, p, span);
+  const eu = E(u);
+  if (Math.abs(eu) < 1e-6 || Math.abs(1 - eu) < 1e-6) return null;
+  const head = Array.from({ length: at + 1 }, (_, k) => E((k / at) * u) / eu);
+  const tail = Array.from({ length: span - at + 1 }, (_, k) => (E(u + (k / (span - at)) * (1 - u)) - eu) / (1 - eu));
+  if ([...head, ...tail].some((v) => Math.abs(v) > CURVE_Y_LIMIT)) return null;
+  return [{ kind: "curve", curve: polylineCurve(head) }, { kind: "curve", curve: polylineCurve(tail) }];
+}
+
+/** A curve of straight segments through `values`, evenly spaced over 0..1,
+ *  merging runs that lie on one line. */
 function polylineCurve(values: number[]): number[] {
   const last = values.length - 1;
   const pts = values.map((y, j): [number, number] => [j / last, y]);
-
-  const TOL = 0.5e-4;
+  const TOL = 1e-9;
   const kept: Array<[number, number]> = [pts[0]!];
   let a = 0;
   while (a < pts.length - 1) {
@@ -280,7 +323,6 @@ function polylineCurve(values: number[]): number[] {
     kept.push(pts[b]!);
     a = b;
   }
-
   const out: number[] = [];
   for (let s = 0; s < kept.length - 1; s++) {
     const [ax, ay] = kept[s]!;
@@ -301,156 +343,11 @@ function collinear(pts: Array<[number, number]>, a: number, b: number, tol: numb
   return true;
 }
 
-/* ── Evaluation ───────────────────────────────────────────────────────────
-   Playback samples every tweened node on every frame; a table costs a
-   binary search per sample, so tables are cached per spec object (specs
-   are replaced, never mutated) and span.                                   */
-
-const tableCache = new WeakMap<object, Map<number, Int32Array>>();
-
-function tableFor(spec: Extract<TweenSpec, { kind: "curve" | "preset" }>, frameCount: number): Int32Array {
-  let bySpan = tableCache.get(spec);
-  if (!bySpan) tableCache.set(spec, (bySpan = new Map()));
-  let table = bySpan.get(frameCount);
-  if (!table) {
-    const json = tweenToJson(spec, frameCount);
-    table = sampleRuntimeCurve(json.curve!, frameCount);
-    bySpan.set(frameCount, table);
-  }
-  return table;
-}
-
-/**
- * Map a linear 0..1 progress across a span of `frameCount` frames through a
- * tween spec, the way the runtime would. `none` holds at the start value.
- */
-export function applyTween(spec: TweenSpec, progress: number, frameCount: number): number {
-  switch (spec.kind) {
-    case "none":   return 0;
-    case "linear": return progress;
-    case "ease":   return easeScalar(progress, spec.value);
-    case "curve":
-    case "preset": return easeCurveSampled(progress, tableFor(spec, frameCount));
-  }
-}
-
-/* ── JSON mapping ─────────────────────────────────────────────────────────
-   `tweenEasing` ABSENT means "no tween" — a hold. `0` means linear. Emitting
-   0 where you meant absent turns every hold into a slide, which is the
-   single easiest way to get an export subtly wrong.                        */
-
-export interface TweenJson {
-  tweenEasing?: number;
-  curve?: number[];
-}
-
-/** `frameCount` is the span the frame governs: a preset's curve depends on it. */
-export function tweenToJson(spec: TweenSpec, frameCount = 1): TweenJson {
-  switch (spec.kind) {
-    case "none":   return {};
-    case "linear": return { tweenEasing: 0 };
-    case "ease":   return { tweenEasing: spec.value };
-    case "curve":  return { curve: curveToJson(spec.curve) };
-    case "preset": return { curve: curveToJson(presetCurve(spec, frameCount)) };
-  }
-}
-
-export function tweenFromJson(raw: TweenJson): TweenSpec {
-  if (raw.curve && raw.curve.length >= 4 && raw.curve.length % 6 === 4) {
-    return { kind: "curve", curve: [...raw.curve] };
-  }
-  if (raw.tweenEasing === undefined || raw.tweenEasing === null) return TWEEN_NONE;
-  if (raw.tweenEasing === 0) return TWEEN_LINEAR;
-  return { kind: "ease", value: raw.tweenEasing };
-}
-
-/* ── Cutting an interval ──────────────────────────────────────────────────*/
-
-/**
- * The eases of the two halves of an interval of `span` frames cut `at`
- * frames in, each reproducing the part of the original motion it now
- * governs. F6 does not do this — it gives both halves the whole ease — so
- * whatever must stay put across a cut (Edit Multiple Frames) goes through
- * here.
- *
- * A quad in/out stays a scalar when the halves' scalars, which the file
- * rounds to hundredths, still land on every frame; anything else becomes a
- * curve through the displayed ease (`throughFrames`). Null when the cut
- * shows no progress on one side, or when a half needs a value past what the
- * file can hold (an elastic cut right on an overshoot).
- */
-export function splitTween(spec: EaseSpec, span: number, at: number): [EaseSpec, EaseSpec] | null {
-  if (spec.kind === "linear") return [spec, spec];
-  const u = at / span;
-  const E = (p: number) => applyTween(spec, p, span);
-  const eu = E(u);
-  if (Math.abs(eu) < 1e-6 || Math.abs(1 - eu) < 1e-6) return null;
-  const head = (s: number) => E(s * u) / eu;
-  const tail = (s: number) => (E(u + s * (1 - u)) - eu) / (1 - eu);
-
-  const quad = spec.kind === "ease" && spec.value <= 1 ? splitQuad(spec.value, u) : null;
-  if (quad && follows(quad[0], head, at) && follows(quad[1], tail, span - at)) return quad;
-
-  const a = throughFrames(head, at);
-  const b = throughFrames(tail, span - at);
-  if ([...a, ...b].some((v) => Math.abs(v) > CURVE_Y_LIMIT)) return null;
-  return [{ kind: "curve", curve: polylineCurve(a) }, { kind: "curve", curve: polylineCurve(b) }];
-}
-
-/** Quad in/out is `p + k·(p² − p)`, k > 0 in, k < 0 out, and so is each part
- *  of it, with k rescaled to the part covered. */
-function splitQuad(value: number, u: number): [EaseSpec, EaseSpec] | null {
-  const e = Math.round(Math.abs(value) * 100) * 0.01;
-  const k = value < 0 ? e : -e;
-  const head = quadEase((k * u) / (1 - k + k * u));
-  const tail = quadEase((k * (1 - u)) / (1 + k * u));
-  return head && tail ? [head, tail] : null;
-}
-
-function quadEase(k: number): EaseSpec | null {
-  if (!Number.isFinite(k)) return null;
-  if (Math.abs(k) < 0.005) return { kind: "linear" };
-  if (k > 0 ? k <= 2 : k >= -1) return { kind: "ease", value: -k };
-  return null;
-}
-
-/** Does `spec` land on `f` at every whole frame of an `m`-frame span? */
-function follows(spec: EaseSpec, f: (s: number) => number, m: number): boolean {
-  for (let k = 1; k < m; k++) if (Math.abs(applyTween(spec, k / m, m) - f(k / m)) > 1e-4) return false;
-  return true;
-}
-
-/**
- * Sample-point values whose runtime read equals `f` at every whole frame of
- * an `m`-frame span, not merely near it. The read is linear between sample
- * points (j/(m+2), with 0 and 1 at the ends), which are closer together than
- * frames, so each frame falls between its own two points: the one with the
- * larger weight is solved for and the other keeps `f`'s value. Points solved
- * on the left go right to left, those on the right left to right, so every
- * point a solve reads is already final and no division is by less than ½.
- */
-function throughFrames(f: (s: number) => number, m: number): number[] {
-  const nodes = m + 2;
-  const v = Array.from({ length: nodes + 1 }, (_, j) => (j === 0 ? 0 : j === nodes ? 1 : f(j / nodes)));
-  const cells = Array.from({ length: Math.max(0, m - 1) }, (_, i) => {
-    const x = ((i + 1) * nodes) / m;
-    const j = Math.floor(x);
-    return { target: f((i + 1) / m), j, w: x - j };
-  });
-  for (const c of [...cells].reverse()) {
-    if (c.w < 0.5) v[c.j] = (c.target - c.w * v[c.j + 1]!) / (1 - c.w);
-  }
-  for (const c of cells) {
-    if (c.w >= 0.5) v[c.j + 1] = (c.target - (1 - c.w) * v[c.j]!) / c.w;
-  }
-  return v;
-}
-
 /* ── Labels ───────────────────────────────────────────────────────────────*/
 
 const DIR_LABEL: Record<EaseDir, string> = { in: "in", out: "out", inOut: "in-out" };
 
-/** One signed scalar, the way DragonBones stores it. */
+/** Which quad ease a classic scalar is: negative in, up to 1 out, above in-out. */
 export function classicDir(value: number): EaseDir {
   if (value < 0) return "in";
   if (value > 1) return "inOut";

@@ -413,6 +413,14 @@ describe("what does not reach the file", () => {
     expect(file(project).slots!.map((s) => s.name)).toEqual(["art"]);
   });
 
+  it("warns that motion blur is not carried", () => {
+    const { project } = scene(["a"]);
+    project.motionBlur = { enabled: true, shutter: 180, maxLength: 64 };
+    expect(messages(project).some((m) => m.includes("Motion blur"))).toBe(true);
+    project.motionBlur.enabled = false;
+    expect(messages(project)).toEqual([]);
+  });
+
   it("warns that nested symbols and masks are not carried yet", () => {
     const { project, sym } = scene(["art", "mask"]);
     sym.layers.find((l) => l.name === "mask")!.isMask = true;

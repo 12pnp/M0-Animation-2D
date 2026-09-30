@@ -21,12 +21,12 @@ flowchart LR
 
 ## Status
 
-**Phases 0–3 of [docs/PLAN.md](docs/PLAN.md) are done.** The editor works as
+**Phases 0–4 of [docs/PLAN.md](docs/PLAN.md) are done.** The editor works as
 Animo's does; **File ▸ Export Spine** writes `<name>.json`, `<name>.atlas` and
 the atlas pages for Spine 4.3; and the **Preview panel and Play mode run the
 official Spine runtime** (spine-pixi-v8) on those exact files, matching the stage
-frame by frame. Still to come: Spine ease curves and more IK cases (phase 4),
-nested symbols (phase 5), and masks and colour offsets (phase 6). Until then the
+frame by frame, eases and IK included. Still to come: nested symbols (phase 5),
+and masks and colour offsets (phase 6). Until then the
 export warns about each of those it meets.
 
 ## Quick start

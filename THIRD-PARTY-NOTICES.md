@@ -9,7 +9,6 @@ generated from `src/core/about.ts`.
 
 | Component | Version | Licence | Ships in the app |
 |---|---|---|---|
-| [DragonBones](https://github.com/DragonBones/DragonBonesJS) | 5.7.000 (Pixi 8 build) | MIT | no, tests only: `tests/reference/dragonBones.min.js` |
 | [PixiJS](https://pixijs.com) | 8.21.0 | MIT | yes, `public/vendor/pixi.js` |
 | [spine-pixi-v8](https://github.com/EsotericSoftware/spine-runtimes) | 4.3.13 | Spine Runtimes License | yes, `public/vendor/spine-pixi-v8.js` (the Preview) |
 | [ag-psd](https://github.com/Agamnentzar/ag-psd) | 31.x | MIT | yes, bundled |
@@ -23,7 +22,7 @@ generated from `src/core/about.ts`.
 
 The vendored files carry their notices beside them:
 `public/vendor/LICENSE-pixijs.txt` and `public/vendor/LICENSE-spine-runtimes.txt`,
-copied into every build, and `tests/reference/LICENSE-dragonbones.txt`. The Spine
+copied into every build. The Spine
 Runtimes License requires every user of the product to hold their own Spine Editor
 licence.
 
@@ -31,34 +30,6 @@ licence.
 trademark of Egret Technology. PixiJS, Photoshop and Adobe Animate are
 trademarks of their respective owners. Amino Spine2D is an independent project,
 not affiliated with or endorsed by any of them, or by Morenoise.
-
----
-
-## DragonBones
-
-DragonBones 5.7.000 (PixiJS 8 build): https://github.com/DragonBones/DragonBonesJS
-Vendored as dragonBones.min.js, which carries no licence header of its own.
-
-The MIT License (MIT)
-
-Copyright (c) 2012-2013 DragonBones team and other contributors
-
-Permission is hereby granted, free of charge, to any person obtaining a copy of
-this software and associated documentation files (the "Software"), to deal in
-the Software without restriction, including without limitation the rights to
-use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of
-the Software, and to permit persons to whom the Software is furnished to do so,
-subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS
-FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR
-COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
-IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
-CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ---
 

@@ -3,120 +3,42 @@ import { reseed, newIkId, type NodeId } from "@/core/doc/ids";
 import { createProject, createNode, createLayer } from "@/core/doc/defaults";
 import { isSymbol, type SymbolItem } from "@/core/doc/types";
 import { evaluateSymbol, invalidateBounds } from "@/core/doc/pose";
-import {
-  solveOneBone, solveTwoBones, normalizeRadian, matrixToWorld, worldToMatrix, type IkWorld,
-} from "@/core/math/ik";
-import { mat, matOf } from "@/core/math/Matrix2D";
+import { ikApply1, type IkBone } from "@/core/math/ik";
 
 beforeEach(() => { reseed(); invalidateBounds(); });
 
-const world = (x: number, y: number, rotation = 0): IkWorld =>
-  ({ x, y, rotation, skew: 0, scaleX: 1, scaleY: 1 });
-
-/** Where the effector's tip lands, the way the runtime computes it. */
-const tipOf = (bone: IkWorld, length: number) => ({
-  x: bone.x + Math.cos(bone.rotation) * bone.scaleX * length,
-  y: bone.y + Math.sin(bone.rotation) * bone.scaleX * length,
-});
-
+/**
+ * The solver is Spine's, transcribed (`core/math/ik.ts`); it is checked
+ * against spine-core itself on whole rigs in spineParity.test.ts. These are
+ * the behaviours the editor relies on.
+ */
 describe("IK solver", () => {
-  it("reaches a target inside the chain's range", () => {
-    // Upper bone root at the origin pointing right, joint at (100, 0),
-    // lower bone 100 long. The target is comfortably inside 200.
-    const root = world(0, 0, 0);
-    const bone = world(100, 0, 0);
-    const target = { x: 100, y: 120 };
+  const bone = (over: Partial<IkBone> = {}): IkBone => ({
+    x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, shearX: 0, shearY: 0,
+    a: 1, b: 0, c: 0, d: 1, worldX: 0, worldY: 0, ...over,
+  });
+  const identity = { a: 1, b: 0, c: 0, d: 1, worldX: 0, worldY: 0 };
 
-    solveTwoBones(root, bone, matOf(1, 0, 0, 1, 100, 0), 100, target, true, false, 1);
-
-    const tip = tipOf(bone, 100);
-    expect(tip.x).toBeCloseTo(target.x, 6);
-    expect(tip.y).toBeCloseTo(target.y, 6);
-    // The joint stays exactly one upper-bone away from the root.
-    expect(Math.hypot(bone.x - root.x, bone.y - root.y)).toBeCloseTo(100, 6);
+  it("points one bone at the target, in local degrees", () => {
+    const b = bone();
+    ikApply1(b, identity, 0, 50, 1);
+    expect(b.rotation).toBeCloseTo(90, 4);
   });
 
-  it("straightens at an unreachable target instead of giving up", () => {
-    const root = world(0, 0, 0);
-    const bone = world(100, 0, 0);
-    const target = { x: 0, y: 500 };
-
-    solveTwoBones(root, bone, matOf(1, 0, 0, 1, 100, 0), 100, target, true, false, 1);
-
-    // Both bones point straight at the target, tip 200 away along that line.
-    expect(root.rotation).toBeCloseTo(Math.PI / 2, 6);
-    expect(bone.x).toBeCloseTo(0, 6);
-    expect(bone.y).toBeCloseTo(100, 6);
-    const tip = tipOf(bone, 100);
-    expect(tip.x).toBeCloseTo(0, 6);
-    expect(tip.y).toBeCloseTo(200, 6);
+  it("blends the rotation by the mix", () => {
+    const b = bone();
+    ikApply1(b, identity, 0, 50, 0.5);
+    expect(b.rotation).toBeCloseTo(45, 4);
   });
 
-  it("bends the other way when bendPositive is off", () => {
-    const target = { x: 100, y: 120 };
-    const positive = { root: world(0, 0, 0), bone: world(100, 0, 0) };
-    const negative = { root: world(0, 0, 0), bone: world(100, 0, 0) };
-
-    solveTwoBones(positive.root, positive.bone, matOf(1, 0, 0, 1, 100, 0), 100, target, true, false, 1);
-    solveTwoBones(negative.root, negative.bone, matOf(1, 0, 0, 1, 100, 0), 100, target, false, false, 1);
-
-    // Same tip, elbow on opposite sides of the root-to-target line.
-    expect(tipOf(positive.bone, 100).y).toBeCloseTo(tipOf(negative.bone, 100).y, 6);
-    expect(positive.bone.x).not.toBeCloseTo(negative.bone.x, 3);
-    const side = (b: IkWorld) => Math.sign(target.x * b.y - target.y * b.x);
-    expect(side(positive.bone)).toBe(-side(negative.bone));
-  });
-
-  it("mirrors the bend when the chain's parent is mirrored", () => {
-    const target = { x: 100, y: 120 };
-    const plain = { root: world(0, 0, 0), bone: world(100, 0, 0) };
-    const mirrored = { root: world(0, 0, 0), bone: world(100, 0, 0) };
-
-    solveTwoBones(plain.root, plain.bone, matOf(1, 0, 0, 1, 100, 0), 100, target, true, false, 1);
-    solveTwoBones(mirrored.root, mirrored.bone, matOf(1, 0, 0, 1, 100, 0), 100, target, true, true, 1);
-
-    expect(plain.bone.x).not.toBeCloseTo(mirrored.bone.x, 3);
-  });
-
-  it("leaves the pose alone at weight 0 and blends in between", () => {
-    const target = { x: 100, y: 120 };
-    const none = { root: world(0, 0, 0), bone: world(100, 0, 0) };
-    const half = { root: world(0, 0, 0), bone: world(100, 0, 0) };
-    const full = { root: world(0, 0, 0), bone: world(100, 0, 0) };
-
-    solveTwoBones(none.root, none.bone, matOf(1, 0, 0, 1, 100, 0), 100, target, true, false, 0);
-    solveTwoBones(half.root, half.bone, matOf(1, 0, 0, 1, 100, 0), 100, target, true, false, 0.5);
-    solveTwoBones(full.root, full.bone, matOf(1, 0, 0, 1, 100, 0), 100, target, true, false, 1);
-
-    expect(none.root.rotation).toBeCloseTo(0, 9);
-    expect(none.bone.x).toBeCloseTo(100, 9);
-    expect(half.root.rotation).toBeCloseTo(full.root.rotation / 2, 9);
-  });
-
-  it("points a single bone at the target", () => {
-    const root = world(10, 10, 0);
-    solveOneBone(root, { x: 10, y: 110 }, 1);
-    expect(root.rotation).toBeCloseTo(Math.PI / 2, 9);
-
-    // A mirrored bone points its own way round, as the runtime does.
-    const flipped: IkWorld = { ...world(0, 0, 0), scaleX: -1 };
-    solveOneBone(flipped, { x: 100, y: 0 }, 1);
-    expect(Math.abs(normalizeRadian(flipped.rotation - Math.PI))).toBeLessThan(1e-9);
-  });
-
-  it("round-trips a world matrix through the runtime's parameterisation", () => {
-    const m = matOf(0.6, 0.8, -0.8 * 2, 0.6 * 2, 12, -34);
-    const w = matrixToWorld(
-      { x: 0, y: 0, rotation: 0, skew: 0, scaleX: 1, scaleY: 1 }, m,
-    );
-    const back = worldToMatrix(mat(), w);
-    for (const k of ["a", "b", "c", "d", "tx", "ty"] as const) {
-      expect(back[k]).toBeCloseTo(m[k], 9);
-    }
+  it("takes the short way round from where the bone is", () => {
+    const b = bone({ rotation: 170 });
+    ikApply1(b, identity, -100, -10, 1);
+    // From 170 to the target at about -174: 16 degrees on, not 344 back.
+    expect(b.rotation).toBeGreaterThan(170);
+    expect(b.rotation).toBeLessThan(190);
   });
 });
-
-/* ── In a document ─────────────────────────────────────────────────────── */
 
 function rig(chain: 0 | 1 = 1) {
   const project = createProject("Rig");
@@ -155,8 +77,9 @@ describe("IK in a pose", () => {
 
     const pose = evaluateSymbol(root as SymbolItem, null, 0, "setup");
     const tip = tipOfEntry(pose.byNode.get(lower.id)!.world, 100);
-    expect(tip.x).toBeCloseTo(100, 6);
-    expect(tip.y).toBeCloseTo(120, 6);
+    // To the runtime's precision: Spine's solver uses its own pi, 3.1415927.
+    expect(tip.x).toBeCloseTo(100, 4);
+    expect(tip.y).toBeCloseTo(120, 4);
   });
 
   it("carries the effector's children along", () => {

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { mat, mul, invert, apply, equalsEps, matOf } from "@/core/math/Matrix2D";
 import { tf, toMatrix, fromMatrix, rotateBy, matrixOf, shearOf } from "@/core/math/Transform";
 import { wrapTo180, turnsOf, shortestDelta, DEG_RAD } from "@/core/math/angle";
-import { easeScalar, sampleCurve, easeCurveSampled, applyTween, tweenFromJson, tweenToJson } from "@/core/math/easing";
+import { applyTween } from "@/core/math/easing";
 
 /** Deterministic PRNG so failures are reproducible. */
 function rng(seed: number) {
@@ -135,49 +135,16 @@ describe("angles", () => {
   });
 });
 
-describe("easing (runtime-faithful)", () => {
-  it("linear and endpoints", () => {
-    expect(easeScalar(0.5, 0)).toBe(0.5);
-    for (const e of [-2, -1, 0, 0.5, 1, 1.5, 2]) {
-      expect(easeScalar(0, e)).toBeCloseTo(0, 12);
-      expect(easeScalar(1, e)).toBeCloseTo(1, 12);
+describe("easing", () => {
+  it("linear and endpoints, for every kind", () => {
+    expect(applyTween({ kind: "linear" }, 0.5, 10)).toBe(0.5);
+    for (const spec of [{ kind: "ease", value: -2 }, { kind: "ease", value: 1.5 }, { kind: "curve", curve: [0.2, 0.8, 0.4, 1] }, { kind: "preset", family: "back", dir: "out" }] as const) {
+      expect(applyTween(spec, 0, 10)).toBe(0);
+      expect(applyTween(spec, 1, 10)).toBe(1);
     }
-  });
-
-  it("reproduces the runtime's quad formulas and 0.01 quantisation", () => {
-    const p = 0.3;
-    // QuadIn at full strength
-    expect(easeScalar(p, -1)).toBeCloseTo((p * p - p) * 1 + p, 12);
-    // QuadOut at full strength
-    expect(easeScalar(p, 1)).toBeCloseTo((1 - (1 - p) ** 2 - p) * 1 + p, 12);
-    // QuadInOut: easing = e*100 - 100, so e=2 -> strength 1
-    expect(easeScalar(p, 2)).toBeCloseTo((0.5 * (1 - Math.cos(p * Math.PI)) - p) * 1 + p, 12);
-  });
-
-  it("curve sampling is monotone, bounded and endpoint-exact", () => {
-    const samples = sampleCurve([0.42, 0, 0.58, 1], 12);
-    expect(samples.length).toBe(13);
-    for (let i = 1; i < samples.length; i++) {
-      expect(samples[i]!).toBeGreaterThanOrEqual(samples[i - 1]!);
-    }
-    expect(easeCurveSampled(0, samples)).toBe(0);
-    expect(easeCurveSampled(1, samples)).toBe(1);
-    // ease-in-out is symmetric about the midpoint
-    expect(easeCurveSampled(0.5, samples)).toBeCloseTo(0.5, 2);
   });
 
   it("a 'none' tween holds at the start value", () => {
     expect(applyTween({ kind: "none" }, 0.99, 10)).toBe(0);
-  });
-
-  it("JSON mapping keeps 'no tween' distinct from 'linear'", () => {
-    expect(tweenToJson({ kind: "none" })).toEqual({});
-    expect(tweenToJson({ kind: "linear" })).toEqual({ tweenEasing: 0 });
-    expect(tweenFromJson({})).toEqual({ kind: "none" });
-    expect(tweenFromJson({ tweenEasing: 0 })).toEqual({ kind: "linear" });
-    expect(tweenFromJson({ tweenEasing: -0.5 })).toEqual({ kind: "ease", value: -0.5 });
-    expect(tweenFromJson({ curve: [0.1, 0.2, 0.3, 0.4] })).toEqual({
-      kind: "curve", curve: [0.1, 0.2, 0.3, 0.4],
-    });
   });
 });

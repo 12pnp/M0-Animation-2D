@@ -91,7 +91,7 @@ one, and the AI checks its own result against the runtime. Two ways to connect:
 | 1 | **Done.** `core/spine/types.ts` (contract read from spine-core 4.3.13), `core/spine/transform.ts` (mapping, relative keys, `keyTime`, `regionCentre`) | checked against the real runtime; 8 deliberate bugs each fail |
 | 2 | **Done.** `core/spine/exportSpine.ts` and `core/spine/atlas.ts`; File ▸ Export writes `.json`, `.atlas`, pages | spine-core plays every fixture symbol as the stage draws it, every frame; the real packer's output loads in the browser |
 | 3 | **Done.** Preview and Play mode on spine-pixi-v8 4.3.13 / PixiJS 8.21; one build per edit, per-symbol skeletons over one atlas | every stickman bone (IK included) matches the stage on every frame through the real preview, 3.5e-5 px; found and fixed the IK bend inversion |
-| 4 | Stage fidelity: Spine curves for eases the format can hold (smaller files), IK where the two solvers could differ (mix below 1, non-uniform scale) | parity test extended to those cases; port Spine's solver only if they disagree |
+| 4 | **Done.** Stage eases evaluated as Spine plays them, exported as native beziers (frog `body` 107 KB → 7.5 KB); IK solver replaced by a transcription of Spine's | parity on a three-segment curve, every quad ease, 7 targeted and 60 random IK rigs; the old solver failed 3 of the 7 |
 | 5 | Flatten nested symbols | a PSD import previews the same as the stage |
 | 6 | Clipping, two-colour tint, blend modes, loss warnings | mask rigs match the preview |
 | 7 | Import, stage 1 (meshes shown and carried through) | round trip over the M0 samples |

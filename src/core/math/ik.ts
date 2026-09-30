@@ -1,165 +1,158 @@
-import type { Matrix2D } from "./Matrix2D";
-
 /**
- * Inverse kinematics, ported from the runtime's own `IKConstraint`.
+ * Inverse kinematics, transcribed from the Spine runtime the preview runs:
+ * `IkConstraint.apply1` / `apply2` in @esotericsoftware/spine-core 4.3.13.
  *
- * Transcribed from `dragonBones.IKConstraint._computeA/_computeB` in the
- * vendored build the preview actually runs — including the parts that look
- * like quirks, because they are the behaviour the exported file will get:
+ * Kept as the runtime has it, because it is what the exported file gets:
+ * it works in Spine's space (y UP, `a b c d` row-major with `(a, c)` the x
+ * axis), on the bones' LOCAL values against their parents' world matrices,
+ * and writes back local rotations only; `mix` blends those rotations; a
+ * non-uniform parent scale takes a different, numeric solve and zeroes the
+ * child's local y; angles go through the runtime's own pi (3.1415927) and
+ * wrap into (−180, 180] before mixing.
  *
- * - a chain that cannot reach straightens toward the target, and *which* way
- *   it straightens depends on which segment is longer;
- * - `bendPositive` is flipped when the chain's grandparent is mirrored
- *   (negative determinant), so a flipped character bends the same way on
- *   screen;
- * - `weight` interpolates the ROTATIONS, not the positions;
- * - the second segment's length comes from the effector bone's `length`
- *   field, so a bone with no length makes the solve degenerate.
- *
- * Everything here is in world space and radians, which is the space the
- * runtime solves in. Angles follow the runtime's parameterisation:
- * `rotation` is skewY, `skew` is skewX − skewY.
+ * Left out, because the editor cannot author them: stretch, compress,
+ * softness, and every inheritance mode but normal (the export always writes
+ * normal). `core/doc/pose.ts` (`applyIk`) maps the stage's bones into this
+ * space and back; `tests/spineParity.test.ts` checks the result against
+ * spine-core itself.
  */
 
+const PI = 3.1415927;
+const RAD_DEG = 180 / PI;
+const EPSILON = 0.00001;
+
+/** A bone's world matrix, Spine's layout. */
 export interface IkWorld {
-  x: number;
-  y: number;
+  a: number; b: number; c: number; d: number;
+  worldX: number; worldY: number;
+}
+
+/** A constrained bone: its local transform (mutable) and its world matrix. */
+export interface IkBone extends IkWorld {
+  x: number; y: number;
   rotation: number;
-  skew: number;
-  scaleX: number;
-  scaleY: number;
+  scaleX: number; scaleY: number;
+  shearX: number; shearY: number;
 }
 
-export interface IkPoint { x: number; y: number }
-
-/** Wrap into (−π, π], exactly as `Transform.normalizeRadian` does. */
-export function normalizeRadian(radian: number): number {
-  let r = (radian + Math.PI) % (Math.PI * 2);
-  r += r > 0 ? -Math.PI : Math.PI;
-  return r;
-}
-
-/**
- * Decompose a world matrix into the runtime's transform.
- *
- * Per column with `atan2`, as everywhere else in this codebase — the runtime's
- * own `fromMatrix` uses `atan` with sign fix-ups and is fragile near ±90°,
- * and it is not on the path that feeds the solver there anyway.
- */
-export function matrixToWorld(out: IkWorld, m: Matrix2D): IkWorld {
-  out.x = m.tx;
-  out.y = m.ty;
-  out.rotation = Math.atan2(m.b, m.a);
-  out.skew = Math.atan2(-m.c, m.d) - out.rotation;
-  out.scaleX = Math.hypot(m.a, m.b);
-  out.scaleY = Math.hypot(m.c, m.d);
-  return out;
-}
-
-/** The inverse, matching `Transform.toMatrix`. */
-export function worldToMatrix(out: Matrix2D, w: IkWorld): Matrix2D {
-  const skewX = w.skew + w.rotation;
-  out.a = Math.cos(w.rotation) * w.scaleX;
-  out.b = Math.sin(w.rotation) * w.scaleX;
-  out.c = -Math.sin(skewX) * w.scaleY;
-  out.d = Math.cos(skewX) * w.scaleY;
-  out.tx = w.x;
-  out.ty = w.y;
-  return out;
-}
-
-/**
- * One bone: point it at the target. Mutates `root.rotation`.
- */
-export function solveOneBone(root: IkWorld, target: IkPoint, weight = 1): void {
-  let ikRadian = Math.atan2(target.y - root.y, target.x - root.x);
-  if (root.scaleX < 0) ikRadian += Math.PI;
-  root.rotation += normalizeRadian(ikRadian - root.rotation) * weight;
-}
-
-/**
- * Two bones: law of cosines on the triangle root → joint → target.
- *
- * `bone` is the effector (the lower bone); `boneMatrix` is its world matrix
- * BEFORE the solve, which is where the second segment's direction comes from.
- * Both `root` and `bone` are mutated.
- */
-export function solveTwoBones(
-  root: IkWorld,
-  bone: IkWorld,
-  boneMatrix: Matrix2D,
-  boneLength: number,
-  target: IkPoint,
-  bendPositive: boolean,
-  /** True when the chain's grandparent has a mirrored (negative) basis. */
-  parentMirrored: boolean,
-  weight = 1,
-): void {
-  // Second segment, measured through the effector's own basis so a scaled
-  // parent scales the chain with it.
-  const lowerX = boneMatrix.a * boneLength;
-  const lowerY = boneMatrix.b * boneLength;
-  const lowerLenSq = lowerX * lowerX + lowerY * lowerY;
-  const lowerLen = Math.sqrt(lowerLenSq);
-
-  // First segment: root joint to the effector's joint.
-  let dx = bone.x - root.x;
-  let dy = bone.y - root.y;
-  const upperLenSq = dx * dx + dy * dy;
-  const upperLen = Math.sqrt(upperLenSq);
-  const rawBoneRotation = bone.rotation;
-  const rawRootRotation = root.rotation;
-  const currentRadian = Math.atan2(dy, dx);
-
-  // Root joint to target.
-  dx = target.x - root.x;
-  dy = target.y - root.y;
-  const targetLenSq = dx * dx + dy * dy;
-  const targetLen = Math.sqrt(targetLenSq);
-
-  let solvedRadian = 0;
-  if (
-    lowerLen + upperLen <= targetLen ||
-    targetLen + lowerLen <= upperLen ||
-    targetLen + upperLen <= lowerLen
-  ) {
-    // No triangle: reach straight at the target, or fold away from it.
-    solvedRadian = Math.atan2(target.y - root.y, target.x - root.x);
-    if (lowerLen + upperLen <= targetLen) {
-      // Out of reach: straighten.
-    } else if (upperLen < lowerLen) {
-      solvedRadian += Math.PI;
-    }
-  } else {
-    // Circle intersection: the joint sits at distance `upperLen` from the
-    // root and `lowerLen` from the target.
-    const h = (upperLenSq - lowerLenSq + targetLenSq) / (2 * targetLenSq);
-    const r = Math.sqrt(upperLenSq - h * h * targetLenSq) / targetLen;
-    const hx = root.x + dx * h;
-    const hy = root.y + dy * h;
-    const rx = -dy * r;
-    const ry = dx * r;
-    if (parentMirrored !== bendPositive) {
-      bone.x = hx - rx;
-      bone.y = hy - ry;
-    } else {
-      bone.x = hx + rx;
-      bone.y = hy + ry;
-    }
-    solvedRadian = Math.atan2(bone.y - root.y, bone.x - root.x);
+/** `IkConstraint.apply1`: point one bone at the target. `parent` is the
+ *  bone's parent's world matrix. Mutates `bone.rotation`. */
+export function ikApply1(bone: IkBone, parent: IkWorld, targetX: number, targetY: number, mix: number): void {
+  const pa = parent.a, pb = parent.b, pc = parent.c, pd = parent.d;
+  let rotationIK = -bone.shearX - bone.rotation, tx = 0, ty = 0;
+  const x = targetX - parent.worldX, y = targetY - parent.worldY;
+  const d = pa * pd - pb * pc;
+  if (Math.abs(d) > EPSILON) {
+    tx = (x * pd - y * pb) / d - bone.x;
+    ty = (y * pa - x * pc) / d - bone.y;
   }
+  rotationIK += Math.atan2(ty, tx) * RAD_DEG;
+  if (bone.scaleX < 0) rotationIK += 180;
+  if (rotationIK > 180) rotationIK -= 360;
+  else if (rotationIK <= -180) rotationIK += 360;
+  bone.rotation += rotationIK * mix;
+}
 
-  const deltaRadian = normalizeRadian(solvedRadian - currentRadian);
-  root.rotation = rawRootRotation + deltaRadian * weight;
+/**
+ * `IkConstraint.apply2`: two bones, `child` a direct child of `parent`.
+ * `grand` is `parent`'s parent's world matrix; `childLength` the child's
+ * bone length. Mutates both rotations, and `child.y` for a non-uniform
+ * parent scale.
+ */
+export function ikApply2(
+  parent: IkBone, child: IkBone, grand: IkWorld, childLength: number,
+  targetX: number, targetY: number, bendDir: number, mix: number,
+): void {
+  const px = parent.x, py = parent.y;
+  let psx = parent.scaleX, psy = parent.scaleY, csx = child.scaleX;
+  let os1: number, os2: number, s2: number;
+  if (psx < 0) { psx = -psx; os1 = 180; s2 = -1; } else { os1 = 0; s2 = 1; }
+  if (psy < 0) { psy = -psy; s2 = -s2; }
+  if (csx < 0) { csx = -csx; os2 = 180; } else os2 = 0;
 
-  // The joint is placed from the (possibly weighted) root rotation, so a
-  // partial weight leaves the chain part-way rather than snapping.
-  const jointRadian = currentRadian + deltaRadian * weight;
-  bone.x = root.x + Math.cos(jointRadian) * upperLen;
-  bone.y = root.y + Math.sin(jointRadian) * upperLen;
+  let cwx: number, cwy: number, a = parent.a, b = parent.b, c = parent.c, d = parent.d;
+  const u = Math.abs(psx - psy) <= EPSILON;
+  if (!u) {
+    child.y = 0;
+    cwx = a * child.x + parent.worldX;
+    cwy = c * child.x + parent.worldY;
+  } else {
+    cwx = a * child.x + b * child.y + parent.worldX;
+    cwy = c * child.x + d * child.y + parent.worldY;
+  }
+  a = grand.a; b = grand.b; c = grand.c; d = grand.d;
+  let id = a * d - b * c, x = cwx - grand.worldX, y = cwy - grand.worldY;
+  id = Math.abs(id) <= EPSILON ? 0 : 1 / id;
+  const dx = (x * d - y * b) * id - px, dy = (y * a - x * c) * id - py;
+  const l1 = Math.sqrt(dx * dx + dy * dy);
+  let l2 = childLength * csx, a1: number, a2: number;
+  if (l1 < EPSILON) {
+    ikApply1(parent, grand, targetX, targetY, mix);
+    child.rotation = 0;
+    return;
+  }
+  x = targetX - grand.worldX;
+  y = targetY - grand.worldY;
+  const tx = (x * d - y * b) * id - px, ty = (y * a - x * c) * id - py;
+  const dd = tx * tx + ty * ty;
 
-  let tipRadian = Math.atan2(target.y - bone.y, target.x - bone.x);
-  if (bone.scaleX < 0) tipRadian += Math.PI;
-  bone.rotation = root.rotation + rawBoneRotation - rawRootRotation
-    + normalizeRadian(tipRadian - deltaRadian - rawBoneRotation) * weight;
+  outer: if (u) {
+    l2 *= psx;
+    let cos = (dd - l1 * l1 - l2 * l2) / (2 * l1 * l2);
+    if (cos < -1) { cos = -1; a2 = PI * bendDir; }
+    else if (cos > 1) { cos = 1; a2 = 0; }
+    else a2 = Math.acos(cos) * bendDir;
+    a = l1 + l2 * cos;
+    b = l2 * Math.sin(a2);
+    a1 = Math.atan2(ty * a - tx * b, tx * a + ty * b);
+  } else {
+    a = psx * l2;
+    b = psy * l2;
+    const aa = a * a, bb = b * b, ta = Math.atan2(ty, tx);
+    c = bb * l1 * l1 + aa * dd - aa * bb;
+    const c1 = -2 * bb * l1, c2 = bb - aa;
+    d = c1 * c1 - 4 * c2 * c;
+    if (d >= 0) {
+      let q = Math.sqrt(d);
+      if (c1 < 0) q = -q;
+      q = -(c1 + q) * 0.5;
+      let r0 = q / c2;
+      const r1 = c / q;
+      const r = Math.abs(r0) < Math.abs(r1) ? r0 : r1;
+      r0 = dd - r * r;
+      if (r0 >= 0) {
+        y = Math.sqrt(r0) * bendDir;
+        a1 = ta - Math.atan2(y, r);
+        a2 = Math.atan2(y / psy, (r - l1) / psx);
+        break outer;
+      }
+    }
+    let minAngle = PI, minX = l1 - a, minDist = minX * minX, minY = 0;
+    let maxAngle = 0, maxX = l1 + a, maxDist = maxX * maxX, maxY = 0;
+    c = (-a * l1) / (aa - bb);
+    if (c >= -1 && c <= 1) {
+      c = Math.acos(c);
+      x = a * Math.cos(c) + l1;
+      y = b * Math.sin(c);
+      d = x * x + y * y;
+      if (d < minDist) { minAngle = c; minDist = d; minX = x; minY = y; }
+      if (d > maxDist) { maxAngle = c; maxDist = d; maxX = x; maxY = y; }
+    }
+    if (dd <= (minDist + maxDist) * 0.5) {
+      a1 = ta - Math.atan2(minY * bendDir, minX);
+      a2 = minAngle * bendDir;
+    } else {
+      a1 = ta - Math.atan2(maxY * bendDir, maxX);
+      a2 = maxAngle * bendDir;
+    }
+  }
+  const os = Math.atan2(child.y, child.x) * s2;
+  a1 = (a1 - os) * RAD_DEG + os1 - parent.rotation;
+  if (a1 > 180) a1 -= 360;
+  else if (a1 <= -180) a1 += 360;
+  parent.rotation += a1 * mix;
+  a2 = ((a2 + os) * RAD_DEG - child.shearX) * s2 + os2 - child.rotation;
+  if (a2 > 180) a2 -= 360;
+  else if (a2 <= -180) a2 += 360;
+  child.rotation += a2 * mix;
 }

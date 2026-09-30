@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   AtlasAttachmentLoader, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
 } from "@esotericsoftware/spine-core";
-import { reseed, type AssetId, type ItemId } from "@/core/doc/ids";
+import { newIkId, reseed, type AssetId, type ItemId } from "@/core/doc/ids";
 import { createImageItem, createLayer, createNode, createProject } from "@/core/doc/defaults";
 import { isImage, isSymbol, type Keyframe, type Node, type Project, type SymbolItem } from "@/core/doc/types";
 import { evaluateSymbol } from "@/core/doc/pose";
@@ -184,7 +184,10 @@ function featureRig(): { project: Project; sym: SymbolItem } {
   anim.tracks[arm.id] = {
     nodeId: arm.id, endFrame: 29, keys: [
       key(0, tf(100, 120), { tween: { kind: "preset", family: "sine", dir: "inOut" } }),
-      key(10, tf(140, 90, 40, 25, 1.2, 0.9), { tween: { kind: "curve", curve: [0.25, 0.1, 0.25, 1] } }),
+      // Three segments, so two keys start inside the interval.
+      key(10, tf(140, 90, 40, 25, 1.2, 0.9), {
+        tween: { kind: "curve", curve: [0.1, 0.4, 0.2, 0.6, 0.3, 0.7, 0.4, 0.8, 0.5, 1.2, 0.6, 1.3, 0.8, 1.1, 0.9, 1] },
+      }),
       key(20, tf(120, 100, -20, -20, -1, 1), { rotateDir: "cw", rotateTurns: 1 }),
       key(29, tf(100, 120, 5, 5), { tween: { kind: "none" } }),
     ],
@@ -199,7 +202,8 @@ function featureRig(): { project: Project; sym: SymbolItem } {
         eases: { color: { kind: "preset", family: "bounce", dir: "out" } },
       }),
       key(24, tf(40, 0), { color: { rM: 100, gM: 40, bM: 100, aM: 100, rO: 0, gO: 0, bO: 0, aO: 0 }, tween: { kind: "ease", value: -1 } }),
-      key(28, tf(45, 5)),
+      key(28, tf(45, 5), { tween: { kind: "ease", value: 0.7 } }),
+      key(29, tf(50, 5)),
     ],
   };
   anim.tracks[late.id] = {
@@ -218,6 +222,86 @@ function featureRig(): { project: Project; sym: SymbolItem } {
   return { project, sym };
 }
 
+/**
+ * IK where a DragonBones-style solve and Spine's could part ways: a partial
+ * weight, a negative bend, a one-bone look-at, non-uniform scale on the
+ * chain, a sheared parent — every target keyed across the solve's range.
+ */
+function ikRig(opts: { weight?: number; bendPositive?: boolean; chain?: 0 | 1; scale?: [number, number]; shear?: number }): Project {
+  const project = createProject("IK");
+  const sym = project.items[project.rootSymbolId] as SymbolItem;
+  const add = (node: Node): Node => {
+    sym.nodes[node.id] = node;
+    sym.layers.unshift(createLayer(node.id, node.name, sym.layers.length));
+    return node;
+  };
+  const base = add(createNode("bone", "base", { x: 200, y: 200 }));
+  base.bind = tf(200, 200, 10 + (opts.shear ?? 0), 10, opts.scale?.[0] ?? 1, opts.scale?.[1] ?? 1);
+  const upper = add(createNode("bone", "upper", { parentId: base.id, x: 20, y: 0 }));
+  upper.bind = tf(20, 0, 30, 30);
+  upper.boneLength = 80;
+  const lower = add(createNode("bone", "lower", { parentId: upper.id, x: 80, y: 0 }));
+  lower.bind = tf(80, 0, 40, 40);
+  lower.boneLength = 60;
+  const target = add(createNode("bone", "target", { x: 330, y: 260 }));
+  sym.ik.push({
+    id: newIkId(), name: "limb", boneId: lower.id, targetId: target.id,
+    chain: opts.chain ?? 1, bendPositive: opts.bendPositive ?? true, weight: opts.weight ?? 1,
+  });
+  const anim = sym.animations[0]!;
+  anim.duration = 24;
+  anim.tracks[target.id] = {
+    nodeId: target.id, endFrame: 23, keys: [
+      key(0, tf(330, 260)), key(8, tf(250, 330)), key(16, tf(420, 150)), key(23, tf(330, 260)),
+    ],
+  };
+  return project;
+}
+
+/** A random IK rig: every local of the chain random (non-uniform and
+ *  negative scales, shear), random lengths, weight, bend and chain, and a
+ *  target sweeping through reachable and unreachable positions. */
+function randomIkRig(seed: number): Project {
+  let st = seed;
+  const r = () => ((st = (st * 16807) % 2147483647) / 2147483647);
+  const pick = <T,>(xs: T[]) => xs[Math.floor(r() * xs.length)]!;
+  const scale = () => pick([1, 1, 1.4, 0.7, -1, 1.2]);
+  const angle = () => (r() - 0.5) * 300;
+  const local = (x: number, y: number): Transform => {
+    const skY = angle();
+    return tf(x, y, skY + pick([0, 0, 0, 20, -35]), skY, scale(), scale());
+  };
+  const project = createProject("IK");
+  const sym = project.items[project.rootSymbolId] as SymbolItem;
+  const add = (node: Node): Node => {
+    sym.nodes[node.id] = node;
+    sym.layers.unshift(createLayer(node.id, node.name, sym.layers.length));
+    return node;
+  };
+  const base = add(createNode("bone", "base"));
+  base.bind = local(300, 300);
+  const upper = add(createNode("bone", "upper", { parentId: base.id }));
+  upper.bind = local(30 * r(), 20 * (r() - 0.5));
+  upper.boneLength = 40 + 80 * r();
+  const lower = add(createNode("bone", "lower", { parentId: upper.id }));
+  // Off the parent's axis: a non-uniform parent makes the runtime zero it.
+  lower.bind = local(upper.boneLength, 20 * (r() - 0.5));
+  lower.boneLength = 30 + 70 * r();
+  const target = add(createNode("bone", "target"));
+  target.bind = tf(300, 300);
+  sym.ik.push({
+    id: newIkId(), name: "limb", boneId: lower.id, targetId: target.id,
+    chain: pick([0, 1, 1] as const), bendPositive: r() < 0.5, weight: pick([1, 1, 0.5, 0.25, 0.8]),
+  });
+  const anim = sym.animations[0]!;
+  anim.duration = 12;
+  anim.tracks[target.id] = {
+    nodeId: target.id, endFrame: 11,
+    keys: Array.from({ length: 4 }, (_, i) => key(i * 4 - (i === 3 ? 1 : 0), tf(300 + (r() - 0.5) * 500, 300 + (r() - 0.5) * 500))),
+  };
+  return project;
+}
+
 describe("the Spine runtime plays the export the way the stage draws it", () => {
   it("a rig using every tween, display switch, blank key, partial span and colour the export handles", () => {
     const { project } = featureRig();
@@ -232,6 +316,31 @@ describe("the Spine runtime plays the export the way the stage draws it", () => 
       if (isSymbol(item)) checks += checkParity(project, item.id).checks;
     }
     expect(checks).toBeGreaterThan(1000);
+  });
+
+  it.each([
+    ["full weight", {}],
+    ["half weight", { weight: 0.5 }],
+    ["negative bend", { bendPositive: false }],
+    ["one-bone look-at", { chain: 0 as const }],
+    ["non-uniform scale on the chain", { scale: [1.5, 0.6] as [number, number] }],
+    ["mirrored parent", { scale: [-1, 1] as [number, number] }],
+    ["sheared parent", { shear: 25 }],
+  ])("IK: %s", (_name, opts) => {
+    const project = ikRig(opts);
+    expect(checkParity(project, project.rootSymbolId).checks).toBeGreaterThan(50);
+  });
+
+  it("IK: 60 random rigs", () => {
+    for (let seed = 1; seed <= 60; seed++) {
+      const project = randomIkRig(seed * 7919);
+      try {
+        checkParity(project, project.rootSymbolId);
+      } catch (err) {
+        const k = (project.items[project.rootSymbolId] as SymbolItem).ik[0]!;
+        throw new Error(`seed ${seed * 7919} (chain ${k.chain}, weight ${k.weight}): ${(err as Error).message}`);
+      }
+    }
   });
 
   it("the stickman rig, four two-bone IK chains included", async () => {

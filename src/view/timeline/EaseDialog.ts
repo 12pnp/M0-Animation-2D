@@ -9,8 +9,8 @@ import {
     EASE_FAMILIES,
     type EaseDir,
     type EaseFamily,
-    easeFunction,
-    easeScalar,
+    exportNote,
+    idealEase,
     type EaseSpec,
     familyInfo,
     presetAmount,
@@ -20,7 +20,6 @@ import {
 } from "@/core/math/easing";
 import {
     anchorsOf,
-    curveValueAt,
     insertAnchor,
     moveAnchor,
     moveHandle,
@@ -69,13 +68,7 @@ function classicStrength(value: number): number {
 
 /** The ideal curve, drawn dashed behind what the runtime will sample. */
 function idealAt(spec: TweenSpec, p: number): number {
-  switch (spec.kind) {
-    case "none":   return 0;
-    case "linear": return p;
-    case "ease":   return easeScalar(p, spec.value);
-    case "curve":  return curveValueAt(spec.curve, p);
-    case "preset": return easeFunction(spec)(p);
-  }
+  return idealEase(spec, p);
 }
 
 /**
@@ -132,8 +125,7 @@ export function openEaseDialog(store: Store, targets: EaseTarget[]): void {
       canvas,
       hint)));
 
-  const info = h("span", { class: "ease-info" },
-    `${span} frame${span === 1 ? "" : "s"} · the export keeps ${span + 1} points of the curve`);
+  const info = h("span", { class: "ease-info" });
   const cancel = h("button", { class: "btn" }, "Cancel");
   on(cancel, "pointerup", () => modal.close());
   const ok = h("button", { class: "btn primary" }, "OK");
@@ -272,7 +264,7 @@ export function openEaseDialog(store: Store, targets: EaseTarget[]): void {
     } else if (scope !== "all" && !eases[scope]) {
       hint.textContent = "Uses the ease set for All properties.";
     } else {
-      hint.textContent = "Solid line: the curve as it plays after export, one point per frame. Dashed line: the exact curve.";
+      hint.textContent = "Solid line: the curve as Spine plays it after export; the dots are the frames. Dashed line: the exact curve.";
     }
   };
 
@@ -298,6 +290,7 @@ export function openEaseDialog(store: Store, targets: EaseTarget[]): void {
   const fromY = (py: number) => yMin + ((cssH() - PAD - py) / (cssH() - 2 * PAD)) * (yMax - yMin);
 
   const draw = () => {
+    info.textContent = exportNote(effective(), span);
     const dpr = window.devicePixelRatio || 1;
     const w = cssW(), hgt = cssH();
     if (canvas.width !== Math.round(w * dpr)) canvas.width = Math.round(w * dpr);

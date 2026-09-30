@@ -5,11 +5,12 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 Amino Spine2D is Animo (github.com/justmorenoise/animo) retargeted from
 DragonBones 5.5 to **Spine 4.3**. [docs/PLAN.md](docs/PLAN.md) is the plan: the
 phases, the DragonBones→Spine mapping, and the checklist of export tests to
-rebuild. Phases 0–3 are done: DragonBones is gone, `src/core/spine/` holds the
+rebuild. Phases 0–4 are done: DragonBones is gone, `src/core/spine/` holds the
 Spine 4.3 contract, the transform mapping and the exporter (ARCHITECTURE ▸ The
 Spine 4.3 contract, The Spine exporter), File ▸ Export writes Spine files, and
 the Preview panel and Play mode run spine-pixi-v8 (ARCHITECTURE ▸ The preview is
-ground truth, Vendored runtime). An exporter change must keep
+ground truth, Vendored runtime), and the stage's eases and IK are Spine's own
+(ARCHITECTURE ▸ Easing, Bones and IK). An exporter change must keep
 `tests/spineParity.test.ts` passing: it plays every fixture through spine-core
 and compares it with the stage frame by frame. Check Spine behaviour against
 `@esotericsoftware/spine-core` in a test, the way `tests/spineTransform.test.ts`
@@ -116,8 +117,7 @@ npx tsc --noEmit   # typecheck alone; faster than a build while iterating
 
 AGPL-3.0-or-later, inherited from Animo; keep `LICENSE`, `LICENSE-EXCEPTION.md`
 and `THIRD-PARTY-NOTICES.md`. What the exporter writes is the user's (the
-exception's second clause). `tests/reference/dragonBones.min.js` is MIT and
-test-only. The `@esotericsoftware/spine-core` dev dependency (tests only) and
+exception's second clause). The `@esotericsoftware/spine-core` dev dependency (tests only) and
 `public/vendor/spine-pixi-v8.js` (the Preview) are under the Spine Runtimes
 License, not MIT: every user needs their own Spine Editor licence
 (THIRD-PARTY-NOTICES.md).

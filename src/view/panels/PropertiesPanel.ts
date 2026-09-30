@@ -349,8 +349,8 @@ export class PropertiesPanel implements Panel {
     if (isInstance) {
       rows.push(h("div", { class: "prow wide" },
         h("div", { class: "hint", style: "padding:2px 0" },
-          "DragonBones cannot tint or blend a symbol, only an image, so the " +
-          "export ignores these here. Alpha still works.")));
+          "Symbol instances are not in the Spine export yet, so their colour " +
+          "and blend do not reach it either.")));
     }
 
     return this.section("Color Effect", true, rows);

@@ -1,5 +1,6 @@
-import { applyInverse, clone, determinant, mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
-import { type IkWorld, matrixToWorld, solveOneBone, solveTwoBones, worldToMatrix, } from "@/core/math/ik";
+import { applyInverse, clone, mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
+import { type IkBone, type IkWorld, ikApply1, ikApply2 } from "@/core/math/ik";
+import { fromSpineLocal, toSpineLocal } from "@/core/spine/transform";
 import { cloneTf, toMatrix, type Transform } from "@/core/math/Transform";
 import type { Animation, ColorTransform, DisplayRef, Node, Project, SymbolItem } from "./types";
 import { DEFAULT_COLOR, isImage, isSymbol } from "./types";
@@ -245,9 +246,16 @@ export function evaluateSymbol(
  *
  * The editor solves at DISPLAY time and never writes the result into the
  * document, because that is exactly what the runtime does: the file carries
- * the chain's own pose plus `ik[]`, and the solve happens on playback. Baking
- * solved rotations into keyframes would look identical in the editor and
- * fight the runtime the moment the file was played back.
+ * the chain's own pose plus its constraints, and the solve happens on
+ * playback. Baking solved rotations into keyframes would look identical in
+ * the editor and fight the runtime the moment the file was played back.
+ *
+ * The solve is Spine's (`core/math/ik.ts`), run in Spine's space: each
+ * chain bone's local transform through `toSpineLocal`, parent worlds
+ * flipped to y up, the result's local rotations back through
+ * `fromSpineLocal`. It mirrors the exporter: the bend written inverted (the
+ * flip mirrors the chain), a bone length only on bone nodes, and a zero
+ * weight skipping the solve, as the runtime does.
  */
 function applyIk(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>): void {
   if (symbol.ik.length === 0) return;
@@ -261,15 +269,19 @@ function applyIk(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>): void {
     else children.set(parentId, [e]);
   }
 
+  // Solved local transforms; the pose's own `local` stays what was keyed.
+  const solved = new Map<NodeId, Transform>();
+  const localOf = (e: PoseEntry): Transform => solved.get(e.nodeId) ?? e.local;
+  const parentWorld = (e: PoseEntry): Matrix2D =>
+    (e.node.parentId ? byNode.get(e.node.parentId)?.world : undefined) ?? mat();
+
   /** Re-compose a subtree after the solver moved its root. */
-  const recompose = (id: NodeId, alreadySolved: Set<NodeId>): void => {
+  const recompose = (id: NodeId): void => {
     const parent = byNode.get(id);
     if (!parent) return;
     for (const child of children.get(id) ?? []) {
-      if (!alreadySolved.has(child.nodeId)) {
-        mul(child.world, parent.world, toMatrix(mat(), child.local));
-      }
-      recompose(child.nodeId, alreadySolved);
+      mul(child.world, parent.world, toMatrix(mat(), localOf(child)));
+      recompose(child.nodeId);
     }
   };
 
@@ -282,16 +294,17 @@ function applyIk(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>): void {
     return false;
   };
 
-  const rootWorld: IkWorld = { x: 0, y: 0, rotation: 0, skew: 0, scaleX: 1, scaleY: 1 };
-  const boneWorld: IkWorld = { x: 0, y: 0, rotation: 0, skew: 0, scaleX: 1, scaleY: 1 };
+  const spineWorld = (m: Matrix2D): IkWorld => ({ a: m.a, b: -m.c, c: -m.b, d: m.d, worldX: m.tx, worldY: -m.ty });
+  const ikBone = (e: PoseEntry): IkBone => ({ ...toSpineLocal(localOf(e)), ...spineWorld(e.world) });
 
   for (const constraint of symbol.ik) {
+    if (constraint.weight === 0) continue;
     const effector = byNode.get(constraint.boneId);
     const target = byNode.get(constraint.targetId);
     if (!effector || !target || effector === target) continue;
 
-    // The runtime's own rule: a chain of 2 needs a parent to root it, and
-    // falls back to the one-bone solve when there is none.
+    // A chain of 2 needs a parent to root it, and falls back to the
+    // one-bone solve when there is none (the exporter's rule too).
     const parent = effector.node.parentId ? byNode.get(effector.node.parentId) : undefined;
     const twoBone = constraint.chain > 0 && !!parent;
     const root = twoBone ? parent! : effector;
@@ -299,29 +312,21 @@ function applyIk(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>): void {
     // A target inside the chain would chase its own tail.
     if (isDescendantOf(target.nodeId, root.nodeId)) continue;
 
-    const targetPoint = { x: target.world.tx, y: target.world.ty };
-    matrixToWorld(rootWorld, root.world);
-
+    const tx = target.world.tx, ty = -target.world.ty;
+    const rootParentWorld = parentWorld(root);
     if (twoBone) {
-      matrixToWorld(boneWorld, effector.world);
-      const grandparent = root.node.parentId ? byNode.get(root.node.parentId) : undefined;
-      solveTwoBones(
-        rootWorld, boneWorld,
-        clone(effector.world),
-        effector.node.boneLength ?? 0,
-        targetPoint,
-        constraint.bendPositive,
-        grandparent ? determinant(grandparent.world) < 0 : false,
-        constraint.weight,
-      );
-      worldToMatrix(root.world, rootWorld);
-      worldToMatrix(effector.world, boneWorld);
-      recompose(root.nodeId, new Set([effector.nodeId]));
+      const p = ikBone(root), c = ikBone(effector);
+      const length = effector.node.kind === "bone" ? effector.node.boneLength ?? 0 : 0;
+      ikApply2(p, c, spineWorld(rootParentWorld), length, tx, ty, constraint.bendPositive ? -1 : 1, constraint.weight);
+      solved.set(root.nodeId, fromSpineLocal(p));
+      solved.set(effector.nodeId, fromSpineLocal(c));
     } else {
-      solveOneBone(rootWorld, targetPoint, constraint.weight);
-      worldToMatrix(root.world, rootWorld);
-      recompose(root.nodeId, new Set());
+      const b = ikBone(root);
+      ikApply1(b, spineWorld(rootParentWorld), tx, ty, constraint.weight);
+      solved.set(root.nodeId, fromSpineLocal(b));
     }
+    mul(root.world, rootParentWorld, toMatrix(mat(), localOf(root)));
+    recompose(root.nodeId);
   }
 }
 

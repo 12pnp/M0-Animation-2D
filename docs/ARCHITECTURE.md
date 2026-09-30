@@ -9,7 +9,8 @@
 > the preview client ("Vendored runtime", the runtime half of "The preview is
 > ground truth"), and `animo-pixi.js` ("Runtime extensions", and the export
 > halves of "Motion blur" and "Mask layers"). Still DragonBones-faithful until
-> phase 4: the ease sampler ("Easing") and the IK solver ("Bones and IK").
+> phase 4: the ease sampler ("Easing") and the IK solver ("Bones and IK"), both
+> since replaced by Spine's.
 > Rewrite each section when the phase that replaces it lands. "The Spine 4.3
 > contract" (phase 1) and "The Spine exporter" (phase 2) are new; "The preview is
 > ground truth" and "Vendored runtime" describe the Spine preview (phase 3).
@@ -1072,11 +1073,19 @@ wrong by the edited instance's scale.
 
 ## Bones and IK
 
-`core/math/ik.ts` is a transcription of `dragonBones.IKConstraint._computeA/_computeB`
-from the vendored build, not an independent solver. Read it out of
-`public/vendor/dragonBones.min.js` before changing anything: the degenerate branch, the
-mirrored-grandparent flip of `bendPositive`, and weight blending rotations (not
-positions) are all behaviour the exported file inherits.
+`core/math/ik.ts` is a transcription of Spine's `IkConstraint.apply1` / `apply2`
+(spine-core 4.3.13), not an independent solver. It works in Spine's space on the chain
+bones' LOCAL values against their parents' world matrices, and writes back local rotations
+only; `applyIk` in `core/doc/pose.ts` maps the stage's bones there (`toSpineLocal`, parent
+worlds flipped to y up) and the solved locals back (`fromSpineLocal`). Behaviour the file
+inherits and the port keeps: `mix` (the editor's weight) blends local rotations; a
+non-uniform parent scale takes a numeric solve and ZEROES the child's local y; angles use
+the runtime's pi and wrap into (−180, 180] before mixing; a zero weight skips the solve.
+Stretch, compress and softness are not ported (the editor cannot author them). The bend is
+written inverted (ARCHITECTURE ▸ The Spine 4.3 contract). `tests/spineParity.test.ts`
+checks the stage against spine-core on the stickman, seven targeted rigs (partial weight,
+negative bend, look-at, non-uniform scale, mirrored and sheared parents) and 60 random
+ones; the DragonBones solver it replaced disagreed on three of the seven.
 
 - **The solve is display-time only.** `applyIk` in `core/doc/pose.ts` runs after the
   world matrices are composed and mutates them in place; nothing is written back to the
@@ -1501,50 +1510,56 @@ walking a loop by a tenth of the step accumulates float error, and `v % step ===
 
 ## Easing
 
-The format has two ease encodings: the scalar `tweenEasing` (quad in / out / in-out) and
-`curve`. Everything else — sine, back, elastic, bounce, a hand-drawn curve — travels as a
-`curve`, and `core/math/easing.ts` is the only place that knows how.
+`core/math/easing.ts` is the only place that knows how an ease is played, and it plays
+it the way the Spine 4.3 runtime does, because the stage must show what the runtime
+shows at every whole frame.
 
-- **`curve` is multi-segment.** `_samplingEasingCurve` takes `length % 3 === 1`:
-  `[c1x,c1y, c2x,c2y, (ax,ay, c1x,c1y, c2x,c2y)*]` with (0,0) and (1,1) implicit. The
-  `% 3 === 2` branch (explicit endpoints) stores a NEGATIVE sample count that
-  `_getEasingCurveValue` then reads out of bounds — never emit it.
-- **The runtime evaluates the first and last segment wrongly**: the first from (0,0) to
-  (1,1) instead of to its anchor, the last from (0,0) instead of from its anchor. Only
-  middle segments are what they look like. `curveToJson` pads every multi-segment curve
-  with a zero-width segment at each end, so no sample (t is strictly inside (0,1)) ever
-  lands on one. A single 4-number curve is unaffected and goes out as it is.
-- The table is `duration + 1` samples at t = (i+1)/(duration+2), `round(y·10000)` in an
-  **Int16Array**: y past ±3.2767 wraps silently. Presets clamp, custom curves are held
-  to ±3, and `sampleRuntimeCurve` wraps exactly as the typed array does.
-- **A preset is a polyline through the ease at those sample points**, so the runtime's
-  table holds the ease's own values; collinear anchors are dropped. Its curve therefore
-  depends on the span, which is why `tweenToJson` takes the frame count. A short span
-  gives a coarse bounce on the stage and in the runtime alike — the Ease panel draws the
-  sampled curve solid over the ideal one dashed, so this is visible before export.
-- **The stage samples the exported bytes**: `applyTween` builds `tweenToJson` and runs
-  the port of `_samplingEasingCurve` on it (cached per spec object and span).
-  `tests/easing.test.ts` cuts that method out of `public/vendor/dragonBones.min.js` and
-  checks the port against it.
+```mermaid
+flowchart LR
+    SPEC["TweenSpec"] --> SEG["easeSegments"]
+    SEG -->|"ease, curve"| POLY["spinePolyline<br/>ends + t = 0.1 … 0.9"]
+    POLY --> READ["readPolyline<br/>(getBezierValue)"]
+    SPEC -->|preset| EXACT["easeFunction at whole frames"]
+    READ --> AT["applyTween → stage"]
+    EXACT --> AT
+    SEG --> EXP["exporter: one key per segment,<br/>curve [cx1,cy1,cx2,cy2] per channel"]
+    EXACT --> BAKE["exporter: a key per frame"]
+```
+
+- **Spine does not evaluate the bezier.** `CurveTimeline.setBezier` samples each
+  segment at parameter 0.1 … 0.9 and `getBezierValue` reads the 10-piece polyline through
+  those points and the two keys, by time. `spinePolyline` / `readPolyline` are that;
+  `tests/easing.test.ts` checks them against spine-core's own `RotateTimeline`. The
+  Ease panel draws that polyline solid over the exact curve dashed.
+- **What each ease is.** `linear`: no curve. `ease` (Classic quad in / out / in-out): one
+  cubic, EXACTLY, since `p + e·(g(p) − p)` with `g = p²`, `2p − p²` or the smoothstep
+  `3p² − 2p³` is a polynomial with x = p (controls at x = 1/3, 2/3). In-out was
+  DragonBones' cosine blend; the smoothstep differs by at most 0.01 of the travel.
+  `curve` (custom): its own cubic segments, one key per anchor in the file. `preset`
+  (sine, back, bounce …): no cubic holds it, so the stage shows the exact function at
+  every whole frame and the file carries a key per frame, straight between.
+- **The exporter maps curves exactly**: a segment's control points are in the
+  INTERVAL's 0..1 space, so each channel's control values are its values at the
+  interval's two ends mixed by the control's y (timelines are linear in their values),
+  and control times are the interval's start plus x × span. A three-segment curve with an
+  overshoot is in `tests/spineParity.test.ts`'s feature rig, and moving a segment's key
+  off its anchor fails it.
 - **Per property.** `Keyframe.eases` overrides `tween` for `position`, `rotation`,
-  `scale` and `color`, one per DragonBones timeline (`easeOf`); rotation covers both
-  skews, so shear is untouched. A hold (`tween.kind === "none"`) holds every channel
-  whatever the overrides say. Schema v5.
-- **`splitTween`** divides an eased interval in two without changing the motion — what
-  Edit Multiple Frames needs at the edges of its range. The halves are built on the
-  displayed ease (the runtime's table), and `throughFrames` picks sample values so the
-  runtime's piecewise-linear read passes through the original at every WHOLE frame: a
-  polyline through the sample points alone was up to 3px off on a 500px move, this is the
-  table's own rounding (~0.02px).
-- An eased interval that needs rotation subdivision (> 170°) is cut at EVERY frame:
-  the pieces tween linearly, so a frame left inside one would show a straight line where
-  the stage shows the ease.
+  `scale` and `color` (`easeOf`), one per Spine timeline; rotation covers rotate and
+  shear, so shear follows the rotation ease. A hold (`tween.kind === "none"`) holds every
+  channel whatever the overrides say. Schema v5.
+- **`splitTween`** divides an eased interval in two without changing the motion at any
+  whole frame — what Edit Multiple Frames needs at the edges of its range. Each half is a
+  custom curve of STRAIGHT segments through the original's value at each of its frames:
+  Spine's polyline of a straight bezier is the line itself, so every frame lands exactly.
 - Custom curve editing is `core/math/easeCurve.ts`. Every operation ends in
   `constrain`: anchors strictly increasing in x and control xs non-decreasing inside
-  each segment, because the runtime finds the parameter by bisection on x.
+  each segment, because the runtime finds its place on the curve by time. Custom curve
+  y stays within ±3.2767 (`CURVE_Y_LIMIT`), the range documents have always kept.
 - The panel is `view/timeline/EaseDialog.ts`, opened from the tween readout in the
   transport bar and from **Ease…** in the frame menu; it acts on the spans under the
   frame selection, or under the playhead on the selected layers, in one `EditTracks`.
+  Its footer says what the export writes (`exportNote`).
 
 ## Colour, alpha and blend mode
 
