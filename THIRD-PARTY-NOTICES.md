@@ -18,6 +18,7 @@ generated from `src/core/about.ts`.
 | [Vite](https://vite.dev) | 6.x | MIT | no, build only |
 | [Vitest](https://vitest.dev) | 3.x | MIT | no, tests only |
 | [TypeScript](https://www.typescriptlang.org) | 5.x | Apache-2.0 | no, build only |
+| [spine-core](https://github.com/EsotericSoftware/spine-runtimes) | 4.3.13 | Spine Runtimes License | no, tests only (`devDependencies`) |
 
 The vendored files carry their notices beside them:
 `public/vendor/LICENSE-pixijs.txt`, copied into every build, and

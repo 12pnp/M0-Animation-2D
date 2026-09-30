@@ -10,7 +10,8 @@
 > ground truth"), and `animo-pixi.js` ("Runtime extensions", and the export
 > halves of "Motion blur" and "Mask layers"). Still DragonBones-faithful until
 > phase 4: the ease sampler ("Easing") and the IK solver ("Bones and IK").
-> Rewrite each section when the phase that replaces it lands.
+> Rewrite each section when the phase that replaces it lands. "The Spine 4.3
+> contract" is new (phase 1).
 
 How Animo is built, and — mostly — the things in it that fail **silently** when
 you get them wrong. This is not a style guide: it is the record of decisions
@@ -684,6 +685,55 @@ to ~3e-6 mid-tween (the exporter's own rounding). Sample *inside* tweens, not ju
 runtime samples bezier curves into a table and lerps between samples rather than evaluating the
 cubic, so a mismatch there is invisible at keyframes. `core/math/easing.ts` replicates that sampler
 deliberately — do not "fix" it to evaluate the exact curve.
+
+## The Spine 4.3 contract
+
+Read out of the runtime's parser (`SkeletonJson` in
+`@esotericsoftware/spine-core` 4.3.13, the core of the spine-pixi-v8 build the
+preview will run), not documentation. `src/core/spine/types.ts` is the
+authority and carries a note on every field below; `src/core/spine/transform.ts`
+is the mapping. `tests/spineTransform.test.ts` checks both against the runtime
+itself (a dev dependency), not a transcription of it.
+
+```mermaid
+flowchart LR
+    T["Transform<br/>x y skewX skewY scaleX scaleY<br/>y down"] -->|toSpineLocal| S["SpineLocal<br/>rotation = −skewY<br/>shearY = skewY − skewX<br/>y up"]
+    S -->|keyValues vs setup| K["timeline values<br/>translate/rotate/shear: +<br/>scale: ×"]
+    F["frame, fps"] -->|keyTime| KT["time: float32 ≤ frame/fps"]
+    S --> RT["spine-core<br/>BonePose.updateWorldTransform"]
+```
+
+- **The transform maps exactly.** Spine's x axis points at `rotation + shearX`
+  and its y axis at `rotation + 90 + shearY`; Flash's at `skewY` and
+  `skewX + 90`. Flipping y (Spine data is y up) negates both, so
+  `rotation = −skewY`, `shearX = 0`, `shearY = skewY − skewX`, `y = −y`,
+  scales unchanged. Random chains six bones deep match the runtime's world
+  matrices to within what its rounded pi explains (below).
+- **The runtime's pi is `3.1415927`** (`MathUtils.PI`), 1.5e-8 off, so its
+  matrices differ from exact ones by about |angle in radians| × 1.5e-8: 2e-7
+  at two turns. The stage does not copy it. Tests bound it (`piErrorBounds`)
+  rather than using a blanket tolerance, and pin the constant.
+- **Timeline values are relative to the setup pose.** Translate, rotate and
+  shear keys are ADDED to it; scale keys MULTIPLY it, so a setup scale of 0
+  cannot be animated (`keyValues` returns null for that channel).
+- **Rotation interpolates raw degrees**, no shortest path: a 720° key turns
+  twice. Animo's subdivision of wide turns is not needed.
+- **Key times are float32 in the runtime** and a key applies once
+  `time >= key`. float32(1/60) is after 1/60, so seeking to frame 1 showed
+  frame 0 at 60 fps. `keyTime` writes the largest float32 not after
+  `frame / fps`; the JSON must carry it unrounded (`canonicalJson`'s 4
+  decimals would move it again).
+- **Duration is the last key's time.** The format has no length field, so an
+  animation ending on a hold needs a key at its end.
+- **Bones are parents first.** A parent listed after its child is not an
+  error: the child silently becomes a root.
+- **A region attachment places the image's CENTRE** (`regionCentre`), and its
+  `width`/`height` have no default (absent reads as NaN).
+- Enum strings (`inherit`, `blend`) are read by upper-casing the first
+  letter; a misspelling is undefined, not an error. Blend modes are only
+  normal, additive, multiply and screen.
+- spine-unity accepts `skeleton.spine` when major.minor match its own
+  (`SkeletonDataCompatibility`); `SPINE_VERSION` is `"4.3.0"`.
 
 ## The DragonBones 5.5 contract
 

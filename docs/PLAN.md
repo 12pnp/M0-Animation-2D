@@ -88,7 +88,7 @@ one, and the AI checks its own result against the runtime. Two ways to connect:
 | # | Phase | Done when |
 |---|---|---|
 | 0 | **Done.** Clean copy, new git repo, DragonBones vendor, exporter and extensions removed, branding renamed | 631 tests green (79 export tests listed below), build clean |
-| 1 | Spine 4.3 contract, transform and y-flip mapping | table tests pass |
+| 1 | **Done.** `core/spine/types.ts` (contract read from spine-core 4.3.13), `core/spine/transform.ts` (mapping, relative keys, `keyTime`, `regionCentre`) | checked against the real runtime; 8 deliberate bugs each fail |
 | 2 | Flat exporter and `.atlas` writer | spine-pixi loads the export |
 | 3 | Preview on spine-pixi-v8 (load, seek, tick) | editor and runtime bone world matrices agree at keys and mid-tween |
 | 4 | Stage fidelity: bezier sampler and IK solver | ports tested against the vendored spine JS |

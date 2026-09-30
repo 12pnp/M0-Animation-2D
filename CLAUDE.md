@@ -5,8 +5,12 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 Amino Spine2D is Animo (github.com/justmorenoise/animo) retargeted from
 DragonBones 5.5 to **Spine 4.3**. [docs/PLAN.md](docs/PLAN.md) is the plan: the
 phases, the DragonBones→Spine mapping, and the checklist of export tests to
-rebuild. Phase 0 is done: DragonBones is gone, and `buildExport` refuses with
-`EXPORT_NOT_BUILT`, so export and the preview are off until phases 2 and 3.
+rebuild. Phases 0 and 1 are done: DragonBones is gone, `buildExport` refuses
+with `EXPORT_NOT_BUILT` (export and the preview are off until phases 2 and 3),
+and `src/core/spine/` holds the Spine 4.3 contract and the transform mapping
+(ARCHITECTURE ▸ The Spine 4.3 contract). Check Spine behaviour against
+`@esotericsoftware/spine-core` in a test, the way `tests/spineTransform.test.ts`
+does, rather than against documentation.
 
 **Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing anything.**
 It is the real project documentation: what Animo is, how it is layered, and —
@@ -110,5 +114,6 @@ npx tsc --noEmit   # typecheck alone; faster than a build while iterating
 AGPL-3.0-or-later, inherited from Animo; keep `LICENSE`, `LICENSE-EXCEPTION.md`
 and `THIRD-PARTY-NOTICES.md`. What the exporter writes is the user's (the
 exception's second clause). `tests/reference/dragonBones.min.js` is MIT and
-test-only. The Spine runtime vendored in phase 3 is under the Spine Runtimes
+test-only, as is the `@esotericsoftware/spine-core` dev dependency. The Spine
+runtime vendored in phase 3 is under the Spine Runtimes
 License, not MIT: record it in `THIRD-PARTY-NOTICES.md` when it lands.
