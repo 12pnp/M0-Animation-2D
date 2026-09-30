@@ -92,6 +92,12 @@ export function validateProject(raw: unknown): ValidationResult {
 
     for (const nodeId of Object.keys(item.nodes)) observeId(nodeId);
 
+    if (item.stageSkins !== undefined) {
+      const skins = Array.isArray(item.stageSkins) ? item.stageSkins.filter((n): n is string => typeof n === "string") : null;
+      if (skins && item.spine) item.stageSkins = [...new Set(skins)];
+      else delete item.stageSkins;
+    }
+
     // Drop layers whose node vanished, and nodes with no layer: the one-node
     // one-layer rule is what makes slot ordering unambiguous.
     const before = item.layers.length;

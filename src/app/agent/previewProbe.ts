@@ -24,9 +24,9 @@ export class HiddenPreviewProbe implements PreviewProbe {
     if (key !== this.loadedFor) {
       const result = (await buildExports(this.store.project, this.assets, [sym.id])).get(sym.id)!;
       const loaded = host.once("loaded", 20000);
-      const skin = sym.spine ? stageSkinOf(sym) : null;
+      const skins = sym.spine ? stageSkinOf(sym) : [];
       host.load(result.skeleton, result.atlas, result.pages.map((p) => ({ name: p.info.imagePath, png: p.blob })), {
-        animation, frame, ...(skin ? { skin } : {}),
+        animation, frame, ...(skins.length ? { skins } : {}),
       });
       const msg = await loaded;
       if (msg.animation !== animation) throw new Error(`The runtime has no animation "${animation}" in the export.`);

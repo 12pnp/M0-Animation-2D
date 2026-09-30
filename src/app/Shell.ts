@@ -7,6 +7,8 @@ import { APP_NAME } from "@/core/about";
 // dark bar, and the app icon's own panel inside it reads as a second one.
 import markSvg from "@/assets/animo-mark.svg?raw";
 import type { Store, ToolId } from "./Store";
+import { SetStageSkins } from "@/core/history/commands";
+import { skinsOf, stageSkinOf } from "@/core/spine/spinePose";
 
 interface ToolDef {
   id: ToolId;
@@ -267,6 +269,7 @@ export class Shell {
       h("div", { class: "spacer" }),
       this.playSlot,
       h("div", { class: "spacer" }),
+      this.buildSkinPicker(),
       this.buildModeSwitch(),
       h("div", { class: "sep-v" }),
       toggles,
@@ -308,6 +311,58 @@ export class Shell {
     this.store.subscribe((t) => { if (t === "doc" || t === "ui" || t === "stage") sync(); });
     sync();
     return el;
+  }
+
+  /**
+   * An opened rig's skins, for the stage and the Preview: none, one, or
+   * several combined, as a game combines them. Skins named with a folder
+   * ("accessories/bag") are grouped by it. Only shown for a rig that has
+   * skins beyond the default one.
+   */
+  private buildSkinPicker(): HTMLElement {
+    const btn = h("button", { class: "skinpick" }) as HTMLButtonElement;
+    const sync = () => {
+      const sym = this.store.currentSymbol;
+      const named = sym.spine ? skinsOf(sym).filter((n) => n !== "default") : [];
+      btn.style.display = named.length ? "" : "none";
+      const shown = stageSkinOf(sym);
+      const label = shown.length ? shown.join(" + ") : "default";
+      btn.textContent = `Skin: ${label} ▾`;
+      btn.title = `The skins the stage and Preview show: ${label}${sym.stageSkins ? "" : " (automatic)"}`;
+    };
+    on(btn, "click", () => {
+      const sym = this.store.currentSymbol;
+      const named = skinsOf(sym).filter((n) => n !== "default");
+      const shown = stageSkinOf(sym);
+      const set = (skins: string[] | null) => this.store.apply(new SetStageSkins(sym.id, skins));
+      const toggle = (name: string) => {
+        const next = shown.includes(name) ? shown.filter((n) => n !== name) : [...shown, name];
+        set(named.filter((n) => next.includes(n)));
+      };
+      const entry = (name: string, label: string): MenuEntry => ({ label, checked: shown.includes(name), run: () => toggle(name) });
+      const folders = new Map<string, MenuEntry[]>();
+      const items: Array<MenuEntry | "-"> = [
+        { label: "Default skin only", checked: shown.length === 0, run: () => set([]) },
+        { label: "Automatic", checked: !sym.stageSkins, run: () => set(null) },
+        "-",
+      ];
+      for (const name of named) {
+        const slash = name.indexOf("/");
+        if (slash < 0) { items.push(entry(name, name)); continue; }
+        const folder = name.slice(0, slash);
+        if (!folders.has(folder)) {
+          const sub: MenuEntry[] = [];
+          folders.set(folder, sub);
+          // Ticked while any skin inside is shown.
+          items.push({ label: folder, items: sub, checked: named.some((n) => n.startsWith(`${folder}/`) && shown.includes(n)) });
+        }
+        folders.get(folder)!.push(entry(name, name.slice(slash + 1)));
+      }
+      showMenu(btn, items);
+    });
+    this.store.subscribe((t) => { if (t === "doc" || t === "ui" || t === "stage") sync(); });
+    sync();
+    return btn;
   }
 
   private toggleBtn(

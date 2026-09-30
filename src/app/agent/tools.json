@@ -1,7 +1,7 @@
 [
   {
     "name": "get_rig",
-    "description": "The skeleton being edited: its bones (parent, length, setup pose), slots, IK constraints, animations and frame rate, and which animation and frame the editor shows. Call this first. Values use Spine's conventions: x right, y UP, rotation in degrees counter-clockwise, all local to the parent bone.",
+    "description": "The skeleton being edited: its bones (parent, length, setup pose), slots, IK constraints, skins, animations and frame rate, and which animation, frame and skins the editor shows. Call this first. Values use Spine's conventions: x right, y UP, rotation in degrees counter-clockwise, all local to the parent bone.",
     "input_schema": { "type": "object", "properties": {}, "additionalProperties": false }
   },
   {
@@ -111,10 +111,14 @@
   },
   {
     "name": "show",
-    "description": "Show an animation at a frame in the editor, so the user sees it (the stage, the timeline and the Preview follow).",
+    "description": "Show an animation at a frame in the editor, so the user sees it (the stage, the timeline and the Preview follow). `skins` picks which of the rig's skins (get_rig lists them) are shown, combined over the default skin; [] shows the default skin only. Choosing skins is one undoable step.",
     "input_schema": {
       "type": "object",
-      "properties": { "animation": { "type": "string" }, "frame": { "type": "integer", "minimum": 0 } },
+      "properties": {
+        "animation": { "type": "string" },
+        "frame": { "type": "integer", "minimum": 0 },
+        "skins": { "type": "array", "items": { "type": "string" } }
+      },
       "required": ["animation"],
       "additionalProperties": false
     }

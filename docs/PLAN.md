@@ -95,9 +95,12 @@ bone by bone against `x` over the M0 sample skeletons.
   x and y, scale x and y, and rotation and shear on different curves each get their own
   ease (per-axis eases): 892 frame-by-frame intervals over the 16 samples became 584.
 
-**Not yet:** binary `.skel` (export JSON from Spine instead); choosing the skin shown
-(the stage and Preview show "default", or the first skin when "default" draws nothing);
-editing meshes, weights, deform keys and the carried constraints; physics simulation on the
+- **Skins.** The stage bar's Skin picker shows any of an opened rig's skins, several
+  combined as a game combines them (mix-and-match: a body, hair, clothes), on the stage
+  and in the Preview; one undo step, saved with the document, never exported. The AI's
+  `show` takes the same choice.
+
+**Not yet:** binary `.skel` (export JSON from Spine instead); editing meshes, weights, deform keys and the carried constraints; physics simulation on the
 stage (posed at rest; the Preview plays it). spine-core now ships in the app bundle
 (+168 KB, 52 KB gzipped).
 

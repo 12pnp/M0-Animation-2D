@@ -892,8 +892,12 @@ The skeleton is `exportSpine(…, { setupOnly: true })`, the file the export wri
 generated keys, over one untrimmed page of library images. It is rebuilt only when the
 structure changes (`structureKey`). Posing spineboy-pro or celestial-circus takes 0.3 ms.
 Physics is posed at rest (`Physics.reset`), because a seek has no frames before it to
-simulate from. A rig whose default skin draws nothing shows its first other skin, on the
-stage and in the Preview (`stageSkinOf`). "Fit to Stage" frames the rig, and the Preview
+simulate from. The skins shown over the default skin are `stageSkinOf`: the symbol's
+choice (`SymbolItem.stageSkins`, from the stage bar's Skin picker, `SetStageSkins`),
+else none, or the first other skin when the default one draws nothing. Several are
+combined into one `Skin` (`addSkin`, a later one winning a shared slot key) by the stage
+rig and the preview page alike; the rig is cached per combination. The choice is the
+editor's: the export writes every skin and picks none. "Fit to Stage" frames the rig, and the Preview
 draws no stage box for it: an opened rig sits about its own origin, not on a stage.
 
 **Tests.** `tests/spineImport.test.ts` plays `export(import(x))` against `x` in spine-core

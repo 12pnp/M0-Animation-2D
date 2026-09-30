@@ -73,6 +73,11 @@ export interface SymbolItem {
    *  export as it came. The stage poses such a symbol through the runtime
    *  (`core/spine/spinePose.ts`), so what it carries is also what it shows. */
   spine?: SpineCarry;
+  /** An opened rig's skins the stage and Preview show, combined as Spine
+   *  combines skins (the default skin under them all). Absent: the default
+   *  skin, or the first other one when it draws nothing (`stageSkinOf`).
+   *  The editor's choice only: the export does not write it. */
+  stageSkins?: string[];
 }
 
 /**

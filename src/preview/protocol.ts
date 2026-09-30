@@ -19,9 +19,9 @@ export type HostToFrame =
       /** Content bounds in the symbol's space, so the frame can fit the rig
        *  before anything has been drawn. */
       fit?: { x: number; y: number; w: number; h: number };
-      /** The skin to show, for a skeleton whose default skin draws
-       *  nothing: the one the stage shows. */
-      skin?: string; }
+      /** The skins the stage shows over the default skin, combined
+       *  (`stageSkinOf`). */
+      skins?: string[]; }
   /** Take whatever is loaded off the screen: the document has nothing to
    *  show (a new project), and leaving the previous rig up says the editor
    *  and the runtime disagree when they do not. */

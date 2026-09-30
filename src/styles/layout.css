@@ -119,7 +119,7 @@
   flex: none;
 }
 .crumb { display: flex; align-items: center; gap: 4px; }
-.crumb .step { padding: 0 4px; border-radius: var(--radius); color: var(--fg); }
+.crumb .step { padding: 0 4px; border-radius: var(--radius); color: var(--fg); white-space: nowrap; }
 .crumb .step:hover { background: var(--hover); }
 .crumb .step.current { color: var(--fg-strong); }
 .crumb .chev { color: var(--fg-dim); }
@@ -212,6 +212,21 @@ body.resizing-ew, body.resizing-ew * { cursor: ew-resize !important; }
 
 /* Stage bar right-hand controls */
 .stage-toggles { display: flex; align-items: center; gap: 1px; }
+/* Shrinks first when the bar is short: a long combination is in its title. */
+.skinpick {
+  flex: 0 1 auto;
+  min-width: 70px;
+  max-width: 180px;
+  height: var(--h-field);
+  padding: 0 8px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  background: var(--bg-field);
+  border: 1px solid #262626;
+  color: var(--fg-strong);
+}
+
 .zoomsel {
   width: 68px;
   height: var(--h-field);

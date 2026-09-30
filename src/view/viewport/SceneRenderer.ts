@@ -12,7 +12,7 @@ import {
     SETUP_CONTEXT,
 } from "@/core/doc/pose";
 import { maskGroups } from "@/core/doc/layerTree";
-import { posedSymbol, stageSkinOf } from "@/core/spine/spinePose";
+import { posedSymbol } from "@/core/spine/spinePose";
 import type { AssetStore } from "@/app/AssetStore";
 
 /**
@@ -64,10 +64,9 @@ export class SceneRenderer {
     frame: number,
     mode: "setup" | "animate",
     view: Matrix2D,
-    opts: { alpha?: number; hiddenLayers?: Set<string>; skin?: string | null } = {},
+    opts: { alpha?: number; hiddenLayers?: Set<string> } = {},
   ): Pose {
-    const skin = opts.skin === undefined ? stageSkinOf(symbol) : opts.skin;
-    const pose = posedSymbol(this.project(), symbol, animation, frame, mode, skin);
+    const pose = posedSymbol(this.project(), symbol, animation, frame, mode);
     const when: FrameContext = { animationName: animation?.name ?? null, frame, mode };
 
     ctx.save();

@@ -7,6 +7,8 @@ import { exportSpine, spineJson } from "@/core/spine/exportSpine";
 import { atlasText } from "@/core/spine/atlas";
 import { isImage } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
+import { importSpine } from "@/core/spine/importSpine";
+import { imagesOf, sampleRigs } from "./fixtures/spineSamples";
 
 /**
  * The AI's tools on the real stickman rig: values go in and come out in
@@ -159,5 +161,21 @@ describe("the AI's tools", () => {
     await expect(api.call("new_animation", { name: "w", frames: 3 })).rejects.toThrow(/already/);
     await expect(api.call("set_keys", { animation: "w", keys: [{ bone, frame: 1, ease: "bouncy" }] })).rejects.toThrow(/Unknown ease/);
     await expect(api.call("check_preview", { animation: "w" })).rejects.toThrow(/Preview/);
+  });
+
+  const mix = sampleRigs().find((r) => r.name === "mix-and-match");
+  it.skipIf(!mix)("list an opened rig's skins, and show chosen ones in one undo step", async () => {
+    const { project } = importSpine(JSON.parse(mix!.json), mix!.name, imagesOf(mix!.atlas));
+    const store = new Store(project);
+    const api = new AgentApi(store);
+    const rig = await api.call("get_rig") as { skins: string[]; showing: { skins: string[] }; animations: Array<{ name: string }> };
+    expect(rig.skins).toContain("hair/pink");
+    expect(rig.showing.skins).toEqual(["skin-base"]);
+    const anim = rig.animations[0]!.name;
+    expect(await api.call("show", { animation: anim, skins: ["hair/pink", "skin-base"] })).toMatchObject({ skins: ["skin-base", "hair/pink"] });
+    expect(store.history.undoLabel).toBe("AI: Show Skins");
+    await expect(api.call("show", { animation: anim, skins: ["hat"] })).rejects.toThrow(/no skin "hat"/);
+    await api.call("undo");
+    expect((await api.call("get_rig") as { showing: { skins: string[] } }).showing.skins).toEqual(["skin-base"]);
   });
 });

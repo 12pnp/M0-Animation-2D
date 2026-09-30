@@ -261,7 +261,7 @@ export class PreviewSession {
         // An opened Spine rig has no stage: it is framed on its own.
         stage: opts.showStage && !target.spine ? { ...this.store.project.stage } : undefined,
         fit: target.fit,
-        ...(target.skin ? { skin: target.skin } : {}),
+        ...(target.skins.length ? { skins: target.skins } : {}),
       },
     );
   }
@@ -289,7 +289,7 @@ export class PreviewSession {
    */
   private targetFor(
     scope: PreviewScope,
-  ): { animation?: string; frame: number; fit: { x: number; y: number; w: number; h: number }; skin?: string; spine: boolean } {
+  ): { animation?: string; frame: number; fit: { x: number; y: number; w: number; h: number }; skins: string[]; spine: boolean } {
     const project = this.store.project;
     const edited = this.store.currentSymbol;
     const root = project.items[project.rootSymbolId];
@@ -301,13 +301,13 @@ export class PreviewSession {
       : sym.animations[0]?.name;
     // The editor knows the rig's extent; Pixi cannot measure it. An opened
     // Spine rig is measured as the runtime draws it (meshes included).
-    const skin = sym.spine ? stageSkinOf(sym) : null;
-    const b = (sym.spine ? spineBounds(project, sym, skin) : null) ?? symbolBounds(project, sym.id);
+    const skins = sym.spine ? stageSkinOf(sym) : [];
+    const b = (sym.spine ? spineBounds(project, sym, skins) : null) ?? symbolBounds(project, sym.id);
     return {
       animation,
       frame: here ? this.store.ui.frame : 0,
       fit: { x: b.x, y: b.y, w: b.w, h: b.h },
-      ...(skin ? { skin } : {}),
+      skins,
       spine: !!sym.spine,
     };
   }

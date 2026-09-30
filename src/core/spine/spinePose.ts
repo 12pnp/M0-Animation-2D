@@ -1,6 +1,6 @@
 import {
   AtlasAttachmentLoader, type Bone, ClippingAttachment, MeshAttachment, MixFrom, Physics, RegionAttachment, Skeleton,
-  SkeletonJson, type Slot, TextureAtlas, TextureAtlasRegion, type Animation as SpineRuntimeAnimation,
+  SkeletonJson, Skin, type Slot, TextureAtlas, TextureAtlasRegion, type Animation as SpineRuntimeAnimation,
 } from "@esotericsoftware/spine-core";
 import type { ItemId, NodeId } from "@/core/doc/ids";
 import type { Animation, ColorTransform, Project, SymbolItem } from "@/core/doc/types";
@@ -82,37 +82,40 @@ function structureKey(project: Project, sym: SymbolItem): string {
   return JSON.stringify([idOf(sym.spine), project.frameRate, nodes, layers, ik, anims]);
 }
 
-function rigFor(project: Project, sym: SymbolItem, skin: string | null): { rig: Rig | null; error?: string } {
+function rigFor(project: Project, sym: SymbolItem, skins: readonly string[]): { rig: Rig | null; error?: string } {
   let perSkin = bySymbol.get(sym);
   if (!perSkin) bySymbol.set(sym, (perSkin = new Map()));
-  const cached = perSkin.get(skin ?? "");
+  const skinKey = JSON.stringify(skins);
+  const cached = perSkin.get(skinKey);
   if (cached) return cached;
-  const key = JSON.stringify([skin, structureKey(project, sym)]);
+  const key = JSON.stringify([skins, structureKey(project, sym)]);
   let built = byKey.get(key);
   if (!built) {
-    built = buildRig(project, sym, skin);
+    built = buildRig(project, sym, skins);
     byKey.set(key, built);
     // A handful of structures at most: undo and redo flip between a few.
     if (byKey.size > 8) byKey.delete(byKey.keys().next().value!);
   }
   const out = { key, ...built };
-  perSkin.set(skin ?? "", out);
+  perSkin.set(skinKey, out);
   return out;
 }
 
 /**
- * The skin the stage shows when none is chosen: "default" when it draws
- * anything, else the file's first other skin. Without one the runtime
- * draws only what the default skin holds, and a game picks the rest.
+ * The skins the stage shows over the default skin, combined: the symbol's
+ * choice (`stageSkins`, less any the file no longer has), else none when
+ * the default skin draws anything, else the file's first other skin.
+ * Without one the runtime draws only what the default skin holds, and a
+ * game picks the rest.
  */
-export function stageSkinOf(sym: SymbolItem): string | null {
+export function stageSkinOf(sym: SymbolItem): string[] {
+  const named = skinsOf(sym).filter((n) => n !== "default");
+  if (sym.stageSkins) return sym.stageSkins.filter((n) => named.includes(n));
   const skins = (sym.spine?.skins ?? []) as Array<{ name?: string; attachments?: Record<string, Record<string, { type?: string }>> }>;
   const draws = (a: { type?: string }) => a.type === undefined || a.type === "region" || a.type === "mesh" || a.type === "linkedmesh";
   const hasDefault = Object.values(sym.nodes).some((n) => n.attachment)
     || skins.some((s) => s.name === "default" && Object.values(s.attachments ?? {}).some((byKey) => Object.values(byKey).some(draws)));
-  if (hasDefault) return null;
-  const first = skins.find((s) => s.name !== "default");
-  return typeof first?.name === "string" ? first.name : null;
+  return hasDefault || named.length === 0 ? [] : [named[0]!];
 }
 
 /** The skins an opened symbol has, "default" first when it has one. */
@@ -122,7 +125,7 @@ export function skinsOf(sym: SymbolItem): string[] {
     ? ["default", ...names.filter((n) => n !== "default")] : names;
 }
 
-function buildRig(project: Project, sym: SymbolItem, skin: string | null): { rig: Rig | null; error?: string } {
+function buildRig(project: Project, sym: SymbolItem, skins: readonly string[]): { rig: Rig | null; error?: string } {
   const exported = exportSpine(project, sym.id, { setupOnly: true });
   const errors = exported.diagnostics.filter((d) => d.severity === "error");
   if (errors.length) return { rig: null, error: errors[0]!.message };
@@ -150,10 +153,9 @@ function buildRig(project: Project, sym: SymbolItem, skin: string | null): { rig
   try {
     const atlas = new TextureAtlas(atlasText([page]));
     skeleton = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(atlas)).readSkeletonData(exported.skeleton));
-    if (skin && skin !== "default") {
-      if (!skeleton.data.findSkin(skin)) return { rig: null, error: `There is no skin "${skin}".` };
-      skeleton.setSkin(skin);
-    }
+    const combined = combineSkins(skeleton, skins);
+    if (typeof combined === "string") return { rig: null, error: combined };
+    if (combined) skeleton.setSkin(combined);
   } catch (err) {
     return { rig: null, error: err instanceof Error ? err.message : String(err) };
   }
@@ -191,18 +193,35 @@ function buildRig(project: Project, sym: SymbolItem, skin: string | null): { rig
  */
 export function posedSymbol(
   project: Project, sym: SymbolItem, animation: Animation | null, frame: number, mode: "setup" | "animate",
-  skin: string | null = stageSkinOf(sym),
+  skins: readonly string[] = stageSkinOf(sym),
 ): Pose {
   const pose = evaluateSymbol(sym, animation, frame, mode);
   if (!sym.spine) return pose;
-  const { rig } = rigFor(project, sym, skin);
+  const { rig } = rigFor(project, sym, skins);
   if (rig) applyRig(rig, sym, pose, animation, frame, mode, project.frameRate);
   return pose;
 }
 
 /** Why an opened symbol is drawn with the editor's own pose, or null. */
-export function spinePoseError(project: Project, sym: SymbolItem, skin: string | null = stageSkinOf(sym)): string | null {
-  return sym.spine ? rigFor(project, sym, skin).error ?? null : null;
+export function spinePoseError(project: Project, sym: SymbolItem, skins: readonly string[] = stageSkinOf(sym)): string | null {
+  return sym.spine ? rigFor(project, sym, skins).error ?? null : null;
+}
+
+/**
+ * The skins as one, the way a game combines them (`Skin.addSkin`), or null
+ * for none (the default skin alone), or why not. A later skin's attachment
+ * wins where two fill the same slot key. The preview page does the same.
+ */
+function combineSkins(skeleton: Skeleton, skins: readonly string[]): Skin | null | string {
+  const named = skins.filter((n) => n !== "default");
+  if (named.length === 0) return null;
+  const combined = new Skin(named.join(" + "));
+  for (const name of named) {
+    const skin = skeleton.data.findSkin(name);
+    if (!skin) return `There is no skin "${name}".`;
+    combined.addSkin(skin);
+  }
+  return combined;
 }
 
 function applyRig(
@@ -317,9 +336,9 @@ function drawOf(rig: Rig, sk: Skeleton, slot: Slot, att: unknown): PoseEntry["sp
 
 /** What an opened symbol draws in its setup pose, boxed in its own space;
  *  null when it draws nothing. */
-export function spineBounds(project: Project, sym: SymbolItem, skin: string | null = stageSkinOf(sym)): { x: number; y: number; w: number; h: number } | null {
+export function spineBounds(project: Project, sym: SymbolItem, skins: readonly string[] = stageSkinOf(sym)): { x: number; y: number; w: number; h: number } | null {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  for (const e of posedSymbol(project, sym, null, 0, "setup", skin).entries) {
+  for (const e of posedSymbol(project, sym, null, 0, "setup", skins).entries) {
     const v = e.spine?.vertices;
     if (!v || !e.visible) continue;
     for (let i = 0; i < v.length; i += 2) {

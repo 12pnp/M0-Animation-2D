@@ -140,8 +140,13 @@ async function load(msg: Extract<HostToFrame, { type: "load" }>): Promise<void> 
   disposeCurrent();
   textures = pageTextures;
   view = new spine.Spine({ skeletonData, autoUpdate: false });
-  // A skeleton whose default skin draws nothing shows the stage's choice.
-  if (msg.skin && skeletonData.findSkin(msg.skin)) view.skeleton.setSkin(msg.skin);
+  // The stage's skins, combined as `spinePose.combineSkins` does.
+  const skins = (msg.skins ?? []).map((n) => skeletonData.findSkin(n)).filter((s): s is spine.Skin => !!s);
+  if (skins.length) {
+    const combined = new spine.Skin(msg.skins!.join(" + "));
+    for (const s of skins) combined.addSkin(s);
+    view.skeleton.setSkin(combined);
+  }
   view.debug = msg.debugDraw ? new spine.SpineDebugRenderer() : undefined;
 
   fitBox = msg.fit ?? null;

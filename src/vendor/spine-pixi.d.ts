@@ -53,11 +53,15 @@ declare namespace spine {
     readSkeletonData(json: unknown): SkeletonData;
   }
   interface Animation { readonly name: string; readonly duration: number }
+  class Skin {
+    constructor(name: string);
+    addSkin(skin: Skin): void;
+  }
   interface SkeletonData {
     readonly animations: Animation[];
     readonly fps: number;
     findAnimation(name: string): Animation | null;
-    findSkin(name: string): unknown;
+    findSkin(name: string): Skin | null;
   }
   interface BonePose { a: number; b: number; c: number; d: number; worldX: number; worldY: number }
   interface Bone { readonly data: { readonly name: string }; readonly appliedPose: BonePose }
@@ -71,7 +75,7 @@ declare namespace spine {
     readonly slots: Slot[];
     readonly drawOrder: { readonly appliedPose: Slot[] };
     setupPose(): void;
-    setSkin(name: string): void;
+    setSkin(skin: string | Skin): void;
   }
   interface TrackEntry {
     loop: boolean;

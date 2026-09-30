@@ -4,9 +4,10 @@ import type { Animation, Keyframe, Node, SymbolItem, Track } from "@/core/doc/ty
 import { createKeyframe } from "@/core/doc/defaults";
 import { insertKeyframe, keyIndexAt, setEndFrame } from "@/core/doc/timeline";
 import { AddAnimation, EditTracks } from "@/core/history/timelineCommands";
+import { SetStageSkins } from "@/core/history/commands";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
 import { CURVE_Y_LIMIT, easeOf, sameEase } from "@/core/math/easing";
-import { posedSymbol } from "@/core/spine/spinePose";
+import { posedSymbol, skinsOf, stageSkinOf } from "@/core/spine/spinePose";
 import { exportSpine } from "@/core/spine/exportSpine";
 import { fromSpineLocal, type SpineLocal, toSpineLocal } from "@/core/spine/transform";
 import TOOLS from "./tools.json";
@@ -60,7 +61,7 @@ export class AgentApi {
       case "new_animation": return this.newAnimation(str(args, "name"), int(args, "frames", 1));
       case "set_keys": return this.setKeys(str(args, "animation"), list<SpineKeyIn>(args, "keys"));
       case "delete_keys": return this.deleteKeys(str(args, "animation"), list<{ bone: string; frame: number }>(args, "keys"));
-      case "show": return this.show(str(args, "animation"), typeof args.frame === "number" ? args.frame : 0);
+      case "show": return this.show(str(args, "animation"), typeof args.frame === "number" ? args.frame : 0, args.skins);
       case "undo": return this.step("undo", typeof args.steps === "number" ? args.steps : 1);
       case "redo": return this.step("redo", typeof args.steps === "number" ? args.steps : 1);
       case "check_preview": return this.checkPreview(str(args, "animation"), args.frames);
@@ -119,7 +120,8 @@ export class AgentApi {
         return { name: k.name, bones, target: nameOf(k.targetId), mix: k.weight };
       }),
       animations: s.animations.map((a) => ({ name: a.name, frames: this.frames(a), loops: a.playTimes === 0 })),
-      showing: { animation: anim?.name ?? null, frame: this.store.ui.frame },
+      ...(skinsOf(s).some((n) => n !== "default") ? { skins: skinsOf(s).filter((n) => n !== "default") } : {}),
+      showing: { animation: anim?.name ?? null, frame: this.store.ui.frame, ...(s.spine ? { skins: stageSkinOf(s) } : {}) },
     };
   }
 
@@ -239,11 +241,21 @@ export class AgentApi {
     this.store.emit("stage");
   }
 
-  private show(animName: string, frame: number) {
+  private show(animName: string, frame: number, skins: unknown) {
     const anim = this.animation(animName);
+    if (skins !== undefined) {
+      if (!Array.isArray(skins) || !skins.every((n) => typeof n === "string")) throw new AgentError("skins is a list of skin names.");
+      const named = skinsOf(this.sym).filter((n) => n !== "default");
+      const missing = skins.filter((n) => n !== "default" && !named.includes(n));
+      if (missing.length) throw new AgentError(`There is no skin "${missing[0]}"; the rig has ${named.length ? named.join(", ") : "only the default skin"}.`);
+      const next = named.filter((n) => skins.includes(n));
+      if (JSON.stringify(next) !== JSON.stringify(stageSkinOf(this.sym)) || !this.sym.stageSkins) {
+        this.store.apply(new SetStageSkins(this.sym.id, next, "AI: Show Skins"));
+      }
+    }
     this.store.setUi({ animId: anim.id }, "timeline");
     this.store.setFrame(Math.max(0, Math.round(frame)));
-    return { showing: anim.name, frame: this.store.ui.frame };
+    return { showing: anim.name, frame: this.store.ui.frame, ...(this.sym.spine ? { skins: stageSkinOf(this.sym) } : {}) };
   }
 
   private step(which: "undo" | "redo", steps: number) {
