@@ -8,8 +8,8 @@
  * banner) does not have to reach into `view/`.
  */
 
-export const APP_NAME = "Animo";
-export const APP_TAGLINE = "A Flash-style animation editor that exports DragonBones";
+export const APP_NAME = "Amino Spine2D";
+export const APP_TAGLINE = "A Flash-style animation editor for Spine 4.3";
 
 /**
  * Replaced at build time by `define` in vite.config.ts. `typeof` rather than a
@@ -19,44 +19,32 @@ export const APP_TAGLINE = "A Flash-style animation editor that exports DragonBo
 export const APP_VERSION: string =
   typeof __APP_VERSION__ === "string" ? __APP_VERSION__ : "dev";
 
-export const AUTHOR = "Morenoise";
-export const AUTHOR_URL = "https://morenoise.it";
-export const REPO_URL = "https://github.com/justmorenoise/animo";
-export const SITE_URL = "https://morenoise.it/en/apps/animo";
-export const SPONSOR_URL = "https://github.com/sponsors/justmorenoise";
+export const REPO_URL = "https://github.com/12pnp/Amino-Spine2D-Src";
+
+/** The editor this one is built from. The AGPL keeps its notices with the code. */
+export const ORIGIN_NAME = "Animo";
+export const ORIGIN_AUTHOR = "Morenoise";
+export const ORIGIN_AUTHOR_URL = "https://morenoise.it";
+export const ORIGIN_REPO_URL = "https://github.com/justmorenoise/animo";
 
 export const LICENSE_ID = "AGPL-3.0-or-later";
 
-/**
- * The one sentence that keeps the licence usable.
- *
- * The exporter copies `animo-pixi.js` into the zip and it ships inside the
- * games people make; AGPL there would reach their code. So the runtime file
- * and everything the exporter writes are carved out. See LICENSE-EXCEPTION.md.
- */
+/** The one sentence that keeps the licence usable. See LICENSE-EXCEPTION.md. */
 export const LICENSE_NOTE =
-  "Animo is free software, released under the GNU AGPL v3 or later. What you "
-  + "export is yours: the exported files, including the runtime file for the "
-  + "extensions, are under the MIT license and can go into any game, commercial "
-  + "or not.";
+  "Amino Spine2D is free software, released under the GNU AGPL v3 or later, "
+  + "like Animo, the editor it is built from. What you export is yours: the "
+  + "exported files can go into any game, commercial or not.";
 
 export const TRADEMARK_NOTE =
-  "DragonBones is a trademark of Egret Technology. PixiJS is a trademark of its "
-  + "owners. Animo is an independent project, not affiliated with either.";
+  "Spine is a trademark of Esoteric Software. PixiJS is a trademark of its "
+  + "owners. Amino Spine2D is an independent project, not affiliated with "
+  + "Esoteric Software or with Morenoise.";
 
 /** How the editor relates to the runtime it exports for. */
-export const DRAGONBONES_NOTE =
-  "Animo saves animations in the DragonBones 5.5 format, so they play in any "
-  + "engine with a DragonBones runtime. The Preview panel and Play mode run the "
-  + "real DragonBones runtime on the exported files: what you see there is what "
-  + "your game will show.";
-
-/** The two features the format cannot carry, and how they reach a game. */
-export const PIXI_NOTE =
-  "Mask layers and motion blur go beyond what the DragonBones format can "
-  + "describe. The export saves them in an extra file and adds a small runtime "
-  + "for PixiJS 8 that applies them. Both are added only when the project uses "
-  + "these features.";
+export const SPINE_NOTE =
+  "Amino Spine2D is being retargeted from DragonBones to the Spine 4.3 format. "
+  + "Export and the runtime preview are not built yet; the plan is docs/PLAN.md "
+  + "in the source.";
 
 export interface Credit {
   name: string;
@@ -70,18 +58,17 @@ export interface Credit {
 
 export const CREDITS: readonly Credit[] = Object.freeze([
   {
-    name: "DragonBones",
-    version: "5.7.000",
-    license: "MIT",
-    url: "https://github.com/DragonBones/DragonBonesJS",
-    what: "The animation runtime. Included so the Preview plays your animation for real.",
+    name: "Animo",
+    license: "AGPL-3.0-or-later",
+    url: "https://github.com/justmorenoise/animo",
+    what: "The editor this one is built from, by Morenoise.",
   },
   {
     name: "PixiJS",
     version: "8.9.2",
     license: "MIT",
     url: "https://pixijs.com",
-    what: "Draws the Preview. The runtime extensions are written for it.",
+    what: "Draws the Preview.",
   },
   {
     name: "ag-psd",

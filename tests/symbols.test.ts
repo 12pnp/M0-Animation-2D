@@ -11,7 +11,6 @@ import {
 } from "@/core/history/symbolCommands";
 import { History } from "@/core/history/History";
 import { RenameLibraryItem, SetBindTransform } from "@/core/history/commands";
-import { exportSkeleton } from "@/core/export/exportSkeleton";
 import type { AssetId } from "@/core/doc/ids";
 
 beforeEach(() => { reseed(); invalidateBounds(); });
@@ -130,25 +129,6 @@ describe("ConvertToSymbol", () => {
     cmd.revert(project);
 
     expect(JSON.parse(JSON.stringify(project))).toEqual(before);
-  });
-
-  it("exports the instance as a child armature", () => {
-    const { project, root, a, b } = scene();
-    new ConvertToSymbol(root.id, [a.id, b.id], "Arms").apply(project);
-
-    const { skeleton, diagnostics } = exportSkeleton(project);
-    expect(diagnostics).toEqual([]);
-    const child = skeleton.armature.find((x) => x.name === "Arms")!;
-    const host = skeleton.armature.find((x) => x.name === "Scene 1")!;
-
-    // Dependencies come first, and the child auto-plays or it sits frozen.
-    expect(skeleton.armature.indexOf(child)).toBeLessThan(skeleton.armature.indexOf(host));
-    expect(child.defaultActions?.[0]?.gotoAndPlay).toBeTruthy();
-
-    const display = host.skin[0]!.slot.find((sl) => sl.name === "Arms")!.display[0]!;
-    expect(display).toMatchObject({ name: "Arms", type: "armature" });
-    // A nested armature has no image to normalise a pivot against.
-    expect(display.pivot).toBeUndefined();
   });
 });
 

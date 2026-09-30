@@ -1,13 +1,15 @@
 # Third-party notices
 
-Animo is AGPL-3.0-or-later (see [LICENSE](LICENSE) and
-[LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md)). It ships and builds on the
-software listed below, all under permissive licences. The same table is in the
-app under **Help ▸ About Animo**, generated from `src/core/about.ts`.
+Amino Spine2D is AGPL-3.0-or-later (see [LICENSE](LICENSE) and
+[LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md)). It is built from
+[Animo](https://github.com/justmorenoise/animo) by Moreno Tomasella (Morenoise),
+also AGPL-3.0-or-later, and it ships and builds on the software listed below.
+The app's version of this list is under **Help ▸ About Amino Spine2D**,
+generated from `src/core/about.ts`.
 
 | Component | Version | Licence | Ships in the app |
 |---|---|---|---|
-| [DragonBones](https://github.com/DragonBones/DragonBonesJS) | 5.7.000 (Pixi 8 build) | MIT | yes, `public/vendor/dragonBones.min.js` |
+| [DragonBones](https://github.com/DragonBones/DragonBonesJS) | 5.7.000 (Pixi 8 build) | MIT | no, tests only: `tests/reference/dragonBones.min.js` |
 | [PixiJS](https://pixijs.com) | 8.9.2 | MIT | yes, `public/vendor/pixi.js` |
 | [ag-psd](https://github.com/Agamnentzar/ag-psd) | 31.x | MIT | yes, bundled |
 | [pako](https://github.com/nodeca/pako) | 2.x | MIT AND Zlib | yes, bundled, via ag-psd |
@@ -17,13 +19,14 @@ app under **Help ▸ About Animo**, generated from `src/core/about.ts`.
 | [Vitest](https://vitest.dev) | 3.x | MIT | no, tests only |
 | [TypeScript](https://www.typescriptlang.org) | 5.x | Apache-2.0 | no, build only |
 
-The two vendored files carry their notices beside them, in
-`public/vendor/LICENSE-dragonbones.txt` and `public/vendor/LICENSE-pixijs.txt`,
-and those files are copied into every build.
+The vendored files carry their notices beside them:
+`public/vendor/LICENSE-pixijs.txt`, copied into every build, and
+`tests/reference/LICENSE-dragonbones.txt`.
 
-**Trademarks.** DragonBones is a trademark of Egret Technology. PixiJS,
-Photoshop and Adobe Animate are trademarks of their respective owners. Animo is
-an independent project, not affiliated with or endorsed by any of them.
+**Trademarks.** Spine is a trademark of Esoteric Software. DragonBones is a
+trademark of Egret Technology. PixiJS, Photoshop and Adobe Animate are
+trademarks of their respective owners. Amino Spine2D is an independent project,
+not affiliated with or endorsed by any of them, or by Morenoise.
 
 ---
 

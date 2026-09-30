@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { evaluateSymbol } from "@/core/doc/pose";
-import { exportSkeleton } from "@/core/export/exportSkeleton";
-import type { Project, SymbolItem } from "@/core/doc/types";
+import type { SymbolItem } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
 
 /**
@@ -17,13 +16,11 @@ import { loadStickman } from "./fixtures/stickman";
  * Regenerate the file with `npx vite-node scripts/buildStickman.ts`.
  */
 
-let project: Project;
 let rig: SymbolItem;
 
 beforeAll(async () => {
   const f = await loadStickman();
   expect(f.diagnostics).toEqual([]);
-  project = f.project;
   rig = f.rig;
 });
 
@@ -78,24 +75,5 @@ describe("stickman rig", () => {
         expect(driven.has(id), `${node?.name} is keyed in ${anim.name}`).toBe(false);
       }
     }
-  });
-
-  it("exports one clean armature with both animations", () => {
-    const { skeleton, diagnostics } = exportSkeleton(project);
-    expect(diagnostics).toEqual([]);
-    expect(skeleton.armature).toHaveLength(1);
-
-    const armature = skeleton.armature[0]!;
-    expect(armature.ik).toHaveLength(4);
-    // 11 pieces of art, and no slot for the bones or the IK targets.
-    expect(armature.slot).toHaveLength(11);
-
-    const byName = new Map(armature.animation.map((a) => [a.name, a]));
-    expect([...byName.keys()]).toEqual(["dance", "run"]);
-
-    // Only the run shades the far side of the body, so only it carries slot
-    // timelines — colour in the dance would mean the far limbs never lighten.
-    expect(byName.get("dance")!.slot ?? []).toHaveLength(0);
-    expect(byName.get("run")!.slot ?? []).toHaveLength(4);
   });
 });

@@ -46,7 +46,7 @@ const PROJECT_TYPE: PickerType = {
 };
 
 export const ZIP_TYPE: PickerType = {
-  description: "DragonBones export (zip)",
+  description: "Spine export (zip)",
   accept: { "application/zip": [".zip"] },
 };
 

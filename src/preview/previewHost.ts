@@ -1,5 +1,4 @@
 import type { FrameToHost, HostToFrame, PreviewTexture } from "./protocol";
-import type { ExtensionManifest } from "@/runtime/animo-pixi";
 
 /**
  * Parent-side driver for the preview iframe.
@@ -22,7 +21,7 @@ export class PreviewHost {
     // at the site root. `BASE_URL` is what `base` in vite.config.ts resolves to.
     this.iframe.src = `${import.meta.env.BASE_URL}preview.html`;
     this.iframe.style.cssText = "border:0;width:100%;height:100%;display:block;background:#353535";
-    this.iframe.setAttribute("title", "DragonBones runtime preview");
+    this.iframe.setAttribute("title", "Spine runtime preview");
 
     window.addEventListener("message", (e) => {
       if (e.source !== this.iframe.contentWindow) return;
@@ -84,7 +83,6 @@ export class PreviewHost {
     play?: boolean; frame?: number;
     fit?: { x: number; y: number; w: number; h: number };
     stage?: { width: number; height: number; background: string };
-    extensions?: ExtensionManifest | null;
   } = {}): void {
     this.post({ type: "load", skeleton, textures, ...opts });
   }

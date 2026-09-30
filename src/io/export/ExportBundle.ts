@@ -1,85 +1,49 @@
 import { strToU8 } from "fflate";
 import { zipFiles } from "@/io/zip";
 import type { Project } from "@/core/doc/types";
-import { type ImageItem, isImage } from "@/core/doc/types";
 import type { AssetStore } from "@/app/AssetStore";
-import { type ExportDiagnostic, exportSkeleton } from "@/core/export/exportSkeleton";
-import { type AtlasOptions, atlasOptionsFor, type AtlasPage, buildAtlas } from "@/io/atlas/AtlasBuilder";
+import type { ExportDiagnostic } from "@/core/export/diagnostics";
+import { type AtlasOptions, atlasOptionsFor, type AtlasPage } from "@/io/atlas/AtlasBuilder";
 import { DEFAULT_EXPORT_SETTINGS, type ExportSettings } from "@/core/export/settings";
-import type { DbSkeleton } from "@/core/export/dbTypes";
-import type { ExtensionManifest } from "@/runtime/animo-pixi";
-import { buildExtensionManifest, extensionReadme, RUNTIME_FILE, } from "@/core/export/extensions";
-// The runtime ships verbatim next to the skeleton, so it is read as text from
-// the one place it is authored — the same module the preview runs.
-import runtimeSource from "@/runtime/animo-pixi.js?raw";
 
 export interface ExportResult {
   fileBase: string;
-  skeleton: DbSkeleton;
+  /** The Spine skeleton JSON; null until the Spine exporter exists (phase 2). */
+  skeleton: null;
   pages: AtlasPage[];
   diagnostics: ExportDiagnostic[];
-  /** Null when nothing needs an extension, so the common bundle is unchanged. */
-  extensions: ExtensionManifest | null;
   /** Write the JSON files without indentation. */
   minifyJson?: boolean;
 }
 
+export const EXPORT_NOT_BUILT = "Spine export is not built yet.";
+
 /**
- * Produces everything a DragonBones runtime needs: `<name>_ske.json`,
- * one `<name>_tex.json` + `<name>_tex.png` (or `.webp`) per atlas page, as the
- * document's export settings ask.
+ * False until the Spine exporter lands. The export commands check it before
+ * asking where to save: they have to ask before building (the save picker
+ * needs the click's user activation), and choosing a file only to be told
+ * nothing can be written is worse than being told at once.
+ */
+export const EXPORT_READY = false;
+
+/**
+ * Produces everything a Spine runtime needs. Until the Spine exporter lands
+ * this refuses with one error, before any atlas work, so neither an export
+ * nor the preview does work it then throws away.
  */
 export async function buildExport(
   project: Project,
-  assets: AssetStore,
-  opts: AtlasOptions = atlasOptionsFor(exportSettingsOf(project)),
-  onProgress?: (fraction: number) => void,
+  _assets: AssetStore,
+  _opts: AtlasOptions = atlasOptionsFor(exportSettingsOf(project)),
+  _onProgress?: (fraction: number) => void,
 ): Promise<ExportResult> {
-  const exported = exportSkeleton(project);
-  const { skeleton, diagnostics, usedImages } = exported;
-
-  const items = usedImages
-    .map((id) => project.items[id])
-    .filter((i): i is ImageItem => isImage(i));
-
-  // Before the atlas await, like the skeleton: an edit made while the pages
-  // render must not give the manifest a different document than the skeleton.
-  const extensions = buildExtensionManifest(project, exported);
-
-  const fileBase = safeFileName(project.name);
-  // The atlas `name` must match the skeleton `name`, or the factory will not
-  // pair them and the armature builds with no textures at all.
-  const pages = await buildAtlas(items, assets, skeleton.name, fileBase, opts, onProgress);
-
-  if (items.length === 0) {
-    diagnostics.push({
-      severity: "warning",
-      message: "No images are used on the stage, so the atlas is empty.",
-    });
-  }
-
-  if (extensions) {
-    const required = extensions.extensionsUsed.filter((n) => extensions.extensionsRequired.includes(n));
-    const optional = extensions.extensionsUsed.filter((n) => !extensions.extensionsRequired.includes(n));
-    if (required.length) {
-      diagnostics.push({
-        severity: "warning",
-        message:
-          `Required extensions: ${required.join(", ")}. A standard DragonBones player does not show ` +
-          `this animation as designed: load ${RUNTIME_FILE} too (README.md in the export explains how).`,
-      });
-    }
-    if (optional.length) {
-      diagnostics.push({
-        severity: "warning",
-        message:
-          `Optional extensions: ${optional.join(", ")}. Without ${RUNTIME_FILE} the animation ` +
-          `still plays correctly, without them.`,
-      });
-    }
-  }
-
-  return { fileBase, skeleton, pages, diagnostics, extensions, minifyJson: exportSettingsOf(project).minifyJson };
+  return {
+    fileBase: safeFileName(project.name),
+    skeleton: null,
+    pages: [],
+    diagnostics: [{ severity: "error", message: EXPORT_NOT_BUILT }],
+    minifyJson: exportSettingsOf(project).minifyJson,
+  };
 }
 
 /** The document's export settings, the defaults when it has none. */
@@ -100,17 +64,10 @@ export function canonicalJson(value: unknown, minify = false): string {
 
 /** Every exported file by name, shared by the zip and the folder export. */
 export async function exportFiles(result: ExportResult): Promise<Record<string, Uint8Array>> {
+  if (result.skeleton === null) throw new Error(EXPORT_NOT_BUILT);
   const files: Record<string, Uint8Array> = {};
-  const min = result.minifyJson === true;
-  files[`${result.fileBase}_ske.json`] = strToU8(canonicalJson(result.skeleton, min));
-  if (result.extensions) {
-    const armature = result.skeleton.armature[result.skeleton.armature.length - 1]?.name ?? "";
-    files[`${result.fileBase}_ext.json`] = strToU8(canonicalJson(result.extensions, min));
-    files[RUNTIME_FILE] = strToU8(runtimeSource);
-    files["README.md"] = strToU8(extensionReadme(result.fileBase, armature, result.extensions));
-  }
+  files[`${result.fileBase}.json`] = strToU8(canonicalJson(result.skeleton, result.minifyJson === true));
   for (const page of result.pages) {
-    files[`${page.fileStem}.json`] = strToU8(canonicalJson(page.json, min));
     files[`${page.fileStem}.${page.ext}`] = new Uint8Array(await page.blob.arrayBuffer());
   }
   return files;

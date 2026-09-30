@@ -3,9 +3,6 @@ import { icon } from "@/view/icons";
 import type { Panel } from "@/view/widgets/Dock";
 import { PreviewHost } from "@/preview/previewHost";
 import type { PreviewSession, PreviewView } from "@/preview/PreviewSession";
-import type { ExtensionManifest } from "@/runtime/animo-pixi";
-import { EXT_MASKS, EXTENSION_DOCS } from "@/core/export/extensions";
-import { openExtensionHelp } from "@/view/help/ExtensionHelp";
 
 /**
  * Runs the project through the ACTUAL DragonBones runtime.
@@ -43,7 +40,6 @@ export class PreviewPanel implements Panel, PreviewView {
    * part of the DragonBones format; a stock player would ignore them, and
    * nothing else in the UI would say so.
    */
-  private extras: HTMLElement;
 
   constructor(
     private readonly session: PreviewSession,
@@ -59,8 +55,7 @@ export class PreviewPanel implements Panel, PreviewView {
       class: "iconbtn", title: "Float this panel",
     }) as HTMLButtonElement;
 
-    this.extras = h("div", { class: "preview-extras", style: "display:none" });
-    this.el = h("div", { class: "preview" }, this.frameWrap, this.extras, this.status);
+    this.el = h("div", { class: "preview" }, this.frameWrap, this.status);
     this.footer = this.buildFooter();
 
     this.host.onMessage((msg) => {
@@ -88,7 +83,6 @@ export class PreviewPanel implements Panel, PreviewView {
     return { debugDraw: this.debugDraw, showStage: this.showStage, play: this.playing };
   }
   onStatus(text: string, isError = false): void { this.setStatus(text, isError); }
-  onExtras(extensions: ExtensionManifest | null): void { this.showExtras(extensions); }
 
   onShow(): void {
     this.mounted = true;
@@ -139,44 +133,6 @@ export class PreviewPanel implements Panel, PreviewView {
       h("div", { class: "spacer" }),
       this.floatBtn, refresh,
     );
-  }
-
-  /**
-   * One badge per extension the export carries: things the DragonBones
-   * format cannot express, which a game gets only by installing the shipped
-   * runtime. This preview installs it exactly as a game must.
-   */
-  private showExtras(manifest: ExtensionManifest | null): void {
-    clear(this.extras);
-    const used = manifest?.extensionsUsed ?? [];
-    if (used.length === 0) {
-      this.extras.style.display = "none";
-      return;
-    }
-    for (const name of used) {
-      const doc = EXTENSION_DOCS[name];
-      const required = manifest!.extensionsRequired.includes(name);
-      const count = name === EXT_MASKS
-        ? ` Masks in use: ${manifest!.extensions.ANIMO_masks?.masks.length ?? 0}.`
-        : "";
-      const pill = h("span", {
-        class: "preview-extra",
-        role: "button",
-        tabindex: "0",
-        title:
-          `${doc?.title ?? name}: ${required ? "required" : "optional"} for playback.${count} ` +
-          `${doc?.without ?? ""} Click for details.`,
-      }, icon(name === EXT_MASKS ? "mask" : "motionBlur", 11), h("span", null, name));
-      // pointerup, not click: the badge is rebuilt on every export, and a
-      // rebuild between down and up eats the click (see CLAUDE.md).
-      on(pill, "pointerup", () => openExtensionHelp(name));
-      on(pill, "keydown", (ev) => {
-        const e = ev as unknown as KeyboardEvent;
-        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openExtensionHelp(name); }
-      });
-      this.extras.appendChild(pill);
-    }
-    this.extras.style.display = "";
   }
 
   private setStatus(text: string, isError = false): void {

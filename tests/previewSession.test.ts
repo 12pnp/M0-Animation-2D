@@ -25,7 +25,6 @@ function result(tag: number): ExportResult {
     skeleton: { tag, armature: [{ name: "Scene 1", slot: [{ name: "s" }] }] } as never,
     pages: [],
     diagnostics: [],
-    extensions: null,
   };
 }
 
@@ -33,10 +32,9 @@ function result(tag: number): ExportResult {
 function empty(): ExportResult {
   return {
     fileBase: "p",
-    skeleton: { armature: [{ name: "Scene 1", slot: [] }] } as never,
+    skeleton: null,
     pages: [],
     diagnostics: [],
-    extensions: null,
   };
 }
 
@@ -52,7 +50,6 @@ function viewInto(loaded: number[], log?: string[]): PreviewView {
     active: () => true,
     options: () => ({ debugDraw: false, showStage: false, play: false }),
     onStatus: () => {},
-    onExtras: (ext) => { log?.push(`extras:${ext === null ? "none" : "some"}`); },
   };
 }
 
@@ -150,7 +147,7 @@ describe("an empty document", () => {
     store.emit("doc");                             // the new project
     await vi.advanceTimersByTimeAsync(300);
     expect(loaded).toEqual([1]);                   // nothing loaded on top
-    expect(log).toEqual(["extras:none", "clear", "extras:none"]);
+    expect(log).toEqual(["clear"]);
   });
 });
 

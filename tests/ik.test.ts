@@ -3,7 +3,6 @@ import { reseed, newIkId, type NodeId } from "@/core/doc/ids";
 import { createProject, createNode, createLayer } from "@/core/doc/defaults";
 import { isSymbol, type SymbolItem } from "@/core/doc/types";
 import { evaluateSymbol, invalidateBounds } from "@/core/doc/pose";
-import { exportSkeleton } from "@/core/export/exportSkeleton";
 import {
   solveOneBone, solveTwoBones, normalizeRadian, matrixToWorld, worldToMatrix, type IkWorld,
 } from "@/core/math/ik";
@@ -221,36 +220,5 @@ describe("IK in a pose", () => {
     sane.target.bind.y = 120;
     const ok = evaluateSymbol(sane.root as SymbolItem, null, 0, "setup");
     expect(ok.byNode.get(sane.lower.id)!.world.b).not.toBeCloseTo(0, 3);
-  });
-});
-
-describe("IK in the export", () => {
-  it("writes ik[] the way the parser reads it", () => {
-    const { project, root, lower, target } = rig(1);
-    (root as SymbolItem).ik[0]!.weight = 0.5;
-    (root as SymbolItem).ik[0]!.bendPositive = false;
-
-    const { skeleton } = exportSkeleton(project);
-    const armature = skeleton.armature.find((a) => a.name === "Scene 1")!;
-    expect(armature.ik).toEqual([{
-      name: "arm_ik", bone: "lower", target: "target",
-      chain: 1, bendPositive: false, weight: 0.5,
-    }]);
-
-    // The effector's length is the second segment of the runtime's solve, so
-    // it has to survive the trip.
-    const bone = armature.bone.find((b) => b.name === "lower")!;
-    expect(bone.length).toBe(100);
-    expect(lower.boneLength).toBe(100);
-    expect(target.name).toBe("target");
-  });
-
-  it("leaves out what the parser already defaults", () => {
-    const { project, root } = rig(0);
-    void root;
-    const { skeleton } = exportSkeleton(project);
-    const armature = skeleton.armature.find((a) => a.name === "Scene 1")!;
-    // chain 0, bendPositive true and weight 1 are the parser's defaults.
-    expect(armature.ik).toEqual([{ name: "arm_ik", bone: "lower", target: "target" }]);
   });
 });

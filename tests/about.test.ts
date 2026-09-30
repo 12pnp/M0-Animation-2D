@@ -11,8 +11,8 @@ import {
  */
 describe("about", () => {
   it("names the app and its version", () => {
-    expect(APP_NAME).toBe("Animo");
-    expect(APP_TAGLINE).toContain("DragonBones");
+    expect(APP_NAME).toBe("Amino Spine2D");
+    expect(APP_TAGLINE).toContain("Spine");
     // vitest runs its own config, so the build-time token is never substituted.
     expect(APP_VERSION).toBe("dev");
   });
@@ -27,17 +27,17 @@ describe("about", () => {
     }
   });
 
-  it("credits the two things the export depends on", () => {
+  it("credits the editor it is built from, and the preview's renderer", () => {
     const names = CREDITS.map((c) => c.name);
-    expect(names).toContain("DragonBones");
+    expect(names).toContain("Animo");
     expect(names).toContain("PixiJS");
   });
 
   it("states the licence and the export carve-out", () => {
     expect(LICENSE_ID).toBe("AGPL-3.0-or-later");
-    // Without this sentence the licence would reach the games people ship.
-    expect(LICENSE_NOTE).toContain("MIT");
-    expect(TRADEMARK_NOTE).toContain("Egret");
+    // Without this sentence the licence would seem to reach the games people ship.
+    expect(LICENSE_NOTE).toContain("What you export is yours");
+    expect(TRADEMARK_NOTE).toContain("Esoteric Software");
     expect(REPO_URL.startsWith("https://github.com/")).toBe(true);
   });
 });

@@ -2,7 +2,6 @@ import type { Store } from "@/app/Store";
 import type { AssetStore } from "@/app/AssetStore";
 import type { PreviewHost } from "./previewHost";
 import { buildExport, type ExportResult } from "@/io/export/ExportBundle";
-import type { ExtensionManifest } from "@/runtime/animo-pixi";
 import { symbolBounds } from "@/core/doc/pose";
 import { isSymbol } from "@/core/doc/types";
 
@@ -30,13 +29,11 @@ export interface PreviewView {
   active(): boolean;
   options(): PreviewOptions;
   onStatus(text: string, isError?: boolean): void;
-  /** Extensions in the last build, for the runtime badges. */
-  onExtras?(extensions: ExtensionManifest | null): void;
 }
 
-/** An export with no artwork and no slots: there is nothing to render. */
+/** No skeleton: there is nothing to render. */
 function isEmpty(result: ExportResult): boolean {
-  return result.pages.length === 0 && result.skeleton.armature.every((a) => a.slot.length === 0);
+  return result.skeleton === null;
 }
 
 /**
@@ -179,7 +176,9 @@ export class PreviewSession {
     this.status("Building…");
     try {
       const result = await buildExport(this.store.project, this.assets);
-      reportDiagnostics(result.diagnostics);
+      // Until the Spine exporter exists every build refuses; saying so in the
+      // console on each edit would bury everything else logged there.
+      if (result.skeleton !== null) reportDiagnostics(result.diagnostics);
       this.result = result;
 
       this.loadAll(result);
@@ -209,17 +208,17 @@ export class PreviewSession {
     // status line saying there was nothing to show.
     if (isEmpty(result)) {
       view.host.clear();
-      view.onStatus("Nothing on the stage to preview yet.");
-      view.onExtras?.(null);
+      view.onStatus(result.diagnostics.find((d) => d.severity === "error")?.message
+        ?? "Nothing on the stage to preview yet.");
       return;
     }
 
     const opts = view.options();
-    const target = this.targetFor(opts.scope ?? "symbol", result);
+    const target = this.targetFor(opts.scope ?? "symbol");
     view.onStatus("");
     view.host.load(
       result.skeleton,
-      result.pages.map((p) => ({ json: p.json, png: p.blob })),
+      result.pages.map((p) => ({ json: p.info, png: p.blob })),
       {
         armature: target.armature,
         animation: target.animation,
@@ -228,10 +227,8 @@ export class PreviewSession {
         frame: target.frame,
         stage: opts.showStage ? { ...this.store.project.stage } : undefined,
         fit: target.fit,
-        extensions: result.extensions,
       },
     );
-    view.onExtras?.(result.extensions);
   }
 
   /**
@@ -249,7 +246,7 @@ export class PreviewSession {
    * means nothing here and the scene starts at 0.
    */
   private targetFor(
-    scope: PreviewScope, result: ExportResult,
+    scope: PreviewScope,
   ): { armature?: string; animation?: string; frame: number; fit: { x: number; y: number; w: number; h: number } } {
     const project = this.store.project;
     const edited = this.store.currentSymbol;
@@ -257,9 +254,7 @@ export class PreviewSession {
     const sym = scope === "scene" && root && isSymbol(root) ? root : edited;
     const here = sym.id === edited.id;
 
-    const armature = result.skeleton.armature.some((a) => a.name === sym.name)
-      ? sym.name
-      : result.skeleton.armature[result.skeleton.armature.length - 1]?.name;
+    const armature = sym.name;
     const animation = here
       ? this.store.currentAnimation?.name
       : sym.animations[0]?.name;

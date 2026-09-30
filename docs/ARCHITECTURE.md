@@ -1,5 +1,17 @@
 # Animo — architecture
 
+> **Amino Spine2D note.** This is Animo's architecture document, kept as it was.
+> The editor sections (transforms, undo, the timeline, layers, symbols,
+> edit-in-place, the library, dialogs, workers) describe this code as it is.
+> The DragonBones sections describe code that phase 0 removed or that later
+> phases replace; `docs/PLAN.md` says which. Removed in phase 0: the exporter
+> and `dbTypes.ts` ("The DragonBones 5.5 contract"), the vendored runtime and
+> the preview client ("Vendored runtime", the runtime half of "The preview is
+> ground truth"), and `animo-pixi.js` ("Runtime extensions", and the export
+> halves of "Motion blur" and "Mask layers"). Still DragonBones-faithful until
+> phase 4: the ease sampler ("Easing") and the IK solver ("Bones and IK").
+> Rewrite each section when the phase that replaces it lands.
+
 How Animo is built, and — mostly — the things in it that fail **silently** when
 you get them wrong. This is not a style guide: it is the record of decisions
 that look arbitrary until the day they matter. Read the section that covers
@@ -21,7 +33,7 @@ what you are about to touch before you touch it.
 ## Commands
 
 ```bash
-npm run dev        # Vite on :5180 — open in Chrome or Edge
+npm run dev        # Vite on :5181 — open in Chrome or Edge
 npm test           # vitest run
 npm run test:watch
 npm run build      # tsc --noEmit && vite build

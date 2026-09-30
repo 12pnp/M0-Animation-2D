@@ -2,6 +2,12 @@
 
 Guidance for Claude Code (claude.ai/code) working in this repository.
 
+Amino Spine2D is Animo (github.com/justmorenoise/animo) retargeted from
+DragonBones 5.5 to **Spine 4.3**. [docs/PLAN.md](docs/PLAN.md) is the plan: the
+phases, the DragonBones→Spine mapping, and the checklist of export tests to
+rebuild. Phase 0 is done: DragonBones is gone, and `buildExport` refuses with
+`EXPORT_NOT_BUILT`, so export and the preview are off until phases 2 and 3.
+
 **Read [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing anything.**
 It is the real project documentation: what Animo is, how it is layered, and —
 mostly — the things that fail *silently* when you get them wrong. The DragonBones
@@ -17,7 +23,7 @@ decisions.
 ## Commands
 
 ```bash
-npm run dev        # Vite on :5180 — open in Chrome or Edge
+npm run dev        # Vite on :5181 — open in Chrome or Edge
 npm test           # vitest run
 npm run build      # tsc --noEmit && vite build
 npx tsc --noEmit   # typecheck alone; faster than a build while iterating
@@ -101,7 +107,8 @@ npx tsc --noEmit   # typecheck alone; faster than a build while iterating
 
 ## Licensing
 
-AGPL-3.0-or-later, with an MIT carve-out for `src/runtime/animo-pixi.js` and
-everything the exporter writes — that file ships inside other people's games.
-See [LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md). Never move export-bound code
-out of that file without checking the exception still covers it.
+AGPL-3.0-or-later, inherited from Animo; keep `LICENSE`, `LICENSE-EXCEPTION.md`
+and `THIRD-PARTY-NOTICES.md`. What the exporter writes is the user's (the
+exception's second clause). `tests/reference/dragonBones.min.js` is MIT and
+test-only. The Spine runtime vendored in phase 3 is under the Spine Runtimes
+License, not MIT: record it in `THIRD-PARTY-NOTICES.md` when it lands.

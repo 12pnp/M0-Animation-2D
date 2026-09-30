@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
-  EASE_FAMILIES, applyTween, curveToJson, easeFunction, easeLabel, easeOf, presetCurve,
+  EASE_FAMILIES, applyTween, curveToJson, easeFunction, easeLabel, presetCurve,
   sampleCurve, sampleRuntimeCurve, splitTween, tweenToJson, type EaseDir, type EaseSpec,
   type TweenSpec,
 } from "@/core/math/easing";
@@ -13,7 +13,6 @@ import { reseed } from "@/core/doc/ids";
 import { tf } from "@/core/math/Transform";
 import type { Track } from "@/core/doc/types";
 import { sampleTransformRaw, insertKeyframe } from "@/core/doc/timeline";
-import { buildBoneTimeline } from "@/core/export/frameSplit";
 import { migrate, validateProject } from "@/core/doc/schema";
 import { createProject, createLayer, createNode } from "@/core/doc/defaults";
 
@@ -25,7 +24,7 @@ beforeEach(() => reseed());
  * checked against the bytes that ship, not against a re-reading of them.
  */
 function vendoredSampler(): (curve: number[], samples: number[]) => void {
-  const src = readFileSync(resolve(__dirname, "../public/vendor/dragonBones.min.js"), "utf8");
+  const src = readFileSync(resolve(__dirname, "reference/dragonBones.min.js"), "utf8");
   const method = (name: string, params: string) => {
     const start = src.indexOf(`${name}(${params}){`);
     if (start < 0) throw new Error(`${name} not found in the vendored runtime`);
@@ -263,43 +262,6 @@ describe("per-property eases", () => {
     expect(s.scaleX).toBeCloseTo(1.25, 6);
     expect(s.skewY).toBeCloseTo(90 * applyTween({ kind: "preset", family: "back", dir: "in" }, 0.25, 20), 6);
     expect(s.skewY).toBeLessThan(0);   // back in starts by pulling away
-  });
-
-  it("a hold holds every channel, whatever the overrides say", () => {
-    const t = tweenTrack();
-    t.keys[0]!.tween = { kind: "none" };
-    expect(easeOf(t.keys[0]!, "rotation")).toEqual({ kind: "none" });
-    const out = buildBoneTimeline(t, createNode("image", "n"), 21)!;
-    expect(out.translateFrame![0]).not.toHaveProperty("tweenEasing");
-    expect(out.translateFrame![0]).not.toHaveProperty("curve");
-  });
-
-  it("the override reaches only its own timeline", () => {
-    const n = createNode("image", "n");
-    n.bind = tf(0, 0, 0, 0);
-    const out = buildBoneTimeline(tweenTrack(), n, 21)!;
-    expect(out.translateFrame![0]!.tweenEasing).toBe(0);
-    expect(out.scaleFrame![0]!.tweenEasing).toBe(0);
-    expect(out.rotateFrame![0]).not.toHaveProperty("tweenEasing");
-    expect(out.rotateFrame![0]!.curve!.length % 3).toBe(1);
-  });
-
-  it("an eased turn past half a revolution is cut at every frame, on the stage's values", () => {
-    const n = createNode("image", "n");
-    n.bind = tf(0, 0, 0, 0);
-    const t: Track = {
-      nodeId: "n1" as Track["nodeId"],
-      keys: [
-        { frame: 0, transform: tf(0, 0, 0, 0), displayIndex: 0, tween: { kind: "preset", family: "sine", dir: "inOut" } },
-        { frame: 12, transform: tf(0, 0, 400, 400), displayIndex: 0, tween: { kind: "linear" } },
-      ],
-      endFrame: 12,
-    };
-    const frames = buildBoneTimeline(t, n, 12)!.rotateFrame!;
-    expect(frames.length).toBe(13);
-    frames.slice(0, 12).forEach((f, i) => {
-      expect(f.rotate ?? 0).toBeCloseTo(sampleTransformRaw(t, i)!.skewY, 3);
-    });
   });
 
   it("F6 inside a tween keeps the overrides on both halves", () => {

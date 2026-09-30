@@ -1,4 +1,4 @@
-# Contributing to Animo
+# Contributing to Amino Spine2D
 
 Thanks for looking. Issues, bug reports and pull requests are all welcome.
 
@@ -31,7 +31,7 @@ Three rules the code depends on, and one grep that checks the first:
 
 ```bash
 npm install
-npm run dev          # Vite on :5180, Chrome or Edge
+npm run dev          # Vite on :5181, Chrome or Edge
 npm test             # vitest
 npx tsc --noEmit     # typecheck alone, faster than a build while iterating
 npm run build        # tsc --noEmit && vite build
@@ -46,26 +46,6 @@ where the suite earns its keep.
 Comments explain *why*, not *what*: the surrounding code is written that way
 and a PR that reads differently is harder to review than one that is simply
 wrong. No comment is better than a comment restating the line below it.
-
-## The CLA
-
-Animo is AGPL-3.0-or-later, and a commercial licence is sold to fund the work
-(see [LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md)). That only stays possible if
-one party holds the rights to relicense, so **every contributor signs a
-Contributor Licence Agreement** before their first PR is merged:
-[CLA.md](CLA.md). It is short, it does not take your copyright away, and it is
-the same arrangement Qt, Grafana and Elastic use.
-
-Signing takes one comment. On your first pull request a bot links the CLA and
-asks you to reply with:
-
-    I have read the CLA Document and I hereby sign the CLA
-
-The signature is recorded once and covers all your future pull requests. Until
-then the CLA check stays red and the PR cannot be merged.
-
-If you would rather not sign, open an issue describing the change instead. A
-good bug report is worth as much as a patch.
 
 ## Code of conduct
 

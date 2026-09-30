@@ -1,7 +1,5 @@
 /** postMessage contract between the editor and the preview iframe. */
 
-import type { ExtensionManifest } from "@/runtime/animo-pixi";
-
 export interface PreviewTexture {
   json: unknown;
   png: Blob;
@@ -20,11 +18,7 @@ export type HostToFrame =
       /** Content bounds in armature space, so the frame can fit the rig.
        *  Supplied by the editor because Pixi cannot measure a DragonBones
        *  display container without a render pass. */
-      fit?: { x: number; y: number; w: number; h: number };
-      /** What the skeleton cannot carry (masks, motion blur). The preview
-       *  installs it exactly the way a game would — otherwise it would stop
-       *  being ground truth the moment an extension is in use. */
-      extensions?: ExtensionManifest | null }
+      fit?: { x: number; y: number; w: number; h: number }; }
   /** Take whatever is loaded off the screen: the document has nothing to
    *  show (a new project), and leaving the previous rig up says the editor
    *  and the runtime disagree when they do not. */

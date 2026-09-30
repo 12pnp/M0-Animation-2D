@@ -18,12 +18,13 @@ import { OutlinePanel } from "@/view/panels/OutlinePanel";
 import { HistoryPanel } from "@/view/panels/HistoryPanel";
 import { PreviewPanel } from "@/view/panels/PreviewPanel";
 import { PreviewSession } from "@/preview/PreviewSession";
-import { extensionHelpEntries } from "@/view/help/ExtensionHelp";
 import { openAbout } from "@/view/help/AboutDialog";
 import { APP_NAME } from "@/core/about";
 import { StagePlay } from "@/view/viewport/StagePlay";
 import { TimelinePanel } from "@/view/timeline/TimelinePanel";
-import { buildExport, bundleZip, exportFiles, exportSettingsOf, safeFileName } from "@/io/export/ExportBundle";
+import {
+  buildExport, bundleZip, EXPORT_NOT_BUILT, EXPORT_READY, exportFiles, exportSettingsOf, safeFileName,
+} from "@/io/export/ExportBundle";
 import {
     type FileRef,
     hasDirectoryPicker,
@@ -774,12 +775,13 @@ export class App {
   }
 
   async exportProject(): Promise<void> {
-    const suggested = `${safeFileName(this.store.project.name)}_dragonbones.zip`;
+    if (!EXPORT_READY) { this.toast.show(EXPORT_NOT_BUILT, true); return; }
+    const suggested = `${safeFileName(this.store.project.name)}_spine.zip`;
     let target: FileRef | null;
     if (hasNativeFiles()) {
       target = await pickSaveLocation(suggested, ZIP_TYPE, "animo-export");
     } else {
-      const name = await promptText({ title: "Export DragonBones", label: "File name", value: suggested, ok: "Export" });
+      const name = await promptText({ title: "Export Spine", label: "File name", value: suggested, ok: "Export" });
       target = name ? { name: name.endsWith(".zip") ? name : `${name}.zip` } : null;
     }
     if (!target) return;                        // cancelled
@@ -792,8 +794,7 @@ export class App {
         await writeFile(file, await bundleZip(result));
         report(1);
         this.toast.show(
-          `Exported ${file.name} (${result.pages.length} atlas page(s))` +
-          (result.extensions ? ` with extensions ${result.extensions.extensionsUsed.join(", ")}` : ""),
+          `Exported ${file.name} (${result.pages.length} atlas page(s))`,
         );
       } catch (err) {
         this.reportExportFailure(err);
@@ -809,8 +810,9 @@ export class App {
    * only because the exporter insisted on a zip.
    */
   async exportToFolder(): Promise<void> {
+    if (!EXPORT_READY) { this.toast.show(EXPORT_NOT_BUILT, true); return; }
     if (!hasDirectoryPicker()) {
-      this.toast.show("This browser cannot choose a folder. Use Export DragonBones to get a zip instead.", true);
+      this.toast.show("This browser cannot choose a folder. Use Export Spine to get a zip instead.", true);
       return;
     }
     const dir = await pickDirectory("animo-export");
@@ -827,8 +829,7 @@ export class App {
           report(0.8 + 0.2 * (n + 1) / names.length);
         }
         this.toast.show(
-          `Exported ${names.length} file(s) to ${dir.name}` +
-          (result.extensions ? ". README.md explains the extensions" : ""),
+          `Exported ${names.length} file(s) to ${dir.name}`,
         );
       } catch (err) {
         this.reportExportFailure(err);
@@ -1144,10 +1145,8 @@ export class App {
         items: [
           it("help.shortcuts"),
           "-",
-          // Plain menu rows: these open a dialog and carry no chord, so they
-          // need no entry in the command registry.
-          { label: "Runtime Extensions", items: extensionHelpEntries() },
-          "-",
+          // A plain menu row: it opens a dialog and carries no chord, so it
+          // needs no entry in the command registry.
           { label: `About ${APP_NAME}\u2026`, run: () => openAbout() },
         ],
       },

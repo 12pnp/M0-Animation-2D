@@ -20,7 +20,9 @@ export default defineConfig({
   // bundle does not carry package.json, and so `vitest` (which does not run
   // this config's define) can fall back — see `core/about.ts`.
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
-  server: { port: 5180, open: false },
+  // 5181, not Animo's 5180: storage is per origin, and on one port the two
+  // editors would share preferences and overwrite each other's autosave.
+  server: { port: 5181, open: false },
   // ES workers can share chunks with the page (the resampler, ag-psd) and
   // load their own imports on demand; the IIFE default cannot split.
   worker: { format: "es" },

@@ -31,7 +31,7 @@ const SECTIONS: Array<{ title: string; rows: Row[] }> = [
   {
     title: "Format", rows: [
       { kind: "select", key: "format", label: "Runtime", options: [
-        { value: "dragonbones-pixi", text: "DragonBones 5.5 (Pixi 8)" },
+        { value: "spine-4.3", text: "Spine 4.3" },
       ] },
     ],
   },

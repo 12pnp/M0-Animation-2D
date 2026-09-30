@@ -10,7 +10,6 @@ import { History } from "@/core/history/History";
 import { SetPivot, SetNodeDisplays, SetNodeItem } from "@/core/history/commands";
 import { wouldCreateCycle } from "@/core/history/symbolCommands";
 import { validateProject, migrate } from "@/core/doc/schema";
-import { exportSkeleton } from "@/core/export/exportSkeleton";
 
 beforeEach(() => reseed());
 
@@ -166,45 +165,5 @@ describe("loading", () => {
     const raw = JSON.parse(JSON.stringify({ ...project, version: 5 }));
     expect(validateProject(migrate(raw)).project.version).toBe(DOC_VERSION);
     expect(DOC_VERSION).toBe(7);
-  });
-});
-
-describe("export", () => {
-  it("writes every used display, each with its own pivot", () => {
-    const { project } = scene();
-    const { skeleton, usedImages } = exportSkeleton(project);
-    const root = skeleton.armature[skeleton.armature.length - 1]!;
-    const display = root.skin[0]!.slot[0]!.display;
-    expect(display.map((d) => d.name)).toEqual(["heart", "star"]);
-    expect(display[0]!.pivot).toEqual({ x: 0.5, y: 0.5 });
-    expect(display[1]!.pivot).toEqual({ x: 0.5, y: 0.5 });
-    expect(usedImages).toHaveLength(2);
-    const frames = root.animation[0]!.slot![0]!.displayFrame!;
-    expect(frames.map((f) => f.value ?? 0)).toEqual([0, 1, 1, 1]);   // keys, then the end
-  });
-
-  it("leaves out a display no key uses, remapping the ones after it", () => {
-    const { project, sym, node, heart } = scene([key(0, 0, 0), key(10, 0, 2)]);
-    const n = sym.nodes[node.id]!;
-    n.extraDisplays = [...n.extraDisplays!, { itemId: heart.id, pivot: { x: 0, y: 0 } }];
-    const { skeleton } = exportSkeleton(project);
-    const root = skeleton.armature[skeleton.armature.length - 1]!;
-    expect(root.skin[0]!.slot[0]!.display.map((d) => d.name)).toEqual(["heart", "heart"]);
-    expect(root.animation[0]!.slot![0]!.displayFrame!.map((f) => f.value ?? 0)).toEqual([0, 1, 1]);
-  });
-
-  it("exports a symbol reached only through an extra display", () => {
-    const { project, sym, node } = scene();
-    const inner = createSymbol("Inner");
-    project.items[inner.id] = inner;
-    project.itemOrder.push(inner.id);
-    const n = sym.nodes[node.id]!;
-    n.extraDisplays = [{ itemId: inner.id, pivot: { x: 5, y: 5 } }];
-    const { skeleton } = exportSkeleton(project);
-    expect(skeleton.armature.map((a) => a.name)).toContain("Inner");
-    const root = skeleton.armature[skeleton.armature.length - 1]!;
-    const d = root.skin[0]!.slot[0]!.display[1]!;
-    expect(d.type).toBe("armature");
-    expect(d.transform).toEqual({ x: -5, y: -5 });
   });
 });

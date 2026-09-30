@@ -1,10 +1,9 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { reseed, type AssetId, type NodeId } from "@/core/doc/ids";
 import {
-  createProject, createImageItem, createNode, createLayer, createTrack, createSymbol,
+  createProject, createImageItem, createNode, createLayer, createTrack,
 } from "@/core/doc/defaults";
 import { isSymbol, type Project, type SymbolItem, type Node } from "@/core/doc/types";
-import { exportSkeleton } from "@/core/export/exportSkeleton";
 import { History } from "@/core/history/History";
 import {
   ReorderLayer, RemoveNodes, SetLayerExcluded, SetNodeItem, SetParent,
@@ -39,133 +38,8 @@ function add(sym: SymbolItem, node: Node, at = 0): Node {
   return node;
 }
 
-const armature = (p: Project) => exportSkeleton(p).skeleton.armature[0]!;
-const names = (xs: { name: string }[]) => xs.map((x) => x.name);
-
-describe("empty layers", () => {
-  it("export as nothing at all — no bone, no slot, no timeline", () => {
-    const { project, sym } = scene(["art"]);
-    const empty = add(sym, createNode("empty", "Layer 1"));
-    sym.animations[0]!.tracks[empty.id] = createTrack(empty, 4);
-
-    const arm = armature(project);
-    expect(names(arm.bone)).toEqual(["art"]);
-    expect(names(arm.slot)).toEqual(["art"]);
-    expect(arm.animation[0]!.bone ?? []).toHaveLength(0);
-  });
-
-  it("keeps its bone when a kept node is parented under it", () => {
-    // Dropping the bone would reparent the child to the armature root and
-    // move it; the slot still must not exist.
-    const { project, sym } = scene(["art"]);
-    const empty = add(sym, createNode("empty", "Layer 1"));
-    const art = Object.values(sym.nodes).find((n) => n.name === "art")!;
-    art.parentId = empty.id;
-
-    const arm = armature(project);
-    expect(names(arm.bone).sort()).toEqual(["Layer 1", "art"]);
-    expect(names(arm.slot)).toEqual(["art"]);
-    expect(arm.bone.find((b) => b.name === "art")!.parent).toBe("Layer 1");
-  });
-
-  it("becomes a real instance through SetNodeItem, keeping its tracks", () => {
-    const { project, sym } = scene(["art"]);
-    const empty = add(sym, createNode("empty", "Layer 1"));
-    const track = createTrack(empty, 6);
-    sym.animations[0]!.tracks[empty.id] = track;
-    const itemId = Object.values(project.items).find((i) => i.name === "art")!.id;
-
-    const history = new History(project);
-    history.apply(new SetNodeItem(sym.id, new Map([[empty.id, { itemId, kind: "image" }]])));
-
-    expect(sym.nodes[empty.id]!.kind).toBe("image");
-    expect(sym.nodes[empty.id]!.itemId).toBe(itemId);
-    expect(sym.animations[0]!.tracks[empty.id]).toBe(track);
-    expect(names(armature(project).slot).sort()).toEqual(["Layer 1", "art"]);
-
-    history.undo();
-    expect(sym.nodes[empty.id]!.kind).toBe("empty");
-    expect(sym.nodes[empty.id]!.itemId).toBeUndefined();
-    expect(sym.animations[0]!.tracks[empty.id]).toBe(track);
-  });
-});
 
 describe("exclude from export", () => {
-  it("removes the bone, the slot, the timeline and the image", () => {
-    const { project, sym } = scene(["keep", "drop"]);
-    const dropLayer = sym.layers.find((l) => l.name === "drop")!;
-    const dropped = sym.nodes[dropLayer.nodeId]!;
-    sym.animations[0]!.tracks[dropped.id] = createTrack(dropped, 4);
-    dropLayer.excludeFromExport = true;
-
-    const result = exportSkeleton(project);
-    const arm = result.skeleton.armature[0]!;
-    expect(names(arm.bone)).toEqual(["keep"]);
-    expect(names(arm.slot)).toEqual(["keep"]);
-    expect(arm.animation[0]!.bone ?? []).toHaveLength(0);
-    expect(result.usedImages).toHaveLength(1);
-    expect(result.diagnostics.some((d) => d.message.includes('"drop"'))).toBe(true);
-  });
-
-  it("takes the whole subtree of an excluded group with it", () => {
-    const { project, sym } = scene(["child", "keep"]);
-    const group = add(sym, createNode("group", "rig"));
-    const child = Object.values(sym.nodes).find((n) => n.name === "child")!;
-    child.parentId = group.id;
-    sym.layers.find((l) => l.nodeId === group.id)!.excludeFromExport = true;
-
-    const arm = armature(project);
-    expect(names(arm.bone)).toEqual(["keep"]);
-    expect(names(arm.slot)).toEqual(["keep"]);
-  });
-
-  it("does not export the armature or the art of a symbol only an excluded layer uses", () => {
-    const { project, sym } = scene(["keep"]);
-    const ref = createSymbol("Reference");
-    project.items[ref.id] = ref;
-    const art = createImageItem("reference_art", "asset_ref" as AssetId, 10, 10);
-    project.items[art.id] = art;
-    const inner = createNode("image", "reference_art", { itemId: art.id });
-    ref.nodes[inner.id] = inner;
-    ref.layers.push(createLayer(inner.id, "reference_art", 0));
-
-    const instance = add(sym, createNode("symbol", "reference", { itemId: ref.id }));
-    const layer = sym.layers.find((l) => l.nodeId === instance.id)!;
-    expect(exportSkeleton(project).skeleton.armature.map((a) => a.name)).toContain("Reference");
-
-    layer.excludeFromExport = true;
-    const result = exportSkeleton(project);
-    expect(result.skeleton.armature.map((a) => a.name)).toEqual(["Scene 1"]);
-    expect(result.usedImages).not.toContain(art.id);
-  });
-
-  it("still exports a symbol that a kept layer uses too", () => {
-    const { project, sym } = scene([]);
-    const ref = createSymbol("Shared");
-    project.items[ref.id] = ref;
-    const a = add(sym, createNode("symbol", "a", { itemId: ref.id }));
-    add(sym, createNode("symbol", "b", { itemId: ref.id }));
-    sym.layers.find((l) => l.nodeId === a.id)!.excludeFromExport = true;
-    expect(exportSkeleton(project).skeleton.armature.map((x) => x.name)).toContain("Shared");
-  });
-
-  it("leaves the names of the layers it keeps alone", () => {
-    // uniqueNames deliberately runs over every layer: filtering there would
-    // renumber a collision suffix the moment a sibling is excluded.
-    const { project, sym } = scene(["art", "art"]);
-    sym.layers[0]!.excludeFromExport = true;
-    expect(names(armature(project).slot)).toEqual(["art_2"]);
-  });
-
-  it("drops an excluded mask, and an excluded target, from the sidecar", () => {
-    const { project, sym } = scene(["under", "clip"]);
-    sym.layers[0]!.isMask = true;
-    sym.layers[1]!.maskedBy = sym.layers[0]!.id;
-    expect(exportSkeleton(project).masks).toHaveLength(1);
-
-    sym.layers[0]!.excludeFromExport = true;
-    expect(exportSkeleton(project).masks).toHaveLength(0);
-  });
 
   it("is undoable and leaves no key behind when off", () => {
     const { project, sym } = scene(["art"]);
@@ -176,19 +50,6 @@ describe("exclude from export", () => {
     expect(layer.excludeFromExport).toBe(true);
     history.undo();
     expect("excludeFromExport" in layer).toBe(false);
-  });
-});
-
-describe("layer order stays depth first", () => {
-  it("after inserting an empty layer above a group's child", () => {
-    const { project, sym } = scene(["child"]);
-    const group = add(sym, createNode("group", "rig"));
-    const child = Object.values(sym.nodes).find((n) => n.name === "child")!;
-    const history = new History(project);
-    history.apply(new SetParent(sym.id, [child.id as NodeId], group.id));
-
-    expect(sym.layers.map((l) => l.name)).toEqual(["rig", "child"]);
-    expect(armature(project).bone.find((b) => b.name === "child")!.parent).toBe("rig");
   });
 });
 
@@ -348,5 +209,39 @@ describe("descendantsOf / withDescendants", () => {
     const c = node("group", "c", { parentId: b.id });
     for (const n of [a, b, c]) sym.nodes[n.id] = n;
     expect(withDescendants(sym, [b.id, a.id])).toEqual([b.id, c.id, a.id]);
+  });
+});
+
+describe("empty layers", () => {
+  it("becomes a real instance through SetNodeItem, keeping its tracks", () => {
+    const { project, sym } = scene(["art"]);
+    const empty = add(sym, createNode("empty", "Layer 1"));
+    const track = createTrack(empty, 6);
+    sym.animations[0]!.tracks[empty.id] = track;
+    const itemId = Object.values(project.items).find((i) => i.name === "art")!.id;
+
+    const history = new History(project);
+    history.apply(new SetNodeItem(sym.id, new Map([[empty.id, { itemId, kind: "image" }]])));
+
+    expect(sym.nodes[empty.id]!.kind).toBe("image");
+    expect(sym.nodes[empty.id]!.itemId).toBe(itemId);
+    expect(sym.animations[0]!.tracks[empty.id]).toBe(track);
+
+    history.undo();
+    expect(sym.nodes[empty.id]!.kind).toBe("empty");
+    expect(sym.nodes[empty.id]!.itemId).toBeUndefined();
+    expect(sym.animations[0]!.tracks[empty.id]).toBe(track);
+  });
+});
+
+describe("layer order stays depth first", () => {
+  it("after inserting an empty layer above a group's child", () => {
+    const { project, sym } = scene(["child"]);
+    const group = add(sym, createNode("group", "rig"));
+    const child = Object.values(sym.nodes).find((n) => n.name === "child")!;
+    const history = new History(project);
+    history.apply(new SetParent(sym.id, [child.id as NodeId], group.id));
+
+    expect(sym.layers.map((l) => l.name)).toEqual(["rig", "child"]);
   });
 });

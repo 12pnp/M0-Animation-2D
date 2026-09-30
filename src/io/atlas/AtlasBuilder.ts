@@ -2,7 +2,6 @@ import { DEFAULT_PACK, type PackOptions, type PackPage, packRects } from "@/core
 import type { ItemId } from "@/core/doc/ids";
 import { AtlasTooSmall, type Oversized, regionFits } from "@/core/atlas/oversize";
 import { alphaBounds, type TrimResult } from "@/core/atlas/trim";
-import type { DbAtlas, DbSubTexture } from "@/core/export/dbTypes";
 import type { Asset, AssetStore } from "@/app/AssetStore";
 import type { ImageItem } from "@/core/doc/types";
 import { type AtlasLayout, type ExportSettings, type ImageFormat, pageLimit, type Resample } from "@/core/export/settings";
@@ -57,8 +56,40 @@ export function atlasOptionsFor(s: ExportSettings): AtlasOptions {
   };
 }
 
+/**
+ * One image placed on a page, in page pixels with a top-left origin. The
+ * format writers (the Spine `.atlas` from phase 2) serialise this; it holds
+ * everything a trimmed region needs and names no runtime.
+ */
+export interface PackedRegion {
+  name: string;
+  x: number;
+  y: number;
+  /** The TRIMMED size, as drawn on the page. */
+  width: number;
+  height: number;
+  /** What trimming cut off the left and top edges; 0 when untrimmed. */
+  offsetX: number;
+  offsetY: number;
+  /** The UNTRIMMED size. */
+  originalWidth: number;
+  originalHeight: number;
+  rotated: boolean;
+}
+
+export interface PackedPage {
+  /** The shared atlas name every page carries. */
+  name: string;
+  imagePath: string;
+  width: number;
+  height: number;
+  /** Texture resolution; 1 at full size. */
+  scale: number;
+  regions: PackedRegion[];
+}
+
 export interface AtlasPage {
-  json: DbAtlas;
+  info: PackedPage;
   blob: Blob;
   canvas: HTMLCanvasElement;
   /** File stem, e.g. "MyProject_tex" or "MyProject_tex_1". */
@@ -251,40 +282,36 @@ export async function buildAtlas(
     const blob = await encodePage(canvas, opts);
     onProgress((scaling ? 0.5 : 0) + ((scaling ? 0.5 : 1) * (p + 1)) / pages.length);
 
-    // Every entry whose region landed on THIS page gets a SubTexture, even
-    // when several entries share one region.
-    const subTextures: DbSubTexture[] = [];
+    // Every entry whose region landed on THIS page gets a region, even when
+    // several entries share one.
+    const regions: PackedRegion[] = [];
     for (const entry of entries) {
       const rect = placed.get(entry.key);
       if (!rect) continue;
-      const sub: DbSubTexture = {
+      regions.push({
         name: entry.item.name,
         x: rect.x + opts.extrude,
         y: rect.y + opts.extrude,
         width: entry.trim.width,
         height: entry.trim.height,
-      };
-      if (!entry.trim.untrimmed) {
-        sub.frameX = -entry.trim.x;
-        sub.frameY = -entry.trim.y;
-        sub.frameWidth = entry.width;
-        sub.frameHeight = entry.height;
-      }
-      if (rect.rotated) sub.rotated = true;
-      subTextures.push(sub);
+        offsetX: entry.trim.untrimmed ? 0 : entry.trim.x,
+        offsetY: entry.trim.untrimmed ? 0 : entry.trim.y,
+        originalWidth: entry.width,
+        originalHeight: entry.height,
+        rotated: rect.rotated === true,
+      });
     }
-    subTextures.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
+    regions.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 
-    const json: DbAtlas = {
+    const info: PackedPage = {
       name: atlasName,
       imagePath: `${stem}.${opts.image}`,
       width: page.width,
       height: page.height,
-      SubTexture: subTextures,
+      scale: opts.scale,
+      regions,
     };
-    // The runtime reads it as `1 / scale` and multiplies every sprite by that.
-    if (opts.scale < 1) json.scale = opts.scale;
-    out.push({ fileStem: stem, canvas, blob, json, ext: opts.image });
+    out.push({ fileStem: stem, canvas, blob, info, ext: opts.image });
   }
 
   lastBuild = { key, assets: used, pages: out };

@@ -1,15 +1,13 @@
 import { Modal } from "@/view/widgets/Modal";
 import { h, on } from "@/view/widgets/dom";
-import { openExtensionHelp } from "./ExtensionHelp";
-import { EXT_MASKS, EXT_MOTION_BLUR } from "@/core/export/extensions";
 import animoSvg from "@/assets/animo-logo.svg?raw";
 // The mark alone, not the full lockup: at this size the "morenoise" lettering
 // in the lockup is a grey smudge. The name is right beside it as real text.
 import logoSvg from "@/assets/morenoise-mark.svg?raw";
 import {
-  APP_NAME, APP_TAGLINE, APP_VERSION, AUTHOR, AUTHOR_URL, CREDITS,
-  DRAGONBONES_NOTE, LICENSE_ID, LICENSE_NOTE, PIXI_NOTE, REPO_URL, SITE_URL,
-  SPONSOR_URL, TRADEMARK_NOTE,
+  APP_NAME, APP_TAGLINE, APP_VERSION, CREDITS, LICENSE_ID, LICENSE_NOTE,
+  ORIGIN_AUTHOR, ORIGIN_AUTHOR_URL, ORIGIN_NAME, ORIGIN_REPO_URL, REPO_URL,
+  SPINE_NOTE, TRADEMARK_NOTE,
 } from "@/core/about";
 
 function link(href: string, text: string, cls = "about-link"): HTMLAnchorElement {
@@ -42,32 +40,23 @@ export function openAbout(): void {
   ));
 
   body.appendChild(h("a", {
-    class: "about-maker", href: AUTHOR_URL, target: "_blank", rel: "noopener noreferrer",
+    class: "about-maker", href: ORIGIN_AUTHOR_URL, target: "_blank", rel: "noopener noreferrer",
   },
     mark,
     h("span", { class: "about-maker-text" },
-      h("span", { class: "about-maker-by" }, "Made by"),
-      h("span", { class: "about-maker-name" }, AUTHOR),
+      h("span", { class: "about-maker-by" }, "Built from"),
+      h("span", { class: "about-maker-name" }, `${ORIGIN_NAME} by ${ORIGIN_AUTHOR}`),
     ),
-    h("span", { class: "about-maker-url" }, AUTHOR_URL.replace(/^https:\/\//, "")),
+    h("span", { class: "about-maker-url" }, ORIGIN_AUTHOR_URL.replace(/^https:\/\//, "")),
   ));
 
   body.appendChild(h("div", { class: "about-links" },
     link(REPO_URL, "Source code"),
-    link(SITE_URL, "Website"),
-    link(SPONSOR_URL, "Sponsor"),
+    link(ORIGIN_REPO_URL, `${ORIGIN_NAME} source`),
   ));
 
   body.appendChild(h("h4", null, "How it works"));
-  body.appendChild(h("p", null, DRAGONBONES_NOTE));
-  body.appendChild(h("p", null, PIXI_NOTE));
-  const extRow = h("div", { class: "about-exts" });
-  for (const [name, label] of [[EXT_MASKS, "Mask layers"], [EXT_MOTION_BLUR, "Motion blur"]] as const) {
-    const btn = h("button", { class: "btn small" }, `${label}…`);
-    on(btn, "pointerup", () => openExtensionHelp(name));
-    extRow.appendChild(btn);
-  }
-  body.appendChild(extRow);
+  body.appendChild(h("p", null, SPINE_NOTE));
 
   body.appendChild(h("h4", null, "Credits"));
   const list = h("ul", { class: "about-credits" });

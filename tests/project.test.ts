@@ -6,7 +6,6 @@ import { tf } from "@/core/math/Transform";
 import { TWEEN_LINEAR } from "@/core/math/easing";
 import { serializeProject, deserializeProject } from "@/io/project/ProjectFile";
 import { validateProject, migrate } from "@/core/doc/schema";
-import { exportSkeleton } from "@/core/export/exportSkeleton";
 import type { AssetStore } from "@/app/AssetStore";
 
 beforeEach(() => reseed());
@@ -102,20 +101,6 @@ describe("project round trip", () => {
 
     expect(assets.size()).toBe(2);
     expect(await assets.bytesOf("asset_torso")).toEqual(originalBytes);
-  });
-
-  it("produces a byte-identical export after a round trip", async () => {
-    // The strongest check available without a browser: if saving and loading
-    // altered anything the runtime cares about, the two skeletons diverge.
-    const assets = fakeAssets();
-    const project = richProject(assets);
-    const exportBefore = JSON.stringify(exportSkeleton(project).skeleton);
-
-    const blob = await serializeProject(project, assets.store);
-    const { project: loaded } = await deserializeProject(await blob.arrayBuffer(), assets.store);
-    const exportAfter = JSON.stringify(exportSkeleton(loaded).skeleton);
-
-    expect(exportAfter).toBe(exportBefore);
   });
 
   it("only stores assets the document still uses", async () => {

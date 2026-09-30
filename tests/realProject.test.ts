@@ -4,7 +4,6 @@ import { createNode, createLayer } from "@/core/doc/defaults";
 import { DOC_VERSION, isImage, isSymbol, type SymbolItem, type Track } from "@/core/doc/types";
 import { sampleTransformRaw } from "@/core/doc/timeline";
 import { evaluateSymbol } from "@/core/doc/pose";
-import { exportSkeleton } from "@/core/export/exportSkeleton";
 import { AddNode, ReplaceImageAsset, SetLayerExcluded, SetNodeItem } from "@/core/history/commands";
 import { wouldCreateCycle } from "@/core/history/symbolCommands";
 import { serializeProject, deserializeProject } from "@/io/project/ProjectFile";
@@ -51,8 +50,6 @@ function selectAllFrames(store: Store, nodeIds: NodeId[]): void {
 const keyFrames = (track: Track | undefined) => (track?.keys ?? []).map((k) => k.frame);
 const nodeOf = (sym: SymbolItem, layerName: string) =>
   sym.nodes[sym.layers.find((l) => l.name === layerName)!.nodeId]!;
-const armatureNamed = (fx: Fixture, name: string) =>
-  exportSkeleton(fx.project).skeleton.armature.find((a) => a.name === name)!;
 
 describe("the fixture itself", () => {
   let fx: Fixture;
@@ -74,14 +71,6 @@ describe("the fixture itself", () => {
     expect(rowNames(fx.symbol(RIG.body))).toHaveLength(5);
     expect(fx.symbol(RIG.body).animations[0]!.duration).toBe(120);
     expect(fx.symbol(RIG.eyeLeft).animations[0]!.duration).toBe(288);
-  });
-
-  it("exports without errors, with the mask link the rig carries", () => {
-    const result = exportSkeleton(fx.project);
-    expect(result.diagnostics.filter((d) => d.severity === "error")).toHaveLength(0);
-    const link = result.masks.find((m) => m.armature === RIG.eyeLeft)!;
-    expect(link.mask).toBe("eyelid_mask");
-    expect(link.targets.sort()).toEqual(["eyelid_bottom", "eyelid_top"]);
   });
 });
 
@@ -503,49 +492,6 @@ describe("empty layers and Exclude from Export on the real rig", () => {
     sym = fx.open(RIG.eyeLeft);
   });
 
-  it("an empty layer changes nothing about the exported file", () => {
-    const before = JSON.stringify(exportSkeleton(fx.project).skeleton);
-    addEmptyLayer(fx.store, "Layer 7", 0);
-    expect(JSON.stringify(exportSkeleton(fx.project).skeleton)).toBe(before);
-  });
-
-  it("excluding the mask layer removes its bone, slot and mask link", () => {
-    const layer = sym.layers.find((l) => l.name === "eyelid_mask")!;
-    const image = sym.nodes[layer.nodeId]!.itemId!;
-    expect(exportSkeleton(fx.project).usedImages).toContain(image);
-
-    fx.store.apply(new SetLayerExcluded(sym.id, [layer.id], true));
-
-    const result = exportSkeleton(fx.project);
-    const arm = result.skeleton.armature.find((a) => a.name === RIG.eyeLeft)!;
-    expect(arm.slot.map((s) => s.name)).not.toContain("eyelid_mask");
-    expect(arm.bone.map((b) => b.name)).not.toContain("eyelid_mask");
-    expect(arm.animation[0]!.bone?.some((b) => b.name === "eyelid_mask")).toBeFalsy();
-    expect(result.masks.some((m) => m.armature === RIG.eyeLeft)).toBe(false);
-    // The image drops out of the atlas because nothing draws it any more.
-    expect(result.usedImages).not.toContain(image);
-    expect(result.diagnostics.some((d) => d.message.includes("eyelid_mask"))).toBe(true);
-  });
-
-  it("leaves the other rows of the same symbol named exactly as they were", () => {
-    const before = armatureNamed(fx, RIG.eyeLeft).slot.map((s) => s.name)
-      .filter((n) => n !== "eyelid_mask");
-    const layer = sym.layers.find((l) => l.name === "eyelid_mask")!;
-    fx.store.apply(new SetLayerExcluded(sym.id, [layer.id], true));
-    expect(armatureNamed(fx, RIG.eyeLeft).slot.map((s) => s.name)).toEqual(before);
-  });
-
-  it("is undoable, byte for byte", () => {
-    const before = JSON.stringify(exportSkeleton(fx.project).skeleton);
-    const layer = sym.layers.find((l) => l.name === "eyelid_bottom")!;
-    fx.store.apply(new SetLayerExcluded(sym.id, [layer.id], true));
-    expect(JSON.stringify(exportSkeleton(fx.project).skeleton)).not.toBe(before);
-
-    fx.store.undo();
-    expect("excludeFromExport" in layer).toBe(false);
-    expect(JSON.stringify(exportSkeleton(fx.project).skeleton)).toBe(before);
-  });
-
   it("survives a save and reload", async () => {
     const layer = sym.layers.find((l) => l.name === "Layer 6")!;
     fx.store.apply(new SetLayerExcluded(sym.id, [layer.id], true));
@@ -598,16 +544,11 @@ describe("Swap Instance on a real node", () => {
     expect(keyFrames(fx.store.currentAnimation!.tracks[node.id])).toEqual(keys);
   });
 
-  it("swaps an image for a symbol, and the export follows", () => {
-    const node = nodeOf(sym, "Layer 6");
-    const symbolItem = fx.itemId(RIG.pupil2);
-    fx.store.apply(new SetNodeItem(
-      sym.id, new Map([[node.id, { itemId: symbolItem, kind: "symbol" }]])));
-
-    const arm = armatureNamed(fx, RIG.eyeLeft);
-    const slot = arm.skin[0]!.slot.find((s) => s.name === "Layer 6")!;
-    expect(slot.display[0]!.type).toBe("armature");
-    expect(slot.display[0]!.name).toBe(RIG.pupil2);
+  it("is refused where it would nest a symbol inside itself", () => {
+    // eye_left already contains an instance of pupil_2, so putting eye_left
+    // inside pupil_2 is a cycle — the guard every entry point must call.
+    expect(wouldCreateCycle(fx.project, fx.itemId(RIG.pupil2), fx.symbol(RIG.eyeLeft).id)).toBe(true);
+    expect(wouldCreateCycle(fx.project, fx.symbol(RIG.eyeLeft).id, fx.itemId(RIG.pupil2))).toBe(false);
   });
 
   it("fills an empty layer in place, keeping its row and its id", () => {
@@ -620,14 +561,6 @@ describe("Swap Instance on a real node", () => {
 
     expect(sym.layers[1]!.id).toBe(layerId);           // same row, same z-order
     expect(sym.layers[1]!.nodeId).toBe(emptyId);
-    expect(armatureNamed(fx, RIG.eyeLeft).slot.map((s) => s.name)).toContain("Layer 7");
-  });
-
-  it("is refused where it would nest a symbol inside itself", () => {
-    // eye_left already contains an instance of pupil_2, so putting eye_left
-    // inside pupil_2 is a cycle — the guard every entry point must call.
-    expect(wouldCreateCycle(fx.project, fx.itemId(RIG.pupil2), fx.symbol(RIG.eyeLeft).id)).toBe(true);
-    expect(wouldCreateCycle(fx.project, fx.symbol(RIG.eyeLeft).id, fx.itemId(RIG.pupil2))).toBe(false);
   });
 });
 
@@ -670,31 +603,5 @@ describe("Replace Image on an image used by several rows", () => {
     expect(item.assetId).toBe(was.assetId);
     expect(item.width).toBe(was.width);
     expect(item.height).toBe(was.height);
-  });
-
-  it("re-anchors the exported pivot, exactly as the toast warns", () => {
-    // The transform point is stored in PIXELS and the exporter normalises it
-    // against the untrimmed size, so a resize moves the anchor inside the
-    // artwork — even for a pivot that was dead centre, which every pivot in
-    // this rig is. This is the shift the user is told about instead of
-    // discovering it in game.
-    const sym = fx.open(RIG.eyeLeft);
-    const node = nodeOf(sym, "eyelid_top");
-    const itemId = node.itemId!;
-    const pivotOf = () => armatureNamed(fx, RIG.eyeLeft)
-      .skin[0]!.slot.find((s) => s.name === "eyelid_top")!.display[0]!.pivot!;
-    expect(pivotOf()).toEqual({ x: 0.5, y: 0.5 });     // 70,40 of 140x80
-    expect(node.pivot).toEqual({ x: 70, y: 40 });
-
-    fx.store.apply(new ReplaceImageAsset(
-      itemId, { assetId: "asset_new" as never, width: 240, height: 180 }, [sym.id]));
-
-    expect(node.pivot).toEqual({ x: 70, y: 40 });      // untouched, by design
-    const after = pivotOf();
-    expect(after.x).toBeCloseTo(70 / 240, 4);
-    expect(after.y).toBeCloseTo(40 / 180, 4);
-
-    fx.store.undo();
-    expect(pivotOf()).toEqual({ x: 0.5, y: 0.5 });
   });
 });

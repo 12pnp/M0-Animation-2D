@@ -5,7 +5,6 @@ import { isSymbol, type Project, type SymbolItem } from "@/core/doc/types";
 import {
   normalizeMasks, maskRepairs, maskGroups, maskCandidate, nearestMaskAbove,
 } from "@/core/doc/layerTree";
-import { exportSkeleton } from "@/core/export/exportSkeleton";
 import { History } from "@/core/history/History";
 import { AddNode, RemoveNodes, ReorderLayer, SetLayerMasks } from "@/core/history/commands";
 import { Store } from "@/app/Store";
@@ -119,37 +118,6 @@ describe("mask links", () => {
     sym.layers[0]!.isMask = true;
     expect(nearestMaskAbove(sym, sym.layers[2]!.id)!.name).toBe("top");
     expect(nearestMaskAbove(sym, sym.layers[0]!.id)).toBeNull();
-  });
-});
-
-describe("mask export", () => {
-  it("writes mask links as slot names, not as anything in the skeleton", () => {
-    const { project, sym } = scene(["bottom", "top"]);
-    link(sym, 0, 1);
-    const { skeleton, masks } = exportSkeleton(project);
-    expect(masks).toEqual([{ armature: sym.name, mask: "top", targets: ["bottom"] }]);
-    // Nothing about a mask may leak into the skeleton: the runtime's parser
-    // has no key for one and would not complain, it would just ignore it.
-    expect(JSON.stringify(skeleton)).not.toMatch(/mask/i);
-  });
-
-  it("warns and skips a mask layer with no artwork to clip with", () => {
-    const { project, sym } = scene(["bottom", "top"]);
-    link(sym, 0, 1);
-    sym.nodes[sym.layers[0]!.nodeId]!.kind = "bone";     // produces no slot
-    const { masks, diagnostics } = exportSkeleton(project);
-    expect(masks).toEqual([]);
-    expect(diagnostics.some((d) => /no artwork to clip/.test(d.message))).toBe(true);
-  });
-
-  it("carries several targets under one mask", () => {
-    // Verified against Pixi 8.9.2: one mask display can clip many targets.
-    const { project, sym } = scene(["c", "b", "a"]);
-    sym.layers[0]!.isMask = true;
-    sym.layers[1]!.maskedBy = sym.layers[0]!.id;
-    sym.layers[2]!.maskedBy = sym.layers[0]!.id;
-    const { masks } = exportSkeleton(project);
-    expect(masks[0]!.targets).toEqual(["b", "c"]);
   });
 });
 

@@ -14,7 +14,6 @@ import {
 import { ReplaceImageAsset, SetBindTransform, SetPivot } from "@/core/history/commands";
 import { EditTracks } from "@/core/history/timelineCommands";
 import { History } from "@/core/history/History";
-import { exportSkeleton } from "@/core/export/exportSkeleton";
 
 beforeEach(() => { reseed(); invalidateBounds(); });
 
@@ -202,30 +201,6 @@ describe("moving a transform point", () => {
     // A quarter turn sends local +x to world +y.
     expect(out.x).toBeCloseTo(100, 9);
     expect(out.y).toBeCloseTo(60, 9);
-  });
-});
-
-describe("exporting a symbol instance's transform point", () => {
-  it("puts it on the display, where it moves the slot and not the bone", () => {
-    const { project, instance } = nested();
-    new SetPivot(project.rootSymbolId, new Map([[instance.id, { x: 40, y: 25 }]])).apply(project);
-
-    const { skeleton } = exportSkeleton(project);
-    const scene = skeleton.armature.find((a) => a.name === "Scene 1")!;
-    const display = scene.skin[0]!.slot[0]!.display[0]!;
-    expect(display).toMatchObject({ type: "armature", transform: { x: -40, y: -25 } });
-
-    // The bone carries the compensated origin, so the artwork stays put.
-    const bone = scene.bone.find((b) => b.name === "part")!;
-    expect(bone.transform!.x).toBeCloseTo(340, 4);
-    expect(bone.transform!.y).toBeCloseTo(225, 4);
-  });
-
-  it("writes no display transform when the point is where it started", () => {
-    const { project } = nested();
-    const { skeleton } = exportSkeleton(project);
-    const scene = skeleton.armature.find((a) => a.name === "Scene 1")!;
-    expect(scene.skin[0]!.slot[0]!.display[0]).toEqual({ name: "part", type: "armature" });
   });
 });
 

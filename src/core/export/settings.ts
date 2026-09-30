@@ -13,7 +13,7 @@
 
 /** The runtime a bundle is written for. One today; the field exists so a
  *  second format is a new value rather than a new setting. */
-export type ExportFormat = "dragonbones-pixi";
+export type ExportFormat = "spine-4.3";
 
 /** How artwork is resized when `scale` is below 1. */
 export type Resample = "nearest" | "bilinear" | "lanczos";
@@ -54,7 +54,7 @@ export interface ExportSettings {
 }
 
 export const DEFAULT_EXPORT_SETTINGS: Readonly<ExportSettings> = Object.freeze({
-  format: "dragonbones-pixi",
+  format: "spine-4.3",
   maxWidth: 2048,
   maxHeight: 2048,
   powerOfTwo: false,
@@ -83,7 +83,7 @@ export const EXPORT_LIMITS = {
 } as const satisfies Partial<Record<keyof ExportSettings, { min: number; max: number }>>;
 
 export const EXPORT_CHOICES = {
-  format: ["dragonbones-pixi"],
+  format: ["spine-4.3"],
   resample: ["nearest", "bilinear", "lanczos"],
   layout: ["packed", "perImage"],
   image: ["png", "webp"],
