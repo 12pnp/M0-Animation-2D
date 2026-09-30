@@ -10,17 +10,21 @@ import { loadStickman } from "./fixtures/stickman";
 /**
  * `mcp/amino-bridge.mjs` as Claude Code runs it: MCP over stdio on one side,
  * the editor page's long poll on the other. The "page" here is a real
- * `AgentApi` on the stickman, polling as `AgentBridge` does; the Claude API
- * for Ask AI is a fake that asks for one tool and then answers.
+ * `AgentApi` on the stickman, polling as `AgentBridge` does; the model APIs
+ * for Ask AI are fakes that ask for one tool and then answer — Anthropic
+ * Messages for Claude, chat completions for GLM.
  */
 
 const BRIDGE = fileURLToPath(new URL("../mcp/amino-bridge.mjs", import.meta.url));
-const PORT = 5391, API_PORT = 5392;
+const PORT = 5391, API_PORT = 5392, GLM_PORT = 5393, GLM_API_PORT = 5394;
 const ORIGIN = "http://localhost:5181";
 
 let bridge: ChildProcess;
 let fakeApi: http.Server;
 const apiRequests: Array<{ messages: Array<{ role: string; content: unknown }>; tools: Array<{ name: string }> }> = [];
+let glmBridge: ChildProcess;
+let glmApi: http.Server;
+const glmRequests: Array<{ messages: Array<{ role: string; tool_call_id?: string; content: unknown }>; tools: Array<{ type?: string }>; authorization?: string }> = [];
 let pageRunning = true;
 let buffer = "";
 const waiting = new Map<number, (msg: { result?: Record<string, unknown>; error?: { message: string } }) => void>();
@@ -35,17 +39,17 @@ function rpc(method: string, params: unknown): Promise<{ result?: Record<string,
 }
 
 /** The page's side, as `AgentBridge.loop` does it. */
-async function runPage(api: AgentApi): Promise<void> {
+async function runPage(api: AgentApi, port = PORT): Promise<void> {
   while (pageRunning) {
     try {
-      const res = await fetch(`http://127.0.0.1:${PORT}/agent/next`, { headers: { origin: ORIGIN } });
+      const res = await fetch(`http://127.0.0.1:${port}/agent/next`, { headers: { origin: ORIGIN } });
       if (res.status === 204) continue;
       const call = await res.json() as { id: string; name: string; args: Record<string, unknown> };
       let body: Record<string, unknown>;
       try { body = { id: call.id, ok: true, value: await api.call(call.name, call.args) }; } catch (err) {
         body = { id: call.id, ok: false, error: err instanceof AgentError ? err.message : String(err) };
       }
-      await fetch(`http://127.0.0.1:${PORT}/agent/result`, { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: JSON.stringify(body) });
+      await fetch(`http://127.0.0.1:${port}/agent/result`, { method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: JSON.stringify(body) });
     } catch {
       await new Promise((r) => setTimeout(r, 100));
     }
@@ -87,12 +91,36 @@ beforeAll(async () => {
   });
   await new Promise<void>((r) => bridge.stderr!.once("data", () => r()));
   void runPage(api);
+
+  // The same bridge on GLM (GLM_API_KEY alone picks the provider), against a
+  // fake chat-completions API: first asks for get_rig, then answers.
+  glmApi = http.createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const c of req) chunks.push(c as Buffer);
+    const body = JSON.parse(Buffer.concat(chunks).toString());
+    glmRequests.push({ ...body, authorization: req.headers.authorization });
+    const first = glmRequests.length === 1;
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify(first
+      ? { choices: [{ message: { content: null, tool_calls: [{ id: "call1", type: "function", function: { name: "get_rig", arguments: "{}" } }] }, finish_reason: "tool_calls" }] }
+      : { choices: [{ message: { content: "The rig has hips." }, finish_reason: "stop" }] }));
+  });
+  await new Promise<void>((r) => glmApi.listen(GLM_API_PORT, "127.0.0.1", r));
+
+  const env: NodeJS.ProcessEnv = { ...process.env, AMINO_BRIDGE_PORT: String(GLM_PORT), GLM_API_KEY: "test-glm", AMINO_API_URL: `http://127.0.0.1:${GLM_API_PORT}/chat/completions` };
+  delete env.AMINO_PROVIDER; // auto-detect: GLM_API_KEY means glm
+  glmBridge = spawn("node", [BRIDGE], { stdio: ["pipe", "pipe", "pipe"], env });
+  glmBridge.stdout!.resume(); // no MCP over stdio for this one
+  await new Promise<void>((r) => glmBridge.stderr!.once("data", () => r()));
+  void runPage(api, GLM_PORT);
 });
 
 afterAll(async () => {
   pageRunning = false;
   bridge?.kill();
+  glmBridge?.kill();
   await new Promise((r) => fakeApi.close(r));
+  await new Promise((r) => glmApi.close(r));
 });
 
 describe("the AI bridge", () => {
@@ -136,5 +164,32 @@ describe("the AI bridge", () => {
     const toolResult = apiRequests[1]!.messages.at(-1)!.content as Array<{ type: string; content: string }>;
     expect(toolResult[0]!.type).toBe("tool_result");
     expect(toolResult[0]!.content).toContain("\"hips\"");
+  });
+});
+
+describe("the AI bridge on GLM", () => {
+  it("reports which provider it runs", async () => {
+    const res = await fetch(`http://127.0.0.1:${GLM_PORT}/agent/status`, { headers: { origin: ORIGIN } });
+    expect(await res.json()).toMatchObject({ chat: true, provider: "glm", model: "glm-4.6" });
+  });
+
+  it("runs Ask AI through chat-completions format and answers in the page's format", async () => {
+    const res = await fetch(`http://127.0.0.1:${GLM_PORT}/chat`, {
+      method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "What is in the rig?" }] }),
+    });
+    const body = await res.json() as { text: string; messages: Array<{ role: string; content: unknown }> };
+    expect(body.text).toBe("The rig has hips.");
+    // Outgoing: Bearer auth, a system message first, the tools as functions.
+    expect(glmRequests[0]!.authorization).toBe("Bearer test-glm");
+    expect(glmRequests[0]!.messages[0]).toMatchObject({ role: "system" });
+    expect(glmRequests[0]!.tools.every((t) => t.type === "function")).toBe(true);
+    // The second request carried the page's answer as a tool message.
+    const tool = glmRequests[1]!.messages.at(-1) as { role: string; tool_call_id?: string; content: string };
+    expect(tool).toMatchObject({ role: "tool", tool_call_id: "call1" });
+    expect(tool.content).toContain("\"hips\"");
+    // Back to the page: the model's tool call came back in Anthropic shape.
+    const said = body.messages.find((m) => m.role === "assistant")!;
+    expect(said.content).toEqual([{ type: "tool_use", id: "call1", name: "get_rig", input: {} }]);
   });
 });

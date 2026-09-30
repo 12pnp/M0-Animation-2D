@@ -7,14 +7,17 @@
 //   node mcp/amino-bridge.mjs --http-only  just the HTTP side, for Ask AI
 //
 // The editor page (Window ▸ Connect to AI) long-polls GET /agent/next for tool
-// calls and posts results to /agent/result. POST /chat runs Claude with the
-// same tools (the key is ANTHROPIC_API_KEY in THIS process, never in the page).
+// calls and posts results to /agent/result. POST /chat runs the model with the
+// same tools: Claude (Anthropic Messages) or GLM (OpenAI-compatible), picked by
+// AMINO_PROVIDER — the key stays in THIS process, never in the page.
 // Listens on 127.0.0.1 only; only the editor's origins may call it.
 //
 // Environment: AMINO_BRIDGE_PORT (5190), AMINO_ORIGINS (comma separated;
 // default the dev server, http://localhost:5181 and http://127.0.0.1:5181),
-// ANTHROPIC_API_KEY, AMINO_MODEL (claude-sonnet-5-5), AMINO_API_URL (the
-// Messages endpoint; tests point it at a fake).
+// AMINO_PROVIDER (anthropic | glm; glm when GLM_API_KEY is set), ANTHROPIC_API_KEY,
+// GLM_API_KEY (api.z.ai; for open.bigmodel.cn also set AMINO_API_URL), AMINO_MODEL
+// (claude-sonnet-5-5 / glm-4.6), AMINO_API_URL (the provider's endpoint; tests
+// point it at a fake).
 
 import http from "node:http";
 import { readFileSync } from "node:fs";
@@ -26,10 +29,28 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const TOOLS = JSON.parse(readFileSync(join(HERE, "../src/app/agent/tools.json"), "utf8"));
 const PORT = Number(process.env.AMINO_BRIDGE_PORT ?? 5190);
 const ORIGINS = new Set((process.env.AMINO_ORIGINS ?? "http://localhost:5181,http://127.0.0.1:5181").split(",").map((s) => s.trim()));
-const MODEL = process.env.AMINO_MODEL ?? "claude-sonnet-5-5";
-const API_URL = process.env.AMINO_API_URL ?? "https://api.anthropic.com/v1/messages";
 const HTTP_ONLY = process.argv.includes("--http-only");
 const log = (...a) => process.stderr.write(`[amino-bridge] ${a.join(" ")}\n`);
+
+/* The chat providers: everything provider-specific about one LLM API. The
+   conversation with the page stays Anthropic-shaped; each provider's turn()
+   translates to its wire format and the reply back. */
+const PROVIDERS = {
+  anthropic: {
+    label: "Claude", url: "https://api.anthropic.com/v1/messages", model: "claude-sonnet-5-5",
+    keyName: "ANTHROPIC_API_KEY", key: () => process.env.ANTHROPIC_API_KEY, turn: anthropicTurn,
+  },
+  glm: {
+    label: "GLM", url: "https://api.z.ai/api/paas/v4/chat/completions", model: "glm-4.6",
+    keyName: "GLM_API_KEY", key: () => process.env.GLM_API_KEY ?? process.env.Z_AI_API_KEY, turn: openaiTurn,
+  },
+};
+const PROVIDER_NAME = process.env.AMINO_PROVIDER ?? (process.env.GLM_API_KEY ? "glm" : "anthropic");
+const PROVIDER = PROVIDERS[PROVIDER_NAME];
+if (!PROVIDER) { log(`Unknown AMINO_PROVIDER "${PROVIDER_NAME}" (anthropic or glm).`); process.exit(1); }
+const MODEL = process.env.AMINO_MODEL ?? PROVIDER.model;
+const API_URL = process.env.AMINO_API_URL ?? PROVIDER.url;
+const hasKey = () => !!PROVIDER.key();
 
 /* ── the page: calls waiting for it, and the one poll waiting for a call ── */
 
@@ -63,7 +84,7 @@ function flush() {
 
 function send(res, status, body) {
   res.statusCode = status;
-  res.setHeader("x-amino-chat", process.env.ANTHROPIC_API_KEY ? "1" : "0");
+  res.setHeader("x-amino-chat", hasKey() ? "1" : "0");
   if (body === undefined) { res.end(); return; }
   res.setHeader("content-type", "application/json");
   res.end(JSON.stringify(body));
@@ -108,7 +129,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 204);
     }
     if (req.method === "GET" && url.pathname === "/agent/status") {
-      return send(res, 200, { editor: Date.now() - lastSeen < 30000, chat: !!process.env.ANTHROPIC_API_KEY, model: MODEL });
+      return send(res, 200, { editor: Date.now() - lastSeen < 30000, chat: hasKey(), provider: PROVIDER_NAME, model: MODEL });
     }
     if (req.method === "POST" && url.pathname === "/chat") {
       const body = await readJson(req);
@@ -123,7 +144,7 @@ const server = http.createServer(async (req, res) => {
 server.on("error", (err) => { log(`HTTP: ${err.message}`); process.exit(1); });
 server.listen(PORT, "127.0.0.1", () => log(`HTTP on http://127.0.0.1:${PORT} for ${[...ORIGINS].join(", ")}`));
 
-/* ── Ask AI: Claude with the editor's tools ── */
+/* ── Ask AI: Claude or GLM with the editor's tools ── */
 
 const SYSTEM = `You animate Spine 2D skeletons in Amino Spine2D, a timeline editor, through tools.
 Conventions: x right, y UP, rotation in degrees counter-clockwise; key values are LOCAL to the parent bone and absolute (not offsets from the setup pose).
@@ -133,21 +154,15 @@ Use get_pose to check where bones end up (feet on the ground, hands where intend
 Put many keys in one set_keys call: each call is ONE undo step for the user. End with check_preview on what you made, then show it, and tell the user briefly what you did.`;
 
 async function chat(messages) {
-  if (!process.env.ANTHROPIC_API_KEY) throw new Error("The bridge has no ANTHROPIC_API_KEY: start it with the key in its environment.");
+  const key = PROVIDER.key();
+  if (!key) throw new Error(`The bridge has no ${PROVIDER.keyName}: start it with the key in its environment.`);
   const convo = [...messages];
-  const tools = TOOLS.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema }));
   for (let turn = 0; turn < 24; turn++) {
-    const res = await fetch(API_URL, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-      body: JSON.stringify({ model: MODEL, max_tokens: 8000, system: SYSTEM, tools, messages: convo }),
-    });
-    const reply = await res.json();
-    if (!res.ok) throw new Error(reply?.error?.message ?? `Claude API ${res.status}`);
-    convo.push({ role: "assistant", content: reply.content });
-    const uses = reply.content.filter((b) => b.type === "tool_use");
-    if (reply.stop_reason !== "tool_use" || uses.length === 0) {
-      return { messages: convo, text: reply.content.filter((b) => b.type === "text").map((b) => b.text).join("\n") };
+    const reply = await PROVIDER.turn(convo, key);
+    convo.push({ role: "assistant", content: reply.blocks });
+    const uses = reply.blocks.filter((b) => b.type === "tool_use");
+    if (!reply.toolUse || uses.length === 0) {
+      return { messages: convo, text: reply.blocks.filter((b) => b.type === "text").map((b) => b.text).join("\n") };
     }
     const results = [];
     for (const use of uses) {
@@ -160,6 +175,57 @@ async function chat(messages) {
     convo.push({ role: "user", content: results });
   }
   return { messages: convo, text: "(Stopped after 24 steps.)" };
+}
+
+/** One Anthropic Messages call (Claude): request and reply already in the bridge's format. */
+async function anthropicTurn(convo, key) {
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
+    body: JSON.stringify({
+      model: MODEL, max_tokens: 8000, system: SYSTEM,
+      tools: TOOLS.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
+      messages: convo,
+    }),
+  });
+  const reply = await res.json();
+  if (!res.ok) throw new Error(reply?.error?.message ?? `Claude API ${res.status}`);
+  return { blocks: reply.content, toolUse: reply.stop_reason === "tool_use" };
+}
+
+/** One OpenAI-compatible call (GLM): the conversation is translated to
+    chat-completions format and the reply back, so /chat stays Anthropic-shaped. */
+async function openaiTurn(convo, key) {
+  const toOpenAI = (m) => {
+    const blocks = Array.isArray(m.content) ? m.content : [];
+    if (m.role === "user" && typeof m.content === "string") return [{ role: "user", content: m.content }];
+    if (m.role === "assistant") {
+      const text = blocks.filter((b) => b.type === "text").map((b) => b.text).join("\n");
+      const tool_calls = blocks.filter((b) => b.type === "tool_use")
+        .map((b) => ({ id: b.id, type: "function", function: { name: b.name, arguments: JSON.stringify(b.input ?? {}) } }));
+      return [{ role: "assistant", content: text || null, ...(tool_calls.length ? { tool_calls } : {}) }];
+    }
+    return blocks.filter((b) => b.type === "tool_result")
+      .map((b) => ({ role: "tool", tool_call_id: b.tool_use_id, content: b.content }));
+  };
+  const res = await fetch(API_URL, {
+    method: "POST",
+    headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
+    body: JSON.stringify({
+      model: MODEL, max_tokens: 8000,
+      messages: [{ role: "system", content: SYSTEM }, ...convo.flatMap(toOpenAI)],
+      tools: TOOLS.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.input_schema } })),
+    }),
+  });
+  const reply = await res.json();
+  if (!res.ok) throw new Error(reply?.error?.message ?? `GLM API ${res.status}`);
+  const choice = reply.choices[0];
+  const blocks = [];
+  if (choice.message.content) blocks.push({ type: "text", text: choice.message.content });
+  for (const call of choice.message.tool_calls ?? []) {
+    blocks.push({ type: "tool_use", id: call.id, name: call.function.name, input: JSON.parse(call.function.arguments || "{}") });
+  }
+  return { blocks, toolUse: choice.finish_reason === "tool_calls" };
 }
 
 /* ── MCP over stdio: newline-delimited JSON-RPC 2.0 ── */

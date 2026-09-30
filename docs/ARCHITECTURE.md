@@ -933,7 +933,7 @@ An AI edits the open document through the same undoable commands as a person.
 flowchart LR
     CC["Claude Code / Desktop"] -->|"MCP, stdio"| BR["mcp/amino-bridge.mjs<br/>127.0.0.1:5190"]
     ASK["AI ▸ Ask AI dialog"] -->|"POST /chat"| BR
-    BR -->|"Messages API + tools<br/>(key in the bridge)"| CL["Claude"]
+    BR -->|"Messages API or chat completions<br/>(key in the bridge)"| CL["Claude or GLM"]
     PAGE["AgentBridge (page)"] -->|"GET /agent/next (long poll)"| BR
     PAGE --> API["AgentApi"]
     API -->|"EditTracks, AddAnimation<br/>labelled AI: …"| ST["Store / History"]
@@ -958,14 +958,17 @@ flowchart LR
   delimited JSON-RPC: `initialize`, `tools/list`, `tools/call`) and HTTP on 127.0.0.1 for the
   page, and refuses other origins (`AMINO_ORIGINS`). The page long-polls it (AI ▸ Connect to
   AI, remembered per browser, or `?agent` in the URL): no key and no socket server in the
-  page. Ask AI runs Claude inside the bridge with `ANTHROPIC_API_KEY` from its environment
-  (`AMINO_MODEL`, default claude-sonnet-5-5).
+  page. Ask AI runs the model inside the bridge, with its key from the bridge's environment:
+  Claude (Anthropic Messages, `ANTHROPIC_API_KEY`) or GLM (OpenAI chat completions,
+  `GLM_API_KEY` on api.z.ai), picked by `AMINO_PROVIDER` — `glm` whenever `GLM_API_KEY` is
+  set. `AMINO_MODEL` (claude-sonnet-5-5 / glm-4.6) and `AMINO_API_URL` (for open.bigmodel.cn)
+  override; the conversation with the page stays Anthropic-shaped either way.
 - **A wrong call is the model's to fix**: `AgentError` messages go back as tool errors
   (`isError`), saying what exists ("There is no bone "tail". get_rig lists them.").
 
 `tests/agentApi.test.ts` runs the tools on the stickman and plays the export in spine-core.
 `tests/agentBridge.test.ts` runs the bridge as Claude Code would, with a page that polls
-and a fake Messages API.
+and fake model APIs (Anthropic Messages for Claude, chat completions for GLM).
 
 ## The DragonBones 5.5 contract
 

@@ -17,7 +17,7 @@ flowchart LR
     EXP -->|"same bytes"| PREV["Preview<br/>spine-pixi-v8"]
     FILES --> GAME["Unity / Pixi / any Spine 4.3 runtime"]
     FILES --> IMP["Spine import"] --> DOC
-    AI["Claude (MCP / Ask AI)"] --> BR["mcp/amino-bridge.mjs"] --> AG["AgentApi"] --> DOC
+    AI["Claude or GLM (MCP / Ask AI)"] --> BR["mcp/amino-bridge.mjs"] --> AG["AgentApi"] --> DOC
 ```
 
 ## Status
@@ -32,25 +32,28 @@ JSON export (with its atlas and pages, or a zip of them) for editing. Meshes,
 constraints, physics and other skins are shown through the Spine runtime and
 written back unchanged. The exports play in Unity through spine-unity 4.3 exactly as in the
 Preview (checked frame by frame; turn on Export Settings ▸ "Atlas as .atlas.txt" for Unity).
-**An AI can animate the open rig**: Claude Code or Claude Desktop over MCP, or
-AI ▸ Ask AI in the editor, through tools that read the rig, key bones and check the
+**An AI can animate the open rig**: Claude or GLM through AI ▸ Ask AI in the
+editor, or any MCP client (Claude Code, Claude Desktop), through tools that read
+the rig, key bones and check the
 result against the Spine runtime. Every AI edit is one undo step.
 
-## Connecting Claude
+## Connecting an AI
 
 ```bash
 node mcp/amino-bridge.mjs --http-only
 ```
 
-That runs the bridge for the page alone; for Ask AI, start it with `ANTHROPIC_API_KEY` in
-its environment. For Claude Code, add the bridge to a project's `.mcp.json` instead, and
-Claude starts it:
+That runs the bridge for the page alone; for Ask AI, start it with `ANTHROPIC_API_KEY`
+(Claude) or `GLM_API_KEY` (GLM, on api.z.ai) in its environment. For a bigmodel.cn
+key, also set `AMINO_API_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions`;
+`AMINO_MODEL` picks the model. For Claude Code, add the bridge to a project's
+`.mcp.json` instead, and Claude starts it:
 
 ```json
 { "mcpServers": { "amino-spine2d": { "command": "node", "args": ["<path to>/mcp/amino-bridge.mjs"] } } }
 ```
 
-Then choose **AI ▸ Connect to AI** in the editor and ask Claude to animate the rig.
+Then choose **AI ▸ Connect to AI** in the editor and ask the model to animate the rig.
 
 ## Quick start
 

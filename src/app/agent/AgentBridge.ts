@@ -55,6 +55,18 @@ export class AgentBridge {
     return { messages: body.messages ?? [], text: body.text ?? "" };
   }
 
+  /** Which model Ask AI runs, or null when the bridge does not answer. */
+  async info(): Promise<{ provider: string; model: string } | null> {
+    try {
+      const res = await fetch(`${this.url}/agent/status`);
+      if (!res.ok) return null;
+      const body = await res.json() as { provider?: string; model?: string };
+      return { provider: body.provider ?? "anthropic", model: body.model ?? "" };
+    } catch {
+      return null;
+    }
+  }
+
   private async loop(): Promise<void> {
     let failures = 0;
     while (this.running) {

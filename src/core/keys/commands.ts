@@ -153,7 +153,7 @@ export const COMMANDS: CommandDef[] = [
 
   c("AI", "ai.connect", "Connect to AI"),
   c("AI", "ai.ask", "Ask AI…"),
-  c("AI", "ai.help", "Connecting Claude…"),
+  c("AI", "ai.help", "Connecting AI…"),
   c("Help", "help.shortcuts", "Keyboard Shortcuts", ["Shift+/"]),
 ];
 

@@ -1282,8 +1282,8 @@ export class App {
     reg("file.importPsd", () => this.pickPsd());
     reg("file.openSpine", () => this.pickSpine());
     reg("ai.connect", () => this.toggleAgent(), undefined, () => this.agentBridge.state !== "off");
-    reg("ai.ask", () => openAskAi(this.agentBridge));
-    reg("ai.help", () => openAiHelp());
+    reg("ai.ask", () => openAskAi(this.agentBridge, () => this.toggleAgent()));
+    reg("ai.help", () => openAiHelp(this.agentBridge, () => this.toggleAgent()));
     reg("file.export", () => void this.exportProject());
     reg("file.exportFolder", () => void this.exportToFolder());
     reg("file.exportSettings", () => openExportSettings(this.store));

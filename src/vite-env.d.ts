@@ -6,3 +6,5 @@
  * substitutes it; `core/about.ts` is the only reader and handles that.
  */
 declare const __APP_VERSION__: string | undefined;
+/** mcp/amino-bridge.mjs of this checkout under `npm run dev`; "" in a build. */
+declare const __BRIDGE_PATH__: string | undefined;
