@@ -65,6 +65,7 @@ export class PreviewPanel implements Panel, PreviewView {
         for (const name of msg.animations) {
           this.animSelect.appendChild(h("option", { value: name }, name));
         }
+        this.animSelect.value = msg.animation;
         this.animSelect.disabled = msg.animations.length <= 1;
       } else if (msg.type === "error") {
         this.setStatus(msg.message, true);

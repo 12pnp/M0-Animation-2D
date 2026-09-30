@@ -1,12 +1,13 @@
 import type { Store } from "@/app/Store";
 import type { AssetStore } from "@/app/AssetStore";
 import type { PreviewHost } from "./previewHost";
-import { buildExport, type ExportResult } from "@/io/export/ExportBundle";
+import { buildExports, type ExportResult } from "@/io/export/ExportBundle";
 import { symbolBounds } from "@/core/doc/pose";
-import { isSymbol } from "@/core/doc/types";
+import { isSymbol, type SymbolItem } from "@/core/doc/types";
+import type { ItemId } from "@/core/doc/ids";
 
 /**
- * Which armature a view wants: the whole scene, or the symbol being edited.
+ * Which symbol a view wants: the whole scene, or the symbol being edited.
  *
  * They are genuinely different questions. "Is the rig right?" is asked of the
  * scene; "does the animation I am authoring inside this symbol run?" is asked
@@ -37,14 +38,15 @@ function isEmpty(result: ExportResult): boolean {
 }
 
 /**
- * One export, many runtimes.
+ * One build, many runtimes.
  *
  * The preview panel and the stage's Play mode both need the project run
- * through the ACTUAL DragonBones runtime, and both must be fed the exact
- * bytes that would go to disk — that is what makes either of them ground
- * truth. What they must not do is build those bytes twice: re-packing the
- * atlas is by far the expensive half, and a drag emits dozens of document
- * changes a second.
+ * through the ACTUAL Spine runtime, and both must be fed the exact bytes that
+ * would go to disk — that is what makes either of them ground truth. A Spine
+ * file holds one skeleton, so each view gets the export of ITS symbol; what
+ * they must not do is pack the atlas twice (by far the expensive half, and a
+ * drag emits dozens of document changes a second), so one build exports
+ * every symbol an active view needs over one shared atlas (`buildExports`).
  *
  * Each view keeps its own iframe. Sharing one would mean moving it between
  * the dock and the stage, and moving an iframe reloads it — the dock alone
@@ -96,6 +98,10 @@ export class PreviewSession {
       if (msg.type === "loaded") {
         this.animations = msg.animations;
         for (const fn of this.animListeners) fn(msg.animations);
+        // The panel clears its status when the runtime reports a load; an
+        // export error found for that load has to outlive it.
+        const error = this.errorFor.get(view);
+        if (error) view.onStatus(error, true);
       }
     });
   }
@@ -132,8 +138,9 @@ export class PreviewSession {
 
   /** A view that has just come on screen wants whatever is current. */
   show(view: PreviewView): void {
-    if (this.stale || !this.result) this.scheduleRefresh();
-    else this.loadInto(view, this.result);
+    const built = this.builtFor(view);
+    if (this.stale || !built) this.scheduleRefresh();
+    else this.loadInto(view, built);
   }
 
   /**
@@ -142,7 +149,8 @@ export class PreviewSession {
    * panel's animation every time Play mode was entered.
    */
   present(view: PreviewView): void {
-    if (!this.stale && this.result) this.loadInto(view, this.result);
+    const built = this.builtFor(view);
+    if (!this.stale && built) this.loadInto(view, built);
     else void this.refresh(true);
   }
 
@@ -164,7 +172,7 @@ export class PreviewSession {
       // The build in flight started before this request, so what it produces
       // may already be out of date.
       this.rerun = true;
-      if (this.result && force) this.loadAll(this.result);
+      if (force) this.loadAll();
       return;
     }
     if (!this.stale && !force) return;
@@ -175,11 +183,14 @@ export class PreviewSession {
     this.stale = false;
     this.status("Building…");
     try {
-      const result = await buildExport(this.store.project, this.assets);
-      reportDiagnostics(result.diagnostics);
-      this.result = result;
+      const wanted = new Set<ItemId>();
+      for (const v of this.views) if (v.active()) wanted.add(this.symbolFor(v).id);
+      if (wanted.size === 0) wanted.add(this.store.currentSymbol.id);
+      const results = await buildExports(this.store.project, this.assets, [...wanted]);
+      for (const r of results.values()) reportDiagnostics(r.diagnostics);
+      this.results = results;
 
-      this.loadAll(result);
+      this.loadAll();
       this.onBuilt(null);
     } catch (err) {
       this.stale = true;
@@ -194,10 +205,25 @@ export class PreviewSession {
     }
   }
 
-  private result: ExportResult | null = null;
+  /** The export error each view was last loaded with, if any. */
+  private errorFor = new Map<PreviewView, string>();
 
-  private loadAll(result: ExportResult): void {
-    for (const view of this.views) if (view.active()) this.loadInto(view, result);
+  /** The last build, per symbol. */
+  private results = new Map<ItemId, ExportResult>();
+
+  private builtFor(view: PreviewView): ExportResult | undefined {
+    return this.results.get(this.symbolFor(view).id);
+  }
+
+  /** Every active view whose symbol the last build has. A view whose symbol
+   *  it lacks (the user opened another one meanwhile) waits for the rebuild
+   *  that change scheduled. */
+  private loadAll(): void {
+    for (const view of this.views) {
+      if (!view.active()) continue;
+      const built = this.builtFor(view);
+      if (built) this.loadInto(view, built);
+    }
   }
 
   private loadInto(view: PreviewView, result: ExportResult): void {
@@ -205,19 +231,28 @@ export class PreviewSession {
     // load up is how a new project kept showing the old one, behind a
     // status line saying there was nothing to show.
     if (isEmpty(result)) {
+      this.errorFor.delete(view);
       view.host.clear();
-      view.onStatus("Nothing on the stage to preview yet.");
+      // Say why when the export knows: a scene holding only symbol instances
+      // is empty until they export, and "nothing on the stage" reads as a bug.
+      const why = result.diagnostics.find((d) => d.severity === "warning" && !d.message.startsWith("No images"));
+      view.onStatus(why ? `Nothing to preview: ${why.message}` : "Nothing on the stage to preview yet.");
       return;
     }
 
     const opts = view.options();
     const target = this.targetFor(opts.scope ?? "symbol");
-    view.onStatus("");
+    // An export error still leaves a skeleton to show, but not the one the
+    // stage draws: the preview must not look authoritative then.
+    const error = result.diagnostics.find((d) => d.severity === "error");
+    const text = error ? `Export error: ${error.message}` : "";
+    if (text) this.errorFor.set(view, text); else this.errorFor.delete(view);
+    view.onStatus(text, !!error);
     view.host.load(
       result.skeleton,
-      result.pages.map((p) => ({ json: p.info, png: p.blob })),
+      result.atlas,
+      result.pages.map((p) => ({ name: p.info.imagePath, png: p.blob })),
       {
-        armature: target.armature,
         animation: target.animation,
         debugDraw: opts.debugDraw,
         play: opts.play,
@@ -228,8 +263,15 @@ export class PreviewSession {
     );
   }
 
+  /** The symbol a view shows: the scene, or the one being edited. */
+  private symbolFor(view: PreviewView): SymbolItem {
+    const project = this.store.project;
+    const root = project.items[project.rootSymbolId];
+    return (view.options().scope ?? "symbol") === "scene" && root && isSymbol(root) ? root : this.store.currentSymbol;
+  }
+
   /**
-   * Which armature, on which timeline, at which frame.
+   * Which timeline, at which frame.
    *
    * In `"symbol"` scope this is what is being EDITED, not the scene: the
    * playhead belongs to the open symbol, so running the root while the user
@@ -244,21 +286,19 @@ export class PreviewSession {
    */
   private targetFor(
     scope: PreviewScope,
-  ): { armature?: string; animation?: string; frame: number; fit: { x: number; y: number; w: number; h: number } } {
+  ): { animation?: string; frame: number; fit: { x: number; y: number; w: number; h: number } } {
     const project = this.store.project;
     const edited = this.store.currentSymbol;
     const root = project.items[project.rootSymbolId];
     const sym = scope === "scene" && root && isSymbol(root) ? root : edited;
     const here = sym.id === edited.id;
 
-    const armature = sym.name;
     const animation = here
       ? this.store.currentAnimation?.name
       : sym.animations[0]?.name;
     // The editor knows the rig's extent; Pixi cannot measure it.
     const b = symbolBounds(project, sym.id);
     return {
-      armature,
       animation,
       frame: here ? this.store.ui.frame : 0,
       fit: { x: b.x, y: b.y, w: b.w, h: b.h },

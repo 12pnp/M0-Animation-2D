@@ -29,12 +29,18 @@ export function atlasText(pages: readonly PackedPage[]): string {
   return out.join("\n") + "\n";
 }
 
+/** Whether a region name survives the line-based format: no line breaks, and
+ *  no surrounding spaces (the reader trims page lines, not region names). */
+export function isAtlasName(name: string): boolean {
+  return name !== "" && name === name.trim() && !/[\r\n]/.test(name);
+}
+
 function regionLines(r: PackedRegion): string[] {
   // The packer never rotates (MaxRectsPacker's allowRotation is off and no
   // setting turns it on); which way a rotated region turns is not settled
   // here, so refuse rather than guess.
   if (r.rotated) throw new Error(`Atlas region "${r.name}" is rotated, which the Spine atlas writer does not support.`);
-  if (/[\r\n]/.test(r.name) || r.name !== r.name.trim()) {
+  if (!isAtlasName(r.name)) {
     throw new Error(`Atlas region name ${JSON.stringify(r.name)} cannot be written: the atlas is line based.`);
   }
   const lines = [r.name, `bounds:${r.x},${r.y},${r.width},${r.height}`];

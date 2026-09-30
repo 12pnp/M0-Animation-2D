@@ -8,7 +8,7 @@ import type { ExportDiagnostic } from "@/core/export/diagnostics";
 import { type AtlasOptions, atlasOptionsFor, type AtlasPage, buildAtlas } from "@/io/atlas/AtlasBuilder";
 import { DEFAULT_EXPORT_SETTINGS, type ExportSettings } from "@/core/export/settings";
 import { exportSpine, spineJson } from "@/core/spine/exportSpine";
-import { atlasText } from "@/core/spine/atlas";
+import { atlasText, isAtlasName } from "@/core/spine/atlas";
 import type { SpineSkeletonFile } from "@/core/spine/types";
 
 export interface ExportResult {
@@ -24,39 +24,57 @@ export interface ExportResult {
 
 /**
  * Everything a Spine runtime needs: `<name>.json`, `<name>.atlas` and its
- * page images. `symbolId` picks the symbol to export (the scene when
- * absent); the preview asks for the one being edited.
+ * page images, for the scene.
  */
 export async function buildExport(
   project: Project,
   assets: AssetStore,
   opts: AtlasOptions = atlasOptionsFor(exportSettingsOf(project)),
   onProgress?: (fraction: number) => void,
-  symbolId?: ItemId,
 ): Promise<ExportResult> {
-  const exported = exportSpine(project, symbolId);
-  const { skeleton, diagnostics, usedImages } = exported;
-  const items = usedImages
+  const built = await buildExports(project, assets, [project.rootSymbolId], opts, onProgress);
+  return built.get(project.rootSymbolId)!;
+}
+
+/**
+ * Several symbols at once, as the preview wants them (the edited symbol for
+ * the panel, the scene for Play mode). Each gets its own skeleton; they share
+ * ONE atlas holding every image any of them draws, so two views cost one pack
+ * per edit rather than two thrashing the atlas cache. A region nobody uses is
+ * harmless to the runtime.
+ */
+export async function buildExports(
+  project: Project,
+  assets: AssetStore,
+  symbolIds: readonly ItemId[],
+  opts: AtlasOptions = atlasOptionsFor(exportSettingsOf(project)),
+  onProgress?: (fraction: number) => void,
+): Promise<Map<ItemId, ExportResult>> {
+  const exported = [...new Set(symbolIds)].map((id) => [id, exportSpine(project, id)] as const);
+  const used = new Set<ItemId>();
+  for (const [, e] of exported) for (const id of e.usedImages) used.add(id);
+  const items = [...used]
     .map((id) => project.items[id])
     .filter((i): i is ImageItem => isImage(i));
 
   const fileBase = safeFileName(project.name);
-  // An atlas region name the file cannot hold is already an error; packing
-  // would only throw on it.
-  const refused = diagnostics.some((d) => d.severity === "error");
-  const pages = refused ? [] : await buildAtlas(items, assets, fileBase, fileBase, opts, onProgress);
-  if (items.length === 0) {
-    diagnostics.push({ severity: "warning", message: "No images are used on the stage, so the atlas is empty." });
-  }
+  // A region name the file cannot hold is already an error in each export
+  // that draws it; packing would only throw on it.
+  const pages = items.every((i) => isAtlasName(i.name))
+    ? await buildAtlas(items, assets, fileBase, fileBase, opts, onProgress)
+    : [];
+  const atlas = atlasText(pages.map((p) => p.info));
+  const minifyJson = exportSettingsOf(project).minifyJson;
 
-  return {
-    fileBase,
-    skeleton,
-    atlas: atlasText(pages.map((p) => p.info)),
-    pages,
-    diagnostics,
-    minifyJson: exportSettingsOf(project).minifyJson,
-  };
+  const out = new Map<ItemId, ExportResult>();
+  for (const [id, e] of exported) {
+    const diagnostics = [...e.diagnostics];
+    if (e.usedImages.length === 0) {
+      diagnostics.push({ severity: "warning", message: "No images are used on the stage, so the atlas is empty." });
+    }
+    out.set(id, { fileBase, skeleton: e.skeleton, atlas, pages, diagnostics, minifyJson });
+  }
+  return out;
 }
 
 /** The document's export settings, the defaults when it has none. */

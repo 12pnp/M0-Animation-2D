@@ -346,15 +346,21 @@ describe("IK", () => {
 
   it("writes a two-bone chain as [parent, child] the way the parser reads it", () => {
     const project = chain(1);
-    expect(file(project).constraints).toEqual([{ type: "ik", name: "leg", bones: ["upper", "lower"], target: "target" }]);
+    expect(file(project).constraints).toEqual([
+      { type: "ik", name: "leg", bones: ["upper", "lower"], target: "target", bendPositive: false },
+    ]);
     expect(load(project).data.constraints).toHaveLength(1);
   });
 
   it("writes a look-at as one bone, and what differs from the parser's defaults", () => {
     const project = chain(0, 0.5, false);
-    expect(file(project).constraints).toEqual([
-      { type: "ik", name: "leg", bones: ["lower"], target: "target", mix: 0.5, bendPositive: false },
-    ]);
+    expect(file(project).constraints).toEqual([{ type: "ik", name: "leg", bones: ["lower"], target: "target", mix: 0.5 }]);
+  });
+
+  it("inverts the bend: the y flip mirrors the chain", () => {
+    // Checked against the runtime by the stickman in spineParity.test.ts.
+    expect(file(chain(1, 1, true)).constraints![0]!.bendPositive).toBe(false);
+    expect(file(chain(1, 1, false)).constraints![0]!.bendPositive).toBeUndefined();
   });
 
   it("writes every bone's length, which the two-bone solve uses", () => {

@@ -1,10 +1,19 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("@/io/export/ExportBundle", () => ({ buildExport: vi.fn() }));
+// `buildExport` stands for one build: `buildExports` calls it once per build
+// and gives every symbol asked for its result.
+vi.mock("@/io/export/ExportBundle", () => {
+  const buildExport = vi.fn();
+  const buildExports = vi.fn(async (_p: unknown, _a: unknown, ids: string[]) => {
+    const r = await buildExport();
+    return new Map(ids.map((id) => [id, r]));
+  });
+  return { buildExport, buildExports };
+});
 
-import { buildExport, type ExportResult } from "@/io/export/ExportBundle";
+import { buildExport, buildExports, type ExportResult } from "@/io/export/ExportBundle";
 import { reseed } from "@/core/doc/ids";
-import { createProject } from "@/core/doc/defaults";
+import { createProject, createSymbol } from "@/core/doc/defaults";
 import { Store } from "@/app/Store";
 import type { AssetStore } from "@/app/AssetStore";
 import { PreviewSession, type PreviewView } from "@/preview/PreviewSession";
@@ -40,7 +49,7 @@ function empty(): ExportResult {
   };
 }
 
-function viewInto(loaded: number[], log?: string[]): PreviewView {
+function viewInto(loaded: number[], log?: string[], scope?: "scene" | "symbol"): PreviewView {
   const host = {
     onMessage: () => () => {},
     post: () => {},
@@ -50,7 +59,7 @@ function viewInto(loaded: number[], log?: string[]): PreviewView {
   return {
     host,
     active: () => true,
-    options: () => ({ debugDraw: false, showStage: false, play: false }),
+    options: () => ({ debugDraw: false, showStage: false, play: false, scope }),
     onStatus: () => {},
   };
 }
@@ -134,7 +143,7 @@ describe("preview session", () => {
 // File ▸ New Project left the previous rig on screen: the empty export
 // returned early and the iframe was never told.
 describe("an empty document", () => {
-  it("clears the frame and the extension badges instead of leaving the old one", async () => {
+  it("clears the frame instead of leaving the old one", async () => {
     const store = new Store(createProject("P"));
     const s = new PreviewSession(store, {} as AssetStore);
     const loaded: number[] = [];
@@ -179,5 +188,75 @@ describe("the frame a tick reports", () => {
     expect(tickFrame(0.999, 24, 24)).toBe(23);
     expect(tickFrame(1, 24, 24)).toBe(23);
     expect(tickFrame(0.5, 24, 0)).toBe(0);
+  });
+});
+
+// A Spine file holds one skeleton, so each view needs its own symbol's
+// export; building them one by one packed the atlas once per view.
+describe("views on different symbols", () => {
+  it("get their own symbol's skeleton from one build", async () => {
+    const store = new Store(createProject("P"));
+    const inner = createSymbol("Inner");
+    store.project.items[inner.id] = inner;
+    store.openSymbol(inner.id);
+    const s = new PreviewSession(store, {} as AssetStore);
+    s.register(viewInto([]));
+    s.register(viewInto([], undefined, "scene"));
+
+    built.mockImplementation(async () => result(1));
+    s.invalidate();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(built).toHaveBeenCalledTimes(1);
+    const ids = vi.mocked(buildExports).mock.calls.at(-1)![2];
+    expect([...ids].sort()).toEqual([inner.id, store.project.rootSymbolId].sort());
+  });
+});
+
+describe("the status line", () => {
+  function statusView() {
+    const listeners: Array<(msg: { type: string; animations?: string[] }) => void> = [];
+    const statuses: Array<[string, boolean]> = [];
+    const host = {
+      onMessage: (fn: (msg: { type: string }) => void) => { listeners.push(fn); return () => {}; },
+      post: () => {},
+      load: () => {},
+      clear: () => {},
+    } as unknown as PreviewHost;
+    // The panel clears its status on every load, as PreviewPanel does, and
+    // registers its listener before the session's.
+    const view: PreviewView = {
+      host,
+      active: () => true,
+      options: () => ({ debugDraw: false, showStage: false, play: false }),
+      onStatus: (text, isError = false) => { statuses.push([text, isError]); },
+    };
+    host.onMessage((msg) => { if (msg.type === "loaded") view.onStatus(""); });
+    const loaded = () => { for (const fn of listeners) fn({ type: "loaded", animations: [] }); };
+    return { view, statuses, loaded };
+  }
+
+  it("says why there is nothing to preview", async () => {
+    const s = new PreviewSession(new Store(createProject("P")), {} as AssetStore);
+    const { view, statuses } = statusView();
+    s.register(view);
+    built.mockImplementation(async () => ({
+      ...empty(), diagnostics: [{ severity: "warning", message: '"Scene 1" contains symbol instances' }],
+    }));
+    s.invalidate();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(statuses.at(-1)).toEqual(['Nothing to preview: "Scene 1" contains symbol instances', false]);
+  });
+
+  it("keeps an export error on screen after the runtime reports the load", async () => {
+    const s = new PreviewSession(new Store(createProject("P")), {} as AssetStore);
+    const { view, statuses, loaded } = statusView();
+    s.register(view);
+    built.mockImplementation(async () => ({
+      ...result(1), diagnostics: [{ severity: "error", message: "bad scale" }],
+    }));
+    s.invalidate();
+    await vi.advanceTimersByTimeAsync(300);
+    loaded();
+    expect(statuses.at(-1)).toEqual(["Export error: bad scale", true]);
   });
 });

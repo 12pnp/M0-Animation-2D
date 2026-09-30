@@ -11,7 +11,8 @@
 > halves of "Motion blur" and "Mask layers"). Still DragonBones-faithful until
 > phase 4: the ease sampler ("Easing") and the IK solver ("Bones and IK").
 > Rewrite each section when the phase that replaces it lands. "The Spine 4.3
-> contract" (phase 1) and "The Spine exporter" (phase 2) are new.
+> contract" (phase 1) and "The Spine exporter" (phase 2) are new; "The preview is
+> ground truth" and "Vendored runtime" describe the Spine preview (phase 3).
 
 How Animo is built, and — mostly — the things in it that fail **silently** when
 you get them wrong. This is not a style guide: it is the record of decisions
@@ -581,8 +582,9 @@ also gave Edit Multiple Frames a new base per step.
 
 ### The preview is ground truth
 
-`preview/PreviewSession.ts` exports the project in memory and feeds the **actual** DragonBones
-runtime (vendored, PixiJS 8) the exact bytes that would go to disk. It is not a second renderer. If
+`preview/PreviewSession.ts` exports the project in memory and feeds the **actual** Spine
+runtime (spine-pixi-v8 4.3.13 on PixiJS 8.21, vendored) the exact bytes that would go to disk:
+the skeleton JSON, the `.atlas` text and the page images. It is not a second renderer. If
 the stage and the preview disagree, the export is wrong. An excluded layer therefore disappears
 from the preview too, which is the point rather than a side effect.
 
@@ -590,18 +592,21 @@ The session owns the export and the 250 ms coalescing; its VIEWS own the iframes
 the Preview panel and the stage's **Play mode** (`view/viewport/StagePlay.ts`, the toggle centred
 in the stage bar, ⌘P). They cannot share one iframe — `Dock.render` re-appends a panel's element
 on every focus and tab drag, and moving an iframe reloads it — but they must not build the atlas
-twice, which is the whole reason the session exists.
+twice, which is the whole reason the session exists. A Spine file holds ONE skeleton, so each view
+gets the export of its own symbol (the panel: the one being edited; Play mode: the scene), built
+together over one shared atlas by `buildExports`.
 
 `refresh` clears `stale` when a build STARTS, and a request that arrives while one is running
 sets `rerun`; the finished build reschedules if the document moved on meanwhile. Clearing it at
 the end swallowed any edit made during the build, and the preview sat on the older document
-until the next change (`tests/previewSession.test.ts`, with `buildExport` mocked).
+until the next change (`tests/previewSession.test.ts`, with the build mocked).
 
 In Play mode the **runtime owns the clock**: the editor's `Playback` is stopped and the playhead
 FOLLOWS the `tick` messages coming back, because re-driving the runtime frame by frame would show
-the editor's timing rather than the runtime's. Two protocol messages exist for it: `resume`
-(`Animation.play` always restarts at 0; the STATE's own `play()` just lifts `_playheadState`) and
-`setLoop`. The stage keeps its canvases — `visibility: hidden` under `.stage-host.playing`, never
+the editor's timing rather than the runtime's. The skeleton is built with `autoUpdate: false` and
+the client's own ticker calls `update(dt)` only while playing, so a pause is exact and a seek is
+not overwritten by the next tick. `resume` carries on from the track's current time; `play` and
+`setAnimation` restart it; `setLoop` sets the track entry's `loop`. The stage keeps its canvases — `visibility: hidden` under `.stage-host.playing`, never
 `display: none`, or the Viewport's `ResizeObserver` measures 0×0.
 
 - **A tick reports the frame on screen** (`tickFrame` in `preview/protocol.ts`): the floor of
@@ -613,10 +618,8 @@ the editor's timing rather than the runtime's. Two protocol messages exist for i
   while the old armature is still on screen, then disposes, builds, FITS and adds with no
   `await` in between; a load overtaken by a newer one gives up (`loadSeq`). Disposing first
   drew empty frames, and fitting on the next frame drew one at the origin and full size — the
-  flash on every edit while playing. The factory is created in `ensureApp`, before the ticker
-  that calls the static `advanceTime` (null until then), and the ticker body is wrapped:
-  an exception in a Pixi ticker listener ENDS the loop, and the preview then sits frozen,
-  unposed, with nothing said.
+  flash on every edit while playing. The ticker body is wrapped: an exception in a Pixi ticker
+  listener ENDS the loop, and the preview then sits frozen, unposed, with nothing said.
 - **Entering Play mode reveals the runtime only once it has loaded.** The iframe goes in at
   opacity 0 and the stage stays visible until the first `loaded`; hiding the stage at once
   showed an empty grey frame while the page, Pixi and the export loaded. Leaving calls
@@ -627,64 +630,45 @@ the editor's timing rather than the runtime's. Two protocol messages exist for i
   (File ▸ New Project) used to return early from `refresh`, leaving the previous
   project's rig on screen behind a status line saying there was nothing to show —
   and `PreviewHost.lastLoad` still held it, so every iframe reload put it back.
-  `loadInto` now sends `clear` (protocol message, `disposeCurrent` in the client)
-  and `onExtras(null)`, and `PreviewHost.clear` drops `lastLoad`.
+  `loadInto` now sends `clear` (protocol message, `disposeCurrent` in the client),
+  and `PreviewHost.clear` drops `lastLoad`. The status line says WHY when the export knows
+  (a scene holding only symbol instances), and an export error stays on it after the
+  runtime reports the load (`errorFor`): the panel clears its status on `loaded`.
 - **Only edits rebuild the preview.** `PreviewSession` listens to `doc` and `library`; every
   edit goes through History, which emits `doc` first. `stage` and `timeline` also come from
   view state — entering Play mode, a view flag, folding a group — and each one rebuilt the
   export and restarted the animation a quarter of a second after Play. A view that comes on
   screen with nothing changed gets the last build (`show`, `present`), and only that view.
 
-To check parity, compare the editor's world matrices against the runtime's own — the preview client
-exposes `window.__preview` (`app`, `display`, `factory`) inside the iframe:
+**Seeking** (`previewClient.seekTo`, the one place that seeks): setup pose, `setAnimation`,
+`trackTime = frame / fps`, `update(0)`. The setup pose goes first so a bone the animation does not
+key shows its setup pose rather than the previous frame's; `update(0)` poses without advancing.
+`keyTime` in the exporter makes `frame / fps` land on the key at that frame, never before it.
 
-```js
-const d = document.querySelector('.preview-frame iframe').contentWindow.__preview.display;
-d.animation.gotoAndPlayByFrame('animation', frame);   // deterministic; play-then-wait is not
-d.armature.advanceTime(0);                            // REQUIRED: see below
-d.animation.stop();
-d.armature.getSlots().map(s => [s.displayIndex, s.globalTransformMatrix]);
-```
+To check parity in the browser, read the runtime inside the iframe (`window.__preview.view`, a
+`spine.Spine`) after moving the editor's playhead, and compare with `evaluateSymbol` (or
+`app.viewport.pose.byNode.get(id).world`). The preview sets `Skeleton.yDown`, so the runtime's
+world space IS the editor's: `worldX/worldY` equal `tx/ty`, the x axis `(a, c)` equals the
+editor's `(a, b)`, and the y axis `(b, d)` is the NEGATED `(c, d)` (a bone's +y is up in Spine's
+local space). Measured on the stickman, every frame of both animations, every bone including the
+IK chains: 3.5e-5 px at worst. The same comparison without a browser is
+`tests/spineParity.test.ts`.
 
-**Seeking alone changes nothing you can read.** It sets the animation state; the
-bone and slot matrices are recomposed inside `advanceTime`, so a matrix read straight afterwards
-is still the previous frame's — usually the bind pose, which looks exactly like "the runtime
-ignores the animation" and sends you hunting in the exporter. `advanceTime(0)` is enough. Also
-worth knowing while driving the preview from a script: the editor's `Playback`, the viewport and
-the runtime's clock all run on `requestAnimationFrame`, so in a browser tab that is hidden or
-backgrounded nothing advances and every reading is stale.
-
-**Seek with `gotoAndPlayByFrame` + `advanceTime(0)` + `stop`, not `gotoAndStopByFrame`.** The
-state `gotoAndStopByFrame` makes is never playing, so its timelines keep `playState` -1 and
-`SlotDisplayTimelineState._onArriveAtFrame` applies nothing: blank keys, late-starting tracks and
-display switches did not show while scrubbing, and the slot kept whatever it showed before.
-The matrices are right either way. `previewClient.seekTo` is the one place that seeks. To see a
-child armature advance, drive the factory's clock (`dragonBones.PixiFactory.advanceTime` in the
-iframe): the root's `advanceTime` does not move a child's own timeline.
+**Drive it with timeouts, not `requestAnimationFrame`**: in a hidden or backgrounded tab rAF never
+fires, so a harness waiting on it hangs — and one left running keeps moving the playhead whenever
+a frame does fire, which reads as a stray seek. Seeks do not need rAF; the client poses on the
+message.
 
 Play mode has TWO scopes, a `Scene` / `Symbol` toggle in the play cluster,
 defaulting to Scene: pressing Play usually means "show me the thing", and the
-scene is the only scope that answers it. `PreviewSession.targetFor` picks the
-armature, the animation and the frame per VIEW, so the panel and the stage can
-disagree — and the editor's playhead is handed over (`seek`, and the `tick`
-follower in `StagePlay`) only when the runtime is on the timeline the user is
-actually editing, which `followsPlayhead` decides. The Preview panel declares
-no scope and therefore stays symbol-scoped:
-
-The panel previews the symbol being EDITED, not always the scene: the playhead
-belongs to the open symbol's timeline, so building the root armature would seek
-the runtime on a timeline that is not the user's. Nested armatures need seeking
-too — seeking the root does not reach a child, which runs off its own
-clock, so `previewClient` walks the tree (`seekChildren` / `playChildren`,
-wrapping the frame exactly as `pose.childFrame` does). Without that, an
-animation authored inside a nested symbol looks like it is simply not
-happening while the stage plays it.
-
-Compare against `app.viewport.pose.byNode.get(id).world`. This currently agrees to 0 at keyframes and
-to ~3e-6 mid-tween (the exporter's own rounding). Sample *inside* tweens, not just on keyframes: the
-runtime samples bezier curves into a table and lerps between samples rather than evaluating the
-cubic, so a mismatch there is invisible at keyframes. `core/math/easing.ts` replicates that sampler
-deliberately — do not "fix" it to evaluate the exact curve.
+scene is the only scope that answers it. `PreviewSession.symbolFor` and
+`targetFor` pick the symbol, the animation and the frame per VIEW, so the panel
+and the stage can disagree — and the editor's playhead is handed over (`seek`,
+and the `tick` follower in `StagePlay`) only when the runtime is on the timeline
+the user is actually editing, which `followsPlayhead` decides. The Preview panel
+declares no scope and therefore stays symbol-scoped: the playhead belongs to the
+open symbol's timeline. The panel frames that symbol against the scene's stage
+rectangle, which means little in a symbol's own space (inherited from Animo).
 
 ## The Spine 4.3 contract
 
@@ -732,6 +716,12 @@ flowchart LR
 - Enum strings (`inherit`, `blend`) are read by upper-casing the first
   letter; a misspelling is undefined, not an error. Blend modes are only
   normal, additive, multiply and screen.
+- **IK bends the other way.** The y flip mirrors the rig, and a mirrored two-bone chain
+  bends the other way, so the editor's `bendPositive` is written inverted. Written as
+  keyed, every chain bent backwards in the runtime (100+ px on the stickman); inverted,
+  Spine's solver and the stage's (a DragonBones transcription) agree to 1e-6 on every
+  stickman frame. Found by the phase 3 preview, since the Node parity test skipped IK
+  bones until then.
 - spine-unity accepts `skeleton.spine` when major.minor match its own
   (`SkeletonDataCompatibility`); `SPINE_VERSION` is `"4.3.0"`.
 
@@ -775,8 +765,8 @@ flowchart LR
   into spine-core with its atlas and compares, at every frame of every animation of
   every fixture symbol, each bone's world matrix, the draw order, each slot's
   attachment and colour, and the four corners of each image with `evaluateSymbol`.
-  Worst differences: matrices 1.5e-6, positions and corners 1.5e-4 px. Bones an IK
-  constraint moves are skipped until phase 4 ports Spine's solver.
+  Worst differences: matrices 1.5e-6, positions and corners 1.5e-4 px, IK chains
+  included.
 - **Not carried yet, said out loud:** nested symbol instances (phase 5), mask layers
   and colour offsets (phase 6), blend modes other than normal, add, multiply and
   screen, motion blur.
@@ -818,20 +808,22 @@ guessed wrong. `core/export/dbTypes.ts` is the authority.
 
 ## Vendored runtime
 
-`public/vendor/dragonBones.min.js` (Pixi 8 build) and `pixi.js` 8.9.2 are **classic scripts, not npm
-packages** — the DragonBones build binds a global `PIXI` at load time, and serving them to
-`preview.html` keeps Pixi out of the editor bundle entirely. `src/vendor/dragonBones.d.ts` declares
-only the API surface actually called. Three things about it that are not obvious:
+`public/vendor/pixi.js` (PixiJS 8.21.0) and `public/vendor/spine-pixi-v8.js` (4.3.13, the
+package's IIFE build, which bundles spine-core) are **classic scripts, not npm packages**, served
+to `preview.html` so neither is in the editor bundle. `src/vendor/spine-pixi.d.ts` declares only
+the surface `previewClient` calls. Not obvious:
 
-- `PixiFactory` registers on `PIXI.Ticker.shared`, which a Pixi 8 `Application` does not run. The
-  client sets `useSharedTicker = false` **before first touching the factory** and drives the clock
-  itself.
-- `PIXI.Assets.load()` cannot resolve a blob URL (no extension to pick a parser from) and returns an
-  EMPTY texture without raising. Build textures from `createImageBitmap` + `PIXI.Texture.from`.
-- `display.getBounds()` returns a degenerate 1×1 for a DragonBones container, so the editor supplies
-  the fit box in the `load` message.
-- The runtime reports `VERSION === "5.7.000"`; the "6.0.2" on the npm package is the Pixi-8 wrapper's
-  version. Same build.
+- **Order matters.** The IIFE calls `require("pixi.js")`; its embedded shim maps that to the
+  global `PIXI`, and only when `PIXI` already exists. So `pixi.js` loads first.
+- spine-pixi-v8 4.3.13 needs Pixi **8.16 or newer** (its peer range); Animo's 8.9.2 was too old.
+- Loading `spine-pixi-v8` sets `Skeleton.yDown = true`: data is y up, the preview y down, the
+  editor's own numbers.
+- 4.3 renamed `AnimationState.getCurrent` to `getTrack`; a declaration guessed from 4.2 compiles
+  and throws in the ticker.
+- `PIXI.Assets.load()` cannot resolve a blob URL (no extension to pick a parser from) and returns
+  an EMPTY texture without raising. Pages are built from `createImageBitmap` +
+  `PIXI.Texture.from`, and handed to each atlas page as `spine.SpineTexture.from(texture.source)`.
+- The Spine Runtimes License applies to `spine-pixi-v8.js` (see THIRD-PARTY-NOTICES.md).
 
 ## Keyboard shortcuts
 

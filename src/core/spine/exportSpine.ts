@@ -7,6 +7,7 @@ import { rotationDelta, sampleColorRaw, sampleTransformRaw } from "@/core/doc/ti
 import type { Transform } from "@/core/math/Transform";
 import { easeOf, type TweenChannel } from "@/core/math/easing";
 import type { ExportDiagnostic } from "@/core/export/diagnostics";
+import { isAtlasName } from "./atlas";
 import { keyTime, keyValues, regionCentre, type SpineKeyValues, type SpineLocal, toSpineLocal } from "./transform";
 import {
   SPINE_VERSION,
@@ -186,7 +187,10 @@ export function exportSpine(project: Project, symbolId: ItemId = project.rootSym
     const chain = k.chain > 0 && parent ? [names.get(parent)!, names.get(effector.id)!] : [names.get(effector.id)!];
     const ik: SpineIkConstraint = { type: "ik", name: k.name, bones: chain, target: names.get(target.id)! };
     if (k.weight !== 1) ik.mix = k.weight;
-    if (!k.bendPositive) ik.bendPositive = false;
+    // The y flip mirrors the rig, and a mirrored two-bone chain bends the
+    // other way: the editor's positive bend (y down) is Spine's negative
+    // (y up). Written as keyed, every chain bent backwards in the runtime.
+    if (k.bendPositive) ik.bendPositive = false;
     constraints.push(ik);
   }
 
@@ -482,7 +486,7 @@ function reportImageNames(project: Project, ids: ItemId[], diags: ExportDiagnost
   for (const id of ids) {
     const name = project.items[id]!.name;
     count.set(name, (count.get(name) ?? 0) + 1);
-    if (name !== name.trim() || /[\r\n]/.test(name) || name === "") {
+    if (!isAtlasName(name)) {
       diags.push({
         severity: "error",
         message: `The image name ${JSON.stringify(name)} cannot go in a Spine atlas: remove leading or trailing spaces and line breaks.`,

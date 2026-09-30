@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   AtlasAttachmentLoader, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
 } from "@esotericsoftware/spine-core";
-import { reseed, type AssetId, type ItemId, type NodeId } from "@/core/doc/ids";
+import { reseed, type AssetId, type ItemId } from "@/core/doc/ids";
 import { createImageItem, createLayer, createNode, createProject } from "@/core/doc/defaults";
 import { isImage, isSymbol, type Keyframe, type Node, type Project, type SymbolItem } from "@/core/doc/types";
 import { evaluateSymbol } from "@/core/doc/pose";
@@ -22,8 +22,10 @@ import { loadStickman } from "./fixtures/stickman";
  * the stage draws with. This is the preview-is-ground-truth rule, checked
  * without a browser.
  *
- * Bones an IK constraint moves are left out until phase 4: the stage still
- * solves IK the DragonBones way.
+ * IK bones included: the stage's solver is a transcription of DragonBones',
+ * and on these rigs it agrees with Spine's once the bend is mirrored with
+ * the y flip. Phase 4 ports Spine's own solver for what they do not share
+ * (softness, stretch, non-uniform scale).
  */
 
 beforeEach(() => reseed());
@@ -59,22 +61,6 @@ function flipped(m: Matrix2D): number[] {
   return [m.a, -m.c, -m.b, m.d, m.tx, -m.ty];
 }
 
-function ikMoved(sym: SymbolItem): Set<NodeId> {
-  const out = new Set<NodeId>();
-  const add = (id: NodeId): void => {
-    if (out.has(id)) return;
-    out.add(id);
-    for (const n of Object.values(sym.nodes)) if (n.parentId === id) add(n.id);
-  };
-  for (const k of sym.ik) {
-    const bone = sym.nodes[k.boneId];
-    if (!bone) continue;
-    add(bone.id);
-    if (k.chain > 0 && bone.parentId) add(bone.parentId);
-  }
-  return out;
-}
-
 interface Worst { matrix: number; position: number; corner: number; color: number; checks: number }
 
 /**
@@ -85,7 +71,6 @@ function checkParity(project: Project, symbolId: ItemId): Worst {
   const sym = project.items[symbolId];
   if (!isSymbol(sym)) throw new Error("not a symbol");
   const { exported, skeleton } = runtimeFor(project, symbolId);
-  const skipIk = ikMoved(sym);
   const fps = project.frameRate;
   const worst: Worst = { matrix: 0, position: 0, corner: 0, color: 0, checks: 0 };
   const fail = (where: string, what: string) => { throw new Error(`${sym.name} ${where}: ${what}`); };
@@ -108,7 +93,6 @@ function checkParity(project: Project, symbolId: ItemId): Worst {
         const entry = pose.byNode.get(nodeId);
         const bone = skeleton.findBone(name);
         if (!entry || !bone) fail(where, `no bone or entry for "${name}"`);
-        if (skipIk.has(nodeId)) continue;
         const p = bone!.appliedPose;
         const actual = [p.a, p.b, p.c, p.d, p.worldX, p.worldY];
         const expected = flipped(entry!.world);
@@ -250,7 +234,7 @@ describe("the Spine runtime plays the export the way the stage draws it", () => 
     expect(checks).toBeGreaterThan(1000);
   });
 
-  it("the stickman rig, IK-driven bones aside", async () => {
+  it("the stickman rig, four two-bone IK chains included", async () => {
     const { project } = await loadStickman();
     expect(checkParity(project, project.rootSymbolId).checks).toBeGreaterThanOrEqual(500);
   });

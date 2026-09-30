@@ -25,7 +25,7 @@ IndexedDB. The interesting surface is therefore:
   (`validateProject`). A crafted file that escapes that validation, reads
   outside the project, or executes anything is in scope.
 - **Importing a PSD.** Parsed by `ag-psd` in the page.
-- **The preview iframe.** It will run the vendored Spine runtime over
+- **The preview iframe.** It runs the vendored Spine runtime over
   `postMessage`; a message that makes it do something outside its own document
   is in scope.
 - **Exported files.** They ship inside other people's games, so anything that

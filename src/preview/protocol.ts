@@ -1,13 +1,14 @@
 /** postMessage contract between the editor and the preview iframe. */
 
-export interface PreviewTexture {
-  json: unknown;
+/** An atlas page image, by the file name the `.atlas` text gives it. */
+export interface PreviewPage {
+  name: string;
   png: Blob;
 }
 
 export type HostToFrame =
-  | { type: "load"; skeleton: unknown; textures: PreviewTexture[];
-      armature?: string; animation?: string; debugDraw?: boolean;
+  | { type: "load"; skeleton: unknown; atlas: string; pages: PreviewPage[];
+      animation?: string; debugDraw?: boolean;
       /** Start playing straight away. Off by default: an animation looping in
        *  the corner while you work is a distraction, not information. */
       play?: boolean;
@@ -15,9 +16,8 @@ export type HostToFrame =
       frame?: number;
       /** Scene bounds, drawn as an outline so the framing is legible. */
       stage?: { width: number; height: number; background: string };
-      /** Content bounds in armature space, so the frame can fit the rig.
-       *  Supplied by the editor because Pixi cannot measure a DragonBones
-       *  display container without a render pass. */
+      /** Content bounds in the symbol's space, so the frame can fit the rig
+       *  before anything has been drawn. */
       fit?: { x: number; y: number; w: number; h: number }; }
   /** Take whatever is loaded off the screen: the document has nothing to
    *  show (a new project), and leaving the previous rig up says the editor
@@ -35,38 +35,19 @@ export type HostToFrame =
   | { type: "setDebug"; on: boolean }
   | { type: "setBackground"; color: string }
   | { type: "showStage"; on: boolean }
-  /** Used by the parity harness: the runtime's own world matrices. */
+  /** Used by the parity harness: the runtime's own world matrices, y down
+   *  (the preview's Skeleton.yDown), by bone name. */
   | { type: "getMatrices" };
 
 export type FrameToHost =
   | { type: "ready"; version: string }
-  | { type: "loaded"; armature: string; animations: string[]; duration: number }
+  /** `animation` is the one loaded, which the transport menus show. */
+  | { type: "loaded"; animations: string[]; animation: string; duration: number }
   | { type: "tick"; frame: number; playing: boolean }
-  | { type: "matrices"; bones: Record<string, number[]>; slots: Record<string, number[]> }
+  | { type: "matrices"; bones: Record<string, number[]>; attachments: Record<string, string | null> }
   | { type: "error"; message: string };
 
 export const PREVIEW_ORIGIN_SAME = true;
-
-/**
- * Where the run a slot's display timeline is in at `frame` began: the frame
- * the display showing there was last swapped in, which is where the runtime
- * reset and restarted a child armature shown there. The same rule as
- * `displaySince` in `core/doc/pose.ts`, read off the exported frames; 0 for
- * a slot with no display timeline.
- */
-export function displayRunStart(
-  frames: ReadonlyArray<{ duration?: number; value?: number }> | undefined, frame: number,
-): number {
-  if (!frames?.length) return 0;
-  const starts: number[] = [];
-  let t = 0;
-  for (const f of frames) { starts.push(t); t += f.duration ?? 1; }
-  let i = 0;
-  while (i + 1 < frames.length && starts[i + 1]! <= frame && (frames[i + 1]!.duration ?? 1) > 0) i++;
-  const value = frames[i]!.value ?? 0;
-  while (i > 0 && (frames[i - 1]!.value ?? 0) === value) i--;
-  return starts[i]!;
-}
 
 /**
  * The frame a `tick` reports: the one on screen, which is the frame the

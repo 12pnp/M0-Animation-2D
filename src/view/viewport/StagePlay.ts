@@ -91,6 +91,12 @@ export class StagePlay implements PreviewView {
       // Every build starts the animation looping; a `setLoop` sent before it
       // reached an armature that no longer exists.
       if (msg.type === "loaded" && this.active()) this.host.post({ type: "setLoop", on: this.store.ui.loop });
+      // The session's list is shared by every view; which one THIS runtime
+      // loaded is its own.
+      if (msg.type === "loaded" && msg.animations.includes(msg.animation)) {
+        this.fillAnimations(msg.animations);
+        this.animSelect.value = msg.animation;
+      }
       if (msg.type !== "tick" || !this.active()) return;
       // The playhead follows the runtime, so the timeline stays a readout of
       // what is actually on screen.

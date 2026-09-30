@@ -10,7 +10,8 @@ generated from `src/core/about.ts`.
 | Component | Version | Licence | Ships in the app |
 |---|---|---|---|
 | [DragonBones](https://github.com/DragonBones/DragonBonesJS) | 5.7.000 (Pixi 8 build) | MIT | no, tests only: `tests/reference/dragonBones.min.js` |
-| [PixiJS](https://pixijs.com) | 8.9.2 | MIT | yes, `public/vendor/pixi.js` |
+| [PixiJS](https://pixijs.com) | 8.21.0 | MIT | yes, `public/vendor/pixi.js` |
+| [spine-pixi-v8](https://github.com/EsotericSoftware/spine-runtimes) | 4.3.13 | Spine Runtimes License | yes, `public/vendor/spine-pixi-v8.js` (the Preview) |
 | [ag-psd](https://github.com/Agamnentzar/ag-psd) | 31.x | MIT | yes, bundled |
 | [pako](https://github.com/nodeca/pako) | 2.x | MIT AND Zlib | yes, bundled, via ag-psd |
 | [base64-js](https://github.com/beatgammit/base64-js) | 1.x | MIT | yes, bundled, via ag-psd |
@@ -21,8 +22,10 @@ generated from `src/core/about.ts`.
 | [spine-core](https://github.com/EsotericSoftware/spine-runtimes) | 4.3.13 | Spine Runtimes License | no, tests only (`devDependencies`) |
 
 The vendored files carry their notices beside them:
-`public/vendor/LICENSE-pixijs.txt`, copied into every build, and
-`tests/reference/LICENSE-dragonbones.txt`.
+`public/vendor/LICENSE-pixijs.txt` and `public/vendor/LICENSE-spine-runtimes.txt`,
+copied into every build, and `tests/reference/LICENSE-dragonbones.txt`. The Spine
+Runtimes License requires every user of the product to hold their own Spine Editor
+licence.
 
 **Trademarks.** Spine is a trademark of Esoteric Software. DragonBones is a
 trademark of Egret Technology. PixiJS, Photoshop and Adobe Animate are
@@ -61,7 +64,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 ## PixiJS
 
-PixiJS 8.9.2: https://pixijs.com
+PixiJS 8.21.0: https://pixijs.com
 
 The MIT License
 

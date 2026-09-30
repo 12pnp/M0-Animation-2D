@@ -43,9 +43,10 @@ export const TRADEMARK_NOTE =
 /** How the editor relates to the runtime it exports for. */
 export const SPINE_NOTE =
   "Amino Spine2D exports the Spine 4.3 format: a skeleton .json, a .atlas and "
-  + "its pages, which any Spine 4.3 runtime plays. The runtime preview, nested "
-  + "symbols and masks are still being built; the plan is docs/PLAN.md in the "
-  + "source.";
+  + "its pages, which any Spine 4.3 runtime plays. The Preview panel and Play "
+  + "mode run the official Spine runtime on those exact files: what you see there "
+  + "is what your game will show. Nested symbols and masks are still being "
+  + "built; the plan is docs/PLAN.md in the source.";
 
 export interface Credit {
   name: string;
@@ -65,8 +66,15 @@ export const CREDITS: readonly Credit[] = Object.freeze([
     what: "The editor this one is built from, by Morenoise.",
   },
   {
+    name: "spine-pixi-v8",
+    version: "4.3.13",
+    license: "Spine Runtimes License",
+    url: "https://github.com/EsotericSoftware/spine-runtimes",
+    what: "The Spine runtime. Included so the Preview plays your animation for real.",
+  },
+  {
     name: "PixiJS",
-    version: "8.9.2",
+    version: "8.21.0",
     license: "MIT",
     url: "https://pixijs.com",
     what: "Draws the Preview.",

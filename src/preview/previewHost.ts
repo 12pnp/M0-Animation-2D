@@ -1,4 +1,4 @@
-import type { FrameToHost, HostToFrame, PreviewTexture } from "./protocol";
+import type { FrameToHost, HostToFrame, PreviewPage } from "./protocol";
 
 /**
  * Parent-side driver for the preview iframe.
@@ -78,13 +78,13 @@ export class PreviewHost {
     this.iframe.contentWindow?.postMessage(msg, "*");
   }
 
-  load(skeleton: unknown, textures: PreviewTexture[], opts: {
-    armature?: string; animation?: string; debugDraw?: boolean;
+  load(skeleton: unknown, atlas: string, pages: PreviewPage[], opts: {
+    animation?: string; debugDraw?: boolean;
     play?: boolean; frame?: number;
     fit?: { x: number; y: number; w: number; h: number };
     stage?: { width: number; height: number; background: string };
   } = {}): void {
-    this.post({ type: "load", skeleton, textures, ...opts });
+    this.post({ type: "load", skeleton, atlas, pages, ...opts });
   }
 
   /** Await one message of a given type — used by the parity harness. */
