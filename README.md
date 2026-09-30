@@ -7,7 +7,7 @@ Animo has a timeline, layers, keyframes, symbols, bones and IK, masks and PSD
 import, and it exports DragonBones. Amino Spine2D keeps the editor and changes
 what it writes to Spine: a skeleton `.json`, a `.atlas` and its pages, played in
 the editor by the official Spine runtime. It also opens existing Spine files for
-editing. Later an AI will be able to drive the editor.
+editing, and an AI can drive it through the same undoable commands.
 
 ```mermaid
 flowchart LR
@@ -17,11 +17,12 @@ flowchart LR
     EXP -->|"same bytes"| PREV["Preview<br/>spine-pixi-v8"]
     FILES --> GAME["Unity / Pixi / any Spine 4.3 runtime"]
     FILES --> IMP["Spine import"] --> DOC
+    AI["Claude (MCP / Ask AI)"] --> BR["mcp/amino-bridge.mjs"] --> AG["AgentApi"] --> DOC
 ```
 
 ## Status
 
-**Phases 0–8 of [docs/PLAN.md](docs/PLAN.md) are done.** The editor works as
+**Phases 0–9 of [docs/PLAN.md](docs/PLAN.md) are done.** The editor works as
 Animo's does; **File ▸ Export Spine** writes `<name>.json`, `<name>.atlas` and
 the atlas pages for Spine 4.3; and the **Preview panel and Play mode run the
 official Spine runtime** (spine-pixi-v8) on those exact files, matching the stage
@@ -31,7 +32,25 @@ JSON export (with its atlas and pages, or a zip of them) for editing. Meshes,
 constraints, physics and other skins are shown through the Spine runtime and
 written back unchanged. The exports play in Unity through spine-unity 4.3 exactly as in the
 Preview (checked frame by frame; turn on Export Settings ▸ "Atlas as .atlas.txt" for Unity).
-Next: letting an AI drive the editor (phase 9).
+**An AI can animate the open rig**: Claude Code or Claude Desktop over MCP, or
+AI ▸ Ask AI in the editor, through tools that read the rig, key bones and check the
+result against the Spine runtime. Every AI edit is one undo step.
+
+## Connecting Claude
+
+```bash
+node mcp/amino-bridge.mjs --http-only
+```
+
+That runs the bridge for the page alone; for Ask AI, start it with `ANTHROPIC_API_KEY` in
+its environment. For Claude Code, add the bridge to a project's `.mcp.json` instead, and
+Claude starts it:
+
+```json
+{ "mcpServers": { "amino-spine2d": { "command": "node", "args": ["<path to>/mcp/amino-bridge.mjs"] } } }
+```
+
+Then choose **AI ▸ Connect to AI** in the editor and ask Claude to animate the rig.
 
 ## Quick start
 

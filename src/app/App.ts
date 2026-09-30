@@ -17,6 +17,10 @@ import { PropertiesPanel } from "@/view/panels/PropertiesPanel";
 import { OutlinePanel } from "@/view/panels/OutlinePanel";
 import { HistoryPanel } from "@/view/panels/HistoryPanel";
 import { PreviewPanel } from "@/view/panels/PreviewPanel";
+import { AgentApi } from "@/app/agent/AgentApi";
+import { AgentBridge } from "@/app/agent/AgentBridge";
+import { HiddenPreviewProbe } from "@/app/agent/previewProbe";
+import { openAiHelp, openAskAi } from "@/view/agent/AskAiDialog";
 import { PreviewSession } from "@/preview/PreviewSession";
 import { openAbout } from "@/view/help/AboutDialog";
 import { APP_NAME } from "@/core/about";
@@ -87,6 +91,10 @@ export class App {
   readonly timeline: TimelinePanel;
   readonly project: ProjectService;
   private toast = new Toast();
+  /** The AI's way in: `AgentApi` over the Store, reached through the local
+   *  bridge (AI ▸ Connect to AI). */
+  readonly agent: AgentApi;
+  readonly agentBridge: AgentBridge;
   /** The "unsaved work was found" bar, while it is on screen. */
   private recoveryBar: HTMLElement | null = null;
   readonly clipboard = new Clipboard();
@@ -115,6 +123,14 @@ export class App {
       (message, isError) => this.toast.show(message, isError),
     );
     this.previewSession = new PreviewSession(this.store, this.assets, (err) => this.previewBuilt(err));
+    this.agent = new AgentApi(this.store, new HiddenPreviewProbe(this.store, this.assets));
+    this.agentBridge = new AgentBridge(this.agent);
+    let lastAgentState = "off";
+    this.agentBridge.onState((state, detail) => {
+      // Said once per change, not on every retry.
+      if (state !== lastAgentState && detail) this.toast.show(detail, false);
+      lastAgentState = state;
+    });
     this.preview = new PreviewPanel(
       this.previewSession,
       () => this.shell.floatPanel("preview"),
@@ -181,6 +197,9 @@ export class App {
     this.wireStageDrops();
     this.viewport.fitToStage();
     void this.offerRecovery();
+    let agentWanted = new URLSearchParams(location.search).has("agent");
+    try { agentWanted ||= localStorage.getItem("amino.agent") === "1"; } catch { /* storage may be off */ }
+    if (agentWanted) this.agentBridge.start();
   }
 
   /**
@@ -905,6 +924,14 @@ export class App {
     ];
   }
 
+  /** AI ▸ Connect to AI: poll the local bridge for tool calls, or stop.
+   *  Remembered for this browser, as a convenience only. */
+  private toggleAgent(): void {
+    const on = this.agentBridge.state === "off";
+    if (on) this.agentBridge.start(); else this.agentBridge.stop();
+    try { localStorage.setItem("amino.agent", on ? "1" : "0"); } catch { /* storage may be off */ }
+  }
+
   /** File ▸ Open Spine…: the skeleton .json, its .atlas and page images
    *  picked together, or the zip File ▸ Export writes. */
   private pickSpine(): void {
@@ -1152,6 +1179,10 @@ export class App {
         ],
       },
       {
+        label: "AI",
+        items: [it("ai.connect"), it("ai.ask"), "-", it("ai.help")],
+      },
+      {
         label: "Help",
         items: [
           it("help.shortcuts"),
@@ -1250,6 +1281,9 @@ export class App {
     reg("file.importImages", () => this.shell.showPanel("library"));
     reg("file.importPsd", () => this.pickPsd());
     reg("file.openSpine", () => this.pickSpine());
+    reg("ai.connect", () => this.toggleAgent(), undefined, () => this.agentBridge.state !== "off");
+    reg("ai.ask", () => openAskAi(this.agentBridge));
+    reg("ai.help", () => openAiHelp());
     reg("file.export", () => void this.exportProject());
     reg("file.exportFolder", () => void this.exportToFolder());
     reg("file.exportSettings", () => openExportSettings(this.store));

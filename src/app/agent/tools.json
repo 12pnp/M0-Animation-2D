@@ -1,0 +1,142 @@
+[
+  {
+    "name": "get_rig",
+    "description": "The skeleton being edited: its bones (parent, length, setup pose), slots, IK constraints, animations and frame rate, and which animation and frame the editor shows. Call this first. Values use Spine's conventions: x right, y UP, rotation in degrees counter-clockwise, all local to the parent bone.",
+    "input_schema": { "type": "object", "properties": {}, "additionalProperties": false }
+  },
+  {
+    "name": "get_animation",
+    "description": "Every key of one animation, per bone: frame, local x, y, rotation, scaleX, scaleY and the ease of the interval that starts at the key. Also its length in frames and whether it loops. Keys set by other tools (constraints, meshes, events) are not listed.",
+    "input_schema": {
+      "type": "object",
+      "properties": { "animation": { "type": "string", "description": "Animation name." } },
+      "required": ["animation"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "get_pose",
+    "description": "Where bones are at one frame, as the Spine runtime poses them (IK and every constraint applied): each bone's world position (y up), world rotation in degrees and world scale. Use it to check an edit, e.g. that a foot touches the ground (y near 0 for most rigs).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "animation": { "type": "string", "description": "Animation name; omit for the setup pose." },
+        "frame": { "type": "integer", "minimum": 0 },
+        "bones": { "type": "array", "items": { "type": "string" }, "description": "Bone names; omit for all." }
+      },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "new_animation",
+    "description": "Create an empty animation. It loops over `frames` frames: frame `frames` is the same instant as frame 0, so a looping animation keys the same pose at 0 and at `frames`.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "frames": { "type": "integer", "minimum": 1, "maximum": 10000, "description": "Length in frames at the rig's frame rate." }
+      },
+      "required": ["name", "frames"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "set_keys",
+    "description": "Key bones at frames, all in ONE undoable step. Each key sets any of x, y, rotation, scaleX, scaleY (local to the parent bone, Spine conventions: y up, degrees counter-clockwise; absolute values, not offsets from setup); what a key leaves out keeps the value the animation already has at that frame. `ease` shapes the motion from this key to the next: linear (default), hold, in, out, inout, or a cubic bezier [x1, y1, x2, y2] in 0..1. Keying past the end lengthens the animation.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "animation": { "type": "string" },
+        "keys": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "bone": { "type": "string" },
+              "frame": { "type": "integer", "minimum": 0 },
+              "x": { "type": "number" },
+              "y": { "type": "number" },
+              "rotation": { "type": "number" },
+              "scaleX": { "type": "number" },
+              "scaleY": { "type": "number" },
+              "ease": {
+                "oneOf": [
+                  { "type": "string", "enum": ["linear", "hold", "in", "out", "inout"] },
+                  { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 }
+                ]
+              }
+            },
+            "required": ["bone", "frame"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["animation", "keys"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "delete_keys",
+    "description": "Remove keys, in one undoable step. A bone left with no keys goes back to its setup pose in that animation.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "animation": { "type": "string" },
+        "keys": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": { "bone": { "type": "string" }, "frame": { "type": "integer", "minimum": 0 } },
+            "required": ["bone", "frame"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["animation", "keys"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "show",
+    "description": "Show an animation at a frame in the editor, so the user sees it (the stage, the timeline and the Preview follow).",
+    "input_schema": {
+      "type": "object",
+      "properties": { "animation": { "type": "string" }, "frame": { "type": "integer", "minimum": 0 } },
+      "required": ["animation"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "undo",
+    "description": "Undo the last steps, whoever made them (each tool call that edits is one step). Returns what was undone.",
+    "input_schema": {
+      "type": "object",
+      "properties": { "steps": { "type": "integer", "minimum": 1, "maximum": 50 } },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "redo",
+    "description": "Redo steps undone.",
+    "input_schema": {
+      "type": "object",
+      "properties": { "steps": { "type": "integer", "minimum": 1, "maximum": 50 } },
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "check_preview",
+    "description": "Play the animation in the real Spine runtime (the Preview panel, what a game will show) at the given frames and compare every bone with the editor's pose. Returns the largest difference in pixels; anything above 0.01 means the file would not play as the editor shows it. Needs the Preview panel open.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "animation": { "type": "string" },
+        "frames": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "description": "Omit for every frame (up to 120)." }
+      },
+      "required": ["animation"],
+      "additionalProperties": false
+    }
+  }
+]

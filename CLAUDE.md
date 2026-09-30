@@ -5,7 +5,7 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 Amino Spine2D is Animo (github.com/justmorenoise/animo) retargeted from
 DragonBones 5.5 to **Spine 4.3**. [docs/PLAN.md](docs/PLAN.md) is the plan: the
 phases, the DragonBones→Spine mapping, and the checklist of export tests to
-rebuild. Phases 0–8 are done: DragonBones is gone, `src/core/spine/` holds the
+rebuild. Phases 0–9 are done: DragonBones is gone, `src/core/spine/` holds the
 Spine 4.3 contract, the transform mapping and the exporter (ARCHITECTURE ▸ The
 Spine 4.3 contract, The Spine exporter), File ▸ Export writes Spine files, and
 the Preview panel and Play mode run spine-pixi-v8 (ARCHITECTURE ▸ The preview is
@@ -22,7 +22,9 @@ must keep `tests/spineImport.test.ts` (every M0 sample round-trips) and
 `tests/spinePose.test.ts` (the stage equals the export) passing. Phase 8 checked the
 exports in Unity (ARCHITECTURE ▸ Checked in Unity, `scripts/unity-check/`): spine-csharp
 is stricter than spine-core (it requires `skeleton.hash`), so a header or format change
-should be rerun there. Check Spine behaviour against
+should be rerun there. An AI edits the document through `src/app/agent/`
+(ARCHITECTURE ▸ The AI bridge): a new editing ability becomes a tool there,
+declared in `tools.json`, applied as one labelled command. Check Spine behaviour against
 `@esotericsoftware/spine-core` in a test, the way `tests/spineTransform.test.ts`
 does, rather than against documentation.
 

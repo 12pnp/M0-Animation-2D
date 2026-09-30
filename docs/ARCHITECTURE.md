@@ -15,7 +15,8 @@
 > contract" (phase 1) and "The Spine exporter" (phases 2 and 5) are new; "The preview is
 > ground truth" and "Vendored runtime" describe the Spine preview (phase 3); "Colour,
 > alpha and blend mode" and "Mask layers" describe Spine's tint and clipping (phase 6);
-> "Opening Spine files" is new (phase 7), "Checked in Unity" (phase 8).
+> "Opening Spine files" is new (phase 7), "Checked in Unity" (phase 8), "The AI bridge"
+> (phase 9).
 
 How Animo is built, and — mostly — the things in it that fail **silently** when
 you get them wrong. This is not a style guide: it is the record of decisions
@@ -918,6 +919,48 @@ runtimes matter to the exporter:
   changed.
 - **Unity does not import `.atlas` as text.** Export Settings ▸ Files ▸ "Atlas as .atlas.txt
   (Unity)" names it the way spine-unity's importer looks for it.
+
+## The AI bridge
+
+An AI edits the open document through the same undoable commands as a person.
+
+```mermaid
+flowchart LR
+    CC["Claude Code / Desktop"] -->|"MCP, stdio"| BR["mcp/amino-bridge.mjs<br/>127.0.0.1:5190"]
+    ASK["AI ▸ Ask AI dialog"] -->|"POST /chat"| BR
+    BR -->|"Messages API + tools<br/>(key in the bridge)"| CL["Claude"]
+    PAGE["AgentBridge (page)"] -->|"GET /agent/next (long poll)"| BR
+    PAGE --> API["AgentApi"]
+    API -->|"EditTracks, AddAnimation<br/>labelled AI: …"| ST["Store / History"]
+    API --> POSE["posedSymbol (get_pose)"]
+    API --> PROBE["HiddenPreviewProbe<br/>(check_preview)"]
+```
+
+- **Tools** (`src/app/agent/tools.json`, shared by the page and the bridge): `get_rig`,
+  `get_animation`, `get_pose`, `new_animation`, `set_keys`, `delete_keys`, `show`, `undo`,
+  `redo`, `check_preview`. Values are Spine's: y up, degrees counter-clockwise, local to
+  the parent bone, absolute. A model knows them better than the editor's Flash
+  conventions, and `toSpineLocal` / `fromSpineLocal` convert exactly.
+- **Every call that edits is one history step** labelled "AI: …". `set_keys` for many
+  bones is one `EditTracks` in one transaction, so Undo takes back an AI edit exactly as it
+  takes back a drag. What a key leaves out keeps the value the animation already shows at
+  that frame. A bone keyed for the first time starts from its setup pose at 0.
+- **`get_pose` is the runtime's pose** (`posedSymbol`, IK and constraints applied), so a
+  model checks its own work against what a game will show. **`check_preview`** loads the
+  export into a hidden preview page of its own (`HiddenPreviewProbe`: the same spine-pixi,
+  without taking over the Preview panel), seeks frame by frame and compares every bone.
+- **The bridge** is one Node file with no dependencies. It serves MCP on stdio (newline-
+  delimited JSON-RPC: `initialize`, `tools/list`, `tools/call`) and HTTP on 127.0.0.1 for the
+  page, and refuses other origins (`AMINO_ORIGINS`). The page long-polls it (AI ▸ Connect to
+  AI, remembered per browser, or `?agent` in the URL): no key and no socket server in the
+  page. Ask AI runs Claude inside the bridge with `ANTHROPIC_API_KEY` from its environment
+  (`AMINO_MODEL`, default claude-sonnet-5-5).
+- **A wrong call is the model's to fix**: `AgentError` messages go back as tool errors
+  (`isError`), saying what exists ("There is no bone "tail". get_rig lists them.").
+
+`tests/agentApi.test.ts` runs the tools on the stickman and plays the export in spine-core.
+`tests/agentBridge.test.ts` runs the bridge as Claude Code would, with a page that polls
+and a fake Messages API.
 
 ## The DragonBones 5.5 contract
 

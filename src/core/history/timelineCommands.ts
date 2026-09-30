@@ -210,10 +210,9 @@ export class SetAnimationLoop implements Command {
 export class AddAnimation implements Command {
   readonly kind = "anim.add";
   readonly touches: TouchSet;
-  readonly label = "New Animation";
   readonly animation: Animation;
 
-  constructor(private readonly symbolId: ItemId, name: string, duration = 1) {
+  constructor(private readonly symbolId: ItemId, name: string, duration = 1, readonly label = "New Animation") {
     this.animation = createAnimation(name, duration);
     this.touches = { symbols: [symbolId], timeline: true };
   }

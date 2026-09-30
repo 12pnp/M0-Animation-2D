@@ -14,7 +14,7 @@
 
 export type CommandCategory =
   | "File" | "Edit" | "View" | "Modify" | "Timeline" | "Playback"
-  | "Stage" | "Tools" | "Window" | "Help";
+  | "Stage" | "Tools" | "Window" | "AI" | "Help";
 
 export interface CommandDef {
   id: string;
@@ -25,7 +25,7 @@ export interface CommandDef {
 }
 
 export const CATEGORY_ORDER: CommandCategory[] = [
-  "File", "Edit", "View", "Modify", "Timeline", "Playback", "Stage", "Tools", "Window", "Help",
+  "File", "Edit", "View", "Modify", "Timeline", "Playback", "Stage", "Tools", "Window", "AI", "Help",
 ];
 
 const c = (
@@ -151,6 +151,9 @@ export const COMMANDS: CommandDef[] = [
     .map((p) => c("Window", `window.float.${p.id}`, `Float / Dock ${p.label}`)),
   c("Window", "window.resetLayout", "Reset Layout"),
 
+  c("AI", "ai.connect", "Connect to AI"),
+  c("AI", "ai.ask", "Ask AI…"),
+  c("AI", "ai.help", "Connecting Claude…"),
   c("Help", "help.shortcuts", "Keyboard Shortcuts", ["Shift+/"]),
 ];
 
