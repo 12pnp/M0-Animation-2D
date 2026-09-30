@@ -146,6 +146,8 @@ const CATEGORIES: Category[] = [
           { kind: "number", cat: "stage", key: "gridSubdivisions", label: "Major line every", unit: "cells" },
           { kind: "color", cat: "stage", key: "gridColor", label: "Line" },
           { kind: "color", cat: "stage", key: "gridMajorColor", label: "Major line" },
+          { kind: "check", cat: "stage", key: "showOrigin", label: "Show origin lines (x = 0, y = 0)" },
+          { kind: "color", cat: "stage", key: "originColor", label: "Origin line" },
         ],
       },
       {
@@ -162,8 +164,13 @@ const CATEGORIES: Category[] = [
       },
       {
         title: "Stage", rows: [
+          { kind: "color", cat: "stage", key: "pasteboard", label: "Background" },
+          { kind: "check", cat: "stage", key: "fillStage", label: "Fill the stage with the document's background colour" },
           { kind: "color", cat: "stage", key: "stageEdgeColor", label: "Stage edge" },
-          { kind: "color", cat: "stage", key: "pasteboard", label: "Pasteboard" },
+          { kind: "select", cat: "stage", key: "wheel", label: "Mouse wheel", options: [
+            { value: "zoom", text: "Zooms (Shift or ⌘ + wheel pans)" },
+            { value: "pan", text: "Pans (⌘ or Ctrl + wheel zooms)" },
+          ] },
         ],
       },
     ],

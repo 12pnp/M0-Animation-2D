@@ -20,7 +20,8 @@ import { PreviewPanel } from "@/view/panels/PreviewPanel";
 import { AgentApi } from "@/app/agent/AgentApi";
 import { AgentBridge } from "@/app/agent/AgentBridge";
 import { HiddenPreviewProbe } from "@/app/agent/previewProbe";
-import { openAiHelp, openAskAi } from "@/view/agent/AskAiDialog";
+import { openAiHelp } from "@/view/agent/AskAiDialog";
+import { AiPanel } from "@/view/agent/AiPanel";
 import { PreviewSession } from "@/preview/PreviewSession";
 import { openAbout } from "@/view/help/AboutDialog";
 import { APP_NAME } from "@/core/about";
@@ -95,6 +96,7 @@ export class App {
    *  bridge (AI ▸ Connect to AI). */
   readonly agent: AgentApi;
   readonly agentBridge: AgentBridge;
+  private readonly aiPanel: AiPanel;
   /** The "unsaved work was found" bar, while it is on screen. */
   private recoveryBar: HTMLElement | null = null;
   readonly clipboard = new Clipboard();
@@ -131,6 +133,8 @@ export class App {
       if (state !== lastAgentState && detail) this.toast.show(detail, false);
       lastAgentState = state;
     });
+    this.aiPanel = new AiPanel(this.agentBridge, () => this.toggleAgent(), () => this.shell.setAiOpen(false));
+    this.shell.aiWrap.appendChild(this.aiPanel.el);
     this.preview = new PreviewPanel(
       this.previewSession,
       () => this.shell.floatPanel("preview"),
@@ -339,6 +343,9 @@ export class App {
           s.emit("doc");
         },
       },
+      "-",
+      { label: "Grid", command: "view.grid", checked: s.ui.showGrid, run: () => s.setViewFlag("showGrid", !s.ui.showGrid) },
+      { label: "Stage & Grid Settings…", command: "view.stageSettings", run: () => this.openPreferences("stage") },
     ]);
   }
 
@@ -1126,6 +1133,7 @@ export class App {
           it("view.rulers"),
           it("view.grid"),
           it("view.guides"),
+          it("view.stageSettings"),
           it("view.lockGuides"),
           it("view.clearGuides"),
           it("view.snapping"),
@@ -1180,7 +1188,7 @@ export class App {
       },
       {
         label: "AI",
-        items: [it("ai.connect"), it("ai.ask"), "-", it("ai.help")],
+        items: [it("ai.panel"), it("ai.ask"), it("ai.connect"), "-", it("ai.help")],
       },
       {
         label: "Help",
@@ -1282,7 +1290,8 @@ export class App {
     reg("file.importPsd", () => this.pickPsd());
     reg("file.openSpine", () => this.pickSpine());
     reg("ai.connect", () => this.toggleAgent(), undefined, () => this.agentBridge.state !== "off");
-    reg("ai.ask", () => openAskAi(this.agentBridge, () => this.toggleAgent()));
+    reg("ai.ask", () => { this.shell.setAiOpen(true); this.aiPanel.focus(); });
+    reg("ai.panel", () => this.shell.setAiOpen(!this.shell.aiOpen), undefined, () => this.shell.aiOpen);
     reg("ai.help", () => openAiHelp(this.agentBridge, () => this.toggleAgent()));
     reg("file.export", () => void this.exportProject());
     reg("file.exportFolder", () => void this.exportToFolder());
@@ -1320,6 +1329,7 @@ export class App {
     reg("edit.pasteLayers", () => { tl.pasteLayers(); }, () => this.clipboard.hasLayers);
     reg("edit.duplicateLayers", () => { tl.duplicateLayers(); }, hasNodes);
     reg("edit.preferences", () => this.openPreferences());
+    reg("view.stageSettings", () => this.openPreferences("stage"));
     reg("edit.delete", () => {
       s.apply(new RemoveNodes(s.currentSymbolId, [...s.selection.nodes]));
       s.clearSelection();

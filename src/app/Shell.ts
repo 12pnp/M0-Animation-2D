@@ -83,6 +83,10 @@ export class Shell {
   readonly stageHost: HTMLElement;
   readonly rightDock: Dock;
   readonly bottomDock: Dock;
+  /** The AI panel's column, left of the stage; App fills it. */
+  readonly aiWrap: HTMLElement = h("div", { class: "ai-side collapsed" });
+  /** Notified when the AI column opens or closes. */
+  onAiToggle: ((open: boolean) => void) | null = null;
 
   private toolButtons = new Map<ToolId, HTMLElement>();
   private crumbEl: HTMLElement;
@@ -94,6 +98,9 @@ export class Shell {
   private railToggle: HTMLElement | null = null;
   private panelDock = new Map<string, Dock>();
   private docNameEl: HTMLElement;
+  /** The AI column's width while it is closed (a hidden element measures 0). */
+  private aiWidth = 380;
+  private syncAiButton: () => void = () => {};
   /** Where App puts the Play-mode transport, built after the shell. */
   readonly playSlot: HTMLElement = h("div", { class: "stage-play" });
   /** The name of the file on disk. Supplied by App, because ProjectService —
@@ -124,11 +131,14 @@ export class Shell {
 
     const vSplit = this.buildVerticalSplitter();
     const hSplit = this.buildHorizontalSplitter();
+    const aiSplit = this.buildAiSplitter();
 
     this.el = h("div", { class: "shell" },
       this.menubarEl,
       this.buildDocTabs(),
       toolsEl,
+      this.aiWrap,
+      aiSplit,
       stageRegion,
       hSplit,
       this.bottomWrap,
@@ -138,6 +148,7 @@ export class Shell {
     );
 
     this.restoreSizes();
+    this.syncAiButton();
     this.store.subscribe((topic) => {
       if (topic === "tool") this.syncTools();
       if (topic === "doc" || topic === "ui") { this.syncCrumb(); this.syncMenus(); }
@@ -264,7 +275,13 @@ export class Shell {
 
     // Two spacers, so the play cluster is CENTRED rather than pushed to one
     // side: it is the mode the whole stage is in, not another toggle.
+    const aiBtn = h("button", { class: "ai-toggle", title: "Show or hide the AI panel" }, "✦ AI");
+    on(aiBtn, "click", () => this.setAiOpen(!this.aiOpen));
+    this.syncAiButton = () => cls(aiBtn, "on", this.aiOpen);
+
     const bar = h("div", { class: "stage-bar" },
+      aiBtn,
+      h("div", { class: "sep-v" }),
       this.crumbEl,
       h("div", { class: "spacer" }),
       this.playSlot,
@@ -516,6 +533,34 @@ export class Shell {
     return sp;
   }
 
+  /** The AI column's right edge. */
+  private buildAiSplitter(): HTMLElement {
+    const sp = h("div", { class: "splitter v ai-split" });
+    let start = 380;
+    drag(sp, {
+      cursor: "ew-resize",
+      onStart: () => { start = this.aiWrap.offsetWidth; sp.classList.add("dragging"); },
+      onMove: (dx) => {
+        const w = Math.max(260, Math.min(900, innerWidth - 480, start + dx));
+        this.aiWrap.style.width = `${w}px`;
+      },
+      onEnd: () => { sp.classList.remove("dragging"); this.saveSizes(); },
+    });
+    return sp;
+  }
+
+  get aiOpen(): boolean { return !this.aiWrap.classList.contains("collapsed"); }
+
+  setAiOpen(open: boolean): void {
+    this.aiWrap.classList.toggle("collapsed", !open);
+    this.el.classList.toggle("ai-open", open);
+    this.saveSizes();
+    this.syncAiButton();
+    this.onAiToggle?.(open);
+    // The stage canvas measures its host on resize.
+    window.dispatchEvent(new Event("resize"));
+  }
+
   private buildHorizontalSplitter(): HTMLElement {
     const sp = h("div", { class: "splitter h" });
     sp.style.gridArea = "bottom";
@@ -536,11 +581,14 @@ export class Shell {
   }
 
   private saveSizes(): void {
+    if (this.aiOpen && this.aiWrap.offsetWidth) this.aiWidth = this.aiWrap.offsetWidth;
     try {
       localStorage.setItem("animo.sizes", JSON.stringify({
         right: this.rightWrap.offsetWidth,
         bottom: this.bottomWrap.offsetHeight,
         rightHidden: this.rightWrap.classList.contains("collapsed"),
+        ai: this.aiWidth,
+        aiOpen: this.aiOpen,
       }));
     } catch { /* private mode */ }
   }
@@ -550,7 +598,9 @@ export class Shell {
     try {
       const raw = localStorage.getItem("animo.sizes");
       if (!raw) return;
-      const s = JSON.parse(raw) as { right?: number; bottom?: number; rightHidden?: boolean };
+      const s = JSON.parse(raw) as { right?: number; bottom?: number; rightHidden?: boolean; ai?: number; aiOpen?: boolean };
+      if (s.ai) { this.aiWidth = s.ai; this.aiWrap.style.width = `${s.ai}px`; }
+      if (s.aiOpen) { this.aiWrap.classList.remove("collapsed"); this.el.classList.add("ai-open"); }
       if (s.right) this.rightWrap.style.width = `${s.right}px`;
       if (s.bottom) this.bottomWrap.style.height = `${s.bottom}px`;
       if (s.rightHidden) this.rightWrap.classList.add("collapsed");

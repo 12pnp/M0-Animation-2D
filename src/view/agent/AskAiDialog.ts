@@ -3,24 +3,11 @@ import { Modal } from "@/view/widgets/Modal";
 import type { AgentBridge, BridgeState } from "@/app/agent/AgentBridge";
 
 /**
- * AI ▸ Ask AI…: a conversation with Claude or GLM about the open rig. The
- * bridge process runs the model with the editor's tools (the API key stays
- * there); every edit the model makes is an ordinary undo step, labelled
- * "AI: …". The conversation lasts as long as the page.
- *
- * Both AI windows say at the top whether the bridge is there and which model
- * it chats with, and connect or disconnect on the spot: a question typed
- * into a window that cannot answer is the failure this layout is for.
+ * AI ▸ Connecting AI…, and the connection strip it shares with the AI panel
+ * (`AiPanel.ts`): whether the bridge is there and which model it chats with,
+ * with the button that connects or disconnects on the spot. A question typed
+ * into a window that cannot answer is the failure the strip is for.
  */
-
-let conversation: unknown[] = [];
-
-const EXAMPLES = [
-  "Describe this rig: its bones, IK and animations.",
-  "Make a 24-frame walk cycle that loops.",
-  "Make a 40-frame idle: slow breathing, a small head bob.",
-  "Make a 16-frame hop: the body rises and lands, x moves linearly.",
-];
 
 /** This checkout's bridge when the dev server knows it (`__BRIDGE_PATH__`,
  *  `vite.config.ts`). */
@@ -29,7 +16,7 @@ function bridgePath(): string {
 }
 
 /** A connection strip: a light, what it means, and the button that changes it. */
-function statusStrip(bridge: AgentBridge, toggle: () => void): { el: HTMLElement; dispose: () => void } {
+export function statusStrip(bridge: AgentBridge, toggle: () => void): { el: HTMLElement; dispose: () => void } {
   const dot = h("span", { class: "ai-dot" });
   const text = h("span", { class: "ai-status-text" });
   const btn = h("button", { class: "btn" }) as HTMLButtonElement;
@@ -52,89 +39,6 @@ function statusStrip(bridge: AgentBridge, toggle: () => void): { el: HTMLElement
   };
   sync(bridge.state);
   return { el, dispose: bridge.onState((s) => sync(s)) };
-}
-
-export function openAskAi(bridge: AgentBridge, toggleConnection: () => void): void {
-  const strip = statusStrip(bridge, toggleConnection);
-  const modal = new Modal({ title: "Ask AI", width: 900, height: 720, onClose: () => strip.dispose() });
-
-  const log = h("div", { class: "ai-log" });
-  const input = h("textarea", { class: "ai-input", placeholder: "Ask the AI to animate the open rig…  (⌘↩ to send)", rows: "4" }) as HTMLTextAreaElement;
-  const send = h("button", { class: "btn primary ai-send" }, "Send") as HTMLButtonElement;
-  const reset = h("button", { class: "btn" }, "New conversation") as HTMLButtonElement;
-  const note = h("div", { class: "ai-hint" }, "Each edit the AI makes is one undo step, named \"AI: …\" in History.");
-  modal.body.classList.add("ai-body");
-  modal.body.append(strip.el, log, h("div", { class: "ai-compose" }, input, send));
-  modal.footer.append(note, h("div", { class: "spacer" }), reset);
-
-  const say = (who: "you" | "ai" | "note", text: string) => {
-    log.querySelector(".ai-empty")?.remove();
-    const row = h("div", { class: `ai-msg ai-${who}` },
-      who === "note" ? null : h("div", { class: "ai-who" }, who === "you" ? "You" : "AI"),
-      h("div", { class: "ai-text" }, text));
-    log.appendChild(row);
-    log.scrollTop = log.scrollHeight;
-    return row;
-  };
-
-  const empty = () => {
-    const chips = h("div", { class: "ai-examples" });
-    for (const ex of EXAMPLES) {
-      const chip = h("button", { class: "ai-example" }, ex);
-      on(chip, "pointerup", () => { input.value = ex; input.focus(); });
-      chips.appendChild(chip);
-    }
-    log.appendChild(h("div", { class: "ai-empty" },
-      h("div", { class: "ai-empty-title" }, "What should the rig do?"),
-      h("div", { class: "ai-empty-sub" }, "The AI reads the rig, keys the bones, checks the result in the Spine runtime, and shows it to you."),
-      chips));
-  };
-
-  for (const m of conversation as Array<{ role: string; content: unknown }>) {
-    if (m.role === "user" && typeof m.content === "string") say("you", m.content);
-    if (m.role === "assistant" && Array.isArray(m.content)) {
-      const text = (m.content as Array<{ type: string; text?: string }>).filter((b) => b.type === "text").map((b) => b.text).join("\n");
-      if (text) say("ai", text);
-    }
-  }
-  if (!log.childElementCount) empty();
-
-  const problem = () => {
-    if (bridge.state !== "connected") return "Not connected: press Connect above, with the bridge running (AI ▸ Connecting AI…).";
-    if (!bridge.chatReady) return "The bridge has no API key: start it with ANTHROPIC_API_KEY or GLM_API_KEY set, or use Claude Code over MCP instead.";
-    return "";
-  };
-
-  const go = async () => {
-    const text = input.value.trim();
-    if (!text || send.disabled) return;
-    const why = problem();
-    if (why) { say("note", why); return; }
-    say("you", text);
-    input.value = "";
-    send.disabled = true;
-    const working = say("note", "Working… the stage updates as the AI edits.");
-    working.classList.add("ai-working");
-    try {
-      const out = await bridge.chat([...conversation, { role: "user", content: text }]);
-      conversation = out.messages;
-      working.remove();
-      say("ai", out.text || "(done)");
-    } catch (err) {
-      working.remove();
-      say("note", err instanceof Error ? err.message : String(err));
-    } finally {
-      send.disabled = false;
-      input.focus();
-    }
-  };
-  on(send, "pointerup", () => void go());
-  on(input, "keydown", (e) => {
-    const k = e as unknown as KeyboardEvent;
-    if (k.key === "Enter" && (k.metaKey || k.ctrlKey)) { k.preventDefault(); void go(); }
-  });
-  on(reset, "pointerup", () => { conversation = []; log.replaceChildren(); empty(); input.focus(); });
-  input.focus();
 }
 
 /** AI ▸ Connecting AI…: how to start the bridge and point a model at it. */

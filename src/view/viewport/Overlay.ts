@@ -36,6 +36,7 @@ export interface Guide { axis: "x" | "y"; at: number; }
 export interface OverlayOptions {
   showRulers: boolean;
   showGrid: boolean;
+  showOrigin: boolean;
   showGuides: boolean;
   showBones: boolean;
   /** The reference marks on a selected node — never the selection box itself,
@@ -100,6 +101,7 @@ export class Overlay {
     ctx.clip();
 
     if (opts.showGrid) this.drawGrid(ctx, camera, opts.gridSize, opts.gridSubdivisions);
+    if (opts.showOrigin) this.drawOrigin(ctx, camera);
     this.drawStageOutline(ctx, camera, project, opts.setupMode);
     if (opts.showGuides) this.drawGuides(ctx, camera, opts.guides, opts.draftGuide);
     this.drawEmptySymbols(ctx, camera, project, pose);
@@ -158,6 +160,27 @@ export class Overlay {
       }
       ctx.stroke();
     }
+  }
+
+  /** The x and y axes of what is being edited, through its (0,0): where an
+   *  opened Spine rig's root sits, or a symbol's registration point. */
+  private drawOrigin(ctx: CanvasRenderingContext2D, cam: Camera): void {
+    const o = cam.toScreen(0, 0), ex = cam.toScreen(1, 0), ey = cam.toScreen(0, 1);
+    const line = (dx: number, dy: number) => {
+      const len = Math.hypot(dx, dy);
+      if (len < 1e-9) return;
+      const far = (cam.width + cam.height) * 2 / len;
+      ctx.moveTo(o.x - dx * far, o.y - dy * far);
+      ctx.lineTo(o.x + dx * far, o.y + dy * far);
+    };
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = this.C.origin;
+    ctx.beginPath();
+    line(ex.x - o.x, ex.y - o.y);
+    line(ey.x - o.x, ey.y - o.y);
+    ctx.stroke();
+    ctx.restore();
   }
 
   /**

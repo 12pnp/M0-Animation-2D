@@ -932,7 +932,7 @@ An AI edits the open document through the same undoable commands as a person.
 ```mermaid
 flowchart LR
     CC["Claude Code / Desktop"] -->|"MCP, stdio"| BR["mcp/amino-bridge.mjs<br/>127.0.0.1:5190"]
-    ASK["AI ▸ Ask AI dialog"] -->|"POST /chat"| BR
+    ASK["AI panel (AiPanel)"] -->|"POST /chat"| BR
     BR -->|"Messages API or chat completions<br/>(key in the bridge)"| CL["Claude or GLM"]
     PAGE["AgentBridge (page)"] -->|"GET /agent/next (long poll)"| BR
     PAGE --> API["AgentApi"]
@@ -962,7 +962,10 @@ flowchart LR
   Claude (Anthropic Messages, `ANTHROPIC_API_KEY`) or GLM (OpenAI chat completions,
   `GLM_API_KEY` on api.z.ai), picked by `AMINO_PROVIDER` — `glm` whenever `GLM_API_KEY` is
   set. `AMINO_MODEL` (claude-sonnet-5-5 / glm-4.6) and `AMINO_API_URL` (for open.bigmodel.cn)
-  override; the conversation with the page stays Anthropic-shaped either way.
+  override; the conversation with the page stays Anthropic-shaped either way. The chat is a
+  panel left of the stage (`view/agent/AiPanel.ts`, in `Shell.aiWrap`), not a dialog, so the
+  stage stays live beside it: the stage bar's AI button, AI ▸ Show AI Panel (⌘⇧L) or Ask AI…
+  opens it, its right edge drags its width, and both are remembered (`animo.sizes`).
 - **A wrong call is the model's to fix**: `AgentError` messages go back as tool errors
   (`isError`), saying what exists ("There is no bone "tail". get_rig lists them.").
 
@@ -1930,7 +1933,10 @@ A mask not showing (blank key, outside its span, eye off) leaves them unclipped.
 so **Hand (H) and Zoom (Z)** highlight in the toolbar, set `ui.tool`, and then behave as the
 Selection tool — pressing H and dragging marquee-selects instead of panning. Both capabilities
 exist by another route: panning is space+drag or the middle button, zooming is the wheel and ⌘±.
-What is missing is the two tool classes, not the behaviour.
+What is missing is the two tool classes, not the behaviour. (A plain wheel zooms at the cursor
+by default; `stage.wheel` makes it pan instead, and Shift or ⌘ with the wheel does the other.
+The stage itself is an outline on the pasteboard unless `stage.fillStage`, with the grid on and
+origin lines through (0,0) of what is being edited: an opened Spine rig has no stage.)
 
 Vector drawing tools, mesh editing. Meshes opened from a Spine file are drawn and
 written back, not edited (Opening Spine files).

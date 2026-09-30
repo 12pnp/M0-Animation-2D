@@ -54,6 +54,8 @@ describe("mergePrefs", () => {
     // outside the four steps has no UI to get back out of.
     expect(mergePrefs({ interface: { fontSize: "huge" } }).interface.fontSize).toBe("small");
     expect(mergePrefs({ interface: { accent: "nonsense" } }).interface.accent).toBe("nonsense");
+    expect(mergePrefs({ stage: { wheel: "pan" } }).stage.wheel).toBe("pan");
+    expect(mergePrefs({ stage: { wheel: "spin" } }).stage.wheel).toBe("zoom");
   });
 
   it("gives an older blob the accents it was saved without", () => {

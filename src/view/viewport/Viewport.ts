@@ -189,9 +189,11 @@ export class Viewport {
     // is drawn where the scene's origin actually falls, not at the symbol's
     // own (0,0) — which would put a white rectangle in the middle of nowhere
     // and make the contents look displaced.
-    const tl = camera.sceneToScreen(0, 0);
-    sc.fillStyle = project.stage.background;
-    sc.fillRect(tl.x, tl.y, project.stage.width * camera.zoom, project.stage.height * camera.zoom);
+    if (store.prefs.value.stage.fillStage) {
+      const tl = camera.sceneToScreen(0, 0);
+      sc.fillStyle = project.stage.background;
+      sc.fillRect(tl.x, tl.y, project.stage.width * camera.zoom, project.stage.height * camera.zoom);
+    }
 
     // World -> device pixels. drawEntry uses setTransform, so the DPR scale
     // and the ruler gutter have to be baked in here rather than left on the
@@ -254,6 +256,7 @@ export class Viewport {
       showBones: store.ui.showBones,
       showGizmos: store.ui.showGizmos,
       setupMode: store.ui.mode === "setup",
+      showOrigin: store.prefs.value.stage.showOrigin,
       gridSize: store.prefs.value.stage.gridSize,
       gridSubdivisions: store.prefs.value.stage.gridSubdivisions,
       handleSize: store.prefs.value.gizmos.handleSize,
@@ -477,13 +480,22 @@ export class Viewport {
       const e = ev as unknown as WheelEvent;
       e.preventDefault();
       const c = this.toContent(e);
-      if (e.ctrlKey || e.metaKey) {
-        this.camera.zoomAt(c.x, c.y, Math.exp(-e.deltaY * 0.0035));
+      // Lines (Firefox's mouse wheel) to pixels.
+      const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+      const dx = e.deltaX * unit, dy = e.deltaY * unit;
+      // A trackpad pinch arrives as ctrl + wheel: always a zoom. A plain
+      // wheel zooms or pans by preference (`stage.wheel`); Shift pans
+      // sideways either way; ⌘ does the other of the two.
+      const zoomsHere = e.ctrlKey || (this.store.prefs.value.stage.wheel === "zoom"
+        ? !e.metaKey && !e.shiftKey && !e.altKey
+        : e.metaKey);
+      if (zoomsHere) {
+        this.camera.zoomAt(c.x, c.y, Math.exp(-dy * (e.ctrlKey ? 0.0035 : 0.0015)));
         this.store.setUi({ zoom: this.camera.zoom }, "ui");
       } else if (e.shiftKey) {
-        this.camera.panBy(-e.deltaY - e.deltaX, 0);
+        this.camera.panBy(-dy - dx, 0);
       } else {
-        this.camera.panBy(-e.deltaX, -e.deltaY);
+        this.camera.panBy(-dx, -dy);
       }
       this.invalidate();
     }, { passive: false });

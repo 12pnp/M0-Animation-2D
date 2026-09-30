@@ -83,6 +83,7 @@ export const COMMANDS: CommandDef[] = [
   c("View", "view.rulers", "Rulers"),
   c("View", "view.grid", "Grid"),
   c("View", "view.guides", "Guides"),
+  c("View", "view.stageSettings", "Stage & Grid Settings…"),
   c("View", "view.lockGuides", "Lock Guides"),
   c("View", "view.clearGuides", "Clear Guides"),
   c("View", "view.snapping", "Snapping", ["Mod+Shift+;"], true),
@@ -152,6 +153,7 @@ export const COMMANDS: CommandDef[] = [
   c("Window", "window.resetLayout", "Reset Layout"),
 
   c("AI", "ai.connect", "Connect to AI"),
+  c("AI", "ai.panel", "Show AI Panel", ["Mod+Shift+L"]),
   c("AI", "ai.ask", "Ask AI…"),
   c("AI", "ai.help", "Connecting AI…"),
   c("Help", "help.shortcuts", "Keyboard Shortcuts", ["Shift+/"]),

@@ -21,6 +21,7 @@ export interface OverlayColors {
   gridMajor: string;
   guide: string;
   stageEdge: string;
+  origin: string;
   select: string;
   selectSoft: string;
   bone: string;
@@ -50,6 +51,7 @@ export const DEFAULT_COLORS: OverlayColors = {
   gridMajor: "rgba(255,255,255,0.11)",
   guide: "#4fd1c5",
   stageEdge: "#222",
+  origin: "rgba(255,255,255,0.3)",
   select: "#00bcd9",
   selectSoft: "rgba(0,188,217,0.80)",
   bone: "rgba(44,205,230,0.9)",
@@ -86,6 +88,7 @@ export function resolveColors(prefs: Prefs): OverlayColors {
     gridMajor: stage.gridMajorColor,
     guide: stage.guideColor,
     stageEdge: stage.stageEdgeColor,
+    origin: stage.originColor,
     select: gizmos.select,
     selectSoft: withAlpha(gizmos.select, 0.85),
     marquee: gizmos.marquee,

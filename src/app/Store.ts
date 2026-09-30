@@ -119,7 +119,7 @@ export class Store {
     zoom: 1,
     panX: 0,
     panY: 0,
-    showGrid: false,
+    showGrid: true,
     showRulers: true,
     showGuides: true,
     snap: true,

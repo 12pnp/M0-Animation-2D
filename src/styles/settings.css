@@ -512,3 +512,19 @@
   background: var(--bg-field); border: 1px solid var(--line-soft); border-radius: var(--radius);
 }
 .ai-copy { position: absolute; top: 6px; right: 6px; }
+
+.ai-panel { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 0; }
+.ai-panel-head {
+  display: flex; align-items: center; gap: 6px;
+  height: var(--h-tabstrip); padding: 0 4px 0 10px; flex: none;
+  background: var(--bg-header); border-bottom: 1px solid var(--line);
+}
+.ai-panel-head .spacer { flex: 1 1 auto; }
+.ai-panel-title { color: var(--fg-strong); font-weight: 600; }
+.ai-panel-body {
+  display: flex; flex-direction: column; gap: 10px;
+  flex: 1 1 auto; min-height: 0; padding: 10px; font-size: 13px;
+}
+.ai-panel .ai-msg { max-width: 92%; }
+.ai-panel .ai-status { flex-wrap: wrap; }
+.ai-panel .ai-status-text { flex: 1 1 160px; min-width: 0; }

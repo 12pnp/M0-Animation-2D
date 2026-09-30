@@ -13,13 +13,15 @@
   display: grid;
   flex: 1 1 auto;
   min-height: 0;
-  grid-template-columns: var(--w-rail) 1fr auto auto;
+  /* minmax(0, …): the stage gives way to the AI column and the dock, not
+     the other way round, whatever its toolbar and the timeline hold. */
+  grid-template-columns: var(--w-rail) auto minmax(0, 1fr) auto auto;
   grid-template-rows: var(--h-menubar) var(--h-tabstrip) 1fr auto;
   grid-template-areas:
-    "menubar menubar menubar menubar"
-    "doctabs doctabs doctabs doctabs"
-    "tools   stage   dockR   railR"
-    "tools   bottom  dockR   railR";
+    "menubar menubar menubar menubar menubar"
+    "doctabs doctabs doctabs doctabs doctabs"
+    "tools   aiL     stage   dockR   railR"
+    "tools   aiL     bottom  dockR   railR";
   background: var(--bg-app);
 }
 
@@ -117,6 +119,7 @@
   background: var(--bg-panel);
   border-bottom: 1px solid var(--line);
   flex: none;
+  overflow: hidden;
 }
 .crumb { display: flex; align-items: center; gap: 4px; }
 .crumb .step { padding: 0 4px; border-radius: var(--radius); color: var(--fg); white-space: nowrap; }
@@ -163,6 +166,7 @@
   border-top: 1px solid var(--line);
   border-right: 1px solid var(--line);
   background: var(--bg-panel);
+  min-width: 0;
   min-height: 0;
 }
 
@@ -197,6 +201,40 @@
 .splitter.v { width: 5px; margin: 0 -2px; cursor: ew-resize; }
 .splitter:hover { background: rgba(var(--accent-rgb), 0.35); }
 .splitter.dragging { background: var(--accent); }
+
+/* The AI panel's column, left of the stage (view/agent/AiPanel.ts) */
+.ai-side {
+  grid-area: aiL;
+  display: flex;
+  width: 380px;
+  min-width: 260px;
+  min-height: 0;
+  background: var(--bg-panel);
+  border-right: 1px solid var(--line);
+}
+.ai-side.collapsed { display: none; }
+.shell > .splitter.v.ai-split {
+  grid-area: aiL;
+  justify-self: end;
+  height: 100%;
+  width: 5px;
+  margin-right: -3px;
+  display: none;
+}
+.shell.ai-open > .splitter.v.ai-split { display: block; }
+
+.ai-toggle {
+  flex: none;
+  height: var(--h-field);
+  padding: 0 10px;
+  font-weight: 600;
+  color: var(--fg);
+  background: var(--bg-field);
+  border: 1px solid #262626;
+  border-radius: var(--radius);
+}
+.ai-toggle:hover { color: var(--fg-strong); }
+.ai-toggle.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 
 /* Vertical splitter sitting between stage and right dock */
 .shell > .splitter.v {

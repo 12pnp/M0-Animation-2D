@@ -52,8 +52,17 @@ export interface StagePrefs {
   gridSubdivisions: number;
   gridColor: string;
   gridMajorColor: string;
+  /** Lines through the origin of what is being edited (Spine's axes). */
+  showOrigin: boolean;
+  originColor: string;
   stageEdgeColor: string;
   pasteboard: string;
+  /** Fill the stage with the document's background; off, the stage is an
+   *  outline on the pasteboard. */
+  fillStage: boolean;
+  /** What a plain mouse wheel does on the stage; the other is on Shift… see
+   *  `Viewport`'s wheel handler. */
+  wheel: "zoom" | "pan";
   showRulers: boolean;
   rulerBg: string;
   rulerTick: string;
@@ -154,13 +163,17 @@ export const DEFAULT_PREFS: Prefs = {
     fontSize: "small",
   },
   stage: {
-    showGrid: false,
+    showGrid: true,
     gridSize: 20,
     gridSubdivisions: 5,
     gridColor: "rgba(255,255,255,0.055)",
     gridMajorColor: "rgba(255,255,255,0.11)",
+    showOrigin: true,
+    originColor: "rgba(255,255,255,0.3)",
     stageEdgeColor: "#222222",
     pasteboard: "#535353",
+    fillStage: false,
+    wheel: "zoom",
     showRulers: true,
     rulerBg: "#3c3c3c",
     rulerTick: "#8f8f8f",
@@ -238,6 +251,7 @@ export const PREF_LIMITS: Record<string, { min: number; max: number; step?: numb
  *  four steps has no UI to get back out of. */
 export const PREF_ENUMS: Record<string, readonly string[]> = {
   "interface.fontSize": UI_FONT_SIZES,
+  "stage.wheel": ["zoom", "pan"],
 };
 
 export function clampPref(path: string, value: number): number {
