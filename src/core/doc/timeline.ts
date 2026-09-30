@@ -429,25 +429,31 @@ export function sampleTransformRaw(track: Track, frame: number) {
   const span = to.frame - from.frame;
   if (span <= 0) return from.transform;
 
-  // Each channel follows its own ease, exactly as the exporter splits them
-  // into translateFrame / rotateFrame / scaleFrame.
+  // Each channel follows its own ease, as the exporter writes them: Spine's
+  // translate, rotate, shear and scale timelines, one per axis where the
+  // axes' eases differ.
   const progress = (frame - from.frame) / span;
-  const pos = easeFor(from, "position", progress, span);
-  const rot = easeFor(from, "rotation", progress, span);
-  const scl = easeFor(from, "scale", progress, span);
+  const ease = (channel: TweenChannel) => easeFor(from, channel, progress, span);
+  const rot = ease("rotation"), shear = ease("shear");
   const a = from.transform, b = to.transform;
   // The same whole-turn offset on both angles: it turns the object and leaves
   // the shear (skewX − skewY) exactly as keyed.
   const offset = rotationDelta(from, to) - (b.skewY - a.skewY);
   const skewYEnd = b.skewY + offset;
   const skewXEnd = b.skewX + offset;
+  const skewY = a.skewY + (skewYEnd - a.skewY) * rot;
+  // A shear eased apart from the rotation: skewY turns with the rotation,
+  // and skewX keeps the eased shear from it (Spine's rotate and shear keys).
+  const skewX = shear === rot
+    ? a.skewX + (skewXEnd - a.skewX) * rot
+    : skewY - ((a.skewY - a.skewX) + ((b.skewY - b.skewX) - (a.skewY - a.skewX)) * shear);
   return {
-    x: a.x + (b.x - a.x) * pos,
-    y: a.y + (b.y - a.y) * pos,
-    skewX: a.skewX + (skewXEnd - a.skewX) * rot,
-    skewY: a.skewY + (skewYEnd - a.skewY) * rot,
-    scaleX: a.scaleX + (b.scaleX - a.scaleX) * scl,
-    scaleY: a.scaleY + (b.scaleY - a.scaleY) * scl,
+    x: a.x + (b.x - a.x) * ease("x"),
+    y: a.y + (b.y - a.y) * ease("y"),
+    skewX,
+    skewY,
+    scaleX: a.scaleX + (b.scaleX - a.scaleX) * ease("scaleX"),
+    scaleY: a.scaleY + (b.scaleY - a.scaleY) * ease("scaleY"),
   };
 }
 

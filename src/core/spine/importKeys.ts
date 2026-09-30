@@ -1,5 +1,5 @@
 import type { ChannelEases, EaseSpec, TweenChannel, TweenSpec } from "@/core/math/easing";
-import { CURVE_Y_LIMIT, readPolyline, spinePolyline } from "@/core/math/easing";
+import { CHANNEL_PARENT, CURVE_Y_LIMIT, readPolyline, sameEase, spinePolyline } from "@/core/math/easing";
 
 /**
  * Spine's per-channel keys turned into the editor's keyframes.
@@ -18,10 +18,13 @@ import { CURVE_Y_LIMIT, readPolyline, spinePolyline } from "@/core/math/easing";
  *   part of a bezier (another value is keyed inside it)  the part, cut out
  *                                        exactly (de Casteljau)
  *
+ * Values of one channel wanting different eases (x and y on their own
+ * curves) get them per axis, as refinements (`ChannelGroup.parts`).
+ *
  * and every interval is then CHECKED at each whole frame, through the
  * stage's own sampler (`sample`), against Spine's evaluation of the
  * original keys (`valueAt`, Spine's 10-piece polyline). Where the values of
- * one channel want different curves, a hold meets a tween, or a cut-out
+ * one refinement want different curves, a hold meets a tween, or a cut-out
  * part drifts from the polyline Spine drew for the whole, the interval is
  * written frame by frame instead: exact at every whole frame, straight
  * between. `baked` counts those.
@@ -146,8 +149,10 @@ function split(p: number[], u: number): [number[], number[]] {
   ];
 }
 
-/** One tween channel: the values it moves together. */
-export interface ChannelGroup { channel: TweenChannel; comps: Comp[]; eps: number }
+/** One tween channel: the values it moves together. `parts` split it into
+ *  its refinements (position into x and y …), tried when the values do not
+ *  share one ease. */
+export interface ChannelGroup { channel: TweenChannel; comps: Comp[]; eps: number; parts?: ChannelGroup[] }
 
 /** The ease one channel needs over [a, b], "const" when it does not move. */
 function groupEase(g: ChannelGroup, a: number, b: number): CompEase {
@@ -167,6 +172,14 @@ function groupEase(g: ChannelGroup, a: number, b: number): CompEase {
     }
   }
   return out;
+}
+
+/** A channel's ease over [a, b], or, when its values want different ones,
+ *  each refinement's. */
+function channelEases(g: ChannelGroup, a: number, b: number): Array<{ channel: TweenChannel; e: CompEase }> {
+  const e = groupEase(g, a, b);
+  if (e || !g.parts) return [{ channel: g.channel, e }];
+  return g.parts.map((p) => ({ channel: p.channel, e: groupEase(p, a, b) }));
 }
 
 function easeSpec(e: CompEase): EaseSpec | null {
@@ -198,7 +211,7 @@ export function mergeKeys(
   for (let i = 0; i < sorted.length; i++) {
     const a = sorted[i]!, b = sorted[i + 1];
     if (b === undefined) { keys.push({ frame: a, tween: { kind: "none" } }); break; }
-    const eases = groups.map((g) => ({ g, e: groupEase(g, a, b) }));
+    const eases = groups.flatMap((g) => channelEases(g, a, b));
     let timing: KeyTiming | null = null;
     if (eases.every(({ e }) => e !== null)) {
       const moving = eases.filter(({ e }) => e!.kind !== "const");
@@ -207,9 +220,12 @@ export function mergeKeys(
       } else if (moving.every(({ e }) => e!.kind !== "hold")) {
         const tween = easeSpec(moving[0]!.e)!;
         const over: ChannelEases = {};
-        for (const { g, e } of moving.slice(1)) {
+        // Against what the channel would inherit: a shear unset follows a
+        // rotation override. Parents come before their refinements.
+        for (const { channel, e } of moving.slice(1)) {
           const spec = easeSpec(e)!;
-          if (JSON.stringify(spec) !== JSON.stringify(tween)) over[g.channel] = spec;
+          const parent = CHANNEL_PARENT[channel];
+          if (!sameEase(spec, over[channel] ?? (parent && over[parent]) ?? tween)) over[channel] = spec;
         }
         timing = Object.keys(over).length ? { frame: a, tween, eases: over } : { frame: a, tween };
       }

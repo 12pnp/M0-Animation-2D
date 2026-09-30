@@ -95,6 +95,27 @@ describe("the AI's tools", () => {
     expect(Object.keys((await api.call("get_animation", { animation: "walk" }) as { bones: object }).bones).sort()).toEqual([bone, other].sort());
   });
 
+  it("ease one property on its own, and read it back", async () => {
+    const { api, store } = await setup();
+    const bone = ((await api.call("get_rig")) as { bones: Array<{ name: string; parent: string | null }> }).bones.find((b) => b.parent)!.name;
+    await api.call("new_animation", { name: "hop", frames: 12 });
+    await api.call("set_keys", { animation: "hop", keys: [
+      { bone, frame: 0, x: 0, y: 0, ease: "linear", eases: { y: "out" } },
+      { bone, frame: 12, x: 12, y: 12 },
+    ] });
+    type Keys = { bones: Record<string, Array<{ frame: number; ease: unknown; eases?: unknown }>> };
+    const k0 = () => ((api.call("get_animation", { animation: "hop" })) as Promise<Keys>).then((a) => a.bones[bone]![0]!);
+    expect(await k0()).toMatchObject({ ease: "linear", eases: { y: "out" } });
+    const at = played(store, "hop", 6);
+    expect(at(bone).x).toBeCloseTo(6, 3);
+    expect(at(bone).y).toBeGreaterThan(8);
+
+    await expect(api.call("set_keys", { animation: "hop", keys: [{ bone, frame: 0, eases: { y: "hold" } }] })).rejects.toThrow(/whole key/);
+    await expect(api.call("set_keys", { animation: "hop", keys: [{ bone, frame: 0, eases: { shear: "in" } }] })).rejects.toThrow(/no property "shear"/);
+    await api.call("set_keys", { animation: "hop", keys: [{ bone, frame: 0, ease: "inout" }] });
+    expect((await k0()).eases).toBeUndefined();
+  });
+
   it("keep what a key leaves out, as the animation has it at that frame", async () => {
     const { api } = await setup();
     const dance = await api.call("get_animation", { animation: "dance" }) as { bones: Record<string, Array<{ frame: number; x: number; rotation: number }>> };

@@ -120,9 +120,9 @@ describe.skipIf(found.length === 0)("opening a Spine file and exporting it again
   // pieces of a curve that do not play as the whole). A ratchet: a change
   // that keeps fewer curves fails here; one that keeps more lowers these.
   const BAKED: Record<string, number> = {
-    Dragon: 16, Eyes: 0, FootSoldier: 14, Gauge: 0, Goblins: 0, Hero: 86, "Raggedy Spineboy": 1, Raptor: 0,
-    Spineunitygirl: 114, Stretchyman: 100, "celestial-circus": 17, "mix-and-match": 17, "raptor-pro-and-mask": 434,
-    "spineboy-pro": 27, "spineboy-unity": 66, whirlyblendmodes: 0,
+    Dragon: 16, Eyes: 0, FootSoldier: 14, Gauge: 0, Goblins: 0, Hero: 82, "Raggedy Spineboy": 1, Raptor: 0,
+    Spineunitygirl: 105, Stretchyman: 42, "celestial-circus": 15, "mix-and-match": 17, "raptor-pro-and-mask": 203,
+    "spineboy-pro": 27, "spineboy-unity": 62, whirlyblendmodes: 0,
   };
 
   for (const rig of found) {

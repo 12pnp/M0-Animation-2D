@@ -5,7 +5,7 @@ import type { SpineInherit } from "@/core/spine/types";
 import type { AnimId, AssetId, FolderId, IkId, ItemId, LayerId, NodeId } from "./ids";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 8;
+export const DOC_VERSION = 9;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -258,8 +258,8 @@ export interface Keyframe {
   displayIndex: number;
   /** Governs the interval STARTING at this keyframe. */
   tween: TweenSpec;
-  /** Per-property overrides of `tween` over the same interval. Ignored while
-   *  `tween` is a hold. Each maps to its own DragonBones timeline. */
+  /** Per-property overrides of `tween` over the same interval, down to one
+   *  axis (`TweenChannel`). Ignored while `tween` is a hold. */
   eases?: ChannelEases;
   /** Which way the outgoing tween turns. Absent: as keyed — the angle
    *  travels from this key's value to the next one's, sign included. Set,

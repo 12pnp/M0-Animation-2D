@@ -387,15 +387,27 @@ export const EASE_PRESETS: ReadonlyArray<{ label: string; spec: TweenSpec }> = [
 
 /* ── Per-property eases ───────────────────────────────────────────────────*/
 
-export type TweenChannel = "position" | "rotation" | "scale" | "color";
-export const TWEEN_CHANNELS: readonly TweenChannel[] = ["position", "rotation", "scale", "color"];
+/**
+ * The properties an ease can be set for. `x`, `y`, `scaleX` and `scaleY`
+ * refine position and scale one axis at a time; `shear` (skewY − skewX, how
+ * far the two skews part) refines rotation, as Spine keys rotate and shear
+ * on timelines of their own. A refinement unset follows its parent.
+ */
+export type TweenChannel = "position" | "x" | "y" | "rotation" | "shear" | "scale" | "scaleX" | "scaleY" | "color";
+/** In the Ease dialog's order, each refinement after its parent. */
+export const TWEEN_CHANNELS: readonly TweenChannel[] = ["position", "x", "y", "rotation", "shear", "scale", "scaleX", "scaleY", "color"];
+export const CHANNEL_PARENT: Partial<Record<TweenChannel, TweenChannel>> = {
+  x: "position", y: "position", shear: "rotation", scaleX: "scale", scaleY: "scale",
+};
 export type ChannelEases = Partial<Record<TweenChannel, EaseSpec>>;
 
 /** The ease a channel follows over the interval leaving a key. A hold holds
- *  every channel; otherwise an override wins over the key's own ease. */
+ *  every channel; otherwise the most specific override wins over the key's
+ *  own ease. */
 export function easeOf(key: { tween: TweenSpec; eases?: ChannelEases }, channel: TweenChannel): TweenSpec {
   if (key.tween.kind === "none") return key.tween;
-  return key.eases?.[channel] ?? key.tween;
+  const parent = CHANNEL_PARENT[channel];
+  return key.eases?.[channel] ?? (parent && key.eases?.[parent]) ?? key.tween;
 }
 
 /** Structural equality, for "do these keys share an ease". */

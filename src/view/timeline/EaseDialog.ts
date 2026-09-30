@@ -6,6 +6,7 @@ import {
     type ChannelEases,
     classicDir,
     DEFAULT_CUSTOM_CURVE,
+    easeOf,
     EASE_FAMILIES,
     type EaseDir,
     type EaseFamily,
@@ -14,6 +15,7 @@ import {
     type EaseSpec,
     familyInfo,
     presetAmount,
+    CHANNEL_PARENT,
     TWEEN_CHANNELS,
     type TweenChannel,
     type TweenSpec,
@@ -35,7 +37,8 @@ type Scope = "all" | TweenChannel;
 type Choice = "none" | "default" | "linear" | "classic" | EaseFamily | "custom";
 
 const CHANNEL_LABEL: Record<TweenChannel, string> = {
-  position: "Position", rotation: "Rotation", scale: "Scale", color: "Color",
+  position: "Position", x: "X", y: "Y", rotation: "Rotation", shear: "Shear",
+  scale: "Scale", scaleX: "Scale X", scaleY: "Scale Y", color: "Color",
 };
 
 const DIRS: Array<[EaseDir, string]> = [["in", "In"], ["out", "Out"], ["inOut", "In-Out"]];
@@ -139,8 +142,14 @@ export function openEaseDialog(store: Store, targets: EaseTarget[]): void {
   /* ── State ─────────────────────────────────────────────────────────────*/
 
   const specInScope = (): TweenSpec | undefined => (scope === "all" ? tween : eases[scope]);
-  /** What the graph shows: an unset override follows the default. */
-  const effective = (): TweenSpec => (scope === "all" ? tween : eases[scope] ?? tween);
+  /** Where an unset override takes its ease from: a refinement (X, Shear …)
+   *  from its property, the rest from All. */
+  const inheritsFrom = (ch: TweenChannel): Scope => {
+    const parent = CHANNEL_PARENT[ch];
+    return parent && eases[parent] ? parent : "all";
+  };
+  /** What the graph shows: an unset override follows what it inherits. */
+  const effective = (): TweenSpec => (scope === "all" ? tween : easeOf({ tween, eases }, scope));
 
   const setSpec = (spec: TweenSpec | undefined) => {
     if (scope === "all") {
@@ -208,9 +217,11 @@ export function openEaseDialog(store: Store, targets: EaseTarget[]): void {
     clear(scopeList);
     scopeList.appendChild(row("All properties", scope === "all", () => { scope = "all"; syncDirFromSpec(); render(); }));
     for (const ch of channels) {
-      scopeList.appendChild(row(CHANNEL_LABEL[ch], scope === ch,
+      const el = row(CHANNEL_LABEL[ch], scope === ch,
         () => { scope = ch; syncDirFromSpec(); render(); },
-        { mark: !!eases[ch], disabled: tween.kind === "none" }));
+        { mark: !!eases[ch], disabled: tween.kind === "none" });
+      if (CHANNEL_PARENT[ch]) el.style.paddingLeft = "22px";
+      scopeList.appendChild(el);
     }
   };
 
@@ -218,7 +229,10 @@ export function openEaseDialog(store: Store, targets: EaseTarget[]): void {
     clear(choiceList);
     const current = choiceOf(specInScope());
     if (scope === "all") choiceList.appendChild(row("No tween", current === "none", () => choose("none")));
-    else choiceList.appendChild(row("Same as All", current === "default", () => choose("default")));
+    else {
+      const from = inheritsFrom(scope);
+      choiceList.appendChild(row(`Same as ${from === "all" ? "All" : CHANNEL_LABEL[from]}`, current === "default", () => choose("default")));
+    }
     choiceList.appendChild(row("Linear", current === "linear", () => choose("linear")));
     choiceList.appendChild(row("Classic", current === "classic", () => choose("classic")));
     for (const f of EASE_FAMILIES) {
@@ -262,7 +276,8 @@ export function openEaseDialog(store: Store, targets: EaseTarget[]): void {
     } else if (tween.kind === "none") {
       hint.textContent = "No tween: the frames keep the first keyframe's values until the next keyframe.";
     } else if (scope !== "all" && !eases[scope]) {
-      hint.textContent = "Uses the ease set for All properties.";
+      const from = inheritsFrom(scope);
+      hint.textContent = `Uses the ease set for ${from === "all" ? "All properties" : CHANNEL_LABEL[from]}.`;
     } else {
       hint.textContent = "Solid line: the curve as Spine plays it after export; the dots are the frames. Dashed line: the exact curve.";
     }

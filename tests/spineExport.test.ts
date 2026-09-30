@@ -13,6 +13,7 @@ import type { PackedPage } from "@/core/atlas/packed";
 import { atlasText } from "@/core/spine/atlas";
 import { type Channel, colorHex, exportSpine, ROOT_BONE, sliceRuns, spineJson } from "@/core/spine/exportSpine";
 import { keyTime } from "@/core/spine/transform";
+import { sampleTransformRaw } from "@/core/doc/timeline";
 import { SPINE_VERSION, type SpineSkeletonFile } from "@/core/spine/types";
 
 beforeEach(() => reseed());
@@ -202,6 +203,35 @@ describe("bone timelines", () => {
     const bone = file(project).animations!.animation!.bones!.a!;
     expect(bone.translate).toHaveLength(7);
     expect(bone.rotate).toHaveLength(2);
+  });
+
+  it("writes a timeline per axis only where the axes' eases part, and the runtime plays the stage", () => {
+    const { project, sym } = scene(["a", "b"]);
+    const sine = { kind: "preset", family: "sine", dir: "in" } as const;
+    track(sym, "a", [
+      key(0, tf(), { eases: { y: sine, scaleY: { kind: "curve", curve: [0.3, 0, 0.6, 1] } } }),
+      key(6, tf(60, 30, 0, 0, 2, 3)),
+    ], undefined, 7);
+    track(sym, "b", [key(0, tf(), { eases: { x: sine, y: sine } }), key(6, tf(60, 30))], undefined, 7);
+    const bones = file(project).animations!.animation!.bones!;
+    const a = bones.a!, b = bones.b!;
+    expect([a.translate, a.scale]).toEqual([undefined, undefined]);
+    expect((a.translatex as unknown[]).length).toBe(2);   // linear: one key and the end
+    expect((a.translatey as unknown[]).length).toBe(7);   // a preset: every frame
+    expect((a.scaley as Array<{ curve?: unknown }>)[0]!.curve).toHaveLength(4);
+    expect(b.translatex).toBeUndefined();
+    expect(b.translate).toHaveLength(7);
+
+    const sk = load(project);
+    const anim = sk.data.findAnimation("animation")!;
+    for (let f = 0; f <= 6; f++) {
+      sk.setupPose();
+      anim.apply(sk, 0, f / 24 + 1e-6, false, null, 1, MixFrom.setup, false, false, false);
+      const stage = sampleTransformRaw(sym.animations[0]!.tracks[nodeNamed(sym, "a").id]!, f)!;
+      const pose = sk.findBone("a")!.pose;
+      const want = [stage.x, -stage.y, stage.scaleX, stage.scaleY];
+      [pose.x, pose.y, pose.scaleX, pose.scaleY].forEach((v, i) => expect(v).toBeCloseTo(want[i]!, 3));
+    }
   });
 
   it("holds every channel across a hold, whatever the overrides say", () => {

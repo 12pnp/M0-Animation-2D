@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { RotateTimeline } from "@esotericsoftware/spine-core";
 import {
   EASE_FAMILIES, applyTween, easeFunction, exportNote, easeLabel, easeSegments, idealEase, readPolyline, spinePolyline,
-  splitTween, type EaseDir, type EaseSegment, type EaseSpec,
+  easeOf, splitTween, type EaseDir, type EaseSegment, type EaseSpec,
 } from "@/core/math/easing";
 import {
   anchorsOf, constrain, curveValueAt, insertAnchor, moveAnchor, moveHandle, removeAnchor, toCorner,
@@ -270,6 +270,48 @@ describe("per-property eases", () => {
     expect(s.skewY).toBeLessThan(0);   // back in starts by pulling away
   });
 
+  it("an axis's ease wins over its property's, which wins over the key's", () => {
+    const sine: EaseSpec = { kind: "preset", family: "sine", dir: "in" };
+    const back: EaseSpec = { kind: "preset", family: "back", dir: "in" };
+    const k = { tween: { kind: "linear" } as const, eases: { position: sine, y: back, rotation: back } };
+    expect(easeOf(k, "x")).toBe(sine);
+    expect(easeOf(k, "y")).toBe(back);
+    expect(easeOf(k, "shear")).toBe(back);
+    expect(easeOf(k, "scaleX")).toEqual({ kind: "linear" });
+    expect(easeOf({ ...k, tween: { kind: "none" } }, "y")).toEqual({ kind: "none" });
+  });
+
+  it("the stage eases x and y, and scale x and y, each on its own", () => {
+    const t = tweenTrack();
+    t.keys[0] = { ...t.keys[0]!, eases: { y: { kind: "preset", family: "sine", dir: "in" }, scaleX: { kind: "ease", value: 1 } } };
+    t.keys[1] = { ...t.keys[1]!, transform: tf(100, 50, 0, 0, 2, 2) };
+    const s = sampleTransformRaw(t, 5)!;
+    expect(s.x).toBeCloseTo(25, 6);
+    expect(s.y).toBeCloseTo(50 * applyTween({ kind: "preset", family: "sine", dir: "in" }, 0.25, 20), 6);
+    expect(s.scaleY).toBeCloseTo(1.25, 6);
+    expect(s.scaleX).toBeCloseTo(1 + applyTween({ kind: "ease", value: 1 }, 0.25, 20), 6);
+    expect(s.scaleX).toBeGreaterThan(1.3);
+  });
+
+  it("the stage eases the shear (skewY − skewX) apart from the rotation (skewY)", () => {
+    const shearEase: EaseSpec = { kind: "preset", family: "sine", dir: "in" };
+    const t: Track = {
+      nodeId: "n1" as Track["nodeId"],
+      keys: [
+        { frame: 0, transform: tf(0, 0, 0, 0), displayIndex: 0, tween: { kind: "linear" }, eases: { shear: shearEase } },
+        { frame: 20, transform: tf(0, 0, 60, 80), displayIndex: 0, tween: { kind: "linear" } },
+      ],
+      endFrame: 20,
+    };
+    const s = sampleTransformRaw(t, 5)!;
+    expect(s.skewY).toBeCloseTo(20, 6);
+    expect(s.skewY - s.skewX).toBeCloseTo(20 * applyTween(shearEase, 0.25, 20), 6);
+    // No shear override: both skews straight, as ever.
+    delete t.keys[0]!.eases;
+    const plain = sampleTransformRaw(t, 5)!;
+    expect([plain.skewX, plain.skewY]).toEqual([15, 20]);
+  });
+
   it("F6 inside a tween keeps the overrides on both halves", () => {
     const t = insertKeyframe(tweenTrack(), 10, createNode("image", "n"))!;
     expect(t.keys[1]!.eases?.rotation).toEqual({ kind: "preset", family: "back", dir: "in" });
@@ -295,6 +337,8 @@ describe("schema", () => {
             position: { kind: "curve", curve: [0.1, 0.2, 0.3] },
             rotation: { kind: "wobble" },
             scale: { kind: "curve", curve: [0.2, 0, 0.8, 1] },
+            y: { kind: "linear" },
+            shear: { kind: "none" },
             bogus: { kind: "linear" },
           },
         },
@@ -304,7 +348,7 @@ describe("schema", () => {
     const { project: out } = validateProject(migrate(JSON.parse(JSON.stringify(p0))));
     const keys = (out.items[out.rootSymbolId] as unknown as typeof sym).animations[0]!.tracks[node.id] as Track;
     expect(keys.keys[0]!.tween).toEqual({ kind: "preset", family: "back", dir: "out", amount: 4 });
-    expect(keys.keys[0]!.eases).toEqual({ scale: { kind: "curve", curve: [0.2, 0, 0.8, 1] } });
+    expect(keys.keys[0]!.eases).toEqual({ y: { kind: "linear" }, scale: { kind: "curve", curve: [0.2, 0, 0.8, 1] } });
     expect(keys.keys[1]!.tween).toEqual({ kind: "linear" });
   });
 });

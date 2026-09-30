@@ -8,7 +8,7 @@ import { displaysOf } from "@/core/doc/displays";
 import { childFrame, displayContext, localAt } from "@/core/doc/pose";
 import { rotationDelta, sampleColorRaw, sampleTransformRaw } from "@/core/doc/timeline";
 import type { Transform } from "@/core/math/Transform";
-import { type EaseSegment, easeOf, easeSegments, type TweenChannel, type TweenSpec } from "@/core/math/easing";
+import { type EaseSegment, easeOf, easeSegments, sameEase, type TweenChannel, type TweenSpec } from "@/core/math/easing";
 import type { ExportDiagnostic } from "@/core/export/diagnostics";
 import { isAtlasName } from "./atlas";
 import { animationRefs, bonesToIndices, type CarriedRef, constraintRefs, lastTime, regionsOf, skinRefs } from "./carry";
@@ -830,25 +830,49 @@ function boneTimelines(
   const moves = (vs: Array<{ v: SpineKeyValues }>, pick: (v: SpineKeyValues) => number[], rest: number) =>
     vs.some(({ v }) => pick(v).some((x) => Math.abs(x - rest) > 1e-9));
 
-  const pos = rowsOf("position");
-  if (moves(pos, (v) => [v.x, v.y], 0)) {
-    out.translate = pos.map(({ r, v }) => ({ ...base(r, (w) => [w.x, w.y]), ...nonZero({ x: v.x, y: v.y }) }));
+  // Two axes eased apart anywhere: a timeline per axis (translatex and
+  // translatey), each with its own keys. Otherwise one timeline for both.
+  const apart = (p: TweenChannel, q: TweenChannel) => runs.some(({ anim }) =>
+    anim?.tracks[node.id]?.keys.some((k) => !sameEase(easeOf(k, p), easeOf(k, q))));
+  type Axis = { key: keyof SpineKeyValues; channel: TweenChannel; timeline: string };
+  const perAxis = (axes: Axis[], rest: number) => {
+    for (const { key, channel, timeline } of axes) {
+      const rows = rowsOf(channel);
+      if (!moves(rows, (v) => [v[key]!], rest)) continue;
+      out[timeline] = rows.map(({ r, v }) => {
+        const k: { time?: number; curve?: SpineCurve; value?: number } = base(r, (w) => [w[key]!]);
+        if (v[key] !== rest) k.value = v[key]!;
+        return k;
+      });
+    }
+  };
+
+  if (apart("x", "y")) {
+    perAxis([{ key: "x", channel: "x", timeline: "translatex" }, { key: "y", channel: "y", timeline: "translatey" }], 0);
+  } else {
+    const pos = rowsOf("x");
+    if (moves(pos, (v) => [v.x, v.y], 0)) {
+      out.translate = pos.map(({ r, v }) => ({ ...base(r, (w) => [w.x, w.y]), ...nonZero({ x: v.x, y: v.y }) }));
+    }
   }
 
   const rot = rowsOf("rotation");
   if (moves(rot, (v) => [v.rotate], 0)) {
     out.rotate = rot.map(({ r, v }) => ({ ...base(r, (w) => [w.rotate]), ...nonZero({ value: v.rotate }) }));
   }
-  if (moves(rot, (v) => [v.shearX, v.shearY], 0)) {
-    out.shear = rot.map(({ r, v }) => ({ ...base(r, (w) => [w.shearX, w.shearY]), ...nonZero({ x: v.shearX, y: v.shearY }) }));
+  const shr = rowsOf("shear");
+  if (moves(shr, (v) => [v.shearX, v.shearY], 0)) {
+    out.shear = shr.map(({ r, v }) => ({ ...base(r, (w) => [w.shearX, w.shearY]), ...nonZero({ x: v.shearX, y: v.shearY }) }));
   }
 
-  const scl = rowsOf("scale");
+  const scl = rowsOf("scaleX");
   if (scl.some(({ v }) => v.scaleX === null || v.scaleY === null)) {
     diags.push({
       severity: "error",
       message: `"${node.name}" is keyed away from a setup scale of 0, which Spine cannot animate (its scale keys multiply the setup scale).`,
     });
+  } else if (apart("scaleX", "scaleY")) {
+    perAxis([{ key: "scaleX", channel: "scaleX", timeline: "scalex" }, { key: "scaleY", channel: "scaleY", timeline: "scaley" }], 1);
   } else if (moves(scl, (v) => [v.scaleX!, v.scaleY!], 1)) {
     out.scale = scl.map(({ r, v }) => {
       const k: { time?: number; curve?: SpineCurve; x?: number; y?: number } = base(r, (w) => [w.scaleX!, w.scaleY!]);

@@ -6,7 +6,7 @@
   },
   {
     "name": "get_animation",
-    "description": "Every key of one animation, per bone: frame, local x, y, rotation, scaleX, scaleY and the ease of the interval that starts at the key. Also its length in frames and whether it loops. Keys set by other tools (constraints, meshes, events) are not listed.",
+    "description": "Every key of one animation, per bone: frame, local x, y, rotation, scaleX, scaleY and the ease of the interval that starts at the key (with `eases` for properties that follow their own). Also its length in frames and whether it loops. Keys set by other tools (constraints, meshes, events) are not listed.",
     "input_schema": {
       "type": "object",
       "properties": { "animation": { "type": "string", "description": "Animation name." } },
@@ -42,7 +42,7 @@
   },
   {
     "name": "set_keys",
-    "description": "Key bones at frames, all in ONE undoable step. Each key sets any of x, y, rotation, scaleX, scaleY (local to the parent bone, Spine conventions: y up, degrees counter-clockwise; absolute values, not offsets from setup); what a key leaves out keeps the value the animation already has at that frame. `ease` shapes the motion from this key to the next: linear (default), hold, in, out, inout, or a cubic bezier [x1, y1, x2, y2] in 0..1. Keying past the end lengthens the animation.",
+    "description": "Key bones at frames, all in ONE undoable step. Each key sets any of x, y, rotation, scaleX, scaleY (local to the parent bone, Spine conventions: y up, degrees counter-clockwise; absolute values, not offsets from setup); what a key leaves out keeps the value the animation already has at that frame. `ease` shapes the motion from this key to the next: linear (default), hold, in, out, inout, or a cubic bezier [x1, y1, x2, y2] in 0..1. `eases` gives single properties their own ease over the same interval, e.g. {\"y\": \"out\"} for a ball that travels x linearly and slows in y; it replaces the key's earlier per-property eases ({} clears them), and `ease` given alone clears them too. Keying past the end lengthens the animation.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -65,6 +65,17 @@
                   { "type": "string", "enum": ["linear", "hold", "in", "out", "inout"] },
                   { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 }
                 ]
+              },
+              "eases": {
+                "type": "object",
+                "properties": {
+                  "x": { "oneOf": [{ "type": "string", "enum": ["linear", "in", "out", "inout"] }, { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 }] },
+                  "y": { "oneOf": [{ "type": "string", "enum": ["linear", "in", "out", "inout"] }, { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 }] },
+                  "rotation": { "oneOf": [{ "type": "string", "enum": ["linear", "in", "out", "inout"] }, { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 }] },
+                  "scaleX": { "oneOf": [{ "type": "string", "enum": ["linear", "in", "out", "inout"] }, { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 }] },
+                  "scaleY": { "oneOf": [{ "type": "string", "enum": ["linear", "in", "out", "inout"] }, { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 }] }
+                },
+                "additionalProperties": false
               }
             },
             "required": ["bone", "frame"],

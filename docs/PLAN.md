@@ -88,15 +88,16 @@ bone by bone against `x` over the M0 sample skeletons.
   keys are then shown exactly, and nothing has to be written twice.
 - **Exact at every whole frame, curves where they can be.** An interval the editor's
   eases cannot play as Spine does is written frame by frame, exact. The per-rig counts
-  are pinned in `tests/spineImport.test.ts` so they only go down. That happens for x and y
-  with different curves in one key (the editor has one position ease), and for a piece of
-  a curve that another channel's key cuts, when the piece played alone drifts from the
-  whole by more than 0.001.
+  are pinned in `tests/spineImport.test.ts` so they only go down. That happens for a
+  piece of a curve that another channel's key cuts, when the piece played alone drifts
+  from the whole by more than 0.001; for shearX keyed on another curve than rotation
+  (the stage turns skewY by both); and for a hold on one channel while another tweens.
+  x and y, scale x and y, and rotation and shear on different curves each get their own
+  ease (per-axis eases): 892 frame-by-frame intervals over the 16 samples became 584.
 
 **Not yet:** binary `.skel` (export JSON from Spine instead); choosing the skin shown
 (the stage and Preview show "default", or the first skin when "default" draws nothing);
-editing meshes, weights, deform keys and the carried constraints; per-axis position and
-scale eases (which would remove most frame-by-frame intervals); physics simulation on the
+editing meshes, weights, deform keys and the carried constraints; physics simulation on the
 stage (posed at rest; the Preview plays it). spine-core now ships in the app bundle
 (+168 KB, 52 KB gzipped).
 

@@ -26,6 +26,26 @@ function skeleton(parts: Partial<Record<string, unknown>>): SpineRaw {
   return { skeleton: { spine: "4.3.74", fps: 30 }, bones: [{ name: "root" }], ...parts };
 }
 
+/** The largest gap between two skeletons' bone worlds, frame by frame. */
+function playsAlike(a: SpineRaw, b: unknown, anim: string, frames: number): number {
+  const posed = (json: unknown) => {
+    const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(""))).readSkeletonData(json));
+    return (f: number) => {
+      sk.setupPose();
+      sk.data.findAnimation(anim)!.apply(sk, 0, f / 30 + 2e-6, false, null, 1, MixFrom.setup, false, false, false);
+      sk.updateWorldTransform(Physics.reset);
+      return sk.bones.flatMap((bn) => { const p = bn.appliedPose; return [p.worldX, p.worldY, p.a, p.b, p.c, p.d]; });
+    };
+  };
+  const pa = posed(a), pb = posed(b);
+  let worst = 0;
+  for (let f = 0; f < frames; f++) {
+    const x = pa(f), y = pb(f);
+    x.forEach((v, i) => { worst = Math.max(worst, Math.abs(v - y[i]!)); });
+  }
+  return worst;
+}
+
 function sym(project: { items: Record<string, unknown>; rootSymbolId: string }): SymbolItem {
   return project.items[project.rootSymbolId] as SymbolItem;
 }
@@ -105,15 +125,46 @@ describe("keys", () => {
     expect([0, 1, 2, 5, 6].map(shown)).toEqual([0, 0, 1, 1, 0]);
   });
 
-  it("writes an interval frame by frame when x and y want different curves", () => {
+  it("gives x and y their own eases when they want different curves, and writes them back per axis", () => {
     const file = skeleton({
       animations: { a: { bones: { root: { translate: [
         { x: 0, y: 0, curve: [0.1, 0, 0.2, 10, 0.1, 0, 0.3, 0] }, { time: 0.5, x: 10, y: 10 },
       ] } } } },
     });
     const { project, baked } = importSpine(file, "x", images());
-    expect(baked).toBe(1);
-    expect(Object.values(sym(project).animations[0]!.tracks)[0]!.keys.length).toBe(16);
+    expect(baked).toBe(0);
+    const keys = Object.values(sym(project).animations[0]!.tracks)[0]!.keys;
+    expect(keys.map((k) => k.frame)).toEqual([0, 15]);
+    expect(keys[0]!.tween.kind).toBe("curve");
+    expect(keys[0]!.eases?.y?.kind).toBe("curve");
+
+    const bone = exportSpine(project).skeleton.animations!.a!.bones!.root!;
+    expect(bone.translate).toBeUndefined();
+    const tx = bone.translatex as Array<{ curve?: number[] }>, ty = bone.translatey as Array<{ curve?: number[] }>;
+    expect(tx[0]!.curve).toEqual([0.1, 0, 0.2, 10].map((v) => expect.closeTo(v, 9)));
+    expect(ty[0]!.curve).toEqual([0.1, 0, 0.3, 0].map((v) => expect.closeTo(v, 9)));
+    expect(playsAlike(file, spineJson(exportSpine(project).skeleton), "a", 16)).toBeLessThan(1e-4);
+  });
+
+  it("eases shear apart from rotation, and a shear on the key's own ease stays on it", () => {
+    // Translate linear sets the key's ease; rotate takes a curve override.
+    // The shear, linear too, must say so: unset it would follow rotation.
+    const file = skeleton({
+      animations: { a: { bones: { root: {
+        translate: [{ x: 0 }, { time: 0.5, x: 10 }],
+        rotate: [{ value: 0, curve: [0.1, 0, 0.2, 40] }, { time: 0.5, value: 40 }],
+        shear: [{ y: 0 }, { time: 0.5, y: 20 }],
+      } } } },
+    });
+    const { project, baked } = importSpine(file, "x", images());
+    expect(baked).toBe(0);
+    const k = Object.values(sym(project).animations[0]!.tracks)[0]!.keys[0]!;
+    expect(k.tween.kind).toBe("linear");
+    expect(k.eases?.rotation?.kind).toBe("curve");
+    expect(k.eases?.shear?.kind).toBe("linear");
+    const bone = exportSpine(project).skeleton.animations!.a!.bones!.root!;
+    expect(bone.shear![0]!.curve).toBeUndefined();
+    expect(playsAlike(file, spineJson(exportSpine(project).skeleton), "a", 16)).toBeLessThan(1e-4);
   });
 
   it("turns light and dark into multiplier and offset, and back to the same bytes", () => {

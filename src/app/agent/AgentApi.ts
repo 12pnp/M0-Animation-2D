@@ -4,8 +4,8 @@ import type { Animation, Keyframe, Node, SymbolItem, Track } from "@/core/doc/ty
 import { createKeyframe } from "@/core/doc/defaults";
 import { insertKeyframe, keyIndexAt, setEndFrame } from "@/core/doc/timeline";
 import { AddAnimation, EditTracks } from "@/core/history/timelineCommands";
-import type { TweenSpec } from "@/core/math/easing";
-import { CURVE_Y_LIMIT } from "@/core/math/easing";
+import type { ChannelEases, TweenSpec } from "@/core/math/easing";
+import { CURVE_Y_LIMIT, easeOf, sameEase } from "@/core/math/easing";
 import { posedSymbol } from "@/core/spine/spinePose";
 import { exportSpine } from "@/core/spine/exportSpine";
 import { fromSpineLocal, type SpineLocal, toSpineLocal } from "@/core/spine/transform";
@@ -40,7 +40,10 @@ export interface PreviewProbe {
 }
 
 type Args = Record<string, unknown>;
-type SpineKeyIn = { bone: string; frame: number; x?: number; y?: number; rotation?: number; scaleX?: number; scaleY?: number; ease?: string | number[] };
+type SpineKeyIn = {
+  bone: string; frame: number; x?: number; y?: number; rotation?: number; scaleX?: number; scaleY?: number;
+  ease?: string | number[]; eases?: Partial<Record<AxisName, string | number[]>>;
+};
 
 const round = (v: number, digits = 4) => Math.round(v * 10 ** digits) / 10 ** digits;
 
@@ -126,7 +129,10 @@ export class AgentApi {
     for (const n of this.bones()) {
       const track = anim.tracks[n.id];
       if (!track) continue;
-      bones[n.name] = track.keys.map((k) => ({ frame: k.frame, ...spine(toSpineLocal(k.transform)), ease: easeName(k) }));
+      bones[n.name] = track.keys.map((k) => {
+        const own = axisEases(k);
+        return { frame: k.frame, ...spine(toSpineLocal(k.transform)), ease: easeName(k.tween), ...(own ? { eases: own } : {}) };
+      });
     }
     return { name: anim.name, frames: this.frames(anim), loops: anim.playTimes === 0, fps: this.store.project.frameRate, bones };
   }
@@ -198,7 +204,10 @@ export class AgentApi {
       if (k.ease !== undefined) patch.tween = tweenOf(k.ease);
       else if (fresh) patch.tween = { kind: "linear" };
       const replaced: Keyframe = { ...key, ...patch };
-      if (patch.tween) delete replaced.eases;
+      if (k.eases !== undefined) {
+        const eases = easesOf(k.eases, `Key for "${k.bone}" at ${k.frame}`);
+        if (eases) replaced.eases = eases; else delete replaced.eases;
+      } else if (patch.tween) delete replaced.eases;
       track = { ...track, keys: track.keys.map((x, n) => (n === i ? replaced : x)) };
       tracks.set(node.id, track);
     }
@@ -299,12 +308,37 @@ function tweenOf(ease: string | number[]): TweenSpec {
   }
 }
 
-function easeName(k: Keyframe): string | number[] {
-  const t = k.tween;
-  const base = t.kind === "none" ? "hold" : t.kind === "linear" ? "linear"
+function easeName(t: TweenSpec): string | number[] {
+  return t.kind === "none" ? "hold" : t.kind === "linear" ? "linear"
     : t.kind === "ease" ? (t.value < 0 ? "in" : t.value <= 1 ? "out" : "inout")
     : t.kind === "curve" && t.curve.length === 4 ? t.curve.map((v) => round(v)) : "custom";
-  return k.eases && Object.keys(k.eases).length ? `${Array.isArray(base) ? "curve" : base} (per-property overrides)` : base;
+}
+
+/** The tools' per-property names: each is the editor's channel of that name. */
+const AXES = ["x", "y", "rotation", "scaleX", "scaleY"] as const;
+type AxisName = typeof AXES[number];
+
+/** A key's properties that do not follow its `ease`, with theirs. */
+function axisEases(k: Keyframe): Record<string, string | number[]> | null {
+  if (k.tween.kind === "none") return null;
+  const out: Record<string, string | number[]> = {};
+  for (const ax of AXES) {
+    const e = easeOf(k, ax);
+    if (!sameEase(e, k.tween)) out[ax] = easeName(e);
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+function easesOf(raw: unknown, where: string): ChannelEases | null {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new AgentError(`${where}: eases is an object, e.g. {"y": "out"}.`);
+  const out: ChannelEases = {};
+  for (const [ax, ease] of Object.entries(raw)) {
+    if (!(AXES as readonly string[]).includes(ax)) throw new AgentError(`${where}: eases has no property "${ax}" (${AXES.join(", ")}).`);
+    const spec = tweenOf(ease as string | number[]);
+    if (spec.kind === "none") throw new AgentError(`${where}: "hold" is for the whole key (ease), not one property.`);
+    out[ax as AxisName] = spec;
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 function str(args: Args, key: string): string {

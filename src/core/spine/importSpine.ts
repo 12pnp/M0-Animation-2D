@@ -401,14 +401,21 @@ function boneComps(timelines: SpineRaw, setup: SpineLocal, rate: number, keepShe
       comps.set(value, compOf(keys.filter(obj), rate, i, (k) => abs(num(k[field], scale ? 1 : 0)), abs, base));
     });
   }
-  const group = (channel: ChannelGroup["channel"], values: BoneValue[], eps: number): BoneGroups | null => {
+  const group = (
+    channel: ChannelGroup["channel"], values: BoneValue[], eps: number,
+    parts: Array<[ChannelGroup["channel"], BoneValue[]]> = [],
+  ): BoneGroups | null => {
     const cs = values.map((v) => comps.get(v)).filter((c): c is Comp => !!c);
-    return cs.length ? { channel, comps: cs, eps, values: values.filter((v) => comps.has(v)) } : null;
+    if (!cs.length) return null;
+    const refined = parts.map(([ch, vs]) => group(ch, vs, eps)).filter((p): p is BoneGroups => !!p);
+    return { channel, comps: cs, eps, values: values.filter((v) => comps.has(v)), ...(refined.length ? { parts: refined } : {}) };
   };
+  // The stage's rotation turns skewY, which is rotation + shearX; its shear
+  // is skewY − skewX, shearY − shearX (`fromSpineLocal`).
   const groups = [
-    group("position", ["x", "y"], 1e-6),
-    group("rotation", ["rotation", "shearX", "shearY"], 1e-6),
-    group("scale", ["scaleX", "scaleY"], 1e-9),
+    group("position", ["x", "y"], 1e-6, [["x", ["x"]], ["y", ["y"]]]),
+    group("rotation", ["rotation", "shearX", "shearY"], 1e-6, [["rotation", ["rotation", "shearX"]], ["shear", ["shearX", "shearY"]]]),
+    group("scale", ["scaleX", "scaleY"], 1e-9, [["scaleX", ["scaleX"]], ["scaleY", ["scaleY"]]]),
   ].filter((g): g is BoneGroups => !!g);
   return { groups, rest: Object.keys(rest).length ? rest : null };
 }

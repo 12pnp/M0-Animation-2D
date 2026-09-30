@@ -345,6 +345,9 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
     }
     return { ...p, version: 8 };
   },
+  // 8 -> 9: eases per axis (`Keyframe.eases` x, y, scaleX, scaleY, shear).
+  // Additive; an older build would drop them and play both axes on one ease.
+  8: (p) => ({ ...p, version: 9 }),
 };
 
 /** A tween read from disk, or null when it is not one this build knows. */

@@ -858,7 +858,8 @@ flowchart LR
   export's indices on the way out, because the export may order bones differently.
 - **Keys** (`importKeys.ts`). Spine keys each value on its own; the editor keys whole
   frames with one ease per channel. Keys go on the union of the frames, each interval
-  gets per channel the ease that plays as Spine does (a bezier piece cut out by
+  gets per channel, or per axis where the channel's values disagree
+  (`ChannelGroup.parts`), the ease that plays as Spine does (a bezier piece cut out by
   de Casteljau, its value controls fitted to what the whole plays), and every interval
   is then checked at each whole frame through the stage's own sampler against Spine's
   evaluation (`valueAt`, the 10-piece polyline). What fails is written frame by frame,
@@ -1734,10 +1735,15 @@ flowchart LR
   and control times are the interval's start plus x × span. A three-segment curve with an
   overshoot is in `tests/spineParity.test.ts`'s feature rig, and moving a segment's key
   off its anchor fails it.
-- **Per property.** `Keyframe.eases` overrides `tween` for `position`, `rotation`,
-  `scale` and `color` (`easeOf`), one per Spine timeline; rotation covers rotate and
-  shear, so shear follows the rotation ease. A hold (`tween.kind === "none"`) holds every
-  channel whatever the overrides say. Schema v5.
+- **Per property, down to one axis.** `Keyframe.eases` overrides `tween` for
+  `position`, `rotation`, `scale` and `color`, and for their refinements `x`, `y`
+  (position), `shear` (rotation: skewY − skewX, how far the skews part) and `scaleX`,
+  `scaleY` (scale). `easeOf` takes the most specific: the refinement, else its property,
+  else `tween`. The sampler turns skewY with the rotation ease and eases the shear on its
+  own, which equals the old per-skew lerp when the two eases are one. A hold
+  (`tween.kind === "none"`) holds every channel whatever the overrides say. The export
+  writes one timeline per property, and `translatex`/`translatey` (or `scalex`/`scaley`)
+  for a bone whose axes' eases part on any key. Schema v5; the refinements v9.
 - **`splitTween`** divides an eased interval in two without changing the motion at any
   whole frame — what Edit Multiple Frames needs at the edges of its range. Each half is a
   custom curve of STRAIGHT segments through the original's value at each of its frames:
