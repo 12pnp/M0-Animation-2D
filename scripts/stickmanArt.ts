@@ -36,9 +36,9 @@ const SHOE = "#2b3a4f";
 
 /* ── Raster ───────────────────────────────────────────────────────────────*/
 
-type Sdf = (x: number, y: number) => number;
+export type Sdf = (x: number, y: number) => number;
 
-class Raster {
+export class Raster {
   readonly data: Uint8ClampedArray;
 
   constructor(readonly w: number, readonly h: number) {
@@ -84,7 +84,7 @@ function parseHex(hex: string): [number, number, number] {
 }
 
 /** Distance to a segment, minus a radius that lerps from `r0` to `r1`. */
-function capsule(
+export function capsule(
   ax: number, ay: number, bx: number, by: number, r0: number, r1 = r0,
 ): Sdf {
   const dx = bx - ax, dy = by - ay;
@@ -98,7 +98,7 @@ function capsule(
   };
 }
 
-function circle(cx: number, cy: number): (r: number) => Sdf {
+export function circle(cx: number, cy: number): (r: number) => Sdf {
   return (r) => (x, y) => Math.hypot(x - cx, y - cy) - r;
 }
 
