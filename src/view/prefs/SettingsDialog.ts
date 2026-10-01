@@ -232,6 +232,7 @@ const CATEGORIES: Category[] = [
         title: "Bones and IK", rows: [
           { kind: "color", cat: "gizmos", key: "bone", label: "Bone" },
           { kind: "color", cat: "gizmos", key: "boneIk", label: "Bone driven by IK" },
+          { kind: "color", cat: "gizmos", key: "boneFar", label: "Far / right side shade" },
           { kind: "color", cat: "gizmos", key: "ikTarget", label: "IK target" },
           { kind: "color", cat: "gizmos", key: "ikLink", label: "IK link" },
         ],

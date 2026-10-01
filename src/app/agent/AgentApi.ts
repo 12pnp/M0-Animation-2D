@@ -7,7 +7,7 @@ import { apply } from "@/core/math/Matrix2D";
 import { pt, type Rect, transformCorners } from "@/core/math/geom";
 import { createKeyframe, createLayer, createNode } from "@/core/doc/defaults";
 import { ikChain, ikRoles } from "@/core/doc/ikGraph";
-import { guessRoles, type MotionClip, type RigBone, retarget } from "@/core/rig/motion";
+import { boneSide, guessRoles, type MotionClip, type RigBone, retarget } from "@/core/rig/motion";
 import MOTIONS from "@/core/rig/motions.json";
 import { insertKeyframe, keyIndexAt, setEndFrame } from "@/core/doc/timeline";
 import { AddAnimation, EditTracks } from "@/core/history/timelineCommands";
@@ -58,8 +58,9 @@ export interface AgentImage { mimeType: string; data: string }
  *  them out into image blocks (MCP, Claude, GLM's vision models). */
 export const IMAGES_KEY = "__images";
 
-/** A bone drawn over a picture: from its origin to its tip, in pixels. */
-export interface BoneMark { name: string; from: [number, number]; to: [number, number] }
+/** A bone drawn over a picture: from its origin to its tip, in pixels, and
+ *  its side by name (`boneSide`). */
+export interface BoneMark { name: string; from: [number, number]; to: [number, number]; side?: "near" | "far" }
 
 /** What the model can look at: the page's canvases (`view/agent/AgentVision.ts`).
  *  The geometry is worked out here; this only paints and encodes. */
@@ -742,7 +743,7 @@ export class AgentApi {
     const ref = withReference && anim?.reference && referenceIndexAt(anim.reference, frame) !== null ? anim.reference : undefined;
     if (ref) boxes.push(referenceRect(ref));
     const view = imageFrame(boxes, RENDER_SIDE);
-    const marks: BoneMark[] = bones.map((b) => ({ name: b.name, from: view.toPixel(...b.from), to: view.toPixel(...b.to) }));
+    const marks = bones.map((b) => mark(b, view));
     const inside = (p: [number, number]) => p[0] >= 0 && p[1] >= 0 && p[0] <= view.width && p[1] <= view.height;
     const image = await this.needVision().render({ symbol: this.sym, animation: anim, frame, view, reference: !!ref, bones: withBones ? marks : [] });
     const [lx, ly] = view.fromPixel(0, 0);
@@ -756,7 +757,7 @@ export class AgentApi {
       bones: Object.fromEntries(marks.map((m) => [m.name, {
         origin: m.from.map((v) => round(v, 1)), tip: m.to.map((v) => round(v, 1)), ...(inside(m.from) ? {} : { outside: true }),
       }])),
-      note: "Names that would overlap are left off the picture; every bone is listed here. Bones marked outside are beyond the picture's edges.",
+      note: "Bones named far or right are drawn blue, the others magenta. Names that would overlap are left off the picture; every bone is listed here. Bones marked outside are beyond the picture's edges.",
       [IMAGES_KEY]: [image],
     };
   }
@@ -799,7 +800,7 @@ export class AgentApi {
     const view = imageFrame(boxes, RENDER_SIDE);
     const images: AgentImage[] = [];
     for (let i = 0; i < frames.length; i++) {
-      const marks = views[i]!.bones.map((b) => ({ name: b.name, from: view.toPixel(...b.from), to: view.toPixel(...b.to) }));
+      const marks = views[i]!.bones.map((b) => mark(b, view));
       const image = await this.needVision().render({
         symbol: this.sym, animation: anim, frame: frames[i]!, view, reference: false,
         bones: style === "artwork" ? [] : marks,
@@ -854,6 +855,11 @@ export class AgentApi {
 }
 
 /* ── helpers ── */
+
+function mark(b: { name: string; from: [number, number]; to: [number, number] }, view: ImageFrame): BoneMark {
+  const side = boneSide(b.name);
+  return { name: b.name, from: view.toPixel(...b.from), to: view.toPixel(...b.to), ...(side ? { side } : {}) };
+}
 
 function spine(l: SpineLocal) {
   const out: Record<string, number> = { x: round(l.x), y: round(l.y), rotation: round(l.rotation), scaleX: round(l.scaleX), scaleY: round(l.scaleY) };

@@ -108,6 +108,8 @@ export interface GizmoPrefs {
   axisY: string;
   bone: string;
   boneIk: string;
+  /** Laid over a bone named far or right (`boneSide`); alpha 0: none. */
+  boneFar: string;
   ikTarget: string;
   ikLink: string;
 }
@@ -219,6 +221,7 @@ export const DEFAULT_PREFS: Prefs = {
     axisY: "#46c05a",
     bone: "rgba(255,214,102,0.9)",
     boneIk: "rgba(120,200,255,0.92)",
+    boneFar: "rgba(0,0,0,0.4)",
     ikTarget: "rgba(90,230,160,0.95)",
     ikLink: "rgba(120,200,255,0.5)",
   },

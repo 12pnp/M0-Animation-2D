@@ -58,16 +58,19 @@ export class PageVision implements AgentVision {
  *  (the joint it rotates about), the name beside it. */
 function drawBones(ctx: CanvasRenderingContext2D, bones: BoneMark[], width: number, height: number): void {
   ctx.lineCap = "round";
+  // The far (or right) side blue, everything else magenta: overlapping
+  // limbs read apart. render_frame's note says so.
+  const colour = (b: BoneMark) => (b.side === "far" ? "#2f9bff" : "#ff2fd0");
   for (const b of bones) {
     ctx.strokeStyle = "rgba(0,0,0,0.75)";
     ctx.lineWidth = 4;
     ctx.beginPath(); ctx.moveTo(...b.from); ctx.lineTo(...b.to); ctx.stroke();
-    ctx.strokeStyle = "#ff2fd0";
+    ctx.strokeStyle = colour(b);
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.moveTo(...b.from); ctx.lineTo(...b.to); ctx.stroke();
   }
   for (const b of bones) {
-    ctx.fillStyle = "#ff2fd0";
+    ctx.fillStyle = colour(b);
     ctx.strokeStyle = "#000";
     ctx.lineWidth = 1;
     ctx.beginPath(); ctx.arc(b.from[0], b.from[1], 3.5, 0, Math.PI * 2); ctx.fill(); ctx.stroke();

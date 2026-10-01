@@ -28,6 +28,7 @@ export interface OverlayColors {
   boneCore: string;
   boneSelected: string;
   boneIk: string;
+  boneFar: string;
   ikTarget: string;
   ikLink: string;
   ikLinkActive: string;
@@ -58,6 +59,7 @@ export const DEFAULT_COLORS: OverlayColors = {
   boneCore: "#2b2b2b",
   boneSelected: "#ffffff",
   boneIk: "rgba(120,200,255,0.92)",      // driven by a constraint
+  boneFar: "rgba(0,0,0,0.4)",            // over the far / right side's bones
   ikTarget: "rgba(90,230,160,0.95)",
   ikLink: "rgba(120,200,255,0.5)",
   ikLinkActive: "rgba(150,215,255,0.95)",
@@ -98,6 +100,7 @@ export function resolveColors(prefs: Prefs): OverlayColors {
     axisY: gizmos.axisY,
     bone: gizmos.bone,
     boneIk: gizmos.boneIk,
+    boneFar: gizmos.boneFar,
     ikTarget: gizmos.ikTarget,
     ikLink: gizmos.ikLink,
     driven: withAlpha(gizmos.select, 0.42),

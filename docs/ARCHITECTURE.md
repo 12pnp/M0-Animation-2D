@@ -1400,6 +1400,12 @@ ones; the DragonBones solver it replaced disagreed on three of the seven.
   agree: the timeline row (a dashed-ring `ikTarget` icon in the stage's own green, driven
   bones in its blue, `ikSummary` in the tooltip), the Properties **IK** section, the
   stage's link lines, and the bone colouring in `Overlay.drawBones`.
+- **The far side is shaded, not recoloured.** A bone named far or right (`boneSide` in
+  `core/rig/motion.ts`, the same reading of names as `guessRoles`: near/far, left/right,
+  `_l`/`_r`) gets `gizmos.boneFar` laid over its fill, so a far leg is a darker blue and a far
+  arm a darker yellow: blue and green keep meaning IK. Preferences ▸ Selection & Gizmos ▸ "Far /
+  right side shade"; alpha 0 turns it off. The AI's pictures colour sides outright instead
+  (far blue, the rest magenta), since telling crossed limbs apart is the point there.
 - **`ikRelations` includes the chain ROOT, which the constraint never names.** A two-bone
   solve moves the effector's parent, so selecting `leg_near_thigh` has to show the IK
   section; matching `boneId`/`targetId` alone — what the panel did — left the bone that

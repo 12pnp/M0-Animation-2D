@@ -240,6 +240,9 @@ describe("the AI's tools", () => {
     expect(Math.max(...out.size)).toBe(768);
     expect(out.reference).toMatch(/image 1/);
     expect(fake.renders[0]).toMatchObject({ frame: 5, reference: true });
+    // Far-side bones are marked so the picture can tell overlapping limbs apart.
+    const side = (n: string) => fake.renders[0]!.bones.find((b) => b.name === n)!.side;
+    expect([side("leg_far_thigh"), side("arm_near_up"), side("hips")]).toEqual(["far", "near", undefined]);
     expect(fake.renders[0]!.bones.length).toBeGreaterThan(5);
 
     // The picture's mapping takes each bone's pixel back to get_pose's world.

@@ -12,6 +12,7 @@ import {
 import type { Layer, Project, SymbolItem } from "@/core/doc/types";
 import type { NodeId } from "@/core/doc/ids";
 import { ikChain, ikRoles } from "@/core/doc/ikGraph";
+import { boneSide } from "@/core/rig/motion";
 import { mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { type Point, type Rect, transformCorners } from "@/core/math/geom";
 import { type Gizmo, handlePoints } from "@/view/tools/gizmo";
@@ -730,6 +731,11 @@ export class Overlay {
       ctx.closePath();
       ctx.fillStyle = driven.has(e.nodeId) ? this.C.boneIk : this.C.bone;
       ctx.fill();
+      // The far (or right) limbs darker, on top of what the fill means.
+      if (boneSide(e.node.name) === "far") {
+        ctx.fillStyle = this.C.boneFar;
+        ctx.fill();
+      }
       ctx.strokeStyle = selected ? this.C.boneSelected : this.C.boneCore;
       ctx.lineWidth = selected ? 1.6 : 1;
       ctx.stroke();

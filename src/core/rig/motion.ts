@@ -313,6 +313,24 @@ export function retarget(req: RetargetRequest): RetargetResult {
   return { keys, expected, ...(lockFeet ? { ground } : {}), notes };
 }
 
+/** A bone name's words: "leg_near_thigh" → leg, near, thigh; "upperArmL" → upper, arm, l. */
+function nameTokens(name: string): string[] {
+  return name.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Za-z])(\d)/g, "$1 $2")
+    .toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+}
+
+const SIDE_WORDS: Record<string, string> = { near: "near", front: "near", far: "far", back: "far", left: "left", l: "left", right: "right", r: "right" };
+
+/**
+ * Which side a bone is on, by its name: the near (or left) side, the far
+ * (or right) side, or neither. What the stage shades and the AI's pictures
+ * colour, so overlapping limbs read apart.
+ */
+export function boneSide(name: string): "near" | "far" | null {
+  const side = nameTokens(name).map((t) => SIDE_WORDS[t]).find(Boolean);
+  return side === "near" || side === "left" ? "near" : side === "far" || side === "right" ? "far" : null;
+}
+
 /**
  * Roles read off bone names: "leg_near_thigh" → thigh.near,
  * "upperArmL" → upperArm.left. A side clip maps left/right names to
@@ -321,9 +339,6 @@ export function retarget(req: RetargetRequest): RetargetResult {
  */
 export function guessRoles(names: readonly string[], view: MotionView): { map: Record<string, string>; notes: string[] } {
   const notes: string[] = [];
-  const tokens = (name: string) => name.replace(/([a-z])([A-Z])/g, "$1 $2").replace(/([A-Za-z])(\d)/g, "$1 $2")
-    .toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
-  const SIDE: Record<string, string> = { near: "near", front: "near", far: "far", back: "far", left: "left", l: "left", right: "right", r: "right" };
   const kindOf = (t: string[]): string | null => {
     const has = (...w: string[]) => w.some((x) => t.includes(x));
     if (has("target", "ik", "ctrl", "control", "pole")) return null;
@@ -341,10 +356,10 @@ export function guessRoles(names: readonly string[], view: MotionView): { map: R
   };
   const found = new Map<string, string[]>();
   for (const name of names) {
-    const t = tokens(name);
+    const t = nameTokens(name);
     const kind = kindOf(t);
     if (!kind) continue;
-    const side = t.map((x) => SIDE[x]).find(Boolean) ?? null;
+    const side = t.map((x) => SIDE_WORDS[x]).find(Boolean) ?? null;
     const key = ["hips", "torso", "head"].includes(kind) ? kind : `${kind}.${side ?? "?"}`;
     found.set(key, [...(found.get(key) ?? []), name]);
   }

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { apply, type Matrix2D, mat, mul } from "@/core/math/Matrix2D";
 import { matrixOf, tf } from "@/core/math/Transform";
 import { fromSpineLocal, type SpineLocal } from "@/core/spine/transform";
-import { guessRoles, localRotationFor, type MotionClip, retarget, type RigBone, type RigIk, sampleRole } from "@/core/rig/motion";
+import { boneSide, guessRoles, localRotationFor, type MotionClip, retarget, type RigBone, type RigIk, sampleRole } from "@/core/rig/motion";
 import MOTIONS from "@/core/rig/motions.json";
 
 const CLIPS = MOTIONS as unknown as MotionClip[];
@@ -200,6 +200,15 @@ describe("the motion library", () => {
       if (c.loop) expect(keys[keys.length - 1]![1], role).toBeCloseTo(keys[0]![1], 6);
       expect(c.view === "side" ? !/left|right/.test(role) : !/near|far/.test(role), role).toBe(true);
     }
+  });
+});
+
+describe("boneSide", () => {
+  it.each([
+    ["leg_far_thigh", "far"], ["arm_near_up", "near"], ["UpperArm.L", "near"], ["thigh_r", "far"], ["handRight", "far"],
+    ["leftFoot", "near"], ["shin_back", "far"], ["hips", null], ["torso_bone", null], ["Lollipop", null], ["rear", null],
+  ] as const)("%s is %s", (name, side) => {
+    expect(boneSide(name)).toBe(side);
   });
 });
 
