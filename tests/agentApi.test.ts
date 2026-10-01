@@ -55,7 +55,7 @@ describe("the AI's tools", () => {
   it("are described once, with a schema each", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
-      "get_reference", "render_frame", "add_bones", "attach", "add_ik", "draw_order",
+      "get_reference", "render_frame", "add_bones", "attach", "add_ik", "list_motions", "apply_motion", "draw_order",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -255,19 +255,19 @@ describe("the AI's tools", () => {
   });
 });
 
+/** The stickman's library, and a root symbol with nothing in it. */
+async function blank() {
+  const { project } = await loadStickman();
+  const original = new Store(project);
+  const empty = structuredClone(project);
+  Object.assign(empty.items[empty.rootSymbolId] as SymbolItem, { nodes: {}, layers: [], ik: [], animations: [createAnimation()] });
+  const store = new Store(empty);
+  return { original, store, api: new AgentApi(store) };
+}
+
 describe("rigging through the AI's tools", () => {
   type Pose = { bones: Record<string, { x: number; y: number; rotation: number; scaleX: number; scaleY: number }> };
   type Rig = { bones: Array<{ name: string; parent: string | null; length?: number }>; slots: unknown[]; ik: unknown[]; images: Array<{ name: string; width: number; height: number }> };
-
-  /** The stickman's library, and a root symbol with nothing in it. */
-  async function blank() {
-    const { project } = await loadStickman();
-    const original = new Store(project);
-    const empty = structuredClone(project);
-    Object.assign(empty.items[empty.rootSymbolId] as SymbolItem, { nodes: {}, layers: [], ik: [], animations: [createAnimation()] });
-    const store = new Store(empty);
-    return { original, store, api: new AgentApi(store) };
-  }
 
   /** The calls a model would make to rebuild `sym` from its pictures, read
    *  off its setup pose in skeleton space. */
@@ -439,5 +439,120 @@ describe("rigging a PSD imported as layers", () => {
     await api.call("set_keys", { animation: "lift", keys: [{ bone: "leg", frame: 2, rotation: 90 }] });
     const lifted = (await api.call("get_pose", { animation: "lift", frame: 2 }) as { bones: Record<string, { x: number; y: number; rotation: number }> }).bones.thigh_2!;
     expect(lifted).toMatchObject({ x: 300, y: -214, rotation: 90 });
+  });
+});
+
+describe("the motion library through the AI's tools", () => {
+  type Applied = { animation: string; frames: number; map: Record<string, string>; ground?: number; check: { matches: boolean; worstPixels: number }; notes: string[] };
+  type Pose = { bones: Record<string, { x: number; y: number; rotation: number; scaleX: number }> };
+
+  /** The lowest shin tip, where a stickman foot is. */
+  async function feet(api: AgentApi, animation: string, frame: number) {
+    const rig = await api.call("get_rig") as { bones: Array<{ name: string; length?: number }> };
+    const len = (n: string) => rig.bones.find((b) => b.name === n)!.length!;
+    const { bones } = await api.call("get_pose", { animation, frame }) as Pose;
+    return Math.min(...["leg_near_shin", "leg_far_shin"].map((n) => bones[n]!.y + Math.sin((bones[n]!.rotation * Math.PI) / 180) * len(n) * bones[n]!.scaleX));
+  }
+
+  it("list the clips and the roles guessed for this rig", async () => {
+    const { api } = await setup();
+    const out = await api.call("list_motions") as { motions: Array<{ name: string; roles: string[] }>; guess: { side: Record<string, string> } };
+    expect(out.motions.map((m) => m.name)).toEqual(["walk", "run", "idle", "jump", "idle_front", "wave", "jump_front"]);
+    expect(out.guess.side).toMatchObject({ "thigh.near": "leg_near_thigh", "shin.far": "leg_far_shin", torso: "chest", hips: "hips" });
+    expect(Object.values(out.guess.side)).not.toContain("foot_near_target");
+  });
+
+  it.each(["walk", "run", "idle", "jump", "idle_front", "wave", "jump_front"])("fit %s onto the stickman in one undo step, as the runtime plays it", async (motion) => {
+    const { api, store } = await setup();
+    const before = store.history.position;
+    const out = await api.call("apply_motion", { motion, animation: `m_${motion}` }) as Applied;
+    expect(store.history.position).toBe(before + 1);
+    expect(store.history.undoLabel).toBe(`AI: Motion "${motion}" as "m_${motion}"`);
+    expect(out.check.matches).toBe(true);
+    // The IK chains are keyed through their targets only.
+    const keyed = Object.keys((await api.call("get_animation", { animation: out.animation }) as { bones: Record<string, unknown> }).bones);
+    expect(keyed).toEqual(expect.arrayContaining(["foot_near_target", "hand_far_target", "hips", "chest"]));
+    expect(keyed).not.toContain("leg_near_shin");
+    // Feet: on the ground on every frame of a walk or an idle, never below it.
+    const grounded = ["walk", "idle", "idle_front", "wave"].includes(motion);
+    for (let f = 0; f <= out.frames; f++) {
+      const y = await feet(api, out.animation, f);
+      if (grounded) expect(y, `frame ${f}`).toBeCloseTo(out.ground!, 0);
+      else expect(y, `frame ${f}`).toBeGreaterThan(out.ground! - 0.5);
+    }
+    // The exported file plays it as the editor shows it.
+    const names = new Map(exportSpine(store.project).names);
+    for (const f of [0, Math.floor(out.frames / 3), Math.floor(out.frames / 2)]) {
+      const runtime = played(store, out.animation, f);
+      const { bones } = await api.call("get_pose", { animation: out.animation, frame: f }) as Pose;
+      for (const [bone, v] of Object.entries(bones)) {
+        const id = Object.values(store.currentSymbol.nodes).find((n) => n.name === bone)!.id;
+        const w = runtime.world(names.get(id)!);
+        expect(Math.hypot(v.x - w.worldX, v.y - w.worldY), `${bone} at ${f}`).toBeLessThan(0.02);
+      }
+    }
+    store.undo();
+    expect(store.currentSymbol.animations.some((a) => a.name === out.animation)).toBe(false);
+  });
+
+  it("mirror for a character facing left, stretch to a length, and take a map over the guess", async () => {
+    const { api } = await setup();
+    await api.call("apply_motion", { motion: "walk", animation: "r" });
+    const left = await api.call("apply_motion", { motion: "walk", animation: "l", facing: "left", frames: 48 }) as Applied;
+    expect(left.frames).toBe(48);
+    expect(left.check.matches).toBe(true);
+    const r = (await api.call("get_pose", { animation: "r", frame: 6 }) as Pose).bones;
+    const l = (await api.call("get_pose", { animation: "l", frame: 12 }) as Pose).bones;
+    // Mirrored about the hip joint (the stickman's sits 13 px forward of its hips bone).
+    expect(r.foot_near_target!.x - r.leg_near_thigh!.x).toBeCloseTo(-(l.foot_near_target!.x - l.leg_near_thigh!.x), 1);
+    expect(r.foot_near_target!.y).toBeCloseTo(l.foot_near_target!.y, 1);
+    const swapped = await api.call("apply_motion", { motion: "walk", animation: "s", map: { "thigh.near": "leg_far_thigh", "shin.near": "leg_far_shin", "thigh.far": "leg_near_thigh", "shin.far": "leg_near_shin", head: null } }) as Applied;
+    expect(swapped.map["thigh.near"]).toBe("leg_far_thigh");
+    expect(swapped.map.head).toBeUndefined();
+    expect(swapped.check.matches).toBe(true);
+  });
+
+  it("fit a rig without IK, keying the bones themselves", async () => {
+    const { api } = await blank();
+    await api.call("add_bones", { bones: [
+      { name: "pelvis", from: [0, 100], to: [0, 110] },
+      { name: "spine", parent: "pelvis", from: [0, 100], to: [0, 160] },
+      { name: "thigh_l", parent: "pelvis", from: [0, 100], to: [5, 50] },
+      { name: "calf_l", parent: "thigh_l", from: [5, 50], to: [0, 0] },
+      { name: "thigh_r", parent: "pelvis", from: [0, 100], to: [-5, 50] },
+      { name: "calf_r", parent: "thigh_r", from: [-5, 50], to: [0, 0] },
+    ] });
+    const out = await api.call("apply_motion", { motion: "walk" }) as Applied;
+    expect(out.map).toMatchObject({ hips: "pelvis", torso: "spine", "thigh.near": "thigh_l", "shin.far": "calf_r" });
+    expect(out.notes[0]).toMatch(/left\/right were read as near/);
+    expect(out.check.matches).toBe(true);
+    const pose = (await api.call("get_pose", { animation: "walk", frame: 6 }) as Pose).bones;
+    // At frame 6 the near thigh is a quarter cycle on: 24° forward of hanging straight.
+    expect(pose.thigh_l!.rotation).toBeCloseTo(-66, 1);
+  });
+
+  it("key a target that hangs from the moving hips in the hips' space", async () => {
+    const { api } = await blank();
+    await api.call("add_bones", { bones: [
+      { name: "hips", from: [0, 100], to: [0, 110] },
+      { name: "thigh", parent: "hips", from: [0, 100], to: [6, 52] },
+      { name: "shin", parent: "thigh", from: [6, 52], to: [0, 0] },
+    ] });
+    // add_ik's own target hangs from the chain root's parent: the hips.
+    expect(await api.call("add_ik", { bone: "shin" })).toMatchObject({ target: "shin_target" });
+    const out = await api.call("apply_motion", { motion: "run", map: { hips: "hips", "thigh.near": "thigh", "shin.near": "shin" } }) as Applied;
+    expect(out.check.matches).toBe(true);
+    const rig = await api.call("get_rig") as { bones: Array<{ name: string; parent: string | null }> };
+    expect(rig.bones.find((b) => b.name === "shin_target")!.parent).toBe("hips");
+  });
+
+  it("refuse what it cannot do, saying why", async () => {
+    const { api, store } = await setup();
+    const position = store.history.position;
+    await expect(api.call("apply_motion", { motion: "moonwalk" })).rejects.toThrow(/no motion "moonwalk"/);
+    await expect(api.call("apply_motion", { motion: "walk", animation: "run" })).rejects.toThrow(/already an animation "run"/);
+    await expect(api.call("apply_motion", { motion: "walk", map: { torso: "torso" } })).rejects.toThrow(/slot/);
+    await expect(api.call("apply_motion", { motion: "walk", map: { tail: "chest" } })).rejects.toThrow(/no role "tail"/);
+    expect(store.history.position).toBe(position);
   });
 });

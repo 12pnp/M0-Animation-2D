@@ -254,6 +254,27 @@
     }
   },
   {
+    "name": "list_motions",
+    "description": "The motion library: ready-made clips (walk, run, idle, jump, and front-view ones) that apply_motion fits onto this rig, each with the body roles it moves (thigh.near, shin.near, upperArm.far, torso, head, hips…), and the roles guessed for this rig's bones from their names, for side-view and front-view clips.",
+    "input_schema": { "type": "object", "properties": {}, "additionalProperties": false }
+  },
+  {
+    "name": "apply_motion",
+    "description": "Make a new animation from a library clip, fitted to this rig, in ONE undoable step: each role's limb points the way the clip says (so any proportions and setup pose take it), the feet stay on the ground, and limbs under IK get their targets keyed instead of their bones. Side-view clips face right; `facing: \"left\"` mirrors them. Roles are guessed from bone names (list_motions shows the guess); `map` overrides roles ({\"thigh.near\": \"leg_l_up\"}, or null to leave one out). Returns the mapping it used and a check of the result against the runtime pose; then refine it with set_keys like any animation.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "motion": { "type": "string", "description": "A clip from list_motions." },
+        "animation": { "type": "string", "description": "The new animation's name (default: the clip's)." },
+        "map": { "type": "object", "additionalProperties": { "type": ["string", "null"] }, "description": "Role → bone name, over the guess." },
+        "facing": { "type": "string", "enum": ["right", "left"], "description": "Which way the character faces (side-view clips). Default right." },
+        "frames": { "type": "integer", "minimum": 1, "description": "Length in frames; default the clip's length at the rig's frame rate. Longer is slower." }
+      },
+      "required": ["motion"],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "draw_order",
     "description": "Reorder what draws in front, in one undoable step: the listed children of `parent` (bones and slots; omit parent for the skeleton's roots) draw in this order, FRONT first, in the places they held; the others keep theirs. A bone carries everything below it, so the near arm goes in front of the torso by ordering the chest's children, e.g. [\"arm_near_up\", \"torso\", \"arm_far_up\"].",
     "input_schema": {

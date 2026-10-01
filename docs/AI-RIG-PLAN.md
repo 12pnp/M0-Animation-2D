@@ -96,15 +96,16 @@ Each edit is one history step labelled "AI: …", like the existing tools.
 | `add_ik` | **Built.** Adds IK, making the target at the tip when none is given; refuses keyed chain bones | `AddNode` + `AddIkConstraint` |
 | `draw_order` | **Built.** Orders a bone's children front to back (`siblingOrder`) | one `SetLayerOrder` |
 | `auto_rig` | `detect_joints` + `autoRigPlan` → bones, slots, IK in one step, for the LLM to inspect and fix | one transaction |
-| `list_motions` / `apply_motion` | Lists library clips; retargets one onto the rig as a new animation, with speed, length and a blend weight | one `EditTracks` |
+| `list_motions` / `apply_motion` | **Built.** Lists library clips and the roles guessed for the rig; fits one onto the rig as a new animation, facing either way, at any length (no blend weight yet) | one transaction: `AddAnimation` + `EditTracks` |
 
 `get_rig`, `render_frame`, `get_pose` and `check_preview` already let the model see what it built.
 
 ## The motion library
 
-- **Format**: Spine JSON animations on a canonical humanoid (and later quadruped) skeleton,
-  stored in `public/motions/`, with a role per bone (`hip`, `spine`, `head`, `upperArm.L`,
-  `forearm.L`, `hand.L`, `thigh.L`, `shin.L`, `foot.L`, …).
+- **Format** (as built): per body role, world angles for limbs and torso and offsets for
+  hips, head, hands and feet, in `src/core/rig/motions.json`, generated from formulas by
+  `scripts/buildMotions.ts`. Roles: `hips`, `torso`, `head`, and `thigh`, `shin`, `foot`,
+  `upperArm`, `forearm`, `hand` on `near`/`far` (side view) or `left`/`right` (front view).
 - **Mapping**: `get_rig` + bone names + joint positions give a role per user bone. The LLM
   proposes the mapping, `retargetPlan` validates it (every role used once, parents agree).
 - **Retargeting** (`retargetPlan`, pure): rotations copy as offsets from each role's setup
@@ -122,7 +123,7 @@ Each edit is one history step labelled "AI: …", like the existing tools.
 | # | Phase | Done when |
 |---|---|---|
 | A | **Done.** **Rig tools**: `add_bones`, `attach`, `add_ik`, `draw_order`; `render_frame` without an animation shows the setup pose. A model rigs pictures by hand through MCP or Ask AI. | Stickman rebuilt from its images by tool calls equals `stickman.animo`'s rig; parity passes on an animation keyed on it; deliberate bugs (wrong parent space, y-down, draw order) each fail a test |
-| B | **Motion library + retarget**: `core/rig/retarget.ts`, 10 side-view and 10 front-view clips, `list_motions`, `apply_motion` | Each clip retargeted onto stickman and frog: feet stay on the ground (`get_pose`), parity passes, one undo removes it |
+| B | **Done (first library).** **Motion library + retarget**: `core/rig/motion.ts`, `list_motions`, `apply_motion`; 4 side-view clips (walk, run, idle, jump) and 3 front-view (idle_front, wave, jump_front) from `scripts/buildMotions.ts`. More clips are data: add them to the script. | Each clip retargeted onto stickman and frog: feet stay on the ground (`get_pose`), parity passes, one undo removes it |
 | C | **Joints + auto-rig**: image-service plumbing in the bridge (`AMINO_IMAGE_PROVIDER`, fake service in `tests/agentBridge.test.ts`), `detect_joints`, `autoRigPlan`, `auto_rig` | `autoRigPlan` table tests (missing joints, arms crossing the body, side view); a PSD character auto-rigs and walks with B's clip without hand edits |
 | D | **Image split**: `split_image` with segmentation, then inpainting; runs under `busy()` with progress | A flat PNG becomes parts that reassemble to the original within a set pixel error in the setup pose; inpainted regions only where parts overlapped |
 | E | **Local models**: ONNX in `io/workers/` for joints and segmentation, falling back to the bridge on `WorkerCrashed` | Same results as C/D on the fixtures within tolerance, offline |

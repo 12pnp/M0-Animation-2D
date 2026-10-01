@@ -6,7 +6,9 @@ import { type ImageFrame, imageFrame, referenceEnd, referenceFrameOf, referenceI
 import { apply } from "@/core/math/Matrix2D";
 import { pt, type Rect, transformCorners } from "@/core/math/geom";
 import { createKeyframe, createLayer, createNode } from "@/core/doc/defaults";
-import { ikRoles } from "@/core/doc/ikGraph";
+import { ikChain, ikRoles } from "@/core/doc/ikGraph";
+import { guessRoles, type MotionClip, type RigBone, retarget } from "@/core/rig/motion";
+import MOTIONS from "@/core/rig/motions.json";
 import { insertKeyframe, keyIndexAt, setEndFrame } from "@/core/doc/timeline";
 import { AddAnimation, EditTracks } from "@/core/history/timelineCommands";
 import { AddNode, createsCycle, SetLayerOrder, SetParent, SetPivot, SetStageSkins } from "@/core/history/commands";
@@ -76,6 +78,8 @@ export type PoseStyle = "bones" | "artwork" | "both";
  *  enough to see a pose, few enough tokens to look at many. */
 const RENDER_SIDE = 768, REFERENCE_SIDE = 512, MAX_IMAGES = 6;
 
+export const MOTION_CLIPS = MOTIONS as unknown as MotionClip[];
+
 type Args = Record<string, unknown>;
 type BoneIn = { name: string; parent?: string; from?: number[]; to?: number[]; x?: number; y?: number; rotation?: number; length?: number };
 type AttachIn = { bone: string; image?: string; layer?: string; name?: string; pivot?: number[]; at?: number[]; rotation?: number; scale?: number };
@@ -109,6 +113,8 @@ export class AgentApi {
       case "add_bones": return this.addBones(list<BoneIn>(args, "bones"));
       case "attach": return this.attach(list<AttachIn>(args, "items"));
       case "add_ik": return this.addIk(str(args, "bone"), args);
+      case "list_motions": return this.listMotions();
+      case "apply_motion": return this.applyMotion(str(args, "motion"), args);
       case "draw_order": return this.drawOrder(typeof args.parent === "string" ? args.parent : null, list<string>(args, "front"));
       default: throw new AgentError(`There is no tool "${name}".`);
     }
@@ -494,6 +500,105 @@ export class AgentApi {
     this.store.apply(new SetLayerOrder("AI: Draw Order", this.store.currentSymbolId, plan.map((l) => l.id)));
     const children = this.sym.layers.map((l) => this.sym.nodes[l.nodeId]!).filter((n) => (n.parentId ?? null) === parentId);
     return { parent: parentName, frontToBack: children.map((n) => n.name) };
+  }
+
+  /* ── motions ── */
+
+  /** Bones a clip may move: real bones, not IK targets. */
+  private motionBones(): Node[] {
+    const { targets } = ikRoles(this.sym);
+    return this.bones().filter((n) => n.kind === "bone" && !targets.has(n.id));
+  }
+
+  private listMotions() {
+    const names = this.motionBones().map((n) => n.name);
+    return {
+      motions: MOTION_CLIPS.map((c) => ({ name: c.name, description: c.description, view: c.view, frames: c.frames, fps: c.fps, roles: Object.keys(c.angles) })),
+      guess: { side: guessRoles(names, "side").map, front: guessRoles(names, "front").map },
+      note: "apply_motion maps roles to bones by these guesses unless you give map; check them against get_rig.",
+    };
+  }
+
+  private applyMotion(motion: string, args: Args) {
+    const clip = MOTION_CLIPS.find((c) => c.name === motion);
+    if (!clip) throw new AgentError(`There is no motion "${motion}". list_motions lists them.`);
+    const name = typeof args.animation === "string" ? args.animation : motion;
+    if (this.sym.animations.some((a) => a.name === name)) throw new AgentError(`There is already an animation "${name}": give another name.`);
+    const facing = args.facing ?? "right";
+    if (facing !== "right" && facing !== "left") throw new AgentError(`facing is "right" or "left".`);
+    const fps = this.store.project.frameRate;
+    const frames = args.frames === undefined ? Math.max(1, Math.round((clip.frames * fps) / clip.fps)) : int(args, "frames", 1);
+
+    const guess = guessRoles(this.motionBones().map((n) => n.name), clip.view);
+    const map: Record<string, string> = { ...guess.map };
+    if (args.map !== undefined) {
+      if (!args.map || typeof args.map !== "object" || Array.isArray(args.map)) throw new AgentError(`map is an object of role → bone, e.g. {"thigh.near": "leg_l_up"}.`);
+      for (const [role, bone] of Object.entries(args.map)) {
+        if (bone === null) { delete map[role]; continue; }
+        if (typeof bone !== "string") throw new AgentError(`map.${role} is a bone name, or null to leave the role out.`);
+        if (this.bone(bone).kind !== "bone") throw new AgentError(`"${bone}" is a slot; map roles to bones.`);
+        map[role] = bone;
+      }
+    }
+    if (Object.keys(map).length === 0) throw new AgentError("No bone is mapped to a role; give map (list_motions lists the roles).");
+
+    const s = this.sym;
+    const setup = posedSymbol(this.store.project, s, null, 0, "setup");
+    const rig: RigBone[] = this.bones().map((n) => {
+      const m = setup.byNode.get(n.id)?.world;
+      return {
+        name: n.id, parent: n.parentId && s.nodes[n.parentId] ? n.parentId : null, local: toSpineLocal(n.bind), length: n.boneLength ?? 0,
+        setup: m ? { x: m.tx, y: -m.ty, rotation: (Math.atan2(-m.b, m.a) * 180) / Math.PI, scaleX: Math.hypot(m.a, m.b) } : { x: 0, y: 0, rotation: 0, scaleX: 1 },
+      };
+    });
+    const idOf = (bone: string) => this.bone(bone).id as string;
+    const nameOf = (id: string) => s.nodes[id as NodeId]?.name ?? id;
+    let result;
+    try {
+      result = retarget({
+        clip, bones: rig, frames, facing,
+        map: Object.fromEntries(Object.entries(map).map(([role, bone]) => [role, idOf(bone)])),
+        ik: s.ik.map((k) => {
+          const chain = ikChain(s, k);
+          // Which way the solver bends it, read off the solved setup pose.
+          const [r, e] = chain.map((id) => setup.byNode.get(id)?.world);
+          const turn = r && e ? Math.sin(Math.atan2(-e.b, e.a) - Math.atan2(-r.b, r.a)) : 0;
+          return { bones: chain as string[], target: k.targetId as string, ...(chain.length === 2 && Math.abs(turn) > 0.02 ? { bend: turn > 0 ? 1 as const : -1 as const } : {}) };
+        }),
+      });
+    } catch (err) {
+      throw new AgentError(err instanceof Error ? err.message.replace(/"([^"]+)"/g, (_, id: string) => `"${nameOf(id)}"`) : String(err));
+    }
+
+    const label = `AI: Motion "${clip.name}" as "${name}"`;
+    this.store.transaction(label, () => {
+      this.newAnimation(name, frames);
+      this.setKeys(name, result.keys.map((k) => ({ ...k, bone: nameOf(k.bone), ease: "linear" })));
+    });
+
+    // What the runtime now shows, against what the retarget posed.
+    const anim = this.animation(name);
+    let worstDeg = 0, worstPx = 0, at = "";
+    for (const e of result.expected) {
+      const pose = posedSymbol(this.store.project, s, anim, e.frame, "animate");
+      for (const [id, want] of Object.entries(e.bones)) {
+        const m = pose.byNode.get(id as NodeId)?.world;
+        if (!m) continue;
+        const deg = Math.abs(((((Math.atan2(-m.b, m.a) * 180) / Math.PI - want.rotation) % 360) + 540) % 360 - 180);
+        const px = Math.hypot(m.tx - want.x, -m.ty - want.y);
+        if (deg > worstDeg) { worstDeg = deg; at = `"${nameOf(id)}" at frame ${e.frame}`; }
+        worstPx = Math.max(worstPx, px);
+      }
+    }
+    const matches = worstDeg < 1 && worstPx < 1;
+    return {
+      animation: name, frames, motion: clip.name, facing,
+      map: Object.fromEntries(Object.entries(map).sort()),
+      keys: result.keys.length,
+      ...(result.ground !== undefined ? { ground: round(result.ground, 2) } : {}),
+      check: { matches, worstDegrees: round(worstDeg, 3), worstPixels: round(worstPx, 3), ...(matches ? {} : { at, hint: "An IK chain may bend the other way (add_ik's bendPositive), or a role is on the wrong bone: look with render_frame." }) },
+      notes: [...guess.notes, ...result.notes.map((n) => n.replace(/"([^"]+)"/g, (_, id: string) => `"${nameOf(id)}"`))],
+    };
   }
 
   /* ── looking ── */
