@@ -1,6 +1,7 @@
 import type { Prefs } from "@/core/prefs/prefs";
 import { inkOn, rgbTriplet } from "@/core/prefs/color";
 import { UI_FONT_SCALES, uiPx } from "@/core/prefs/fonts";
+import { themeById } from "@/core/prefs/themes";
 
 /**
  * The handful of preferences that are CSS rather than canvas.
@@ -10,6 +11,12 @@ import { UI_FONT_SCALES, uiPx } from "@/core/prefs/fonts";
  * root element is therefore the entire implementation — no stylesheet is
  * rebuilt and nothing reloads. The canvas palette is a separate concern, in
  * `overlayColors.ts`.
+ *
+ * The chosen theme's neutral chrome (`core/prefs/themes.ts`) goes on FIRST, so
+ * the preference values written after it — which are the user's, not the
+ * theme's — win wherever the two could ever overlap. The theme owns surfaces,
+ * lines and text; accents, the playhead and the pasteboard are preferences, so
+ * switching a theme leaves a hand-tuned palette alone.
  *
  * Four of the tokens are DERIVED and have no preference of their own: the two
  * `-rgb` triplets that `rgba(var(--accent-rgb), α)` needs, and the two inks,
@@ -27,7 +34,11 @@ import { UI_FONT_SCALES, uiPx } from "@/core/prefs/fonts";
  */
 export function applyTheme(prefs: Prefs): void {
   const root = document.documentElement.style;
-  const { accent, accentRow, accentHot, accentBlue, setup, warn, fontSize } = prefs.interface;
+  const { theme, accent, accentRow, accentHot, accentBlue, setup, warn, fontSize } = prefs.interface;
+
+  for (const [token, value] of Object.entries(themeById(theme).tokens)) {
+    root.setProperty(token, value);
+  }
 
   root.setProperty("--accent", accent);
   root.setProperty("--accent-rgb", rgbTriplet(accent));

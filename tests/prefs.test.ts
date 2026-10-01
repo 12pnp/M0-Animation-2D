@@ -56,6 +56,11 @@ describe("mergePrefs", () => {
     expect(mergePrefs({ interface: { accent: "nonsense" } }).interface.accent).toBe("nonsense");
     expect(mergePrefs({ stage: { wheel: "pan" } }).stage.wheel).toBe("pan");
     expect(mergePrefs({ stage: { wheel: "spin" } }).stage.wheel).toBe("zoom");
+    // A theme is a choice like the font size: an id from a newer build (or a
+    // hand edit) falls back to the default rather than a blank stylesheet.
+    expect(mergePrefs({ interface: { theme: "classic" } }).interface.theme).toBe("classic");
+    expect(mergePrefs({ interface: { theme: "neon" } }).interface.theme)
+      .toBe(DEFAULT_PREFS.interface.theme);
   });
 
   it("gives an older blob the accents it was saved without", () => {

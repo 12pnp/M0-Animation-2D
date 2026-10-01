@@ -13,6 +13,7 @@
 
 import { type Overrides, sanitizeOverrides } from "@/core/keys/keymap";
 import { UI_FONT_SIZES, type UiFontSize } from "@/core/prefs/fonts";
+import { DEFAULT_THEME_ID, THEME_IDS } from "@/core/prefs/themes";
 
 export interface GeneralPrefs {
   autosave: boolean;
@@ -30,6 +31,10 @@ export interface GeneralPrefs {
 }
 
 export interface InterfacePrefs {
+  /** One of `THEME_IDS`: the neutral chrome (surfaces, lines, text). The
+   *  accents below are deliberately outside it, so switching does not clobber
+   *  a palette tuned by hand. */
+  theme: string;
   accent: string;
   /** The two accents derived from it: the darker one behind a selected row,
    *  the brighter one on an editable number. They are settings of their own
@@ -159,6 +164,7 @@ export const DEFAULT_PREFS: Prefs = {
     newDocBackground: "#ffffff",
   },
   interface: {
+    theme: DEFAULT_THEME_ID,
     accent: "#00bcd9",
     accentRow: "#006b86",
     accentHot: "#2ccde6",
@@ -260,6 +266,7 @@ export const PREF_LIMITS: Record<string, { min: number; max: number; step?: numb
  *  four steps has no UI to get back out of. */
 export const PREF_ENUMS: Record<string, readonly string[]> = {
   "interface.fontSize": UI_FONT_SIZES,
+  "interface.theme": THEME_IDS,
   "stage.wheel": ["zoom", "pan"],
 };
 

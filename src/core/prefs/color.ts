@@ -101,6 +101,12 @@ function contrast(a: number, b: number): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
+/** The WCAG contrast ratio of two CSS colours — `inkOn` picks an ink with it,
+ *  and the theme table's test holds every theme's text above a floor with it. */
+export function contrastRatio(a: string, b: string): number {
+  return contrast(relativeLuminance(parseColor(a)), relativeLuminance(parseColor(b)));
+}
+
 function relativeLuminance(c: Rgba): number {
   const lin = (v: number) => {
     const x = v / 255;

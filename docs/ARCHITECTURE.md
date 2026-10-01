@@ -1622,6 +1622,15 @@ already has it.
   (−0.38 and +0.18, a mix towards black and white — an HSL lightness lift leaves a
   saturated accent garish). `shade` on the default teal lands near the hand-picked
   `#006b86` / `#2ccde6`, not exactly on them: those stay the defaults.
+- **Interface ▸ Theme** (`interface.theme`, the table in `core/prefs/themes.ts`) owns the
+  NEUTRAL chrome: surfaces, lines, the button/scrollbar greys and the text colours, as CSS
+  tokens. Graphite (a grey-to-dark-grey ramp with near-white text) is the default, Classic
+  is the pre-theme Animate palette, Slate a cool third. `applyTheme` writes the table's
+  tokens on the root BEFORE the preference tokens; accents, the playhead and the pasteboard
+  are deliberately outside the table, so switching a theme never clobbers a hand-tuned
+  palette. The `:root` literals in `theme.css` mirror the default theme so the first paint
+  is right before the script runs — `tests/themes.test.ts` holds that, the token
+  completeness and every theme's text-contrast floor.
 - **Interface ▸ Text is Photoshop's four steps** (`interface.fontSize`, `small` = scale
   1 exactly, so the default moves nothing). It is a TEXT size, not a UI zoom: the font
   tokens and the heights of the rows built to hold text scale, icons and `--w-rail` do

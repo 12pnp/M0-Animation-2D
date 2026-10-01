@@ -1,6 +1,7 @@
 import type { Store, ViewFlag } from "@/app/Store";
 import { PREF_LIMITS, type PrefsCategory } from "@/core/prefs/prefs";
 import { shade } from "@/core/prefs/color";
+import { THEMES } from "@/core/prefs/themes";
 import { Modal } from "@/view/widgets/Modal";
 import { NumberField } from "@/view/widgets/NumberField";
 import { clear, h, on } from "@/view/widgets/dom";
@@ -91,6 +92,11 @@ const CATEGORIES: Category[] = [
     sections: [
       {
         title: "Appearance", rows: [
+          {
+            kind: "select", cat: "interface", key: "theme", label: "Theme",
+            options: THEMES.map((t) => ({ value: t.id, text: t.label })),
+          },
+          { kind: "note", text: "The theme sets the window, panel and menu greys and the text on them. The colours below are your own and follow you across themes." },
           { kind: "color", cat: "interface", key: "accent", label: "Accent" },
           { kind: "color", cat: "interface", key: "accentRow", label: "Selected rows" },
           { kind: "color", cat: "interface", key: "accentHot", label: "Editable values" },

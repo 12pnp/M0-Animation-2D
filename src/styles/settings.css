@@ -130,7 +130,7 @@
   width: 34px; height: var(--h-field);
   padding: 0 1px;
   background: var(--bg-field);
-  border: 1px solid #262626;
+  border: 1px solid var(--line);
   border-radius: var(--radius);
   cursor: default;
 }
