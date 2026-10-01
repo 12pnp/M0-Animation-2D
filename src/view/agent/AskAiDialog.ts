@@ -16,8 +16,9 @@ function bridgePath(): string {
 }
 
 /** The status, in the parts every home for it shows: the dot's colour, the
- *  sentence that explains it, and the button that changes it. */
-function statusParts(bridge: AgentBridge): { dot: HTMLElement; text: HTMLElement; btn: HTMLButtonElement; dispose: () => void } {
+ *  sentence that explains it, the button that changes it, and a short line
+ *  for hovering over the dot. */
+function statusParts(bridge: AgentBridge, onShort?: (line: string) => void): { dot: HTMLElement; text: HTMLElement; btn: HTMLButtonElement; refresh: () => void; dispose: () => void } {
   const dot = h("span", { class: "ai-dot" });
   const text = h("span", { class: "ai-status-text" });
   const btn = h("button", { class: "btn" }) as HTMLButtonElement;
@@ -29,15 +30,23 @@ function statusParts(bridge: AgentBridge): { dot: HTMLElement; text: HTMLElement
       : bridge.chatReady ? "Connected. Ask AI is ready."
       : "Connected for MCP (Claude Code / Desktop). Ask AI here needs the bridge started with an API key.";
     btn.textContent = state === "off" ? "Connect" : "Disconnect";
+    onShort?.(state === "off" ? "AI bridge: not connected"
+      : state === "connecting" ? "AI bridge: looking…"
+      : bridge.chatReady ? "Ask AI: ready"
+      : "MCP connected — Ask AI needs an API key");
     if (state === "connected" && bridge.chatReady) {
       const ask = ++asked;
       void bridge.info().then((info) => {
-        if (ask === asked && info && bridge.state === "connected") text.textContent = `Connected. Ask AI is ready: ${info.provider === "glm" ? "GLM" : "Claude"} (${info.model})${info.vision ? "" : ", text only: it cannot see pictures"}.`;
+        if (ask === asked && info && bridge.state === "connected") {
+          const label = `${info.provider === "glm" ? "GLM" : "Claude"} (${info.model})`;
+          text.textContent = `Connected. Ask AI is ready: ${label}${info.vision === false ? ", text only: it cannot see pictures" : ""}.`;
+          onShort?.(`Ask AI: ${label}${info.vision === false ? ", no pictures" : ""}`);
+        }
       });
     }
   };
   sync(bridge.state);
-  return { dot, text, btn, dispose: bridge.onState((s) => sync(s)) };
+  return { dot, text, btn, refresh: () => sync(bridge.state), dispose: bridge.onState((s) => sync(s)) };
 }
 
 /** A connection strip: a light, what it means, and the button that changes it. */
@@ -47,17 +56,60 @@ export function statusStrip(bridge: AgentBridge, toggle: () => void): { el: HTML
   return { el: h("div", { class: "ai-status" }, dot, text, h("div", { class: "spacer" }), btn), dispose };
 }
 
-/** Just the dot, for a panel header: click it for the status as a popup —
- *  the sentence and the connect button, closed by clicking anywhere else. */
+/** Just the dot, for a panel header: hover it for the status in one short
+ *  line, click it for the whole popup — the sentence, the model picker, and
+ *  the connect button, closed by clicking anywhere else. */
 export function statusDot(bridge: AgentBridge, toggle: () => void): { el: HTMLElement; dispose: () => void } {
-  const { dot, text, btn, dispose } = statusParts(bridge);
-  const pop = h("div", { class: "ai-dot-pop" }, text, h("div", { class: "ai-dot-pop-row" }, btn));
-  const el = h("button", { class: "ai-dot-btn", title: "Connection status — click for details" }, dot) as HTMLButtonElement;
+  let hover = "AI bridge";
+  const el = h("button", { class: "ai-dot-btn", title: hover }) as HTMLButtonElement;
+  const { dot, text, btn, refresh, dispose } = statusParts(bridge, (line) => {
+    hover = `${line} — click for details`;
+    el.title = hover;
+  });
+  el.appendChild(dot);
+  // The model the bridge runs, switchable right here — the bridge holds the
+  // key, so the choice is asked of it, never of the page.
+  const pick = h("select", { class: "ai-model", title: "The model Ask AI runs, live until the bridge restarts" }) as HTMLSelectElement;
+  const modelRow = h("div", { class: "ai-dot-pop-row ai-dot-pop-model" }, h("span", { class: "ai-dot-pop-label" }, "Model"), pick);
+  const syncModels = async () => {
+    const info = await bridge.models();
+    if (!info || info.models.length === 0) { modelRow.style.display = "none"; return; }
+    modelRow.style.display = "";
+    pick.replaceChildren(...info.models.map((m) => h("option", { value: m }, m)));
+    if (!info.models.includes(info.model)) pick.append(new Option(info.model, info.model));
+    pick.value = info.model;
+  };
+  void syncModels();
+  on(pick, "change", () => {
+    void bridge.setModel(pick.value).then((ok) => { if (ok) { refresh(); void syncModels(); } });
+  });
+
+  // A key pasted here goes to the bridge and its key file; the page forgets
+  // it the moment the fetch is away.
+  const keyInput = h("input", { type: "password", class: "ai-key", placeholder: "Paste a GLM key…", autocomplete: "off" }) as HTMLInputElement;
+  const keySave = h("button", { class: "btn" }, "Save") as HTMLButtonElement;
+  const saveKey = () => {
+    const key = keyInput.value.trim();
+    if (!key) return;
+    void bridge.setKey("glm", key).then((ok) => {
+      keyInput.value = "";
+      if (ok) { refresh(); void syncModels(); }
+      else keyInput.placeholder = "The bridge refused it — paste it again";
+    });
+  };
+  on(keySave, "pointerup", saveKey);
+  on(keyInput, "keydown", (e) => {
+    if ((e as unknown as KeyboardEvent).key === "Enter") { e.preventDefault(); saveKey(); }
+  });
+  const keyRow = h("div", { class: "ai-dot-pop-row ai-dot-pop-key" },
+    h("span", { class: "ai-dot-pop-label" }, "GLM key"), keyInput, keySave);
+
+  const pop = h("div", { class: "ai-dot-pop" }, text, modelRow, keyRow, h("div", { class: "ai-dot-pop-row" }, btn));
   const closeAway = (e: Event) => {
     const t = e.target as Node;
     if (!pop.contains(t) && !el.contains(t)) pop.classList.remove("open");
   };
-  on(el, "pointerup", () => pop.classList.toggle("open"));
+  on(el, "pointerup", () => { pop.classList.toggle("open"); void syncModels(); });
   on(pop, "pointerup", (e) => e.stopPropagation());
   on(btn, "pointerup", () => { toggle(); pop.classList.remove("open"); });
   on(document, "pointerup", closeAway);
@@ -92,7 +144,8 @@ export function openAiHelp(bridge: AgentBridge, toggleConnection: () => void): v
     step(1, "Start the bridge in a terminal, with your API key. Claude:",
       code(`ANTHROPIC_API_KEY=sk-ant-… node "${path}" --http-only`),
       h("div", { class: "ai-hint" }, "or GLM (api.z.ai; for a bigmodel.cn key also set AMINO_API_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions, and AMINO_MODEL to pick a model):"),
-      code(`GLM_API_KEY=… node "${path}" --http-only`)),
+      code(`GLM_API_KEY=… node "${path}" --http-only`),
+      h("div", { class: "ai-hint" }, "Or skip the terminal: click the ● beside “Ask AI” and paste the key into the popup — the bridge keeps it in its key file (~/.amino-bridge.json, readable only by you) and every later start has it.")),
     step(2, "Press Connect above, then open AI ▸ Ask AI…"),
     h("h3", {}, "Claude Code or Claude Desktop (MCP)"),
     step(1, "Add the bridge as an MCP server, from a terminal:",

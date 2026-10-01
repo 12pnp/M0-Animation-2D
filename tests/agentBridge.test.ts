@@ -1,5 +1,6 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import http from "node:http";
+import { readFile, rm, stat } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { reseed } from "@/core/doc/ids";
@@ -29,7 +30,7 @@ let glmVisionBridge: ChildProcess;
 /** The tool the fake models ask for when handed a question. */
 let askFor: { name: string; input: Record<string, unknown> } = { name: "get_rig", input: {} };
 let glmApi: http.Server;
-const glmRequests: Array<{ messages: Array<{ role: string; tool_call_id?: string; content: unknown }>; tools: Array<{ type?: string }>; authorization?: string }> = [];
+const glmRequests: Array<{ model?: string; messages: Array<{ role: string; tool_call_id?: string; content: unknown }>; tools: Array<{ type?: string }>; authorization?: string }> = [];
 let pageRunning = true;
 let buffer = "";
 const waiting = new Map<number, (msg: { result?: Record<string, unknown>; error?: { message: string } }) => void>();
@@ -214,6 +215,103 @@ describe("the AI bridge on GLM", () => {
     // Back to the page: the model's tool call came back in Anthropic shape.
     const said = body.messages.find((m) => m.role === "assistant")!;
     expect(said.content).toEqual([{ type: "tool_use", id: "call1", name: "get_rig", input: {} }]);
+  });
+
+  it("lists its models, and a live switch changes what /chat sends", async () => {
+    const origin = { origin: ORIGIN };
+    const before = await (await fetch(`http://127.0.0.1:${GLM_PORT}/agent/models`, { headers: origin })).json();
+    expect(before).toMatchObject({ provider: "glm", model: "glm-4.6" });
+    expect(before.models).toEqual(expect.arrayContaining(["glm-4.6", "glm-4.5", "glm-4.5-air"]));
+
+    const set = await fetch(`http://127.0.0.1:${GLM_PORT}/agent/model`, {
+      method: "POST", headers: { ...origin, "content-type": "application/json" }, body: JSON.stringify({ model: "glm-test-air" }),
+    });
+    expect(await set.json()).toEqual({ model: "glm-test-air" });
+    const after = await (await fetch(`http://127.0.0.1:${GLM_PORT}/agent/models`, { headers: origin })).json();
+    expect(after.model).toBe("glm-test-air");
+    expect(after.models).toContain("glm-test-air");
+    const status = await (await fetch(`http://127.0.0.1:${GLM_PORT}/agent/status`, { headers: origin })).json();
+    expect(status.model).toBe("glm-test-air");
+
+    await fetch(`http://127.0.0.1:${GLM_PORT}/chat`, {
+      method: "POST", headers: { ...origin, "content-type": "application/json" },
+      body: JSON.stringify({ messages: [{ role: "user", content: "What is in the rig?" }] }),
+    });
+    expect(glmRequests.at(-1)!.model).toBe("glm-test-air");
+
+    await fetch(`http://127.0.0.1:${GLM_PORT}/agent/model`, {
+      method: "POST", headers: { ...origin, "content-type": "application/json" }, body: JSON.stringify({ model: "glm-4.6" }),
+    });
+  });
+
+  it("refuses an empty model", async () => {
+    const res = await fetch(`http://127.0.0.1:${GLM_PORT}/agent/model`, {
+      method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: JSON.stringify({ model: "  " }),
+    });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("a key pasted in the popup", () => {
+  const PORT = 5396;
+  const keyfile = fileURLToPath(new URL("./fixtures/bridge-key.json", import.meta.url));
+  let keyBridge: ChildProcess;
+
+  beforeAll(async () => {
+    await rm(keyfile, { force: true });
+    keyBridge = spawn("node", [BRIDGE], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, AMINO_BRIDGE_PORT: String(PORT), AMINO_KEYFILE: keyfile },
+    });
+    keyBridge.stdout!.resume();
+    await new Promise<void>((r) => keyBridge.stderr!.once("data", () => r()));
+  });
+  afterAll(async () => {
+    keyBridge?.kill();
+    await rm(keyfile, { force: true });
+  });
+
+  const origin = () => ({ origin: ORIGIN });
+
+  it("turns a keyless bridge into a keyed GLM one, and the file remembers it", async () => {
+    const before = await (await fetch(`http://127.0.0.1:${PORT}/agent/status`, { headers: origin() })).json() as Record<string, unknown>;
+    expect(before).toMatchObject({ chat: false, provider: "anthropic" });
+
+    const set = await fetch(`http://127.0.0.1:${PORT}/agent/key`, {
+      method: "POST", headers: { ...origin(), "content-type": "application/json" },
+      body: JSON.stringify({ provider: "glm", key: "test-key-from-popup" }),
+    });
+    expect(await set.json()).toMatchObject({ provider: "glm", chat: true, model: "glm-4.6" });
+
+    const after = await (await fetch(`http://127.0.0.1:${PORT}/agent/status`, { headers: origin() })).json() as Record<string, unknown>;
+    expect(after).toMatchObject({ chat: true, provider: "glm", model: "glm-4.6" });
+    // The key itself is never said back.
+    expect(JSON.stringify(after)).not.toContain("test-key-from-popup");
+
+    const file = JSON.parse(await readFile(keyfile, "utf8")) as { glmKey?: string };
+    expect(file.glmKey).toBe("test-key-from-popup");
+    const mode = (await stat(keyfile)).mode & 0o777;
+    expect(mode & 0o077).toBe(0); // only the owner may read it
+  });
+
+  it("hands the saved key to the next start on its own", async () => {
+    const fresh = spawn("node", [BRIDGE], {
+      stdio: ["pipe", "pipe", "pipe"],
+      env: { ...process.env, AMINO_BRIDGE_PORT: String(PORT + 1), AMINO_KEYFILE: keyfile },
+    });
+    fresh.stdout!.resume();
+    await new Promise<void>((r) => fresh.stderr!.once("data", () => r()));
+    const status = await (await fetch(`http://127.0.0.1:${PORT + 1}/agent/status`, { headers: origin() })).json() as Record<string, unknown>;
+    expect(status).toMatchObject({ chat: true, provider: "glm" });
+    fresh.kill();
+  });
+
+  it("refuses junk", async () => {
+    const res = await fetch(`http://127.0.0.1:${PORT}/agent/key`, {
+      method: "POST", headers: { ...origin(), "content-type": "application/json" },
+      body: JSON.stringify({ provider: "nope", key: "x" }),
+    });
+    expect(res.status).toBe(400);
   });
 });
 

@@ -9,19 +9,26 @@
 // The editor page (Window ▸ Connect to AI) long-polls GET /agent/next for tool
 // calls and posts results to /agent/result. POST /chat runs the model with the
 // same tools: Claude (Anthropic Messages) or GLM (OpenAI-compatible), picked by
-// AMINO_PROVIDER — the key stays in THIS process, never in the page.
+// AMINO_PROVIDER. Keys come from the environment or the key file the popup's
+// field writes (`POST /agent/key`) — either way they live in THIS process and
+// its key file, never longer in the page than the paste.
 // Listens on 127.0.0.1 only; only the editor's origins may call it.
 //
 // Environment: AMINO_BRIDGE_PORT (5190), AMINO_ORIGINS (comma separated;
 // default the dev server, http://localhost:5181 and http://127.0.0.1:5181),
-// AMINO_PROVIDER (anthropic | glm; glm when GLM_API_KEY is set), ANTHROPIC_API_KEY,
+// AMINO_PROVIDER (anthropic | glm; glm when a GLM key is known), ANTHROPIC_API_KEY,
 // GLM_API_KEY (api.z.ai; for open.bigmodel.cn also set AMINO_API_URL), AMINO_MODEL
-// (claude-sonnet-5-5 / glm-4.6), AMINO_API_URL (the provider's endpoint; tests
-// point it at a fake).
+// (claude-sonnet-5-5 / glm-4.6; the starting model — the dot popup's picker
+// changes it live via POST /agent/model), AMINO_MODELS (the picker's choices,
+// comma separated; a small built-in list per provider otherwise), AMINO_API_URL
+// (the provider's endpoint; tests point it at a fake), AMINO_KEYFILE
+// (~/.amino-bridge.json; where the popup's key field stores what it is given,
+// mode 600, read back at startup).
 
 import http from "node:http";
-import { readFileSync } from "node:fs";
+import { chmodSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { randomUUID } from "node:crypto";
 
@@ -38,23 +45,70 @@ const log = (...a) => process.stderr.write(`[amino-bridge] ${a.join(" ")}\n`);
 const PROVIDERS = {
   anthropic: {
     label: "Claude", url: "https://api.anthropic.com/v1/messages", model: "claude-sonnet-5-5",
-    keyName: "ANTHROPIC_API_KEY", key: () => process.env.ANTHROPIC_API_KEY, turn: anthropicTurn,
+    keyName: "ANTHROPIC_API_KEY", turn: anthropicTurn,
   },
   glm: {
     label: "GLM", url: "https://api.z.ai/api/paas/v4/chat/completions", model: "glm-4.6",
-    keyName: "GLM_API_KEY", key: () => process.env.GLM_API_KEY ?? process.env.Z_AI_API_KEY, turn: openaiTurn,
+    keyName: "GLM_API_KEY", turn: openaiTurn,
   },
 };
-const PROVIDER_NAME = process.env.AMINO_PROVIDER ?? (process.env.GLM_API_KEY ? "glm" : "anthropic");
-const PROVIDER = PROVIDERS[PROVIDER_NAME];
-if (!PROVIDER) { log(`Unknown AMINO_PROVIDER "${PROVIDER_NAME}" (anthropic or glm).`); process.exit(1); }
-const MODEL = process.env.AMINO_MODEL ?? PROVIDER.model;
-const API_URL = process.env.AMINO_API_URL ?? PROVIDER.url;
-const hasKey = () => !!PROVIDER.key();
+
+/* The API keys: from the environment, or from the key file the popup's field
+   writes — either way only this process holds them after that. */
+const KEYFILE = process.env.AMINO_KEYFILE ?? join(homedir(), ".amino-bridge.json");
+let savedKeys = {};
+try { savedKeys = JSON.parse(readFileSync(KEYFILE, "utf8")); } catch { /* none saved yet */ }
+const envAnthropic = process.env.ANTHROPIC_API_KEY ?? null;
+const envGlm = process.env.GLM_API_KEY ?? process.env.Z_AI_API_KEY ?? null;
+const keys = {
+  anthropic: envAnthropic ?? (typeof savedKeys.anthropicKey === "string" ? savedKeys.anthropicKey : null),
+  glm: envGlm ?? (typeof savedKeys.glmKey === "string" ? savedKeys.glmKey : null),
+};
+/** A key arriving from the page: kept in memory, saved to the key file (mode
+ *  600) so the next start has it, and the provider switches to it. An empty
+ *  key forgets the saved one. */
+function setKey(name, key) {
+  if (!PROVIDERS[name]) return { error: `Unknown provider "${name}".` };
+  if (typeof key !== "string" || key.length > 4096) return { error: "That does not look like a key." };
+  keys[name] = key || null;
+  providerName = keys[name] ? name : (keys.glm ? "glm" : "anthropic");
+  if (!modelChoices(providerName).includes(currentModel)) currentModel = provider().model;
+  MODELS = [...new Set([...modelChoices(providerName), currentModel])];
+  const file = { anthropicKey: keys.anthropic ?? undefined, glmKey: keys.glm ?? undefined };
+  try {
+    writeFileSync(KEYFILE, JSON.stringify(file), { mode: 0o600 });
+    chmodSync(KEYFILE, 0o600);
+  } catch (err) {
+    log(`key file not written: ${err.message}`);
+  }
+  log(`${key ? "key set for" : "key cleared for"} ${name}; provider ${providerName}${key ? "" : " (no key)"}`);
+  return { provider: providerName, chat: hasKey(), model: currentModel };
+}
+
+// A key given in the environment says which provider this start is for; a
+// key that exists only in the key file auto-activates only then (GLM's first
+// — the popup's field is GLM's).
+const PROVIDER_NAME = process.env.AMINO_PROVIDER
+  ?? (envAnthropic ? "anthropic" : envGlm ? "glm" : keys.glm ? "glm" : keys.anthropic ? "anthropic" : "anthropic");
+if (!PROVIDERS[PROVIDER_NAME]) { log(`Unknown AMINO_PROVIDER "${PROVIDER_NAME}" (anthropic or glm).`); process.exit(1); }
+/** The active provider — switched by whichever key arrives last
+ *  (`POST /agent/key`); AMINO_PROVIDER is only its starting value. */
+let providerName = PROVIDER_NAME;
+const provider = () => PROVIDERS[providerName];
+const apiUrl = () => process.env.AMINO_API_URL ?? provider().url;
+/** The model Ask AI runs — switchable live (`POST /agent/model`); AMINO_MODEL
+ *  is only its starting value. The choices the page offers: AMINO_MODELS
+ *  (comma separated) or a small built-in list per provider, plus the current. */
+const modelChoices = (name) => (process.env.AMINO_MODELS
+  ?? { anthropic: "claude-sonnet-5-5", glm: "glm-4.6,glm-4.5,glm-4.5-air" }[name])
+  .split(",").map((s) => s.trim()).filter(Boolean);
+let currentModel = process.env.AMINO_MODEL ?? provider().model;
+let MODELS = [...new Set([...modelChoices(providerName), currentModel])];
+const hasKey = () => !!keys[providerName];
 // Whether the model reads pictures: Claude does; GLM only its vision models
 // (glm-4.5v, glm-4.6v…). AMINO_VISION=1 or 0 says so outright.
-const VISION = process.env.AMINO_VISION ? process.env.AMINO_VISION !== "0"
-  : PROVIDER_NAME === "anthropic" || /v$|v-|vision/i.test(MODEL);
+const vision = () => process.env.AMINO_VISION ? process.env.AMINO_VISION !== "0"
+  : providerName === "anthropic" || /v$|v-|vision/i.test(currentModel);
 // Pictures kept in a conversation sent to the model, newest first; older
 // ones become a line of text. Each costs about a thousand tokens.
 const KEEP_IMAGES = Number(process.env.AMINO_KEEP_IMAGES ?? 8);
@@ -71,7 +125,7 @@ function splitImages(value) {
   return { text: JSON.stringify(rest), images };
 }
 
-const NO_VISION = `[a picture: ${MODEL} cannot see pictures; use a vision model (e.g. glm-4.5v) or set AMINO_VISION=1 if it can]`;
+const noVisionNote = () => `[a picture: ${currentModel} cannot see pictures; use a vision model (e.g. glm-4.5v) or set AMINO_VISION=1 if it can]`;
 const DROPPED = "[an earlier picture, left out to save tokens]";
 
 /** The conversation as sent to the model: pictures it cannot see turned into
@@ -80,7 +134,7 @@ function forModel(convo) {
   let kept = 0;
   const swap = (b) => {
     if (b?.type !== "image") return b;
-    if (!VISION) return { type: "text", text: NO_VISION };
+    if (!vision()) return { type: "text", text: noVisionNote() };
     return ++kept <= KEEP_IMAGES ? b : { type: "text", text: DROPPED };
   };
   const out = [];
@@ -171,7 +225,25 @@ const server = http.createServer(async (req, res) => {
       return send(res, 204);
     }
     if (req.method === "GET" && url.pathname === "/agent/status") {
-      return send(res, 200, { editor: Date.now() - lastSeen < 30000, chat: hasKey(), provider: PROVIDER_NAME, model: MODEL, vision: VISION });
+      return send(res, 200, { editor: Date.now() - lastSeen < 30000, chat: hasKey(), provider: providerName, model: currentModel, vision: vision() });
+    }
+    if (req.method === "GET" && url.pathname === "/agent/models") {
+      return send(res, 200, { provider: providerName, model: currentModel, models: MODELS });
+    }
+    if (req.method === "POST" && url.pathname === "/agent/key") {
+      const body = await readJson(req);
+      const out = setKey(String(body.provider ?? ""), typeof body.key === "string" ? body.key.trim() : "");
+      if (out.error) return send(res, 400, out);
+      return send(res, 200, out);
+    }
+    if (req.method === "POST" && url.pathname === "/agent/model") {
+      const body = await readJson(req);
+      const model = typeof body.model === "string" ? body.model.trim() : "";
+      if (!model || /[\r\n]/.test(model)) return send(res, 400, { error: "A model name is required." });
+      currentModel = model;
+      if (!MODELS.includes(model)) MODELS.push(model);
+      log(`model: ${model}`);
+      return send(res, 200, { model: currentModel });
     }
     if (req.method === "POST" && url.pathname === "/chat") {
       const body = await readJson(req);
@@ -197,11 +269,11 @@ Put many keys in one set_keys call: each call is ONE undo step for the user. End
 When an animation has a reference (get_rig lists it), animate from it: get_reference for its timing and the images at a few key frames (contacts, extremes); pose each key frame with set_keys; check it with render_frame, which draws your skeleton over the reference with every bone named; adjust until the body lines up, then let eases fill between and look at a frame in between. Pictures cost tokens: look at key frames, not every frame. A picture the user attaches is the pose or the style to match.`;
 
 async function chat(messages) {
-  const key = PROVIDER.key();
-  if (!key) throw new Error(`The bridge has no ${PROVIDER.keyName}: start it with the key in its environment.`);
+  const key = keys[providerName];
+  if (!key) throw new Error(`The bridge has no ${provider().keyName}: start it with the key, or paste one in the AI panel's status popup.`);
   const convo = [...messages];
   for (let turn = 0; turn < 24; turn++) {
-    const reply = await PROVIDER.turn(forModel(convo), key);
+    const reply = await provider().turn(forModel(convo), key);
     convo.push({ role: "assistant", content: reply.blocks });
     const uses = reply.blocks.filter((b) => b.type === "tool_use");
     if (!reply.toolUse || uses.length === 0) {
@@ -228,11 +300,11 @@ async function chat(messages) {
 
 /** One Anthropic Messages call (Claude): request and reply already in the bridge's format. */
 async function anthropicTurn(convo, key) {
-  const res = await fetch(API_URL, {
+  const res = await fetch(apiUrl(), {
     method: "POST",
     headers: { "content-type": "application/json", "x-api-key": key, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({
-      model: MODEL, max_tokens: 8000, system: SYSTEM,
+      model: currentModel, max_tokens: 8000, system: SYSTEM,
       tools: TOOLS.map((t) => ({ name: t.name, description: t.description, input_schema: t.input_schema })),
       messages: convo,
     }),
@@ -271,11 +343,11 @@ async function openaiTurn(convo, key) {
     if (pictures.length) out.push({ role: "user", content: [{ type: "text", text: "The pictures the tools above returned:" }, ...pictures] });
     return out;
   };
-  const res = await fetch(API_URL, {
+  const res = await fetch(apiUrl(), {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${key}` },
     body: JSON.stringify({
-      model: MODEL, max_tokens: 8000,
+      model: currentModel, max_tokens: 8000,
       messages: [{ role: "system", content: SYSTEM }, ...convo.flatMap(toOpenAI)],
       tools: TOOLS.map((t) => ({ type: "function", function: { name: t.name, description: t.description, parameters: t.input_schema } })),
     }),

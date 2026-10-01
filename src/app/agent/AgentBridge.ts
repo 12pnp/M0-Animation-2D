@@ -55,15 +55,56 @@ export class AgentBridge {
     return { messages: body.messages ?? [], text: body.text ?? "" };
   }
 
-  /** Which model Ask AI runs, or null when the bridge does not answer. */
-  async info(): Promise<{ provider: string; model: string; vision: boolean } | null> {
+  /** Which model the bridge would run, or null when it does not answer. */
+  async info(): Promise<{ provider: string; model: string; vision?: boolean } | null> {
     try {
       const res = await fetch(`${this.url}/agent/status`);
       if (!res.ok) return null;
       const body = await res.json() as { provider?: string; model?: string; vision?: boolean };
-      return { provider: body.provider ?? "anthropic", model: body.model ?? "", vision: body.vision !== false };
+      return { provider: body.provider ?? "anthropic", model: body.model ?? "", ...(body.vision !== undefined ? { vision: body.vision } : {}) };
     } catch {
       return null;
+    }
+  }
+
+  /** The bridge's model choices and its current one, for the picker. */
+  async models(): Promise<{ provider: string; model: string; models: string[] } | null> {
+    try {
+      const res = await fetch(`${this.url}/agent/models`);
+      if (!res.ok) return null;
+      const body = await res.json() as { provider?: string; model?: string; models?: string[] };
+      return { provider: body.provider ?? "", model: body.model ?? "", models: body.models ?? [] };
+    } catch {
+      return null;
+    }
+  }
+
+  /** Switch the bridge's model, live until the bridge restarts. */
+  async setModel(model: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.url}/agent/model`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ model }),
+      });
+      return res.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  /** A key pasted into the popup: handed to the bridge, which keeps it (and
+   *  its key file); the page forgets it as soon as the fetch is away. */
+  async setKey(provider: "glm" | "anthropic", key: string): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.url}/agent/key`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ provider, key }),
+      });
+      const body = await res.json() as { chat?: boolean; error?: string };
+      if (!res.ok || body.error) return false;
+      this.chatReady = !!body.chat;
+      if (this.stateNow !== "off") this.set("connected", this.chatReady ? "Connected to the AI bridge; Ask AI is ready." : "Connected to the AI bridge.");
+      return true;
+    } catch {
+      return false;
     }
   }
 
