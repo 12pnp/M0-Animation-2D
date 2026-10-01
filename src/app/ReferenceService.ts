@@ -2,7 +2,7 @@ import type { Store } from "./Store";
 import type { AssetStore } from "./AssetStore";
 import type { AnimationReference } from "@/core/doc/types";
 import type { AssetId } from "@/core/doc/ids";
-import { fitReference, sheetCells } from "@/core/doc/reference";
+import { fitReference, referenceSpacing, sheetCells } from "@/core/doc/reference";
 import { symbolBounds } from "@/core/doc/pose";
 import { spineBounds } from "@/core/spine/spinePose";
 import { SetAnimationReference } from "@/core/history/timelineCommands";
@@ -43,6 +43,23 @@ export class ReferenceService {
     this.store.apply(new SetAnimationReference(this.store.currentSymbolId, anim.id, { ...ref, ...patch }, label));
   }
 
+  /** One picture moved to `frame`; the others keep theirs. */
+  setFrameAt(index: number, frame: number): void {
+    const ref = this.current;
+    if (!ref || index < 0 || index >= ref.at.length) return;
+    const at = ref.at.map((v, i) => (i === index ? Math.max(0, Math.round(frame)) : v));
+    this.update({ at }, "Set Reference Frame");
+  }
+
+  /** Every picture re-spaced `hold` apart from `start` — the panel's two
+   * bulk fields, which replace per-picture placements. */
+  respace(start: number, hold: number): void {
+    const ref = this.current;
+    if (!ref) return;
+    const s = Math.max(0, Math.round(start)), each = Math.max(1, Math.round(hold));
+    this.update({ start: s, hold: each, at: referenceSpacing(ref.frames.length, s, each) });
+  }
+
   /** Stand the reference over what the rig draws now. */
   fitToRig(): void {
     const ref = this.current;
@@ -61,9 +78,11 @@ export class ReferenceService {
     if (!anim) throw new Error("There is no animation to add a reference to.");
     const ids: AssetId[] = [];
     for (let i = 0; i < images.blobs.length; i++) ids.push((await this.assets.addFromBlob(images.blobs[i]!, `reference ${i + 1}`)).id);
+    const each = Math.max(1, Math.round(hold)), from = Math.max(0, Math.round(start));
     const ref: AnimationReference = {
       frames: ids, width: images.width, height: images.height,
-      hold: Math.max(1, Math.round(hold)), start: Math.max(0, Math.round(start)),
+      at: ids.map((_, i) => from + i * each),
+      hold: each, start: from,
       ...fitReference(images.width, images.height, this.rigBox()),
     };
     this.store.apply(new SetAnimationReference(this.store.currentSymbolId, anim.id, ref, label));

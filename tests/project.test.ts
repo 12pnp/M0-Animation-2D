@@ -133,7 +133,7 @@ describe("project round trip", () => {
     const project = richProject(assets);
     for (const id of ["ref_0", "ref_1"]) assets.seed(id, [0x89, 0x50, id.length, 7]);
     const anim = (project.items[project.rootSymbolId] as SymbolItem).animations[0]!;
-    anim.reference = { frames: ["ref_0", "ref_1"] as AssetId[], width: 64, height: 96, hold: 2, start: 1, x: -32, y: -96, scale: 1.5 };
+    anim.reference = { frames: ["ref_0", "ref_1"] as AssetId[], width: 64, height: 96, at: [1, 3], hold: 2, start: 1, x: -32, y: -96, scale: 1.5 };
 
     const blob = await serializeProject(project, assets.store);
     assets.store.clear();

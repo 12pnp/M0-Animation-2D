@@ -53,6 +53,8 @@ export class Dock {
   readonly el: HTMLElement;
   private panels = new Map<string, Panel>();
   private layout: DockLayout = { groups: [], floats: {}, closed: [] };
+  /** The groups `setDefault` was last given, for placing newcomers. */
+  private defaults: string[][] = [];
   private groupEls: HTMLElement[] = [];
   private floatWins = new Map<string, FloatWindow>();
   /** Notified whenever a panel opens, closes, floats or docks. */
@@ -83,6 +85,7 @@ export class Dock {
 
   /** Default arrangement, used when nothing is stored. */
   setDefault(groups: string[][]): void {
+    this.defaults = groups;
     const stored = this.load();
     this.layout = stored ?? {
       groups: groups
@@ -117,9 +120,15 @@ export class Dock {
     }
     this.layout.groups = this.layout.groups.filter((g) => g.panelIds.length > 0);
     for (const id of this.panels.keys()) {
-      if (!seen.has(id)) {
-        this.layout.groups.push({ panelIds: [id], activeId: id, collapsed: false, weight: 1 });
-      }
+      if (seen.has(id)) continue;
+      // A panel no stored layout places — new, or moved to this dock while
+      // the user's old layout lived elsewhere — rejoins the group its
+      // default grouping shares with a placed panel, so it arrives as a
+      // tab beside its group-mate rather than a group of its own.
+      const mates = this.defaults.find((g) => g.includes(id))?.filter((m) => m !== id) ?? [];
+      const home = this.layout.groups.find((g) => mates.some((m) => g.panelIds.includes(m)));
+      if (home) home.panelIds.push(id);
+      else this.layout.groups.push({ panelIds: [id], activeId: id, collapsed: false, weight: 1 });
     }
   }
 

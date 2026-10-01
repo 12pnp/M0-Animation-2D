@@ -10,9 +10,10 @@ import { referenceEnd, referenceFrameOf, referenceIndexAt, sheetCells } from "@/
 /**
  * The Reference panel: pictures to animate against, for the animation being
  * edited (`Animation.reference`). A sprite sheet or a run of images becomes
- * one image per `hold` frames from `start`; the stage draws the one at the
- * playhead, and the AI can look at them (`get_reference`). Thumbnails jump
- * the playhead to their frame. Saved with the document, never exported.
+ * one picture per `hold` frames from `start`, and each picture's frame can
+ * then be moved on its own; the stage draws the one at the playhead, and the
+ * AI can look at them (`get_reference`). Thumbnails jump the playhead to
+ * their frame. Saved with the document, never exported.
  */
 export class ReferencePanel implements Panel {
   readonly id = "reference";
@@ -85,9 +86,19 @@ export class ReferencePanel implements Panel {
       const bmp = this.assets.get(id)?.bitmap;
       if (bmp) canvas.getContext("2d")!.drawImage(bmp as CanvasImageSource, 0, 0, tw, th);
       const frame = referenceFrameOf(ref, i);
-      const cell = h("div", { class: "ref-thumb", title: `Image ${i + 1}: frames ${frame}–${frame + ref.hold - 1}` },
-        canvas, h("div", { class: "ref-thumb-n" }, String(frame)));
-      on(cell, "pointerup", () => this.store.setFrame(frame));
+      // The badge is the picture's frame, typed or dragged to move it; the
+      // picture itself still jumps the playhead.
+      const badge = new NumberField({
+        min: 0, max: 100000, step: 1, decimals: 0,
+        onInput: (v, committing) => { if (committing) this.refs.setFrameAt(i, v); },
+      });
+      badge.set(frame);
+      const cell = h("div", { class: "ref-thumb", title: `Image ${i + 1}: from frame ${frame}` },
+        canvas, badge.el);
+      on(cell, "pointerup", (e) => {
+        if ((e.target as HTMLElement).closest(".field")) return;
+        this.store.setFrame(frame);
+      });
       strip.appendChild(cell);
       this.thumbs.push(cell);
     });
@@ -106,10 +117,10 @@ export class ReferencePanel implements Panel {
     this.body.append(
       row("Show", show, where),
       row("Opacity", opacity),
-      h("div", { class: "ref-hint" }, `${ref.frames.length} image${ref.frames.length === 1 ? "" : "s"}, ${ref.width}×${ref.height}, frames ${ref.start}–${referenceEnd(ref)}. Click one to go to its frame.`),
+      h("div", { class: "ref-hint" }, `${ref.frames.length} image${ref.frames.length === 1 ? "" : "s"}, ${ref.width}×${ref.height}, frames ${referenceFrameOf(ref, 0)}–${referenceEnd(ref)}. Click a picture to go to its frame; type its number to move it.`),
       strip,
-      row("Each image", num(ref.hold, { min: 1, max: 1000, step: 1, decimals: 0, unit: "frames" }, (v) => this.refs.update({ hold: Math.round(v) }))),
-      row("Starts at", num(ref.start, { min: 0, max: 100000, step: 1, decimals: 0, unit: "frame" }, (v) => this.refs.update({ start: Math.round(v) }))),
+      row("Each image", num(ref.hold, { min: 1, max: 1000, step: 1, decimals: 0, unit: "frames" }, (v) => this.refs.respace(ref.start, v))),
+      row("Starts at", num(ref.start, { min: 0, max: 100000, step: 1, decimals: 0, unit: "frame" }, (v) => this.refs.respace(v, ref.hold))),
       row("Position", num(ref.x, { glyph: "X", step: 1, decimals: 1 }, (v) => this.refs.update({ x: v })),
         num(ref.y, { glyph: "Y", step: 1, decimals: 1 }, (v) => this.refs.update({ y: v }))),
       row("Scale", num(ref.scale * 100, { min: 0.1, max: 100000, step: 1, decimals: 1, unit: "%" }, (v) => this.refs.update({ scale: v / 100 })), fit),

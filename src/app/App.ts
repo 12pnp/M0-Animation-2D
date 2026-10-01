@@ -156,8 +156,8 @@ export class App {
 
     this.registerPanels();
     this.shell.layoutDocks(
-      [["properties"], ["library", "outline"], ["preview", "reference"]],
-      [["timeline"]],
+      [["properties"], ["library", "outline"], ["preview"]],
+      [["timeline", "reference"]],
     );
 
     document.body.appendChild(this.toast.el);
@@ -246,9 +246,9 @@ export class App {
     this.shell.addRightPanel(new OutlinePanel(this.store));
     this.shell.addRightPanel(new HistoryPanel(this.store));
     this.shell.addRightPanel(this.preview);
-    this.shell.addRightPanel(new ReferencePanel(this.store, this.assets, this.references, (m, e) => this.toast.show(m, e)));
 
     this.shell.addBottomPanel(this.timeline);
+    this.shell.addBottomPanel(new ReferencePanel(this.store, this.assets, this.references, (m, e) => this.toast.show(m, e)));
   }
 
   /**

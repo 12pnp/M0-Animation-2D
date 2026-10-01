@@ -5,7 +5,7 @@ import type { SpineInherit } from "@/core/spine/types";
 import type { AnimId, AssetId, FolderId, IkId, ItemId, LayerId, NodeId } from "./ids";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 10;
+export const DOC_VERSION = 11;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -312,17 +312,21 @@ export interface Animation {
 
 /**
  * Reference art for one animation (`core/doc/reference.ts`): images of one
- * size, the cells of a sprite sheet or a numbered sequence, each shown for
- * `hold` frames from frame `start`, drawn on the stage for the animator and
- * shown to the AI to match. Placed in the symbol's own space: the image's
- * top-left at (x, y), `scale` symbol units per image pixel, y down as the
- * editor has it. The images live in the project file like library images.
+ * size, the cells of a sprite sheet or a numbered sequence. Image `i` is
+ * keyed to frame `at[i]` and shows until the next image's frame (the last
+ * holds `hold` frames); `start`/`hold` are the bulk spacing the panel's two
+ * fields re-apply across `at`. Drawn on the stage for the animator and shown
+ * to the AI to match. Placed in the symbol's own space: the image's top-left
+ * at (x, y), `scale` symbol units per image pixel, y down as the editor has
+ * it. The images live in the project file like library images.
  */
 export interface AnimationReference {
   frames: AssetId[];
   /** Every image's size, in pixels. */
   width: number;
   height: number;
+  /** The frame each image is keyed to, one per `frames` entry. */
+  at: number[];
   hold: number;
   start: number;
   x: number;

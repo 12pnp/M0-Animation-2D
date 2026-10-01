@@ -66,7 +66,7 @@ beforeAll(async () => {
   const { project } = await loadStickman();
   const sym = project.items[project.rootSymbolId] as SymbolItem;
   sym.animations.find((a) => a.name === "run")!.reference = {
-    frames: ["r1"] as AssetId[], width: 10, height: 20, hold: 30, start: 0, x: -5, y: -20, scale: 10,
+    frames: ["r1"] as AssetId[], width: 10, height: 20, at: [0], hold: 30, start: 0, x: -5, y: -20, scale: 10,
   };
   // The page's canvases, faked: a picture is a tag.
   const vision: AgentVision = {

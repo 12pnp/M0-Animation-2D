@@ -493,7 +493,11 @@
 .ref-thumb:hover { border-color: var(--line-soft); }
 .ref-thumb.on { border-color: var(--accent); background: rgba(var(--accent-rgb), 0.15); }
 .ref-thumb-img { display: block; height: 64px; background: repeating-conic-gradient(#555 0 25%, #444 0 50%) 0 0 / 12px 12px; }
-.ref-thumb-n { font-size: 10px; color: var(--fg-dim); }
+/* The picture's frame number: a whole field, as wide as the picture. */
+.ref-thumb .field { height: 18px; width: 100%; justify-content: center; padding: 0 2px; }
+.ref-thumb .field input { color: var(--fg-dim); font-size: 10px; text-align: center; }
+.ref-thumb .field:focus-within { box-shadow: none; border-color: var(--accent); }
+.ref-thumb .field:focus-within input { color: var(--accent-hot); }
 .modal-body.ref-sheet-dlg { gap: 12px; padding: 12px; }
 .ref-sheet-view { flex: 1 1 auto; min-width: 0; display: flex; align-items: flex-start; justify-content: center; overflow: auto; background: var(--bg-sunken); border-radius: var(--radius); padding: 4px; }
 .ref-sheet { max-width: 100%; background: repeating-conic-gradient(#555 0 25%, #444 0 50%) 0 0 / 12px 12px; }

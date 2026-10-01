@@ -200,10 +200,18 @@ export function validateProject(raw: unknown): ValidationResult {
         if (frames.length === 0) delete anim.reference;
         else {
           for (const f of frames) observeId(f);
+          const hold = clampInt(r.hold, 1, 1000, 1), start = clampInt(r.start, 0, 100000, 0);
+          // `at` is the timing's source of truth; anything malformed falls
+          // back to the even spacing the older shape describes.
+          const atRaw = Array.isArray(r.at) ? (r.at as unknown[]) : [];
+          const at = atRaw.length === frames.length
+            ? atRaw.map((v) => clampInt(v, 0, 100000, start))
+            : frames.map((_, i) => start + i * hold);
           anim.reference = {
             frames: frames as never,
             width: clampInt(r.width, 1, 16384, 1), height: clampInt(r.height, 1, 16384, 1),
-            hold: clampInt(r.hold, 1, 1000, 1), start: clampInt(r.start, 0, 100000, 0),
+            at: at as never,
+            hold, start,
             x: finite(r.x, 0), y: finite(r.y, 0), scale: Math.max(1e-4, finite(r.scale, 1)),
           };
         }
@@ -372,6 +380,11 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // 9 -> 10: `Animation.reference`, reference art saved in the file. An
   // older build would keep the field and drop its images on the next save.
   9: (p) => ({ ...p, version: 10 }),
+  // 10 -> 11: `AnimationReference.at`, the frame each picture is keyed to.
+  // Additive (the reader re-derives it from start/hold when absent), but the
+  // version moves: an older build would drop it on save and re-space the
+  // pictures evenly.
+  10: (p) => ({ ...p, version: 11 }),
 };
 
 /** A tween read from disk, or null when it is not one this build knows. */

@@ -203,7 +203,7 @@ describe("the AI's tools", () => {
     const anim = store.currentSymbol.animations.find((a) => a.name === "run")!;
     await expect(api.call("get_reference", { animation: "run" })).rejects.toThrow(/no reference/);
     store.apply(new SetAnimationReference(store.currentSymbolId, anim.id,
-      { frames: ["r1", "r2", "r3"] as AssetId[], width: 100, height: 200, hold: 4, start: 2, x: -50, y: -200, scale: 2 }));
+      { frames: ["r1", "r2", "r3"] as AssetId[], width: 100, height: 200, at: [2, 6, 10], hold: 4, start: 2, x: -50, y: -200, scale: 2 }));
 
     const rig = await api.call("get_rig") as { animations: Array<{ name: string; reference?: unknown }> };
     expect(rig.animations.find((a) => a.name === "run")!.reference).toEqual({ images: 3, frames: [2, 13] });
@@ -223,7 +223,7 @@ describe("the AI's tools", () => {
     const api = new AgentApi(store, undefined, fake.vision);
     const anim = store.currentSymbol.animations.find((a) => a.name === "run")!;
     store.apply(new SetAnimationReference(store.currentSymbolId, anim.id,
-      { frames: ["r1"] as AssetId[], width: 100, height: 200, hold: 20, start: 0, x: -50, y: -200, scale: 2 }));
+      { frames: ["r1"] as AssetId[], width: 100, height: 200, at: [0], hold: 20, start: 0, x: -50, y: -200, scale: 2 }));
 
     const out = await api.call("render_frame", { animation: "run", frame: 5 }) as {
       size: number[]; mapping: string; bones: Record<string, { origin: number[] }>; reference: string; [IMAGES_KEY]: unknown[];

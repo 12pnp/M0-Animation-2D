@@ -6,21 +6,38 @@ import type { Rect } from "@/core/math/geom";
  * cells of a sprite sheet. Pure: cutting pixels is `io/import/spriteSheet.ts`.
  */
 
-/** Which image a frame shows, or null before the first or after the last. */
+/** Which image a frame shows, or null before the first key or after the last.
+ * A picture shows from its own `at` until one keyed later takes over; the
+ * last holds `hold` frames. `at` need not ascend with the strip — the strip
+ * is storage order, the keys decide. */
 export function referenceIndexAt(ref: AnimationReference, frame: number): number | null {
-  if (ref.frames.length === 0 || frame < ref.start) return null;
-  const i = Math.floor((frame - ref.start) / ref.hold);
-  return i < ref.frames.length ? i : null;
+  let best = -1;
+  for (let k = 0; k < ref.frames.length; k++) {
+    const at = referenceFrameOf(ref, k);
+    // `>=` so a tie goes to the later picture in the strip.
+    if (at <= frame && (best < 0 || at >= referenceFrameOf(ref, best))) best = k;
+  }
+  return best >= 0 && frame <= referenceEnd(ref) ? best : null;
 }
 
 /** The first frame image `index` shows. */
 export function referenceFrameOf(ref: AnimationReference, index: number): number {
-  return ref.start + index * ref.hold;
+  return ref.at?.[index] ?? ref.start + index * ref.hold;
 }
 
-/** The last frame the reference reaches. */
+/** The last frame the reference reaches: the latest any picture plays. */
 export function referenceEnd(ref: AnimationReference): number {
-  return ref.start + ref.frames.length * ref.hold - 1;
+  if (ref.frames.length === 0) return ref.start - 1;
+  const last = ref.at?.length === ref.frames.length
+    ? Math.max(...ref.at)
+    : ref.start + (ref.frames.length - 1) * ref.hold;
+  return last + ref.hold - 1;
+}
+
+/** `at` re-spaced by the bulk fields: every image `hold` frames apart from
+ * `start` — what "Starts at" and "Each image" in the panel apply. */
+export function referenceSpacing(count: number, start: number, hold: number): number[] {
+  return Array.from({ length: count }, (_, i) => start + i * hold);
 }
 
 /** Where an image sits in the symbol's space. */

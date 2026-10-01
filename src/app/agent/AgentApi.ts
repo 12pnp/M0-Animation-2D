@@ -151,7 +151,7 @@ export class AgentApi {
       }),
       animations: s.animations.map((a) => ({
         name: a.name, frames: this.frames(a), loops: a.playTimes === 0,
-        ...(a.reference ? { reference: { images: a.reference.frames.length, frames: [a.reference.start, referenceEnd(a.reference)] } } : {}),
+        ...(a.reference ? { reference: { images: a.reference.frames.length, frames: [referenceFrameOf(a.reference, 0), referenceEnd(a.reference)] } } : {}),
       })),
       ...(skinsOf(s).some((n) => n !== "default") ? { skins: skinsOf(s).filter((n) => n !== "default") } : {}),
       showing: { animation: anim?.name ?? null, frame: this.store.ui.frame, ...(s.spine ? { skins: stageSkinOf(s) } : {}) },
@@ -314,7 +314,7 @@ export class AgentApi {
       animation: anim.name,
       images: ref.frames.length,
       size: [ref.width, ref.height],
-      timing: `image n (1-based) shows from frame ${ref.start} + (n-1)*${ref.hold} for ${ref.hold} frame(s); the reference ends at frame ${referenceEnd(ref)}`,
+      timing: `image n (1-based) is keyed at keyFrames[n-1] and holds until the next image's keyFrame; the last holds ${ref.hold} frame(s); the reference ends at frame ${referenceEnd(ref)}`,
       keyFrames: ref.frames.map((_, i) => referenceFrameOf(ref, i)),
       // Spine conventions, as get_pose reports worlds: y up.
       placement: `image pixel (u, v) from its top-left sits at x = ${round(r.x, 3)} + u*${round(ref.scale, 6)}, y = ${round(-r.y, 3)} - v*${round(ref.scale, 6)} in the skeleton's space (the space get_pose reports)`,
