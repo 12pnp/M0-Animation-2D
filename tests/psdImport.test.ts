@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { existsSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { buildPsdImport, planBounds, type PsdPlan } from "@/core/doc/psdImport";
+import { buildFlatPsdImport, buildPsdImport, planBounds, type PsdPlan } from "@/core/doc/psdImport";
 import { newAssetId } from "@/core/doc/ids";
 import { resolveAlpha } from "@/io/import/psdReader";
 import { parsePsd, type PsdRaw } from "@/io/import/psdParse";
@@ -104,6 +104,43 @@ describe("PSD import", () => {
     const g = group("g", [img("a", 10, 20, 30, 40), img("b", 5, 60, 10, 10)]);
     expect(planBounds(g)).toEqual({ x: 5, y: 20, w: 35, h: 50 });
     expect(planBounds(group("empty", []))).toBeNull();
+  });
+});
+
+describe("PSD import as layers, for rigging", () => {
+  const doc = () => [
+    img("floor", 0, 90, 100, 10),
+    group("body", [img("leg", 40, 50, 20, 40), group("top", [img("arm", 10, 20, 30, 8), img("head", 30, 0, 40, 40)])]),
+    group("hidden", [img("ghost", 0, 0)], false),
+    img("", 5, 5, 4, 4),
+  ];
+
+  it("lays every layer flat, front first, groups stacking as in Photoshop", () => {
+    const { layers } = buildFlatPsdImport(doc());
+    expect(layers.map((l) => l.node.name)).toEqual(["Layer 1", "ghost", "head", "arm", "leg", "floor"]);
+    expect(layers.every((l) => l.node.kind === "image" && l.node.parentId === null)).toBe(true);
+  });
+
+  it("keeps each layer where Photoshop had it, turning about its centre", () => {
+    const { layers, items } = buildFlatPsdImport(doc());
+    for (const name of ["arm", "head", "floor"]) {
+      const { node } = layers.find((l) => l.node.name === name)!;
+      const item = items.find((i) => i.id === node.itemId)!;
+      expect(node.pivot).toEqual({ x: item.width / 2, y: item.height / 2 });
+      // The image's top-left is the node's origin less the pivot.
+      const left = node.bind.x - node.pivot.x, top = node.bind.y - node.pivot.y;
+      expect([left, top]).toEqual(name === "arm" ? [10, 20] : name === "head" ? [30, 0] : [0, 90]);
+    }
+  });
+
+  it("hides what a hidden group holds, and names no two layers alike", () => {
+    const { layers, items, folder } = buildFlatPsdImport(doc(), (n) => n === "leg", "art");
+    expect(layers.find((l) => l.node.name === "ghost")!.visible).toBe(false);
+    expect(layers.find((l) => l.node.name === "head")!.visible).toBe(true);
+    expect(items.map((i) => i.name)).toContain("leg_2");
+    expect(new Set(items.map((i) => i.name)).size).toBe(items.length);
+    expect(items.every((i) => i.folderId === folder.id)).toBe(true);
+    expect(folder).toMatchObject({ name: "art", parentId: null });
   });
 });
 

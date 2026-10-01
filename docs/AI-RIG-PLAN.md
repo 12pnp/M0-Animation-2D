@@ -27,7 +27,7 @@ Missing:
 
 | Step | Gap |
 |---|---|
-| 1, 2 | No way to turn one flat picture into parts. PSD import exists, so a layered PSD skips this. |
+| 1, 2 | No way to turn one flat picture into parts. A layered PSD skips this: File ▸ Import PSD as Layers puts its layers in the symbol, ready to rig. |
 | 3 | The AI cannot create bones, attach images or add IK: there is no tool for it. |
 | 4 | No motion library and no retargeting; every animation is keyed from nothing. |
 

@@ -4,7 +4,7 @@ import { AddFolder } from "@/core/history/libraryCommands";
 import type { AssetStore } from "./AssetStore";
 import { phase, type ReportProgress } from "./busy";
 import { type PsdRaw, readPsdFile } from "@/io/import/psdReader";
-import { buildPsdImport, type PsdPlan } from "@/core/doc/psdImport";
+import { buildFlatPsdImport, buildPsdImport, type PsdPlan } from "@/core/doc/psdImport";
 import { AddLibraryItem, AddNode, SetDocumentSettings } from "@/core/history/commands";
 import { createLayer, createNode } from "@/core/doc/defaults";
 
@@ -22,7 +22,8 @@ export interface PsdImportOutcome {
 
 /**
  * Import a `.psd` as library items, and drop one instance of the document on
- * the stage.
+ * the stage; or, `flat`, every layer straight into the symbol being edited,
+ * ready to rig (`buildFlatPsdImport`).
  *
  * The whole thing is one undo entry. Half an imported PSD is not a state
  * anyone wants to be left in, and `Store.transaction` already gives us that
@@ -33,6 +34,7 @@ export async function importPsd(
   /** Where the document's canvas origin lands. Defaults to the symbol's own. */
   at: { x: number; y: number } = { x: 0, y: 0 },
   report: ReportProgress = () => {},
+  opts: { flat?: boolean } = {},
 ): Promise<PsdImportOutcome> {
   const doc = await readPsdFile(file, phase(report, 0, 0.85));
   const registered = phase(report, 0.85, 1);
@@ -70,11 +72,6 @@ export async function importPsd(
 
   const plan = await toPlan(doc.children);
   const taken = new Set(Object.values(store.project.items).map((i) => i.name));
-  // Its groups become library folders under one named after the file: a PSD
-  // brings dozens of items, and loose they bury the rest of the library.
-  const { items, root, folders } = buildPsdImport(
-    doc.name, plan, (name) => taken.has(name), uniqueFolderName(store.project, null, doc.name));
-
   const hostId = store.currentSymbolId;
   // A PSD is usually bigger than an 800x600 stage, and landing mostly
   // off-stage looks broken. In an empty project the document defines the
@@ -85,6 +82,39 @@ export async function importPsd(
     && store.project.itemOrder.length === 1;
   const resizeStage = empty
     && (doc.width !== store.project.stage.width || doc.height !== store.project.stage.height);
+  const folderName = uniqueFolderName(store.project, null, doc.name);
+
+  if (opts.flat) {
+    // Node names are unique in the symbol as well as in the library: the
+    // rig names its bones and slots after them.
+    const nodeNames = new Set(Object.values(store.currentSymbol.nodes).map((n) => n.name));
+    const flat = buildFlatPsdImport(plan, (name) => taken.has(name) || nodeNames.has(name), folderName);
+    store.transaction(`Import ${file.name}`, () => {
+      store.apply(new AddFolder(flat.folder));
+      for (const item of flat.items) store.apply(new AddLibraryItem(`Import ${item.name}`, item));
+      // Back to front, each on top: the front layer ends up first.
+      for (const { node, visible } of [...flat.layers].reverse()) {
+        node.bind = { ...node.bind, x: node.bind.x + at.x, y: node.bind.y + at.y };
+        const layer = createLayer(node.id, node.name, store.currentSymbol.layers.length);
+        layer.visible = visible;
+        store.apply(new AddNode(`Import ${node.name}`, hostId, node, layer, 0));
+      }
+      if (resizeStage) store.apply(new SetDocumentSettings({ width: doc.width, height: doc.height }));
+    });
+    store.selectNodes(flat.layers.map((l) => l.node.id));
+    store.emit("library");
+    store.emit("doc");
+    if (resizeStage) store.emit("stage");
+    return {
+      symbolName: store.currentSymbol.name, images, symbols: 0,
+      stage: resizeStage ? { width: doc.width, height: doc.height } : null,
+      warnings: doc.warnings, folderName,
+    };
+  }
+
+  // Its groups become library folders under one named after the file: a PSD
+  // brings dozens of items, and loose they bury the rest of the library.
+  const { items, root, folders } = buildPsdImport(doc.name, plan, (name) => taken.has(name), folderName);
   const instance = createNode("symbol", root.name, { itemId: root.id, x: at.x, y: at.y });
   const layer = createLayer(instance.id, instance.name, store.currentSymbol.layers.length);
 

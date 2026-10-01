@@ -231,8 +231,8 @@ export class LibraryPanel implements Panel {
    * on the stage — a PSD places itself (as one document symbol), so it
    * contributes nothing here even though it adds a whole tree to the library.
    */
-  async importFiles(files: File[], at?: { x: number; y: number }): Promise<ItemId[]> {
-    for (const file of files.filter(isPsd)) await this.importPsdFile(file, at);
+  async importFiles(files: File[], at?: { x: number; y: number }, psd: { flat?: boolean } = {}): Promise<ItemId[]> {
+    for (const file of files.filter(isPsd)) await this.importPsdFile(file, at, psd);
 
     const images = files.filter((f) => !isPsd(f) && f.type.startsWith("image/"));
     const added: ItemId[] = [];
@@ -257,17 +257,20 @@ export class LibraryPanel implements Panel {
     return added;
   }
 
-  private async importPsdFile(file: File, at?: { x: number; y: number }): Promise<void> {
+  private async importPsdFile(file: File, at?: { x: number; y: number }, opts: { flat?: boolean } = {}): Promise<void> {
     try {
       const result = await busy(`Importing ${file.name}`,
-        (report) => importPsd(this.store, this.assets, file, at, report));
+        (report) => importPsd(this.store, this.assets, file, at, report, opts));
       for (const w of result.warnings) console.warn(`[PSD] ${w}`);
-      const parts = [
-        `Imported ${result.symbolName}:`,
-        `${result.images} image${result.images === 1 ? "" : "s"}`,
-        `in ${result.symbols} symbol${result.symbols === 1 ? "" : "s"},`,
-        `in the folder "${result.folderName}"`,
-      ];
+      const images = `${result.images} image${result.images === 1 ? "" : "s"}`;
+      const parts = opts.flat
+        ? [`Imported ${images} as layers of ${result.symbolName},`, `in the folder "${result.folderName}"`]
+        : [
+          `Imported ${result.symbolName}:`,
+          images,
+          `in ${result.symbols} symbol${result.symbols === 1 ? "" : "s"},`,
+          `in the folder "${result.folderName}"`,
+        ];
       if (result.stage) parts.push(`· stage set to ${result.stage.width} × ${result.stage.height}`);
       if (result.warnings.length) {
         parts.push(`· ${result.warnings.length} warning(s), listed in the browser console`);

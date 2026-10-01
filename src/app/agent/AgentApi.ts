@@ -9,7 +9,7 @@ import { createKeyframe, createLayer, createNode } from "@/core/doc/defaults";
 import { ikRoles } from "@/core/doc/ikGraph";
 import { insertKeyframe, keyIndexAt, setEndFrame } from "@/core/doc/timeline";
 import { AddAnimation, EditTracks } from "@/core/history/timelineCommands";
-import { AddNode, createsCycle, SetLayerOrder, SetParent, SetStageSkins } from "@/core/history/commands";
+import { AddNode, createsCycle, SetLayerOrder, SetParent, SetPivot, SetStageSkins } from "@/core/history/commands";
 import { AddIkConstraint } from "@/core/history/ikCommands";
 import { boneFromWorld, placeOnBone, siblingOrder, type SpinePoint } from "@/core/rig/rigPlan";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
@@ -147,6 +147,18 @@ export class AgentApi {
     const s = this.sym;
     const nameOf = (id: NodeId | null | undefined) => (id ? s.nodes[id]?.name ?? null : null);
     const anim = this.store.currentAnimation;
+    const setup = posedSymbol(this.store.project, s, null, 0, "setup");
+    // Where a picture is: its pivot pixel in skeleton space, which with the
+    // size and the bone's turn is enough to read any of its pixels.
+    const picture = (n: Node) => {
+      const item = n.kind === "image" && !n.slotBone && n.itemId ? this.store.project.items[n.itemId] : undefined;
+      const m = setup.byNode.get(n.id)?.world;
+      if (!item || !isImage(item) || !m) return {};
+      return {
+        image: item.name, size: [item.width, item.height], pivot: [round(n.pivot.x, 2), round(n.pivot.y, 2)],
+        at: [round(m.tx, 2), round(-m.ty, 2)], rotation: round((Math.atan2(-m.b, m.a) * 180) / Math.PI, 2),
+      };
+    };
     return {
       name: s.name,
       fps: this.store.project.frameRate,
@@ -158,7 +170,7 @@ export class AgentApi {
         ...(n.inherit ? { inherit: n.inherit } : {}),
       })),
       slots: s.layers.map((l) => s.nodes[l.nodeId]).filter((n): n is Node => !!n && (n.kind === "image" || n.kind === "symbol"))
-        .reverse().map((n) => ({ name: n.name, bone: nameOf(n.slotBone) ?? n.name })),
+        .reverse().map((n) => ({ name: n.name, bone: nameOf(n.slotBone) ?? n.name, ...picture(n) })),
       ik: s.ik.map((k) => {
         const effector = s.nodes[k.boneId];
         const bones = k.chain > 0 && effector?.parentId ? [nameOf(effector.parentId), effector.name] : [effector?.name];
@@ -384,7 +396,7 @@ export class AgentApi {
       if (bone.kind !== "bone" && bone.kind !== "group") throw new AgentError(`"${it.bone}" is a slot, not a bone.`);
       if ((it.image === undefined) === (it.layer === undefined)) throw new AgentError(`On "${it.bone}": give either image (from the library) or layer (already in the skeleton).`);
       if (it.layer !== undefined) {
-        for (const k of ["pivot", "at", "rotation", "scale", "name"] as const) {
+        for (const k of ["at", "rotation", "scale", "name"] as const) {
           if (it[k] !== undefined) throw new AgentError(`Layer "${it.layer}": ${k} is for a new image; a layer keeps where it is.`);
         }
         const node = this.node(it.layer);
@@ -392,6 +404,11 @@ export class AgentApi {
         if (node.slotBone) throw new AgentError(`"${it.layer}" is a slot of an opened Spine rig; it already rides "${this.sym.nodes[node.slotBone]?.name}".`);
         if (createsCycle(this.sym, node.id, bone.id)) throw new AgentError(`"${it.bone}" hangs below "${it.layer}".`);
         if (ikRoles(this.sym).driven.has(node.id)) throw new AgentError(`"${it.layer}" is turned by IK; it cannot change parent.`);
+        if (it.pivot !== undefined) {
+          const [u, v] = point(it.pivot, `Layer "${it.layer}": pivot`);
+          // The artwork stays where it is; only the point it turns about moves.
+          plans.push(() => this.store.apply(new SetPivot(this.store.currentSymbolId, new Map([[node.id, { x: u, y: v }]]))));
+        }
         plans.push(() => this.store.apply(new SetParent(this.store.currentSymbolId, [node.id], bone.id, true, label)));
         continue;
       }

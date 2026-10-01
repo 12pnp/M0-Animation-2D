@@ -978,7 +978,10 @@ flowchart LR
   `add_ik` follows the IK tool: the chain by the runtime's rule, a target made at the tip under
   the chain root's parent, and it refuses a chain bone that has keys. A call is checked whole
   before its first command: a transaction keeps what it applied before a throw.
-  `render_frame` without an animation draws the setup pose.
+  `render_frame` without an animation draws the setup pose. `get_rig` gives each picture
+  slot its image, size, pivot pixel and where that pivot is in skeleton space, which is how a
+  model reads a PSD layer's joints; `attach` with `layer` and `pivot` moves the turning point
+  there without moving the artwork (`SetPivot`), then re-parents it.
 - **A wrong call is the model's to fix**: `AgentError` messages go back as tool errors
   (`isError`), saying what exists ("There is no bone "tail". get_rig lists them.").
 
@@ -1469,6 +1472,13 @@ rules live, so `tests/psdImport.test.ts` can exercise all of them).
   imported document symbol with `SceneRenderer` at identity into a 1206×1187 canvas and
   diff against `psd.imageData` (ag-psd's read of Photoshop's own composite). Currently 3
   differing pixels in 528,744 opaque ones, worst case at alpha 12.
+- **File ▸ Import PSD as Layers…** (`buildFlatPsdImport`, `importPsd(…, { flat: true })`)
+  is the import for rigging: every raster layer becomes an image layer of the symbol being
+  edited, where Photoshop had it, turning about its centre, with no group symbols. A bone can
+  only carry artwork in its own symbol, so the grouped import leaves nothing to rig without
+  editing inside each group. Groups decide only the stacking (and a hidden group hides its
+  layers); the images go in one library folder. Names are unique against the library and the
+  symbol's nodes, because bones and slots are named after them.
 - `ag-psd`, not `psd.js`: psd.js is CoffeeScript with Node-only deps (`fs`, `pngjs`,
   `iconv-lite`, a CoffeeScript compiler at runtime) and no browser entry.
 

@@ -1,7 +1,7 @@
 [
   {
     "name": "get_rig",
-    "description": "The skeleton being edited: its bones (parent, length, setup pose), slots, IK constraints, skins, animations and frame rate, and which animation, frame and skins the editor shows. Call this first. Values use Spine's conventions: x right, y UP, rotation in degrees counter-clockwise, all local to the parent bone.",
+    "description": "The skeleton being edited: its bones (parent, length, setup pose), slots (a picture's slot also gives its image, size in pixels, pivot pixel, and where that pivot is in skeleton space with its world rotation: pixel (u, v) of an unturned picture is at at + (u - pivot[0], pivot[1] - v)), IK constraints, the library's pictures, skins, animations and frame rate, and which animation, frame and skins the editor shows. Call this first. Values use Spine's conventions: x right, y UP, rotation in degrees counter-clockwise, all local to the parent bone.",
     "input_schema": { "type": "object", "properties": {}, "additionalProperties": false }
   },
   {
@@ -210,7 +210,7 @@
   },
   {
     "name": "attach",
-    "description": "Put pictures on bones, all in ONE undoable step: each becomes a slot that moves with its bone. `image` names a library picture (get_rig lists them with their sizes) and adds it; `layer` names artwork already in the skeleton (a slot get_rig lists) and moves it onto the bone, staying where it is. For an image, `pivot` is the pixel of the picture (from its top-left) that turns with the bone, usually the joint, and `at` is where that pixel goes in skeleton space (default: the bone's joint); `rotation` turns the picture counter-clockwise in the world (default 0: upright, as drawn). A new picture draws in front of what the bone already holds; draw_order changes that.",
+    "description": "Put pictures on bones, all in ONE undoable step: each becomes a slot that moves with its bone. `image` names a library picture (get_rig lists them with their sizes) and adds it; `layer` names artwork already in the skeleton (a slot get_rig lists, e.g. from File ▸ Import PSD as Layers) and moves it onto the bone, staying where it is. `pivot` is the pixel of the picture (from its top-left) it turns about, usually the joint: for a layer it moves only that point, not the artwork. For an image, `at` is where the pivot pixel goes in skeleton space (default: the bone's joint); `rotation` turns the picture counter-clockwise in the world (default 0: upright, as drawn). A new picture draws in front of what the bone already holds; draw_order changes that.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -223,7 +223,7 @@
               "image": { "type": "string", "description": "A library picture to add." },
               "layer": { "type": "string", "description": "Artwork already in the skeleton, to move onto the bone." },
               "name": { "type": "string", "description": "The new slot's name (default: the image's)." },
-              "pivot": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "[u, v] in the picture's pixels from its top-left (default its centre)." },
+              "pivot": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "[u, v] in the picture's pixels from its top-left (a new image: default its centre; a layer: default unchanged)." },
               "at": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "[x, y] in skeleton space (default the bone's joint)." },
               "rotation": { "type": "number" },
               "scale": { "type": "number", "exclusiveMinimum": 0 }

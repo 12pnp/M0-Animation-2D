@@ -971,15 +971,17 @@ export class App {
     input.click();
   }
 
-  /** File ▸ Import PSD… — the same path as dropping one on the Library. */
-  private pickPsd(): void {
+  /** File ▸ Import PSD… — the same path as dropping one on the Library.
+   *  `flat` (Import PSD as Layers…): every layer into the symbol being
+   *  edited, for rigging, instead of one symbol per group. */
+  private pickPsd(flat = false): void {
     const input = h("input", { type: "file", accept: ".psd,image/vnd.adobe.photoshop" });
     input.style.display = "none";
     document.body.appendChild(input);
     on(input, "change", () => {
       const file = input.files?.[0];
       input.remove();
-      if (file) void this.library.importFiles([file]);
+      if (file) void this.library.importFiles([file], undefined, { flat });
     });
     input.click();
   }
@@ -1105,6 +1107,7 @@ export class App {
           "-",
           it("file.importImages"),
           it("file.importPsd"),
+          it("file.importPsdLayers"),
           it("file.export"),
           it("file.exportFolder"),
           it("file.exportSettings"),
@@ -1306,6 +1309,7 @@ export class App {
     reg("file.saveAs", () => void this.project.saveAs());
     reg("file.importImages", () => this.shell.showPanel("library"));
     reg("file.importPsd", () => this.pickPsd());
+    reg("file.importPsdLayers", () => this.pickPsd(true));
     reg("file.openSpine", () => this.pickSpine());
     reg("ai.connect", () => this.toggleAgent(), undefined, () => this.agentBridge.state !== "off");
     reg("ai.ask", () => { this.shell.setAiOpen(true); this.aiPanel.focus(); });

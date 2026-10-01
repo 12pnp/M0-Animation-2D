@@ -9,7 +9,9 @@ import { exportSpine, spineJson } from "@/core/spine/exportSpine";
 import { atlasText } from "@/core/spine/atlas";
 import { isImage, type Node, type Project, type SymbolItem } from "@/core/doc/types";
 import type { NodeId } from "@/core/doc/ids";
-import { createAnimation } from "@/core/doc/defaults";
+import { createAnimation, createLayer } from "@/core/doc/defaults";
+import { buildFlatPsdImport } from "@/core/doc/psdImport";
+import { AddLibraryItem, AddNode } from "@/core/history/commands";
 import { posedSymbol } from "@/core/spine/spinePose";
 import { apply } from "@/core/math/Matrix2D";
 import { pt } from "@/core/math/geom";
@@ -399,5 +401,43 @@ describe("rigging through the AI's tools", () => {
     await api.call("new_animation", { name: "w", frames: 4 });
     await api.call("set_keys", { animation: "w", keys: [{ bone: "leg", frame: 2, rotation: 10 }] });
     await expect(api.call("add_ik", { bone: "leg" })).rejects.toThrow(/"leg" has keys in "w"/);
+  });
+});
+
+describe("rigging a PSD imported as layers", () => {
+  /** A blank root holding `head` and `thigh` as layers, as File ▸ Import PSD
+   *  as Layers leaves them: at canvas places, turning about their centres. */
+  async function layered() {
+    const { project } = await loadStickman();
+    const empty = structuredClone(project);
+    Object.assign(empty.items[empty.rootSymbolId] as SymbolItem, { nodes: {}, layers: [], ik: [], animations: [createAnimation()] });
+    const store = new Store(empty);
+    const byName = (n: string) => Object.values(empty.items).find((i) => i.name === n && isImage(i))!;
+    const plan = buildFlatPsdImport([
+      { kind: "image", name: "thigh", x: 300, y: 200, width: 100, height: 28, assetId: (byName("thigh") as { assetId: AssetId }).assetId, visible: true },
+      { kind: "image", name: "head", x: 270, y: 100, width: 61, height: 58, assetId: (byName("head") as { assetId: AssetId }).assetId, visible: true },
+    ], (n) => n === "thigh" || n === "head");
+    store.transaction("Import", () => {
+      for (const item of plan.items) store.apply(new AddLibraryItem("Import", item));
+      for (const { node } of [...plan.layers].reverse()) store.apply(new AddNode("Import", store.currentSymbolId, node, createLayer(node.id, node.name, 0), 0));
+    });
+    return { store, api: new AgentApi(store) };
+  }
+  type Slot = { name: string; image?: string; size?: number[]; pivot: number[]; at: number[]; rotation: number };
+
+  it("says where each layer's pixels are, and moving its pivot onto a bone leaves it in place", async () => {
+    const { api } = await layered();
+    const rig = await api.call("get_rig") as { slots: Slot[] };
+    const thigh = rig.slots.find((s) => s.name === "thigh_2")!;
+    expect(thigh).toMatchObject({ image: "thigh_2", size: [100, 28], pivot: [50, 14], at: [350, -214], rotation: 0 });
+    // The joint is the picture's left end: pixel (0, 14), at x = 350 - 50.
+    await api.call("add_bones", { bones: [{ name: "leg", from: [300, -214], to: [400, -214] }] });
+    await api.call("attach", { items: [{ bone: "leg", layer: "thigh_2", pivot: [0, 14] }] });
+    const after = (await api.call("get_rig") as { slots: Slot[] }).slots.find((s) => s.name === "thigh_2")!;
+    expect(after).toMatchObject({ pivot: [0, 14], at: [300, -214], rotation: 0 });
+    await api.call("new_animation", { name: "lift", frames: 4 });
+    await api.call("set_keys", { animation: "lift", keys: [{ bone: "leg", frame: 2, rotation: 90 }] });
+    const lifted = (await api.call("get_pose", { animation: "lift", frame: 2 }) as { bones: Record<string, { x: number; y: number; rotation: number }> }).bones.thigh_2!;
+    expect(lifted).toMatchObject({ x: 300, y: -214, rotation: 90 });
   });
 });

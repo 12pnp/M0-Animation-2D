@@ -1,5 +1,5 @@
 import { type AssetId, type FolderId, newFolderId } from "./ids";
-import type { BlendMode, Layer, LibraryFolder, LibraryItem, Node, SymbolItem } from "./types";
+import type { BlendMode, ImageItem, Layer, LibraryFolder, LibraryItem, Node, SymbolItem } from "./types";
 import { createImageItem, createLayer, createNode, createSymbol } from "./defaults";
 
 /**
@@ -168,4 +168,56 @@ export function buildPsdImport(
   const root = build(documentName, children, 0, 0, folder(folderName, null));
   items.push(root);
   return { items, root, folders };
+}
+
+export interface FlatPsdImport {
+  /** One per raster layer, all in `folder`. */
+  items: ImageItem[];
+  folder: LibraryFolder;
+  /** Image nodes at canvas coordinates, FRONT first, with their visibility
+   *  (a hidden group hides what is in it). */
+  layers: Array<{ node: Node; visible: boolean }>;
+}
+
+/**
+ * A PSD laid flat, for rigging: every raster layer an image layer of the
+ * symbol being edited, where Photoshop had it, with no group symbols around
+ * it — bones can only carry artwork that is in their own symbol. Groups only
+ * decide the stacking, as in Photoshop. The transform point is the layer's
+ * centre; `attach` moves it to the joint.
+ */
+export function buildFlatPsdImport(
+  children: PsdPlan[],
+  isNameTaken: (name: string) => boolean = () => false,
+  folderName = "PSD",
+): FlatPsdImport {
+  const folder: LibraryFolder = { id: newFolderId(), name: folderName, parentId: null };
+  const items: ImageItem[] = [];
+  const layers: FlatPsdImport["layers"] = [];
+  const claimed = new Set<string>();
+  const unique = (base: string): string => {
+    const stem = base.trim() || "Layer";
+    for (let i = 1; ; i++) {
+      const name = i === 1 ? stem : `${stem}_${i}`;
+      if (!claimed.has(name) && !isNameTaken(name)) { claimed.add(name); return name; }
+    }
+  };
+  let unnamed = 0;
+  const walk = (kids: PsdPlan[], visible: boolean): void => {
+    // Front first: Photoshop's last child is the front one.
+    for (const child of [...kids].reverse()) {
+      if (child.kind === "group") { walk(child.children, visible && child.visible); continue; }
+      const item = createImageItem(unique(child.name.trim() || `Layer ${++unnamed}`), child.assetId, child.width, child.height);
+      item.folderId = folder.id;
+      items.push(item);
+      const node = createNode("image", item.name, {
+        itemId: item.id, x: child.x + child.width / 2, y: child.y + child.height / 2,
+        pivotX: child.width / 2, pivotY: child.height / 2,
+      });
+      if (child.blendMode && child.blendMode !== "normal") node.blendMode = child.blendMode;
+      layers.push({ node, visible: visible && child.visible });
+    }
+  };
+  walk(children, true);
+  return { items, folder, layers };
 }
