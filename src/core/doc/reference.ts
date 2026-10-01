@@ -40,6 +40,19 @@ export function referenceEnd(ref: AnimationReference): number {
   return last + ref.hold - 1;
 }
 
+/**
+ * The frame the reference shows `seconds` into playing it on a loop at
+ * `fps` × `speed`: from its first picture's frame to the last frame it
+ * reaches (`referenceEnd`), then round again. The panel's preview player.
+ */
+export function referencePlayFrame(ref: AnimationReference, seconds: number, fps: number, speed = 1): number {
+  const first = Math.min(...ref.frames.map((_, i) => referenceFrameOf(ref, i)));
+  const span = referenceEnd(ref) - first + 1;
+  if (!(span > 0) || !(fps > 0)) return first;
+  const n = Math.floor(Math.max(0, seconds) * fps * speed + 1e-9);
+  return first + (n % span);
+}
+
 /** `at` re-spaced by the bulk fields: every image `hold` frames apart from
  * `start` — what "Starts at" and "Each image" in the panel apply. */
 export function referenceSpacing(count: number, start: number, hold: number): number[] {

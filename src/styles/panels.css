@@ -479,6 +479,10 @@
 .ref-body { display: flex; flex-direction: column; gap: 8px; padding: 8px; }
 .ref-empty { display: flex; flex-direction: column; gap: 8px; padding: 8px 2px; color: var(--fg); }
 .ref-hint { color: var(--fg-dim); font-size: 11px; line-height: 1.4; }
+.ref-preview { display: flex; flex-direction: column; gap: 4px; user-select: none; }
+.ref-preview-canvas { display: block; width: 100%; height: 180px; border-radius: var(--radius); background: repeating-conic-gradient(#555 0 25%, #444 0 50%) 0 0 / 12px 12px; }
+.ref-preview-bar { display: flex; align-items: center; gap: 6px; }
+.ref-preview-label { color: var(--fg-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
 .ref-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .ref-actions .spacer { flex: 1 1 auto; }
 .ref-row { display: flex; align-items: center; gap: 6px; }

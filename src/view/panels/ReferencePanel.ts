@@ -5,7 +5,10 @@ import type { Panel } from "@/view/widgets/Dock";
 import { Modal } from "@/view/widgets/Modal";
 import { NumberField } from "@/view/widgets/NumberField";
 import { clear, h, on } from "@/view/widgets/dom";
-import { referenceEnd, referenceFrameOf, referenceIndexAt, sheetCells } from "@/core/doc/reference";
+import { referenceEnd, referenceFrameOf, referenceIndexAt, referencePlayFrame, sheetCells } from "@/core/doc/reference";
+import type { AnimationReference } from "@/core/doc/types";
+
+const SPEEDS = [0.25, 0.5, 1, 2];
 
 /**
  * The Reference panel: pictures to animate against, for the animation being
@@ -13,7 +16,9 @@ import { referenceEnd, referenceFrameOf, referenceIndexAt, sheetCells } from "@/
  * one picture per `hold` frames from `start`, and each picture's frame can
  * then be moved on its own; the stage draws the one at the playhead, and the
  * AI can look at them (`get_reference`). Thumbnails jump the playhead to
- * their frame. Saved with the document, never exported.
+ * their frame. A preview plays the pictures on a loop at the document's
+ * frame rate (`referencePlayFrame`), or shows the one at the playhead while
+ * paused. Saved with the document, never exported.
  */
 export class ReferencePanel implements Panel {
   readonly id = "reference";
@@ -23,6 +28,15 @@ export class ReferencePanel implements Panel {
   private readonly body: HTMLElement;
   private thumbs: HTMLElement[] = [];
   private builtFor: unknown = null;
+  /** The preview player. Its state outlives a rebuild of the panel: the
+   *  loop restarts on the new canvas. */
+  private preview: { canvas: HTMLCanvasElement; label: HTMLElement; button: HTMLButtonElement } | null = null;
+  private playing = false;
+  private speed = 1;
+  private raf = 0;
+  /** performance.now() when the shown loop began. */
+  private clock = 0;
+  private shownIndex: number | null = null;
 
   constructor(
     private readonly store: Store,
@@ -50,6 +64,10 @@ export class ReferencePanel implements Panel {
     const key = [anim?.id, ref, this.store.ui.mode];
     if (!force && this.builtFor && JSON.stringify(key) === JSON.stringify(this.builtFor)) { this.syncCurrent(); return; }
     this.builtFor = key;
+    cancelAnimationFrame(this.raf);
+    this.raf = 0;
+    this.preview = null;
+    this.shownIndex = null;
     clear(this.body);
     this.thumbs = [];
     if (!anim) { this.body.append(h("div", { class: "ref-empty" }, "No animation.")); return; }
@@ -60,6 +78,7 @@ export class ReferencePanel implements Panel {
     on(addImages, "pointerup", () => this.pickImages());
 
     if (!ref) {
+      this.playing = false;
       this.body.append(h("div", { class: "ref-empty" },
         h("div", {}, `No reference for “${anim.name}”.`),
         h("div", { class: "ref-hint" }, "Add a sprite sheet or a run of images to animate against, frame by frame. The AI can look at it too."),
@@ -115,6 +134,7 @@ export class ReferencePanel implements Panel {
 
     const row = (label: string, ...els: Array<HTMLElement | string>) => h("div", { class: "ref-row" }, h("span", { class: "ref-label" }, label), ...els);
     this.body.append(
+      this.buildPreview(),
       row("Show", show, where),
       row("Opacity", opacity),
       h("div", { class: "ref-hint" }, `${ref.frames.length} image${ref.frames.length === 1 ? "" : "s"}, ${ref.width}×${ref.height}, frames ${referenceFrameOf(ref, 0)}–${referenceEnd(ref)}. Click a picture to go to its frame; type its number to move it.`),
@@ -130,14 +150,118 @@ export class ReferencePanel implements Panel {
     addSheet.textContent = "Replace with sheet…";
     addImages.textContent = "Replace with images…";
     this.syncCurrent();
+    if (this.playing) this.loop(); else this.showAtPlayhead();
+  }
+
+  private buildPreview(): HTMLElement {
+    const canvas = h("canvas", { class: "ref-preview-canvas" }) as HTMLCanvasElement;
+    // Acts on pointerup, and only its label changes, never the element:
+    // ARCHITECTURE ▸ A DOM trap that has bitten twice.
+    const button = h("button", { class: "btn" }, this.playing ? "Pause" : "Play") as HTMLButtonElement;
+    on(button, "pointerup", () => this.setPlaying(!this.playing));
+    const speed = h("select", { title: "Playback speed" },
+      ...SPEEDS.map((v) => h("option", { value: String(v) }, `${v}×`))) as HTMLSelectElement;
+    speed.value = String(this.speed);
+    on(speed, "change", () => {
+      // Keep the frame on screen: restart the clock from it at the new speed.
+      const frame = this.playFrame();
+      this.speed = Number(speed.value);
+      if (frame !== null) this.startClockAt(frame);
+    });
+    const label = h("span", { class: "ref-preview-label" });
+    this.preview = { canvas, label, button };
+    return h("div", { class: "ref-preview" }, canvas, h("div", { class: "ref-preview-bar" }, button, speed, label));
+  }
+
+  private setPlaying(playing: boolean): void {
+    if (playing === this.playing) return;
+    this.playing = playing;
+    if (this.preview) this.preview.button.textContent = playing ? "Pause" : "Play";
+    if (playing) {
+      // From the playhead's picture when the playhead is on the reference.
+      const ref = this.store.currentAnimation?.reference;
+      const f = this.store.ui.frame;
+      this.startClockAt(ref && referenceIndexAt(ref, f) !== null ? f : null);
+      this.loop();
+    } else {
+      cancelAnimationFrame(this.raf);
+      this.raf = 0;
+      this.showAtPlayhead();
+    }
+  }
+
+  /** Set the clock so playback is at reference frame `frame` now (null: its first frame). */
+  private startClockAt(frame: number | null): void {
+    const ref = this.store.currentAnimation?.reference;
+    const fps = this.store.project.frameRate;
+    const first = ref ? referencePlayFrame(ref, 0, fps) : 0;
+    this.clock = performance.now() - (frame === null ? 0 : ((frame - first) / (fps * this.speed)) * 1000);
+  }
+
+  private playFrame(): number | null {
+    const ref = this.store.currentAnimation?.reference;
+    if (!ref || !this.playing) return null;
+    return referencePlayFrame(ref, (performance.now() - this.clock) / 1000, this.store.project.frameRate, this.speed);
+  }
+
+  private loop(): void {
+    cancelAnimationFrame(this.raf);
+    const tick = () => {
+      const canvas = this.preview?.canvas;
+      // A hidden tab stops the loop; onShow rebuilds and restarts it.
+      if (!canvas || !canvas.isConnected || canvas.offsetParent === null) { this.raf = 0; return; }
+      const frame = this.playFrame();
+      if (frame !== null) this.draw(frame, true);
+      this.raf = requestAnimationFrame(tick);
+    };
+    this.raf = requestAnimationFrame(tick);
+  }
+
+  private showAtPlayhead(): void {
+    if (!this.playing) this.draw(this.store.ui.frame, false);
+  }
+
+  /** The picture at reference frame `frame`, fitted into the preview. */
+  private draw(frame: number, playing: boolean): void {
+    const ref: AnimationReference | undefined = this.store.currentAnimation?.reference;
+    const p = this.preview;
+    if (!ref || !p) return;
+    const index = referenceIndexAt(ref, frame);
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(1, Math.round(p.canvas.clientWidth * dpr)), hgt = Math.max(1, Math.round(p.canvas.clientHeight * dpr));
+    if (p.canvas.width !== w || p.canvas.height !== hgt) { p.canvas.width = w; p.canvas.height = hgt; }
+    const ctx = p.canvas.getContext("2d")!;
+    ctx.clearRect(0, 0, w, hgt);
+    const bmp = index === null ? undefined : this.assets.get(ref.frames[index]!)?.bitmap;
+    if (bmp) {
+      const s = Math.min(w / ref.width, hgt / ref.height);
+      const dw = ref.width * s, dh = ref.height * s;
+      ctx.drawImage(bmp as CanvasImageSource, (w - dw) / 2, (hgt - dh) / 2, dw, dh);
+    }
+    p.label.textContent = index === null
+      ? `Frame ${frame}: no picture`
+      : `Frame ${frame} · picture ${index + 1} of ${ref.frames.length}`;
+    // While playing, light the picture's thumbnail without scrolling the strip under the user.
+    if (playing && index !== this.shownIndex) this.thumbs.forEach((t, i) => t.classList.toggle("on", i === index));
+    this.shownIndex = index;
   }
 
   /** The thumbnail the playhead is on. */
   private syncCurrent(): void {
+    if (this.playing) return;
+    this.showAtPlayhead();
     const ref = this.store.currentAnimation?.reference;
     const at = ref ? referenceIndexAt(ref, this.store.ui.frame) : null;
     this.thumbs.forEach((t, i) => t.classList.toggle("on", i === at));
-    if (at !== null) this.thumbs[at]?.scrollIntoView({ block: "nearest", inline: "nearest" });
+    // Scroll the strip alone: scrollIntoView would scroll the panel too and
+    // take the preview off screen whenever the playhead moved.
+    const cell = at === null ? undefined : this.thumbs[at];
+    const strip = cell?.parentElement;
+    if (cell && strip) {
+      const left = cell.offsetLeft - strip.offsetLeft, right = left + cell.offsetWidth;
+      if (left < strip.scrollLeft) strip.scrollLeft = left;
+      else if (right > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = right - strip.clientWidth;
+    }
   }
 
   private pick(multiple: boolean, then: (files: File[]) => void): void {

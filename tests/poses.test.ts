@@ -6,7 +6,7 @@ import { migrate, validateProject } from "@/core/doc/schema";
 import { Store } from "@/app/Store";
 import { PosesService } from "@/app/PosesService";
 import { posePrompt } from "@/app/agent/poseHandoff";
-import { referenceStarts } from "@/core/doc/reference";
+import { referenceIndexAt, referencePlayFrame, referenceStarts } from "@/core/doc/reference";
 import type { AnimationReference } from "@/core/doc/types";
 
 beforeEach(() => reseed());
@@ -109,3 +109,24 @@ describe("referenceStarts", () => {
   });
 });
 
+
+describe("referencePlayFrame", () => {
+  // Four pictures from frame 2, three frames each: frames 2–13.
+  const ref = { frames: ["a", "b", "c", "d"], width: 1, height: 1, start: 2, hold: 3, x: 0, y: 0, scale: 1 } as unknown as AnimationReference;
+  it.each([
+    [0, 24, 1, 2], [1 / 24, 24, 1, 3], [11 / 24, 24, 1, 13], [12 / 24, 24, 1, 2], [13 / 24, 24, 1, 3],
+    [1, 12, 1, 2], [0.5, 24, 2, 2], [0.25, 24, 0.5, 5], [-1, 24, 1, 2],
+  ])("at %ss, %d fps, ×%d: frame %d", (seconds, fps, speed, frame) => {
+    expect(referencePlayFrame(ref, seconds, fps, speed)).toBe(frame);
+  });
+  it("shows every picture in turn, each for its hold, wrapping after the last", () => {
+    const shown = Array.from({ length: 14 }, (_, i) => referenceIndexAt(ref, referencePlayFrame(ref, i / 24, 24)));
+    expect(shown).toEqual([0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 3, 3, 0, 0]);
+  });
+  it("loops over the pictures' own frames when they were moved apart", () => {
+    const moved = { ...ref, at: [10, 0, 20, 5] } as AnimationReference;
+    // Frames 0–22: 23 frames round.
+    expect(referencePlayFrame(moved, 22 / 24, 24)).toBe(22);
+    expect(referencePlayFrame(moved, 23 / 24, 24)).toBe(0);
+  });
+});

@@ -1051,6 +1051,16 @@ scaled to at most 1024 px and saved in the project file with the library images
 (`serializeProject` keeps what `referenceAssets` lists); nothing reaches the export.
 Document version 10. `tests/reference.test.ts` and the project round trip cover it.
 
+The panel's **preview** plays the pictures on a loop at the document's frame rate (¼× to 2×),
+from its first picture's frame to `referenceEnd` (`referencePlayFrame`, pure), so a sheet can
+be watched before it is animated against; paused, it shows the picture at the playhead. Its
+state lives on the panel, not the DOM: the panel rebuilds on every document change and the
+loop restarts on the new canvas; a hidden tab stops the loop (its canvas has no
+`offsetParent`) and `onShow` restarts it. Time comes from the clock, not from counting
+animation frames, so a throttled pane stays on time. The thumbnail under the playhead is
+scrolled into view inside the strip only: `scrollIntoView` also scrolled the panel, and took
+the preview off screen whenever the playhead moved.
+
 **Poses** (`Animation.poses`, `view/panels/PosesPanel.ts`, `app/PosesService.ts`) are frames
 marked as key poses, one undo step per change: the playhead's frame, every keyed frame, or
 "From reference", the frame each reference picture starts on (`referenceStarts`). A pose
