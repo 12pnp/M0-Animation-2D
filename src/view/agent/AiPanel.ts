@@ -1,6 +1,6 @@
 import { h, on } from "@/view/widgets/dom";
 import type { AgentBridge } from "@/app/agent/AgentBridge";
-import { statusStrip } from "./AskAiDialog";
+import { statusDot } from "./AskAiDialog";
 
 /**
  * The AI panel beside the stage (AI ▸ Show AI Panel, the stage bar's AI
@@ -26,7 +26,7 @@ export class AiPanel {
   private sender: ((text: string, pictures: Picture[]) => Promise<void>) | null = null;
 
   constructor(private readonly bridge: AgentBridge, toggleConnection: () => void, close: () => void) {
-    const strip = statusStrip(bridge, toggleConnection);
+    const status = statusDot(bridge, toggleConnection);
     const log = h("div", { class: "ai-log" });
     const input = h("textarea", { class: "ai-input", placeholder: "Ask the AI to animate the open rig…  (⌘↩ to send)", rows: "4" }) as HTMLTextAreaElement;
     this.input = input;
@@ -49,9 +49,8 @@ export class AiPanel {
     on(closeBtn, "pointerup", close);
 
     this.el = h("div", { class: "ai-panel" },
-      h("div", { class: "ai-panel-head" }, h("span", { class: "ai-panel-title" }, "Ask AI"), h("div", { class: "spacer" }), reset, closeBtn),
+      h("div", { class: "ai-panel-head" }, h("span", { class: "ai-panel-title" }, "Ask AI"), status.el, h("div", { class: "spacer" }), reset, closeBtn),
       h("div", { class: "ai-panel-body" },
-        strip.el,
         log,
         pending,
         h("div", { class: "ai-compose" }, input, h("div", { class: "ai-compose-btns" }, send, attach)),

@@ -15,13 +15,12 @@ function bridgePath(): string {
   return typeof __BRIDGE_PATH__ === "string" && __BRIDGE_PATH__ ? __BRIDGE_PATH__ : "<path to Amino-Spine2D-Src>/mcp/amino-bridge.mjs";
 }
 
-/** A connection strip: a light, what it means, and the button that changes it. */
-export function statusStrip(bridge: AgentBridge, toggle: () => void): { el: HTMLElement; dispose: () => void } {
+/** The status, in the parts every home for it shows: the dot's colour, the
+ *  sentence that explains it, and the button that changes it. */
+function statusParts(bridge: AgentBridge): { dot: HTMLElement; text: HTMLElement; btn: HTMLButtonElement; dispose: () => void } {
   const dot = h("span", { class: "ai-dot" });
   const text = h("span", { class: "ai-status-text" });
   const btn = h("button", { class: "btn" }) as HTMLButtonElement;
-  const el = h("div", { class: "ai-status" }, dot, text, h("div", { class: "spacer" }), btn);
-  on(btn, "pointerup", toggle);
   let asked = 0;
   const sync = (state: BridgeState) => {
     dot.dataset.state = state === "connected" ? (bridge.chatReady ? "ready" : "mcp") : state;
@@ -38,7 +37,31 @@ export function statusStrip(bridge: AgentBridge, toggle: () => void): { el: HTML
     }
   };
   sync(bridge.state);
-  return { el, dispose: bridge.onState((s) => sync(s)) };
+  return { dot, text, btn, dispose: bridge.onState((s) => sync(s)) };
+}
+
+/** A connection strip: a light, what it means, and the button that changes it. */
+export function statusStrip(bridge: AgentBridge, toggle: () => void): { el: HTMLElement; dispose: () => void } {
+  const { dot, text, btn, dispose } = statusParts(bridge);
+  on(btn, "pointerup", toggle);
+  return { el: h("div", { class: "ai-status" }, dot, text, h("div", { class: "spacer" }), btn), dispose };
+}
+
+/** Just the dot, for a panel header: click it for the status as a popup —
+ *  the sentence and the connect button, closed by clicking anywhere else. */
+export function statusDot(bridge: AgentBridge, toggle: () => void): { el: HTMLElement; dispose: () => void } {
+  const { dot, text, btn, dispose } = statusParts(bridge);
+  const pop = h("div", { class: "ai-dot-pop" }, text, h("div", { class: "ai-dot-pop-row" }, btn));
+  const el = h("button", { class: "ai-dot-btn", title: "Connection status — click for details" }, dot) as HTMLButtonElement;
+  const closeAway = (e: Event) => {
+    const t = e.target as Node;
+    if (!pop.contains(t) && !el.contains(t)) pop.classList.remove("open");
+  };
+  on(el, "pointerup", () => pop.classList.toggle("open"));
+  on(pop, "pointerup", (e) => e.stopPropagation());
+  on(btn, "pointerup", () => { toggle(); pop.classList.remove("open"); });
+  on(document, "pointerup", closeAway);
+  return { el: h("span", { class: "ai-dot-wrap" }, el, pop), dispose };
 }
 
 /** AI ▸ Connecting AI…: how to start the bridge and point a model at it. */

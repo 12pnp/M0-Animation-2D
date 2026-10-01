@@ -456,6 +456,20 @@
 .ai-dot[data-state="ready"] { background: #3fbf5f; }
 @keyframes ai-pulse { 50% { opacity: 0.35; } }
 
+/* The panel header's dot: the whole status hidden behind a click. */
+.ai-dot-wrap { position: relative; display: inline-flex; }
+.ai-dot-btn { display: inline-flex; align-items: center; padding: 4px 2px; border: none; background: none; cursor: pointer; }
+.ai-dot-pop {
+  display: none; position: absolute; top: calc(100% + 2px); left: -8px; z-index: 30;
+  flex-direction: column; gap: 8px;
+  min-width: 250px; max-width: 330px; padding: 8px 10px;
+  background: var(--bg-panel); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.4);
+}
+.ai-dot-pop.open { display: flex; }
+.ai-dot-pop .ai-status-text { font-size: var(--fs-sm); }
+.ai-dot-pop-row { display: flex; justify-content: flex-end; }
+
 .ai-log {
   flex: 1 1 auto; min-height: 200px; overflow: auto;
   display: flex; flex-direction: column; gap: 10px;
