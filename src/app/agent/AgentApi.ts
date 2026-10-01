@@ -60,9 +60,14 @@ export interface AgentVision {
   /** One reference image, its longer side at most `maxSide` pixels. */
   image(assetId: AssetId, maxSide: number): Promise<AgentImage>;
   /** The symbol at a frame as the stage draws it, through `view`, over its
-   *  reference image when `reference` is set, with `bones` marked and named. */
-  render(req: { symbol: SymbolItem; animation: Animation; frame: number; view: ImageFrame; reference: boolean; bones: BoneMark[] }): Promise<AgentImage>;
+   *  reference image when `reference` is set, with `bones` marked and named.
+   *  `artwork: false` leaves the pictures out and shows only the bones. */
+  render(req: { symbol: SymbolItem; animation: Animation; frame: number; view: ImageFrame; reference: boolean; bones: BoneMark[]; artwork?: boolean }): Promise<AgentImage>;
 }
+
+/** How a pose is captured (`renderPoses`): the bones alone, the artwork
+ *  alone, or one over the other. */
+export type PoseStyle = "bones" | "artwork" | "both";
 
 /** Longest side of a rendered frame and of a reference image, in pixels:
  *  enough to see a pose, few enough tokens to look at many. */
@@ -169,7 +174,8 @@ export class AgentApi {
         return { frame: k.frame, ...spine(toSpineLocal(k.transform)), ease: easeName(k.tween), ...(own ? { eases: own } : {}) };
       });
     }
-    return { name: anim.name, frames: this.frames(anim), loops: anim.playTimes === 0, fps: this.store.project.frameRate, bones };
+    return { name: anim.name, frames: this.frames(anim), loops: anim.playTimes === 0, fps: this.store.project.frameRate, bones,
+      ...(anim.poses?.length ? { poses: [...anim.poses], note: "poses: the user's key-pose frames, already keyed — keep them as they are" } : {}) };
   }
 
   private getPose(args: Args) {
@@ -327,8 +333,37 @@ export class AgentApi {
    *  every bone drawn and named; and where each bone lands in the picture. */
   private async renderFrame(animName: string, frame: number, withReference: boolean, withBones: boolean) {
     const anim = this.animation(animName);
-    const sym = this.sym;
-    const pose = posedSymbol(this.store.project, sym, anim, frame, "animate");
+    const { boxes, bones } = this.frameView(anim, frame);
+    // Framed on what is drawn: helper bones far from the artwork (an aim
+    // target, a crosshair) would shrink the body to a corner. A rig that
+    // draws nothing is framed on its bones.
+    if (boxes.length === 0) for (const b of bones) boxes.push({ x: Math.min(b.from[0], b.to[0]), y: Math.min(b.from[1], b.to[1]), w: Math.abs(b.to[0] - b.from[0]) || 1e-3, h: Math.abs(b.to[1] - b.from[1]) || 1e-3 });
+    const ref = withReference && anim.reference && referenceIndexAt(anim.reference, frame) !== null ? anim.reference : undefined;
+    if (ref) boxes.push(referenceRect(ref));
+    const view = imageFrame(boxes, RENDER_SIDE);
+    const marks: BoneMark[] = bones.map((b) => ({ name: b.name, from: view.toPixel(...b.from), to: view.toPixel(...b.to) }));
+    const inside = (p: [number, number]) => p[0] >= 0 && p[1] >= 0 && p[0] <= view.width && p[1] <= view.height;
+    const image = await this.needVision().render({ symbol: this.sym, animation: anim, frame, view, reference: !!ref, bones: withBones ? marks : [] });
+    const [lx, ly] = view.fromPixel(0, 0);
+    return {
+      animation: anim.name, frame,
+      size: [view.width, view.height],
+      reference: ref ? `image ${referenceIndexAt(ref, frame)! + 1} behind the skeleton, half transparent` : "none",
+      // Pixel (px, py) from the top-left of the picture, in the skeleton's
+      // space as get_pose reports it (y up).
+      mapping: `x = ${round(lx, 3)} + px/${round(view.scale, 6)}, y = ${round(-ly, 3)} - py/${round(view.scale, 6)}`,
+      bones: Object.fromEntries(marks.map((m) => [m.name, {
+        origin: m.from.map((v) => round(v, 1)), tip: m.to.map((v) => round(v, 1)), ...(inside(m.from) ? {} : { outside: true }),
+      }])),
+      note: "Names that would overlap are left off the picture; every bone is listed here. Bones marked outside are beyond the picture's edges.",
+      [IMAGES_KEY]: [image],
+    };
+  }
+
+  /** The pose at `frame`: what it draws (the framing boxes) and every bone
+   *  as a line, in the symbol's own space. */
+  private frameView(anim: Animation, frame: number): { boxes: Rect[]; bones: Array<{ name: string; from: [number, number]; to: [number, number] }> } {
+    const pose = posedSymbol(this.store.project, this.sym, anim, frame, "animate");
     const when: FrameContext = { animationName: anim.name, frame, mode: "animate" };
     const boxes: Rect[] = [];
     for (const e of pose.entries) {
@@ -345,30 +380,33 @@ export class AgentApi {
       const tip = apply(pt(), m, n.boneLength ?? 0, 0);
       return { name: n.name, from: [m.tx, m.ty] as [number, number], to: [tip.x, tip.y] as [number, number] };
     }).filter((b): b is NonNullable<typeof b> => !!b);
-    // Framed on what is drawn: helper bones far from the artwork (an aim
-    // target, a crosshair) would shrink the body to a corner. A rig that
-    // draws nothing is framed on its bones.
-    if (boxes.length === 0) for (const b of bones) boxes.push({ x: Math.min(b.from[0], b.to[0]), y: Math.min(b.from[1], b.to[1]), w: Math.abs(b.to[0] - b.from[0]) || 1e-3, h: Math.abs(b.to[1] - b.from[1]) || 1e-3 });
-    const ref = withReference && anim.reference && referenceIndexAt(anim.reference, frame) !== null ? anim.reference : undefined;
-    if (ref) boxes.push(referenceRect(ref));
+    return { boxes, bones };
+  }
+
+  /** Frames rendered in ONE shared framing, so the pictures compare —
+   *  per-frame framing would zoom each pose to itself. Not an AI tool: the
+   *  Poses panel's thumbnails and its Ask AI handoff. `each` sees every
+   *  picture as it is done — a strip shows itself progressively. */
+  async renderPoses(animName: string, frames: number[], style: PoseStyle = "both", each?: (image: AgentImage, index: number) => void): Promise<AgentImage[]> {
+    const anim = this.animation(animName);
+    const views = frames.map((f) => this.frameView(anim, f));
+    const boxes = views.flatMap((v) => v.boxes);
+    if (boxes.length === 0) for (const v of views) for (const b of v.bones) {
+      boxes.push({ x: Math.min(b.from[0], b.to[0]), y: Math.min(b.from[1], b.to[1]), w: Math.abs(b.to[0] - b.from[0]) || 1e-3, h: Math.abs(b.to[1] - b.from[1]) || 1e-3 });
+    }
     const view = imageFrame(boxes, RENDER_SIDE);
-    const marks: BoneMark[] = bones.map((b) => ({ name: b.name, from: view.toPixel(...b.from), to: view.toPixel(...b.to) }));
-    const inside = (p: [number, number]) => p[0] >= 0 && p[1] >= 0 && p[0] <= view.width && p[1] <= view.height;
-    const image = await this.needVision().render({ symbol: sym, animation: anim, frame, view, reference: !!ref, bones: withBones ? marks : [] });
-    const [lx, ly] = view.fromPixel(0, 0);
-    return {
-      animation: anim.name, frame,
-      size: [view.width, view.height],
-      reference: ref ? `image ${referenceIndexAt(ref, frame)! + 1} behind the skeleton, half transparent` : "none",
-      // Pixel (px, py) from the top-left of the picture, in the skeleton's
-      // space as get_pose reports it (y up).
-      mapping: `x = ${round(lx, 3)} + px/${round(view.scale, 6)}, y = ${round(-ly, 3)} - py/${round(view.scale, 6)}`,
-      bones: Object.fromEntries(marks.map((m) => [m.name, {
-        origin: m.from.map((v) => round(v, 1)), tip: m.to.map((v) => round(v, 1)), ...(inside(m.from) ? {} : { outside: true }),
-      }])),
-      note: "Names that would overlap are left off the picture; every bone is listed here. Bones marked outside are beyond the picture's edges.",
-      [IMAGES_KEY]: [image],
-    };
+    const images: AgentImage[] = [];
+    for (let i = 0; i < frames.length; i++) {
+      const marks = views[i]!.bones.map((b) => ({ name: b.name, from: view.toPixel(...b.from), to: view.toPixel(...b.to) }));
+      const image = await this.needVision().render({
+        symbol: this.sym, animation: anim, frame: frames[i]!, view, reference: false,
+        bones: style === "artwork" ? [] : marks,
+        artwork: style !== "bones",
+      });
+      images.push(image);
+      each?.(image, i);
+    }
+    return images;
   }
 
   private needVision(): AgentVision {

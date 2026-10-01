@@ -18,6 +18,8 @@ import { OutlinePanel } from "@/view/panels/OutlinePanel";
 import { HistoryPanel } from "@/view/panels/HistoryPanel";
 import { ReferencePanel } from "@/view/panels/ReferencePanel";
 import { ReferenceService } from "./ReferenceService";
+import { PosesService } from "./PosesService";
+import { PosesPanel } from "@/view/panels/PosesPanel";
 import { PreviewPanel } from "@/view/panels/PreviewPanel";
 import { AgentApi } from "@/app/agent/AgentApi";
 import { AgentBridge, DEFAULT_BRIDGE } from "@/app/agent/AgentBridge";
@@ -100,6 +102,7 @@ export class App {
   readonly agent: AgentApi;
   readonly agentBridge: AgentBridge;
   readonly references: ReferenceService;
+  readonly poses: PosesService;
   private readonly aiPanel: AiPanel;
   /** The "unsaved work was found" bar, while it is on screen. */
   private recoveryBar: HTMLElement | null = null;
@@ -130,6 +133,7 @@ export class App {
     );
     this.previewSession = new PreviewSession(this.store, this.assets, (err) => this.previewBuilt(err));
     this.references = new ReferenceService(this.store, this.assets);
+    this.poses = new PosesService(this.store);
     this.agent = new AgentApi(this.store, new HiddenPreviewProbe(this.store, this.assets), new PageVision(this.store, this.assets));
     // `?agent=5191` talks to a bridge on another port (AMINO_BRIDGE_PORT),
     // e.g. beside one another tool already runs.
@@ -157,7 +161,7 @@ export class App {
     this.registerPanels();
     this.shell.layoutDocks(
       [["properties"], ["library", "outline"], ["preview"]],
-      [["timeline", "reference"]],
+      [["timeline", "reference", "poses"]],
     );
 
     document.body.appendChild(this.toast.el);
@@ -249,6 +253,11 @@ export class App {
 
     this.shell.addBottomPanel(this.timeline);
     this.shell.addBottomPanel(new ReferencePanel(this.store, this.assets, this.references, (m, e) => this.toast.show(m, e)));
+    this.shell.addBottomPanel(new PosesPanel(
+      this.store, this.agent, this.poses,
+      (text, pictures) => { this.shell.setAiOpen(true); this.aiPanel.ask(text, pictures); },
+      (m, e) => this.toast.show(m, e),
+    ));
   }
 
   /**

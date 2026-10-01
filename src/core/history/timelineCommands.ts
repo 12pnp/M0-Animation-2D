@@ -341,3 +341,33 @@ export class SetAnimationReference implements Command {
     else delete anim.reference;
   }
 }
+
+/** The animation's key-pose frames (the Poses panel), set whole in one step. */
+export class SetAnimationPoses implements Command {
+  readonly kind = "anim.poses";
+  readonly touches: TouchSet;
+  private before: number[] | undefined;
+  private captured = false;
+
+  constructor(
+    private readonly symbolId: ItemId, private readonly animId: AnimId,
+    private readonly next: number[] | undefined, readonly label = "Change Poses",
+  ) {
+    this.touches = { symbols: [symbolId], timeline: true, stage: true };
+  }
+
+  apply(p: Project): void {
+    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
+    if (!anim) return;
+    if (!this.captured) { this.before = anim.poses; this.captured = true; }
+    if (this.next && this.next.length) anim.poses = [...this.next];
+    else delete anim.poses;
+  }
+
+  revert(p: Project): void {
+    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
+    if (!anim) return;
+    if (this.before && this.before.length) anim.poses = [...this.before];
+    else delete anim.poses;
+  }
+}

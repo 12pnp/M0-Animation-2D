@@ -216,6 +216,12 @@ export function validateProject(raw: unknown): ValidationResult {
           };
         }
       }
+      if (anim.poses !== undefined) {
+        const raw = Array.isArray(anim.poses) ? anim.poses : [];
+        const poses = [...new Set(raw.map((f) => clampInt(f, 0, 100000, 0)))].sort((a, b) => a - b);
+        if (poses.length) (anim as { poses?: number[] }).poses = poses;
+        else delete anim.poses;
+      }
       for (const [nodeId, track] of Object.entries(anim.tracks)) {
         if (!item.nodes[nodeId as never] || !track?.keys?.length) {
           delete anim.tracks[nodeId as never];
@@ -385,6 +391,9 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // version moves: an older build would drop it on save and re-space the
   // pictures evenly.
   10: (p) => ({ ...p, version: 11 }),
+  // 11 -> 12: `Animation.poses`, the user's key-pose frames. Additive; an
+  // older build would drop the list on save without saying so.
+  11: (p) => ({ ...p, version: 12 }),
 };
 
 /** A tween read from disk, or null when it is not one this build knows. */

@@ -22,6 +22,8 @@ export class AiPanel {
   readonly el: HTMLElement;
   private readonly input: HTMLTextAreaElement;
   private conversation: unknown[] = [];
+  /** The constructor-built send, for `ask`. */
+  private sender: ((text: string, pictures: Picture[]) => Promise<void>) | null = null;
 
   constructor(private readonly bridge: AgentBridge, toggleConnection: () => void, close: () => void) {
     const strip = statusStrip(bridge, toggleConnection);
@@ -84,16 +86,11 @@ export class AiPanel {
       if (!bridge.chatReady) return "The bridge has no API key: start it with ANTHROPIC_API_KEY or GLM_API_KEY set, or use Claude Code over MCP instead.";
       return "";
     };
-    const go = async () => {
-      const text = input.value.trim();
-      if ((!text && attached.length === 0) || send.disabled) return;
+    const send2 = async (text: string, pics: Picture[]): Promise<void> => {
+      if ((!text && pics.length === 0) || send.disabled) return;
       const why = problem();
       if (why) { say("note", why); return; }
-      const pics = attached;
       say("you", text, pics);
-      input.value = "";
-      attached = [];
-      showPending();
       send.disabled = true;
       const working = say("note", "Working… the stage updates as the AI edits.");
       working.classList.add("ai-working");
@@ -116,6 +113,16 @@ export class AiPanel {
         input.focus();
       }
     };
+    this.sender = send2;
+    const go = async () => {
+      const text = input.value.trim();
+      if ((!text && attached.length === 0) || send.disabled) return;
+      const pics = attached;
+      input.value = "";
+      attached = [];
+      showPending();
+      await send2(text, pics);
+    };
     on(send, "pointerup", () => void go());
     on(input, "keydown", (e) => {
       const k = e as unknown as KeyboardEvent;
@@ -125,10 +132,16 @@ export class AiPanel {
   }
 
   focus(): void { this.input.focus(); }
+
+  /** A message composed elsewhere in the editor — the Poses panel's handoff —
+   *  sent as if the user typed it. */
+  ask(text: string, pictures: Picture[]): void {
+    void this.sender?.(text, pictures);
+  }
 }
 
 /** A picture in the conversation, base64. */
-interface Picture { mimeType: string; data: string }
+export interface Picture { mimeType: string; data: string }
 
 function thumb(p: Picture): HTMLElement {
   const img = h("img", { class: "ai-pic", src: `data:${p.mimeType};base64,${p.data}`, alt: "" }) as HTMLImageElement;

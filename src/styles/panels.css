@@ -503,3 +503,30 @@
 .ref-sheet { max-width: 100%; background: repeating-conic-gradient(#555 0 25%, #444 0 50%) 0 0 / 12px 12px; }
 .ref-sheet-fields { flex: none; width: 220px; display: flex; flex-direction: column; gap: 8px; }
 .ref-sheet-fields .ref-label { width: 96px; }
+
+/* ── Poses ─────────────────────────────────────────────────────────────── */
+.pose-body { display: flex; flex-direction: column; gap: 8px; padding: 8px; overflow-y: auto; }
+.pose-empty { display: grid; place-items: center; gap: 8px; min-height: 80px; color: var(--fg-dim); text-align: center; }
+.pose-hint { color: var(--fg-dim); }
+.pose-actions { display: flex; gap: 6px; align-items: center; }
+.pose-actions .spacer { flex: 1 1 auto; }
+.pose-label { flex: none; color: var(--fg-dim); }
+.pose-strip {
+  display: flex; gap: 4px; overflow-x: auto; padding: 4px;
+  background: var(--bg-sunken); border: 1px solid var(--line-soft); border-radius: var(--radius);
+}
+.pose-thumb { position: relative; flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 2px; border: 1px solid transparent; border-radius: var(--radius); cursor: pointer; }
+.pose-thumb:hover { border-color: var(--line-soft); }
+.pose-thumb.on { border-color: var(--accent); background: rgba(var(--accent-rgb), 0.15); }
+.pose-thumb-img { display: block; height: 72px; background: var(--bg-sunken); }
+.pose-thumb .field { height: 18px; width: 100%; justify-content: center; padding: 0 2px; }
+.pose-thumb .field input { color: var(--fg-dim); font-size: 10px; text-align: center; }
+.pose-thumb .field:focus-within { box-shadow: none; border-color: var(--accent); }
+.pose-thumb .field:focus-within input { color: var(--accent-hot); }
+.pose-x {
+  position: absolute; top: -1px; right: -1px; display: none;
+  width: 14px; height: 14px; padding: 0; line-height: 1;
+  font-size: 11px; border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--bg-panel); color: var(--fg-dim); cursor: pointer;
+}
+.pose-thumb:hover .pose-x { display: block; }

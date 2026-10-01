@@ -47,7 +47,7 @@ export class PageVision implements AgentVision {
     // where they overlap, which is where the comparison is.
     const over = req.reference && !!req.animation.reference;
     if (over) drawReference(ctx, m, req.animation.reference!, req.frame, this.assets, 1);
-    this.renderer.draw(ctx, req.symbol, req.animation, req.frame, "animate", m, over ? { alpha: 0.55 } : {});
+    if (req.artwork !== false) this.renderer.draw(ctx, req.symbol, req.animation, req.frame, "animate", m, over ? { alpha: 0.55 } : {});
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     drawBones(ctx, req.bones, view.width, view.height);
     return encode(canvas);

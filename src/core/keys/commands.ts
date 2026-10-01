@@ -39,6 +39,7 @@ export const PANEL_COMMANDS = [
   { id: "history", label: "History" },
   { id: "preview", label: "Preview" },
   { id: "reference", label: "Reference" },
+  { id: "poses", label: "Poses" },
   { id: "timeline", label: "Timeline" },
 ] as const;
 

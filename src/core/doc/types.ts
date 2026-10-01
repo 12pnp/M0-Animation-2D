@@ -5,7 +5,7 @@ import type { SpineInherit } from "@/core/spine/types";
 import type { AnimId, AssetId, FolderId, IkId, ItemId, LayerId, NodeId } from "./ids";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 11;
+export const DOC_VERSION = 12;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -308,6 +308,10 @@ export interface Animation {
   spine?: Record<string, unknown>;
   /** Pictures to animate against, frame by frame. Never exported. */
   reference?: AnimationReference;
+  /** The frames the user marked as this animation's key poses, sorted and
+   *  unique: the Poses panel's list, which the AI animates between. Never
+   *  exported. */
+  poses?: number[];
 }
 
 /**
