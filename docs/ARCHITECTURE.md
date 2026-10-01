@@ -1051,6 +1051,18 @@ scaled to at most 1024 px and saved in the project file with the library images
 (`serializeProject` keeps what `referenceAssets` lists); nothing reaches the export.
 Document version 10. `tests/reference.test.ts` and the project round trip cover it.
 
+**Poses** (`Animation.poses`, `view/panels/PosesPanel.ts`, `app/PosesService.ts`) are frames
+marked as key poses, one undo step per change: the playhead's frame, every keyed frame, or
+"From reference", the frame each reference picture starts on (`referenceStarts`). A pose
+need not be keyed: one marked from the reference on a new animation is not, and the panel
+says so (the count in its hint, the frame number italic in a dashed box). With "Reference" on,
+every pose is drawn see-through over the reference picture at its frame, in one framing that
+holds the reference whole (`renderPoses(…, withReference)`): the thumbnails, the export and
+the pictures "Ask AI to fill in" sends. That prompt (`posePrompt`, pure) knows which poses
+have keys: the AI poses the unkeyed ones from the reference first, keeps the keyed ones as
+they are, then animates between them. `tests/poses.test.ts` covers the prompt and the
+frames; the agent test covers the framing.
+
 `tests/agentApi.test.ts` runs the tools on the stickman and plays the export in spine-core;
 it also rebuilds the stickman from its library pictures through the rigging tools, compares
 rig and poses with the original on every third frame of `run` and `dance`, and plays the

@@ -257,6 +257,27 @@ describe("the AI's tools", () => {
     expect(fake.renders[1]).toMatchObject({ reference: false, bones: [] });
     await expect(new AgentApi(store).call("render_frame", { animation: "run", frame: 0 })).rejects.toBeInstanceOf(AgentError);
   });
+
+  it("render poses over the reference where it has a picture, framed to hold it whole", async () => {
+    const { store } = await setup();
+    const fake = fakeVision();
+    const api = new AgentApi(store, undefined, fake.vision);
+    const anim = store.currentSymbol.animations.find((a) => a.name === "run")!;
+    // A tall reference far to the right of the rig, from frame 4 to 11.
+    store.apply(new SetAnimationReference(store.currentSymbolId, anim.id,
+      { frames: ["r1", "r2"] as AssetId[], width: 100, height: 400, at: [4, 8], hold: 4, start: 4, x: 900, y: -100, scale: 2 }));
+    await api.renderPoses("run", [0, 4, 8], "both");
+    const plain = fake.renders.splice(0);
+    expect(plain.map((r) => r.reference)).toEqual([false, false, false]);
+    await api.renderPoses("run", [0, 4, 8], "both", undefined, true);
+    const over = fake.renders.splice(0);
+    expect(over.map((r) => r.reference)).toEqual([false, true, true]);
+    // Framed on the rig and the 200 × 800 reference together: the picture got
+    // wider to hold both, so the rig shrinks in it.
+    expect(over[0]!.width / over[0]!.height).toBeGreaterThan(plain[0]!.width / plain[0]!.height);
+    const span = (r: typeof over[0]) => Math.max(...r!.bones.map((b) => b.from[0])) - Math.min(...r!.bones.map((b) => b.from[0]));
+    expect(span(over[0])).toBeLessThan(span(plain[0]));
+  });
 });
 
 /** The stickman's library, and a root symbol with nothing in it. */

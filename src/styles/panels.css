@@ -508,7 +508,8 @@
 .pose-body { display: flex; flex-direction: column; gap: 8px; padding: 8px; overflow-y: auto; }
 .pose-empty { display: grid; place-items: center; gap: 8px; min-height: 80px; color: var(--fg-dim); text-align: center; }
 .pose-hint { color: var(--fg-dim); }
-.pose-actions { display: flex; gap: 6px; align-items: center; }
+.pose-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pose-check { display: flex; align-items: center; gap: 4px; color: var(--fg-dim); cursor: pointer; }
 .pose-actions .spacer { flex: 1 1 auto; }
 .pose-label { flex: none; color: var(--fg-dim); }
 .pose-strip {
@@ -518,6 +519,9 @@
 .pose-thumb { position: relative; flex: none; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 2px; border: 1px solid transparent; border-radius: var(--radius); cursor: pointer; }
 .pose-thumb:hover { border-color: var(--line-soft); }
 .pose-thumb.on { border-color: var(--accent); background: rgba(var(--accent-rgb), 0.15); }
+/* A pose marked but not keyed: the AI keys it first. */
+.pose-thumb.unkeyed .field input { font-style: italic; }
+.pose-thumb.unkeyed .field { border-style: dashed; }
 .pose-thumb-img { display: block; height: 72px; background: var(--bg-sunken); }
 .pose-thumb .field { height: 18px; width: 100%; justify-content: center; padding: 0 2px; }
 .pose-thumb .field input { color: var(--fg-dim); font-size: 10px; text-align: center; }

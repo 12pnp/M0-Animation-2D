@@ -790,19 +790,27 @@ export class AgentApi {
    *  per-frame framing would zoom each pose to itself. Not an AI tool: the
    *  Poses panel's thumbnails and its Ask AI handoff. `each` sees every
    *  picture as it is done — a strip shows itself progressively. */
-  async renderPoses(animName: string, frames: number[], style: PoseStyle = "both", each?: (image: AgentImage, index: number) => void): Promise<AgentImage[]> {
+  async renderPoses(
+    animName: string, frames: number[], style: PoseStyle = "both", each?: (image: AgentImage, index: number) => void,
+    /** Each pose over the reference picture at its frame, when there is one. */
+    withReference = false,
+  ): Promise<AgentImage[]> {
     const anim = this.animation(animName);
     const views = frames.map((f) => this.frameView(anim, f));
     const boxes = views.flatMap((v) => v.boxes);
     if (boxes.length === 0) for (const v of views) for (const b of v.bones) {
       boxes.push({ x: Math.min(b.from[0], b.to[0]), y: Math.min(b.from[1], b.to[1]), w: Math.abs(b.to[0] - b.from[0]) || 1e-3, h: Math.abs(b.to[1] - b.from[1]) || 1e-3 });
     }
+    const ref = withReference ? anim.reference : undefined;
+    const over = frames.map((f) => !!ref && referenceIndexAt(ref, f) !== null);
+    // The reference in the shared framing too, or a pose drawn over it would crop it.
+    if (ref && over.some(Boolean)) boxes.push(referenceRect(ref));
     const view = imageFrame(boxes, RENDER_SIDE);
     const images: AgentImage[] = [];
     for (let i = 0; i < frames.length; i++) {
       const marks = views[i]!.bones.map((b) => mark(b, view));
       const image = await this.needVision().render({
-        symbol: this.sym, animation: anim, frame: frames[i]!, view, reference: false,
+        symbol: this.sym, animation: anim, frame: frames[i]!, view, reference: over[i]!,
         bones: style === "artwork" ? [] : marks,
         artwork: style !== "bones",
       });

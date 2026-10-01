@@ -25,6 +25,12 @@ export function referenceFrameOf(ref: AnimationReference, index: number): number
   return ref.at?.[index] ?? ref.start + index * ref.hold;
 }
 
+/** The frames the reference's pictures start on, in time order: the key
+ *  drawings, as the Poses panel's "From reference" marks them. */
+export function referenceStarts(ref: AnimationReference): number[] {
+  return [...new Set(ref.frames.map((_, i) => referenceFrameOf(ref, i)))].sort((a, b) => a - b);
+}
+
 /** The last frame the reference reaches: the latest any picture plays. */
 export function referenceEnd(ref: AnimationReference): number {
   if (ref.frames.length === 0) return ref.start - 1;

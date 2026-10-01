@@ -6,6 +6,8 @@ import { migrate, validateProject } from "@/core/doc/schema";
 import { Store } from "@/app/Store";
 import { PosesService } from "@/app/PosesService";
 import { posePrompt } from "@/app/agent/poseHandoff";
+import { referenceStarts } from "@/core/doc/reference";
+import type { AnimationReference } from "@/core/doc/types";
 
 beforeEach(() => reseed());
 
@@ -75,7 +77,8 @@ describe("the handoff prompt", () => {
     expect(text).toContain("picture 1 = frame 1, picture 2 = frame 10");
     expect(text).toContain("1 to 10, 10 to 20");
     expect(text).toContain("Only the first 2 are attached");
-    expect(text).toContain("Keep the pose frames' keys exactly as they are");
+    expect(text).toContain("Keep the keys at frames 1, 10, 20 exactly as they are");
+    expect(text).not.toContain("no keys yet");
   });
 
   it("says nothing of a cap when every pose rides along", () => {
@@ -84,7 +87,25 @@ describe("the handoff prompt", () => {
 
   it("mentions the bones only when the pictures carry them", () => {
     expect(posePrompt("idle", 24, [0, 12], 2)).toContain("bones drawn and named");
-    expect(posePrompt("idle", 24, [0, 12], 2, false)).not.toContain("bones");
+    expect(posePrompt("idle", 24, [0, 12], 2, { withBones: false })).not.toContain("bones");
+  });
+
+  it("asks for the poses not keyed yet first, from the reference when the pictures carry it", () => {
+    const fromRef = posePrompt("run", 24, [0, 4, 8], 3, { overReference: true, keyed: [0] });
+    expect(fromRef).toContain("see-through over the reference picture");
+    expect(fromRef).toContain("Frames 4, 8 have no keys yet: first pose the rig at each to match the reference picture");
+    expect(fromRef).toContain("Keep the keys at frame 0 exactly");
+    const none = posePrompt("run", 24, [0, 4], 2, { keyed: [] });
+    expect(none).toContain("Frames 0, 4 have no keys yet: key a pose at each");
+    expect(none).not.toContain("Keep the keys");
+  });
+});
+
+describe("referenceStarts", () => {
+  it("lists the frames the pictures start on, in time order, once each", () => {
+    const ref = { frames: ["a", "b", "c", "d"], width: 1, height: 1, start: 2, hold: 3, x: 0, y: 0, scale: 1 } as unknown as AnimationReference;
+    expect(referenceStarts(ref)).toEqual([2, 5, 8, 11]);
+    expect(referenceStarts({ ...ref, at: [9, 0, 9, 4] })).toEqual([0, 4, 9]);
   });
 });
 
