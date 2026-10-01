@@ -944,7 +944,8 @@ flowchart LR
 
 - **Tools** (`src/app/agent/tools.json`, shared by the page and the bridge): `get_rig`,
   `get_animation`, `get_pose`, `new_animation`, `set_keys`, `delete_keys`, `show`, `undo`,
-  `redo`, `check_preview`, `get_reference`, `render_frame`. Values are Spine's: y up, degrees counter-clockwise, local to
+  `redo`, `check_preview`, `get_reference`, `render_frame`, and for rigging `add_bones`,
+  `attach`, `add_ik`, `draw_order`. Values are Spine's: y up, degrees counter-clockwise, local to
   the parent bone, absolute. A model knows them better than the editor's Flash
   conventions, and `toSpineLocal` / `fromSpineLocal` convert exactly.
 - **Every call that edits is one history step** labelled "AI: …". `set_keys` for many
@@ -967,6 +968,17 @@ flowchart LR
   panel left of the stage (`view/agent/AiPanel.ts`, in `Shell.aiWrap`), not a dialog, so the
   stage stays live beside it: the stage bar's AI button, AI ▸ Show AI Panel (⌘⇧L) or Ask AI…
   opens it, its right edge drags its width, and both are remembered (`animo.sizes`).
+- **Rigging takes positions in skeleton space** (y up, what `get_pose` and `render_frame`
+  report): a bone as its joint and tip, a picture as the pixel that turns with the bone (its
+  pivot), where that pixel goes, and its world rotation (0 = upright, as drawn). That is what a
+  model reads off a picture; `core/rig/rigPlan.ts` turns it into a setup pose local to the
+  parent (`boneFromWorld`, `placeOnBone`, against the parent's setup world as the runtime poses
+  it), and `siblingOrder` plans `draw_order`. Draw order follows the tree (ARCHITECTURE ▸
+  Layers, z-order and groups), so the model orders a bone's children, not slots one by one.
+  `add_ik` follows the IK tool: the chain by the runtime's rule, a target made at the tip under
+  the chain root's parent, and it refuses a chain bone that has keys. A call is checked whole
+  before its first command: a transaction keeps what it applied before a throw.
+  `render_frame` without an animation draws the setup pose.
 - **A wrong call is the model's to fix**: `AgentError` messages go back as tool errors
   (`isError`), saying what exists ("There is no bone "tail". get_rig lists them.").
 
@@ -999,7 +1011,10 @@ scaled to at most 1024 px and saved in the project file with the library images
 (`serializeProject` keeps what `referenceAssets` lists); nothing reaches the export.
 Document version 10. `tests/reference.test.ts` and the project round trip cover it.
 
-`tests/agentApi.test.ts` runs the tools on the stickman and plays the export in spine-core.
+`tests/agentApi.test.ts` runs the tools on the stickman and plays the export in spine-core;
+it also rebuilds the stickman from its library pictures through the rigging tools, compares
+rig and poses with the original on every third frame of `run` and `dance`, and plays the
+rebuilt export in spine-core. `tests/rigPlan.test.ts` holds the placement table.
 `tests/agentBridge.test.ts` runs the bridge as Claude Code would, with a page that polls
 and fake model APIs (Anthropic Messages for Claude, chat completions for GLM).
 

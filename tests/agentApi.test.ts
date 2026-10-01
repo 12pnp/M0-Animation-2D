@@ -7,7 +7,12 @@ import type { AssetId } from "@/core/doc/ids";
 import { SetAnimationReference } from "@/core/history/timelineCommands";
 import { exportSpine, spineJson } from "@/core/spine/exportSpine";
 import { atlasText } from "@/core/spine/atlas";
-import { isImage } from "@/core/doc/types";
+import { isImage, type Node, type Project, type SymbolItem } from "@/core/doc/types";
+import type { NodeId } from "@/core/doc/ids";
+import { createAnimation } from "@/core/doc/defaults";
+import { posedSymbol } from "@/core/spine/spinePose";
+import { apply } from "@/core/math/Matrix2D";
+import { pt } from "@/core/math/geom";
 import { loadStickman } from "./fixtures/stickman";
 import { importSpine } from "@/core/spine/importSpine";
 import { imagesOf, sampleRigs } from "./fixtures/spineSamples";
@@ -48,7 +53,7 @@ describe("the AI's tools", () => {
   it("are described once, with a schema each", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
-      "get_reference", "render_frame",
+      "get_reference", "render_frame", "add_bones", "attach", "add_ik", "draw_order",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -245,5 +250,154 @@ describe("the AI's tools", () => {
     await api.call("render_frame", { animation: "run", frame: 30, bones: false });
     expect(fake.renders[1]).toMatchObject({ reference: false, bones: [] });
     await expect(new AgentApi(store).call("render_frame", { animation: "run", frame: 0 })).rejects.toBeInstanceOf(AgentError);
+  });
+});
+
+describe("rigging through the AI's tools", () => {
+  type Pose = { bones: Record<string, { x: number; y: number; rotation: number; scaleX: number; scaleY: number }> };
+  type Rig = { bones: Array<{ name: string; parent: string | null; length?: number }>; slots: unknown[]; ik: unknown[]; images: Array<{ name: string; width: number; height: number }> };
+
+  /** The stickman's library, and a root symbol with nothing in it. */
+  async function blank() {
+    const { project } = await loadStickman();
+    const original = new Store(project);
+    const empty = structuredClone(project);
+    Object.assign(empty.items[empty.rootSymbolId] as SymbolItem, { nodes: {}, layers: [], ik: [], animations: [createAnimation()] });
+    const store = new Store(empty);
+    return { original, store, api: new AgentApi(store) };
+  }
+
+  /** The calls a model would make to rebuild `sym` from its pictures, read
+   *  off its setup pose in skeleton space. */
+  function rebuildCalls(project: Project, sym: SymbolItem): Array<[string, Record<string, unknown>]> {
+    const setup = posedSymbol(project, sym, null, 0, "setup");
+    const world = (n: Node) => setup.byNode.get(n.id)!.world;
+    const nameOf = (id: NodeId | null) => (id ? sym.nodes[id]!.name : undefined);
+    const rows = sym.layers.map((l) => sym.nodes[l.nodeId]!);
+    const calls: Array<[string, Record<string, unknown>]> = [];
+    calls.push(["add_bones", { bones: rows.filter((n) => n.kind === "bone").map((n) => {
+      const w = world(n), tip = apply(pt(), w, n.boneLength!, 0);
+      return { name: n.name, ...(n.parentId ? { parent: nameOf(n.parentId) } : {}), from: [w.tx, -w.ty], to: [tip.x, -tip.y] };
+    }) }]);
+    calls.push(["attach", { items: rows.filter((n) => n.kind === "image").map((n) => {
+      const w = world(n), item = project.items[n.itemId!]!;
+      return { bone: nameOf(n.parentId), image: item.name, name: n.name, pivot: [n.pivot.x, n.pivot.y], at: [w.tx, -w.ty], rotation: (Math.atan2(-w.b, w.a) * 180) / Math.PI };
+    }) }]);
+    for (const parent of [null, ...rows.map((n) => n.id)]) {
+      const children = rows.filter((n) => n.parentId === parent).map((n) => n.name);
+      if (children.length > 1) calls.push(["draw_order", { ...(parent ? { parent: nameOf(parent) } : {}), front: children }]);
+    }
+    for (const k of sym.ik) calls.push(["add_ik", { bone: nameOf(k.boneId), target: nameOf(k.targetId), name: k.name, bendPositive: k.bendPositive, mix: k.weight }]);
+    return calls;
+  }
+
+  const worstApart = (a: Pose, b: Pose) => {
+    expect(Object.keys(b.bones).sort()).toEqual(Object.keys(a.bones).sort());
+    let worst = 0;
+    for (const [name, p] of Object.entries(a.bones)) {
+      const q = b.bones[name]!;
+      worst = Math.max(worst, Math.hypot(p.x - q.x, p.y - q.y), Math.abs(((p.rotation - q.rotation + 540) % 360) - 180), Math.abs(p.scaleX - q.scaleX), Math.abs(p.scaleY - q.scaleY));
+    }
+    return worst;
+  };
+
+  it("rebuild the stickman from its pictures: same rig, same setup pose, one undo step a call", async () => {
+    const { original, store, api } = await blank();
+    const calls = rebuildCalls(original.project, original.currentSymbol);
+    for (const [tool, args] of calls) {
+      const before = store.history.position;
+      await api.call(tool, args);
+      expect(store.history.position).toBe(before + 1);
+      expect(store.history.undoLabel).toMatch(/^AI: /);
+    }
+    const a = await new AgentApi(original).call("get_rig") as Rig, b = await api.call("get_rig") as Rig;
+    expect(b.bones.map(({ name, parent }) => ({ name, parent }))).toEqual(a.bones.map(({ name, parent }) => ({ name, parent })));
+    expect(b.slots).toEqual(a.slots);
+    expect(b.ik).toEqual(a.ik);
+    expect(b.images.map((i) => i.name)).toContain("head");
+    expect(worstApart(await new AgentApi(original).call("get_pose") as Pose, await api.call("get_pose") as Pose)).toBeLessThan(0.02);
+
+    // Each call takes back whole.
+    for (let i = calls.length; i > 0; i--) store.undo();
+    expect(Object.keys(store.currentSymbol.nodes)).toEqual([]);
+    expect(store.currentSymbol.ik).toEqual([]);
+  });
+
+  it("animate the rebuilt rig as the original animates, and the export plays it", async () => {
+    const { original, store, api } = await blank();
+    for (const [tool, args] of rebuildCalls(original.project, original.currentSymbol)) await api.call(tool, args);
+    const from = new AgentApi(original);
+    for (const name of ["run", "dance"]) {
+      type Anim = { frames: number; bones: Record<string, Array<Record<string, unknown>>> };
+      const anim = await from.call("get_animation", { animation: name }) as Anim;
+      await api.call("new_animation", { name, frames: anim.frames });
+      await api.call("set_keys", { animation: name, keys: Object.entries(anim.bones).flatMap(([bone, keys]) => keys.map((k) => ({ bone, ...k }))) });
+      const names = new Map(exportSpine(store.project).names);
+      for (let f = 0; f <= anim.frames; f += 3) {
+        const want = await from.call("get_pose", { animation: name, frame: f }) as Pose;
+        const got = await api.call("get_pose", { animation: name, frame: f }) as Pose;
+        expect(worstApart(want, got), `${name} frame ${f}`).toBeLessThan(0.02);
+        const runtime = played(store, name, f);
+        for (const [bone, v] of Object.entries(got.bones)) {
+          const id = Object.values(store.currentSymbol.nodes).find((n) => n.name === bone)!.id;
+          const w = runtime.world(names.get(id)!);
+          expect(Math.hypot(v.x - w.worldX, v.y - w.worldY), `${bone} in ${name} at ${f}`).toBeLessThan(0.01);
+        }
+      }
+    }
+  });
+
+  it("place a picture upright on a turned bone, at its joint by default", async () => {
+    const { store, api } = await blank();
+    await api.call("add_bones", { bones: [{ name: "arm", from: [0, 100], to: [0, 40] }] });
+    await api.call("attach", { items: [{ bone: "arm", image: "head", pivot: [0, 0] }] });
+    const pose = await api.call("get_pose") as Pose;
+    expect(pose.bones.arm).toMatchObject({ x: 0, y: 100, rotation: -90 });
+    expect(pose.bones.head).toMatchObject({ x: 0, y: 100, rotation: 0 });
+    // Turning the bone turns the picture with it.
+    await api.call("new_animation", { name: "swing", frames: 10 });
+    await api.call("set_keys", { animation: "swing", keys: [{ bone: "arm", frame: 5, rotation: 0 }] });
+    expect((await api.call("get_pose", { animation: "swing", frame: 5 }) as Pose).bones.head!.rotation).toBeCloseTo(90, 2);
+    expect(store.history.position).toBe(4);
+  });
+
+  it("make an IK target at the tip, and key it rather than the chain", async () => {
+    const { api } = await blank();
+    await api.call("add_bones", { bones: [
+      { name: "thigh", from: [0, 100], to: [0, 50] },
+      { name: "shin", parent: "thigh", from: [0, 50], to: [0, 0] },
+    ] });
+    const ik = await api.call("add_ik", { bone: "shin" }) as { bones: string[]; target: string; created?: string };
+    expect(ik).toMatchObject({ bones: ["thigh", "shin"], target: "shin_target", created: "shin_target" });
+    expect((await api.call("get_pose") as Pose).bones.shin_target).toMatchObject({ x: 0, y: 0 });
+    await api.call("new_animation", { name: "kick", frames: 10 });
+    await api.call("set_keys", { animation: "kick", keys: [{ bone: "shin_target", frame: 5, x: 40, y: 40 }] });
+    const kick = (await api.call("get_pose", { animation: "kick", frame: 5 }) as Pose).bones;
+    // Two 50-long bones reaching (40, 40) from (0, 100): the shin's tip is there.
+    const r = (kick.shin!.rotation * Math.PI) / 180;
+    expect(kick.shin!.x + 50 * Math.cos(r)).toBeCloseTo(40, 1);
+    expect(kick.shin!.y + 50 * Math.sin(r)).toBeCloseTo(40, 1);
+  });
+
+  it("refuse a wrong call whole, saying what is wrong", async () => {
+    const { store, api } = await blank();
+    await api.call("add_bones", { bones: [{ name: "hips", from: [0, 0], to: [0, 20] }, { name: "leg", parent: "hips", length: 30, rotation: -90 }] });
+    const position = store.history.position;
+    const refused = async (tool: string, args: Record<string, unknown>, message: RegExp) => {
+      await expect(api.call(tool, args)).rejects.toThrow(message);
+      expect(store.history.position).toBe(position);
+    };
+    await refused("add_bones", { bones: [{ name: "a", from: [0, 0], to: [1, 0] }, { name: "hips", length: 3 }] }, /"hips" is taken/);
+    await refused("add_bones", { bones: [{ name: "b", parent: "c", length: 3 }, { name: "c", length: 3 }] }, /no bone "c"/);
+    await refused("add_bones", { bones: [{ name: "b", from: [0, 0], to: [0, 0] }] }, /same point/);
+    await refused("add_bones", { bones: [{ name: "b" }] }, /length above 0/);
+    await refused("attach", { items: [{ bone: "hips", image: "head" }, { bone: "leg", image: "nope" }] }, /no picture "nope"/);
+    await refused("attach", { items: [{ bone: "hips", image: "head" }, { bone: "leg", image: "head" }] }, /"head" is taken/);
+    await refused("attach", { items: [{ bone: "hips" }] }, /either image/);
+    await refused("draw_order", { parent: "hips", front: ["hips"] }, /not a child of "hips"/);
+    await refused("add_ik", { bone: "leg", target: "leg" }, /in the chain/);
+    await api.call("new_animation", { name: "w", frames: 4 });
+    await api.call("set_keys", { animation: "w", keys: [{ bone: "leg", frame: 2, rotation: 10 }] });
+    await expect(api.call("add_ik", { bone: "leg" })).rejects.toThrow(/"leg" has keys in "w"/);
   });
 });

@@ -270,13 +270,14 @@ server.listen(PORT, "127.0.0.1", () => log(`HTTP on http://127.0.0.1:${PORT} for
 
 /* ── Ask AI: Claude or GLM with the editor's tools ── */
 
-const SYSTEM = `You animate Spine 2D skeletons in Amino Spine2D, a timeline editor, through tools.
+const SYSTEM = `You rig and animate Spine 2D skeletons in Amino Spine2D, a timeline editor, through tools.
 Conventions: x right, y UP, rotation in degrees counter-clockwise; key values are LOCAL to the parent bone and absolute (not offsets from the setup pose).
 Work like an animator: call get_rig first to learn the bones, their setup poses and IK; read existing animations with get_animation when useful.
 A looping animation keys the same pose at frame 0 and at its last frame. Prefer few keys with eases ("inout" for most body motion) over many linear keys; give one property its own ease with set_keys' "eases" (a hop: x linear, y "out" rising).
 Use get_pose to check where bones end up (feet on the ground, hands where intended): it is the Spine runtime's pose, IK included.
 Put many keys in one set_keys call: each call is ONE undo step for the user. End with check_preview on what you made, then show it, and tell the user briefly what you did.
-When an animation has a reference (get_rig lists it), animate from it: get_reference for its timing and the images at a few key frames (contacts, extremes); pose each key frame with set_keys; check it with render_frame, which draws your skeleton over the reference with every bone named; adjust until the body lines up, then let eases fill between and look at a frame in between. Pictures cost tokens: look at key frames, not every frame. A picture the user attaches is the pose or the style to match.`;
+When an animation has a reference (get_rig lists it), animate from it: get_reference for its timing and the images at a few key frames (contacts, extremes); pose each key frame with set_keys; check it with render_frame, which draws your skeleton over the reference with every bone named; adjust until the body lines up, then let eases fill between and look at a frame in between. Pictures cost tokens: look at key frames, not every frame. A picture the user attaches is the pose or the style to match.
+To rig pictures: get_rig lists the library's pictures and their sizes. Build the bones with add_bones in one call (joint and tip in skeleton space, parents first: hips, then spine, chest, neck, head; each limb in segments), attach each picture to its bone with its joint as the pivot, order the near and far limbs with draw_order, and add IK to legs (and arms when wanted) with add_ik. Look at the setup pose with render_frame (no animation) and fix what is off before animating.`;
 
 async function chat(messages) {
   const key = keys[providerName];

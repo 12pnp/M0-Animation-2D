@@ -169,16 +169,100 @@
   },
   {
     "name": "render_frame",
-    "description": "A picture of the skeleton at a frame, drawn as the editor's stage draws it, over the reference image at that frame (half transparent) when there is one, with every bone drawn as a magenta line from its joint to its tip and named. Also returns each bone's joint and tip in the picture's pixels, and how a pixel maps to the skeleton's space. Use it to compare your pose with the reference and to see what you made; fix what does not match with set_keys and look again.",
+    "description": "A picture of the skeleton at a frame (omit animation for the setup pose: what add_bones and attach built), drawn as the editor's stage draws it, over the reference image at that frame (half transparent) when there is one, with every bone drawn as a magenta line from its joint to its tip and named. Also returns each bone's joint and tip in the picture's pixels, and how a pixel maps to the skeleton's space. Use it to compare your pose with the reference and to see what you made; fix what does not match with set_keys and look again.",
     "input_schema": {
       "type": "object",
       "properties": {
-        "animation": { "type": "string" },
-        "frame": { "type": "integer", "minimum": 0 },
+        "animation": { "type": "string", "description": "Animation name; omit for the setup pose." },
+        "frame": { "type": "integer", "minimum": 0, "description": "Default 0." },
         "reference": { "type": "boolean", "description": "Draw the reference behind the skeleton (default true)." },
         "bones": { "type": "boolean", "description": "Draw and name the bones (default true)." }
       },
-      "required": ["animation", "frame"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "add_bones",
+    "description": "Create bones in the setup pose, all in ONE undoable step. Give each bone its joint `from` and its tip `to` in skeleton space (y up: the space get_pose and render_frame report), or its local x, y, rotation and length under its parent (Spine conventions). A parent is an existing bone or one earlier in the list; omit it for a root. Names must be new. render_frame and get_reference say how a pixel maps to skeleton space, for reading joints off a picture.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "bones": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": { "type": "string" },
+              "parent": { "type": "string" },
+              "from": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "Joint [x, y] in skeleton space." },
+              "to": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "Tip [x, y] in skeleton space: the bone's direction and length." },
+              "x": { "type": "number" }, "y": { "type": "number" }, "rotation": { "type": "number" },
+              "length": { "type": "number", "exclusiveMinimum": 0 }
+            },
+            "required": ["name"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["bones"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "attach",
+    "description": "Put pictures on bones, all in ONE undoable step: each becomes a slot that moves with its bone. `image` names a library picture (get_rig lists them with their sizes) and adds it; `layer` names artwork already in the skeleton (a slot get_rig lists) and moves it onto the bone, staying where it is. For an image, `pivot` is the pixel of the picture (from its top-left) that turns with the bone, usually the joint, and `at` is where that pixel goes in skeleton space (default: the bone's joint); `rotation` turns the picture counter-clockwise in the world (default 0: upright, as drawn). A new picture draws in front of what the bone already holds; draw_order changes that.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array", "minItems": 1,
+          "items": {
+            "type": "object",
+            "properties": {
+              "bone": { "type": "string" },
+              "image": { "type": "string", "description": "A library picture to add." },
+              "layer": { "type": "string", "description": "Artwork already in the skeleton, to move onto the bone." },
+              "name": { "type": "string", "description": "The new slot's name (default: the image's)." },
+              "pivot": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "[u, v] in the picture's pixels from its top-left (default its centre)." },
+              "at": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2, "description": "[x, y] in skeleton space (default the bone's joint)." },
+              "rotation": { "type": "number" },
+              "scale": { "type": "number", "exclusiveMinimum": 0 }
+            },
+            "required": ["bone"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["items"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "add_ik",
+    "description": "Add an IK constraint in one undoable step: `bone` reaches for `target`. A bone whose parent is a bone gets the two-bone solve (the parent turns too: a shin reaching for a foot target turns the thigh); a root bone only aims. Without `target`, a target bone <bone>_target is made at the bone's tip. Key the TARGET to animate the limb: the bones the IK turns must never be keyed, so a bone with keys is refused (delete_keys first). `bendPositive` picks which way the joint bends (default true); flip it if render_frame shows the knee or elbow bent backwards.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "bone": { "type": "string" },
+        "target": { "type": "string", "description": "An existing bone outside the chain; omit to make one." },
+        "name": { "type": "string", "description": "Default <bone>_ik." },
+        "bendPositive": { "type": "boolean" },
+        "mix": { "type": "number", "minimum": 0, "maximum": 1, "description": "Default 1." }
+      },
+      "required": ["bone"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "draw_order",
+    "description": "Reorder what draws in front, in one undoable step: the listed children of `parent` (bones and slots; omit parent for the skeleton's roots) draw in this order, FRONT first, in the places they held; the others keep theirs. A bone carries everything below it, so the near arm goes in front of the torso by ordering the chest's children, e.g. [\"arm_near_up\", \"torso\", \"arm_far_up\"].",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "parent": { "type": "string" },
+        "front": { "type": "array", "minItems": 1, "items": { "type": "string" }, "description": "Names, front first." }
+      },
+      "required": ["front"],
       "additionalProperties": false
     }
   }

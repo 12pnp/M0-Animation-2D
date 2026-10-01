@@ -20,11 +20,11 @@ function symbolOf(p: Project, id: ItemId): SymbolItem {
 export class AddIkConstraint implements Command {
   readonly kind = "ik.add";
   readonly touches: TouchSet;
-  readonly label = "Add IK Constraint";
 
   constructor(
     private readonly symbolId: ItemId,
     private readonly constraint: IkConstraint,
+    readonly label = "Add IK Constraint",
   ) {
     this.touches = { symbols: [symbolId], nodes: [constraint.boneId, constraint.targetId], stage: true };
   }

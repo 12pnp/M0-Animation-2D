@@ -691,6 +691,35 @@ export class ReorderLayer implements Command {
   }
 }
 
+/** The whole layer list in a new order, by id: what `siblingOrder` plans.
+ *  Ids rather than the layer objects, so a redo uses the layers as they are. */
+export class SetLayerOrder implements Command {
+  readonly kind = "layer.order";
+  readonly touches: TouchSet;
+  private before: Layer[] | null = null;
+  private norm: Normalization | null = null;
+  constructor(
+    readonly label: string,
+    private readonly symbolId: ItemId,
+    private readonly order: readonly LayerId[],
+  ) {
+    this.touches = { symbols: [symbolId], stage: true, timeline: true };
+  }
+  apply(p: Project): void {
+    const sym = symbolOf(p, this.symbolId);
+    this.before = sym.layers;
+    const byId = new Map(sym.layers.map((l) => [l.id, l]));
+    const listed = this.order.map((id) => byId.get(id)).filter((l): l is Layer => !!l);
+    sym.layers = [...listed, ...sym.layers.filter((l) => !this.order.includes(l.id))];
+    this.norm = normalizeLayerOrder(sym);
+  }
+  revert(p: Project): void {
+    const sym = symbolOf(p, this.symbolId);
+    if (this.norm) denormalize(sym, this.norm);
+    if (this.before) sym.layers = this.before;
+  }
+}
+
 export class SetLayerFlag implements Command {
   readonly kind = "layer.flag";
   readonly touches: TouchSet;
@@ -795,7 +824,6 @@ export class RenameLayer implements Command {
 export class SetParent implements Command {
   readonly kind = "node.parent";
   readonly touches: TouchSet;
-  readonly label = "Set Parent";
   private beforeParent = new Map<NodeId, NodeId | null>();
   private beforeBind = new Map<NodeId, Transform>();
   /** The tracks whose keys were re-expressed, as they were. */
@@ -810,6 +838,7 @@ export class SetParent implements Command {
      *  the new parent's space. Off means "adopt the parent's frame", which
      *  makes the object jump — occasionally wanted, never the default. */
     private readonly preserveWorld = true,
+    readonly label = "Set Parent",
   ) {
     this.touches = { symbols: [symbolId], nodes: ids, stage: true, timeline: true };
   }

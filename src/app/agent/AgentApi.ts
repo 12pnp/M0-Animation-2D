@@ -1,14 +1,17 @@
 import type { Store } from "@/app/Store";
-import type { AnimId, AssetId, NodeId } from "@/core/doc/ids";
-import type { Animation, Keyframe, Node, SymbolItem, Track } from "@/core/doc/types";
+import { type AnimId, type AssetId, newIkId, type NodeId } from "@/core/doc/ids";
+import { type Animation, type ImageItem, isImage, type Keyframe, type Node, type SymbolItem, type Track } from "@/core/doc/types";
 import { entryBox, type FrameContext } from "@/core/doc/pose";
 import { type ImageFrame, imageFrame, referenceEnd, referenceFrameOf, referenceIndexAt, referenceRect } from "@/core/doc/reference";
 import { apply } from "@/core/math/Matrix2D";
 import { pt, type Rect, transformCorners } from "@/core/math/geom";
-import { createKeyframe } from "@/core/doc/defaults";
+import { createKeyframe, createLayer, createNode } from "@/core/doc/defaults";
+import { ikRoles } from "@/core/doc/ikGraph";
 import { insertKeyframe, keyIndexAt, setEndFrame } from "@/core/doc/timeline";
 import { AddAnimation, EditTracks } from "@/core/history/timelineCommands";
-import { SetStageSkins } from "@/core/history/commands";
+import { AddNode, createsCycle, SetLayerOrder, SetParent, SetStageSkins } from "@/core/history/commands";
+import { AddIkConstraint } from "@/core/history/ikCommands";
+import { boneFromWorld, placeOnBone, siblingOrder, type SpinePoint } from "@/core/rig/rigPlan";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
 import { CURVE_Y_LIMIT, easeOf, sameEase } from "@/core/math/easing";
 import { posedSymbol, skinsOf, stageSkinOf } from "@/core/spine/spinePose";
@@ -62,7 +65,7 @@ export interface AgentVision {
   /** The symbol at a frame as the stage draws it, through `view`, over its
    *  reference image when `reference` is set, with `bones` marked and named.
    *  `artwork: false` leaves the pictures out and shows only the bones. */
-  render(req: { symbol: SymbolItem; animation: Animation; frame: number; view: ImageFrame; reference: boolean; bones: BoneMark[]; artwork?: boolean }): Promise<AgentImage>;
+  render(req: { symbol: SymbolItem; animation: Animation | null; frame: number; view: ImageFrame; reference: boolean; bones: BoneMark[]; artwork?: boolean }): Promise<AgentImage>;
 }
 
 /** How a pose is captured (`renderPoses`): the bones alone, the artwork
@@ -74,12 +77,15 @@ export type PoseStyle = "bones" | "artwork" | "both";
 const RENDER_SIDE = 768, REFERENCE_SIDE = 512, MAX_IMAGES = 6;
 
 type Args = Record<string, unknown>;
+type BoneIn = { name: string; parent?: string; from?: number[]; to?: number[]; x?: number; y?: number; rotation?: number; length?: number };
+type AttachIn = { bone: string; image?: string; layer?: string; name?: string; pivot?: number[]; at?: number[]; rotation?: number; scale?: number };
 type SpineKeyIn = {
   bone: string; frame: number; x?: number; y?: number; rotation?: number; scaleX?: number; scaleY?: number;
   ease?: string | number[]; eases?: Partial<Record<AxisName, string | number[]>>;
 };
 
-const round = (v: number, digits = 4) => Math.round(v * 10 ** digits) / 10 ** digits;
+// + 0: no -0 in what the model reads.
+const round = (v: number, digits = 4) => Math.round(v * 10 ** digits) / 10 ** digits + 0;
 
 export class AgentApi {
   constructor(private readonly store: Store, private readonly preview?: PreviewProbe, private readonly vision?: AgentVision) {}
@@ -99,7 +105,11 @@ export class AgentApi {
       case "redo": return this.step("redo", typeof args.steps === "number" ? args.steps : 1);
       case "check_preview": return this.checkPreview(str(args, "animation"), args.frames);
       case "get_reference": return this.getReference(str(args, "animation"), args.frames);
-      case "render_frame": return this.renderFrame(str(args, "animation"), int(args, "frame", 0), args.reference !== false, args.bones !== false);
+      case "render_frame": return this.renderFrame(typeof args.animation === "string" ? args.animation : null, args.frame === undefined ? 0 : int(args, "frame", 0), args.reference !== false, args.bones !== false);
+      case "add_bones": return this.addBones(list<BoneIn>(args, "bones"));
+      case "attach": return this.attach(list<AttachIn>(args, "items"));
+      case "add_ik": return this.addIk(str(args, "bone"), args);
+      case "draw_order": return this.drawOrder(typeof args.parent === "string" ? args.parent : null, list<string>(args, "front"));
       default: throw new AgentError(`There is no tool "${name}".`);
     }
   }
@@ -159,6 +169,7 @@ export class AgentApi {
         ...(a.reference ? { reference: { images: a.reference.frames.length, frames: [referenceFrameOf(a.reference, 0), referenceEnd(a.reference)] } } : {}),
       })),
       ...(skinsOf(s).some((n) => n !== "default") ? { skins: skinsOf(s).filter((n) => n !== "default") } : {}),
+      images: this.libraryImages().map((i) => ({ name: i.name, width: i.width, height: i.height })),
       showing: { animation: anim?.name ?? null, frame: this.store.ui.frame, ...(s.spine ? { skins: stageSkinOf(s) } : {}) },
     };
   }
@@ -297,6 +308,177 @@ export class AgentApi {
     return { showing: anim.name, frame: this.store.ui.frame, ...(this.sym.spine ? { skins: stageSkinOf(this.sym) } : {}) };
   }
 
+  /* ── rigging ── */
+
+  private libraryImages(): ImageItem[] {
+    const p = this.store.project;
+    return p.itemOrder.map((id) => p.items[id]).filter((i): i is ImageItem => !!i && isImage(i));
+  }
+
+  /** Every node but empty layers, by name: bones, and slots that ride one. */
+  private node(name: string): Node {
+    const found = Object.values(this.sym.nodes).find((n) => n.name === name && n.kind !== "empty");
+    if (!found) throw new AgentError(`There is no bone or slot "${name}". get_rig lists them.`);
+    return found;
+  }
+
+  private nameTaken(name: string): boolean {
+    return Object.values(this.sym.nodes).some((n) => n.name === name);
+  }
+
+  /** A node's world matrix in the setup pose, as the runtime poses it. */
+  private setupWorld(id: NodeId) {
+    return posedSymbol(this.store.project, this.sym, null, 0, "setup").byNode.get(id)?.world;
+  }
+
+  private addBones(specs: BoneIn[]) {
+    // Everything is checked before the first command: a transaction keeps
+    // what it applied before a throw.
+    const coming = new Set<string>();
+    for (const b of specs) {
+      if (typeof b.name !== "string" || !b.name.trim()) throw new AgentError("Each bone needs a name.");
+      if (this.nameTaken(b.name) || coming.has(b.name)) throw new AgentError(`The name "${b.name}" is taken.`);
+      if (b.parent !== undefined && !coming.has(b.parent)) this.bone(b.parent);
+      if (b.from !== undefined || b.to !== undefined) {
+        const from = point(b.from, `Bone "${b.name}": from`), to = point(b.to, `Bone "${b.name}": to`);
+        if (from[0] === to[0] && from[1] === to[1]) throw new AgentError(`Bone "${b.name}": from and to are the same point.`);
+        if (b.x !== undefined || b.y !== undefined || b.rotation !== undefined || b.length !== undefined) {
+          throw new AgentError(`Bone "${b.name}": give from and to, or x, y, rotation and length, not both.`);
+        }
+      } else {
+        for (const k of ["x", "y", "rotation", "length"] as const) {
+          if (b[k] !== undefined && (typeof b[k] !== "number" || !Number.isFinite(b[k]))) throw new AgentError(`Bone "${b.name}": ${k} must be a number.`);
+        }
+        if (!(typeof b.length === "number" && b.length > 0)) throw new AgentError(`Bone "${b.name}": give from and to, or a length above 0.`);
+      }
+      coming.add(b.name);
+    }
+    const label = `AI: Add ${specs.length} bone${specs.length === 1 ? "" : "s"}`;
+    this.store.transaction(label, () => {
+      for (const b of specs) {
+        const parent = b.parent !== undefined ? this.bone(b.parent) : null;
+        const node = createNode("bone", b.name, { parentId: parent?.id ?? null });
+        if (b.from) {
+          const placed = boneFromWorld(parent ? this.setupWorld(parent.id) : undefined, b.from as unknown as SpinePoint, b.to as unknown as SpinePoint);
+          if (!placed) throw new AgentError(`Bone "${b.name}": its parent "${b.parent}" is scaled to nothing.`);
+          node.bind = placed.bind;
+          node.boneLength = Math.max(1, round(placed.length, 2));
+        } else {
+          node.bind = fromSpineLocal({ x: b.x ?? 0, y: b.y ?? 0, rotation: b.rotation ?? 0, shearX: 0, shearY: 0, scaleX: 1, scaleY: 1 });
+          node.boneLength = Math.max(1, round(b.length!, 2));
+        }
+        this.store.apply(new AddNode(label, this.store.currentSymbolId, node, createLayer(node.id, node.name, this.sym.layers.length), 0));
+      }
+    });
+    return { added: specs.map((b) => b.name), note: "render_frame with no animation shows the setup pose" };
+  }
+
+  private attach(items: AttachIn[]) {
+    const images = this.libraryImages();
+    const coming = new Set<string>();
+    const plans: Array<() => void> = [];
+    const label = `AI: Attach ${items.length} picture${items.length === 1 ? "" : "s"}`;
+    for (const it of items) {
+      if (typeof it.bone !== "string") throw new AgentError("Each item needs a bone.");
+      const bone = this.bone(it.bone);
+      if (bone.kind !== "bone" && bone.kind !== "group") throw new AgentError(`"${it.bone}" is a slot, not a bone.`);
+      if ((it.image === undefined) === (it.layer === undefined)) throw new AgentError(`On "${it.bone}": give either image (from the library) or layer (already in the skeleton).`);
+      if (it.layer !== undefined) {
+        for (const k of ["pivot", "at", "rotation", "scale", "name"] as const) {
+          if (it[k] !== undefined) throw new AgentError(`Layer "${it.layer}": ${k} is for a new image; a layer keeps where it is.`);
+        }
+        const node = this.node(it.layer);
+        if (node.kind !== "image" && node.kind !== "symbol") throw new AgentError(`"${it.layer}" is a bone, not artwork.`);
+        if (node.slotBone) throw new AgentError(`"${it.layer}" is a slot of an opened Spine rig; it already rides "${this.sym.nodes[node.slotBone]?.name}".`);
+        if (createsCycle(this.sym, node.id, bone.id)) throw new AgentError(`"${it.bone}" hangs below "${it.layer}".`);
+        if (ikRoles(this.sym).driven.has(node.id)) throw new AgentError(`"${it.layer}" is turned by IK; it cannot change parent.`);
+        plans.push(() => this.store.apply(new SetParent(this.store.currentSymbolId, [node.id], bone.id, true, label)));
+        continue;
+      }
+      const image = images.find((i) => i.name === it.image);
+      if (!image) throw new AgentError(`There is no picture "${it.image}" in the library. get_rig lists them under images.`);
+      const name = it.name ?? image.name;
+      if (this.nameTaken(name) || coming.has(name)) throw new AgentError(`The name "${name}" is taken: give this one a name.`);
+      coming.add(name);
+      const pivot = it.pivot === undefined ? [image.width / 2, image.height / 2] as const : point(it.pivot, `"${name}": pivot`);
+      const scale = it.scale ?? 1;
+      if (typeof scale !== "number" || !(scale > 0)) throw new AgentError(`"${name}": scale must be above 0.`);
+      if (it.rotation !== undefined && (typeof it.rotation !== "number" || !Number.isFinite(it.rotation))) throw new AgentError(`"${name}": rotation must be a number.`);
+      const boneWorld = this.setupWorld(bone.id);
+      const at: SpinePoint = it.at === undefined ? [boneWorld?.tx ?? 0, -(boneWorld?.ty ?? 0)] : point(it.at, `"${name}": at`);
+      const bind = placeOnBone(boneWorld, at, it.rotation ?? 0, scale);
+      if (!bind) throw new AgentError(`"${it.bone}" is scaled to nothing.`);
+      const node = createNode("image", name, { parentId: bone.id, itemId: image.id });
+      node.pivot = { x: pivot[0], y: pivot[1] };
+      node.bind = bind;
+      plans.push(() => this.store.apply(new AddNode(label, this.store.currentSymbolId, node, createLayer(node.id, node.name, this.sym.layers.length), 0)));
+    }
+    this.store.transaction(label, () => { for (const run of plans) run(); });
+    return { attached: items.map((it) => ({ bone: it.bone, slot: it.layer ?? it.name ?? it.image })) };
+  }
+
+  private addIk(boneName: string, args: Args) {
+    const s = this.sym;
+    const effector = this.bone(boneName);
+    if (effector.kind !== "bone") throw new AgentError(`"${boneName}" is a slot; IK turns bones.`);
+    const parent = effector.parentId ? s.nodes[effector.parentId] : undefined;
+    // The runtime's rule (ARCHITECTURE ▸ Bones and IK): a bone parent roots the two-bone solve.
+    const chain: 0 | 1 = parent?.kind === "bone" ? 1 : 0;
+    const chainIds = chain ? [parent!.id, effector.id] : [effector.id];
+    const root = s.nodes[chainIds[0]!]!;
+    const driven = ikRoles(s).driven;
+    for (const id of chainIds) if (driven.has(id)) throw new AgentError(`"${s.nodes[id]!.name}" is already turned by IK.`);
+    for (const anim of s.animations) for (const id of chainIds) {
+      if (anim.tracks[id]?.keys.length) throw new AgentError(`"${s.nodes[id]!.name}" has keys in "${anim.name}"; IK would fight them. Delete them first (delete_keys), then key the target instead.`);
+    }
+    const name = typeof args.name === "string" ? args.name : `${boneName}_ik`;
+    if (s.ik.some((k) => k.name === name)) throw new AgentError(`There is already an IK constraint "${name}".`);
+    if (args.bendPositive !== undefined && typeof args.bendPositive !== "boolean") throw new AgentError("bendPositive is true or false.");
+    const mix = args.mix === undefined ? 1 : args.mix;
+    if (typeof mix !== "number" || mix < 0 || mix > 1) throw new AgentError("mix is a number from 0 to 1.");
+
+    let target: Node;
+    let make: (() => void) | null = null;
+    if (typeof args.target === "string") {
+      target = this.bone(args.target);
+      if (target.kind !== "bone") throw new AgentError(`The target "${args.target}" must be a bone.`);
+      // A target inside the chain chases its own tail; the solve skips it.
+      if (createsCycle(s, root.id, target.id)) throw new AgentError(`The target "${args.target}" is in the chain it would move: parent it outside "${root.name}".`);
+    } else {
+      const targetName = `${boneName}_target`;
+      if (this.nameTaken(targetName)) throw new AgentError(`The name "${targetName}" is taken: give a target.`);
+      const world = this.setupWorld(effector.id);
+      const tip = world ? apply(pt(), world, effector.boneLength ?? 0, 0) : pt();
+      const holderWorld = root.parentId ? this.setupWorld(root.parentId) : undefined;
+      const bind = placeOnBone(holderWorld, [tip.x, -tip.y]);
+      if (!bind) throw new AgentError(`"${root.name}"'s parent is scaled to nothing.`);
+      target = createNode("bone", targetName, { parentId: root.parentId });
+      target.bind = bind;
+      target.boneLength = 20;
+      const made = target;
+      make = () => this.store.apply(new AddNode(`AI: Add ${targetName}`, this.store.currentSymbolId, made, createLayer(made.id, made.name, s.layers.length), 0));
+    }
+    const label = `AI: IK on ${boneName}`;
+    this.store.transaction(label, () => {
+      make?.();
+      this.store.apply(new AddIkConstraint(this.store.currentSymbolId, {
+        id: newIkId(), name, boneId: effector.id, targetId: target.id, chain,
+        bendPositive: args.bendPositive !== false, weight: mix,
+      }, label));
+    });
+    return { constraint: name, bones: chainIds.map((id) => s.nodes[id]!.name), target: target.name, ...(make ? { created: target.name } : {}) };
+  }
+
+  private drawOrder(parentName: string | null, front: string[]) {
+    if (!front.every((n) => typeof n === "string")) throw new AgentError("front is a list of names.");
+    const parentId = parentName === null ? null : this.node(parentName).id;
+    const plan = siblingOrder(this.sym, parentId, front.map((n) => this.node(n).id));
+    if (typeof plan === "string") throw new AgentError(plan);
+    this.store.apply(new SetLayerOrder("AI: Draw Order", this.store.currentSymbolId, plan.map((l) => l.id)));
+    const children = this.sym.layers.map((l) => this.sym.nodes[l.nodeId]!).filter((n) => (n.parentId ?? null) === parentId);
+    return { parent: parentName, frontToBack: children.map((n) => n.name) };
+  }
+
   /* ── looking ── */
 
   /** The animation's reference: how its images sit in time and space, and
@@ -331,14 +513,14 @@ export class AgentApi {
 
   /** The skeleton at a frame as the stage draws it, over its reference, with
    *  every bone drawn and named; and where each bone lands in the picture. */
-  private async renderFrame(animName: string, frame: number, withReference: boolean, withBones: boolean) {
-    const anim = this.animation(animName);
+  private async renderFrame(animName: string | null, frame: number, withReference: boolean, withBones: boolean) {
+    const anim = animName === null ? null : this.animation(animName);
     const { boxes, bones } = this.frameView(anim, frame);
     // Framed on what is drawn: helper bones far from the artwork (an aim
     // target, a crosshair) would shrink the body to a corner. A rig that
     // draws nothing is framed on its bones.
     if (boxes.length === 0) for (const b of bones) boxes.push({ x: Math.min(b.from[0], b.to[0]), y: Math.min(b.from[1], b.to[1]), w: Math.abs(b.to[0] - b.from[0]) || 1e-3, h: Math.abs(b.to[1] - b.from[1]) || 1e-3 });
-    const ref = withReference && anim.reference && referenceIndexAt(anim.reference, frame) !== null ? anim.reference : undefined;
+    const ref = withReference && anim?.reference && referenceIndexAt(anim.reference, frame) !== null ? anim.reference : undefined;
     if (ref) boxes.push(referenceRect(ref));
     const view = imageFrame(boxes, RENDER_SIDE);
     const marks: BoneMark[] = bones.map((b) => ({ name: b.name, from: view.toPixel(...b.from), to: view.toPixel(...b.to) }));
@@ -346,7 +528,7 @@ export class AgentApi {
     const image = await this.needVision().render({ symbol: this.sym, animation: anim, frame, view, reference: !!ref, bones: withBones ? marks : [] });
     const [lx, ly] = view.fromPixel(0, 0);
     return {
-      animation: anim.name, frame,
+      animation: anim?.name ?? null, frame,
       size: [view.width, view.height],
       reference: ref ? `image ${referenceIndexAt(ref, frame)! + 1} behind the skeleton, half transparent` : "none",
       // Pixel (px, py) from the top-left of the picture, in the skeleton's
@@ -362,9 +544,10 @@ export class AgentApi {
 
   /** The pose at `frame`: what it draws (the framing boxes) and every bone
    *  as a line, in the symbol's own space. */
-  private frameView(anim: Animation, frame: number): { boxes: Rect[]; bones: Array<{ name: string; from: [number, number]; to: [number, number] }> } {
-    const pose = posedSymbol(this.store.project, this.sym, anim, frame, "animate");
-    const when: FrameContext = { animationName: anim.name, frame, mode: "animate" };
+  private frameView(anim: Animation | null, frame: number): { boxes: Rect[]; bones: Array<{ name: string; from: [number, number]; to: [number, number] }> } {
+    const mode = anim ? "animate" : "setup";
+    const pose = posedSymbol(this.store.project, this.sym, anim, frame, mode);
+    const when: FrameContext = { animationName: anim?.name ?? null, frame, mode };
     const boxes: Rect[] = [];
     for (const e of pose.entries) {
       if (!e.visible || !(e.display || e.spine)) continue;
@@ -507,6 +690,11 @@ function easesOf(raw: unknown, where: string): ChannelEases | null {
     out[ax as AxisName] = spec;
   }
   return Object.keys(out).length ? out : null;
+}
+
+function point(v: unknown, where: string): SpinePoint {
+  if (!Array.isArray(v) || v.length !== 2 || !v.every((n) => typeof n === "number" && Number.isFinite(n))) throw new AgentError(`${where} is two numbers, [x, y].`);
+  return [v[0] as number, v[1] as number];
 }
 
 function str(args: Args, key: string): string {
