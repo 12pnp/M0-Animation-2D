@@ -18,16 +18,28 @@ const EXAMPLES = [
   "Make a 16-frame hop: the body rises and lands, x moves linearly.",
 ];
 
+/** The providers the panel tabs between. */
+type Provider = "glm" | "anthropic";
+const TABS: Array<{ id: Provider; label: string }> = [
+  { id: "glm", label: "GLM" },
+  { id: "anthropic", label: "Claude" },
+];
+
 export class AiPanel {
   readonly el: HTMLElement;
   private readonly input: HTMLTextAreaElement;
-  private conversation: unknown[] = [];
+  /** The tab on: its conversation shows, and the bridge routes to it. */
+  private provider: Provider = "glm";
+  private conversations: Record<Provider, unknown[]> = { glm: [], anthropic: [] };
+  private logs: Record<Provider, HTMLElement> = { glm: null as never, anthropic: null as never };
+  private tabEls: Record<Provider, HTMLButtonElement> = { glm: null as never, anthropic: null as never };
   /** The constructor-built send, for `ask`. */
   private sender: ((text: string, pictures: Picture[]) => Promise<void>) | null = null;
 
   constructor(private readonly bridge: AgentBridge, toggleConnection: () => void, close: () => void) {
     const status = statusDot(bridge, toggleConnection);
-    const log = h("div", { class: "ai-log" });
+    const logOf = (p: Provider) => h("div", { class: "ai-log", style: p === this.provider ? "" : "display:none" });
+    this.logs = { glm: logOf("glm"), anthropic: logOf("anthropic") };
     const input = h("textarea", { class: "ai-input", placeholder: "Ask the AI to animate the open rig…  (⌘↩ to send)", rows: "4" }) as HTMLTextAreaElement;
     this.input = input;
     const send = h("button", { class: "btn primary ai-send" }, "Send") as HTMLButtonElement;
@@ -48,15 +60,25 @@ export class AiPanel {
     const closeBtn = h("button", { class: "iconbtn", title: "Hide the AI panel" }, "×");
     on(closeBtn, "pointerup", close);
 
+    const tabs = h("div", { class: "ai-tabs" }, ...TABS.map((t) => {
+      const b = h("button", { class: `ai-tab${t.id === this.provider ? " active" : ""}` }, t.label) as HTMLButtonElement;
+      this.tabEls[t.id] = b;
+      on(b, "pointerup", () => void this.showTab(t.id, true));
+      return b;
+    }));
+
     this.el = h("div", { class: "ai-panel" },
       h("div", { class: "ai-panel-head" }, h("span", { class: "ai-panel-title" }, "Ask AI"), status.el, h("div", { class: "spacer" }), reset, closeBtn),
+      tabs,
       h("div", { class: "ai-panel-body" },
-        log,
+        this.logs.glm,
+        this.logs.anthropic,
         pending,
         h("div", { class: "ai-compose" }, input, h("div", { class: "ai-compose-btns" }, send, attach)),
         h("div", { class: "ai-hint" }, "Each edit the AI makes is one undo step, named \"AI: …\" in History.")));
 
     const say = (who: "you" | "ai" | "note", text: string, pictures: Picture[] = []) => {
+      const log = this.logs[this.provider];
       log.querySelector(".ai-empty")?.remove();
       const row = h("div", { class: `ai-msg ai-${who}` },
         who === "note" ? null : h("div", { class: "ai-who" }, who === "you" ? "You" : "AI"),
@@ -66,23 +88,25 @@ export class AiPanel {
       log.scrollTop = log.scrollHeight;
       return row;
     };
-    const empty = () => {
+    const empty = (p: Provider) => {
       const chips = h("div", { class: "ai-examples" });
       for (const ex of EXAMPLES) {
         const chip = h("button", { class: "ai-example" }, ex);
         on(chip, "pointerup", () => { input.value = ex; input.focus(); });
         chips.appendChild(chip);
       }
-      log.appendChild(h("div", { class: "ai-empty" },
-        h("div", { class: "ai-empty-title" }, "What should the rig do?"),
+      this.logs[p].appendChild(h("div", { class: "ai-empty" },
+        h("div", { class: "ai-empty-title" }, `What should the rig do?`),
         h("div", { class: "ai-empty-sub" }, "The AI reads the rig, keys the bones, checks the result in the Spine runtime, and shows it to you."),
         chips));
     };
-    empty();
+    for (const t of TABS) empty(t.id);
 
     const problem = () => {
       if (bridge.state !== "connected") return "Not connected: press Connect above, with the bridge running (AI ▸ Connecting AI…).";
-      if (!bridge.chatReady) return "The bridge has no API key: start it with ANTHROPIC_API_KEY or GLM_API_KEY set, or use Claude Code over MCP instead.";
+      if (!bridge.chatReady) return this.provider === "anthropic"
+        ? "No Claude key in the bridge: paste one above (the dot's popup), or switch to the GLM tab."
+        : "No GLM key in the bridge: paste one above (the dot's popup).";
       return "";
     };
     const send2 = async (text: string, pics: Picture[]): Promise<void> => {
@@ -97,9 +121,9 @@ export class AiPanel {
         const content = pics.length
           ? [...pics.map((p) => ({ type: "image", source: { type: "base64", media_type: p.mimeType, data: p.data } })), { type: "text", text: text || "Match this." }]
           : text;
-        const before = this.conversation.length + 1;
-        const out = await this.bridge.chat([...this.conversation, { role: "user", content }]);
-        this.conversation = out.messages;
+        const before = this.conversations[this.provider].length + 1;
+        const out = await this.bridge.chat([...this.conversations[this.provider], { role: "user", content }]);
+        this.conversations[this.provider] = out.messages;
         working.remove();
         const seen = picturesIn(out.messages.slice(before));
         if (seen.length) say("note", `The AI looked at ${seen.length} picture${seen.length === 1 ? "" : "s"}:`, seen);
@@ -127,7 +151,33 @@ export class AiPanel {
       const k = e as unknown as KeyboardEvent;
       if (k.key === "Enter" && (k.metaKey || k.ctrlKey)) { k.preventDefault(); void go(); }
     });
-    on(reset, "pointerup", () => { this.conversation = []; log.replaceChildren(); empty(); input.focus(); });
+    on(reset, "pointerup", () => {
+      this.conversations[this.provider] = [];
+      this.logs[this.provider].replaceChildren();
+      empty(this.provider);
+      input.focus();
+    });
+    // Follow the bridge: a provider switched elsewhere (a key pasted into the
+    // popup) moves the tab; the tab click above does the moving here.
+    const follow = () => {
+      void bridge.models().then((info) => {
+        if (info && (info.provider === "glm" || info.provider === "anthropic") && info.provider !== this.provider) void this.showTab(info.provider, false);
+      });
+    };
+    bridge.onState(follow);
+    follow();
+  }
+
+  /** One provider's tab: its conversation shows, and (when told) the bridge
+   *  routes Ask AI to it. */
+  private async showTab(provider: Provider, tell: boolean): Promise<void> {
+    if (provider === this.provider) return;
+    this.provider = provider;
+    for (const t of TABS) {
+      this.tabEls[t.id].classList.toggle("active", t.id === provider);
+      this.logs[t.id].style.display = t.id === provider ? "" : "none";
+    }
+    if (tell) await this.bridge.setProvider(provider);
   }
 
   focus(): void { this.input.focus(); }

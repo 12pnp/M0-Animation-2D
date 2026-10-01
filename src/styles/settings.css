@@ -458,6 +458,17 @@
 
 /* The panel header's dot: the whole status hidden behind a click. */
 .ai-dot-wrap { position: relative; display: inline-flex; }
+.ai-tabs {
+  display: flex; gap: 2px; flex: none;
+  padding: 0 8px; border-bottom: 1px solid var(--line-soft);
+}
+.ai-tab {
+  padding: 5px 12px 4px; border: none; background: none; cursor: pointer;
+  font-size: var(--fs-sm); color: var(--fg-dim);
+  border-bottom: 2px solid transparent; margin-bottom: -1px;
+}
+.ai-tab:hover { color: var(--fg-strong); }
+.ai-tab.active { color: var(--fg-strong); border-bottom-color: var(--accent); }
 .ai-dot-btn { display: inline-flex; align-items: center; padding: 4px 2px; border: none; background: none; cursor: pointer; }
 .ai-dot-pop {
   display: none; position: absolute; top: calc(100% + 2px); left: -8px; z-index: 30;

@@ -67,6 +67,14 @@ export function statusDot(bridge: AgentBridge, toggle: () => void): { el: HTMLEl
     el.title = hover;
   });
   el.appendChild(dot);
+  // A key pasted here goes to the bridge and its key file; the page forgets
+  // it the moment the fetch is away. Whichever provider is active — the tab
+  // the panel is on — is the one it keys.
+  const keyLabel = h("span", { class: "ai-dot-pop-label" }, "GLM key");
+  let keyProvider: "glm" | "anthropic" = "glm";
+  const keyInput = h("input", { type: "password", class: "ai-key", placeholder: "Paste a GLM key…", autocomplete: "off" }) as HTMLInputElement;
+  const keySave = h("button", { class: "btn" }, "Save") as HTMLButtonElement;
+
   // The model the bridge runs, switchable right here — the bridge holds the
   // key, so the choice is asked of it, never of the page.
   const pick = h("select", { class: "ai-model", title: "The model Ask AI runs, live until the bridge restarts" }) as HTMLSelectElement;
@@ -78,20 +86,21 @@ export function statusDot(bridge: AgentBridge, toggle: () => void): { el: HTMLEl
     pick.replaceChildren(...info.models.map((m) => h("option", { value: m }, m)));
     if (!info.models.includes(info.model)) pick.append(new Option(info.model, info.model));
     pick.value = info.model;
+    if (info.provider === "anthropic" || info.provider === "glm") {
+      keyProvider = info.provider;
+      keyLabel.textContent = keyProvider === "anthropic" ? "Claude key" : "GLM key";
+      keyInput.placeholder = keyProvider === "anthropic" ? "Paste a Claude key…" : "Paste a GLM key…";
+    }
   };
   void syncModels();
   on(pick, "change", () => {
     void bridge.setModel(pick.value).then((ok) => { if (ok) { refresh(); void syncModels(); } });
   });
 
-  // A key pasted here goes to the bridge and its key file; the page forgets
-  // it the moment the fetch is away.
-  const keyInput = h("input", { type: "password", class: "ai-key", placeholder: "Paste a GLM key…", autocomplete: "off" }) as HTMLInputElement;
-  const keySave = h("button", { class: "btn" }, "Save") as HTMLButtonElement;
   const saveKey = () => {
     const key = keyInput.value.trim();
     if (!key) return;
-    void bridge.setKey("glm", key).then((ok) => {
+    void bridge.setKey(keyProvider, key).then((ok) => {
       keyInput.value = "";
       if (ok) { refresh(); void syncModels(); }
       else keyInput.placeholder = "The bridge refused it — paste it again";
@@ -101,8 +110,7 @@ export function statusDot(bridge: AgentBridge, toggle: () => void): { el: HTMLEl
   on(keyInput, "keydown", (e) => {
     if ((e as unknown as KeyboardEvent).key === "Enter") { e.preventDefault(); saveKey(); }
   });
-  const keyRow = h("div", { class: "ai-dot-pop-row ai-dot-pop-key" },
-    h("span", { class: "ai-dot-pop-label" }, "GLM key"), keyInput, keySave);
+  const keyRow = h("div", { class: "ai-dot-pop-row ai-dot-pop-key" }, keyLabel, keyInput, keySave);
 
   const pop = h("div", { class: "ai-dot-pop" }, text, modelRow, keyRow, h("div", { class: "ai-dot-pop-row" }, btn));
   const closeAway = (e: Event) => {

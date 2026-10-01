@@ -108,6 +108,22 @@ export class AgentBridge {
     }
   }
 
+  /** The provider tab the panel is on: the bridge routes Ask AI to it. */
+  async setProvider(provider: "glm" | "anthropic"): Promise<boolean> {
+    try {
+      const res = await fetch(`${this.url}/agent/provider`, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ provider }),
+      });
+      const body = await res.json() as { chat?: boolean; error?: string };
+      if (!res.ok || body.error) return false;
+      this.chatReady = !!body.chat;
+      if (this.stateNow !== "off") this.set("connected", this.chatReady ? "Connected to the AI bridge; Ask AI is ready." : "Connected to the AI bridge.");
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   private async loop(): Promise<void> {
     let failures = 0;
     while (this.running) {

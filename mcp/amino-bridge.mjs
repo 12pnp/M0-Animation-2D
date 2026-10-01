@@ -236,6 +236,16 @@ const server = http.createServer(async (req, res) => {
       if (out.error) return send(res, 400, out);
       return send(res, 200, out);
     }
+    if (req.method === "POST" && url.pathname === "/agent/provider") {
+      const body = await readJson(req);
+      const name = String(body.provider ?? "");
+      if (!PROVIDERS[name]) return send(res, 400, { error: `Unknown provider "${name}".` });
+      providerName = name;
+      if (!modelChoices(providerName).includes(currentModel)) currentModel = provider().model;
+      MODELS = [...new Set([...modelChoices(providerName), currentModel])];
+      log(`provider: ${providerName}${hasKey() ? "" : " (no key)"}`);
+      return send(res, 200, { provider: providerName, chat: hasKey(), model: currentModel });
+    }
     if (req.method === "POST" && url.pathname === "/agent/model") {
       const body = await readJson(req);
       const model = typeof body.model === "string" ? body.model.trim() : "";

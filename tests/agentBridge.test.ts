@@ -313,6 +313,22 @@ describe("a key pasted in the popup", () => {
     });
     expect(res.status).toBe(400);
   });
+
+  it("switches provider on the panel's tab, model list following", async () => {
+    const toClaude = await fetch(`http://127.0.0.1:${PORT}/agent/provider`, {
+      method: "POST", headers: { ...origin(), "content-type": "application/json" },
+      body: JSON.stringify({ provider: "anthropic" }),
+    });
+    expect(await toClaude.json()).toMatchObject({ provider: "anthropic", chat: false, model: "claude-sonnet-5-5" });
+    const models = await (await fetch(`http://127.0.0.1:${PORT}/agent/models`, { headers: origin() })).json();
+    expect(models.models).toEqual(["claude-sonnet-5-5"]);
+
+    const back = await fetch(`http://127.0.0.1:${PORT}/agent/provider`, {
+      method: "POST", headers: { ...origin(), "content-type": "application/json" },
+      body: JSON.stringify({ provider: "glm" }),
+    });
+    expect(await back.json()).toMatchObject({ provider: "glm", chat: true, model: "glm-4.6" });
+  });
 });
 
 describe("pictures through the bridge", () => {
