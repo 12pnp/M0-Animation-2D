@@ -528,3 +528,12 @@
 .ai-panel .ai-msg { max-width: 92%; }
 .ai-panel .ai-status { flex-wrap: wrap; }
 .ai-panel .ai-status-text { flex: 1 1 160px; min-width: 0; }
+
+.ai-compose-btns { display: flex; flex-direction: column; gap: 6px; flex: none; }
+.ai-attach { font-size: 14px; }
+.ai-pending { display: flex; flex-wrap: wrap; gap: 6px; flex: none; }
+.ai-pending-item { position: relative; }
+.ai-pending-x { position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 0; background: #000c; color: #fff; cursor: pointer; }
+.ai-pics { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+.ai-pic { height: 72px; max-width: 160px; object-fit: contain; border-radius: 4px; background: #0003; cursor: zoom-in; }
+.ai-note .ai-pics { justify-content: center; }

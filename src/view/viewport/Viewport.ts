@@ -17,6 +17,7 @@ import { onionFrames } from "@/core/doc/onion";
 import { keyIndexAt } from "@/core/doc/timeline";
 import { withDescendants } from "@/core/doc/layerTree";
 import { GhostPainter } from "./ghost";
+import { drawReference } from "./reference";
 import { type OverlayColors, resolveColors } from "./overlayColors";
 import { type SnapLine, snapMove, type SnapTargets, snapValue } from "@/core/math/snap";
 import { collectSnapTargets, selectionRefs } from "./snapTargets";
@@ -76,7 +77,7 @@ export class Viewport {
   constructor(
     private readonly host: HTMLElement,
     private readonly store: Store,
-    assets: AssetStore,
+    private readonly assets: AssetStore,
   ) {
     this.renderer = new SceneRenderer(() => this.store.project, assets);
     this.colors = resolveColors(store.prefs.value);
@@ -231,12 +232,19 @@ export class Viewport {
       );
     }
 
+    // Reference art (`Animation.reference`): behind the ghosts and the rig,
+    // or over everything, by preference.
+    const stagePrefs = store.prefs.value.stage;
+    const ref = store.ui.mode === "animate" && stagePrefs.showReference ? store.currentAnimation?.reference : undefined;
+    if (ref && !stagePrefs.referenceAbove) drawReference(sc, view, ref, store.ui.frame, this.assets, stagePrefs.referenceOpacity);
+
     this.ghostPoses = [];
     this.drawOtherFrames(sc, view);
 
     this.lastPose = this.renderer.draw(
       sc, store.currentSymbol, store.currentAnimation, store.ui.frame, store.ui.mode, view,
     );
+    if (ref && stagePrefs.referenceAbove) drawReference(sc, view, ref, store.ui.frame, this.assets, stagePrefs.referenceOpacity);
     sc.restore();
 
     // The transform box is rebuilt from the fresh pose every frame, so it

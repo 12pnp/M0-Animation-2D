@@ -51,6 +51,48 @@ if (!PROVIDER) { log(`Unknown AMINO_PROVIDER "${PROVIDER_NAME}" (anthropic or gl
 const MODEL = process.env.AMINO_MODEL ?? PROVIDER.model;
 const API_URL = process.env.AMINO_API_URL ?? PROVIDER.url;
 const hasKey = () => !!PROVIDER.key();
+// Whether the model reads pictures: Claude does; GLM only its vision models
+// (glm-4.5v, glm-4.6v…). AMINO_VISION=1 or 0 says so outright.
+const VISION = process.env.AMINO_VISION ? process.env.AMINO_VISION !== "0"
+  : PROVIDER_NAME === "anthropic" || /v$|v-|vision/i.test(MODEL);
+// Pictures kept in a conversation sent to the model, newest first; older
+// ones become a line of text. Each costs about a thousand tokens.
+const KEEP_IMAGES = Number(process.env.AMINO_KEEP_IMAGES ?? 8);
+
+/* ── pictures ── */
+
+// A tool's value carries its pictures here (IMAGES_KEY in AgentApi.ts).
+const IMAGES_KEY = "__images";
+
+/** A tool value as text, and its pictures apart. */
+function splitImages(value) {
+  if (!value || typeof value !== "object" || !Array.isArray(value[IMAGES_KEY])) return { text: JSON.stringify(value), images: [] };
+  const { [IMAGES_KEY]: images, ...rest } = value;
+  return { text: JSON.stringify(rest), images };
+}
+
+const NO_VISION = `[a picture: ${MODEL} cannot see pictures; use a vision model (e.g. glm-4.5v) or set AMINO_VISION=1 if it can]`;
+const DROPPED = "[an earlier picture, left out to save tokens]";
+
+/** The conversation as sent to the model: pictures it cannot see turned into
+ *  a note, and all but the newest KEEP_IMAGES turned into another. */
+function forModel(convo) {
+  let kept = 0;
+  const swap = (b) => {
+    if (b?.type !== "image") return b;
+    if (!VISION) return { type: "text", text: NO_VISION };
+    return ++kept <= KEEP_IMAGES ? b : { type: "text", text: DROPPED };
+  };
+  const out = [];
+  for (let i = convo.length - 1; i >= 0; i--) {
+    const m = convo[i];
+    if (!Array.isArray(m.content)) { out.unshift(m); continue; }
+    const content = [...m.content].reverse().map((b) => (b.type === "tool_result" && Array.isArray(b.content)
+      ? { ...b, content: [...b.content].reverse().map(swap).reverse() } : swap(b))).reverse();
+    out.unshift({ ...m, content });
+  }
+  return out;
+}
 
 /* ── the page: calls waiting for it, and the one poll waiting for a call ── */
 
@@ -129,7 +171,7 @@ const server = http.createServer(async (req, res) => {
       return send(res, 204);
     }
     if (req.method === "GET" && url.pathname === "/agent/status") {
-      return send(res, 200, { editor: Date.now() - lastSeen < 30000, chat: hasKey(), provider: PROVIDER_NAME, model: MODEL });
+      return send(res, 200, { editor: Date.now() - lastSeen < 30000, chat: hasKey(), provider: PROVIDER_NAME, model: MODEL, vision: VISION });
     }
     if (req.method === "POST" && url.pathname === "/chat") {
       const body = await readJson(req);
@@ -151,14 +193,15 @@ Conventions: x right, y UP, rotation in degrees counter-clockwise; key values ar
 Work like an animator: call get_rig first to learn the bones, their setup poses and IK; read existing animations with get_animation when useful.
 A looping animation keys the same pose at frame 0 and at its last frame. Prefer few keys with eases ("inout" for most body motion) over many linear keys; give one property its own ease with set_keys' "eases" (a hop: x linear, y "out" rising).
 Use get_pose to check where bones end up (feet on the ground, hands where intended): it is the Spine runtime's pose, IK included.
-Put many keys in one set_keys call: each call is ONE undo step for the user. End with check_preview on what you made, then show it, and tell the user briefly what you did.`;
+Put many keys in one set_keys call: each call is ONE undo step for the user. End with check_preview on what you made, then show it, and tell the user briefly what you did.
+When an animation has a reference (get_rig lists it), animate from it: get_reference for its timing and the images at a few key frames (contacts, extremes); pose each key frame with set_keys; check it with render_frame, which draws your skeleton over the reference with every bone named; adjust until the body lines up, then let eases fill between and look at a frame in between. Pictures cost tokens: look at key frames, not every frame. A picture the user attaches is the pose or the style to match.`;
 
 async function chat(messages) {
   const key = PROVIDER.key();
   if (!key) throw new Error(`The bridge has no ${PROVIDER.keyName}: start it with the key in its environment.`);
   const convo = [...messages];
   for (let turn = 0; turn < 24; turn++) {
-    const reply = await PROVIDER.turn(convo, key);
+    const reply = await PROVIDER.turn(forModel(convo), key);
     convo.push({ role: "assistant", content: reply.blocks });
     const uses = reply.blocks.filter((b) => b.type === "tool_use");
     if (!reply.toolUse || uses.length === 0) {
@@ -167,7 +210,13 @@ async function chat(messages) {
     const results = [];
     for (const use of uses) {
       try {
-        results.push({ type: "tool_result", tool_use_id: use.id, content: JSON.stringify(await callPage(use.name, use.input)) });
+        const { text, images } = splitImages(await callPage(use.name, use.input));
+        results.push({
+          type: "tool_result", tool_use_id: use.id,
+          content: images.length
+            ? [{ type: "text", text }, ...images.map((i) => ({ type: "image", source: { type: "base64", media_type: i.mimeType, data: i.data } }))]
+            : text,
+        });
       } catch (err) {
         results.push({ type: "tool_result", tool_use_id: use.id, content: err.message, is_error: true });
       }
@@ -196,6 +245,10 @@ async function anthropicTurn(convo, key) {
 /** One OpenAI-compatible call (GLM): the conversation is translated to
     chat-completions format and the reply back, so /chat stays Anthropic-shaped. */
 async function openaiTurn(convo, key) {
+  // Anthropic's image block as a chat-completions content part.
+  const part = (b) => (b.type === "image"
+    ? { type: "image_url", image_url: { url: `data:${b.source.media_type};base64,${b.source.data}` } }
+    : { type: "text", text: b.text ?? "" });
   const toOpenAI = (m) => {
     const blocks = Array.isArray(m.content) ? m.content : [];
     if (m.role === "user" && typeof m.content === "string") return [{ role: "user", content: m.content }];
@@ -205,8 +258,18 @@ async function openaiTurn(convo, key) {
         .map((b) => ({ id: b.id, type: "function", function: { name: b.name, arguments: JSON.stringify(b.input ?? {}) } }));
       return [{ role: "assistant", content: text || null, ...(tool_calls.length ? { tool_calls } : {}) }];
     }
-    return blocks.filter((b) => b.type === "tool_result")
-      .map((b) => ({ role: "tool", tool_call_id: b.tool_use_id, content: b.content }));
+    const results = blocks.filter((b) => b.type === "tool_result");
+    if (results.length === 0) return [{ role: "user", content: blocks.map(part) }];
+    // A tool message is text only: the pictures follow as the user's.
+    const out = [];
+    const pictures = [];
+    for (const b of results) {
+      const content = Array.isArray(b.content) ? b.content : [{ type: "text", text: String(b.content) }];
+      out.push({ role: "tool", tool_call_id: b.tool_use_id, content: content.filter((c) => c.type !== "image").map((c) => c.text).join("\n") });
+      pictures.push(...content.filter((c) => c.type === "image").map(part));
+    }
+    if (pictures.length) out.push({ role: "user", content: [{ type: "text", text: "The pictures the tools above returned:" }, ...pictures] });
+    return out;
   };
   const res = await fetch(API_URL, {
     method: "POST",
@@ -251,8 +314,11 @@ async function handle(msg) {
       const name = msg.params?.name;
       if (!TOOLS.some((t) => t.name === name)) return fail(-32602, `Unknown tool: ${name}`);
       try {
-        const value = await callPage(name, msg.params?.arguments ?? {});
-        return reply({ content: [{ type: "text", text: JSON.stringify(value, null, 1) }] });
+        const { text, images } = splitImages(await callPage(name, msg.params?.arguments ?? {}));
+        return reply({ content: [
+          { type: "text", text: JSON.stringify(JSON.parse(text), null, 1) },
+          ...images.map((i) => ({ type: "image", data: i.data, mimeType: i.mimeType })),
+        ] });
       } catch (err) {
         return reply({ content: [{ type: "text", text: err.message }], isError: true });
       }

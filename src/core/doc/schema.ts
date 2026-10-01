@@ -193,6 +193,21 @@ export function validateProject(raw: unknown): ValidationResult {
       anim.duration = clampInt(anim.duration, 1, 100000, 1);
       anim.playTimes = clampInt(anim.playTimes, 0, 10000, 0);
       anim.tracks ??= {};
+      if (anim.reference !== undefined) {
+        const r = anim.reference as unknown as Record<string, unknown>;
+        const finite = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+        const frames = Array.isArray(r?.frames) ? (r.frames as unknown[]).filter((f): f is string => typeof f === "string") : [];
+        if (frames.length === 0) delete anim.reference;
+        else {
+          for (const f of frames) observeId(f);
+          anim.reference = {
+            frames: frames as never,
+            width: clampInt(r.width, 1, 16384, 1), height: clampInt(r.height, 1, 16384, 1),
+            hold: clampInt(r.hold, 1, 1000, 1), start: clampInt(r.start, 0, 100000, 0),
+            x: finite(r.x, 0), y: finite(r.y, 0), scale: Math.max(1e-4, finite(r.scale, 1)),
+          };
+        }
+      }
       for (const [nodeId, track] of Object.entries(anim.tracks)) {
         if (!item.nodes[nodeId as never] || !track?.keys?.length) {
           delete anim.tracks[nodeId as never];
@@ -354,6 +369,9 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // 8 -> 9: eases per axis (`Keyframe.eases` x, y, scaleX, scaleY, shear).
   // Additive; an older build would drop them and play both axes on one ease.
   8: (p) => ({ ...p, version: 9 }),
+  // 9 -> 10: `Animation.reference`, reference art saved in the file. An
+  // older build would keep the field and drop its images on the next save.
+  9: (p) => ({ ...p, version: 10 }),
 };
 
 /** A tween read from disk, or null when it is not one this build knows. */

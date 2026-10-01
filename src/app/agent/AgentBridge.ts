@@ -56,12 +56,12 @@ export class AgentBridge {
   }
 
   /** Which model Ask AI runs, or null when the bridge does not answer. */
-  async info(): Promise<{ provider: string; model: string } | null> {
+  async info(): Promise<{ provider: string; model: string; vision: boolean } | null> {
     try {
       const res = await fetch(`${this.url}/agent/status`);
       if (!res.ok) return null;
-      const body = await res.json() as { provider?: string; model?: string };
-      return { provider: body.provider ?? "anthropic", model: body.model ?? "" };
+      const body = await res.json() as { provider?: string; model?: string; vision?: boolean };
+      return { provider: body.provider ?? "anthropic", model: body.model ?? "", vision: body.vision !== false };
     } catch {
       return null;
     }

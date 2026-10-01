@@ -1,6 +1,10 @@
 import type { Store } from "@/app/Store";
-import type { AnimId, NodeId } from "@/core/doc/ids";
+import type { AnimId, AssetId, NodeId } from "@/core/doc/ids";
 import type { Animation, Keyframe, Node, SymbolItem, Track } from "@/core/doc/types";
+import { entryBox, type FrameContext } from "@/core/doc/pose";
+import { type ImageFrame, imageFrame, referenceEnd, referenceFrameOf, referenceIndexAt, referenceRect } from "@/core/doc/reference";
+import { apply } from "@/core/math/Matrix2D";
+import { pt, type Rect, transformCorners } from "@/core/math/geom";
 import { createKeyframe } from "@/core/doc/defaults";
 import { insertKeyframe, keyIndexAt, setEndFrame } from "@/core/doc/timeline";
 import { AddAnimation, EditTracks } from "@/core/history/timelineCommands";
@@ -40,6 +44,30 @@ export interface PreviewProbe {
   matricesAt(animation: string, frame: number): Promise<Record<string, number[]>>;
 }
 
+/** A picture for the model, base64. */
+export interface AgentImage { mimeType: string; data: string }
+
+/** A tool's value carries its pictures under this key; the bridge lifts
+ *  them out into image blocks (MCP, Claude, GLM's vision models). */
+export const IMAGES_KEY = "__images";
+
+/** A bone drawn over a picture: from its origin to its tip, in pixels. */
+export interface BoneMark { name: string; from: [number, number]; to: [number, number] }
+
+/** What the model can look at: the page's canvases (`view/agent/AgentVision.ts`).
+ *  The geometry is worked out here; this only paints and encodes. */
+export interface AgentVision {
+  /** One reference image, its longer side at most `maxSide` pixels. */
+  image(assetId: AssetId, maxSide: number): Promise<AgentImage>;
+  /** The symbol at a frame as the stage draws it, through `view`, over its
+   *  reference image when `reference` is set, with `bones` marked and named. */
+  render(req: { symbol: SymbolItem; animation: Animation; frame: number; view: ImageFrame; reference: boolean; bones: BoneMark[] }): Promise<AgentImage>;
+}
+
+/** Longest side of a rendered frame and of a reference image, in pixels:
+ *  enough to see a pose, few enough tokens to look at many. */
+const RENDER_SIDE = 768, REFERENCE_SIDE = 512, MAX_IMAGES = 6;
+
 type Args = Record<string, unknown>;
 type SpineKeyIn = {
   bone: string; frame: number; x?: number; y?: number; rotation?: number; scaleX?: number; scaleY?: number;
@@ -49,7 +77,7 @@ type SpineKeyIn = {
 const round = (v: number, digits = 4) => Math.round(v * 10 ** digits) / 10 ** digits;
 
 export class AgentApi {
-  constructor(private readonly store: Store, private readonly preview?: PreviewProbe) {}
+  constructor(private readonly store: Store, private readonly preview?: PreviewProbe, private readonly vision?: AgentVision) {}
 
   get tools(): AgentTool[] { return AGENT_TOOLS; }
 
@@ -65,6 +93,8 @@ export class AgentApi {
       case "undo": return this.step("undo", typeof args.steps === "number" ? args.steps : 1);
       case "redo": return this.step("redo", typeof args.steps === "number" ? args.steps : 1);
       case "check_preview": return this.checkPreview(str(args, "animation"), args.frames);
+      case "get_reference": return this.getReference(str(args, "animation"), args.frames);
+      case "render_frame": return this.renderFrame(str(args, "animation"), int(args, "frame", 0), args.reference !== false, args.bones !== false);
       default: throw new AgentError(`There is no tool "${name}".`);
     }
   }
@@ -119,7 +149,10 @@ export class AgentApi {
         const bones = k.chain > 0 && effector?.parentId ? [nameOf(effector.parentId), effector.name] : [effector?.name];
         return { name: k.name, bones, target: nameOf(k.targetId), mix: k.weight };
       }),
-      animations: s.animations.map((a) => ({ name: a.name, frames: this.frames(a), loops: a.playTimes === 0 })),
+      animations: s.animations.map((a) => ({
+        name: a.name, frames: this.frames(a), loops: a.playTimes === 0,
+        ...(a.reference ? { reference: { images: a.reference.frames.length, frames: [a.reference.start, referenceEnd(a.reference)] } } : {}),
+      })),
       ...(skinsOf(s).some((n) => n !== "default") ? { skins: skinsOf(s).filter((n) => n !== "default") } : {}),
       showing: { animation: anim?.name ?? null, frame: this.store.ui.frame, ...(s.spine ? { skins: stageSkinOf(s) } : {}) },
     };
@@ -256,6 +289,91 @@ export class AgentApi {
     this.store.setUi({ animId: anim.id }, "timeline");
     this.store.setFrame(Math.max(0, Math.round(frame)));
     return { showing: anim.name, frame: this.store.ui.frame, ...(this.sym.spine ? { skins: stageSkinOf(this.sym) } : {}) };
+  }
+
+  /* ── looking ── */
+
+  /** The animation's reference: how its images sit in time and space, and
+   *  the images at the frames asked for. */
+  private async getReference(animName: string, framesArg: unknown) {
+    const anim = this.animation(animName);
+    const ref = anim.reference;
+    if (!ref) throw new AgentError(`"${anim.name}" has no reference. The user adds one in the Reference panel.`);
+    const frames = framesArg === undefined ? [] : Array.isArray(framesArg) ? framesArg : [framesArg];
+    if (!frames.every((f) => typeof f === "number" && Number.isInteger(f) && f >= 0)) throw new AgentError("frames is a list of whole frame numbers.");
+    if (frames.length > MAX_IMAGES) throw new AgentError(`At most ${MAX_IMAGES} frames at a time.`);
+    const images: AgentImage[] = [];
+    const shown: Array<{ frame: number; image: number | null }> = [];
+    for (const f of frames as number[]) {
+      const i = referenceIndexAt(ref, f);
+      shown.push({ frame: f, image: i === null ? null : i + 1 });
+      if (i !== null) images.push(await this.needVision().image(ref.frames[i]!, REFERENCE_SIDE));
+    }
+    const r = referenceRect(ref);
+    return {
+      animation: anim.name,
+      images: ref.frames.length,
+      size: [ref.width, ref.height],
+      timing: `image n (1-based) shows from frame ${ref.start} + (n-1)*${ref.hold} for ${ref.hold} frame(s); the reference ends at frame ${referenceEnd(ref)}`,
+      keyFrames: ref.frames.map((_, i) => referenceFrameOf(ref, i)),
+      // Spine conventions, as get_pose reports worlds: y up.
+      placement: `image pixel (u, v) from its top-left sits at x = ${round(r.x, 3)} + u*${round(ref.scale, 6)}, y = ${round(-r.y, 3)} - v*${round(ref.scale, 6)} in the skeleton's space (the space get_pose reports)`,
+      ...(shown.length ? { shown } : {}),
+      [IMAGES_KEY]: images,
+    };
+  }
+
+  /** The skeleton at a frame as the stage draws it, over its reference, with
+   *  every bone drawn and named; and where each bone lands in the picture. */
+  private async renderFrame(animName: string, frame: number, withReference: boolean, withBones: boolean) {
+    const anim = this.animation(animName);
+    const sym = this.sym;
+    const pose = posedSymbol(this.store.project, sym, anim, frame, "animate");
+    const when: FrameContext = { animationName: anim.name, frame, mode: "animate" };
+    const boxes: Rect[] = [];
+    for (const e of pose.entries) {
+      if (!e.visible || !(e.display || e.spine)) continue;
+      const b = entryBox(this.store.project, e, when);
+      if (!b) continue;
+      const c = transformCorners(e.world, b);
+      const xs = c.map((p) => p.x), ys = c.map((p) => p.y);
+      boxes.push({ x: Math.min(...xs), y: Math.min(...ys), w: Math.max(...xs) - Math.min(...xs), h: Math.max(...ys) - Math.min(...ys) });
+    }
+    const bones = this.bones().map((n) => {
+      const m = pose.byNode.get(n.id)?.world;
+      if (!m) return null;
+      const tip = apply(pt(), m, n.boneLength ?? 0, 0);
+      return { name: n.name, from: [m.tx, m.ty] as [number, number], to: [tip.x, tip.y] as [number, number] };
+    }).filter((b): b is NonNullable<typeof b> => !!b);
+    // Framed on what is drawn: helper bones far from the artwork (an aim
+    // target, a crosshair) would shrink the body to a corner. A rig that
+    // draws nothing is framed on its bones.
+    if (boxes.length === 0) for (const b of bones) boxes.push({ x: Math.min(b.from[0], b.to[0]), y: Math.min(b.from[1], b.to[1]), w: Math.abs(b.to[0] - b.from[0]) || 1e-3, h: Math.abs(b.to[1] - b.from[1]) || 1e-3 });
+    const ref = withReference && anim.reference && referenceIndexAt(anim.reference, frame) !== null ? anim.reference : undefined;
+    if (ref) boxes.push(referenceRect(ref));
+    const view = imageFrame(boxes, RENDER_SIDE);
+    const marks: BoneMark[] = bones.map((b) => ({ name: b.name, from: view.toPixel(...b.from), to: view.toPixel(...b.to) }));
+    const inside = (p: [number, number]) => p[0] >= 0 && p[1] >= 0 && p[0] <= view.width && p[1] <= view.height;
+    const image = await this.needVision().render({ symbol: sym, animation: anim, frame, view, reference: !!ref, bones: withBones ? marks : [] });
+    const [lx, ly] = view.fromPixel(0, 0);
+    return {
+      animation: anim.name, frame,
+      size: [view.width, view.height],
+      reference: ref ? `image ${referenceIndexAt(ref, frame)! + 1} behind the skeleton, half transparent` : "none",
+      // Pixel (px, py) from the top-left of the picture, in the skeleton's
+      // space as get_pose reports it (y up).
+      mapping: `x = ${round(lx, 3)} + px/${round(view.scale, 6)}, y = ${round(-ly, 3)} - py/${round(view.scale, 6)}`,
+      bones: Object.fromEntries(marks.map((m) => [m.name, {
+        origin: m.from.map((v) => round(v, 1)), tip: m.to.map((v) => round(v, 1)), ...(inside(m.from) ? {} : { outside: true }),
+      }])),
+      note: "Names that would overlap are left off the picture; every bone is listed here. Bones marked outside are beyond the picture's edges.",
+      [IMAGES_KEY]: [image],
+    };
+  }
+
+  private needVision(): AgentVision {
+    if (!this.vision) throw new AgentError("Pictures need the editor page; this host cannot draw them.");
+    return this.vision;
   }
 
   private step(which: "undo" | "redo", steps: number) {

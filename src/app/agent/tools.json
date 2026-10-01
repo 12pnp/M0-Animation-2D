@@ -153,5 +153,33 @@
       "required": ["animation"],
       "additionalProperties": false
     }
+  },
+  {
+    "name": "get_reference",
+    "description": "The animation's reference: pictures the user added to animate against, frame by frame (get_rig lists which animations have one). Returns how its images sit in time (which frames each shows) and in the skeleton's space (where an image pixel lands), and the images at the frames you ask for, at most 6 at a time. Look at the reference's key poses before keying.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "animation": { "type": "string" },
+        "frames": { "type": "array", "items": { "type": "integer", "minimum": 0 }, "maxItems": 6, "description": "Frames whose reference image to return. Omit to get only the timing and placement." }
+      },
+      "required": ["animation"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "render_frame",
+    "description": "A picture of the skeleton at a frame, drawn as the editor's stage draws it, over the reference image at that frame (half transparent) when there is one, with every bone drawn as a magenta line from its joint to its tip and named. Also returns each bone's joint and tip in the picture's pixels, and how a pixel maps to the skeleton's space. Use it to compare your pose with the reference and to see what you made; fix what does not match with set_keys and look again.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "animation": { "type": "string" },
+        "frame": { "type": "integer", "minimum": 0 },
+        "reference": { "type": "boolean", "description": "Draw the reference behind the skeleton (default true)." },
+        "bones": { "type": "boolean", "description": "Draw and name the bones (default true)." }
+      },
+      "required": ["animation", "frame"],
+      "additionalProperties": false
+    }
   }
 ]

@@ -939,11 +939,12 @@ flowchart LR
     API -->|"EditTracks, AddAnimation<br/>labelled AI: …"| ST["Store / History"]
     API --> POSE["posedSymbol (get_pose)"]
     API --> PROBE["HiddenPreviewProbe<br/>(check_preview)"]
+    API --> VIS["PageVision<br/>(get_reference, render_frame)"]
 ```
 
 - **Tools** (`src/app/agent/tools.json`, shared by the page and the bridge): `get_rig`,
   `get_animation`, `get_pose`, `new_animation`, `set_keys`, `delete_keys`, `show`, `undo`,
-  `redo`, `check_preview`. Values are Spine's: y up, degrees counter-clockwise, local to
+  `redo`, `check_preview`, `get_reference`, `render_frame`. Values are Spine's: y up, degrees counter-clockwise, local to
   the parent bone, absolute. A model knows them better than the editor's Flash
   conventions, and `toSpineLocal` / `fromSpineLocal` convert exactly.
 - **Every call that edits is one history step** labelled "AI: …". `set_keys` for many
@@ -968,6 +969,35 @@ flowchart LR
   opens it, its right edge drags its width, and both are remembered (`animo.sizes`).
 - **A wrong call is the model's to fix**: `AgentError` messages go back as tool errors
   (`isError`), saying what exists ("There is no bone "tail". get_rig lists them.").
+
+- **The AI can see** (`AgentVision`, painted by `view/agent/AgentVision.ts`). A tool's value
+  carries pictures under `__images`; the bridge lifts them into image content for MCP,
+  image blocks for Claude, and, for GLM, a user message of `image_url` parts after the tool
+  messages (text only in a tool message) when the model reads pictures (`AMINO_VISION`,
+  guessed from a `…v` model name). A model that cannot see gets a line saying a picture was
+  there. Only the newest `AMINO_KEEP_IMAGES` (8) pictures are sent; the page keeps them all.
+  `get_reference` returns the reference's timing, where an image pixel lands in skeleton
+  space, and the images at up to six frames. `render_frame` draws the skeleton at a frame as
+  the stage does, see-through over the reference, every bone a magenta line with its name
+  (names that would overlap are left off; the text lists every bone and its pixels), framed
+  on what is drawn so helper bones far from the art do not shrink the body. The geometry
+  (framing: `imageFrame`, bone pixels) is worked out in `AgentApi`, testable without a
+  canvas; `PageVision` only paints and encodes. The AI panel's 📎 attaches pictures to a
+  message, and it shows the pictures the AI looked at after each answer.
+
+## Reference art
+
+`Animation.reference` holds pictures to animate against: equal-size images (a sprite sheet
+cut into cells, or a run of images brought to the first one's size), one per `hold` frames
+from `start`, placed in the symbol's space (`x`, `y`, `scale`). The Reference panel
+(`view/panels/ReferencePanel.ts`) adds them (a sheet dialog draws the grid as it will cut),
+shows thumbnails that move the playhead, and edits timing and placement; every change is
+one `SetAnimationReference`. A new reference stands over the rig (`fitReference`: as tall,
+centred). The stage draws the image at the playhead in Animate mode, behind or over the
+rig at a set opacity (`stage.showReference`, `referenceOpacity`, `referenceAbove`). Cells are
+scaled to at most 1024 px and saved in the project file with the library images
+(`serializeProject` keeps what `referenceAssets` lists); nothing reaches the export.
+Document version 10. `tests/reference.test.ts` and the project round trip cover it.
 
 `tests/agentApi.test.ts` runs the tools on the stickman and plays the export in spine-core.
 `tests/agentBridge.test.ts` runs the bridge as Claude Code would, with a page that polls

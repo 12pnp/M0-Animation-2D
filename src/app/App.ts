@@ -16,12 +16,15 @@ import { countUsages, LibraryPanel } from "@/view/panels/LibraryPanel";
 import { PropertiesPanel } from "@/view/panels/PropertiesPanel";
 import { OutlinePanel } from "@/view/panels/OutlinePanel";
 import { HistoryPanel } from "@/view/panels/HistoryPanel";
+import { ReferencePanel } from "@/view/panels/ReferencePanel";
+import { ReferenceService } from "./ReferenceService";
 import { PreviewPanel } from "@/view/panels/PreviewPanel";
 import { AgentApi } from "@/app/agent/AgentApi";
-import { AgentBridge } from "@/app/agent/AgentBridge";
+import { AgentBridge, DEFAULT_BRIDGE } from "@/app/agent/AgentBridge";
 import { HiddenPreviewProbe } from "@/app/agent/previewProbe";
 import { openAiHelp } from "@/view/agent/AskAiDialog";
 import { AiPanel } from "@/view/agent/AiPanel";
+import { PageVision } from "@/view/agent/AgentVision";
 import { PreviewSession } from "@/preview/PreviewSession";
 import { openAbout } from "@/view/help/AboutDialog";
 import { APP_NAME } from "@/core/about";
@@ -96,6 +99,7 @@ export class App {
    *  bridge (AI ▸ Connect to AI). */
   readonly agent: AgentApi;
   readonly agentBridge: AgentBridge;
+  readonly references: ReferenceService;
   private readonly aiPanel: AiPanel;
   /** The "unsaved work was found" bar, while it is on screen. */
   private recoveryBar: HTMLElement | null = null;
@@ -125,8 +129,12 @@ export class App {
       (message, isError) => this.toast.show(message, isError),
     );
     this.previewSession = new PreviewSession(this.store, this.assets, (err) => this.previewBuilt(err));
-    this.agent = new AgentApi(this.store, new HiddenPreviewProbe(this.store, this.assets));
-    this.agentBridge = new AgentBridge(this.agent);
+    this.references = new ReferenceService(this.store, this.assets);
+    this.agent = new AgentApi(this.store, new HiddenPreviewProbe(this.store, this.assets), new PageVision(this.store, this.assets));
+    // `?agent=5191` talks to a bridge on another port (AMINO_BRIDGE_PORT),
+    // e.g. beside one another tool already runs.
+    const port = Number(new URLSearchParams(location.search).get("agent"));
+    this.agentBridge = new AgentBridge(this.agent, Number.isInteger(port) && port > 0 && port < 65536 ? `http://127.0.0.1:${port}` : DEFAULT_BRIDGE);
     let lastAgentState = "off";
     this.agentBridge.onState((state, detail) => {
       // Said once per change, not on every retry.
@@ -148,7 +156,7 @@ export class App {
 
     this.registerPanels();
     this.shell.layoutDocks(
-      [["properties"], ["library", "outline"], ["preview"]],
+      [["properties"], ["library", "outline"], ["preview", "reference"]],
       [["timeline"]],
     );
 
@@ -238,6 +246,7 @@ export class App {
     this.shell.addRightPanel(new OutlinePanel(this.store));
     this.shell.addRightPanel(new HistoryPanel(this.store));
     this.shell.addRightPanel(this.preview);
+    this.shell.addRightPanel(new ReferencePanel(this.store, this.assets, this.references, (m, e) => this.toast.show(m, e)));
 
     this.shell.addBottomPanel(this.timeline);
   }

@@ -35,7 +35,9 @@ Preview (checked frame by frame; turn on Export Settings ▸ "Atlas as .atlas.tx
 **An AI can animate the open rig**: Claude or GLM through AI ▸ Ask AI in the
 editor, or any MCP client (Claude Code, Claude Desktop), through tools that read
 the rig, key bones and check the
-result against the Spine runtime. Every AI edit is one undo step.
+result against the Spine runtime. Every AI edit is one undo step. Add a sprite sheet or a
+run of images in the **Reference** panel to animate against frame by frame; the AI can
+look at it and at pictures of its own work (`get_reference`, `render_frame`).
 
 ## Connecting an AI
 

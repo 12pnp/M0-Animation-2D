@@ -164,6 +164,6 @@ describe("loading", () => {
     const { project } = scene();
     const raw = JSON.parse(JSON.stringify({ ...project, version: 5 }));
     expect(validateProject(migrate(raw)).project.version).toBe(DOC_VERSION);
-    expect(DOC_VERSION).toBe(9);
+    expect(DOC_VERSION).toBe(10);
   });
 });

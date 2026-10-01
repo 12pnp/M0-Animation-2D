@@ -63,6 +63,11 @@ export interface StagePrefs {
   /** What a plain mouse wheel does on the stage; the other is on Shift… see
    *  `Viewport`'s wheel handler. */
   wheel: "zoom" | "pan";
+  /** An animation's reference art on the stage (`Animation.reference`). */
+  showReference: boolean;
+  referenceOpacity: number;
+  /** Drawn over the rig rather than behind it. */
+  referenceAbove: boolean;
   showRulers: boolean;
   rulerBg: string;
   rulerTick: string;
@@ -174,6 +179,9 @@ export const DEFAULT_PREFS: Prefs = {
     pasteboard: "#535353",
     fillStage: false,
     wheel: "zoom",
+    showReference: true,
+    referenceOpacity: 0.5,
+    referenceAbove: false,
     showRulers: true,
     rulerBg: "#3c3c3c",
     rulerTick: "#8f8f8f",
@@ -237,6 +245,7 @@ export const PREF_LIMITS: Record<string, { min: number; max: number; step?: numb
   "general.newDocFps": { min: 1, max: 120 },
   "stage.gridSize": { min: 1, max: 4096 },
   "stage.gridSubdivisions": { min: 1, max: 64 },
+  "stage.referenceOpacity": { min: 0.05, max: 1, step: 0.05, decimals: 2 },
   "snap.tolerancePx": { min: 1, max: 64 },
   "gizmos.handleSize": { min: 3, max: 14, step: 0.5, decimals: 1 },
   "timeline.frameWidth": { min: 4, max: 40 },

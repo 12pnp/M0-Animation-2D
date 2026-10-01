@@ -33,7 +33,7 @@ export function statusStrip(bridge: AgentBridge, toggle: () => void): { el: HTML
     if (state === "connected" && bridge.chatReady) {
       const ask = ++asked;
       void bridge.info().then((info) => {
-        if (ask === asked && info && bridge.state === "connected") text.textContent = `Connected. Ask AI is ready: ${info.provider === "glm" ? "GLM" : "Claude"} (${info.model}).`;
+        if (ask === asked && info && bridge.state === "connected") text.textContent = `Connected. Ask AI is ready: ${info.provider === "glm" ? "GLM" : "Claude"} (${info.model})${info.vision ? "" : ", text only: it cannot see pictures"}.`;
       });
     }
   };

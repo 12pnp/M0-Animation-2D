@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { AtlasAttachmentLoader, MixFrom, Physics, Skeleton, SkeletonJson, TextureAtlas } from "@esotericsoftware/spine-core";
 import { reseed } from "@/core/doc/ids";
 import { Store } from "@/app/Store";
-import { AGENT_TOOLS, AgentApi, AgentError } from "@/app/agent/AgentApi";
+import { AGENT_TOOLS, AgentApi, AgentError, type AgentVision, type BoneMark, IMAGES_KEY } from "@/app/agent/AgentApi";
+import type { AssetId } from "@/core/doc/ids";
+import { SetAnimationReference } from "@/core/history/timelineCommands";
 import { exportSpine, spineJson } from "@/core/spine/exportSpine";
 import { atlasText } from "@/core/spine/atlas";
 import { isImage } from "@/core/doc/types";
@@ -46,6 +48,7 @@ describe("the AI's tools", () => {
   it("are described once, with a schema each", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
+      "get_reference", "render_frame",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -177,5 +180,70 @@ describe("the AI's tools", () => {
     await expect(api.call("show", { animation: anim, skins: ["hat"] })).rejects.toThrow(/no skin "hat"/);
     await api.call("undo");
     expect((await api.call("get_rig") as { showing: { skins: string[] } }).showing.skins).toEqual(["skin-base"]);
+  });
+
+  /** A stand-in for the page's canvases: records what it was asked to paint. */
+  function fakeVision() {
+    const renders: Array<{ frame: number; reference: boolean; bones: BoneMark[]; width: number; height: number }> = [];
+    const images: string[] = [];
+    const vision: AgentVision = {
+      image: async (id, maxSide) => { images.push(`${id}@${maxSide}`); return { mimeType: "image/png", data: `IMG:${id}` }; },
+      render: async (req) => {
+        renders.push({ frame: req.frame, reference: req.reference, bones: req.bones, width: req.view.width, height: req.view.height });
+        return { mimeType: "image/png", data: "RENDER" };
+      },
+    };
+    return { vision, renders, images };
+  }
+
+  it("show the reference's timing, placement and images, and say plainly when there is none", async () => {
+    const { store } = await setup();
+    const fake = fakeVision();
+    const api = new AgentApi(store, undefined, fake.vision);
+    const anim = store.currentSymbol.animations.find((a) => a.name === "run")!;
+    await expect(api.call("get_reference", { animation: "run" })).rejects.toThrow(/no reference/);
+    store.apply(new SetAnimationReference(store.currentSymbolId, anim.id,
+      { frames: ["r1", "r2", "r3"] as AssetId[], width: 100, height: 200, hold: 4, start: 2, x: -50, y: -200, scale: 2 }));
+
+    const rig = await api.call("get_rig") as { animations: Array<{ name: string; reference?: unknown }> };
+    expect(rig.animations.find((a) => a.name === "run")!.reference).toEqual({ images: 3, frames: [2, 13] });
+
+    const out = await api.call("get_reference", { animation: "run", frames: [0, 2, 7, 13, 14] }) as Record<string, unknown>;
+    expect(out.keyFrames).toEqual([2, 6, 10]);
+    expect(out.shown).toEqual([{ frame: 0, image: null }, { frame: 2, image: 1 }, { frame: 7, image: 2 }, { frame: 13, image: 3 }, { frame: 14, image: null }]);
+    expect(out[IMAGES_KEY]).toEqual([{ mimeType: "image/png", data: "IMG:r1" }, { mimeType: "image/png", data: "IMG:r2" }, { mimeType: "image/png", data: "IMG:r3" }]);
+    // Pixel (u, v) of the image in Spine's y-up space: its top-left is (-50, 200).
+    expect(out.placement).toContain("x = -50 + u*2, y = 200 - v*2");
+    await expect(api.call("get_reference", { animation: "run", frames: [1, 2, 3, 4, 5, 6, 7] })).rejects.toThrow(/At most 6/);
+  });
+
+  it("render a frame with each bone where get_pose puts it, over the reference when asked", async () => {
+    const { store } = await setup();
+    const fake = fakeVision();
+    const api = new AgentApi(store, undefined, fake.vision);
+    const anim = store.currentSymbol.animations.find((a) => a.name === "run")!;
+    store.apply(new SetAnimationReference(store.currentSymbolId, anim.id,
+      { frames: ["r1"] as AssetId[], width: 100, height: 200, hold: 20, start: 0, x: -50, y: -200, scale: 2 }));
+
+    const out = await api.call("render_frame", { animation: "run", frame: 5 }) as {
+      size: number[]; mapping: string; bones: Record<string, { origin: number[] }>; reference: string; [IMAGES_KEY]: unknown[];
+    };
+    expect(out[IMAGES_KEY]).toEqual([{ mimeType: "image/png", data: "RENDER" }]);
+    expect(Math.max(...out.size)).toBe(768);
+    expect(out.reference).toMatch(/image 1/);
+    expect(fake.renders[0]).toMatchObject({ frame: 5, reference: true });
+    expect(fake.renders[0]!.bones.length).toBeGreaterThan(5);
+
+    // The picture's mapping takes each bone's pixel back to get_pose's world.
+    const [, x0, s1, y0, s2] = /x = (-?[\d.]+) \+ px\/([\d.]+), y = (-?[\d.]+) - py\/([\d.]+)/.exec(out.mapping)!.map(Number) as number[];
+    const pose = await api.call("get_pose", { animation: "run", frame: 5 }) as { bones: Record<string, { x: number; y: number }> };
+    for (const [name, b] of Object.entries(out.bones)) {
+      expect(x0! + b.origin[0]! / s1!).toBeCloseTo(pose.bones[name]!.x, 0);
+      expect(y0! - b.origin[1]! / s2!).toBeCloseTo(pose.bones[name]!.y, 0);
+    }
+
+    await api.call("render_frame", { animation: "run", frame: 30, bones: false });
+    expect(fake.renders[1]).toMatchObject({ reference: false, bones: [] });
+    await expect(new AgentApi(store).call("render_frame", { animation: "run", frame: 0 })).rejects.toBeInstanceOf(AgentError);
   });
 });

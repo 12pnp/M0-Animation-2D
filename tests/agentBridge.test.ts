@@ -4,7 +4,9 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { reseed } from "@/core/doc/ids";
 import { Store } from "@/app/Store";
-import { AGENT_TOOLS, AgentApi, AgentError } from "@/app/agent/AgentApi";
+import { AGENT_TOOLS, AgentApi, AgentError, type AgentVision } from "@/app/agent/AgentApi";
+import type { AssetId } from "@/core/doc/ids";
+import type { SymbolItem } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
 
 /**
@@ -16,13 +18,16 @@ import { loadStickman } from "./fixtures/stickman";
  */
 
 const BRIDGE = fileURLToPath(new URL("../mcp/amino-bridge.mjs", import.meta.url));
-const PORT = 5391, API_PORT = 5392, GLM_PORT = 5393, GLM_API_PORT = 5394;
+const PORT = 5391, API_PORT = 5392, GLM_PORT = 5393, GLM_API_PORT = 5394, GLMV_PORT = 5395;
 const ORIGIN = "http://localhost:5181";
 
 let bridge: ChildProcess;
 let fakeApi: http.Server;
 const apiRequests: Array<{ messages: Array<{ role: string; content: unknown }>; tools: Array<{ name: string }> }> = [];
 let glmBridge: ChildProcess;
+let glmVisionBridge: ChildProcess;
+/** The tool the fake models ask for when handed a question. */
+let askFor: { name: string; input: Record<string, unknown> } = { name: "get_rig", input: {} };
 let glmApi: http.Server;
 const glmRequests: Array<{ messages: Array<{ role: string; tool_call_id?: string; content: unknown }>; tools: Array<{ type?: string }>; authorization?: string }> = [];
 let pageRunning = true;
@@ -59,18 +64,29 @@ async function runPage(api: AgentApi, port = PORT): Promise<void> {
 beforeAll(async () => {
   reseed();
   const { project } = await loadStickman();
-  const api = new AgentApi(new Store(project));
+  const sym = project.items[project.rootSymbolId] as SymbolItem;
+  sym.animations.find((a) => a.name === "run")!.reference = {
+    frames: ["r1"] as AssetId[], width: 10, height: 20, hold: 30, start: 0, x: -5, y: -20, scale: 10,
+  };
+  // The page's canvases, faked: a picture is a tag.
+  const vision: AgentVision = {
+    image: async (id) => ({ mimeType: "image/png", data: `IMG_${id}` }),
+    render: async () => ({ mimeType: "image/png", data: "RENDER" }),
+  };
+  const api = new AgentApi(new Store(project), undefined, vision);
 
-  // A fake Messages API: first asks for get_rig, then says it is done.
+  // A fake Messages API: asks for `askFor` when handed a question, then
+  // says it is done.
   fakeApi = http.createServer(async (req, res) => {
     const chunks: Buffer[] = [];
     for await (const c of req) chunks.push(c as Buffer);
     const body = JSON.parse(Buffer.concat(chunks).toString());
     apiRequests.push(body);
-    const first = apiRequests.length === 1;
+    const last = body.messages.at(-1).content;
+    const first = typeof last === "string" || !last.some((b: { type: string }) => b.type === "tool_result");
     res.setHeader("content-type", "application/json");
     res.end(JSON.stringify(first
-      ? { content: [{ type: "tool_use", id: "tu1", name: "get_rig", input: {} }], stop_reason: "tool_use" }
+      ? { content: [{ type: "tool_use", id: "tu1", name: askFor.name, input: askFor.input }], stop_reason: "tool_use" }
       : { content: [{ type: "text", text: "The rig has hips." }], stop_reason: "end_turn" }));
   });
   await new Promise<void>((r) => fakeApi.listen(API_PORT, "127.0.0.1", r));
@@ -99,10 +115,10 @@ beforeAll(async () => {
     for await (const c of req) chunks.push(c as Buffer);
     const body = JSON.parse(Buffer.concat(chunks).toString());
     glmRequests.push({ ...body, authorization: req.headers.authorization });
-    const first = glmRequests.length === 1;
+    const first = !body.messages.some((m: { role: string }) => m.role === "tool");
     res.setHeader("content-type", "application/json");
     res.end(JSON.stringify(first
-      ? { choices: [{ message: { content: null, tool_calls: [{ id: "call1", type: "function", function: { name: "get_rig", arguments: "{}" } }] }, finish_reason: "tool_calls" }] }
+      ? { choices: [{ message: { content: null, tool_calls: [{ id: "call1", type: "function", function: { name: askFor.name, arguments: JSON.stringify(askFor.input) } }] }, finish_reason: "tool_calls" }] }
       : { choices: [{ message: { content: "The rig has hips." }, finish_reason: "stop" }] }));
   });
   await new Promise<void>((r) => glmApi.listen(GLM_API_PORT, "127.0.0.1", r));
@@ -113,12 +129,19 @@ beforeAll(async () => {
   glmBridge.stdout!.resume(); // no MCP over stdio for this one
   await new Promise<void>((r) => glmBridge.stderr!.once("data", () => r()));
   void runPage(api, GLM_PORT);
+
+  // GLM with a vision model: AMINO_VISION=1 says it reads pictures.
+  glmVisionBridge = spawn("node", [BRIDGE], { stdio: ["pipe", "pipe", "pipe"], env: { ...env, AMINO_BRIDGE_PORT: String(GLMV_PORT), AMINO_VISION: "1" } });
+  glmVisionBridge.stdout!.resume();
+  await new Promise<void>((r) => glmVisionBridge.stderr!.once("data", () => r()));
+  void runPage(api, GLMV_PORT);
 });
 
 afterAll(async () => {
   pageRunning = false;
   bridge?.kill();
   glmBridge?.kill();
+  glmVisionBridge?.kill();
   await new Promise((r) => fakeApi.close(r));
   await new Promise((r) => glmApi.close(r));
 });
@@ -191,5 +214,65 @@ describe("the AI bridge on GLM", () => {
     // Back to the page: the model's tool call came back in Anthropic shape.
     const said = body.messages.find((m) => m.role === "assistant")!;
     expect(said.content).toEqual([{ type: "tool_use", id: "call1", name: "get_rig", input: {} }]);
+  });
+});
+
+describe("pictures through the bridge", () => {
+  const chat = async (port: number, messages: unknown[]) => {
+    const res = await fetch(`http://127.0.0.1:${port}/chat`, {
+      method: "POST", headers: { origin: ORIGIN, "content-type": "application/json" }, body: JSON.stringify({ messages }),
+    });
+    return await res.json() as { text: string; messages: Array<{ role: string; content: unknown }> };
+  };
+  const picture = (data: string) => ({ type: "image", source: { type: "base64", media_type: "image/png", data } });
+
+  it("hands a tool's picture to an MCP client as image content, not as text", async () => {
+    const out = await rpc("tools/call", { name: "render_frame", arguments: { animation: "run", frame: 3 } });
+    const content = out.result!.content as Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
+    expect(content[1]).toEqual({ type: "image", data: "RENDER", mimeType: "image/png" });
+    expect(content[0]!.text).not.toContain("__images");
+    expect(JSON.parse(content[0]!.text!).mapping).toMatch(/px/);
+  });
+
+  it("sends Claude the user's picture and the tool's, and only the newest eight", async () => {
+    askFor = { name: "render_frame", input: { animation: "run", frame: 3 } };
+    const from = apiRequests.length;
+    // Nine pictures earlier in the conversation (every other message), one
+    // attached now, one the tool returns: eleven, of which eight are sent.
+    const earlier = Array.from({ length: 18 }, (_, i) => ({ role: i % 2 ? "assistant" : "user", content: i % 2 ? [{ type: "text", text: "ok" }] : [picture(`OLD${i}`), { type: "text", text: "look" }] }));
+    const body = await chat(PORT, [...earlier, { role: "user", content: [picture("MINE"), { type: "text", text: "Pose it like this." }] }]);
+    expect(body.text).toBe("The rig has hips.");
+    const pics = (req: { messages: Array<{ content: unknown }> }) => JSON.stringify(req.messages).match(/"data":"[A-Z0-9_]+"/g) ?? [];
+    expect(pics(apiRequests[from]!)).toContain('"data":"MINE"');
+    // The second call carries the render as an image block in the tool result.
+    const result = (apiRequests[from + 1]!.messages.at(-1)!.content as Array<{ type: string; content: Array<{ type: string; source?: { data: string } }> }>)[0]!;
+    expect(result.type).toBe("tool_result");
+    expect(result.content[1]).toEqual(picture("RENDER"));
+    expect(pics(apiRequests[from + 1]!)).toHaveLength(8);
+    expect(pics(apiRequests[from + 1]!)).not.toContain('"data":"OLD0"');
+    expect(JSON.stringify(apiRequests[from + 1]!.messages)).toContain("left out to save tokens");
+    // The page keeps every picture: the trimming is only what is sent.
+    expect(JSON.stringify(body.messages)).toContain("OLD0");
+  });
+
+  it("tells a GLM model that cannot see that a picture was there, and sends it none", async () => {
+    askFor = { name: "render_frame", input: { animation: "run", frame: 3 } };
+    const from = glmRequests.length;
+    await chat(GLM_PORT, [{ role: "user", content: "Show me frame 3." }]);
+    const sent = JSON.stringify(glmRequests[from + 1]!.messages);
+    expect(sent).not.toContain("image_url");
+    expect(sent).toContain("cannot see pictures");
+  });
+
+  it("gives a GLM vision model the tool's picture right after the tool's text", async () => {
+    askFor = { name: "get_reference", input: { animation: "run", frames: [0] } };
+    const from = glmRequests.length;
+    await chat(GLMV_PORT, [{ role: "user", content: "What does the reference show?" }]);
+    const msgs = glmRequests[from + 1]!.messages;
+    const tool = msgs.findIndex((m) => m.role === "tool");
+    expect(msgs[tool]!.content).toMatch(/keyFrames/);
+    expect(msgs[tool + 1]).toMatchObject({ role: "user" });
+    expect(JSON.stringify(msgs[tool + 1]!.content)).toContain("data:image/png;base64,IMG_r1");
+    askFor = { name: "get_rig", input: {} };
   });
 });

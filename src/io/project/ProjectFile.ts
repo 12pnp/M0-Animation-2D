@@ -1,7 +1,8 @@
 import { strFromU8, strToU8 } from "fflate";
 import { unzipFiles, zipFiles } from "@/io/zip";
 import type { Project } from "@/core/doc/types";
-import { isImage } from "@/core/doc/types";
+import { isImage, isSymbol } from "@/core/doc/types";
+import { referenceAssets } from "@/core/doc/reference";
 import type { AssetId } from "@/core/doc/ids";
 import type { AssetStore } from "@/app/AssetStore";
 import { type Diagnostic, migrate, validateProject } from "@/core/doc/schema";
@@ -41,6 +42,8 @@ export async function serializeProject(project: Project, assets: AssetStore): Pr
   const used = new Set<AssetId>();
   for (const item of Object.values(project.items)) {
     if (isImage(item)) used.add(item.assetId);
+    // Reference art is kept too: it is part of the document, only not exported.
+    if (isSymbol(item)) for (const id of referenceAssets(item.animations)) used.add(id as AssetId);
   }
 
   for (const id of used) {

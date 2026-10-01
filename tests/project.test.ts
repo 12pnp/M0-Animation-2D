@@ -128,6 +128,27 @@ describe("project round trip", () => {
     expect(assets.size()).toBe(2);
   });
 
+  it("keeps reference art: its images and its placement, and drops them once it is removed", async () => {
+    const assets = fakeAssets();
+    const project = richProject(assets);
+    for (const id of ["ref_0", "ref_1"]) assets.seed(id, [0x89, 0x50, id.length, 7]);
+    const anim = (project.items[project.rootSymbolId] as SymbolItem).animations[0]!;
+    anim.reference = { frames: ["ref_0", "ref_1"] as AssetId[], width: 64, height: 96, hold: 2, start: 1, x: -32, y: -96, scale: 1.5 };
+
+    const blob = await serializeProject(project, assets.store);
+    assets.store.clear();
+    const { project: loaded } = await deserializeProject(await blob.arrayBuffer(), assets.store);
+    expect(assets.size()).toBe(4);
+    expect(await assets.bytesOf("ref_1")).toEqual([0x89, 0x50, 5, 7]);
+    expect((loaded.items[loaded.rootSymbolId] as SymbolItem).animations[0]!.reference).toEqual(anim.reference);
+
+    delete anim.reference;
+    const again = await serializeProject(project, assets.store);
+    assets.store.clear();
+    await deserializeProject(await again.arrayBuffer(), assets.store);
+    expect(assets.size()).toBe(2);
+  });
+
   it("explains itself when handed something that is not a project", async () => {
     const assets = fakeAssets();
     const notAZip = new Uint8Array([1, 2, 3, 4]).buffer;

@@ -1,5 +1,5 @@
 import type { Command, TouchSet } from "./Command";
-import type { Animation, Keyframe, Project, SymbolItem, Track } from "@/core/doc/types";
+import type { Animation, AnimationReference, Keyframe, Project, SymbolItem, Track } from "@/core/doc/types";
 import { isSymbol } from "@/core/doc/types";
 import type { AnimId, ItemId, NodeId } from "@/core/doc/ids";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
@@ -308,4 +308,36 @@ export function withEases(track: Track, frame: number, tween: TweenSpec, eases: 
       return next;
     }),
   };
+}
+
+/** An animation's reference art (`Animation.reference`), replaced whole;
+ *  undefined removes it. The images stay in the asset store for undo; the
+ *  project file keeps only what something still shows. */
+export class SetAnimationReference implements Command {
+  readonly kind = "anim.reference";
+  readonly touches: TouchSet;
+  private before: AnimationReference | undefined;
+  private captured = false;
+
+  constructor(
+    private readonly symbolId: ItemId, private readonly animId: AnimId,
+    private readonly next: AnimationReference | undefined, readonly label = "Change Reference",
+  ) {
+    this.touches = { symbols: [symbolId], timeline: true, stage: true };
+  }
+
+  apply(p: Project): void {
+    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
+    if (!anim) return;
+    if (!this.captured) { this.before = anim.reference; this.captured = true; }
+    if (this.next) anim.reference = { ...this.next, frames: [...this.next.frames] };
+    else delete anim.reference;
+  }
+
+  revert(p: Project): void {
+    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
+    if (!anim) return;
+    if (this.before) anim.reference = this.before;
+    else delete anim.reference;
+  }
 }
