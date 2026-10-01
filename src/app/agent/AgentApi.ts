@@ -12,7 +12,9 @@ import MOTIONS from "@/core/rig/motions.json";
 import { insertKeyframe, keyIndexAt, setEndFrame } from "@/core/doc/timeline";
 import { AddAnimation, EditTracks } from "@/core/history/timelineCommands";
 import { AddNode, createsCycle, SetLayerOrder, SetParent, SetPivot, SetStageSkins } from "@/core/history/commands";
-import { AddIkConstraint } from "@/core/history/ikCommands";
+import { AddIkConstraint, SetIkOptions } from "@/core/history/ikCommands";
+import { autoRigPlan, jointNames, type RigLayer } from "@/core/rig/autoRig";
+import { evaluateSymbol } from "@/core/doc/pose";
 import { boneFromWorld, placeOnBone, siblingOrder, type SpinePoint } from "@/core/rig/rigPlan";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
 import { CURVE_Y_LIMIT, easeOf, sameEase } from "@/core/math/easing";
@@ -113,6 +115,7 @@ export class AgentApi {
       case "add_bones": return this.addBones(list<BoneIn>(args, "bones"));
       case "attach": return this.attach(list<AttachIn>(args, "items"));
       case "add_ik": return this.addIk(str(args, "bone"), args);
+      case "auto_rig": return this.autoRig(args);
       case "list_motions": return this.listMotions();
       case "apply_motion": return this.applyMotion(str(args, "motion"), args);
       case "draw_order": return this.drawOrder(typeof args.parent === "string" ? args.parent : null, list<string>(args, "front"));
@@ -500,6 +503,100 @@ export class AgentApi {
     this.store.apply(new SetLayerOrder("AI: Draw Order", this.store.currentSymbolId, plan.map((l) => l.id)));
     const children = this.sym.layers.map((l) => this.sym.nodes[l.nodeId]!).filter((n) => (n.parentId ?? null) === parentId);
     return { parent: parentName, frontToBack: children.map((n) => n.name) };
+  }
+
+  /* ── auto rig ── */
+
+  private autoRig(args: Args) {
+    const view = args.view ?? "side";
+    if (view !== "side" && view !== "front") throw new AgentError(`view is "side" or "front".`);
+    const facing = args.facing ?? "right";
+    if (facing !== "right" && facing !== "left") throw new AgentError(`facing is "right" or "left".`);
+    if (!args.joints || typeof args.joints !== "object" || Array.isArray(args.joints)) throw new AgentError(`joints is an object of name → [x, y] in skeleton space. Joints: ${jointNames(view).join(", ")}.`);
+    const s = this.sym;
+    const setup = posedSymbol(this.store.project, s, null, 0, "setup");
+    const wanted = Array.isArray(args.layers) ? new Set(args.layers.map(String)) : null;
+    // Pictures not on a bone yet, front first.
+    const layers: RigLayer[] = [];
+    s.layers.forEach((l, z) => {
+      const n = s.nodes[l.nodeId];
+      if (!n || n.kind !== "image" || n.slotBone || n.parentId || !n.itemId) return;
+      if (wanted && !wanted.has(n.name)) return;
+      const item = this.store.project.items[n.itemId], m = setup.byNode.get(n.id)?.world;
+      if (!item || !isImage(item) || !m) return;
+      layers.push({ name: n.name, size: [item.width, item.height], pivot: [n.pivot.x, n.pivot.y], at: [m.tx, -m.ty], rotation: (Math.atan2(-m.b, m.a) * 180) / Math.PI, z });
+    });
+    if (wanted) for (const name of wanted) if (!layers.some((l) => l.name === name)) throw new AgentError(`"${name}" is not a picture layer off any bone.`);
+    const plan = autoRigPlan(args.joints as Record<string, [number, number]>, layers, view, { armIk: args.armIk === true, taken: (n) => this.nameTaken(n) });
+    if (typeof plan === "string") throw new AgentError(plan);
+    const existing = Object.values(s.nodes).find((n) => n.kind === "bone" && ["hips", "torso"].includes(n.name.replace(/_bone\d*$/, "")));
+    if (existing) throw new AgentError(`The rig already has "${existing.name}": auto_rig builds a skeleton from nothing. Undo the old one first.`);
+
+    const before = this.store.history.position;
+    try {
+      this.store.transaction("AI: Auto Rig", () => {
+        this.addBones(plan.bones.map((b) => ({ name: b.name, ...(b.parent ? { parent: b.parent } : {}), from: [...b.from], to: [...b.to] })));
+        if (plan.attach.length) this.attach(plan.attach.map((a) => ({ bone: a.bone, layer: a.layer, pivot: a.pivot })));
+        for (const o of plan.order) this.drawOrder(o.parent, o.front);
+        for (const bone of plan.ik) {
+          this.addIk(bone, {});
+          const chain = plan.bones.filter((b) => b.name === bone || plan.bones.find((x) => x.name === bone)?.parent === b.name);
+          this.settleBend(bone, chain, view === "side" ? facing : null);
+        }
+      });
+    } catch (err) {
+      // A step that failed half way is not left behind.
+      if (this.store.history.position > before) this.store.undo();
+      throw err;
+    }
+
+    // The setup pose now, against the joints it was built from.
+    const posed = posedSymbol(this.store.project, this.sym, null, 0, "setup");
+    let worst = 0, at = "";
+    for (const b of plan.bones) {
+      const m = posed.byNode.get(this.bone(b.name).id)?.world;
+      const d = m ? Math.hypot(m.tx - b.from[0], -m.ty - b.from[1]) : Infinity;
+      if (d > worst) { worst = d; at = b.name; }
+    }
+    return {
+      bones: plan.bones.map((b) => b.name),
+      attached: plan.attach.map((a) => ({ layer: a.layer, bone: a.bone })),
+      ik: plan.ik.map((b) => `${b}_ik`),
+      check: { matches: worst < 0.5, worstPixels: round(worst, 3), ...(worst < 0.5 ? {} : { at }) },
+      notes: plan.notes,
+      next: "Look with render_frame (no animation). Move a layer to another bone with attach; for a wrong joint, undo and run auto_rig again.",
+    };
+  }
+
+  /**
+   * Which way an IK chain bends: as drawn when the joint is visibly bent,
+   * otherwise a knee forward and an elbow back for a side view facing
+   * `facing`. Probed by pulling the target in on a copy of the symbol and
+   * solving: the solver's choice is not guessable from `bendPositive`
+   * alone (ARCHITECTURE ▸ Bones and IK).
+   */
+  private settleBend(effectorName: string, chain: Array<{ name: string; from: SpinePoint; to: SpinePoint }>, facing: "right" | "left" | null): void {
+    const s = this.sym;
+    const k = s.ik.find((x) => s.nodes[x.boneId]?.name === effectorName);
+    const ids = k ? ikChain(s, k) : [];
+    if (!k || ids.length !== 2 || chain.length !== 2) return;
+    const angle = (b: { from: SpinePoint; to: SpinePoint }) => Math.atan2(b.to[1] - b.from[1], b.to[0] - b.from[0]);
+    const [root, eff] = ids.map((id) => chain.find((c) => c.name === s.nodes[id]!.name)!);
+    const drawn = Math.sin(angle(eff!) - angle(root!));
+    // Turn sign root → effector, y up: a knee forward bends a right-facing leg clockwise.
+    const leg = /^shin_/.test(effectorName);
+    const want = Math.abs(drawn) > 0.05 ? Math.sign(drawn) : facing ? (leg ? -1 : 1) * (facing === "right" ? 1 : -1) : 0;
+    if (!want) return;
+    const pose = evaluateSymbol(s, null, 0, "setup");
+    const target = s.nodes[k.targetId]!, tw = pose.byNode.get(target.id)?.world, rw = pose.byNode.get(ids[0]!)?.world;
+    if (!tw || !rw) return;
+    const parentWorld = target.parentId ? pose.byNode.get(target.parentId)?.world : undefined;
+    const pulled = placeOnBone(parentWorld, [tw.tx + 0.25 * (rw.tx - tw.tx), -(tw.ty + 0.25 * (rw.ty - tw.ty))]);
+    if (!pulled) return;
+    const probe = evaluateSymbol({ ...s, nodes: { ...s.nodes, [target.id]: { ...target, bind: pulled } } }, null, 0, "setup");
+    const [a, b] = ids.map((id) => probe.byNode.get(id)!.world);
+    const got = Math.sign(Math.sin(Math.atan2(-b!.b, b!.a) - Math.atan2(-a!.b, a!.a)));
+    if (got !== want) this.store.apply(new SetIkOptions(this.store.currentSymbolId, k.id, { bendPositive: !k.bendPositive }));
   }
 
   /* ── motions ── */

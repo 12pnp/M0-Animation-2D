@@ -9,7 +9,8 @@ import { exportSpine, spineJson } from "@/core/spine/exportSpine";
 import { atlasText } from "@/core/spine/atlas";
 import { isImage, type Node, type Project, type SymbolItem } from "@/core/doc/types";
 import type { NodeId } from "@/core/doc/ids";
-import { createAnimation, createLayer } from "@/core/doc/defaults";
+import { createAnimation, createLayer, createNode } from "@/core/doc/defaults";
+import { fromMatrix, tf } from "@/core/math/Transform";
 import { buildFlatPsdImport } from "@/core/doc/psdImport";
 import { AddLibraryItem, AddNode } from "@/core/history/commands";
 import { posedSymbol } from "@/core/spine/spinePose";
@@ -55,7 +56,7 @@ describe("the AI's tools", () => {
   it("are described once, with a schema each", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
-      "get_reference", "render_frame", "add_bones", "attach", "add_ik", "list_motions", "apply_motion", "draw_order",
+      "get_reference", "render_frame", "add_bones", "attach", "add_ik", "auto_rig", "list_motions", "apply_motion", "draw_order",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -553,6 +554,119 @@ describe("the motion library through the AI's tools", () => {
     await expect(api.call("apply_motion", { motion: "walk", animation: "run" })).rejects.toThrow(/already an animation "run"/);
     await expect(api.call("apply_motion", { motion: "walk", map: { torso: "torso" } })).rejects.toThrow(/slot/);
     await expect(api.call("apply_motion", { motion: "walk", map: { tail: "chest" } })).rejects.toThrow(/no role "tail"/);
+    expect(store.history.position).toBe(position);
+  });
+});
+
+describe("auto_rig through the AI's tools", () => {
+  type Pose = { bones: Record<string, { x: number; y: number; rotation: number; scaleX: number }> };
+
+  /** The stickman's pictures as loose layers where the stickman draws them,
+   *  front first, and its joints read off its bones: what a model would see
+   *  after Import PSD as Layers, and what it would read off the picture. */
+  async function loose() {
+    const { original, store, api } = await blank();
+    const sym = original.currentSymbol;
+    const setup = posedSymbol(original.project, sym, null, 0, "setup");
+    const world = (name: string) => setup.byNode.get(Object.values(sym.nodes).find((n) => n.name === name)!.id)!.world;
+    const rows = sym.layers.map((l) => sym.nodes[l.nodeId]!).filter((n) => n.kind === "image");
+    store.transaction("Import", () => {
+      for (const n of [...rows].reverse()) {
+        const node = createNode("image", n.name, { itemId: n.itemId });
+        node.pivot = { ...n.pivot };
+        node.bind = fromMatrix(tf(), world(n.name));
+        store.apply(new AddNode("Import", store.currentSymbolId, node, createLayer(node.id, node.name, 0), 0));
+      }
+    });
+    const at = (name: string, along = 0): [number, number] => {
+      const m = world(name), n = Object.values(sym.nodes).find((x) => x.name === name)!;
+      const p = apply(pt(), m, along ? n.boneLength! : 0, 0);
+      return [p.x, -p.y];
+    };
+    const joints = {
+      pelvis: at("hips"), chest: at("chest"), neck: at("head"), head: at("head", 1),
+      "shoulder.near": at("arm_near_up"), "elbow.near": at("arm_near_fore"), "wrist.near": at("arm_near_fore", 1),
+      "shoulder.far": at("arm_far_up"), "elbow.far": at("arm_far_fore"), "wrist.far": at("arm_far_fore", 1),
+      "hip.near": at("leg_near_thigh"), "knee.near": at("leg_near_shin"), "ankle.near": at("leg_near_shin", 1),
+      "hip.far": at("leg_far_thigh"), "knee.far": at("leg_far_shin"), "ankle.far": at("leg_far_shin", 1),
+    };
+    return { store, api, joints };
+  }
+
+  type Slot = { name: string; size: number[]; pivot: number[]; at: number[]; rotation: number };
+  /** Where each picture's corners are: what must not move when its pivot does. */
+  async function corners(api: AgentApi) {
+    const { slots } = await api.call("get_rig") as { slots: Slot[] };
+    return Object.fromEntries(slots.map((s) => {
+      const r = (s.rotation * Math.PI) / 180;
+      const place = (u: number, v: number) => {
+        const x = u - s.pivot[0]!, y = s.pivot[1]! - v;
+        return [s.at[0]! + x * Math.cos(r) - y * Math.sin(r), s.at[1]! + x * Math.sin(r) + y * Math.cos(r)];
+      };
+      return [s.name, [place(0, 0), place(s.size[0]!, s.size[1]!)].flat()];
+    }));
+  }
+
+  it.each([["with", true], ["without", false]] as const)("rig the stickman's loose pictures from its joints in one step, %s a chest joint, nothing moving", async (_, withChest) => {
+    const { store, api, joints: all } = await loose();
+    const { chest, ...rest } = all;
+    const joints = withChest ? all : rest;
+    expect(chest).toBeDefined();
+    const before = await corners(api);
+    const position = store.history.position;
+    const out = await api.call("auto_rig", { joints }) as { attached: Array<{ layer: string; bone: string }>; ik: string[]; check: { matches: boolean }; notes: string[] };
+    expect(store.history.position).toBe(position + 1);
+    expect(store.history.undoLabel).toBe("AI: Auto Rig");
+    // Bones the pictures already name get "_bone" after their names.
+    expect(Object.fromEntries(out.attached.map((a) => [a.layer, a.bone]))).toEqual({
+      thigh_near: "thigh_near_bone", shin_near: "shin_near_bone", pelvis: "hips", arm_near_1: "upper_arm_near", arm_near_2: "forearm_near",
+      head_art: "head", torso: "torso_bone", arm_far_1: "upper_arm_far", arm_far_2: "forearm_far", thigh_far: "thigh_far_bone", shin_far: "shin_far_bone",
+    });
+    expect(out.ik).toEqual(["shin_near_bone_ik", "shin_far_bone_ik"]);
+    // The joints are where they were read, the knees bent as drawn (the IK solves the setup pose).
+    expect(out.check.matches).toBe(true);
+    const after = await corners(api);
+    for (const [name, c] of Object.entries(before)) {
+      c.forEach((v, i) => expect(Math.abs(after[name]![i]! - v), name).toBeLessThan(0.02));
+    }
+    // Drawn as the artist stacked it: the near limbs in front, the far ones behind.
+    const slots = (await api.call("get_rig") as { slots: Array<{ name: string }> }).slots.map((s) => s.name).reverse();
+    expect(slots.indexOf("arm_near_1")).toBeLessThan(slots.indexOf("torso"));
+    expect(slots.indexOf("torso")).toBeLessThan(slots.indexOf("arm_far_1"));
+    expect(slots.indexOf("thigh_near")).toBeLessThan(slots.indexOf("thigh_far"));
+    store.undo();
+    expect(Object.values(store.currentSymbol.nodes).every((n) => n.kind === "image" && !n.parentId)).toBe(true);
+  });
+
+  it("make a straight leg bend its knee forward for the way the character faces", async () => {
+    for (const facing of ["right", "left"] as const) {
+      const { api } = await blank();
+      const flip = facing === "right" ? 1 : -1;
+      await api.call("auto_rig", { facing, joints: { pelvis: [0, 100], neck: [0, 160], "knee.near": [0, 50], "ankle.near": [0, 0] } });
+      // Pull the foot up: the knee must come forward.
+      await api.call("new_animation", { name: "lift", frames: 4 });
+      // The target hangs from the hips (at 0, 100, pointing up): skeleton (0, 40) is x -60 along them.
+      await api.call("set_keys", { animation: "lift", keys: [{ bone: "shin_near_target", frame: 2, x: -60, y: 0 }] });
+      const knee = (await api.call("get_pose", { animation: "lift", frame: 2 }) as Pose).bones.shin_near!;
+      expect(knee.x * flip, facing).toBeGreaterThan(10);
+    }
+  });
+
+  it("walk with the library on what it built", async () => {
+    const { api, joints } = await loose();
+    await api.call("auto_rig", { joints });
+    const walk = await api.call("apply_motion", { motion: "walk" }) as { map: Record<string, string>; check: { matches: boolean } };
+    expect(walk.map).toMatchObject({ hips: "hips", torso: "torso_bone", "thigh.near": "thigh_near_bone", "forearm.far": "forearm_far" });
+    expect(walk.check.matches).toBe(true);
+  });
+
+  it("refuse a second skeleton and a joint it does not know, leaving nothing behind", async () => {
+    const { store, api, joints } = await loose();
+    await api.call("auto_rig", { joints });
+    const position = store.history.position;
+    await expect(api.call("auto_rig", { joints })).rejects.toThrow(/already has "hips"/);
+    await expect(api.call("auto_rig", { joints: { ...joints, tail: [0, 0] } })).rejects.toThrow(/no joint "tail"/);
+    await expect(api.call("auto_rig", { joints, view: "top" })).rejects.toThrow(/view is/);
     expect(store.history.position).toBe(position);
   });
 });

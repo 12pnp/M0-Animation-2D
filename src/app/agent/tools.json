@@ -254,6 +254,26 @@
     }
   },
   {
+    "name": "auto_rig",
+    "description": "Build a whole skeleton from a character's joints, in ONE undoable step: bones named hips, torso, head, thigh_near, shin_near, foot_near, upper_arm_near, forearm_near, hand_near… (near/far for a side view, left/right for a front view), each picture layer that is on no bone put on the bone running through it with its joint as the pivot, the drawing order kept as the layers were stacked, and IK on the legs (and arms with armIk). To read the joints: render_frame with no animation shows the pictures and how a pixel maps to skeleton space; give each joint where the body bends, in skeleton space (y up). pelvis and neck are required; a limb stops at its first missing joint (hip defaults to pelvis). Returns which layer went on which bone; look with render_frame and fix what is off with attach, or undo and run it again.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "joints": {
+          "type": "object",
+          "additionalProperties": { "type": "array", "items": { "type": "number" }, "minItems": 2, "maxItems": 2 },
+          "description": "[x, y] per joint: pelvis, chest (where the ribcage starts, when the pelvis and torso are drawn apart), neck, head (top of the head), and per side (side view: .near and .far; front view: .left and .right, as on screen) shoulder, elbow, wrist, hand (fingertips), hip, knee, ankle, toe. E.g. {\"pelvis\": [0, 100], \"neck\": [0, 160], \"knee.near\": [8, 52]}."
+        },
+        "view": { "type": "string", "enum": ["side", "front"], "description": "Default side." },
+        "facing": { "type": "string", "enum": ["right", "left"], "description": "A side view's facing (default right): which way a straight knee or elbow will bend." },
+        "layers": { "type": "array", "items": { "type": "string" }, "description": "The picture layers to rig; default every one on no bone." },
+        "armIk": { "type": "boolean", "description": "IK on the arms too (default false: arms are keyed by their bones)." }
+      },
+      "required": ["joints"],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "list_motions",
     "description": "The motion library: ready-made clips (walk, run, idle, jump, and front-view ones) that apply_motion fits onto this rig, each with the body roles it moves (thigh.near, shin.near, upperArm.far, torso, head, hips…), and the roles guessed for this rig's bones from their names, for side-view and front-view clips.",
     "input_schema": { "type": "object", "properties": {}, "additionalProperties": false }
