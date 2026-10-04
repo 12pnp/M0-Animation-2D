@@ -237,8 +237,15 @@ export class TimelinePanel implements Panel {
       ]);
     });
 
-    const zoom = h("input", { type: "range", min: "4", max: "40", value: String(this.grid.frameWidth) });
+    const zoom = h("input", { type: "range", min: "4", max: "40", value: String(this.grid.frameWidth) }) as HTMLInputElement;
     on(zoom, "input", () => this.grid.setFrameWidth(Number(zoom.value)));
+    // The wheel over the ruler and Fit zoom too: the slider follows the pref.
+    this.store.prefs.subscribe(() => {
+      if (document.activeElement !== zoom) zoom.value = String(this.store.prefs.value.timeline.frameWidth);
+    });
+    const fit = iconBtn("fit", "Fit the animation to the timeline's width", () => {
+      this.grid.fitToView(this.store.currentAnimation?.duration ?? 1);
+    });
 
     this.fpsLabel = h("span", { class: "fps" }, `${this.store.project.frameRate} fps`);
 
@@ -257,6 +264,7 @@ export class TimelinePanel implements Panel {
         this.frameLabel, this.fpsLabel, this.elapsedLabel, this.tweenLabel),
       h("div", { class: "spacer" }),
       h("div", { class: "tl-zoom" }, h("span", { class: "mark" }, "▁"), zoom, h("span", { class: "mark" }, "▆")),
+      fit,
     );
   }
 

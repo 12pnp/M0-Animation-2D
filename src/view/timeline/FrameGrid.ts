@@ -1,4 +1,5 @@
 import { h, on, raf } from "@/view/widgets/dom";
+import { FRAME_WIDTH_MAX, FRAME_WIDTH_MIN, anchoredScroll, fitFrameWidth, steppedFrameWidth } from "./zoom";
 import type { Store } from "@/app/Store";
 import type { Layer, Track } from "@/core/doc/types";
 import type { NodeId } from "@/core/doc/ids";
@@ -93,6 +94,9 @@ const DEFAULT_GRID_COLORS = {
   emptyRow: "#565656",
   excluded: "rgba(0,0,0,0.30)",
 };
+
+/** Wheel pixels per zoom step: one notch of a mouse wheel. */
+const WHEEL_STEP = 100;
 
 /**
  * The frame grid, drawn on a canvas.
@@ -818,9 +822,20 @@ export class FrameGrid {
 
     on(el, "wheel", (ev) => {
       const e = ev as unknown as WheelEvent;
-      if (e.ctrlKey || e.metaKey) {
+      const r = el.getBoundingClientRect();
+      // Over the ruler, or with ⌘/Ctrl anywhere: zoom about the frame under
+      // the pointer. Below the ruler the plain wheel scrolls the rows.
+      if (e.ctrlKey || e.metaKey || (e.clientY - r.top < this.headerHeight && e.deltaY !== 0)) {
         e.preventDefault();
-        this.setFrameWidth(this.frameWidth * (e.deltaY < 0 ? 1.15 : 1 / 1.15));
+        // By distance, not by event: a mouse sends one event a notch, a
+        // trackpad dozens of small ones, and both should zoom alike.
+        const px = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * 400 : e.deltaY;
+        this.zoomWheel += px;
+        while (Math.abs(this.zoomWheel) >= WHEEL_STEP) {
+          const zoomIn = this.zoomWheel < 0;
+          this.zoomWheel += zoomIn ? WHEEL_STEP : -WHEEL_STEP;
+          this.zoomAt(e.clientX - r.left, zoomIn);
+        }
         return;
       }
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
@@ -1044,8 +1059,29 @@ export class FrameGrid {
     const offCancel = on(this.el, "pointercancel", up);
   }
 
+  /** Wheel distance not yet turned into a zoom step. */
+  private zoomWheel = 0;
+
+  /** One wheel step in or out, keeping the frame under `x` where it is. */
+  zoomAt(x: number, zoomIn: boolean): void {
+    const from = this.frameWidth;
+    const to = steppedFrameWidth(from, zoomIn);
+    if (to === from) return;
+    const scroll = anchoredScroll(this.scrollX, x, from, to);
+    this.setFrameWidth(to);
+    this.scrollX = scroll;
+    this.invalidate();
+  }
+
+  /** Zoom so `frames` frames fill the visible width, from frame 1. */
+  fitToView(frames: number): void {
+    this.setFrameWidth(fitFrameWidth(frames, this.viewWidth));
+    this.scrollX = 0;
+    this.invalidate();
+  }
+
   setFrameWidth(px: number): void {
-    const w = Math.max(4, Math.min(40, px));
+    const w = Math.max(FRAME_WIDTH_MIN, Math.min(FRAME_WIDTH_MAX, px));
     this.frameWidth = w;
     // Through the preferences, so the zoom the user settles on survives a
     // reload and the Preferences dialog shows the value they are looking at.
