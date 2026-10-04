@@ -1053,6 +1053,10 @@ flowchart LR
   selection change only restyles rows: rebuilding them would swallow the double-click that
   renames. Arrows walk the rows, Left / Right close and open, F2 or Enter renames; those keys
   stop at the list. Closed branches are per symbol, for the session.
+  The panel is titled Tree; its id stays `outline`, so stored layouts still find it. The
+  **Sub Tree** is the same class in `"subtree"` mode: `outlineRows({ root })` from the node
+  last selected ELSEWHERE (the Tree, the stage). Its own clicks and keys select through
+  `mine()`, which does not re-root it, or every click would replace the list under the pointer.
 - **Hierarchy lines** (the Outline and the timeline's layer list) share the `.tguide` /
   `.telbow` columns and are coloured by depth, Unity-style: `treeLines` in
   `core/doc/treeLines.ts` works the lines out from row depths alone, `lineColorIndex` picks one

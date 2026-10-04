@@ -17,6 +17,8 @@ import { countUsages, LibraryPanel } from "@/view/panels/LibraryPanel";
 import { PropertiesPanel } from "@/view/panels/PropertiesPanel";
 import { OutlinePanel } from "@/view/panels/OutlinePanel";
 import { StageToolbar } from "@/view/viewport/StageToolbar";
+import { AnimationsPanel } from "@/view/panels/AnimationsPanel";
+import { SkinsPanel } from "@/view/panels/SkinsPanel";
 import { HistoryPanel } from "@/view/panels/HistoryPanel";
 import { ReferencePanel } from "@/view/panels/ReferencePanel";
 import { ReferenceService } from "./ReferenceService";
@@ -174,7 +176,7 @@ export class App {
 
     this.registerPanels();
     this.shell.layoutDocks(
-      [["properties"], ["library", "outline"], ["preview"]],
+      [["properties"], ["library", "outline", "animations", "skins"], ["subtree"], ["preview"]],
       [["timeline", "reference", "poses"]],
       [[AI_PANEL]],
     );
@@ -264,6 +266,9 @@ export class App {
     this.shell.addRightPanel(new PropertiesPanel(this.store, () => this.viewport.pose, () => this.viewport.editPoses(true)));
     this.shell.addRightPanel(this.library);
     this.shell.addRightPanel(new OutlinePanel(this.store));
+    this.shell.addRightPanel(new OutlinePanel(this.store, "subtree"));
+    this.shell.addRightPanel(new AnimationsPanel(this.store));
+    this.shell.addRightPanel(new SkinsPanel(this.store));
     this.shell.addRightPanel(new HistoryPanel(this.store));
     this.shell.addRightPanel(this.preview);
     this.shell.addLeftPanel(this.aiPanel);

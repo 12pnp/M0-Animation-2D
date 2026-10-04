@@ -117,31 +117,31 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
   {
     id: "1x1", label: "1 × 1",
     left: [["ai"]],
-    right: [[["properties", "library", "outline", "history", "preview"]]],
+    right: [[["properties", "library", "outline", "animations", "skins", "history", "subtree", "preview"]]],
     bottom: [["timeline", "reference", "poses"]],
   },
   {
     id: "1x2", label: "1 × 2",
     left: [["ai"]],
-    right: [[["properties", "outline", "history"], ["library", "preview"]]],
+    right: [[["properties", "outline", "animations", "skins", "history", "subtree"], ["library", "preview"]]],
     bottom: [["timeline", "reference", "poses"]],
   },
   {
     id: "1x3", label: "1 × 3",
     left: [["ai"]],
-    right: [[["properties", "history"], ["library", "outline"], ["preview"]]],
+    right: [[["properties", "history", "subtree"], ["library", "outline", "animations", "skins"], ["preview"]]],
     bottom: [["timeline", "reference", "poses"]],
   },
   {
     id: "2x2", label: "2 × 2",
     left: [["ai"]],
-    right: [[["properties"], ["history"]], [["library", "outline"], ["preview"]]],
+    right: [[["properties"], ["history", "subtree"]], [["library", "outline", "animations", "skins"], ["preview"]]],
     bottom: [["timeline", "reference", "poses"]],
   },
   {
     id: "2x3", label: "2 × 3",
     left: [["ai"]],
-    right: [[["properties"], ["outline"], ["preview"]], [["library"], ["history"], ["poses"]]],
+    right: [[["properties"], ["outline", "animations", "skins"], ["preview"]], [["library"], ["history", "subtree"], ["poses"]]],
     bottom: [["timeline", "reference"]],
   },
 ];

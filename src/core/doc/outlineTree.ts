@@ -20,6 +20,9 @@ export interface OutlineOptions {
    *  show its matches; branches with none disappear. */
   query: string;
   show: OutlineShow;
+  /** Only this node and what hangs under it (the Sub Tree panel). The root
+   *  shows whatever the filters say; a search still has to match inside. */
+  root?: NodeId | null;
 }
 
 export interface OutlineRow {
@@ -94,7 +97,10 @@ export function outlineRows(sym: SymbolItem, opts: OutlineOptions): OutlineRow[]
       if (open) walk(kids, depth + 1, [...guides, !last]);
     });
   };
-  walk(shownUnder(null), 0, []);
+  const start = opts.root === undefined || opts.root === null
+    ? shownUnder(null)
+    : sym.nodes[opts.root] ? [opts.root] : [];
+  walk(start, 0, []);
   return rows;
 }
 

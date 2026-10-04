@@ -21,12 +21,23 @@ import {
  * Which rows show is decided in `core/doc/outlineTree.ts`. A selection change
  * only restyles the rows: rebuilding them between the two clicks of a
  * double-click would swallow it (the DOM trap in ARCHITECTURE.md).
+ *
+ * Two panels are built from it: the Tree (id `outline`, kept from when it was
+ * called Outline, so stored layouts still find it) and the Sub Tree, which
+ * shows only the node last selected elsewhere — in the Tree, on the stage —
+ * and what hangs under it. A selection made in the Sub Tree itself does not
+ * re-root it, or every click would replace the list under the pointer.
  */
 export class OutlinePanel implements Panel {
-  readonly id = "outline";
-  readonly title = "Outline";
-  readonly icon = "outlinePanel" as const;
+  readonly id: string;
+  readonly title: string;
+  readonly icon: "outlinePanel" | "subtree";
   readonly el: HTMLElement;
+
+  /** The Sub Tree's node; null in the Tree. */
+  private subRoot: NodeId | null = null;
+  /** True while a selection made here is being applied. */
+  private own = false;
 
   private list: HTMLElement;
   private search: HTMLInputElement;
@@ -42,7 +53,10 @@ export class OutlinePanel implements Panel {
   private dragId: NodeId | null = null;
   private renaming: NodeId | null = null;
 
-  constructor(private readonly store: Store) {
+  constructor(private readonly store: Store, private readonly mode: "tree" | "subtree" = "tree") {
+    this.id = mode === "tree" ? "outline" : "subtree";
+    this.title = mode === "tree" ? "Tree" : "Sub Tree";
+    this.icon = mode === "tree" ? "outlinePanel" : "subtree";
     this.search = h("input", { type: "search", class: "otree-search", placeholder: "Search", spellcheck: false }) as HTMLInputElement;
     on(this.search, "input", () => { this.query = this.search.value; this.render(); });
     on(this.search, "keydown", (ev) => {
@@ -75,7 +89,13 @@ export class OutlinePanel implements Panel {
 
     store.subscribe((t) => {
       if (t === "doc" || t === "timeline") this.render();
-      else if (t === "selection") this.syncSelection();
+      else if (t === "selection") {
+        const sel = this.store.selection.nodes;
+        if (this.mode === "subtree" && !this.own && sel.length) {
+          this.subRoot = sel[sel.length - 1]!;
+          this.render();
+        } else this.syncSelection();
+      }
     });
     this.render();
   }
@@ -101,12 +121,18 @@ export class OutlinePanel implements Panel {
       this.list.appendChild(h("div", { class: "empty" }, "No objects on stage"));
       return;
     }
-    this.rows = outlineRows(sym, { collapsed: this.closed, query: this.query, show: this.show });
+    const sub = this.mode === "subtree";
+    if (sub && (!this.subRoot || !sym.nodes[this.subRoot])) {
+      this.rows = [];
+      this.list.appendChild(h("div", { class: "empty" }, "Select a node in the Tree to see it and its children here."));
+      return;
+    }
+    this.rows = outlineRows(sym, { collapsed: this.closed, query: this.query, show: this.show, root: sub ? this.subRoot : null });
     const layerOf = new Map<NodeId, Layer>(sym.layers.map((l) => [l.nodeId, l]));
     const { targets, driven } = ikRoles(sym);
     const ikName = new Map<NodeId, string>(sym.ik.map((k) => [k.targetId, k.name]));
 
-    this.list.appendChild(this.rootRow());
+    if (!sub) this.list.appendChild(this.rootRow());
     for (const r of this.rows) {
       const el = this.rowFor(r, layerOf.get(r.id), targets.has(r.id), driven.has(r.id), ikName.get(r.id));
       this.rowEls.set(r.id, el);
@@ -142,7 +168,9 @@ export class OutlinePanel implements Panel {
 
     const guides = h("span", { class: "tguides" },
       ...r.guides.map((on, j) => h("span", { class: `tguide d${lineColorIndex(j)}${on ? " on" : ""}` })),
-      h("span", { class: `telbow d${lineColorIndex(r.depth)}${r.last ? " last" : ""}` }));
+      // The Sub Tree's top row has nothing above it to join.
+      ...(this.mode === "subtree" && r.depth === 0 ? []
+        : [h("span", { class: `telbow d${lineColorIndex(r.depth)}${r.last ? " last" : ""}` })]));
 
     const tri = h("span", { class: `otree-tri${r.hasChildren ? (r.open ? " open" : "") : " leaf"}` });
     on(tri, "click", (ev) => {
@@ -222,13 +250,21 @@ export class OutlinePanel implements Panel {
   private click(id: NodeId, e: MouseEvent): void {
     this.list.focus({ preventScroll: true });
     if (e.shiftKey && this.anchor) {
-      this.store.selectNodes(rowRange(this.rows, this.anchor, id));
+      this.select(rowRange(this.rows, this.anchor, id));
       return;
     }
-    if (e.metaKey || e.ctrlKey) this.store.toggleNode(id);
-    else this.store.selectNodes([id]);
+    if (e.metaKey || e.ctrlKey) this.mine(() => this.store.toggleNode(id));
+    else this.select([id]);
     this.anchor = id;
   }
+
+  /** A selection made from this panel: the Sub Tree keeps its root. */
+  private mine(run: () => void): void {
+    this.own = true;
+    try { run(); } finally { this.own = false; }
+  }
+
+  private select(ids: NodeId[]): void { this.mine(() => this.store.selectNodes(ids)); }
 
   private syncSelection(): void {
     const sel = new Set(this.store.selection.nodes);
@@ -316,7 +352,7 @@ export class OutlinePanel implements Panel {
     const row = at >= 0 ? this.rows[at]! : null;
     const select = (i: number) => {
       const r = this.rows[Math.max(0, Math.min(this.rows.length - 1, i))]!;
-      this.store.selectNodes([r.id]);
+      this.select([r.id]);
       this.anchor = r.id;
     };
     let handled = true;
@@ -331,7 +367,7 @@ export class OutlinePanel implements Panel {
         if (row?.open && !this.query) { this.closed.add(row.id); this.render(); }
         else if (row) {
           const parent = this.store.currentSymbol.nodes[row.id]?.parentId;
-          if (parent && this.rowEls.has(parent)) { this.store.selectNodes([parent]); this.anchor = parent; }
+          if (parent && this.rowEls.has(parent)) { this.select([parent]); this.anchor = parent; }
         }
         break;
       case "F2":

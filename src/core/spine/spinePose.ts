@@ -118,6 +118,16 @@ export function stageSkinOf(sym: SymbolItem): string[] {
   return hasDefault || named.length === 0 ? [] : [named[0]!];
 }
 
+/**
+ * The stage skins after turning `name` on or off: the named skins kept in
+ * the rig's own order, as the stage bar's picker and the Skins panel both
+ * set them.
+ */
+export function toggledSkins(named: readonly string[], shown: readonly string[], name: string): string[] {
+  const next = shown.includes(name) ? shown.filter((n) => n !== name) : [...shown, name];
+  return named.filter((n) => next.includes(n));
+}
+
 /** The skins an opened symbol has, "default" first when it has one. */
 export function skinsOf(sym: SymbolItem): string[] {
   const names = (sym.spine?.skins ?? []).map((s) => String((s as { name?: unknown }).name));

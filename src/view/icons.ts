@@ -21,6 +21,12 @@ export const ICON = {
   translate:   `<path d="M8 1.5v13M1.5 8h13"/><path d="M6 3.5 8 1.5l2 2M6 12.5l2 2 2-2M3.5 6 1.5 8l2 2M12.5 6l2 2-2 2"/>`,
   scale:       `<rect x="2" y="7" width="7" height="7"/><path d="M7.5 8.5 14 2M10 2h4v4"/>`,
   shear:       `<path d="M5 3h9l-3 10H2z"/>`,
+  // Animations: a strip of film.
+  film:        `<rect x="2.5" y="2" width="11" height="12" rx="1"/><path d="M5 2v12M11 2v12M2.5 5H5M2.5 8H5M2.5 11H5M11 5h2.5M11 8h2.5M11 11h2.5"/>`,
+  // Skins: a shirt, as in Spine.
+  skin:        `<path d="M6 2.5 3 4 1.5 7l2.2 1.1.8-1.3V13.5h7V6.8l.8 1.3L14.5 7 13 4l-3-1.5c-.3 1-1 1.6-2 1.6s-1.7-.6-2-1.6z"/>`,
+  // The Sub Tree: one branch picked out of a tree.
+  subtree:     `<path d="M3 2.5v4.5h3M3 7v5.5h3"/><rect x="6" y="5.5" width="7.5" height="3" rx="0.8"/><rect x="6" y="11" width="7.5" height="3" rx="0.8"/><circle cx="3" cy="2.5" r="1.2"/>`,
   expandAll:   `<path d="M4 3.5l4 4 4-4M4 8.5l4 4 4-4"/>`,
   collapseAll: `<path d="M4 7.5l4-4 4 4M4 12.5l4-4 4 4"/>`,
   tag:         `<path d="M2.5 8.2V2.5h5.7l6 6-5.7 5.7z"/><circle cx="5.3" cy="5.3" r="1"/>`,

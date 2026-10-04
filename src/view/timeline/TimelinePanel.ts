@@ -1,4 +1,5 @@
 import { clear, cls, drag, h, on } from "@/view/widgets/dom";
+import { uniqueAnimationName } from "@/core/doc/animationList";
 import { promptText } from "@/view/widgets/dialogs";
 import { onAccelChange, withAccel } from "@/view/widgets/accel";
 import { icon } from "@/view/icons";
@@ -883,14 +884,6 @@ function uniqueGroupName(store: Store): string {
   for (let i = 1; ; i++) {
     const name = `Group ${i}`;
     if (!taken.has(name)) return name;
-  }
-}
-
-function uniqueAnimationName(taken: string[]): string {
-  const set = new Set(taken);
-  for (let i = 1; ; i++) {
-    const name = `animation${i === 1 ? "" : `_${i}`}`;
-    if (!set.has(name)) return name;
   }
 }
 

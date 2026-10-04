@@ -35,7 +35,10 @@ const c = (
 export const PANEL_COMMANDS = [
   { id: "properties", label: "Properties" },
   { id: "library", label: "Library" },
-  { id: "outline", label: "Outline" },
+  { id: "outline", label: "Tree" },
+  { id: "subtree", label: "Sub Tree" },
+  { id: "animations", label: "Animations" },
+  { id: "skins", label: "Skins" },
   { id: "history", label: "History" },
   { id: "preview", label: "Preview" },
   { id: "reference", label: "Reference" },

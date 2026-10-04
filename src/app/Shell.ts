@@ -10,7 +10,7 @@ import { APP_NAME, documentTitle } from "@/core/about";
 import markSvg from "@/assets/amino-mark.svg?raw";
 import type { Store } from "./Store";
 import { SetStageSkins } from "@/core/history/commands";
-import { skinsOf, stageSkinOf } from "@/core/spine/spinePose";
+import { skinsOf, stageSkinOf, toggledSkins } from "@/core/spine/spinePose";
 
 export interface MenuItemDef {
   label: string;
@@ -328,10 +328,7 @@ export class Shell {
       const named = skinsOf(sym).filter((n) => n !== "default");
       const shown = stageSkinOf(sym);
       const set = (skins: string[] | null) => this.store.apply(new SetStageSkins(sym.id, skins));
-      const toggle = (name: string) => {
-        const next = shown.includes(name) ? shown.filter((n) => n !== name) : [...shown, name];
-        set(named.filter((n) => next.includes(n)));
-      };
+      const toggle = (name: string) => set(toggledSkins(named, shown, name));
       const entry = (name: string, label: string): MenuEntry => ({ label, checked: shown.includes(name), run: () => toggle(name) });
       const folders = new Map<string, MenuEntry[]>();
       const items: Array<MenuEntry | "-"> = [

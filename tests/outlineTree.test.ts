@@ -127,3 +127,34 @@ describe("ancestorsOf / canDropOn", () => {
     });
   }
 });
+
+describe("outlineRows from a root (the Sub Tree)", () => {
+  it("shows the node and everything under it, nothing else", () => {
+    const { sym, ids } = rig();
+    expect(names(sym, outlineRows(sym, { ...all, root: ids.chest! }))).toEqual([
+      "chest", "  head", "    face", "  torso",
+    ]);
+  });
+
+  it("a leaf is a tree of one", () => {
+    const { sym, ids } = rig();
+    expect(names(sym, outlineRows(sym, { ...all, root: ids.face! }))).toEqual(["face"]);
+  });
+
+  it("keeps the root even when a filter hides its kind, and filters below it", () => {
+    const { sym, ids } = rig();
+    const rows = outlineRows(sym, { ...all, root: ids.head!, show: { bones: false, images: true } });
+    expect(names(sym, rows)).toEqual(["head", "  face"]);
+  });
+
+  it("searches inside the root only", () => {
+    const { sym, ids } = rig();
+    expect(names(sym, outlineRows(sym, { ...all, root: ids.leg!, query: "chest" }))).toEqual([]);
+    expect(names(sym, outlineRows(sym, { ...all, root: ids.hips!, query: "shin" }))).toEqual(["hips", "  leg", "    shin"]);
+  });
+
+  it("a root that no longer exists shows nothing", () => {
+    const { sym } = rig();
+    expect(outlineRows(sym, { ...all, root: "gone" as NodeId })).toEqual([]);
+  });
+});

@@ -118,7 +118,7 @@ const CATEGORIES: Category[] = [
               again();
             },
           },
-          { kind: "note", text: "Selected rows colours the selected row in the Library, Outline, History and timeline. Editable values colours the numbers you can drag to change. Derive from accent sets both from the accent colour." },
+          { kind: "note", text: "Selected rows colours the selected row in the Library, Tree, History and timeline. Editable values colours the numbers you can drag to change. Derive from accent sets both from the accent colour." },
           { kind: "color", cat: "interface", key: "accentBlue", label: "Focus / links" },
           { kind: "color", cat: "interface", key: "setup", label: "Setup pose" },
           { kind: "color", cat: "interface", key: "warn", label: "Warning" },
@@ -133,7 +133,7 @@ const CATEGORIES: Category[] = [
           { kind: "color", cat: "interface", key: "treeLine3", label: "Depth 4" },
           { kind: "color", cat: "interface", key: "treeLine4", label: "Depth 5" },
           { kind: "color", cat: "interface", key: "treeLine5", label: "Depth 6" },
-          { kind: "note", text: "The lines joining a row to its parent in the Outline and the timeline's layer list. Deeper levels repeat the colours from Depth 1." },
+          { kind: "note", text: "The lines joining a row to its parent in the Tree, the Sub Tree and the timeline's layer list. Deeper levels repeat the colours from Depth 1." },
         ],
       },
       {

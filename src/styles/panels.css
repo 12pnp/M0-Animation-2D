@@ -625,3 +625,43 @@
   background: var(--bg-panel); color: var(--fg-dim); cursor: pointer;
 }
 .pose-thumb:hover .pose-x { display: block; }
+
+/* ── Animations & Skins (view/panels/AnimationsPanel.ts) ────────────────── */
+.anims { display: flex; flex-direction: column; min-height: 100%; }
+.anims-head {
+  display: flex; align-items: center; gap: 2px; flex: none;
+  padding: 2px 4px 2px 8px;
+  border-bottom: 1px solid var(--line);
+  background: var(--bg-panel-alt);
+}
+.anims-head .spacer { flex: 1 1 auto; }
+.anims-title { color: var(--fg-dim); font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: 0.04em; }
+.anims-list { padding: 2px 0; outline: none; }
+.anims-row {
+  display: flex; align-items: center; gap: 6px;
+  height: var(--h-row); padding: 0 8px;
+  cursor: default;
+}
+.anims-row:hover { background: var(--hover); }
+.anims-row.on { background: var(--accent-row); color: var(--accent-row-ink); }
+.anims-mark { width: 10px; flex: none; color: var(--accent); text-align: center; }
+.anims-row.on .anims-mark { color: inherit; }
+.anims-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.anims-len { flex: none; color: var(--fg-dim); font-size: var(--fs-sm); }
+.anims-row.on .anims-len { color: inherit; opacity: 0.8; }
+.anims-rename {
+  flex: 1 1 auto; min-width: 40px; height: calc(var(--h-row) - 4px); padding: 0 4px;
+  background: var(--bg-field); border: 1px solid var(--accent); border-radius: var(--radius);
+  color: var(--fg-strong);
+}
+.skins-list { padding: 6px 8px; display: flex; flex-direction: column; gap: 4px; }
+.skins-choices { display: flex; gap: 2px; margin-bottom: 4px; }
+.skins-choice {
+  flex: 1 1 0; height: var(--h-field);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--bg-field); color: var(--fg);
+}
+.skins-choice:hover { color: var(--fg-strong); }
+.skins-choice.on { background: var(--accent-row); color: var(--accent-row-ink); border-color: transparent; }
+.skins-folder { color: var(--fg-dim); font-size: var(--fs-sm); margin-top: 4px; }
+.skins-row.nested { padding-left: 12px; }
