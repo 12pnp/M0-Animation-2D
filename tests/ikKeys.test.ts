@@ -43,8 +43,8 @@ describe("ikPoseAt", () => {
   });
 
   it("no keys, or no animation: the constraint's own", () => {
-    expect(ikPoseAt(k, null, 3)).toEqual({ mix: 0.8, bendPositive: false });
-    expect(ikPoseAt(k, anim([]), 3)).toEqual({ mix: 0.8, bendPositive: false });
+    expect(ikPoseAt(k, null, 3)).toEqual({ mix: 0.8, bendPositive: false, softness: 0 });
+    expect(ikPoseAt(k, anim([]), 3)).toEqual({ mix: 0.8, bendPositive: false, softness: 0 });
   });
 });
 
@@ -68,6 +68,33 @@ describe("editing IK keys", () => {
     expect(smooth.map(ikTweenOf)).toEqual(["smooth", "smooth", "linear"]);
     expect(withIkTween(smooth, [0], "linear")[0]).not.toHaveProperty("tween");
     expect(withIkKeys({ [k.id]: keys }, k.id, [])).toBeUndefined();
+  });
+});
+
+describe("IK softness", () => {
+  const soft: IkConstraint = { ...k, softness: 12 };
+  const keys: IkKey[] = [
+    { frame: 0, mix: 1, bendPositive: false, softness: 0 },
+    { frame: 10, mix: 1, bendPositive: false },
+    { frame: 20, mix: 1, bendPositive: false, softness: 40, tween: { kind: "none" } },
+    { frame: 24, mix: 1, bendPositive: false, softness: 0 },
+  ];
+  it.each([
+    ["the constraint's before the first key", soft, -1, 12],
+    ["a key's own", soft, 0, 0],
+    ["tweened with the mix to a key without one: the constraint's", soft, 5, 6],
+    ["toward a key's own", soft, 15, 26],
+    ["held by a stepped key", soft, 22, 40],
+    ["no softness on the constraint is 0", k, 5, 0],
+  ] as const)("%s", (_, c, frame, want) => {
+    expect(ikPoseAt(c, anim(keys), frame).softness).toBeCloseTo(want, 9);
+  });
+
+  it("a key leaves off a softness equal to the constraint's, and keeps its own when given none", () => {
+    expect(withIkKey([], 3, { mix: 1, bendPositive: false, softness: 12 }, 12)[0]).not.toHaveProperty("softness");
+    expect(withIkKey([], 3, { mix: 1, bendPositive: false, softness: 0 }, 12)[0]!.softness).toBe(0);
+    expect(withIkKey([{ frame: 3, mix: 1, bendPositive: false, softness: 7 }], 3, { mix: 0.5, bendPositive: true }, 12)[0])
+      .toEqual({ frame: 3, mix: 0.5, bendPositive: true, softness: 7 });
   });
 });
 
@@ -141,6 +168,44 @@ describe("IK keys in files", () => {
     expect(sym.animations[0]!.ik).toEqual({
       [id]: [{ frame: 2, mix: 0.5, bendPositive: false, tween: { kind: "none" } }, { frame: 9, mix: 0.25, bendPositive: false }],
     });
+  });
+
+  it("a constraint's softness carried in `spine` moves to its field (17 -> 18)", async () => {
+    const { project, rig } = await loadStickman();
+    rig.ik[0]!.spine = { softness: 9, stretch: true } as never;
+    rig.ik[1]!.spine = { softness: 4 } as never;
+    const raw = JSON.parse(JSON.stringify({ ...project, version: 17 }));
+    const out = validateProject(migrate(raw)).project;
+    const [a, b] = (out.items[out.rootSymbolId] as SymbolItem).ik;
+    expect(a).toMatchObject({ softness: 9, spine: { stretch: true } });
+    expect(a!.spine).not.toHaveProperty("softness");
+    expect(b!.softness).toBe(4);
+    expect(b).not.toHaveProperty("spine");
+  });
+
+  it("softness keys survive export and open: tweened with the mix, or alone", async () => {
+    const { project, rig } = await loadStickman();
+    const [a, b] = rig.ik;
+    a!.softness = 10;
+    const keys: Record<string, IkKey[]> = {
+      [a!.id]: [
+        { frame: 0, mix: 1, bendPositive: a!.bendPositive, softness: 30, tween: { kind: "curve", curve: SMOOTH_CURVE } },
+        { frame: 6, mix: 0.4, bendPositive: a!.bendPositive, tween: { kind: "curve", curve: SMOOTH_CURVE } },
+        { frame: 12, mix: 0.4, bendPositive: a!.bendPositive, softness: 50 },
+      ],
+      [b!.id]: [{ frame: 2, mix: 1, bendPositive: b!.bendPositive, softness: 25 }],
+    };
+    rig.animations[0]!.ik = keys;
+    const file = JSON.parse(spineJson(exportSpine(project).skeleton));
+    const opened = importSpine(file, "stickman", new Map()).project;
+    const sym = opened.items[opened.rootSymbolId] as SymbolItem;
+    expect(sym.ik.find((c) => c.name === a!.name)!.softness).toBe(10);
+    const back = sym.animations.find((x) => x.name === rig.animations[0]!.name)!;
+    const r6 = (x: IkKey) => ({ ...x, mix: Math.round(x.mix * 1e6) / 1e6, ...(x.tween?.kind === "curve" ? { tween: { kind: "curve", curve: x.tween.curve.map((v) => Math.round(v * 1e4) / 1e4) } } : {}) });
+    for (const c of [a!, b!]) {
+      expect(back.ik?.[sym.ik.find((x) => x.name === c.name)!.id]?.map(r6)).toEqual(keys[c.id]);
+    }
+    expect(back.spine?.ik).toBeUndefined();
   });
 
   it("export then open gives the same keys back", async () => {

@@ -818,7 +818,7 @@ export class TimelinePanel implements Panel {
       run: () => doSetIkKeys(this.store, ik, withIkTween(keys, sel, t), "IK Key Ease"),
     });
     showMenu(this.menuAnchor(x, y), [
-      { label: "Key IK Here", enabled: !at, run: () => doSetIkKeys(this.store, ik, withIkKey(keys, frame, ikPoseAt(k, anim, frame)), "Key IK") },
+      { label: "Key IK Here", enabled: !at, run: () => doSetIkKeys(this.store, ik, withIkKey(keys, frame, ikPoseAt(k, anim, frame), k.softness), "Key IK") },
       "-",
       tween("linear"), tween("stepped"), tween("smooth"),
       "-",

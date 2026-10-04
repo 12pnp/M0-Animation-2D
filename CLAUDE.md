@@ -20,7 +20,7 @@ last frame is frame 0 again, and each selected bone draws its path, which can be
 dragged, bent with handles or baked to edit the animation (ARCHITECTURE ▸ Cycles, Bone
 paths; the decisions are pure in `core/doc/cycle.ts`, `bonePath.ts`, `pathEdit.ts`,
 `pathSpline.ts`). Draw order is keyable per animation (ARCHITECTURE ▸ Draw order keys,
-`core/doc/drawOrder.ts`), and so are IK mix and bend (ARCHITECTURE ▸ IK keys,
+`core/doc/drawOrder.ts`), and so are IK mix, bend and softness (ARCHITECTURE ▸ IK keys,
 `core/doc/ikKeys.ts`). An exporter change must keep
 `tests/spineParity.test.ts` passing: it plays every fixture through spine-core
 and compares it with the stage frame by frame. An importer or exporter change

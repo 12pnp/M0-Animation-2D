@@ -325,7 +325,7 @@
   },
   {
     "name": "key_ik",
-    "description": "Key an IK constraint's mix and bend at a frame of an animation, in one undoable step (Spine's IK keys). From the key on the mix tweens to the next key by `ease` (linear by default; stepped holds; smooth eases in and out) and the bend is the key's until the next key. Before the first key the constraint's own mix and bend hold. A mix of 0 lets the chain bones play their own keys (FK); 1 is full IK. `bendPositive` has add_ik's sense: flip it to bend the knee or elbow the other way from that frame on. Leaving mix or bendPositive out keys the value in force there. `delete: true` removes the key at that frame. get_animation's `ik` lists the keys.",
+    "description": "Key an IK constraint's mix, bend and softness at a frame of an animation, in one undoable step (Spine's IK keys). From the key on the mix tweens to the next key by `ease` (linear by default; stepped holds; smooth eases in and out) and the bend is the key's until the next key. Before the first key the constraint's own mix and bend hold. A mix of 0 lets the chain bones play their own keys (FK); 1 is full IK. `bendPositive` has add_ik's sense: flip it to bend the knee or elbow the other way from that frame on. Leaving mix, bendPositive or softness out keys the value in force there. `delete: true` removes the key at that frame. get_animation's `ik` lists the keys.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -334,6 +334,7 @@
         "frame": { "type": "integer", "minimum": 0 },
         "mix": { "type": "number", "minimum": 0, "maximum": 1 },
         "bendPositive": { "type": "boolean" },
+        "softness": { "type": "number", "minimum": 0, "description": "Pixels: near full reach a two-bone chain eases into straight over this distance instead of snapping. Tweens with the mix." },
         "ease": { "type": "string", "enum": ["linear", "stepped", "smooth"] },
         "delete": { "type": "boolean" }
       },

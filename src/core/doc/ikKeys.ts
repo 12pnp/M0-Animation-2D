@@ -4,12 +4,13 @@ import type { Animation, IkConstraint, IkKey } from "./types";
 
 /**
  * IK keys (ARCHITECTURE ▸ IK keys): an animation keys a constraint's mix and
- * bend the way Spine's `ik` timeline does. Before the first key the
- * constraint's own weight and bend hold; from a key on, the mix tweens to the
- * next key by the key's tween and the bend is the key's, stepped.
+ * bend (and softness) the way Spine's `ik` timeline does. Before the first
+ * key the constraint's own weight, bend and softness hold; from a key on,
+ * the mix and softness tween to the next key by the key's tween and the bend
+ * is the key's, stepped. A key without a softness has the constraint's.
  */
 
-export interface IkPose { mix: number; bendPositive: boolean }
+export interface IkPose { mix: number; bendPositive: boolean; softness?: number }
 
 /** The tweens an IK key can hold: what Spine's timeline writes for one value. */
 export type IkTween = "linear" | "stepped" | "smooth";
@@ -24,22 +25,30 @@ function tweenSpec(t: IkTween): TweenSpec | undefined {
 }
 
 /** The mix and bend in force at `frame` (fractional between frames). */
-export function ikPoseAt(k: IkConstraint, anim: Animation | null | undefined, frame: number): IkPose {
+export function ikPoseAt(k: IkConstraint, anim: Animation | null | undefined, frame: number): Required<IkPose> {
+  const setup = k.softness ?? 0;
   const keys = anim?.ik?.[k.id];
-  if (!keys?.length || frame < keys[0]!.frame) return { mix: k.weight, bendPositive: k.bendPositive };
+  if (!keys?.length || frame < keys[0]!.frame) return { mix: k.weight, bendPositive: k.bendPositive, softness: setup };
   let i = 0;
   while (i + 1 < keys.length && keys[i + 1]!.frame <= frame) i++;
   const a = keys[i]!, b = keys[i + 1];
-  if (!b || a.tween?.kind === "none") return { mix: a.mix, bendPositive: a.bendPositive };
+  const sa = a.softness ?? setup;
+  if (!b || a.tween?.kind === "none") return { mix: a.mix, bendPositive: a.bendPositive, softness: sa };
   const span = b.frame - a.frame;
   const e = applyTween(a.tween ?? { kind: "linear" }, (frame - a.frame) / span, span);
-  return { mix: a.mix + (b.mix - a.mix) * e, bendPositive: a.bendPositive };
+  return { mix: a.mix + (b.mix - a.mix) * e, bendPositive: a.bendPositive, softness: sa + ((b.softness ?? setup) - sa) * e };
 }
 
-/** `keys` with a key at `frame` holding `pose`; a key already there keeps its tween. */
-export function withIkKey(keys: readonly IkKey[], frame: number, pose: IkPose): IkKey[] {
+/**
+ * `keys` with a key at `frame` holding `pose`; a key already there keeps its
+ * tween, and its softness when `pose` has none. A softness equal to the
+ * constraint's own (`setupSoftness`) is left off the key.
+ */
+export function withIkKey(keys: readonly IkKey[], frame: number, pose: IkPose, setupSoftness = 0): IkKey[] {
   const at = keys.find((k) => k.frame === frame);
   const key: IkKey = { ...at, frame, mix: Math.min(1, Math.max(0, pose.mix)), bendPositive: pose.bendPositive };
+  if (pose.softness !== undefined) key.softness = Math.max(0, pose.softness);
+  if (key.softness !== undefined && Math.abs(key.softness - setupSoftness) < 1e-9) delete key.softness;
   return [...keys.filter((k) => k.frame !== frame), key].sort((a, b) => a.frame - b.frame);
 }
 

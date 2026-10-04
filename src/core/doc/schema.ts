@@ -314,7 +314,12 @@ export function validateProject(raw: unknown): ValidationResult {
 
     // An IK constraint pointing at a missing bone would crash the exporter.
     item.ik = item.ik.filter((k) => !!item.nodes[k.boneId] && !!item.nodes[k.targetId]);
-    for (const k of item.ik) observeId(k.id);
+    for (const k of item.ik) {
+      observeId(k.id);
+      const soft = finiteOr(k.softness, 0);
+      if (soft > 0) k.softness = soft;
+      else delete k.softness;
+    }
     // IK keys of constraints the symbol has: one key per frame, in order, the
     // mix in 0..1, a tween the timeline writes (linear, stepped, one cubic).
     const ikIds = new Set<string>(item.ik.map((k) => k.id));
@@ -330,6 +335,7 @@ export function validateProject(raw: unknown): ValidationResult {
           const r = k as Record<string, unknown>;
           const frame = clampInt(r.frame, 0, 100000, 0);
           const key: IkKey = { frame, mix: Math.min(1, Math.max(0, finiteOr(r.mix, 1))), bendPositive: r.bendPositive === true };
+          if (typeof r.softness === "number" && Number.isFinite(r.softness)) key.softness = Math.max(0, r.softness);
           const tween = sanitizeTween(r.tween);
           if (tween?.kind === "none" || (tween?.kind === "curve" && tween.curve.length === 4)) key.tween = tween;
           byFrame.set(frame, key);
@@ -458,6 +464,22 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // 16 -> 17: `Animation.ik`, IK mix and bend keys. Additive; an older build
   // would drop them on save.
   16: (p) => ({ ...p, version: 17 }),
+  // 17 -> 18: `IkConstraint.softness` and `IkKey.softness`. An opened
+  // constraint carried its softness in `spine`; it moves to the field the
+  // solver reads.
+  17: (p) => {
+    const items = (p.items ?? {}) as Record<string, { ik?: Array<{ softness?: unknown; spine?: Record<string, unknown> }> }>;
+    for (const item of Object.values(items)) {
+      for (const k of item.ik ?? []) {
+        if (!k.spine || !("softness" in k.spine)) continue;
+        const { softness, ...rest } = k.spine;
+        k.softness = softness;
+        if (Object.keys(rest).length) k.spine = rest;
+        else delete k.spine;
+      }
+    }
+    return { ...p, version: 18 };
+  },
 };
 
 /** A tween read from disk, or null when it is not one this build knows. */

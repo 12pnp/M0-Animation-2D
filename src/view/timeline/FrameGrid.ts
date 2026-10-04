@@ -885,7 +885,7 @@ export class FrameGrid {
       const k = this.store.currentSymbol.ik.find((c) => c.id === ik);
       if (!anim || !k) return;
       if (!base) {
-        base = withIkKey(anim.ik?.[ik] ?? [], frame, ikPoseAt(k, anim, frame));
+        base = withIkKey(anim.ik?.[ik] ?? [], frame, ikPoseAt(k, anim, frame), k.softness);
         this.cb.onBeginInteraction("timeline.ikMix");
         this.ikSel = { ik, frames: [frame] };
       }

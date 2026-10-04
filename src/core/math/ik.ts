@@ -10,9 +10,10 @@
  * child's local y; angles go through the runtime's own pi (3.1415927) and
  * wrap into (−180, 180] before mixing.
  *
- * Left out, because the editor cannot author them: stretch, compress,
- * softness, and every inheritance mode but normal (the export always writes
- * normal). `core/doc/pose.ts` (`applyIk`) maps the stage's bones into this
+ * Left out, because the editor cannot author them: stretch, compress, and
+ * every inheritance mode but normal (the export always writes normal).
+ * Softness is in: near full reach it pulls the target in, so the chain
+ * eases into straight instead of snapping. `core/doc/pose.ts` (`applyIk`) maps the stage's bones into this
  * space and back; `tests/spineParity.test.ts` checks the result against
  * spine-core itself.
  */
@@ -56,12 +57,12 @@ export function ikApply1(bone: IkBone, parent: IkWorld, targetX: number, targetY
 /**
  * `IkConstraint.apply2`: two bones, `child` a direct child of `parent`.
  * `grand` is `parent`'s parent's world matrix; `childLength` the child's
- * bone length. Mutates both rotations, and `child.y` for a non-uniform
- * parent scale.
+ * bone length; `softness` in pixels. Mutates both rotations, and `child.y`
+ * for a non-uniform parent scale.
  */
 export function ikApply2(
   parent: IkBone, child: IkBone, grand: IkWorld, childLength: number,
-  targetX: number, targetY: number, bendDir: number, mix: number,
+  targetX: number, targetY: number, bendDir: number, mix: number, softness = 0,
 ): void {
   const px = parent.x, py = parent.y;
   let psx = parent.scaleX, psy = parent.scaleY, csx = child.scaleX;
@@ -93,8 +94,19 @@ export function ikApply2(
   }
   x = targetX - grand.worldX;
   y = targetY - grand.worldY;
-  const tx = (x * d - y * b) * id - px, ty = (y * a - x * c) * id - py;
-  const dd = tx * tx + ty * ty;
+  let tx = (x * d - y * b) * id - px, ty = (y * a - x * c) * id - py;
+  let dd = tx * tx + ty * ty;
+  if (softness !== 0) {
+    softness *= psx * (csx + 1) * 0.5;
+    const td = Math.sqrt(dd), sd = td - l1 - l2 * psx + softness;
+    if (sd > 0) {
+      let p = Math.min(1, sd / (softness * 2)) - 1;
+      p = (sd - softness * (1 - p * p)) / td;
+      tx -= p * tx;
+      ty -= p * ty;
+      dd = tx * tx + ty * ty;
+    }
+  }
 
   outer: if (u) {
     l2 *= psx;

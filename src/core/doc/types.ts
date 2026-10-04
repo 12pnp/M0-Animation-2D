@@ -5,7 +5,7 @@ import type { SpineInherit } from "@/core/spine/types";
 import type { AnimId, AssetId, FolderId, IkId, ItemId, LayerId, NodeId } from "./ids";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 17;
+export const DOC_VERSION = 18;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -245,8 +245,11 @@ export interface IkConstraint {
   chain: 0 | 1;
   bendPositive: boolean;
   weight: number;
+  /** Spine's softness, in pixels: near full reach the two-bone solve eases
+   *  into straight over this distance. Absent: 0. */
+  softness?: number;
   /** Fields of an opened Spine IK constraint the editor does not solve
-   *  (softness, stretch, compress, uniform, skin), merged into the export.
+   *  (stretch, compress, uniform, skin), merged into the export.
    *  The Spine pose applies them. */
   spine?: Record<string, unknown>;
 }
@@ -338,7 +341,7 @@ export interface Animation {
   ik?: Record<IkId, IkKey[]>;
 }
 
-/** One IK key. `tween` eases the mix to the next key: linear when absent,
+/** One IK key. `tween` eases the mix (and softness) to the next key: linear when absent,
  *  `none` stepped, or one cubic `curve` (4 numbers). The bend is stepped,
  *  as Spine's is; `bendPositive` is the editor's sense (y down), like
  *  `IkConstraint.bendPositive`. */
@@ -346,6 +349,8 @@ export interface IkKey {
   frame: number;
   mix: number;
   bendPositive: boolean;
+  /** Tweens with the mix, by the same tween. Absent: the constraint's own. */
+  softness?: number;
   tween?: TweenSpec;
 }
 

@@ -268,9 +268,10 @@ function applyRig(
       if (!animation.ik[k.id]?.length) continue;
       const c = sk.constraints.find((x) => x instanceof IkConstraint && x.data.name === k.name) as IkConstraint | undefined;
       if (!c) continue;
-      const { mix, bendPositive } = ikPoseAt(k, animation, frame);
+      const { mix, bendPositive, softness } = ikPoseAt(k, animation, frame);
       c.pose.mix = mix;
       c.pose.bendDirection = bendPositive ? -1 : 1;
+      c.pose.softness = softness;
     }
   }
   // The document's draw order keys (`Animation.drawOrder`): the rig is built

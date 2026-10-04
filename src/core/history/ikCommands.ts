@@ -75,7 +75,14 @@ export interface IkPatch {
   chain?: 0 | 1;
   bendPositive?: boolean;
   weight?: number;
+  softness?: number;
   name?: string;
+}
+
+/** 0 is no softness, written as none. */
+function setSoftness(k: IkConstraint, v: number): void {
+  if (v > 0) k.softness = v;
+  else delete k.softness;
 }
 
 export class SetIkOptions implements Command {
@@ -99,12 +106,13 @@ export class SetIkOptions implements Command {
   apply(p: Project): void {
     const k = this.find(p);
     if (!k) return;
-    this.before ??= { chain: k.chain, bendPositive: k.bendPositive, weight: k.weight, name: k.name };
+    this.before ??= { chain: k.chain, bendPositive: k.bendPositive, weight: k.weight, softness: k.softness ?? 0, name: k.name };
     if (this.patch.chain !== undefined) k.chain = this.patch.chain;
     if (this.patch.bendPositive !== undefined) k.bendPositive = this.patch.bendPositive;
     // The runtime blends the solved rotation by this, so outside 0..1 it
     // would overshoot the target it is meant to reach.
     if (this.patch.weight !== undefined) k.weight = clamp01(this.patch.weight);
+    if (this.patch.softness !== undefined) setSoftness(k, this.patch.softness);
     if (this.patch.name !== undefined && this.patch.name.trim()) k.name = this.patch.name.trim();
     invalidateBounds([this.symbolId]);
   }
@@ -115,6 +123,7 @@ export class SetIkOptions implements Command {
     if (this.before.chain !== undefined) k.chain = this.before.chain;
     if (this.before.bendPositive !== undefined) k.bendPositive = this.before.bendPositive;
     if (this.before.weight !== undefined) k.weight = this.before.weight;
+    if (this.before.softness !== undefined) setSoftness(k, this.before.softness);
     if (this.before.name !== undefined) k.name = this.before.name;
     invalidateBounds([this.symbolId]);
   }

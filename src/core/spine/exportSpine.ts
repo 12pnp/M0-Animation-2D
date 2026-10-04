@@ -1,4 +1,4 @@
-import type { Animation, ColorTransform, DisplayRef, ImageItem, Layer, Node, Project, SymbolItem, Track } from "@/core/doc/types";
+import type { Animation, ColorTransform, DisplayRef, IkKey, ImageItem, Layer, Node, Project, SymbolItem, Track } from "@/core/doc/types";
 import { DEFAULT_COLOR, isImage, isSymbol, producesSlot } from "@/core/doc/types";
 import type { IkId, ItemId, NodeId } from "@/core/doc/ids";
 import { descendantsOf, maskGroups } from "@/core/doc/layerTree";
@@ -257,6 +257,7 @@ export function exportSpine(
       // The y flip mirrors the rig, and a mirrored two-bone chain bends the
       // other way: the editor's positive bend (y down) is Spine's negative.
       if (k.bendPositive) ik.bendPositive = false;
+      if (k.softness) ik.softness = k.softness;
       if (k.spine) Object.assign(ik, k.spine);
       constraints.push(ik);
       if (scope.depth === 0) rootIk.set(k.id, ik);
@@ -922,10 +923,11 @@ function boneTimelines(
 
 /**
  * The animation's IK keys as Spine's `ik` timelines, one per constraint the
- * export wrote. The bend is inverted like the constraint's (the y flip); the
- * softness, compress and stretch an opened constraint carries are repeated
- * on every key, since a key without them sets them back to Spine's defaults.
- * A tween is one cubic over the mix; the softness curve beside it is flat.
+ * export wrote. The bend is inverted like the constraint's (the y flip).
+ * Every key writes its softness (the constraint's when it has none) and the
+ * compress and stretch an opened constraint carries, since a key without
+ * them sets them back to Spine's defaults. A tween is one cubic, written
+ * over the mix and over the softness: Spine reads both halves.
  */
 function ikTimelines(
   sym: SymbolItem, anim: Animation, written: ReadonlyMap<IkId, SpineIkConstraint>, fps: number,
@@ -935,12 +937,14 @@ function ikTimelines(
     const keys = anim.ik?.[k.id];
     const c = written.get(k.id);
     if (!keys?.length || !c) continue;
+    const softOf = (key: IkKey) => key.softness ?? k.softness ?? 0;
     out[c.name] = keys.map((key, i) => {
       const o: SpineIkKey = {};
       const time = keyTime(key.frame, fps);
       if (time) o.time = time;
       if (key.mix !== 1) o.mix = key.mix;
-      if (c.softness) o.softness = c.softness;
+      const soft = softOf(key);
+      if (soft) o.softness = soft;
       if (key.bendPositive) o.bendPositive = false;
       if (c.compress) o.compress = true;
       if (c.stretch) o.stretch = true;
@@ -948,8 +952,8 @@ function ikTimelines(
       if (next && key.tween?.kind === "none") o.curve = "stepped";
       else if (next && key.tween?.kind === "curve") {
         const [x1, y1, x2, y2] = key.tween.curve as [number, number, number, number];
-        const t0 = key.frame / fps, span = (next.frame - key.frame) / fps, dv = next.mix - key.mix, s = c.softness ?? 0;
-        o.curve = [t0 + x1 * span, key.mix + y1 * dv, t0 + x2 * span, key.mix + y2 * dv, t0 + x1 * span, s, t0 + x2 * span, s];
+        const t0 = key.frame / fps, span = (next.frame - key.frame) / fps, dv = next.mix - key.mix, ds = softOf(next) - soft;
+        o.curve = [t0 + x1 * span, key.mix + y1 * dv, t0 + x2 * span, key.mix + y2 * dv, t0 + x1 * span, soft + y1 * ds, t0 + x2 * span, soft + y2 * ds];
       }
       return o;
     });

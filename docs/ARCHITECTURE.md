@@ -479,14 +479,17 @@ against spine-core's `SkeletonJson` in `tests/drawOrder.test.ts`).
 
 ### IK keys
 
-An animation keys an IK constraint's mix and bend, as Spine's `ik` timeline does
-(`Animation.ik`, schema 17: per constraint, keys `{ frame, mix, bendPositive, tween? }`).
+An animation keys an IK constraint's mix, bend and softness, as Spine's `ik` timeline does
+(`Animation.ik`, schema 17: per constraint, keys `{ frame, mix, bendPositive, softness?, tween? }`;
+schema 18 made `softness` a field of the constraint and the key, moving an opened
+constraint's out of `spine`).
 The pure rules are in `core/doc/ikKeys.ts`: `ikPoseAt`, `withIkKey`, `moveIkKeys`,
 `deleteIkKeys` and `withIkTween`, tested in `tests/ikKeys.test.ts`.
 
 - **Spine's semantics.** Before the first key the constraint's own weight and bend hold
-  (the runtime's setup branch). From a key on, the mix tweens to the next key by the key's
-  tween and the bend is the key's, stepped. A tween is linear (absent), stepped (`none`) or
+  (the runtime's setup branch). From a key on, the mix and softness tween to the next key by
+  the key's tween and the bend is the key's, stepped. A key without a softness has the
+  constraint's; `withIkKey` leaves off one equal to it. A tween is linear (absent), stepped (`none`) or
   one cubic (`curve`, 4 numbers; "smooth" is 0.42, 0, 0.58, 1), which is what one Spine
   key's curve holds. `applyTween` samples the cubic the way the runtime does.
 - **The stage.** `applyIk` takes the mix and bend from `ikPoseAt` in Animate; a mix of 0
@@ -494,19 +497,21 @@ The pure rules are in `core/doc/ikKeys.ts`: `ikPoseAt`, `withIkKey`, `moveIkKeys
   constraint's `pose.mix` and `pose.bendDirection` after the carried animation, the bend
   inverted as the exporter writes it.
 - **Export** (`ikTimelines`): one `ik` timeline per constraint of the exported symbol, the
-  bend inverted. The softness, compress and stretch an opened constraint carries are
-  repeated on every key: a key without them sets them back to Spine's defaults. A cubic
-  writes 8 numbers, the mix's and a flat softness's. Spine's `readCurve` reads the
-  softness half too, and with 4 numbers that half is NaN. A constraint keyed in the
+  bend inverted. Every key writes its softness (the constraint's when it has none) and the
+  compress and stretch an opened constraint carries: a key without them sets them back to
+  Spine's defaults. A cubic writes 8 numbers, the same cubic over the mix and over the
+  softness. Spine's `readCurve` reads the softness half too, and with 4 numbers that half
+  is NaN. A constraint keyed in the
   document replaces a carried timeline of the same name. A nested symbol's IK keys are not
   written, and the export warns.
 - **Import** (`ikKeysOf`): a file's `ik` timeline becomes keys when every key lands on a
-  frame and changes only the mix and bend (softness, compress and stretch equal to the
-  constraint's, a curve whose softness half is flat). Otherwise that constraint's timeline
-  is carried. On the samples, spineboy-pro's nine and both of Stretchyman's convert; four of
-  raptor-pro-and-mask's twelve convert.
-- **Checked.** `spineParity` plays the stickman with keyed mixes (linear, stepped, smooth)
-  and flipped bends against spine-core. `spinePose` and `spineImport` cover the samples'
+  frame, its compress and stretch are the constraint's, and each curve's mix and softness
+  halves are one cubic (a half whose value does not change takes the other's). Otherwise
+  that constraint's timeline is carried. On the samples, spineboy-pro's nine and both of
+  Stretchyman's convert; seven of raptor-pro-and-mask's twelve.
+- **Checked.** `spineParity` plays the stickman with keyed mixes (linear, stepped, smooth),
+  flipped bends, and a constraint softness with keyed softness against spine-core; a stage
+  that ignores the softness fails it. `spinePose` and `spineImport` cover the samples'
   converted keys. A stage that ignores the keys fails the parity case.
 - **The timeline.** An IK row (`LayerRow.ik`, `focusRows`, `LayerList.ikRow`,
   `FrameGrid.drawIkRow`) draws a diamond per key in the IK target colour, joined where the
@@ -527,12 +532,14 @@ The pure rules are in `core/doc/ikKeys.ts`: `ikPoseAt`, `withIkKey`, `moveIkKeys
   - Right-click gives Key IK Here, Linear / Stepped / Smooth, and Delete.
   - Q / W stop on IK keys too.
 - **Properties ▸ IK in Animate** keys at the playhead: Bend flips the bend in force there,
-  Mix keys the mix (a scrub is one undo step), and Key keys both as they are. The section
-  shows the values at the playhead. Setup still edits the constraint's own weight and bend.
+  Mix and Softness key their value (a scrub is one undo step), and Key keys them as they
+  are. Softness shows for a two-bone chain only. The section
+  shows the values at the playhead. Setup edits the constraint's own weight, bend and softness.
 - A path drag through the target (Bone paths) treats a constraint whose keyed mix is 0 at
   that frame like weight 0: the bone's own rules apply. Dragging the knee across the leg
   keys the bend flipped at that frame, holding until the next IK key, as Spine's bend does.
-- The AI's `key_ik` keys a constraint's mix, bend and ease at a frame, or deletes a key.
+- The AI's `key_ik` keys a constraint's mix, bend, softness and ease at a frame, or deletes
+  a key.
   `get_animation` lists the keys under `ik`.
 
 ### The timeline fills its panel, and only the layers scroll
@@ -1619,7 +1626,9 @@ worlds flipped to y up) and the solved locals back (`fromSpineLocal`). Behaviour
 inherits and the port keeps: `mix` (the editor's weight) blends local rotations; a
 non-uniform parent scale takes a numeric solve and ZEROES the child's local y; angles use
 the runtime's pi and wrap into (−180, 180] before mixing; a zero weight skips the solve.
-Stretch, compress and softness are not ported (the editor cannot author them). The bend is
+Softness is ported (`IkConstraint.softness`, pixels, two-bone chains only: near full reach
+the target is pulled in so the chain eases into straight). Stretch and compress are not (the
+editor cannot author them). The bend is
 written inverted (ARCHITECTURE ▸ The Spine 4.3 contract). `tests/spineParity.test.ts`
 checks the stage against spine-core on the stickman, seven targeted rigs (partial weight,
 negative bend, look-at, non-uniform scale, mirrored and sheared parents) and 60 random

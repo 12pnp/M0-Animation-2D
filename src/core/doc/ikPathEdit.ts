@@ -119,7 +119,7 @@ export function withTargetAt(anim: Animation, sym: SymbolItem, targetId: NodeId,
  *  a knee dragged across the leg. */
 export function withBendFlippedAt(anim: Animation, k: IkConstraint, frame: number): Animation {
   const now = ikPoseAt(k, anim, frame);
-  const keys = withIkKey(anim.ik?.[k.id] ?? [], frame, { mix: now.mix, bendPositive: !now.bendPositive });
+  const keys = withIkKey(anim.ik?.[k.id] ?? [], frame, { ...now, bendPositive: !now.bendPositive }, k.softness);
   return { ...anim, ik: { ...anim.ik, [k.id]: keys } };
 }
 

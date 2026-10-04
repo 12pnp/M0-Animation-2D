@@ -339,7 +339,7 @@ function applyIk(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>, animation: 
   const ikBone = (e: PoseEntry): IkBone => ({ ...toSpineLocal(localOf(e)), ...spineWorld(e.world) });
 
   for (const constraint of symbol.ik) {
-    const { mix, bendPositive } = ikPoseAt(constraint, animation, frame);
+    const { mix, bendPositive, softness } = ikPoseAt(constraint, animation, frame);
     if (mix === 0) continue;
     const effector = byNode.get(constraint.boneId);
     const target = byNode.get(constraint.targetId);
@@ -359,7 +359,7 @@ function applyIk(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>, animation: 
     if (twoBone) {
       const p = ikBone(root), c = ikBone(effector);
       const length = effector.node.kind === "bone" ? effector.node.boneLength ?? 0 : 0;
-      ikApply2(p, c, spineWorld(rootParentWorld), length, tx, ty, bendPositive ? -1 : 1, mix);
+      ikApply2(p, c, spineWorld(rootParentWorld), length, tx, ty, bendPositive ? -1 : 1, mix, softness);
       solved.set(root.nodeId, fromSpineLocal(p));
       solved.set(effector.nodeId, fromSpineLocal(c));
     } else {

@@ -439,7 +439,7 @@ export class PropertiesPanel implements Panel {
       const keysOf = () => this.store.currentAnimation?.ik?.[constraint.id] ?? [];
       const poseNow = () => ikPoseAt(constraint, this.store.currentAnimation, this.store.ui.frame);
       const keyAt = (pose: IkPose, label: string, kind?: string) =>
-        doSetIkKeys(this.store, constraint.id, withIkKey(keysOf(), this.store.ui.frame, pose), label, kind);
+        doSetIkKeys(this.store, constraint.id, withIkKey(keysOf(), this.store.ui.frame, pose, constraint.softness), label, kind);
 
       const bend = h("button", { class: "btn" }, constraint.bendPositive ? "Positive" : "Negative");
       on(bend, "click", () => {
@@ -463,6 +463,22 @@ export class PropertiesPanel implements Panel {
       });
       weight.set(constraint.weight);
 
+      // Softness eases a two-bone chain into straight near full reach.
+      const softness = new NumberField({
+        glyph: "S", min: 0, step: 1, decimals: 1, sensitivity: 4, unit: "px",
+        onInput: (v, committing) => {
+          if (animate) {
+            this.scrubStep("ik.key", committing);
+            keyAt({ ...poseNow(), softness: v }, "IK Softness", "ik.key");
+          } else {
+            this.scrubStep("ik.options", committing);
+            write({ softness: v });
+          }
+          if (committing) this.store.history.endInteraction();
+        },
+      });
+      softness.set(constraint.softness ?? 0);
+
       const key = h("button", { class: "btn", title: "Key the mix and bend in force here" }, "Key");
       on(key, "click", () => keyAt(poseNow(), "Key IK"));
       if (animate) {
@@ -470,6 +486,7 @@ export class PropertiesPanel implements Panel {
           const now = poseNow();
           bend.textContent = now.bendPositive ? "Positive" : "Negative";
           weight.show(now.mix);
+          softness.show(now.softness);
           const keyed = keysOf().some((k) => k.frame === this.store.ui.frame);
           key.textContent = keyed ? "Keyed" : "Key";
           (key as HTMLButtonElement).disabled = keyed;
@@ -517,6 +534,7 @@ export class PropertiesPanel implements Panel {
         this.row("Chain", [chainSel]),
         this.row("Bend", [bend]),
         this.row(animate ? "Mix" : "Weight", [weight.el]),
+        ...(rel.chain.length > 1 ? [this.row("Softness", [softness.el])] : []),
         ...(animate ? [this.row("", [key])] : []),
         this.row("", [remove]),
       );

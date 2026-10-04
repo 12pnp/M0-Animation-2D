@@ -712,4 +712,22 @@ describe("the Spine runtime plays the export the way the stage draws it", () => 
     }
     expect(checkParity(project, project.rootSymbolId).checks).toBeGreaterThanOrEqual(500);
   });
+
+  it("IK softness: the constraint's, and keyed, tweened with the mix", async () => {
+    const { project } = await loadStickman();
+    const sym = project.items[project.rootSymbolId] as SymbolItem;
+    for (const k of sym.ik) k.softness = 30;
+    const [a] = sym.ik;
+    for (const anim of sym.animations) {
+      const end = anim.duration - 1, mid = Math.round(end / 2);
+      anim.ik = {
+        [a!.id]: [
+          { frame: 1, mix: 1, bendPositive: a!.bendPositive, softness: 0, tween: { kind: "curve", curve: [0.42, 0, 0.58, 1] } },
+          { frame: mid, mix: 0.6, bendPositive: a!.bendPositive, softness: 60 },
+          { frame: end, mix: 1, bendPositive: a!.bendPositive },
+        ],
+      };
+    }
+    expect(checkParity(project, project.rootSymbolId).checks).toBeGreaterThanOrEqual(500);
+  });
 });

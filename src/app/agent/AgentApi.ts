@@ -1,7 +1,7 @@
 import type { Store } from "@/app/Store";
 import { drawingLayers, orderAt, reorderTargets, withDrawOrderKey, withFront } from "@/core/doc/drawOrder";
 import { type AnimId, type AssetId, newIkId, type NodeId } from "@/core/doc/ids";
-import { type Animation, type IkKey, type ImageItem, isImage, type Keyframe, type Node, type SymbolItem, type Track } from "@/core/doc/types";
+import { type Animation, type IkConstraint, type IkKey, type ImageItem, isImage, type Keyframe, type Node, type SymbolItem, type Track } from "@/core/doc/types";
 import { entryBox, type FrameContext } from "@/core/doc/pose";
 import { type ImageFrame, imageFrame, referenceEnd, referenceFrameOf, referenceIndexAt, referenceRect } from "@/core/doc/reference";
 import { apply } from "@/core/math/Matrix2D";
@@ -200,7 +200,7 @@ export class AgentApi {
       ik: s.ik.map((k) => {
         const effector = s.nodes[k.boneId];
         const bones = k.chain > 0 && effector?.parentId ? [nameOf(effector.parentId), effector.name] : [effector?.name];
-        return { name: k.name, bones, target: nameOf(k.targetId), mix: k.weight };
+        return { name: k.name, bones, target: nameOf(k.targetId), mix: k.weight, ...(k.softness ? { softness: round(k.softness, 3) } : {}) };
       }),
       animations: s.animations.map((a) => ({
         name: a.name, frames: this.frames(a), loops: a.playTimes === 0,
@@ -234,7 +234,7 @@ export class AgentApi {
       } : {}),
       ...(anim.ik && Object.keys(anim.ik).length ? {
         ik: Object.fromEntries(this.sym.ik.filter((k) => anim.ik?.[k.id]?.length).map((k) => [k.name, anim.ik![k.id]!.map((key) => ({
-          frame: key.frame, mix: round(key.mix, 3), bendPositive: key.bendPositive, ease: ikTweenOf(key),
+          frame: key.frame, ...ikKeyOut(k, key),
         }))])),
       } : {}) };
   }
@@ -776,6 +776,7 @@ export class AgentApi {
     if (args.mix !== undefined && (typeof args.mix !== "number" || !(args.mix >= 0 && args.mix <= 1))) throw new AgentError("mix is a number from 0 to 1.");
     if (args.bendPositive !== undefined && typeof args.bendPositive !== "boolean") throw new AgentError("bendPositive is true or false.");
     if (args.ease !== undefined && args.ease !== "linear" && args.ease !== "stepped" && args.ease !== "smooth") throw new AgentError(`ease is "linear", "stepped" or "smooth".`);
+    if (args.softness !== undefined && (typeof args.softness !== "number" || !(args.softness >= 0))) throw new AgentError("softness is a number of pixels, 0 or more.");
     const before = anim.ik?.[k.id] ?? [];
     let keys: IkKey[];
     if (args.delete === true) {
@@ -786,7 +787,8 @@ export class AgentApi {
       keys = withIkKey(before, frame, {
         mix: typeof args.mix === "number" ? args.mix : now.mix,
         bendPositive: typeof args.bendPositive === "boolean" ? args.bendPositive : now.bendPositive,
-      });
+        softness: typeof args.softness === "number" ? args.softness : now.softness,
+      }, k.softness);
       if (args.ease) keys = withIkTween(keys, [frame], args.ease as IkTween);
     }
     this.store.apply(new SetIkKeys(`AI: IK "${k.name}" at ${frame + 1}`, this.store.currentSymbolId, anim.id, k.id, keys));
@@ -794,7 +796,7 @@ export class AgentApi {
     this.store.emit("stage");
     return {
       animation: anim.name, ik: k.name,
-      keys: keys.map((key) => ({ frame: key.frame, mix: round(key.mix, 3), bendPositive: key.bendPositive, ease: ikTweenOf(key) })),
+      keys: keys.map((key) => ({ frame: key.frame, ...ikKeyOut(k, key) })),
     };
   }
 
@@ -1135,6 +1137,12 @@ function str(args: Args, key: string): string {
   const v = args[key];
   if (typeof v !== "string") throw new AgentError(`"${key}" is required, as text.`);
   return v;
+}
+
+/** An IK key as the AI reads it: the softness only where it is not 0. */
+function ikKeyOut(k: IkConstraint, key: IkKey) {
+  const softness = key.softness ?? k.softness ?? 0;
+  return { mix: round(key.mix, 3), bendPositive: key.bendPositive, ...(softness ? { softness: round(softness, 3) } : {}), ease: ikTweenOf(key) };
 }
 
 function int(args: Args, key: string, min: number): number {

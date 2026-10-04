@@ -57,7 +57,7 @@ const str = (v: unknown): v is string => typeof v === "string";
 /** Only what the editor models is read off a bone; the rest rides along. */
 const BONE_FIELDS = new Set(["name", "parent", "length", "x", "y", "rotation", "scaleX", "scaleY", "shearX", "shearY", "inherit"]);
 const SLOT_FIELDS = new Set(["name", "bone", "color", "dark", "attachment", "blend"]);
-const IK_FIELDS = new Set(["type", "name", "bones", "target", "mix", "bendPositive"]);
+const IK_FIELDS = new Set(["type", "name", "bones", "target", "mix", "bendPositive", "softness"]);
 const BLEND: Record<string, BlendMode> = { additive: "add", multiply: "multiply", screen: "screen" };
 const INHERIT = new Set<SpineInherit>(["normal", "onlyTranslation", "noRotationOrReflection", "noScale", "noScaleOrReflection"]);
 
@@ -606,31 +606,43 @@ function trackOf(
  */
 /**
  * A Spine `ik` timeline as the document's keys, or null when it holds what
- * the editor does not key: a time off the frames, a softness, compress or
- * stretch other than the constraint's own, or a curve that bends the
- * softness. The bend is inverted, as `ikOf` does.
+ * the editor does not key: a time off the frames, a compress or stretch
+ * other than the constraint's own, or a curve whose mix and softness halves
+ * are not one cubic. A softness equal to the constraint's is left off the
+ * key. The bend is inverted, as `ikOf` does.
  */
 function ikKeysOf(list: unknown[], k: IkConstraint, rate: number): IkKey[] | null {
-  const softness = num(k.spine?.softness, 0), compress = k.spine?.compress === true, stretch = k.spine?.stretch === true;
+  const setup = k.softness ?? 0, compress = k.spine?.compress === true, stretch = k.spine?.stretch === true;
   const keys: IkKey[] = [];
+  /** One half of a Spine curve as the editor's cubic, from `v0` to `v1`;
+   *  undefined when the value does not change (any cubic will do), null when
+   *  a constant value is bent. */
+  const half = (c: number[], at: number, t0: number, span: number, v0: number, v1: number): number[] | undefined | null => {
+    const dv = v1 - v0;
+    if (Math.abs(dv) > 1e-9) return [(c[at]! - t0) / span, (c[at + 1]! - v0) / dv, (c[at + 2]! - t0) / span, (c[at + 3]! - v0) / dv];
+    return Math.abs(c[at + 1]! - v0) > 1e-6 || Math.abs(c[at + 3]! - v0) > 1e-6 ? null : undefined;
+  };
   for (let i = 0; i < list.length; i++) {
     const r = list[i];
     if (!obj(r)) return null;
     const at = num(r.time, 0) * rate;
     if (Math.abs(at - Math.round(at)) > 1e-6) return null;
-    if (Math.abs(num(r.softness, 0) - softness) > 1e-6 || (r.compress === true) !== compress || (r.stretch === true) !== stretch) return null;
+    if ((r.compress === true) !== compress || (r.stretch === true) !== stretch) return null;
+    const soft = Math.max(0, num(r.softness, 0));
     const key: IkKey = { frame: Math.round(at), mix: Math.min(1, Math.max(0, num(r.mix, 1))), bendPositive: r.bendPositive === false };
+    if (Math.abs(soft - setup) > 1e-9) key.softness = soft;
     const next = list[i + 1];
     if (r.curve === "stepped") key.tween = { kind: "none" };
     else if (Array.isArray(r.curve) && obj(next)) {
       const c = r.curve.map((v) => num(v, 0));
-      if (c.length >= 8 && (Math.abs(c[5]! - softness) > 1e-6 || Math.abs(c[7]! - softness) > 1e-6)) return null;
-      const t0 = num(r.time, 0), span = num(next.time, 0) - t0, dv = num(next.mix, 1) - key.mix;
-      if (span <= 0) return null;
-      if (Math.abs(dv) > 1e-9) {
-        const curve = [(c[0]! - t0) / span, (c[1]! - key.mix) / dv, (c[2]! - t0) / span, (c[3]! - key.mix) / dv];
-        key.tween = { kind: "curve", curve: curve.map((v) => v + 0) };
-      }
+      const t0 = num(r.time, 0), span = num(next.time, 0) - t0;
+      if (span <= 0 || c.length < 8) return null;
+      const m = half(c, 0, t0, span, key.mix, num(next.mix, 1));
+      const sh = half(c, 4, t0, span, soft, Math.max(0, num(next.softness, 0)));
+      if (m === null || sh === null) return null;
+      if (m && sh && m.some((v, j) => Math.abs(v - sh[j]!) > 1e-4)) return null;
+      const curve = m ?? sh;
+      if (curve) key.tween = { kind: "curve", curve: curve.map((v) => v + 0) };
     }
     keys.push(key);
   }
@@ -655,6 +667,7 @@ function ikOf(c: SpineRaw, bones: Map<string, Node>, warn: (m: string) => void):
     bendPositive: c.bendPositive === false,
     weight: num(c.mix, 1),
   };
+  if (num(c.softness, 0) > 0) ik.softness = num(c.softness, 0);
   const rest = pick(c, (k) => !IK_FIELDS.has(k));
   if (rest) ik.spine = rest;
   return ik;

@@ -726,6 +726,10 @@ describe("cycles and bone paths through the AI's tools", () => {
     ]);
     const anim = await api.call("get_animation", { animation: "run" }) as { ik: Record<string, unknown[]> };
     expect(anim.ik[name]).toHaveLength(2);
+    const soft = await api.call("key_ik", { animation: "run", ik: name, frame: 10, softness: 20 }) as { keys: Array<{ softness?: number }> };
+    expect(soft.keys[1]!.softness).toBe(20);
+    expect(soft.keys[0]).not.toHaveProperty("softness");
+    await expect(api.call("key_ik", { animation: "run", ik: name, frame: 1, softness: -1 })).rejects.toThrow(/softness/);
     await api.call("key_ik", { animation: "run", ik: name, frame: 10, delete: true });
     await expect(api.call("key_ik", { animation: "run", ik: "nope", frame: 1 })).rejects.toThrow(/no IK constraint "nope"/);
   });
