@@ -52,6 +52,10 @@ export function applyTheme(prefs: Prefs): void {
   root.setProperty("--warn", warn);
 
   root.setProperty("--playhead", prefs.timeline.playhead);
+  // The stage's bone colours, for the Outline's icons and lines.
+  root.setProperty("--bone", prefs.gizmos.bone);
+  root.setProperty("--bone-ik", prefs.gizmos.boneIk);
+  root.setProperty("--ik-target", prefs.gizmos.ikTarget);
   root.setProperty("--bg-stage", prefs.stage.pasteboard);
 
   root.setProperty("--ui-scale", String(UI_FONT_SCALES[fontSize]));

@@ -1041,6 +1041,14 @@ flowchart LR
   per drag or scrub. Its settings are `prefs.gizmos`, so they persist. A panel new to a stored
   layout goes where `setDefault` puts it. The left panel's width and open state stay in
   `animo.sizes` as `ai` / `aiOpen`, the names from when it held only the chat.
+- **The Outline is Spine's Tree** (`view/panels/OutlinePanel.ts`). Which rows show — search
+  (a branch stays if it holds a match), the Bones / Images filters (a hidden node hands its
+  children up), open and closed branches, the guide lines — is `outlineRows` in
+  `core/doc/outlineTree.ts`; Shift-click ranges are `rowRange`, and a drop is `canDropOn`
+  (never onto itself or its own descendant; onto the symbol's row for the top level). A
+  selection change only restyles rows: rebuilding them would swallow the double-click that
+  renames. Arrows walk the rows, Left / Right close and open, F2 or Enter renames; those keys
+  stop at the list. Closed branches are per symbol, for the session.
 - **Rigging takes positions in skeleton space** (y up, what `get_pose` and `render_frame`
   report): a bone as its joint and tip, a picture as the pixel that turns with the bone (its
   pivot), where that pixel goes, and its world rotation (0 = upright, as drawn). That is what a

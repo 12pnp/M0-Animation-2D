@@ -225,21 +225,93 @@
 }
 .lib-preview canvas, .lib-preview img { max-width: 100%; max-height: 100%; }
 
-/* ── Outline / tree ─────────────────────────────────────────────────────── */
-.tree-row {
-  display: flex; align-items: center; gap: 4px;
-  height: calc(20px * var(--ui-scale)); padding: 0 6px;
+/* ── Outline (view/panels/OutlinePanel.ts), Spine's Tree ─────────────────
+   A bar (search, filters, show selection, expand / collapse all) over a
+   scrolling list. Each row: show and lock cells, the lines to its parent,
+   the triangle, the kind icon, the name, IK badges. */
+.otree { display: flex; flex-direction: column; height: 100%; min-height: 0; padding: 0; }
+.otree-bar {
+  display: flex; align-items: center; gap: 4px; flex: none;
+  padding: 3px 4px;
+  border-bottom: 1px solid var(--line);
 }
-.tree-row:hover { background: var(--hover); }
-.tree-row.selected { background: var(--accent-row); color: var(--accent-row-ink); }
-.tree-row .tri {
-  width: 0; height: 0; flex: none; margin-right: 1px;
+.otree-search {
+  flex: 1 1 auto; min-width: 40px;
+  height: var(--h-field); padding: 0 6px;
+  background: var(--bg-field); border: 1px solid var(--line); border-radius: var(--radius);
+  color: var(--fg-strong);
+}
+.otree-group { display: flex; gap: 1px; flex: none; }
+.otree-btn {
+  width: 22px; height: var(--h-field); display: grid; place-items: center;
+  border-radius: var(--radius); color: var(--fg-dim); background: var(--bg-field);
+}
+.otree-btn:hover { color: var(--fg-strong); background: var(--hover); }
+.otree-btn.on { color: var(--accent); }
+.otree-list { flex: 1 1 auto; min-height: 0; overflow: auto; padding: 2px 0; outline: none; }
+
+.otree-row {
+  --row: calc(20px * var(--ui-scale));
+  display: flex; align-items: center;
+  height: var(--row); padding-right: 6px;
+  white-space: nowrap;
+  cursor: default;
+}
+.otree-row:hover { background: var(--hover); }
+.otree-row.selected { background: var(--accent-row); color: var(--accent-row-ink); }
+.otree-row.drop { outline: 1px solid var(--accent); outline-offset: -1px; }
+.otree-row.hidden-layer .otree-name { opacity: 0.5; }
+.otree-root .otree-name { color: var(--fg-strong); font-weight: 600; }
+
+/* Show / lock: dim until the row is in the exceptional state. */
+.otree-cell {
+  width: 18px; height: 100%; flex: none;
+  display: grid; place-items: center;
+  color: var(--fg-dim); opacity: 0.35;
+}
+.otree-row:hover .otree-cell { opacity: 0.7; }
+.otree-cell.on { opacity: 1; color: var(--warn); }
+
+/* The lines: one 12px column per ancestor, and an elbow into the row. */
+.otree-guides { display: flex; height: 100%; flex: none; margin-left: 4px; }
+.otree-guide, .otree-elbow { position: relative; width: 12px; height: 100%; }
+.otree-guide.on::before, .otree-elbow::before {
+  content: ""; position: absolute; left: 5px; top: 0; bottom: 0;
+  border-left: 1px solid var(--otree-line, rgba(255, 255, 255, 0.16));
+}
+.otree-elbow.last::before { bottom: 50%; }
+.otree-elbow::after {
+  content: ""; position: absolute; left: 5px; right: 0; top: 50%;
+  border-top: 1px solid var(--otree-line, rgba(255, 255, 255, 0.16));
+}
+.otree-row.kind-bone { --otree-line: color-mix(in srgb, var(--bone) 40%, transparent); }
+
+.otree-tri { width: 12px; height: 100%; flex: none; display: grid; place-items: center; }
+.otree-tri::before {
+  content: ""; width: 0; height: 0;
   border-left: 4px solid var(--fg-dim);
   border-top: 3.5px solid transparent;
   border-bottom: 3.5px solid transparent;
 }
-.tree-row.open > .tri { transform: rotate(90deg); }
-.tree-row .tri.leaf { border: none; }
+.otree-tri.open::before { transform: rotate(90deg); }
+.otree-tri.leaf::before { border: none; }
+.otree-tri:not(.leaf):hover::before { border-left-color: var(--fg-strong); }
+
+.otree-row .ico { display: flex; flex: none; margin: 0 4px 0 1px; color: var(--fg-dim); }
+.otree-row.kind-bone .ico { color: var(--bone); }
+.otree-row.driven .ico { color: var(--bone-ik); }
+.otree-row.target .ico { color: var(--ik-target); }
+.otree-row.selected .ico { color: var(--accent-row-ink); }
+.otree-name { overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 0 1 auto; }
+.otree-name mark { background: rgba(var(--accent-rgb), 0.35); color: inherit; border-radius: 2px; }
+.otree-rename {
+  flex: 1 1 auto; min-width: 60px; height: calc(var(--row) - 2px); padding: 0 4px;
+  background: var(--bg-field); border: 1px solid var(--accent); border-radius: var(--radius);
+  color: var(--fg-strong);
+}
+.otree-badges { display: flex; gap: 2px; margin-left: auto; padding-left: 6px; flex: none; }
+.otree-badge { display: grid; place-items: center; color: var(--bone-ik); }
+.otree-row.target .otree-badge { color: var(--ik-target); }
 
 /* ── Popup menus (menu bar + panel hamburgers) ──────────────────────────── */
 .popmenu {
@@ -292,9 +364,6 @@
    the rows scroll under them. */
 .lib { display: flex; flex-direction: column; height: 100%; min-height: 0; }
 .lib.dropping { outline: 2px solid var(--accent); outline-offset: -2px; }
-.outline { padding: 2px 0; }
-.tree-row .ico { display: flex; flex: none; color: var(--fg-dim); }
-.tree-row.selected .ico { color: var(--accent-row-ink); }
 
 /* ── Preview ────────────────────────────────────────────────────────────── */
 .preview { position: relative; height: 100%; display: flex; flex-direction: column; }

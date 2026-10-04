@@ -21,6 +21,8 @@ export const ICON = {
   translate:   `<path d="M8 1.5v13M1.5 8h13"/><path d="M6 3.5 8 1.5l2 2M6 12.5l2 2 2-2M3.5 6 1.5 8l2 2M12.5 6l2 2-2 2"/>`,
   scale:       `<rect x="2" y="7" width="7" height="7"/><path d="M7.5 8.5 14 2M10 2h4v4"/>`,
   shear:       `<path d="M5 3h9l-3 10H2z"/>`,
+  expandAll:   `<path d="M4 3.5l4 4 4-4M4 8.5l4 4 4-4"/>`,
+  collapseAll: `<path d="M4 7.5l4-4 4 4M4 12.5l4-4 4 4"/>`,
   tag:         `<path d="M2.5 8.2V2.5h5.7l6 6-5.7 5.7z"/><circle cx="5.3" cy="5.3" r="1"/>`,
 
   // ── Timeline ───────────────────────────────────────────────────────────
