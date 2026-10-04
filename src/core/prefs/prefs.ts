@@ -52,6 +52,15 @@ export interface InterfacePrefs {
   fontFamily: UiFontFamily;
   /** The installed font typed in for Font ▸ Custom. */
   fontCustom: string;
+  /** Hierarchy lines (the Outline, the timeline's layers): one colour per
+   *  depth, repeating after six; off, every line is the neutral grey. */
+  treeLineColors: boolean;
+  treeLine0: string;
+  treeLine1: string;
+  treeLine2: string;
+  treeLine3: string;
+  treeLine4: string;
+  treeLine5: string;
 }
 
 export interface StagePrefs {
@@ -204,6 +213,13 @@ export const DEFAULT_PREFS: Prefs = {
     fontSize: "small",
     fontFamily: "jetbrains",
     fontCustom: "",
+    treeLineColors: true,
+    treeLine0: "rgba(224,108,117,0.75)",
+    treeLine1: "rgba(229,192,123,0.75)",
+    treeLine2: "rgba(152,195,121,0.75)",
+    treeLine3: "rgba(86,182,194,0.75)",
+    treeLine4: "rgba(97,175,239,0.75)",
+    treeLine5: "rgba(198,120,221,0.75)",
   },
   stage: {
     showGrid: true,

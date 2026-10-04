@@ -125,6 +125,18 @@ const CATEGORIES: Category[] = [
         ],
       },
       {
+        title: "Hierarchy lines", rows: [
+          { kind: "check", cat: "interface", key: "treeLineColors", label: "Colour lines by depth" },
+          { kind: "color", cat: "interface", key: "treeLine0", label: "Depth 1" },
+          { kind: "color", cat: "interface", key: "treeLine1", label: "Depth 2" },
+          { kind: "color", cat: "interface", key: "treeLine2", label: "Depth 3" },
+          { kind: "color", cat: "interface", key: "treeLine3", label: "Depth 4" },
+          { kind: "color", cat: "interface", key: "treeLine4", label: "Depth 5" },
+          { kind: "color", cat: "interface", key: "treeLine5", label: "Depth 6" },
+          { kind: "note", text: "The lines joining a row to its parent in the Outline and the timeline's layer list. Deeper levels repeat the colours from Depth 1." },
+        ],
+      },
+      {
         title: "Text", rows: [
           { kind: "custom", render: fontRow },
           {

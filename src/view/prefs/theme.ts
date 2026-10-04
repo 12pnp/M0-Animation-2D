@@ -3,6 +3,9 @@ import { inkOn, rgbTriplet } from "@/core/prefs/color";
 import { fontStack, setUiFontFamily, UI_FONT_SCALES, uiPx } from "@/core/prefs/fonts";
 import { themeById } from "@/core/prefs/themes";
 
+/** A hierarchy line when depth colours are off. */
+const NEUTRAL_LINE = "rgba(255,255,255,0.16)";
+
 /**
  * The handful of preferences that are CSS rather than canvas.
  *
@@ -58,6 +61,10 @@ export function applyTheme(prefs: Prefs): void {
   root.setProperty("--ik-target", prefs.gizmos.ikTarget);
   root.setProperty("--bg-stage", prefs.stage.pasteboard);
 
+  // Hierarchy lines, one colour per depth (core/doc/treeLines.ts).
+  const lines = prefs.interface;
+  const lineColors = [lines.treeLine0, lines.treeLine1, lines.treeLine2, lines.treeLine3, lines.treeLine4, lines.treeLine5];
+  lineColors.forEach((c, i) => root.setProperty(`--tree-line-${i}`, lines.treeLineColors ? c : NEUTRAL_LINE));
   root.setProperty("--font-family", fontStack(fontFamily, fontCustom));
   setUiFontFamily(fontFamily, fontCustom);
   root.setProperty("--ui-scale", String(UI_FONT_SCALES[fontSize]));

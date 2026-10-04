@@ -1053,6 +1053,12 @@ flowchart LR
   selection change only restyles rows: rebuilding them would swallow the double-click that
   renames. Arrows walk the rows, Left / Right close and open, F2 or Enter renames; those keys
   stop at the list. Closed branches are per symbol, for the session.
+- **Hierarchy lines** (the Outline and the timeline's layer list) share the `.tguide` /
+  `.telbow` columns and are coloured by depth, Unity-style: `treeLines` in
+  `core/doc/treeLines.ts` works the lines out from row depths alone, `lineColorIndex` picks one
+  of six colours, which `applyTheme` publishes as `--tree-line-0…5` from Preferences ▸
+  Interface ▸ Hierarchy lines (all neutral when "Colour lines by depth" is off). The
+  timeline has no root row, so its column 0 and top-level elbows are left out.
 - **Rigging takes positions in skeleton space** (y up, what `get_pose` and `render_frame`
   report): a bone as its joint and tip, a picture as the pixel that turns with the bone (its
   pivot), where that pixel goes, and its world rotation (0 = upright, as drawn). That is what a

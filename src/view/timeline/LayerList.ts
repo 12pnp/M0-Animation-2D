@@ -6,6 +6,7 @@ import type { Layer, NodeKind } from "@/core/doc/types";
 import { isSymbol } from "@/core/doc/types";
 import { RenameLayer, ReorderLayer, SetLayerFlag, SetParent } from "@/core/history/commands";
 import { indexAbove, type LayerRow, layerRows } from "@/core/doc/layerTree";
+import { type TreeLine, lineColorIndex, treeLines } from "@/core/doc/treeLines";
 import { ikRoles, ikSummary } from "@/core/doc/ikGraph";
 import type { NodeId } from "@/core/doc/ids";
 import { attachOptionsMenu } from "./onionButton";
@@ -111,7 +112,8 @@ export class LayerList {
     // indentation cannot show, since a target hangs outside the chain.
     const roles = ikRoles(sym);
     const rows = layerRows(sym);
-    rows.forEach((row, i) => this.list.appendChild(this.row(row, i, roles)));
+    const lines = treeLines(rows.map((r) => r.depth));
+    rows.forEach((row, i) => this.list.appendChild(this.row(row, i, roles, lines[i]!)));
 
     // Selecting from somewhere else — the stage, or a name in the Properties
     // panel's IK section — has to be visible. Only on an actual CHANGE, and
@@ -125,6 +127,7 @@ export class LayerList {
   private row(
     row: LayerRow, index: number,
     roles: { targets: Set<NodeId>; driven: Set<NodeId> },
+    line: TreeLine,
   ): HTMLElement {
     const sym = this.store.currentSymbol;
     const { layer, node, depth, hasChildren } = row;
@@ -175,15 +178,21 @@ export class LayerList {
     const eye = this.flagCell(layer, "visible");
     const lock = this.flagCell(layer, "locked");
 
+    // The hierarchy lines, coloured by depth. No root row stands above the
+    // top level here, so column 0 and a top-level row's elbow are left out;
+    // the width is the old indent, 12px a level.
+    const lines = h("span", { class: "tguides" },
+      ...line.guides.slice(1).map((on, j) => h("span", { class: `tguide d${lineColorIndex(j + 1)}${on ? " on" : ""}` })),
+      ...(depth > 0 ? [h("span", { class: `telbow d${lineColorIndex(depth)}${line.last ? " last" : ""}` })] : []));
     // Masked rows sit one step in from their mask, the way Flash draws the
     // linkage. It is an EXTRA step on top of the group indent, not a
     // replacement: a masked layer can also be inside a group.
-    const indent = 4 + depth * 12 + (layer.maskedBy ? 12 : 0);
+    const maskStep = layer.maskedBy ? h("span", { class: "tmask-step" }) : null;
     const el = h("div", {
       class: rowClasses(layer, node.kind, selected, ikRole),
-      style: { height: `${this.cb.rowHeight}px`, paddingLeft: `${indent}px` },
+      style: { height: `${this.cb.rowHeight}px`, paddingLeft: "4px" },
       draggable: true,
-    }, tri, kind, name, ...(badge ? [badge] : []), eye, lock);
+    }, lines, ...(maskStep ? [maskStep] : []), tri, kind, name, ...(badge ? [badge] : []), eye, lock);
 
     on(el, "pointerdown", (ev) => {
       const e = ev as unknown as PointerEvent;

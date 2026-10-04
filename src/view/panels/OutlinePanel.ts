@@ -7,6 +7,7 @@ import { RenameNode, SetLayerFlag, SetParent } from "@/core/history/commands";
 import { mayReparent } from "@/view/widgets/ikReparentGuard";
 import { isSymbol, type Layer } from "@/core/doc/types";
 import { ikRoles } from "@/core/doc/ikGraph";
+import { lineColorIndex } from "@/core/doc/treeLines";
 import {
   type OutlineRow, type OutlineShow, ancestorsOf, canDropOn, outlineRows, rowRange,
 } from "@/core/doc/outlineTree";
@@ -139,9 +140,9 @@ export class OutlinePanel implements Panel {
       ? (isTarget ? "ikTarget" : "bone")
       : isSymbol(item) ? "symbolItem" : "imageItem";
 
-    const guides = h("span", { class: "otree-guides" },
-      ...r.guides.map((on) => h("span", { class: `otree-guide${on ? " on" : ""}` })),
-      h("span", { class: `otree-elbow${r.last ? " last" : ""}${r.depth === 0 ? " top" : ""}` }));
+    const guides = h("span", { class: "tguides" },
+      ...r.guides.map((on, j) => h("span", { class: `tguide d${lineColorIndex(j)}${on ? " on" : ""}` })),
+      h("span", { class: `telbow d${lineColorIndex(r.depth)}${r.last ? " last" : ""}` }));
 
     const tri = h("span", { class: `otree-tri${r.hasChildren ? (r.open ? " open" : "") : " leaf"}` });
     on(tri, "click", (ev) => {

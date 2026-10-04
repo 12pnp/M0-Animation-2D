@@ -181,6 +181,8 @@
 .tl-frames { cursor: default; }
 
 /* ── Layer tree ─────────────────────────────────────────────────────────── */
+.tl-layer .tguides { align-self: stretch; height: auto; }
+.tl-layer .tmask-step { width: 12px; flex: none; }
 .tl-layer .ltri {
   width: 9px; height: 9px; flex: none;
   position: relative;

@@ -272,19 +272,27 @@
 .otree-row:hover .otree-cell { opacity: 0.7; }
 .otree-cell.on { opacity: 1; color: var(--warn); }
 
-/* The lines: one 12px column per ancestor, and an elbow into the row. */
-.otree-guides { display: flex; height: 100%; flex: none; margin-left: 4px; }
-.otree-guide, .otree-elbow { position: relative; width: 12px; height: 100%; }
-.otree-guide.on::before, .otree-elbow::before {
+/* Hierarchy lines, shared by the Outline and the timeline's layer list
+   (core/doc/treeLines.ts): one 12px column per depth, an elbow into the row,
+   each line in its depth's colour (Preferences ▸ Interface ▸ Hierarchy lines). */
+.tguides { display: flex; height: 100%; flex: none; }
+.tguide, .telbow { position: relative; width: 12px; height: 100%; flex: none; }
+.tguide.on::before, .telbow::before {
   content: ""; position: absolute; left: 5px; top: 0; bottom: 0;
-  border-left: 1px solid var(--otree-line, rgba(255, 255, 255, 0.16));
+  border-left: 1px solid var(--tl, rgba(255, 255, 255, 0.16));
 }
-.otree-elbow.last::before { bottom: 50%; }
-.otree-elbow::after {
+.telbow.last::before { bottom: 50%; }
+.telbow::after {
   content: ""; position: absolute; left: 5px; right: 0; top: 50%;
-  border-top: 1px solid var(--otree-line, rgba(255, 255, 255, 0.16));
+  border-top: 1px solid var(--tl, rgba(255, 255, 255, 0.16));
 }
-.otree-row.kind-bone { --otree-line: color-mix(in srgb, var(--bone) 40%, transparent); }
+.tguide.d0, .telbow.d0 { --tl: var(--tree-line-0); }
+.tguide.d1, .telbow.d1 { --tl: var(--tree-line-1); }
+.tguide.d2, .telbow.d2 { --tl: var(--tree-line-2); }
+.tguide.d3, .telbow.d3 { --tl: var(--tree-line-3); }
+.tguide.d4, .telbow.d4 { --tl: var(--tree-line-4); }
+.tguide.d5, .telbow.d5 { --tl: var(--tree-line-5); }
+.otree-row .tguides { margin-left: 4px; }
 
 .otree-tri { width: 12px; height: 100%; flex: none; display: grid; place-items: center; }
 .otree-tri::before {
