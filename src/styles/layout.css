@@ -16,10 +16,9 @@
   /* minmax(0, …): the stage gives way to the AI column and the dock, not
      the other way round, whatever its toolbar and the timeline hold. */
   grid-template-columns: var(--w-rail) auto minmax(0, 1fr) auto auto;
-  grid-template-rows: var(--h-menubar) var(--h-tabstrip) 1fr auto;
+  grid-template-rows: var(--h-menubar) 1fr auto;
   grid-template-areas:
     "menubar menubar menubar menubar menubar"
-    "doctabs doctabs doctabs doctabs doctabs"
     "tools   aiL     stage   dockR   railR"
     "tools   aiL     bottom  dockR   railR";
   background: var(--bg-app);
@@ -38,15 +37,10 @@
 .menubar .brand {
   display: flex;
   align-items: center;
-  gap: 5px;
-  color: var(--accent);
-  font-weight: 700;
-  letter-spacing: 0.3px;
-  margin-right: 10px;
-  padding: 0 5px 0 3px;
+  margin-right: 6px;
+  padding: 0 3px;
   height: calc(20px * var(--ui-scale));
   border-radius: var(--radius);
-  font-size: var(--fs-lg);
 }
 .menubar .brand-mark {
   display: block;
@@ -59,23 +53,16 @@
 .menu-item { padding: 0 8px; height: calc(20px * var(--ui-scale)); line-height: calc(20px * var(--ui-scale)); border-radius: var(--radius); }
 .menu-item:hover, .menu-item.open { background: var(--hover); color: var(--fg-strong); }
 
-/* ── Document tab strip ─────────────────────────────────────────────────── */
-.doctabs {
-  grid-area: doctabs;
-  display: flex;
-  align-items: stretch;
-  background: var(--bg-app);
-  border-bottom: 1px solid var(--line);
-}
-.doctab {
-  display: flex; align-items: center; gap: 6px;
-  padding: 0 10px;
-  background: var(--bg-panel);
-  border-right: 1px solid var(--line);
+/* ── Document name, right end of the menu bar ──────────────────────────── */
+.menubar .doctab {
+  margin-left: auto;
+  min-width: 0;
+  padding: 0 8px;
   color: var(--fg-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.doctab .close { color: var(--fg-dim); font-size: var(--fs-xl); line-height: 1; }
-.doctab .close:hover { color: var(--fg-strong); }
 
 /* ── Tool rail (left) ───────────────────────────────────────────────────── */
 .tools {
@@ -272,7 +259,6 @@ body.resizing-ew, body.resizing-ew * { cursor: ew-resize !important; }
   border: 1px solid var(--line);
   color: var(--fg-strong);
 }
-.doctabs .docname { white-space: nowrap; }
 .tools .rule + .rule { display: none; }
 /* The stage takes keyboard focus for shortcuts; it should not show a ring. */
 .stage-host:focus, .stage-host:focus-visible { outline: none; }

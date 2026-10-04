@@ -98,6 +98,7 @@ export class Shell {
   private railToggle: HTMLElement | null = null;
   private panelDock = new Map<string, Dock>();
   private docNameEl: HTMLElement;
+  private docTabEl: HTMLElement;
   /** The AI column's width while it is closed (a hidden element measures 0). */
   private aiWidth = 380;
   private syncAiButton: () => void = () => {};
@@ -117,6 +118,8 @@ export class Shell {
     this.menubarEl = h("div", { class: "menubar" });
     this.docNameEl = h("span", { class: "docname" });
     this.crumbEl = h("div", { class: "crumb" });
+    this.docTabEl = this.buildDocTab();
+    this.syncDocName();
     this.stageHost = h("div", { class: "stage-host", tabIndex: 0 });
     this.rightRail = h("div", { class: "rail-right" });
 
@@ -135,7 +138,6 @@ export class Shell {
 
     this.el = h("div", { class: "shell" },
       this.menubarEl,
-      this.buildDocTabs(),
       toolsEl,
       this.aiWrap,
       aiSplit,
@@ -168,7 +170,7 @@ export class Shell {
     const mark = h("span", { class: "brand-mark" });
     // `innerHTML`, not `svg()` from dom.ts: that helper forces a 16x16 viewBox.
     mark.innerHTML = markSvg;
-    brand.append(mark, h("span", { class: "brand-name" }, APP_NAME));
+    brand.append(mark);
     on(brand, "pointerup", () => this.onBrand?.());
     this.menubarEl.appendChild(brand);
     for (const m of this.menus) {
@@ -179,31 +181,30 @@ export class Shell {
       });
       this.menubarEl.appendChild(btn);
     }
+    this.menubarEl.appendChild(this.docTabEl);
   }
 
   private syncMenus(): void { /* enabled/checked are read lazily on open */ }
 
   /**
-   * One document per window — a tab strip of exactly one tab, showing the FILE
-   * on disk and whether it has unsaved changes.
+   * One document per window, so no tab strip: the FILE on disk and whether it
+   * has unsaved changes sit at the right end of the menu bar.
    *
    * The file name, not the project name: those two drifted apart the moment
-   * anyone used Save As, and the tab is the one place that has to say which
+   * anyone used Save As, and this is the one place that has to say which
    * file a ⌘S will overwrite. The project name lives on as the exported
    * skeleton's name and is edited in Document settings.
    */
-  private buildDocTabs(): HTMLElement {
+  private buildDocTab(): HTMLElement {
     const tab = h("div", { class: "doctab" }, this.docNameEl);
-    this.syncDocName();
     this.store.subscribe((t) => { if (t === "doc" || t === "library") this.syncDocName(); });
-    return h("div", { class: "doctabs" }, tab);
+    return tab;
   }
 
   syncDocName(): void {
     const name = this.docTitle?.() ?? this.store.project.name;
     this.docNameEl.textContent = name + (this.store.history.isDirty ? " *" : "");
-    const tab = this.docNameEl.parentElement;
-    if (tab) tab.title = name;
+    this.docTabEl.title = name;
   }
 
   // ── Tool rail ──────────────────────────────────────────────────────────
