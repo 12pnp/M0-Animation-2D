@@ -36,7 +36,8 @@ import {
     spanIndexAt,
 } from "@/core/doc/timeline";
 import { applyFrameEdit, deriveEdit } from "@/core/math/multiEdit";
-import { EditTracks, SetAnimationDuration, withEases, withKeyframe, withTween, } from "@/core/history/timelineCommands";
+import { EditTracks, SetAnimationDuration, SetCycle, withEases, withKeyframe, withTween, } from "@/core/history/timelineCommands";
+import { cyclePlan, isCycle, seamKeys } from "@/core/doc/cycle";
 import {
     SetBindColor,
     SetBindTransform,
@@ -142,6 +143,26 @@ export function doClearKeyframe(store: Store, frame: number, ids?: NodeId[]): vo
     if (next) tracks.set(id, next);
   }
   commit(store, "Clear Keyframe", tracks);
+}
+
+/* ── Cycles (core/doc/cycle.ts) ───────────────────────────────────────────*/
+
+export function doToggleCycle(store: Store): void {
+  const anim = store.currentAnimation;
+  if (!anim) return;
+  const on = !isCycle(anim);
+  const plan = on ? cyclePlan(anim, store.currentSymbol.nodes) : undefined;
+  store.apply(new SetCycle(store.currentSymbolId, anim.id, on, plan));
+  store.emit("timeline");
+  store.emit("stage");
+}
+
+/** Frame 0's pose keyed at the join on each of `ids`. */
+export function doCloseLoop(store: Store, ids: NodeId[]): void {
+  const anim = store.currentAnimation;
+  if (!anim) return;
+  const tracks: TrackMap = new Map(seamKeys(anim, store.currentSymbol.nodes, ids).map((t) => [t.nodeId, t]));
+  commit(store, "Close Loop", tracks);
 }
 
 /* ── Ranges: a frame selection, or every layer at the playhead ───────────*/

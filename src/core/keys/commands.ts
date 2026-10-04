@@ -126,6 +126,8 @@ export const COMMANDS: CommandDef[] = [
   c("Timeline", "timeline.clearKeyframe", "Clear Keyframe", ["Shift+F6"], true),
   c("Timeline", "timeline.insertBlankKeyframe", "Insert Blank Keyframe", ["F7"], true),
   c("Timeline", "timeline.goToFrame", "Go to Frame…"),
+  c("Timeline", "timeline.cycle", "Cycle"),
+  c("Timeline", "timeline.closeLoop", "Close Loop"),
 
   c("Playback", "playback.toggle", "Play / Pause", ["Space"]),
   c("Playback", "playback.prev", "Previous Frame", [","]),

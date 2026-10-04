@@ -14,6 +14,7 @@ import { atlasText } from "@/core/spine/atlas";
 import { exportSpine, spineJson } from "@/core/spine/exportSpine";
 import { loadFixture } from "./fixtures/realProject";
 import { loadStickman } from "./fixtures/stickman";
+import { cyclePlan } from "@/core/doc/cycle";
 
 /**
  * The export played by the Spine runtime itself (spine-core 4.3.13) must
@@ -572,4 +573,34 @@ describe("the Spine runtime plays the export the way the stage draws it", () => 
     const { project } = await loadStickman();
     expect(checkParity(project, project.rootSymbolId).checks).toBeGreaterThanOrEqual(500);
   });
+
+  it("the stickman's animations as cycles: the export loops where the stage's join is", async () => {
+    const { project } = await loadStickman();
+    const sym = project.items[project.rootSymbolId] as SymbolItem;
+    const lengths = new Map<string, number>();
+    sym.animations = sym.animations.map((anim) => {
+      lengths.set(anim.name, anim.duration);
+      const plan = cyclePlan(anim, sym.nodes);
+      const tracks = { ...anim.tracks, ...Object.fromEntries(plan.tracks.map((t) => [t.nodeId, t])) };
+      return { ...anim, playTimes: 0, endsAtLastFrame: true as const, duration: plan.duration, tracks };
+    });
+    expect(checkParity(project, project.rootSymbolId).checks).toBeGreaterThanOrEqual(500);
+
+    const { skeleton } = runtimeFor(project, project.rootSymbolId);
+    const fps = project.frameRate;
+    const worlds = (time: number, name: string) => {
+      skeleton.setupPose();
+      skeleton.data.findAnimation(name)!.apply(skeleton, 0, time, true, null, 1, MixFrom.setup, false, false, false);
+      skeleton.updateWorldTransform(Physics.none);
+      return skeleton.bones.map((b) => [b.appliedPose.worldX, b.appliedPose.worldY, b.appliedPose.a, b.appliedPose.b]);
+    };
+    for (const anim of sym.animations) {
+      // Same length in seconds as before Cycle, and the join plays as frame 0.
+      const animation = skeleton.data.findAnimation(anim.name)!;
+      expect(animation.duration).toBeCloseTo(lengths.get(anim.name)! / fps, 6);
+      const start = worlds(0, anim.name).flat(), join = worlds(animation.duration - 1e-9, anim.name).flat();
+      start.forEach((v, i) => expect(Math.abs(v - join[i]!), `${anim.name} value ${i}`).toBeLessThan(1e-3));
+    }
+  });
+
 });

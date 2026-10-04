@@ -207,6 +207,61 @@ export class SetAnimationLoop implements Command {
   }
 }
 
+/**
+ * Turns an animation into a cycle or back (`core/doc/cycle.ts`). On: plays
+ * forever on Spine's timing, with the length and the join keys `cyclePlan`
+ * gives. Off: plays once, keys and timing untouched, so the export is the same.
+ */
+export class SetCycle implements Command {
+  readonly kind = "anim.cycle";
+  readonly touches: TouchSet;
+  readonly label: string;
+  private before: { playTimes: number; endsAtLastFrame: boolean; duration: number } | null = null;
+  private beforeTracks = new Map<NodeId, Track | undefined>();
+
+  constructor(
+    private readonly symbolId: ItemId,
+    private readonly animId: AnimId,
+    private readonly on: boolean,
+    private readonly plan: { duration: number; tracks: Track[] } = { duration: 0, tracks: [] },
+  ) {
+    this.label = on ? "Cycle" : "Play Once";
+    this.touches = { symbols: [symbolId], nodes: plan.tracks.map((t) => t.nodeId), timeline: true, stage: true };
+  }
+
+  apply(p: Project): void {
+    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
+    if (!anim) return;
+    this.before = { playTimes: anim.playTimes, endsAtLastFrame: anim.endsAtLastFrame === true, duration: anim.duration };
+    if (!this.on) {
+      anim.playTimes = 1;
+      return;
+    }
+    anim.playTimes = 0;
+    anim.endsAtLastFrame = true;
+    for (const t of this.plan.tracks) {
+      if (!this.beforeTracks.has(t.nodeId)) this.beforeTracks.set(t.nodeId, anim.tracks[t.nodeId]);
+      anim.tracks[t.nodeId] = t;
+    }
+    anim.duration = Math.max(this.plan.duration, durationFor(anim));
+    invalidateBounds([this.symbolId]);
+  }
+
+  revert(p: Project): void {
+    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
+    if (!anim || !this.before) return;
+    for (const [id, t] of this.beforeTracks) {
+      if (t) anim.tracks[id] = t;
+      else delete anim.tracks[id];
+    }
+    anim.playTimes = this.before.playTimes;
+    if (this.before.endsAtLastFrame) anim.endsAtLastFrame = true;
+    else delete anim.endsAtLastFrame;
+    anim.duration = this.before.duration;
+    invalidateBounds([this.symbolId]);
+  }
+}
+
 export class AddAnimation implements Command {
   readonly kind = "anim.add";
   readonly touches: TouchSet;

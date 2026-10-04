@@ -25,8 +25,11 @@ import {
     doSetEndFrame,
     doSetRotation,
     doSetTween,
+    doCloseLoop,
+    doToggleCycle,
     easeTargets,
 } from "@/app/TimelineOps";
+import { isCycle, seamFrame } from "@/core/doc/cycle";
 import { EASE_PRESETS, easeLabel, sameEase, type TweenSpec } from "@/core/math/easing";
 import { openEaseDialog } from "./EaseDialog";
 import { FrameClipboard, type PasteMode } from "@/app/FrameClipboard";
@@ -226,6 +229,9 @@ export class TimelinePanel implements Panel {
         },
         "-",
         { label: "Set Duration…", enabled: !!anim, run: () => this.setDuration() },
+        "-",
+        this.cycleItem(),
+        this.closeLoopItem(),
       ]);
     });
 
@@ -323,7 +329,7 @@ export class TimelinePanel implements Panel {
     const current = this.store.currentAnimation;
     clear(this.animSelect);
     for (const a of sym.animations) {
-      this.animSelect.appendChild(h("option", { value: a.id }, a.name));
+      this.animSelect.appendChild(h("option", { value: a.id }, isCycle(a) ? `${a.name} ↻` : a.name));
     }
     if (current) this.animSelect.value = current.id;
     this.syncReadout();
@@ -521,6 +527,19 @@ export class TimelinePanel implements Panel {
     });
   }
 
+  private cycleItem() {
+    const anim = this.store.currentAnimation;
+    return { label: "Cycle", command: "timeline.cycle", enabled: !!anim, checked: !!anim && isCycle(anim),
+      run: () => doToggleCycle(this.store) };
+  }
+
+  /** On the selected layers, or every layer when none is selected. */
+  private closeLoopItem() {
+    const anim = this.store.currentAnimation;
+    return { label: "Close Loop", command: "timeline.closeLoop", enabled: !!anim && seamFrame(anim) !== null,
+      run: () => doCloseLoop(this.store, this.insertTargets()) };
+  }
+
   /** A 0×0 fixed anchor at a screen point, for `showMenu`. */
   private menuAnchor(x: number, y: number): HTMLElement {
     const anchor = h("div");
@@ -634,6 +653,9 @@ export class TimelinePanel implements Panel {
       { label: "Set Duration…", enabled: !!this.store.currentAnimation,
         run: () => this.setDuration() },
       { label: "Go to Frame…", command: "timeline.goToFrame", run: () => this.goToFrame() },
+      "-",
+      this.cycleItem(),
+      this.closeLoopItem(),
       "-",
       // The markers live on the ruler, so their options are here too.
       { label: "Onion Skin", items: this.onionMenu() },

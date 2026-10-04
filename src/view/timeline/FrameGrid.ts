@@ -10,6 +10,8 @@ import { withAlpha } from "@/view/viewport/overlayColors";
 import { DEFAULT_PREFS } from "@/core/prefs/prefs";
 import { uiFont, type UiFontSize, uiPx } from "@/core/prefs/fonts";
 import { dragMarkers, type MarkerDrag } from "@/core/doc/onion";
+import { SEAM_TOLERANCE, type SeamGap, seamFrame, seamGap } from "@/core/doc/cycle";
+import { posedSymbol } from "@/core/spine/spinePose";
 
 /** The unscaled row and ruler heights. The layer list is DOM and the grid is
  *  canvas, so the same two numbers have to reach both — see `TimelinePanel`. */
@@ -78,6 +80,9 @@ const DEFAULT_GRID_COLORS = {
   keyRing: "#161616",
   endMark: "#161616",
   playhead: "#e8483f",
+  /** A cycle's join, and the rows whose pose there is not frame 0's. */
+  loop: "#5fb3d9",
+  seamWarn: "#e8a33d",
   selected: DEFAULT_PREFS.timeline.selected,
   rowLine: "rgba(0,0,0,0.22)",
   currentRow: "rgba(255,255,255,0.045)",
@@ -118,6 +123,8 @@ export class FrameGrid {
   bottomGutter = 14;
   scrollX = 0;
   scrollY = 0;
+  /** Seam gaps by node, for the document revision they were measured at. */
+  private seam: { key: string; gaps: Map<NodeId, SeamGap> } | null = null;
   /** Where a frame drag currently points; drawn, not applied, until release. */
   private drop: FrameRect | null = null;
 
@@ -234,6 +241,7 @@ export class FrameGrid {
 
     this.drawBody(ctx, rows, first, last, w, h, duration);
     this.drawHeader(ctx, first, last, w, fps);
+    this.drawSeam(ctx, rows, h);
     this.drawOnionMarkers(ctx);
     this.drawPlayhead(ctx, h);
 
@@ -308,6 +316,87 @@ export class FrameGrid {
     ctx.moveTo(0, H - 0.5);
     ctx.lineTo(w, H - 0.5);
     ctx.stroke();
+  }
+
+  /**
+   * Rows whose pose at a cycle's join is not frame 0's (`seamGap`, each node
+   * in its parent's frame, so the warning is on the row the gap starts at).
+   * Posing two frames is cheap but not free, so it is measured once per
+   * document revision, not on every playhead move.
+   */
+  seamGaps(): Map<NodeId, SeamGap> {
+    const anim = this.store.currentAnimation;
+    const join = anim ? seamFrame(anim) : null;
+    if (!anim || join === null) return new Map();
+    const key = `${this.store.history.revision}|${this.store.currentSymbolId}|${anim.id}`;
+    if (this.seam?.key !== key) {
+      const { project } = this.store;
+      const sym = this.store.currentSymbol;
+      const gaps = seamGap(
+        posedSymbol(project, sym, anim, 0, "animate"), posedSymbol(project, sym, anim, join, "animate"),
+        SEAM_TOLERANCE, true);
+      this.seam = { key, gaps: new Map(gaps.map((g) => [g.nodeId, g])) };
+    }
+    return this.seam.gaps;
+  }
+
+  /** A cycle's join: a ↻ over its column in the ruler, a thin line down the
+   *  rows, and a dot in the join cell of each row that does not close. */
+  private drawSeam(ctx: CanvasRenderingContext2D, rows: LayerRow[], h: number): void {
+    const anim = this.store.currentAnimation;
+    const join = anim ? seamFrame(anim) : null;
+    if (join === null) return;
+    const fw = this.frameWidth;
+    const x = Math.round(this.xOfFrame(join));
+    if (x + fw < 0 || x > this.el.clientWidth) return;
+    const H = this.headerHeight;
+
+    ctx.fillStyle = withAlpha(this.C.loop, 0.25);
+    ctx.fillRect(x, 0, fw - 1, H - 1);
+    ctx.font = uiFont(10, this.fontSize);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = this.C.loop;
+    ctx.fillText("↻", x + (fw - 1) / 2, H / 2);
+    ctx.textAlign = "left";
+
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, H, this.el.clientWidth, h - H);
+    ctx.clip();
+    ctx.fillStyle = withAlpha(this.C.loop, 0.6);
+    ctx.fillRect(x + fw - 2, H, 1, Math.min(h, H + rows.length * this.rowHeight - this.scrollY) - H);
+    const gaps = this.seamGaps();
+    ctx.fillStyle = this.C.seamWarn;
+    for (let i = 0; i < rows.length; i++) {
+      if (!gaps.has(rows[i]!.layer.nodeId)) continue;
+      const y = H + i * this.rowHeight - this.scrollY;
+      ctx.beginPath();
+      ctx.arc(x + (fw - 1) / 2, y + 5, Math.min(3, fw / 3), 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  /** What the seam dot under the pointer means, or "". */
+  private seamTitle(clientX: number, clientY: number): string {
+    const anim = this.store.currentAnimation;
+    const join = anim ? seamFrame(anim) : null;
+    if (join === null) return "";
+    const r = this.el.getBoundingClientRect();
+    const x = clientX - r.left, y = clientY - r.top;
+    if (this.frameAtX(x) !== join) return "";
+    if (y < this.headerHeight) return `Frame ${join + 1} is the loop's join: it shows frame 1 again.`;
+    const row = layerRows(this.store.currentSymbol)[this.rowAtY(y)];
+    const g = row && this.seamGaps().get(row.layer.nodeId);
+    if (!g) return "";
+    const parts: string[] = [];
+    if (g.distance > SEAM_TOLERANCE.px) parts.push(`${g.distance.toFixed(1)} px`);
+    if (Math.abs(g.rotation) > SEAM_TOLERANCE.deg) parts.push(`${g.rotation.toFixed(1)}°`);
+    if (g.scale > SEAM_TOLERANCE.scale) parts.push(`scale ${g.scale.toFixed(3)}`);
+    if (g.color) parts.push("colour");
+    if (g.display) parts.push("image");
+    return `Does not match frame 1 (${parts.join(", ")}). Close Loop keys frame 1's pose here.`;
   }
 
   /** The markers are shown whenever something reads them: the onion skin,
@@ -696,6 +785,11 @@ export class FrameGrid {
 
   private wireInput(): void {
     const el = this.el;
+
+    on(el, "pointermove", (e: PointerEvent) => {
+      const title = this.seamTitle(e.clientX, e.clientY);
+      if (el.title !== title) el.title = title;
+    });
 
     on(el, "wheel", (ev) => {
       const e = ev as unknown as WheelEvent;

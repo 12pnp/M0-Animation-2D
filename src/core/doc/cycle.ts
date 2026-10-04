@@ -1,6 +1,8 @@
+import { invert, type Matrix2D, mat, mul } from "@/core/math/Matrix2D";
 import { cloneTf, type Transform } from "@/core/math/Transform";
+import { anchorOf } from "./displays";
 import type { NodeId } from "./ids";
-import type { Pose } from "./pose";
+import type { Pose, PoseEntry } from "./pose";
 import { insertKeyframe, keyIndexAt, sampleColorRaw, sampleTransformRaw, spanKeyAt } from "./timeline";
 import type { Animation, ColorTransform, Keyframe, Node, Track } from "./types";
 
@@ -57,17 +59,32 @@ function sameColor(a: ColorTransform, b: ColorTransform): boolean {
     && a.aO === b.aO && a.rO === b.rO && a.gO === b.gO && a.bO === b.bO;
 }
 
+/** The node's posed matrix in its parent's frame: its local transform after
+ *  the IK solve. */
+function ownMatrix(pose: Pose, e: PoseEntry): Matrix2D {
+  const parentId = anchorOf(e.node);
+  const parent = parentId ? pose.byNode.get(parentId) : undefined;
+  if (!parent) return e.world;
+  const inv = mat();
+  return invert(inv, parent.world) ? mul(mat(), inv, e.world) : e.world;
+}
+
 /**
  * Every node whose pose at the join differs from frame 0. It compares the posed
  * result rather than the keys, so a bone the IK solves shows a gap when its
  * target's keys do not close, and a node with no keys at all never does.
+ *
+ * `own`: compare each node in its parent's frame, so a node that only moves
+ * with a parent that does not close is left out and the gap is reported where
+ * it starts.
  */
-export function seamGap(start: Pose, end: Pose, tol: SeamTolerance = SEAM_TOLERANCE): SeamGap[] {
+export function seamGap(start: Pose, end: Pose, tol: SeamTolerance = SEAM_TOLERANCE, own = false): SeamGap[] {
   const out: SeamGap[] = [];
   for (const a of start.entries) {
     const b = end.byNode.get(a.nodeId);
     if (!b) continue;
-    const m = a.world, n = b.world;
+    const m = own ? ownMatrix(start, a) : a.world;
+    const n = own ? ownMatrix(end, b) : b.world;
     const distance = Math.hypot(n.tx - m.tx, n.ty - m.ty);
     const rotation = [turn(m.a, m.b, n.a, n.b), turn(m.c, m.d, n.c, n.d)]
       .reduce((x, y) => (Math.abs(y) > Math.abs(x) ? y : x));
@@ -136,4 +153,30 @@ export function seamKeys(
     out.push({ ...keyed, keys: keyed.keys.map((k, j) => (j === i ? key : k)) });
   }
   return out;
+}
+
+/** What turning Cycle on writes. */
+export interface CyclePlan {
+  duration: number;
+  /** Tracks that get a key at the join; the rest are unchanged. */
+  tracks: Track[];
+}
+
+/**
+ * Turning Cycle on. An animation on Flash's timing (no `endsAtLastFrame`)
+ * plays its last frame and then frame 0, so it grows by one frame and the new
+ * last frame is the join: the loop plays exactly as before and the exported
+ * length in seconds is unchanged. Every track that reaches the end and has no
+ * key at the join gets frame 0's pose there (`seamKeys`). A track that stops
+ * earlier is left alone (partial spans stay partial), and a key already at the
+ * join is the user's and stays; the seam check reports either.
+ */
+export function cyclePlan(anim: Animation, nodes: Readonly<Record<NodeId, Node>>): CyclePlan {
+  const join = anim.endsAtLastFrame ? anim.duration - 1 : anim.duration;
+  const duration = join + 1;
+  const looped: Animation = { ...anim, playTimes: 0, endsAtLastFrame: true, duration };
+  const ids = (Object.values(anim.tracks) as Array<Track | undefined>)
+    .filter((t): t is Track => !!t && t.endFrame >= anim.duration - 1 && keyIndexAt(t, join) < 0)
+    .map((t) => t.nodeId);
+  return { duration, tracks: seamKeys(looped, nodes, ids) };
 }

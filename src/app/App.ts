@@ -60,6 +60,7 @@ import {
 import { maskCandidate, nearestMaskAbove } from "@/core/doc/layerTree";
 import { AddSymbol, ConvertToSymbol, DuplicateLibraryItem, wouldCreateCycle, } from "@/core/history/symbolCommands";
 import { evaluateSymbol, pointInParent } from "@/core/doc/pose";
+import { isCycle, seamFrame } from "@/core/doc/cycle";
 import { mayReparent } from "@/view/widgets/ikReparentGuard";
 import { menuAnchor, type MenuEntry, showMenu } from "@/view/widgets/Dock";
 import type { Layer, Node } from "@/core/doc/types";
@@ -69,10 +70,12 @@ import {
     applyEdit,
     displayAtFrame,
     doClearKeyframe,
+    doCloseLoop,
     doInsertBlankKeyframe,
     doInsertFrame,
     doInsertKeyframe,
     doRemoveFrame,
+    doToggleCycle,
     fillEmptyNode,
     transformAtFrame,
 } from "./TimelineOps";
@@ -1432,6 +1435,10 @@ export class App {
     });
     reg("timeline.insertBlankKeyframe", () => doInsertBlankKeyframe(s, s.ui.frame, tl.insertTargets()));
     reg("timeline.goToFrame", () => tl.goToFrame());
+    reg("timeline.cycle", () => doToggleCycle(s), () => !!s.currentAnimation,
+      () => !!s.currentAnimation && isCycle(s.currentAnimation));
+    reg("timeline.closeLoop", () => doCloseLoop(s, tl.insertTargets()),
+      () => !!s.currentAnimation && seamFrame(s.currentAnimation) !== null);
 
     // Space rather than ⌘P for the timeline: the two clocks are deliberately
     // not the same thing.

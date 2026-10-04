@@ -2,7 +2,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { type NodeId, reseed } from "@/core/doc/ids";
 import { createAnimation, createKeyframe, createLayer, createNode, createSymbol } from "@/core/doc/defaults";
 import { evaluateSymbol } from "@/core/doc/pose";
-import { isCycle, seamFrame, seamGap, seamKeys } from "@/core/doc/cycle";
+import { cyclePlan, isCycle, seamFrame, seamGap, seamKeys } from "@/core/doc/cycle";
+import { createProject } from "@/core/doc/defaults";
+import { Store } from "@/app/Store";
+import { doCloseLoop, doToggleCycle } from "@/app/TimelineOps";
 import { TWEEN_LINEAR } from "@/core/math/easing";
 import type { Animation, Keyframe, Node, SymbolItem, Track } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
@@ -159,5 +162,98 @@ describe("seamKeys", () => {
     const { sym, anim } = rig((n) => [key(n, 0, {})], cycle(25));
     const other = createNode("bone", "other");
     expect(seamKeys(anim, { ...sym.nodes, [other.id]: other }, [other.id])).toEqual([]);
+  });
+});
+
+describe("seamGap, each node in its parent's frame", () => {
+  it("reports a child that only moves with its parent on the parent alone", () => {
+    const { sym, node, anim } = rig((n) => [key(n, 0, { x: 0 }), key(n, 24, { x: 10 })], cycle(25));
+    const child = createNode("bone", "hand", { parentId: node.id, x: 30 });
+    sym.nodes[child.id] = child;
+    sym.layers.push(createLayer(child.id, "hand", 1));
+    const start = evaluateSymbol(sym, anim, 0), end = evaluateSymbol(sym, anim, 24);
+    expect(seamGap(start, end).map((g) => g.nodeId)).toEqual([node.id, child.id].reverse());
+    expect(seamGap(start, end, undefined, true).map((g) => g.nodeId)).toEqual([node.id]);
+  });
+});
+
+describe("cyclePlan", () => {
+  it("adds the join after the last frame of an animation on Flash's timing", () => {
+    const anim = createAnimation("a", 24);
+    const { sym, node } = rig((n) => [key(n, 0, { x: 0 }), key(n, 23, { x: 50 })], anim);
+    const plan = cyclePlan(anim, sym.nodes);
+    expect(plan.duration).toBe(25);
+    expect(plan.tracks).toHaveLength(1);
+    expect(plan.tracks[0]!.nodeId).toBe(node.id);
+    expect(plan.tracks[0]!.keys.map((k) => [k.frame, k.transform.x])).toEqual([[0, 0], [23, 50], [24, 0]]);
+  });
+
+  it("keeps the length of an animation already on Spine's timing", () => {
+    const { sym, anim } = rig((n) => [key(n, 0, { x: 0 }), key(n, 12, { x: 50 })], cycle(25));
+    const plan = cyclePlan({ ...anim, playTimes: 1 }, sym.nodes);
+    expect(plan.duration).toBe(25);
+    expect(plan.tracks[0]!.keys.at(-1)).toMatchObject({ frame: 24, transform: { x: 0 } });
+  });
+
+  it("leaves a key already at the join, and a track that stops early", () => {
+    const keyed = rig((n) => [key(n, 0, { x: 0 }), key(n, 24, { x: 9 })], { ...cycle(25), playTimes: 1 });
+    expect(cyclePlan(keyed.anim, keyed.sym.nodes).tracks).toEqual([]);
+    const early = rig((n) => [key(n, 0, { x: 0 }), key(n, 5, { x: 9 })], createAnimation("a", 24), 10);
+    early.anim.duration = 24;
+    expect(cyclePlan(early.anim, early.sym.nodes).tracks).toEqual([]);
+  });
+});
+
+describe("Cycle and Close Loop in the store", () => {
+  function storeWith(keys: (n: Node) => Keyframe[], duration: number, endsAtLastFrame = false) {
+    const project = createProject("P");
+    const sym = project.items[project.rootSymbolId] as SymbolItem;
+    const node = createNode("bone", "arm");
+    sym.nodes[node.id] = node;
+    sym.layers.push(createLayer(node.id, "arm", 0));
+    const anim = sym.animations[0]!;
+    anim.duration = duration;
+    if (endsAtLastFrame) anim.endsAtLastFrame = true;
+    anim.tracks[node.id] = { nodeId: node.id, keys: keys(node), endFrame: duration - 1 };
+    return { store: new Store(project), node };
+  }
+
+  it("turns on as one undo step, and off again without touching the keys", () => {
+    const { store, node } = storeWith((n) => [key(n, 0, { x: 0 }), key(n, 23, { x: 50 })], 24);
+    const before = store.currentAnimation!;
+    doToggleCycle(store);
+    const on = store.currentAnimation!;
+    expect(isCycle(on)).toBe(true);
+    expect(on.duration).toBe(25);
+    expect(on.tracks[node.id]!.keys.map((k) => k.frame)).toEqual([0, 23, 24]);
+
+    doToggleCycle(store);
+    const off = store.currentAnimation!;
+    expect(isCycle(off)).toBe(false);
+    expect(off.playTimes).toBe(1);
+    expect(off.endsAtLastFrame).toBe(true);
+    expect(off.tracks[node.id]).toBe(on.tracks[node.id]);
+
+    store.undo();
+    store.undo();
+    const back = store.currentAnimation!;
+    expect(back.duration).toBe(24);
+    expect(back.playTimes).toBe(0);
+    expect(back.endsAtLastFrame).toBeUndefined();
+    expect(back.tracks[node.id]).toBe(before.tracks[node.id]);
+
+    store.redo();
+    expect(isCycle(store.currentAnimation!)).toBe(true);
+    expect(store.currentAnimation!.tracks[node.id]).toBe(on.tracks[node.id]);
+  });
+
+  it("closes the loop on the layers given", () => {
+    const { store, node } = storeWith((n) => [key(n, 0, { x: 0 }), key(n, 24, { x: 9 })], 25, true);
+    expect(isCycle(store.currentAnimation!)).toBe(true);
+    expect(store.currentAnimation!.tracks[node.id]!.keys[1]!.transform.x).toBe(9);
+    doCloseLoop(store, [node.id]);
+    expect(store.currentAnimation!.tracks[node.id]!.keys[1]!.transform.x).toBe(0);
+    store.undo();
+    expect(store.currentAnimation!.tracks[node.id]!.keys[1]!.transform.x).toBe(9);
   });
 });
