@@ -35,7 +35,8 @@ export function pathScene(args: {
   const node = one ? sym.nodes[one] : undefined;
   if (!one || !node || !args.ids.includes(one)) return { paths, handles };
   const rule = pathDragMode(sym, anim, one, which, node.pathDrag === "parent");
-  if (!("mode" in rule)) return { paths, handles };
+  // A bone the IK solves: its own keys do not shape its path.
+  if (!("mode" in rule) || rule.mode === "throughTarget") return { paths, handles };
   const space = relativeAt === undefined ? null : parentSpace(sample, one, relativeAt);
   const rel = space ? { relativeAt } : {};
   const shownFrames = new Set(frames);

@@ -10,6 +10,8 @@ import {
 import { apply, invert, mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { handleAt, type PathHandle, type Spline, splineAt, splineSegments, withSpline } from "@/core/doc/pathSpline";
 import { quantize, type Transform } from "@/core/math/Transform";
+import { type IkPathDrag, ikTargetFor, targetLocalAt, withTargetAt } from "@/core/doc/ikPathEdit";
+import type { Pose } from "@/core/doc/pose";
 import { posedSymbol } from "@/core/spine/spinePose";
 import { EditTracks } from "@/core/history/timelineCommands";
 
@@ -43,15 +45,20 @@ interface Moving {
  * playhead on that dot's frame. A drag re-keys the bone at that frame so the
  * dot follows the pointer, as `pathDragMode` decides; ⇧ moves every key of
  * the bone instead, ⌥ flips the bone's "with parent" option for this drag.
+ * A bone the IK solves keys its target instead (`ikTargetFor`).
  * One undo step; keys the drag added and left redundant are removed on
  * release.
  */
 export class PathDrag {
   private dragging = false;
-  private mode: PathDragMode | null = null;
+  private mode: PathDragMode | "throughTarget" | null = null;
+  /** Through the IK target: the constraint, the frame's pose at the press,
+   *  and the last target that fitted (a knee pulled across stops there). */
+  private ik: { drag: IkPathDrag; start: Pose; last: Transform } | null = null;
   private refused: string | null = null;
   private moving: Moving[] = [];
   private last: Point;
+  private pressed: Point = { x: 0, y: 0 };
   /** Relative paths: a drawn point into the dragged frame's space. */
   private back: Matrix2D | null = null;
 
@@ -84,6 +91,14 @@ export class PathDrag {
     this.mode = rule.mode;
 
     const pose = posedSymbol(store.project, sym, anim, frame, "animate");
+    if (rule.mode === "throughTarget") {
+      const k = sym.ik.find((c) => c.id === rule.ik.ik)!;
+      const target = pose.byNode.get(k.targetId);
+      const tparent = target?.node.parentId ? pose.byNode.get(target.node.parentId)?.world : undefined;
+      if (!target) { this.mode = null; return; }
+      this.ik = { drag: rule.ik, start: pose, last: target.local };
+      this.moving.push({ id: k.targetId, frame: { local: target.local, world: target.world, parentWorld: tparent ?? mat(), length: 0 }, base: anim.tracks[k.targetId] });
+    }
     const frameOf = (nid: NodeId, length: number): DragFrame | null => {
       const entry = pose.byNode.get(nid);
       const n = sym.nodes[nid];
@@ -94,6 +109,8 @@ export class PathDrag {
     const length = which === "tip" && node.kind === "bone" ? node.boneLength ?? DRAWN_BONE_LENGTH : 0;
     const own = frameOf(id, length);
     if (!own) { this.mode = null; return; }
+    // The dot's own point at the press, where the pointer's delta is measured from.
+    this.pressed = apply({ x: 0, y: 0 }, own.world, length, 0);
     // A path drawn relative to the parent: a point drawn in the parent's pose
     // at `relativeAt` is in this frame's space through the parent's pose here.
     if (dot.relativeAt !== undefined) {
@@ -102,6 +119,7 @@ export class PathDrag {
       const inv = mat();
       if (atParent && invert(inv, atParent)) this.back = mul(mat(), own.parentWorld, inv);
     }
+    if (this.ik) return;
     this.moving.push({ id, frame: own, base: anim.tracks[id] });
     if (this.mode === "rotateWithParent" && node.parentId) {
       const parent = frameOf(node.parentId, 0);
@@ -143,6 +161,20 @@ export class PathDrag {
     const [own, parent] = this.moving;
     const out = new Map<NodeId, Transform>();
     if (!own) return out;
+    if (this.ik) {
+      const ik = this.ik;
+      const store = this.ctx.store;
+      const sym = store.currentSymbol, anim = store.currentAnimation!;
+      const delta = { x: this.last.x - this.pressed.x, y: this.last.y - this.pressed.y };
+      const world = ikTargetFor(sym, ik.drag, ik.start, delta, (w) => {
+        const local = targetLocalAt(ik.start, own.id, w) ?? ik.last;
+        return posedSymbol(store.project, sym, withTargetAt(anim, sym, own.id, this.frame, local), this.frame, "animate");
+      });
+      const local = world ? targetLocalAt(ik.start, own.id, world) : null;
+      if (local) ik.last = local;
+      out.set(own.id, ik.last);
+      return out;
+    }
     if (this.mode === "translate") out.set(own.id, translateTo(own.frame, this.last));
     else if (this.mode === "rotate" || !parent) out.set(own.id, rotateTo(own.frame, this.last));
     else {
@@ -167,7 +199,7 @@ export class PathDrag {
       const t = final ? quantize(solved) : solved;
       if (shift) {
         const keyed = m.base ?? keyAt(undefined, node, this.frame, anim.duration).track;
-        tracks.set(id, shiftKeys(keyed, m.frame.local, t, this.mode));
+        tracks.set(id, shiftKeys(keyed, m.frame.local, t, this.mode === "throughTarget" ? "translate" : this.mode));
         continue;
       }
       const added: number[] = [];
@@ -186,7 +218,7 @@ export class PathDrag {
       tracks.set(id, final && added.length ? withoutRedundantKeys(track, added) : track);
     }
     if (!tracks.size) return;
-    store.apply(new EditTracks("Drag Path", store.currentSymbolId, anim.id, tracks, "path.drag"));
+    store.apply(new EditTracks(this.ik ? "Drag Path (IK)" : "Drag Path", store.currentSymbolId, anim.id, tracks, "path.drag"));
     store.emit("timeline");
     store.emit("stage");
   }

@@ -1568,7 +1568,7 @@ ones; the DragonBones solver it replaced disagreed on three of the seven.
   world matrices are composed and mutates them in place; nothing is written back to the
   document. The file carries the chain's rest pose plus `ik[]`, and the runtime solves on
   playback — so a keyframe must never be written on a chain bone. Dragging an IK target
-  keys the TARGET.
+  keys the TARGET, and so does dragging a chain bone's path (Bone paths).
 - The runtime's own rule decides the chain: `chain > 0 && bone.parent !== null` is the
   two-bone solve rooted at the parent; anything else is the one-bone look-at.
 - The effector's `length` is the second segment. A bone with no length makes the solve
@@ -1788,11 +1788,22 @@ step, "Drag Path", built from the tracks as they were at pointer-down):
 | IK target; origin; a bone whose keys move it without turning it; a root that does not turn | `translateTo`: moves it, the angle kept | x, y |
 | any other tip, **This bone** | `rotateTo`: turns it so the tip points at the pointer | rotation |
 | any other tip, **With parent** | `rotateWithParentTo`: two segments reach the pointer, the bend kept | rotation on both |
-| a bone the IK solves | refused, naming the target to drag | nothing |
+| a bone the IK solves | `throughTarget` (`core/doc/ikPathEdit.ts`): its target is keyed so the dot lands under the pointer | the target's x, y |
 
 - `rotateTo` is exact under any affine parent (mirrored, unevenly scaled): it aims in the
   parent's space, where the parent maps the ray to the pointer onto a ray. A parent the
   IK solves is never turned along.
+- **A chain bone's path keys its target** (`ikPathDrag`, `ikTargetFor`; docs/IK-PATH-PLAN.md).
+  The effector's tip: the target moves by what the solved tip misses until it lands (the
+  real pose, so a partial weight or an opened Spine rig lands too); out of reach the target
+  goes on the pointer and the chain points at it. The knee (the root's tip or the
+  effector's origin): it turns about the root's origin toward the pointer, the effector
+  keeps its world angle, and the target goes where that puts the tip; a knee pulled across
+  root→tip stops, since the solver bends one way only (`bendPositive` is not keyed). A
+  look-at chain: the target goes on the ray from the bone through the pointer, at its
+  distance. The root's origin is refused (the IK only turns it), as are a locked or hidden
+  target and a target inside its chain; weight 0 is the plain rules. Such a bone shows no
+  handles: its own keys do not shape its path. One undo step, "Drag Path (IK)".
 - **Path drag** is a per-bone option (`Node.pathDrag?: "parent"`, schema 13, Properties ▸
   Bone, `SetPathDrag`), never exported; ⌥ flips it for one drag, ⇧ moves every key of the
   bone by what the dragged frame moved (`shiftKeys`).

@@ -59,13 +59,14 @@ describe("pathDragMode", () => {
     expect(pathDragMode(r.sym, r.anim, id, which, withParent)).toEqual({ mode });
   });
 
-  it("refuses a bone the IK solves, and names the target to drag; a target moves", () => {
+  it("a bone the IK solves goes through its target; a target moves", () => {
     const r = rig();
-    r.sym.ik.push({ id: newIkId(), name: "leg", boneId: r.shin.id, targetId: r.target.id, chain: 1, bendPositive: true, weight: 1 });
-    for (const n of [r.thigh, r.shin]) {
-      const rule = pathDragMode(r.sym, r.anim, n.id, "tip", false);
-      expect(rule).toEqual({ refused: expect.stringContaining("Drag the path of target") });
-    }
+    const ik = newIkId();
+    r.sym.ik.push({ id: ik, name: "leg", boneId: r.shin.id, targetId: r.target.id, chain: 1, bendPositive: true, weight: 1 });
+    expect(pathDragMode(r.sym, r.anim, r.shin.id, "tip", false)).toEqual({ mode: "throughTarget", ik: { ik, role: "tip" } });
+    expect(pathDragMode(r.sym, r.anim, r.shin.id, "origin", false)).toEqual({ mode: "throughTarget", ik: { ik, role: "joint" } });
+    expect(pathDragMode(r.sym, r.anim, r.thigh.id, "tip", false)).toEqual({ mode: "throughTarget", ik: { ik, role: "joint" } });
+    expect(pathDragMode(r.sym, r.anim, r.thigh.id, "origin", false)).toEqual({ refused: expect.stringContaining("Drag the path of hips") });
     expect(pathDragMode(r.sym, r.anim, r.target.id, "tip", false)).toEqual({ mode: "translate" });
     // A parent the IK solves is not turned along.
     const foot = createNode("bone", "foot", { parentId: r.shin.id });

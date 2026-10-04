@@ -5,6 +5,7 @@ import { wrapTo180 } from "@/core/math/angle";
 import { createKeyframe } from "./defaults";
 import type { NodeId } from "./ids";
 import { ikChain } from "./ikGraph";
+import { type IkPathDrag, ikPathDrag } from "./ikPathEdit";
 import type { BonePath, PathPointKind } from "./bonePath";
 import { insertKeyframe, keyIndexAt, sampleColorRaw, sampleTransformRaw, spanKeyAt } from "./timeline";
 import type { Animation, Node, SymbolItem, Track } from "./types";
@@ -17,7 +18,10 @@ import type { Animation, Node, SymbolItem, Track } from "./types";
 
 export type PathDragMode = "translate" | "rotate" | "rotateWithParent";
 
-export type PathDragRule = { mode: PathDragMode } | { refused: string };
+export type PathDragRule =
+  | { mode: PathDragMode }
+  | { mode: "throughTarget"; ik: IkPathDrag }
+  | { refused: string };
 
 function varies(track: Track | undefined, pick: (t: Transform) => number[]): boolean {
   if (!track || track.keys.length < 2) return false;
@@ -28,8 +32,8 @@ function varies(track: Track | undefined, pick: (t: Transform) => number[]): boo
 /**
  * What dragging `id`'s path does:
  *
- * - a bone the IK solves is refused: it is never keyed (ARCHITECTURE ▸ Bones
- *   and IK), and its target's path is the one to drag;
+ * - a bone the IK solves is never keyed (ARCHITECTURE ▸ Bones and IK): the
+ *   drag keys its target instead (`throughTarget`, `ikPathDrag`);
  * - an IK target, the origin, a bone whose keys move it without turning it,
  *   and a root bone that does not turn are moved (`translate`);
  * - any other tip turns the bone (`rotate`), or the bone and its parent when
@@ -41,13 +45,9 @@ export function pathDragMode(
 ): PathDragRule {
   const node = sym.nodes[id];
   if (!node) return { refused: "Nothing to drag." };
-  for (const k of sym.ik) {
-    if (k.targetId === id) return { mode: "translate" };
-    if (ikChain(sym, k).includes(id)) {
-      const target = sym.nodes[k.targetId]?.name ?? "its target";
-      return { refused: `${node.name} is moved by IK. Drag the path of ${target} instead.` };
-    }
-  }
+  if (sym.ik.some((k) => k.targetId === id)) return { mode: "translate" };
+  const ik = ikPathDrag(sym, id, which);
+  if (ik) return "refused" in ik ? ik : { mode: "throughTarget", ik };
   if (which === "origin" || node.kind !== "bone") return { mode: "translate" };
   const track = anim.tracks[id];
   const turns = varies(track, (t) => [t.skewX, t.skewY]);

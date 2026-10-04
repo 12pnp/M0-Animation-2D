@@ -802,6 +802,10 @@ export class AgentApi {
     const node = this.bone(boneName);
     const rule = pathDragMode(this.sym, anim, node.id, "origin", false);
     if ("refused" in rule) throw new AgentError(rule.refused);
+    if (rule.mode === "throughTarget") {
+      const target = this.sym.nodes[this.sym.ik.find((k) => k.id === rule.ik.ik)!.targetId]!.name;
+      throw new AgentError(`"${node.name}" is moved by IK: key its target "${target}" instead.`);
+    }
     const pair = (v: unknown, where: string): { x: number; y: number } => {
       const [x, y] = point(v, where);
       return { x, y: -y };
