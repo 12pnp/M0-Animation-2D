@@ -2,7 +2,7 @@ import { h, on, raf } from "@/view/widgets/dom";
 import { FRAME_WIDTH_MAX, FRAME_WIDTH_MIN, anchoredScroll, fitFrameWidth, steppedFrameWidth } from "./zoom";
 import type { Store } from "@/app/Store";
 import type { DrawOrderKey, IkKey, Layer, Node, Track } from "@/core/doc/types";
-import { moveIkKeys } from "@/core/doc/ikKeys";
+import { ikDragAxis, ikPoseAt, moveIkKeys, withIkKey, withIkMixDragged } from "@/core/doc/ikKeys";
 import { moveDrawOrderKeys } from "@/core/doc/drawOrder";
 import type { IkId, NodeId } from "@/core/doc/ids";
 import { describeFrame, ensureTrack } from "@/app/TimelineOps";
@@ -761,20 +761,35 @@ export class FrameGrid {
   /** The keys picked on an IK row. */
   ikSel: { ik: IkId; frames: number[] } | null = null;
 
+  /** The mix a drag on an IK row is setting, shown beside its key. */
+  private ikMixLabel: { ik: IkId; frame: number; mix: number } | null = null;
+
   /**
-   * An IK row: a diamond per key in the IK colour, joined where the mix
-   * tweens (none after a stepped key), the picked ones ringed; a key whose
-   * bend differs from the one before is hollow.
+   * An IK row: the mix in force at each frame as a filled band from the
+   * row's bottom (full height = 1), a diamond per key in the IK colour,
+   * joined where the mix tweens (none after a stepped key), the picked ones
+   * ringed; a key whose bend differs from the one before is hollow.
    */
   private drawIkRow(ctx: CanvasRenderingContext2D, ik: IkId, y: number): void {
     ctx.fillStyle = "rgba(0,0,0,0.12)";
     ctx.fillRect(0, y, this.el.clientWidth, this.rowHeight);
-    const keys = this.store.currentAnimation?.ik?.[ik] ?? [];
-    if (!keys.length) return;
+    const anim = this.store.currentAnimation;
+    const k = this.store.currentSymbol.ik.find((c) => c.id === ik);
+    const keys = anim?.ik?.[ik] ?? [];
+    if (!keys.length || !anim || !k) return;
     const sel = this.ikSel?.ik === ik ? this.ikSel.frames : [];
     const color = this.store.prefs.value.gizmos.ikTarget;
     const mid = Math.round(y + this.rowHeight / 2 - 0.5) + 0.5;
     const half = this.frameWidth / 2;
+    const bottom = y + this.rowHeight - 1, span = this.rowHeight - 3;
+    const first = Math.max(0, this.frameAtX(0)), last = Math.min(anim.duration - 1, this.frameAtX(this.el.clientWidth) + 1);
+    ctx.beginPath();
+    ctx.moveTo(this.xOfFrame(first) + half, bottom);
+    for (let f = first; f <= last; f++) ctx.lineTo(this.xOfFrame(f) + half, bottom - ikPoseAt(k, anim, f).mix * span);
+    ctx.lineTo(this.xOfFrame(last) + half, bottom);
+    ctx.closePath();
+    ctx.fillStyle = withAlpha(color, 0.16);
+    ctx.fill();
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -797,16 +812,39 @@ export class FrameGrid {
       ctx.strokeStyle = picked ? "#ffffff" : flips ? color : this.C.keyDot;
       ctx.stroke();
     });
+    const label = this.ikMixLabel?.ik === ik ? this.ikMixLabel : null;
+    if (label) {
+      ctx.font = uiFont(9, this.fontSize);
+      ctx.textBaseline = "middle";
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(label.mix.toFixed(2), this.xOfFrame(label.frame) + this.frameWidth + 3, mid);
+    }
   }
 
-  /** Move the picked IK keys by whole frames, from the keys at pointerdown. */
+  /**
+   * Drag the picked IK keys, from the keys at pointerdown: sideways moves
+   * them by whole frames, up and down sets their mix (`withIkMixDragged`, ⇧
+   * finer), whichever way the pointer goes first.
+   */
   private beginIkDrag(e: PointerEvent, ik: IkId, frames: number[], base: IkKey[]): void {
     this.el.setPointerCapture(e.pointerId);
-    const startX = e.clientX;
+    const startX = e.clientX, startY = e.clientY;
     const first = Math.min(...frames);
     let lastDelta = 0;
     let started = false;
+    let axis: "time" | "mix" | null = null;
     const move = (m: PointerEvent) => {
+      axis ??= ikDragAxis(m.clientX - startX, m.clientY - startY);
+      if (axis === "mix") {
+        if (!started) { started = true; this.cb.onBeginInteraction("timeline.ikMix"); }
+        const keys = withIkMixDragged(base, frames, m.clientY - startY, m.shiftKey);
+        this.cb.onEditIk(ik, keys, "IK Mix", "timeline.ikMix");
+        const shown = keys.find((k) => k.frame === frames[frames.length - 1]);
+        this.ikMixLabel = shown ? { ik, frame: shown.frame, mix: shown.mix } : null;
+        this.invalidate();
+        return;
+      }
+      if (axis !== "time") return;
       const delta = Math.max(-first, Math.round((m.clientX - startX) / this.frameWidth));
       if (delta === lastDelta) return;
       if (!started) { started = true; this.cb.onBeginInteraction("timeline.ikMove"); }
@@ -818,7 +856,50 @@ export class FrameGrid {
     const up = () => {
       offMove(); offUp(); offCancel();
       this.el.releasePointerCapture?.(e.pointerId);
+      this.ikMixLabel = null;
+      this.invalidate();
       if (started) this.cb.onEndInteraction();
+    };
+    const offMove = on(this.el, "pointermove", move as (x: Event) => void);
+    const offUp = on(this.el, "pointerup", up);
+    const offCancel = on(this.el, "pointercancel", up);
+  }
+
+  /**
+   * A press on an IK row away from its keys: sideways scrubs, as anywhere on
+   * the grid; up and down keys the mix in force at that frame and sets it,
+   * one undo step with the key.
+   */
+  private beginIkEmptyDrag(e: PointerEvent, ik: IkId, frame: number): void {
+    this.el.setPointerCapture(e.pointerId);
+    this.cb.onScrub(frame);
+    const r = this.el.getBoundingClientRect();
+    const startX = e.clientX, startY = e.clientY;
+    let axis: "time" | "mix" | null = null;
+    let base: IkKey[] | null = null;
+    const move = (m: PointerEvent) => {
+      axis ??= ikDragAxis(m.clientX - startX, m.clientY - startY);
+      if (axis === "time") { this.cb.onScrub(this.frameAtX(m.clientX - r.left)); return; }
+      if (axis !== "mix") return;
+      const anim = this.store.currentAnimation;
+      const k = this.store.currentSymbol.ik.find((c) => c.id === ik);
+      if (!anim || !k) return;
+      if (!base) {
+        base = withIkKey(anim.ik?.[ik] ?? [], frame, ikPoseAt(k, anim, frame));
+        this.cb.onBeginInteraction("timeline.ikMix");
+        this.ikSel = { ik, frames: [frame] };
+      }
+      const keys = withIkMixDragged(base, [frame], m.clientY - startY, m.shiftKey);
+      this.cb.onEditIk(ik, keys, "IK Mix", "timeline.ikMix");
+      this.ikMixLabel = { ik, frame, mix: keys.find((x) => x.frame === frame)!.mix };
+      this.invalidate();
+    };
+    const up = () => {
+      offMove(); offUp(); offCancel();
+      this.el.releasePointerCapture?.(e.pointerId);
+      this.ikMixLabel = null;
+      this.invalidate();
+      if (base) this.cb.onEndInteraction();
     };
     const offMove = on(this.el, "pointermove", move as (x: Event) => void);
     const offUp = on(this.el, "pointerup", up);
@@ -1149,7 +1230,7 @@ export class FrameGrid {
           return;
         }
         this.ikSel = null;
-        this.beginScrub(e, frame);
+        this.beginIkEmptyDrag(e, ik, frame);
         return;
       }
       this.ikSel = null;

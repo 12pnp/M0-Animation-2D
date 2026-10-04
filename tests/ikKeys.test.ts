@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import {
-  deleteIkKeys, ikPoseAt, ikTweenOf, moveIkKeys, SMOOTH_CURVE, withIkKey, withIkKeys, withIkTween,
+  deleteIkKeys, ikDragAxis, ikPoseAt, ikTweenOf, IK_MIX_DRAG_PX, moveIkKeys, SMOOTH_CURVE, withIkKey, withIkKeys,
+  withIkMixDragged, withIkTween,
 } from "@/core/doc/ikKeys";
 import { focusRows } from "@/core/doc/layerTree";
 import { migrate, validateProject } from "@/core/doc/schema";
@@ -67,6 +68,33 @@ describe("editing IK keys", () => {
     expect(smooth.map(ikTweenOf)).toEqual(["smooth", "smooth", "linear"]);
     expect(withIkTween(smooth, [0], "linear")[0]).not.toHaveProperty("tween");
     expect(withIkKeys({ [k.id]: keys }, k.id, [])).toBeUndefined();
+  });
+});
+
+describe("dragging the mix on an IK row", () => {
+  it.each([
+    ["too short to tell", 2, -2, null],
+    ["sideways moves in time", 6, 3, "time"],
+    ["up sets the mix", 2, -5, "mix"],
+    ["down sets the mix", -3, 4, "mix"],
+    ["a diagonal goes to time", 4, 4, "time"],
+  ] as const)("%s", (_, dx, dy, axis) => {
+    expect(ikDragAxis(dx, dy)).toBe(axis);
+  });
+
+  const keys: IkKey[] = [
+    { frame: 0, mix: 0.5, bendPositive: false },
+    { frame: 4, mix: 0.9, bendPositive: true, tween: { kind: "none" } },
+    { frame: 8, mix: 0.2, bendPositive: false },
+  ];
+  it("up raises each picked key from its own mix, clamped; the rest stay", () => {
+    const up = withIkMixDragged(keys, [0, 4], -IK_MIX_DRAG_PX / 4);
+    expect(up.map((k) => k.mix)).toEqual([0.75, 1, 0.2]);
+    expect(up[1]).toEqual({ ...keys[1], mix: 1 });
+  });
+  it("down lowers, to 0 at most; ⇧ goes a quarter as fast", () => {
+    expect(withIkMixDragged(keys, [8], IK_MIX_DRAG_PX)[2]!.mix).toBe(0);
+    expect(withIkMixDragged(keys, [0], IK_MIX_DRAG_PX / 2, true)[0]!.mix).toBe(0.375);
   });
 });
 

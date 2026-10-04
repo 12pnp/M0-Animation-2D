@@ -171,7 +171,7 @@ export class LayerList {
     const el = h("div", {
       class: "tl-layer tl-prop prop-ik",
       style: { height: `${this.cb.rowHeight}px` },
-      title: `IK "${name}": its mix and bend keys, as Spine's. Change Mix or Bend in Properties ▸ IK in Animate mode to key them; drag a key to move it, Delete to remove, right-click for the ease.`,
+      title: `IK "${name}": its mix and bend keys, as Spine's. Drag up or down on a key, or on an empty frame, to key the mix; drag sideways to move a key; Bend in Properties ▸ IK keys the bend. Delete removes, right-click sets the ease.`,
     }, h("span", { class: "prop-glyph" }, "⟡"), h("div", { class: "name" }, `IK ${name}`));
     on(el, "pointerdown", (ev) => {
       if ((ev as unknown as PointerEvent).button !== 0) return;

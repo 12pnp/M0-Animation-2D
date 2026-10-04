@@ -514,9 +514,17 @@ The pure rules are in `core/doc/ikKeys.ts`: `ikPoseAt`, `withIkKey`, `moveIkKeys
   - Where it shows: under the target, for each constraint the animation keys; in the
     focused view, under the target (or the first chain bone shown), after the property
     rows.
-  - Editing: a press picks a key (⇧ adds), a drag moves the picked keys (one undo step,
-    `SetIkKeys`, kind `timeline.ikMove`), and Delete removes them. Right-click gives
-    Key IK Here, Linear / Stepped / Smooth, and Delete.
+  - The row also draws the mix in force at each frame as a band rising from its bottom
+    (full height = 1), so a drag on it shows what it sets.
+  - Editing: a press picks a key (⇧ adds), and Delete removes the picked keys. A drag goes
+    the way the pointer goes first (`ikDragAxis`):
+    - sideways moves the picked keys in time (`SetIkKeys`, kind `timeline.ikMove`);
+    - up or down sets their mix, each from its own value, 80 px for the full range, ⇧ a
+      quarter as fast (`withIkMixDragged`, kind `timeline.ikMix`); the value shows beside
+      the key.
+    - On an empty cell, sideways scrubs and up or down keys the mix in force there and sets
+      it, in one undo step with the key.
+  - Right-click gives Key IK Here, Linear / Stepped / Smooth, and Delete.
   - Q / W stop on IK keys too.
 - **Properties ▸ IK in Animate** keys at the playhead: Bend flips the bend in force there,
   Mix keys the mix (a scrub is one undo step), and Key keys both as they are. The section

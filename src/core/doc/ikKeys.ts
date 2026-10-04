@@ -77,3 +77,22 @@ export function withIkKeys(
   else delete out[id];
   return Object.keys(out).length ? out : undefined;
 }
+
+/** Screen pixels a vertical drag on an IK row takes to go from mix 0 to 1. */
+export const IK_MIX_DRAG_PX = 80;
+
+/** Which way a drag on an IK row goes, once it has gone `threshold` pixels:
+ *  sideways moves keys in time (or scrubs), up and down sets the mix. */
+export function ikDragAxis(dx: number, dy: number, threshold = 3): "time" | "mix" | null {
+  if (Math.max(Math.abs(dx), Math.abs(dy)) < threshold) return null;
+  return Math.abs(dy) > Math.abs(dx) ? "mix" : "time";
+}
+
+/** The keys at `frames` with their mix raised by a drag of `dy` pixels (up is
+ *  negative, as on screen), each from its own value in `base`; `fine` (⇧)
+ *  goes a quarter as fast. Clamped to 0..1. */
+export function withIkMixDragged(base: readonly IkKey[], frames: readonly number[], dy: number, fine = false): IkKey[] {
+  const at = new Set(frames);
+  const by = (-dy / IK_MIX_DRAG_PX) * (fine ? 0.25 : 1);
+  return base.map((k) => (at.has(k.frame) ? { ...k, mix: Math.round(Math.min(1, Math.max(0, k.mix + by)) * 1000) / 1000 } : k));
+}
