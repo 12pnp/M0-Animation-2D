@@ -1,7 +1,7 @@
 import type { Store } from "@/app/Store";
 import { drawingLayers, orderAt, reorderTargets, withDrawOrderKey, withFront } from "@/core/doc/drawOrder";
-import { type AnimId, type AssetId, newIkId, type NodeId } from "@/core/doc/ids";
-import { type Animation, type EventDef, type EventKey, type IkConstraint, type IkKey, type ImageItem, isImage, type Keyframe, type Node, type SymbolItem, type Track } from "@/core/doc/types";
+import { type AnimId, type AssetId, newIkId, newTcId, type NodeId } from "@/core/doc/ids";
+import { type Animation, type EventDef, type EventKey, type IkConstraint, type IkKey, type ImageItem, isImage, type TcKey, type TransformConstraint, type Keyframe, type Node, type SymbolItem, type Track } from "@/core/doc/types";
 import { entryBox, type FrameContext } from "@/core/doc/pose";
 import { type ImageFrame, imageFrame, referenceEnd, referenceFrameOf, referenceIndexAt, referenceRect } from "@/core/doc/reference";
 import { apply } from "@/core/math/Matrix2D";
@@ -13,6 +13,9 @@ import MOTIONS from "@/core/rig/motions.json";
 import { insertKeyframe, keyIndexAt, setEndFrame } from "@/core/doc/timeline";
 import { AddAnimation, EditTracks, SetCycle, SetDrawOrder, SetEventKeys, SetEvents, SetIkKeys } from "@/core/history/timelineCommands";
 import { renamedEvent, withEventDefValues, withEventKey, withEventKeyValues, withoutEvent } from "@/core/doc/events";
+import { deleteTcKeys, tcMixAt, tcTweenOf, transformPlan, usedMixes, withTcKey, withTcTween } from "@/core/doc/transformKeys";
+import { SetTcKeys, SetTransforms } from "@/core/history/transformCommands";
+import { TC_CHANNELS, type TcChannel } from "@/core/math/transformConstraint";
 import { deleteIkKeys, ikPoseAt, type IkTween, ikTweenOf, withIkKey, withIkTween } from "@/core/doc/ikKeys";
 import { cyclePlan, isCycle, SEAM_TOLERANCE, seamFrame, seamGap } from "@/core/doc/cycle";
 import { bonePaths, keyedIn, pathFrames } from "@/core/doc/bonePath";
@@ -136,6 +139,8 @@ export class AgentApi {
       case "key_draw_order": return this.keyDrawOrder(str(args, "animation"), int(args, "frame", 0), args);
       case "key_ik": return this.keyIk(str(args, "animation"), str(args, "ik"), int(args, "frame", 0), args);
       case "define_event": return this.defineEvent(str(args, "name"), args);
+      case "add_transform_constraint": return this.addTransform(args);
+      case "key_transform": return this.keyTransform(str(args, "animation"), str(args, "constraint"), int(args, "frame", 0), args);
       case "key_event": return this.keyEvent(str(args, "animation"), int(args, "frame", 0), str(args, "event"), args);
       case "get_bone_path": return this.getBonePath(str(args, "animation"), str(args, "bone"), args.point);
       case "set_bone_path": return this.setBonePath(str(args, "animation"), str(args, "bone"), list<PathKeyIn>(args, "keys"));
@@ -206,6 +211,15 @@ export class AgentApi {
         return { name: k.name, bones, target: nameOf(k.targetId), mix: k.weight, ...(k.softness ? { softness: round(k.softness, 3) } : {}) };
       }),
       ...(s.events?.length ? { events: s.events.map((d) => ({ ...d })) } : {}),
+      ...(s.transforms?.length ? {
+        transforms: s.transforms.map((k) => ({
+          name: k.name, source: nameOf(k.sourceId), bones: k.boneIds.map((id) => nameOf(id)),
+          mix: Object.fromEntries(usedMixes(k).map((c) => [c, round(k.mix[c], 3)])),
+          ...(k.offsets && Object.keys(k.offsets).length ? { offsets: k.offsets } : {}),
+          ...(k.localSource ? { localSource: true } : {}), ...(k.localTarget ? { localTarget: true } : {}),
+          ...(k.additive ? { relative: true } : {}), ...(k.clamp ? { clamp: true } : {}),
+        })),
+      } : {}),
       animations: s.animations.map((a) => ({
         name: a.name, frames: this.frames(a), loops: a.playTimes === 0,
         ...(a.reference ? { reference: { images: a.reference.frames.length, frames: [referenceFrameOf(a.reference, 0), referenceEnd(a.reference)] } } : {}),
@@ -237,6 +251,11 @@ export class AgentApi {
         })),
       } : {}),
       ...(anim.events?.length ? { events: anim.events.map((k) => ({ ...k })) } : {}),
+      ...(anim.transforms && Object.keys(anim.transforms).length ? {
+        transforms: Object.fromEntries((this.sym.transforms ?? []).filter((k) => anim.transforms?.[k.id]?.length).map((k) => [k.name, anim.transforms![k.id]!.map((key) => ({
+          frame: key.frame, mix: Object.fromEntries(usedMixes(k).map((c) => [c, round(key.mix[c], 3)])), ease: tcTweenOf(key),
+        }))])),
+      } : {}),
       ...(anim.ik && Object.keys(anim.ik).length ? {
         ik: Object.fromEntries(this.sym.ik.filter((k) => anim.ik?.[k.id]?.length).map((k) => [k.name, anim.ik![k.id]!.map((key) => ({
           frame: key.frame, ...ikKeyOut(k, key),
@@ -803,6 +822,53 @@ export class AgentApi {
       animation: anim.name, ik: k.name,
       keys: keys.map((key) => ({ frame: key.frame, ...ikKeyOut(k, key) })),
     };
+  }
+
+  private addTransform(args: Args) {
+    const s = this.sym;
+    const bones = list<string>(args, "bones").map((n) => this.bone(n).id);
+    const source = this.bone(str(args, "source"));
+    const plan = transformPlan(s, bones, source.id, newTcId());
+    if ("refused" in plan) throw new AgentError(plan.refused);
+    const k: TransformConstraint = { ...plan };
+    if (typeof args.name === "string" && args.name.trim()) {
+      if ((s.transforms ?? []).some((c) => c.name === args.name)) throw new AgentError(`There is already a transform constraint "${args.name}".`);
+      k.name = (args.name as string).trim();
+    }
+    for (const f of ["localSource", "localTarget", "clamp"] as const) if (args[f] === true) k[f] = true;
+    if (args.relative === true) k.additive = true;
+    const mix = args.mix && typeof args.mix === "object" ? (args.mix as Record<string, unknown>) : {};
+    for (const c of TC_CHANNELS) if (typeof mix[c] === "number") k.mix = { ...k.mix, [c]: Math.min(1, Math.max(0, mix[c] as number)) };
+    const off = args.offsets && typeof args.offsets === "object" ? (args.offsets as Record<string, unknown>) : {};
+    const offsets: Partial<Record<TcChannel, number>> = {};
+    for (const c of TC_CHANNELS) if (typeof off[c] === "number" && off[c]) offsets[c] = off[c] as number;
+    if (Object.keys(offsets).length) k.offsets = offsets;
+    this.store.apply(new SetTransforms(`AI: Transform Constraint "${k.name}"`, this.store.currentSymbolId, [...(s.transforms ?? []), k]));
+    this.store.emit("stage");
+    return { name: k.name, source: source.name, bones: k.boneIds.map((id) => s.nodes[id]!.name) };
+  }
+
+  private keyTransform(animName: string, name: string, frame: number, args: Args) {
+    const anim = this.animation(animName);
+    const k = (this.sym.transforms ?? []).find((c) => c.name === name);
+    if (!k) throw new AgentError(`There is no transform constraint "${name}". get_rig lists them.`);
+    if (args.ease !== undefined && args.ease !== "linear" && args.ease !== "stepped" && args.ease !== "smooth") throw new AgentError(`ease is "linear", "stepped" or "smooth".`);
+    const before = anim.transforms?.[k.id] ?? [];
+    let keys: TcKey[];
+    if (args.delete === true) {
+      if (!before.some((key) => key.frame === frame)) throw new AgentError(`"${name}" has no key at frame ${frame}.`);
+      keys = deleteTcKeys(before, [frame]);
+    } else {
+      const mix = { ...tcMixAt(k, anim, frame) };
+      const given = args.mix && typeof args.mix === "object" ? (args.mix as Record<string, unknown>) : {};
+      for (const c of TC_CHANNELS) if (typeof given[c] === "number") mix[c] = Math.min(1, Math.max(0, given[c] as number));
+      keys = withTcKey(before, frame, mix);
+      if (args.ease) keys = withTcTween(keys, [frame], args.ease as IkTween);
+    }
+    this.store.apply(new SetTcKeys(`AI: Transform "${k.name}" at ${frame + 1}`, this.store.currentSymbolId, anim.id, k.id, keys));
+    this.store.emit("timeline");
+    this.store.emit("stage");
+    return { animation: anim.name, constraint: k.name, keys: keys.map((key) => ({ frame: key.frame, mix: Object.fromEntries(usedMixes(k).map((c) => [c, round(key.mix[c], 3)])), ease: tcTweenOf(key) })) };
   }
 
   private defineEvent(name: string, args: Args) {

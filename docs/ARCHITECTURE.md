@@ -1837,6 +1837,57 @@ ones; the DragonBones solver it replaced disagreed on three of the seven.
   positions (reachable, out of reach, folded, bend flipped). Currently ≤0.0016 px, which
   is the exporter's four-decimal rounding.
 
+## Transform constraints
+
+Bones that follow another bone's rotation, position, scale or shear, as Spine 4.3's transform
+constraint (docs/TRANSFORM-CONSTRAINT-PLAN.md). `SymbolItem.transforms` (schema 20):
+`{ id, name, boneIds, sourceId, localSource?, localTarget?, additive?, clamp?, offsets, mix,
+properties }`, every value as Spine writes it (y up, angles counter-clockwise), so a file's
+constraint round-trips unchanged.
+
+- **4.3's shape**: `properties` maps a source property to target properties, each with an
+  offset, a scale and a max (`clamp`). A new constraint maps each property to itself at full
+  mix with no offsets, so the bones take the source's world transform. A file's remapped table
+  is read, solved, exported and kept; the Properties panel edits the identity map's mixes and
+  offsets and says when a map is not the identity. One mix per target property; spine-core
+  reads only the mixes a property maps to, and the solver does the same (`usedMixes`).
+- **The solver** (`core/math/transformConstraint.ts`) is a transcription of spine-core's
+  `TransformConstraint.update`, the `From*` / `To*` properties and
+  `BonePose.updateLocalTransform` (normal inherit), in its space and with its pi. The stage
+  runs it in one constraint pass with the IK (`applyConstraints` in `core/doc/pose.ts`): IK
+  first, then transform constraints in their order, which is the exporter's order. They share
+  the solved locals, since a world change to a bone rebuilds its children from their solved
+  locals (an IK chain under a constrained bone keeps its solve).
+  - **Local values are the applied ones**, not ones derived from the world matrix, unless an
+    earlier constraint set that bone's world (`worldSet`, the runtime's
+    `validateLocalTransform`). Deriving them every time turned a rotation of 270 into −90,
+    which changes a partial mix.
+- **Checked**: `spineParity` ▸ "transform constraints: 60 random rigs" plays world and local,
+  additive, clamp, remapped tables, keyed mixes and IK chains under constrained bones through
+  spine-core frame by frame. A source whose keyed scale passes through 0 is left out: its axis
+  is gone and `atan2` of signed zeros differs between the y-down stage and the y-up runtime.
+- **Export** writes the constraint after the IK constraints, every mapped mix explicitly
+  (the runtime reads a missing `mixY` as `mixX` and `mixScaleY` as `mixScaleX`), and each
+  animation's `transform` timeline (all six mixes per key; a tween is one cubic over each, 24
+  numbers). **Import** turns a file's transform constraint into the model's when its bones
+  resolve (every constraint of the samples does) and a timeline into keys when its keys land
+  on frames and its curves are one cubic; the rest is carried. An opened rig is still posed by
+  spine-core, which then solves the model's constraints from the exported skeleton
+  (`structureKey` includes them) and the keyed mixes set on the constraint pose
+  (`applyRig`).
+- **Keys** (`core/doc/transformKeys.ts`, `Animation.transforms`): the six mixes per key,
+  linear, stepped or smooth, as IK keys. A row per constraint on the timeline (`LayerRow.tc`):
+  under the source for a keyed constraint, and in the focused view of the source or a bone;
+  drag, Delete, right-click for Key Transform Here and the ease. Q / W stop on them.
+- **Properties ▸ Transform** on a bone: every constraint it is the source or a bone of
+  (source, bones, mixes; offsets in Setup; Local source, Local bones, Relative, Clamp;
+  Remove) and Follow a Bone…, which makes the selected bones follow a bone chosen in a list
+  (`transformPlan`). In Animate the mixes key at the playhead.
+- **Deleting a node** drops a constraint whose source goes and trims one that loses a bone
+  (`RemoveNodes`, undone whole).
+- The AI's `add_transform_constraint` and `key_transform`; `get_rig` lists the constraints
+  and `get_animation` the keys.
+
 ## Bone paths
 
 Each selected bone draws the path its tip (or origin, Preferences ▸ Selection & Gizmos)

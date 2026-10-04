@@ -1,11 +1,12 @@
 import { h, on, raf } from "@/view/widgets/dom";
 import { FRAME_WIDTH_MAX, FRAME_WIDTH_MIN, anchoredScroll, fitFrameWidth, steppedFrameWidth } from "./zoom";
 import type { Store } from "@/app/Store";
-import type { DrawOrderKey, EventKey, IkKey, Layer, Node, Track } from "@/core/doc/types";
+import type { DrawOrderKey, EventKey, IkKey, Layer, Node, TcKey, Track } from "@/core/doc/types";
+import { moveTcKeys } from "@/core/doc/transformKeys";
 import { ikDragAxis, ikPoseAt, moveIkKeys, withIkKey, withIkMixDragged } from "@/core/doc/ikKeys";
 import { moveDrawOrderKeys } from "@/core/doc/drawOrder";
 import { eventFrames, moveEventKeys } from "@/core/doc/events";
-import type { IkId, NodeId } from "@/core/doc/ids";
+import type { IkId, NodeId, TcId } from "@/core/doc/ids";
 import { describeFrame, ensureTrack } from "@/app/TimelineOps";
 import { keyIndexAt, MAX_FRAMES, spanIndexAt } from "@/core/doc/timeline";
 import { easeTag } from "@/core/math/easing";
@@ -15,6 +16,8 @@ import { moveChannelKeys, propertyKeys, type TimelineProp } from "@/core/doc/pro
 
 /** The Draw order row's keys. */
 const DRAW_ORDER_COLOR = "#7fa8ff";
+/** Transform constraint rows' keys. */
+const TC_COLOR = "#c792ea";
 /** The Events row's flags. */
 const EVENT_COLOR = "#ffb35c";
 
@@ -55,6 +58,8 @@ export interface FrameGridCallbacks {
   onEditEvents(keys: EventKey[], label: string, kind?: string): void;
   /** Right-click on the Events row. */
   onEventsMenu(frame: number, x: number, y: number): void;
+  /** A transform constraint row's edit: its keys as they are to be. */
+  onEditTc(tc: TcId, keys: TcKey[], label: string, kind?: string): void;
   /** An IK row's edit: the constraint's keys as they are to be. */
   onEditIk(ik: IkId, keys: IkKey[], label: string, kind?: string): void;
   /** A frame selection dragged somewhere else: its top-left cell lands on
@@ -583,6 +588,10 @@ export class FrameGrid {
         this.drawIkRow(ctx, rows[i]!.ik!, y);
         continue;
       }
+      if (rows[i]!.tc) {
+        this.drawTcRow(ctx, rows[i]!.tc!, y);
+        continue;
+      }
       // A group has no artwork of its own, so it gets a thinner band: it is
       // a container, and drawing it like content would suggest otherwise. An
       // empty layer gets an outlined band with a hollow keyframe — Flash's
@@ -850,6 +859,69 @@ export class FrameGrid {
       if (!started) { started = true; this.cb.onBeginInteraction("timeline.drawOrderMove"); }
       this.cb.onEditDrawOrder(moveDrawOrderKeys(base, frames, delta), "Move Draw Order Keys", "timeline.drawOrderMove");
       this.orderSel = frames.map((f) => f + delta);
+      lastDelta = delta;
+      this.invalidate();
+    };
+    const up = () => {
+      offMove(); offUp(); offCancel();
+      this.el.releasePointerCapture?.(e.pointerId);
+      if (started) this.cb.onEndInteraction();
+    };
+    const offMove = on(this.el, "pointermove", move as (x: Event) => void);
+    const offUp = on(this.el, "pointerup", up);
+    const offCancel = on(this.el, "pointercancel", up);
+  }
+
+  /** The keys picked on a transform constraint row. */
+  tcSel: { tc: TcId; frames: number[] } | null = null;
+
+  /** A transform constraint row: a diamond per key, joined where the mixes
+   *  tween (none after a stepped key), the picked ones ringed. */
+  private drawTcRow(ctx: CanvasRenderingContext2D, tc: TcId, y: number): void {
+    ctx.fillStyle = "rgba(0,0,0,0.12)";
+    ctx.fillRect(0, y, this.el.clientWidth, this.rowHeight);
+    const keys = this.store.currentAnimation?.transforms?.[tc] ?? [];
+    if (!keys.length) return;
+    const sel = this.tcSel?.tc === tc ? this.tcSel.frames : [];
+    const color = TC_COLOR;
+    const mid = Math.round(y + this.rowHeight / 2 - 0.5) + 0.5;
+    const half = this.frameWidth / 2;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 1; i < keys.length; i++) {
+      if (keys[i - 1]!.tween?.kind === "none") continue;
+      ctx.moveTo(this.xOfFrame(keys[i - 1]!.frame) + half, mid);
+      ctx.lineTo(this.xOfFrame(keys[i]!.frame) + half, mid);
+    }
+    ctx.stroke();
+    const r = Math.max(3, Math.min(5.5, half, this.rowHeight / 2 - 2.5));
+    for (const k of keys) {
+      const cx = Math.round(this.xOfFrame(k.frame) + half - 0.5) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, mid - r); ctx.lineTo(cx + r, mid); ctx.lineTo(cx, mid + r); ctx.lineTo(cx - r, mid); ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+      const picked = sel.includes(k.frame);
+      ctx.lineWidth = picked ? 2 : 1;
+      ctx.strokeStyle = picked ? "#ffffff" : this.C.keyDot;
+      ctx.stroke();
+    }
+  }
+
+  /** Move the picked transform keys by whole frames, from the keys at pointerdown. */
+  private beginTcDrag(e: PointerEvent, tc: TcId, frames: number[], base: TcKey[]): void {
+    this.el.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const first = Math.min(...frames);
+    let lastDelta = 0;
+    let started = false;
+    const move = (m: PointerEvent) => {
+      const delta = Math.max(-first, Math.round((m.clientX - startX) / this.frameWidth));
+      if (delta === lastDelta) return;
+      if (!started) { started = true; this.cb.onBeginInteraction("timeline.tcMove"); }
+      this.cb.onEditTc(tc, moveTcKeys(base, frames, delta), "Move Transform Keys", "timeline.tcMove");
+      this.tcSel = { tc, frames: frames.map((f) => f + delta) };
       lastDelta = delta;
       this.invalidate();
     };
@@ -1348,6 +1420,29 @@ export class FrameGrid {
       // Below the last layer there are no frames: a press there deselects
       // them, as a press on the empty stage does.
       if (!layer) { this.store.clearFrameSelection(); return; }
+      // A transform constraint row: a press on a key picks it (shift adds or
+      // drops one), a drag moves the picked keys; elsewhere it scrubs.
+      const tc = this.visibleRows()[row]?.tc;
+      if (tc) {
+        this.propSel = null;
+        this.ikSel = null;
+        const keys = this.store.currentAnimation?.transforms?.[tc] ?? [];
+        if (keys.some((k) => k.frame === frame)) {
+          const mine = this.tcSel?.tc === tc ? this.tcSel.frames : [];
+          const frames = e.shiftKey
+            ? (mine.includes(frame) ? mine.filter((f) => f !== frame) : [...mine, frame])
+            : (mine.includes(frame) ? mine : [frame]);
+          this.tcSel = { tc, frames };
+          this.cb.onScrub(frame);
+          this.invalidate();
+          if (!e.shiftKey) this.beginTcDrag(e, tc, frames, keys);
+          return;
+        }
+        this.tcSel = null;
+        this.beginScrub(e, frame);
+        return;
+      }
+      this.tcSel = null;
       // An IK row: a press on a key picks it (shift adds or drops one), a
       // drag moves the picked keys; elsewhere it moves the playhead.
       const ik = this.visibleRows()[row]?.ik;

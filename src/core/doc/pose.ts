@@ -1,6 +1,8 @@
 import { applyInverse, clone, mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { orderAt } from "./drawOrder";
 import { ikPoseAt } from "./ikKeys";
+import { tcIdle, tcLocalOf, type TcLocal, tcSolveLocal, tcSolveWorld, type TcWorld } from "@/core/math/transformConstraint";
+import { tcMixAt, tcSolveOf } from "./transformKeys";
 import { type IkBone, type IkWorld, ikApply1, ikApply2 } from "@/core/math/ik";
 import { fromSpineLocal, toSpineLocal } from "@/core/spine/transform";
 import { cloneTf, toMatrix, type Transform } from "@/core/math/Transform";
@@ -274,7 +276,7 @@ export function evaluateSymbol(
 
   for (const e of entries) resolve(e);
 
-  applyIk(symbol, byNode, mode === "animate" ? animation : null, frame);
+  applyConstraints(symbol, byNode, mode === "animate" ? animation : null, frame);
 
   return { entries, byNode };
 }
@@ -296,8 +298,8 @@ export function evaluateSymbol(
  * weight skipping the solve, as the runtime does. The weight and bend are the
  * animation's IK keys at the frame (`ikPoseAt`), the constraint's own without.
  */
-function applyIk(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>, animation: Animation | null, frame: number): void {
-  if (symbol.ik.length === 0) return;
+function applyConstraints(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>, animation: Animation | null, frame: number): void {
+  if (symbol.ik.length === 0 && !symbol.transforms?.length) return;
 
   const children = new Map<NodeId, PoseEntry[]>();
   for (const e of byNode.values()) {
@@ -369,6 +371,39 @@ function applyIk(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>, animation: 
     }
     mul(root.world, rootParentWorld, toMatrix(mat(), localOf(root)));
     recompose(root.nodeId);
+  }
+
+  // Transform constraints, after the IK, in their order (the exporter's).
+  // A bone whose WORLD a constraint set has no local to match until one is
+  // derived from it, as the runtime's `validateLocalTransform` does; any
+  // other bone's local is the one it was posed with (keyed or IK-solved),
+  // turns included.
+  const worldSet = new Set<NodeId>();
+  const parentSpine = (e: PoseEntry): TcWorld => spineWorld(parentWorld(e));
+  const appliedLocal = (e: PoseEntry): TcLocal =>
+    worldSet.has(e.nodeId) ? tcLocalOf(spineWorld(e.world), parentSpine(e)) : toSpineLocal(localOf(e));
+  for (const constraint of symbol.transforms ?? []) {
+    const mix = tcMixAt(constraint, animation, frame);
+    if (tcIdle(mix)) continue;
+    const source = byNode.get(constraint.sourceId);
+    if (!source) continue;
+    const data = tcSolveOf(constraint);
+    const sl = appliedLocal(source);
+    for (const id of constraint.boneIds) {
+      const e = byNode.get(id);
+      if (!e || e === source) continue;
+      const sw = spineWorld(source.world);
+      if (data.localTarget) {
+        solved.set(id, fromSpineLocal(tcSolveLocal(data, mix, sw, sl, appliedLocal(e))));
+        worldSet.delete(id);
+        mul(e.world, parentWorld(e), toMatrix(mat(), localOf(e)));
+      } else {
+        const w = tcSolveWorld(data, mix, sw, sl, spineWorld(e.world));
+        e.world = { a: w.a, b: -w.c, c: -w.b, d: w.d, tx: w.worldX, ty: -w.worldY };
+        worldSet.add(id);
+      }
+      recompose(id);
+    }
   }
 }
 

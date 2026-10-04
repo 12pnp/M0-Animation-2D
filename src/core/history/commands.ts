@@ -205,6 +205,9 @@ export class RemoveNodes implements Command {
   private removedLayers: Array<{ layer: Layer; index: number }> = [];
   private removedTracks: Array<{ animId: string; nodeId: NodeId; track: unknown }> = [];
   private removedIk: Array<{ index: number; constraint: unknown }> = [];
+  /** The transform constraints as they were: one whose source goes is
+   *  removed, one that loses bones keeps the rest. */
+  private transformsBefore: SymbolItem["transforms"] | null = null;
   private reparented: Array<{ nodeId: NodeId; oldParent: NodeId | null }> = [];
   private durations: Array<{ animId: string; before: number }> = [];
   private norm: Normalization | null = null;
@@ -261,6 +264,16 @@ export class RemoveNodes implements Command {
       }
     }
 
+    this.transformsBefore = sym.transforms ?? null;
+    if (sym.transforms?.some((k) => doomed.has(k.sourceId) || k.boneIds.some((b) => doomed.has(b)))) {
+      const kept = sym.transforms
+        .filter((k) => !doomed.has(k.sourceId))
+        .map((k) => (k.boneIds.some((b) => doomed.has(b)) ? { ...k, boneIds: k.boneIds.filter((b) => !doomed.has(b)) } : k))
+        .filter((k) => k.boneIds.length);
+      if (kept.length) sym.transforms = kept;
+      else delete sym.transforms;
+    }
+
     // The animation is as long as its longest track, so deleting the layer
     // that reached furthest shortens it. Leaving the number alone left the
     // timeline claiming frames nothing was on any more. `durationFor` keeps
@@ -295,6 +308,8 @@ export class RemoveNodes implements Command {
     for (const { index, constraint } of [...this.removedIk].sort((a, b) => a.index - b.index)) {
       sym.ik.splice(Math.min(index, sym.ik.length), 0, constraint as never);
     }
+    if (this.transformsBefore) sym.transforms = this.transformsBefore;
+    else delete sym.transforms;
     for (const { nodeId, oldParent } of this.reparented) {
       const n = sym.nodes[nodeId];
       if (n) n.parentId = oldParent;

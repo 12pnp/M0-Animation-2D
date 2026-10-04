@@ -1,6 +1,7 @@
 import type { Store } from "./Store";
 import { type Reorder, reorderAt } from "@/core/doc/drawOrder";
-import type { DrawOrderKey, EventDef, EventKey, IkKey } from "@/core/doc/types";
+import type { DrawOrderKey, EventDef, EventKey, IkKey, TcKey, TransformConstraint } from "@/core/doc/types";
+import { SetTcKeys, SetTransforms } from "@/core/history/transformCommands";
 import type {
     BlendMode,
     ColorTransform,
@@ -12,7 +13,7 @@ import type {
     Track,
 } from "@/core/doc/types";
 import { DEFAULT_COLOR } from "@/core/doc/types";
-import type { AnimId, IkId, ItemId, NodeId } from "@/core/doc/ids";
+import type { AnimId, IkId, ItemId, NodeId, TcId } from "@/core/doc/ids";
 import type { Transform } from "@/core/math/Transform";
 import { cloneTf } from "@/core/math/Transform";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
@@ -110,6 +111,22 @@ export function doSetIkKeys(store: Store, ik: IkId, keys: IkKey[], label: string
   const anim = store.currentAnimation;
   if (!anim) return;
   store.apply(new SetIkKeys(label, store.currentSymbolId, anim.id, ik, keys, kind));
+  store.emit("timeline");
+  store.emit("stage");
+}
+
+/** The current symbol's transform constraints replaced. */
+export function doSetTransforms(store: Store, list: TransformConstraint[], label: string, kind?: string): void {
+  store.apply(new SetTransforms(label, store.currentSymbolId, list, kind));
+  store.emit("stage");
+  store.emit("doc");
+}
+
+/** One transform constraint's keys in the current animation replaced. */
+export function doSetTcKeys(store: Store, tc: TcId, keys: TcKey[], label: string, kind?: string): void {
+  const anim = store.currentAnimation;
+  if (!anim) return;
+  store.apply(new SetTcKeys(label, store.currentSymbolId, anim.id, tc, keys, kind));
   store.emit("timeline");
   store.emit("stage");
 }

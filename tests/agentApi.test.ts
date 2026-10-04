@@ -57,7 +57,7 @@ describe("the AI's tools", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
       "get_reference", "render_frame", "add_bones", "attach", "add_ik", "auto_rig", "list_motions", "apply_motion", "draw_order",
-      "key_draw_order", "key_ik", "define_event", "key_event", "set_cycle", "get_bone_path", "set_bone_path",
+      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "set_cycle", "get_bone_path", "set_bone_path",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -750,6 +750,21 @@ describe("cycles and bone paths through the AI's tools", () => {
     const gone = await api.call("define_event", { name: "foot", delete: true }) as { keysRemoved: number };
     expect(gone.keysRemoved).toBe(2);
     expect(await api.call("get_animation", { animation: "run" })).not.toHaveProperty("events");
+  });
+
+  it("add a transform constraint and key its mixes, each one undo step", async () => {
+    const { store, api } = await setup();
+    const out = await api.call("add_transform_constraint", { bones: ["head"], source: "chest", mix: { x: 0.5 }, offsets: { rotate: 10 }, relative: true }) as { name: string };
+    expect(store.history.undoLabel).toBe(`AI: Transform Constraint "${out.name}"`);
+    const rig = await api.call("get_rig", {}) as { transforms: Array<{ name: string; mix: Record<string, number>; relative?: boolean; offsets?: unknown }> };
+    expect(rig.transforms[0]).toMatchObject({ name: out.name, source: "chest", bones: ["head"], relative: true, offsets: { rotate: 10 } });
+    expect(rig.transforms[0]!.mix.x).toBe(0.5);
+    await api.call("key_transform", { animation: "run", constraint: out.name, frame: 3, mix: { rotate: 0 }, ease: "stepped" });
+    const anim = await api.call("get_animation", { animation: "run" }) as { transforms: Record<string, Array<{ frame: number; mix: Record<string, number>; ease: string }>> };
+    expect(anim.transforms[out.name]![0]).toMatchObject({ frame: 3, ease: "stepped" });
+    expect(anim.transforms[out.name]![0]!.mix).toMatchObject({ rotate: 0, x: 0.5 });
+    await expect(api.call("add_transform_constraint", { bones: ["chest"], source: "chest" })).rejects.toThrow(/cannot follow itself/);
+    await expect(api.call("key_transform", { animation: "run", constraint: "nope", frame: 0 })).rejects.toThrow(/no transform constraint "nope"/);
   });
 
   it("make a cycle in one undo step, and say where the loop does not close", async () => {

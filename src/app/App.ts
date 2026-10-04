@@ -1504,7 +1504,7 @@ export class App {
     // last click was on, and the bone stays selected under them.
     reg("edit.delete", () => {
       if (this.timeline.deletePropKeys() || this.timeline.deleteDrawOrderKeys() || this.timeline.deleteIkKeys()
-        || this.timeline.deleteEventKeys() || this.graph.deletePicked()) return;
+        || this.timeline.deleteEventKeys() || this.timeline.deleteTcKeys() || this.graph.deletePicked()) return;
       s.apply(new RemoveNodes(s.currentSymbolId, [...s.selection.nodes]));
       s.clearSelection();
       s.emit("doc");

@@ -1,4 +1,4 @@
-import type { DisplayRef, EventDef, EventKey, IkKey, LibraryFolder, Node, Project } from "./types";
+import type { DisplayRef, EventDef, EventKey, IkKey, LibraryFolder, Node, Project, TcKey, TransformConstraint } from "./types";
 import { eventDefsFromSpine, withEventDefValues } from "./events";
 import { DEFAULT_MOTION_BLUR, DOC_VERSION, type MotionBlurSettings, TIMELINE_PROPS } from "./types";
 import { observeId } from "./ids";
@@ -347,6 +347,43 @@ export function validateProject(raw: unknown): ValidationResult {
       if (Object.keys(out).length) anim.ik = out as never;
       else delete anim.ik;
     }
+    // Transform constraints: a source and bones the symbol has (bones not the
+    // source), unique names, properties of known channels, finite numbers.
+    if (item.transforms !== undefined) {
+      const raw = Array.isArray(item.transforms) ? (item.transforms as unknown[]) : [];
+      const out: TransformConstraint[] = [];
+      for (const r of raw) {
+        const k = sanitizeTransform(r, item.nodes as Record<string, unknown>);
+        if (!k || out.some((o) => o.name === k.name)) continue;
+        observeId(k.id);
+        out.push(k);
+      }
+      if (out.length) item.transforms = out;
+      else delete item.transforms;
+    }
+    const tcIds = new Set<string>((item.transforms ?? []).map((k) => k.id));
+    for (const anim of item.animations) {
+      if (anim.transforms === undefined) continue;
+      const raw = anim.transforms && typeof anim.transforms === "object" ? (anim.transforms as Record<string, unknown>) : {};
+      const out: Record<string, TcKey[]> = {};
+      for (const [id, list] of Object.entries(raw)) {
+        if (!tcIds.has(id) || !Array.isArray(list)) continue;
+        const byFrame = new Map<number, TcKey>();
+        for (const k of list as unknown[]) {
+          if (!k || typeof k !== "object") continue;
+          const r = k as Record<string, unknown>;
+          const frame = clampInt(r.frame, 0, 100000, 0);
+          const key: TcKey = { frame, mix: mixOf(r.mix) };
+          const tween = sanitizeTween(r.tween);
+          if (tween?.kind === "none" || (tween?.kind === "curve" && tween.curve.length === 4)) key.tween = tween;
+          byFrame.set(frame, key);
+        }
+        const keys = [...byFrame.values()].sort((a, b) => a.frame - b.frame);
+        if (keys.length) out[id] = keys;
+      }
+      if (Object.keys(out).length) anim.transforms = out as never;
+      else delete anim.transforms;
+    }
     // Events: names unique and not empty, values of the right type; keys of
     // known events only, sorted by frame (keys sharing one keep their order).
     if (item.events !== undefined) {
@@ -496,6 +533,9 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // 17 -> 18: `IkConstraint.softness` and `IkKey.softness`. An opened
   // constraint carried its softness in `spine`; it moves to the field the
   // solver reads.
+  // 19 -> 20: `SymbolItem.transforms` and `Animation.transforms`, transform
+  // constraints and their keys. Additive; an older build would drop them.
+  19: (p) => ({ ...p, version: 20 }),
   // 18 -> 19: `SymbolItem.events` and `Animation.events`. An opened file's
   // events were carried in `spine.events`; they move to the list the editor
   // edits (an animation's carried keys stay carried, naming them).
@@ -523,6 +563,47 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
     return { ...p, version: 18 };
   },
 };
+
+const TC_NAMES = ["rotate", "x", "y", "scaleX", "scaleY", "shearY"] as const;
+type TcName = (typeof TC_NAMES)[number];
+const isTc = (v: unknown): v is TcName => typeof v === "string" && (TC_NAMES as readonly string[]).includes(v);
+const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+
+/** Six mixes read from disk, 0..1; a missing one is 1. */
+function mixOf(raw: unknown): Record<TcName, number> {
+  const r = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  return Object.fromEntries(TC_NAMES.map((c) => [c, Math.min(1, Math.max(0, num(r[c], 1)))])) as Record<TcName, number>;
+}
+
+/** A transform constraint read from disk, or null when its source or every
+ *  bone is gone. */
+function sanitizeTransform(raw: unknown, nodes: Record<string, unknown>): TransformConstraint | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const name = typeof r.name === "string" ? r.name.trim() : "";
+  const sourceId = typeof r.sourceId === "string" && nodes[r.sourceId] ? r.sourceId : null;
+  if (!name || !sourceId || typeof r.id !== "string") return null;
+  const boneIds = [...new Set((Array.isArray(r.boneIds) ? r.boneIds : []).filter((b): b is string => typeof b === "string" && !!nodes[b] && b !== sourceId))];
+  if (!boneIds.length) return null;
+  const properties = (Array.isArray(r.properties) ? r.properties : [])
+    .filter((p): p is Record<string, unknown> => !!p && typeof p === "object" && isTc((p as { from?: unknown }).from))
+    .map((p) => ({
+      from: p.from as TcName,
+      offset: num(p.offset, 0),
+      to: (Array.isArray(p.to) ? p.to : [])
+        .filter((t): t is Record<string, unknown> => !!t && typeof t === "object" && isTc((t as { to?: unknown }).to))
+        .map((t) => ({ to: t.to as TcName, offset: num(t.offset, 0), max: num(t.max, 1), scale: num(t.scale, 1) })),
+    }))
+    .filter((p) => p.to.length);
+  const offsetsRaw = r.offsets && typeof r.offsets === "object" ? (r.offsets as Record<string, unknown>) : {};
+  const offsets: Partial<Record<TcName, number>> = {};
+  for (const c of TC_NAMES) if (num(offsetsRaw[c], 0) !== 0) offsets[c] = num(offsetsRaw[c], 0);
+  const out: TransformConstraint = { id: r.id as never, name, boneIds: boneIds as never, sourceId: sourceId as never, mix: mixOf(r.mix), properties };
+  if (Object.keys(offsets).length) out.offsets = offsets;
+  for (const f of ["localSource", "localTarget", "additive", "clamp"] as const) if (r[f] === true) out[f] = true;
+  if (r.spine && typeof r.spine === "object") out.spine = r.spine as Record<string, unknown>;
+  return out;
+}
 
 /** An event's or a key's values read from disk: the right types only. */
 function eventFields(r: Record<string, unknown>, def: boolean): Partial<EventDef> {

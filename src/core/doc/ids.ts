@@ -7,6 +7,7 @@ export type NodeId = Brand<string, "NodeId">;
 export type LayerId = Brand<string, "LayerId">;
 export type AnimId = Brand<string, "AnimId">;
 export type IkId = Brand<string, "IkId">;
+export type TcId = Brand<string, "TcId">;
 export type AssetId = Brand<string, "AssetId">;
 export type FolderId = Brand<string, "FolderId">;
 
@@ -28,6 +29,7 @@ export const newNodeId = () => next("n") as NodeId;
 export const newLayerId = () => next("l") as LayerId;
 export const newAnimId = () => next("a") as AnimId;
 export const newIkId = () => next("k") as IkId;
+export const newTcId = () => next("t") as TcId;
 export const newAssetId = () => next("s") as AssetId;
 export const newFolderId = () => next("f") as FolderId;
 

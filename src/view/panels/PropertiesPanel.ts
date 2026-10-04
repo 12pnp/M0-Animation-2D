@@ -18,10 +18,16 @@ import {
     colorAtFrame,
     displayAtFrame,
     doSetIkKeys,
+    doSetTcKeys,
+    doSetTransforms,
     editsMultipleFrames,
     transformAtFrame,
 } from "@/app/TimelineOps";
 import { type IkPose, ikPoseAt, withIkKey } from "@/core/doc/ikKeys";
+import { tcMixAt, transformPlan, usedMixes, withTcKey } from "@/core/doc/transformKeys";
+import { TC_CHANNELS, type TcChannel } from "@/core/math/transformConstraint";
+import { newTcId } from "@/core/doc/ids";
+import { alertDialog, chooseDialog } from "@/view/widgets/dialogs";
 import { cloneTf, type Transform } from "@/core/math/Transform";
 import type { NodeId } from "@/core/doc/ids";
 import type { Rect } from "@/core/math/geom";
@@ -45,6 +51,7 @@ import {
     isDefaultColor,
     isSymbol,
     type Node,
+    type TransformConstraint,
 } from "@/core/doc/types";
 import { ikRelations } from "@/core/doc/ikGraph";
 import { type IkPatch, RemoveIkConstraint, SetBoneLength, SetIkOptions, } from "@/core/history/ikCommands";
@@ -153,7 +160,11 @@ export class PropertiesPanel implements Panel {
     // changes under the playhead on a layer that switches artwork.
     // Animate mode keys the IK section's mix and bend, Setup edits the constraint.
     const anim = this.store.ui.mode === "animate" ? this.store.currentAnimation?.id ?? "" : "setup";
-    return `${anim}|` + nodes.map((n) => `${n.id}:${n.kind}:${displayAtFrame(this.store, n).display?.itemId ?? ""}`).join("|");
+    // Which transform constraints exist and what they connect: the section's
+    // structure. Their values are synced, not rebuilt.
+    const tcs = (this.store.currentSymbol.transforms ?? [])
+      .map((k) => [k.id, k.name, k.sourceId, k.boneIds.join(","), !!k.localSource, !!k.localTarget, !!k.additive, !!k.clamp, usedMixes(k).join("")].join(":")).join(";");
+    return `${anim}|${tcs}|` + nodes.map((n) => `${n.id}:${n.kind}:${displayAtFrame(this.store, n).display?.itemId ?? ""}`).join("|");
   }
 
   /**
@@ -223,6 +234,7 @@ export class PropertiesPanel implements Panel {
       this.body.appendChild(this.boneSection(bone));
       const section = this.ikSection(bone);
       if (section) this.body.appendChild(section);
+      this.body.appendChild(this.transformSection(bone));
     }
   }
 
@@ -582,6 +594,135 @@ export class PropertiesPanel implements Panel {
       fields.appendChild(btn);
     }
     return h("div", { class: "prow" }, h("label", null, label), fields);
+  }
+
+  /**
+   * The transform constraints this bone takes part in, as the source or as one
+   * of the bones that follow it, and a button that makes the selected bones
+   * follow another (ARCHITECTURE ▸ Transform constraints). In Animate mode the
+   * mixes are keyed at the playhead; offsets and the switches belong to the
+   * constraint itself.
+   */
+  private transformSection(node: Node): HTMLElement {
+    const symbol = this.store.currentSymbol;
+    const nameOf = (id: NodeId) => symbol.nodes[id]?.name ?? "\u2014";
+    const animate = this.store.ui.mode === "animate" ? this.store.currentAnimation : null;
+    const rows: HTMLElement[] = [];
+    const list = () => this.store.currentSymbol.transforms ?? [];
+    const replace = (k: TransformConstraint, label: string, kind?: string) =>
+      doSetTransforms(this.store, list().map((c) => (c.id === k.id ? k : c)), label, kind);
+
+    for (const k of symbol.transforms ?? []) {
+      if (k.sourceId !== node.id && !k.boneIds.includes(node.id)) continue;
+      const current = () => list().find((c) => c.id === k.id) ?? k;
+      const keysOf = () => this.store.currentAnimation?.transforms?.[k.id] ?? [];
+      const boneLinks: LinkPart[] = [];
+      k.boneIds.forEach((id, i) => {
+        if (i > 0) boneLinks.push(", ");
+        boneLinks.push({ text: nameOf(id), select: [id] });
+      });
+      rows.push(
+        this.linkRow("Constraint", [{ text: k.name, select: [k.sourceId, ...k.boneIds], title: "Select the source and every bone that follows it" }]),
+        this.linkRow("Source", [{ text: nameOf(k.sourceId), select: [k.sourceId] }]),
+        this.linkRow("Bones", boneLinks),
+      );
+
+      const MIX_LABEL: Record<TcChannel, string> = { rotate: "Rotate", x: "X", y: "Y", scaleX: "Scale X", scaleY: "Scale Y", shearY: "Shear Y" };
+      for (const c of usedMixes(k)) {
+        const field = new NumberField({
+          glyph: "%", min: 0, max: 1, step: 0.05, decimals: 2, sensitivity: 200,
+          onInput: (v, committing) => {
+            if (animate) {
+              this.scrubStep("tc.key", committing);
+              const now = tcMixAt(current(), this.store.currentAnimation, this.store.ui.frame);
+              doSetTcKeys(this.store, k.id, withTcKey(keysOf(), this.store.ui.frame, { ...now, [c]: v }), "Transform Mix", "tc.key");
+            } else {
+              this.scrubStep(`tc.mix.${k.id}.${c}`, committing);
+              const cur = current();
+              replace({ ...cur, mix: { ...cur.mix, [c]: v } }, "Transform Mix", `tc.mix.${k.id}.${c}`);
+            }
+            if (committing) this.store.history.endInteraction();
+          },
+        });
+        field.set(k.mix[c]);
+        if (animate) this.ikSync.push(() => field.show(tcMixAt(current(), this.store.currentAnimation, this.store.ui.frame)[c]));
+        rows.push(this.row(`Mix ${MIX_LABEL[c]}`, [field.el]));
+      }
+      if (animate) {
+        const key = h("button", { class: "btn", title: "Key every mix in force here" }, "Key");
+        on(key, "click", () => doSetTcKeys(this.store, k.id,
+          withTcKey(keysOf(), this.store.ui.frame, tcMixAt(current(), this.store.currentAnimation, this.store.ui.frame)), "Key Transform"));
+        this.ikSync.push(() => {
+          const keyed = keysOf().some((x) => x.frame === this.store.ui.frame);
+          key.textContent = keyed ? "Keyed" : "Key";
+          (key as HTMLButtonElement).disabled = keyed;
+        });
+        rows.push(this.row("", [key]));
+      } else {
+        for (const c of TC_CHANNELS) {
+          const field = new NumberField({
+            glyph: c === "rotate" || c === "shearY" ? "°" : c.startsWith("scale") ? "×" : "px",
+            step: c.startsWith("scale") ? 0.01 : 1, decimals: c.startsWith("scale") ? 3 : 1, sensitivity: c.startsWith("scale") ? 200 : 4,
+            onInput: (v, committing) => {
+              this.scrubStep(`tc.offset.${k.id}.${c}`, committing);
+              const cur = current();
+              const offsets = { ...cur.offsets, [c]: v };
+              if (!v) delete offsets[c];
+              replace({ ...cur, offsets }, "Transform Offset", `tc.offset.${k.id}.${c}`);
+              if (committing) this.store.history.endInteraction();
+            },
+          });
+          field.set(k.offsets?.[c] ?? 0);
+          rows.push(this.row(`Offset ${MIX_LABEL[c]}`, [field.el]));
+        }
+      }
+      const toggle = (f: "localSource" | "localTarget" | "additive" | "clamp", label: string, title: string) => {
+        const box = h("input", { type: "checkbox", class: "switch" }) as HTMLInputElement;
+        box.checked = !!k[f];
+        on(box, "change", () => {
+          const cur = current();
+          const next = { ...cur };
+          if (box.checked) next[f] = true; else delete next[f];
+          replace(next, label);
+        });
+        return h("label", { class: "switch-label", title }, box, label);
+      };
+      rows.push(this.row("", [
+        toggle("localSource", "Local source", "Read the source's local values instead of its world ones"),
+        toggle("localTarget", "Local bones", "Write the bones' local values instead of their world ones"),
+      ]));
+      rows.push(this.row("", [
+        toggle("additive", "Relative", "Add the source's values to the bones' own instead of replacing them"),
+        toggle("clamp", "Clamp", "Keep each value between its offset and its maximum"),
+      ]));
+      const remove = h("button", { class: "btn" }, "Remove");
+      on(remove, "click", () => doSetTransforms(this.store, list().filter((c) => c.id !== k.id), `Remove "${k.name}"`));
+      rows.push(this.row("", [remove]));
+      const identity = k.properties.every((p) => p.to.length === 1 && p.to[0]!.to === p.from && p.to[0]!.scale === 1 && !p.to[0]!.offset && !p.offset);
+      if (!identity) rows.push(this.noteRow("This constraint maps one property to another (from the file it was opened from); the map is kept and exported as it is."));
+    }
+
+    const add = h("button", { class: "btn", title: "Make the selected bones follow a bone you choose next" }, "Follow a Bone…");
+    on(add, "click", async () => {
+      const sym = this.store.currentSymbol;
+      const followers = this.store.selectedNodes.filter((n) => n.kind === "bone").map((n) => n.id);
+      const choices = Object.values(sym.nodes).filter((n) => n.kind === "bone" && !followers.includes(n.id));
+      const picked = await chooseDialog({
+        title: "Follow a Bone",
+        message: `${followers.map(nameOf).join(", ")} will follow the bone you choose.`,
+        options: choices.map((n) => n.name),
+        ok: "Follow",
+      });
+      const now = this.store.currentSymbol;
+      const source = choices.find((n) => n.name === picked);
+      if (!source || now.id !== sym.id) return;
+      const plan = transformPlan(now, followers, source.id, newTcId());
+      if ("refused" in plan) { await alertDialog({ title: "Follow a Bone", message: plan.refused }); return; }
+      doSetTransforms(this.store, [...(now.transforms ?? []), plan], `Transform Constraint "${plan.name}"`);
+    });
+    rows.push(this.row("", [add]));
+    rows.push(this.noteRow("Offsets are as Spine writes them: y up, angles counter-clockwise. In Animate mode the mixes are keyed at the playhead."));
+    return this.section("Transform", (symbol.transforms ?? []).some((k) => k.sourceId === node.id || k.boneIds.includes(node.id)), rows);
   }
 
   /** A paragraph inside a section, for the rule a row of fields cannot say. */

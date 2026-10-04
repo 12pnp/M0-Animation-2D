@@ -1,9 +1,10 @@
 import type { AssetId, NodeId } from "@/core/doc/ids";
 import { fromOffsets } from "@/core/doc/drawOrder";
 import { eventDefsFromSpine, eventValues } from "@/core/doc/events";
-import { newAnimId, newIkId } from "@/core/doc/ids";
+import { newAnimId, newIkId, newTcId } from "@/core/doc/ids";
+import type { TcChannel, TcFrom, TcTo } from "@/core/math/transformConstraint";
 import type {
-  Animation, BlendMode, DrawOrderKey, ColorTransform, DisplayRef, EventDef, EventKey, IkConstraint, IkKey, ImageItem, Keyframe, Layer, Node, Project,
+  Animation, BlendMode, DrawOrderKey, ColorTransform, DisplayRef, EventDef, EventKey, IkConstraint, IkKey, ImageItem, TcKey, TransformConstraint, Keyframe, Layer, Node, Project,
   SpineAttachmentRef, SymbolItem, Track,
 } from "@/core/doc/types";
 import { isDefaultColor } from "@/core/doc/types";
@@ -245,7 +246,9 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
   const carriedConstraints: SpineRaw[] = [];
   for (const c of constraintsIn) {
     const ik = c.type === "ik" ? ikOf(c, boneNode, warn) : null;
+    const tc = c.type === "transform" ? transformOf(c, boneNode) : null;
     if (ik) sym.ik.push(ik);
+    else if (tc) (sym.transforms ??= []).push(tc);
     else carriedConstraints.push(c);
   }
   for (const legacy of ["ik", "transform", "path", "physics", "slider"]) {
@@ -357,6 +360,18 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
         if (keys.length) anim.events = keys;
         delete carried.events;
       }
+    }
+    // Transform constraint keys likewise (`Animation.transforms`).
+    if (obj(animRaw.transform)) {
+      const rest: SpineRaw = {};
+      for (const [name, list] of Object.entries(animRaw.transform)) {
+        const k = sym.transforms?.find((c) => c.name === name);
+        const keys = k && Array.isArray(list) ? transformKeysOf(list, rate) : null;
+        if (keys && k) (anim.transforms ??= {})[k.id] = keys;
+        else rest[name] = list;
+      }
+      if (Object.keys(rest).length) carried.transform = rest;
+      else delete carried.transform;
     }
     // IK keys become the document's (`Animation.ik`) per constraint when each
     // lands on a frame and changes only what the editor keys (the mix, the
@@ -687,6 +702,90 @@ function ikKeysOf(list: unknown[], k: IkConstraint, rate: number): IkKey[] | nul
       if (m && sh && m.some((v, j) => Math.abs(v - sh[j]!) > 1e-4)) return null;
       const curve = m ?? sh;
       if (curve) key.tween = { kind: "curve", curve: curve.map((v) => v + 0) };
+    }
+    keys.push(key);
+  }
+  return keys.length && new Set(keys.map((x) => x.frame)).size === keys.length ? keys : null;
+}
+
+const TC_FIELDS = new Set([
+  "type", "name", "bones", "source", "localSource", "localTarget", "additive", "clamp", "properties",
+  "rotation", "x", "y", "scaleX", "scaleY", "shearY", "mixRotate", "mixX", "mixY", "mixScaleX", "mixScaleY", "mixShearY",
+]);
+const TC_NAMES: readonly TcChannel[] = ["rotate", "x", "y", "scaleX", "scaleY", "shearY"];
+const isTcName = (v: string): v is TcChannel => (TC_NAMES as readonly string[]).includes(v);
+
+/**
+ * A Spine 4.3 transform constraint as the document's, or null when a bone
+ * it names is not a bone of the file (then it is carried). Mixes as
+ * `SkeletonJson` reads them: `mixY` defaults to `mixX`, `mixScaleY` to
+ * `mixScaleX`, the rest to 1.
+ */
+function transformOf(c: SpineRaw, bones: Map<string, Node>): TransformConstraint | null {
+  const names = Array.isArray(c.bones) ? c.bones.map(String) : [];
+  const source = str(c.source) ? bones.get(c.source) : undefined;
+  const targets = names.map((n) => bones.get(n));
+  if (!source || !targets.length || targets.some((b) => !b)) return null;
+  const properties: TcFrom[] = [];
+  for (const [from, rawFrom] of Object.entries(obj(c.properties) ? c.properties : {})) {
+    if (!isTcName(from) || !obj(rawFrom)) return null;
+    const to: TcTo[] = [];
+    for (const [t, rawTo] of Object.entries(obj(rawFrom.to) ? rawFrom.to : {})) {
+      if (!isTcName(t)) return null;
+      const r = obj(rawTo) ? rawTo : {};
+      to.push({ to: t, offset: num(r.offset, 0), max: num(r.max, 1), scale: num(r.scale, 1) });
+    }
+    if (to.length) properties.push({ from, offset: num(rawFrom.offset, 0), to });
+  }
+  const mixX = num(c.mixX, 1), mixScaleX = num(c.mixScaleX, 1);
+  const tc: TransformConstraint = {
+    id: newTcId(), name: String(c.name), boneIds: targets.map((b) => b!.id), sourceId: source.id,
+    mix: { rotate: num(c.mixRotate, 1), x: mixX, y: num(c.mixY, mixX), scaleX: mixScaleX, scaleY: num(c.mixScaleY, mixScaleX), shearY: num(c.mixShearY, 1) },
+    properties,
+  };
+  const offsets: Partial<Record<TcChannel, number>> = {};
+  const offsetField: Record<TcChannel, string> = { rotate: "rotation", x: "x", y: "y", scaleX: "scaleX", scaleY: "scaleY", shearY: "shearY" };
+  for (const ch of TC_NAMES) if (num(c[offsetField[ch]], 0)) offsets[ch] = num(c[offsetField[ch]], 0);
+  if (Object.keys(offsets).length) tc.offsets = offsets;
+  for (const f of ["localSource", "localTarget", "additive", "clamp"] as const) if (c[f] === true) tc[f] = true;
+  const rest = pick(c, (k) => !TC_FIELDS.has(k));
+  if (rest) tc.spine = rest;
+  return tc;
+}
+
+/** A Spine `transform` timeline as the document's keys, or null when a key
+ *  falls between frames or a curve's six halves are not one cubic. */
+function transformKeysOf(list: unknown[], rate: number): TcKey[] | null {
+  const keys: TcKey[] = [];
+  const mixesOf = (r: SpineRaw) => {
+    const x = num(r.mixX, 1), sx = num(r.mixScaleX, 1);
+    return { rotate: num(r.mixRotate, 1), x, y: num(r.mixY, x), scaleX: sx, scaleY: num(r.mixScaleY, 1), shearY: num(r.mixShearY, 1) };
+  };
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i];
+    if (!obj(r)) return null;
+    const at = num(r.time, 0) * rate;
+    if (Math.abs(at - Math.round(at)) > 1e-6) return null;
+    const key: TcKey = { frame: Math.round(at), mix: mixesOf(r) };
+    const next = list[i + 1];
+    if (r.curve === "stepped") key.tween = { kind: "none" };
+    else if (Array.isArray(r.curve) && obj(next)) {
+      const c = r.curve.map((v) => num(v, 0));
+      const t0 = num(r.time, 0), span = num(next.time, 0) - t0;
+      if (span <= 0 || c.length < 24) return null;
+      const to = mixesOf(next);
+      let shape: number[] | null = null;
+      for (const [n, ch] of TC_NAMES.entries()) {
+        const v0 = key.mix[ch], dv = to[ch] - v0, at4 = n * 4;
+        if (Math.abs(dv) <= 1e-9) {
+          if (Math.abs(c[at4 + 1]! - v0) > 1e-6 || Math.abs(c[at4 + 3]! - v0) > 1e-6) return null;
+          continue;
+        }
+        const h = [(c[at4]! - t0) / span, (c[at4 + 1]! - v0) / dv, (c[at4 + 2]! - t0) / span, (c[at4 + 3]! - v0) / dv].map((v) => v + 0);
+        if (shape && shape.some((v, j) => Math.abs(v - h[j]!) > 1e-4)) return null;
+        shape ??= h;
+      }
+      if (shape) key.tween = { kind: "curve", curve: shape };
     }
     keys.push(key);
   }

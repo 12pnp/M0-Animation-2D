@@ -110,7 +110,32 @@ export interface SpineSlot {
 }
 
 /** The IK the editor writes, or any constraint carried from an opened file. */
-export type SpineConstraint = SpineIkConstraint | (SpineRaw & { type: string; name: string });
+export type SpineConstraint = SpineIkConstraint | SpineTransformConstraint | (SpineRaw & { type: string; name: string });
+
+/** Spine 4.3's transform constraint: `bones` follow `source` through
+ *  `properties` (source property → target properties). */
+export interface SpineTransformConstraint {
+  type: "transform";
+  name: string;
+  bones: string[];
+  source: string;
+  localSource?: boolean;
+  localTarget?: boolean;
+  additive?: boolean;
+  clamp?: boolean;
+  properties?: Record<string, { offset?: number; to?: Record<string, { offset?: number; max?: number; scale?: number }> }>;
+  rotation?: number; x?: number; y?: number; scaleX?: number; scaleY?: number; shearY?: number;
+  mixRotate?: number; mixX?: number; mixY?: number; mixScaleX?: number; mixScaleY?: number; mixShearY?: number;
+  skin?: boolean;
+  [field: string]: unknown;
+}
+
+/** A transform constraint key: the six mixes, absolute. */
+export interface SpineTransformKey {
+  time?: number;
+  mixRotate?: number; mixX?: number; mixY?: number; mixScaleX?: number; mixScaleY?: number; mixShearY?: number;
+  curve?: SpineCurve;
+}
 
 export interface SpineIkConstraint {
   type: "ik";

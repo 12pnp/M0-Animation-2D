@@ -50,11 +50,12 @@ Legend:
 - ✅ IK: one- and two-bone, bend, mix, softness; target dragging; the path of a chain bone
   drags through its target
 - ☐ IK stretch, compress and uniform: carried in `IkConstraint.spine`, not solved or edited
-- ◐ Transform constraint: carried, posed by spine-core on opened rigs only
+- ✅ Transform constraint: created, edited, keyed, solved on the stage (ARCHITECTURE ▸ Transform
+  constraints); a remapped property table is kept but not edited
 - ◐ Path constraint: carried
 - ◐ Physics constraint (4.2+): carried
 - ◐ Slider constraint (4.3): carried
-- ☐ Creating or editing any constraint but IK
+- ☐ Creating or editing path, physics and slider constraints
 - ☐ Constraint order (Spine's order list); opened rigs keep the file's order
   (`constraintOrder`)
 
@@ -69,7 +70,8 @@ Legend:
 - ✅ Auto key (`ui.autoKey`)
 - ◐ Deform (mesh) keys: carried
 - ✅ Event keys and the event list (an Events row and panel; ARCHITECTURE ▸ Events)
-- ◐ Transform, path, physics and slider constraint keys: carried
+- ✅ Transform constraint keys (a row per constraint)
+- ◐ Path, physics and slider constraint keys: carried
 - ◐ Inherit keys: carried
 - ✅ Graph editor: values over time as curves, with handles (ARCHITECTURE ▸ Graph editor)
 - ✅ Audio: an event's sound kept in the project, exported to `audio/`, played in the
@@ -143,7 +145,7 @@ shape those values, and it reuses the easing code.
    `graphPoints`, `easeFromHandles`.
 3. Tested against `applyTween` and spine-core's curve sampling; real mouse checks in the app.
 
-### Phase C: transform constraint
+### Phase C: transform constraint (done, docs/TRANSFORM-CONSTRAINT-PLAN.md)
 
 Why: the most used constraint after IK (a bone copying another's rotation, scale or
 position, or following it with an offset). It is a pure solve, like IK.

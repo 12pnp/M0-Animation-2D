@@ -1,9 +1,11 @@
-import type { Animation, ColorTransform, DisplayRef, IkKey, ImageItem, Layer, Node, Project, SymbolItem, Track } from "@/core/doc/types";
+import type { Animation, ColorTransform, DisplayRef, IkKey, TransformConstraint, ImageItem, Layer, Node, Project, SymbolItem, Track } from "@/core/doc/types";
 import { DEFAULT_COLOR, isImage, isSymbol, producesSlot } from "@/core/doc/types";
-import type { IkId, ItemId, NodeId } from "@/core/doc/ids";
+import type { IkId, ItemId, NodeId, TcId } from "@/core/doc/ids";
 import { descendantsOf, maskGroups } from "@/core/doc/layerTree";
 import { orderAt, toOffsets } from "@/core/doc/drawOrder";
 import { eventValues } from "@/core/doc/events";
+import { usedMixes } from "@/core/doc/transformKeys";
+import { TC_CHANNELS, type TcChannel } from "@/core/math/transformConstraint";
 import type { Contour } from "@/core/atlas/contour";
 import { nz } from "@/core/math/angle";
 import { displaysOf } from "@/core/doc/displays";
@@ -30,6 +32,8 @@ import {
   type SpineEventData,
   type SpineEventKey,
   type SpineIkConstraint,
+  type SpineTransformConstraint,
+  type SpineTransformKey,
   type SpineIkKey,
   type SpineRaw,
   type SpineSkin,
@@ -180,9 +184,11 @@ export function exportSpine(
   const slotPaths = new Map<string, string>();
   const displayKeys = new Map<string, Map<number, string>>();
   const attachments: Record<string, Record<string, SpineAttachment>> = {};
-  const constraints: SpineIkConstraint[] = [];
+  const constraints: Array<SpineIkConstraint | SpineTransformConstraint> = [];
   /** The exported symbol's constraints as written, for its IK keys. */
   const rootIk = new Map<IkId, SpineIkConstraint>();
+  const rootTc = new Map<TcId, SpineTransformConstraint>();
+  const tcKeysWarned = new Set<ItemId>();
   const ikKeysWarned = new Set<ItemId>();
   const eventKeysWarned = new Set<ItemId>();
   const setups = new Map<string, SpineLocal>();
@@ -269,6 +275,21 @@ export function exportSpine(
     if (scope.depth > 0 && !ikKeysWarned.has(s.id) && s.animations.some((a) => a.ik && Object.keys(a.ik).length)) {
       ikKeysWarned.add(s.id);
       diagnostics.push({ severity: "warning", message: `"${s.name}" keys its IK, but only the exported symbol's IK keys are written; a nested symbol's play its constraints' own mix and bend.` });
+    }
+    for (const k of s.transforms ?? []) {
+      const source = dropped(k.sourceId) ? undefined : s.nodes[k.sourceId];
+      const bones = k.boneIds.filter((id) => !dropped(id) && s.nodes[id]).map((id) => nameOf(id));
+      if (!source || !bones.length) {
+        diagnostics.push({ severity: "warning", message: `Transform constraint "${k.name}" references a missing bone; skipped.` });
+        continue;
+      }
+      const tc = transformConstraintOf(k, scope.prefix + k.name, bones, nameOf(source.id));
+      constraints.push(tc);
+      if (scope.depth === 0) rootTc.set(k.id, tc);
+    }
+    if (scope.depth > 0 && !tcKeysWarned.has(s.id) && s.animations.some((a) => a.transforms && Object.keys(a.transforms).length)) {
+      tcKeysWarned.add(s.id);
+      diagnostics.push({ severity: "warning", message: `"${s.name}" keys its transform constraints, but only the exported symbol's keys are written.` });
     }
     if (scope.depth > 0 && !eventKeysWarned.has(s.id) && s.animations.some((a) => a.events?.length)) {
       eventKeysWarned.add(s.id);
@@ -562,6 +583,11 @@ export function exportSpine(
       out.ik = ikKeys;
       for (const keys of Object.values(anim.ik ?? {})) lastFrame = Math.max(lastFrame, keys[keys.length - 1]?.frame ?? 0);
     }
+    const tcKeys = transformTimelines(sym, anim, rootTc, fps);
+    if (tcKeys) {
+      out.transform = tcKeys;
+      for (const keys of Object.values(anim.transforms ?? {})) lastFrame = Math.max(lastFrame, keys[keys.length - 1]?.frame ?? 0);
+    }
     const events = eventTimeline(sym, anim, fps);
     if (events) {
       out.events = events;
@@ -572,11 +598,11 @@ export function exportSpine(
     let carried = order ? omitKey(anim.spine ?? {}, "drawOrder") : anim.spine ?? {};
     if (events) carried = omitKey(carried, "events");
     for (const [group, value] of Object.entries(carried)) {
-      if ((group === "bones" || group === "slots" || group === "ik") && value && typeof value === "object") {
+      if ((group === "bones" || group === "slots" || group === "ik" || group === "transform") && value && typeof value === "object") {
         const into = (out[group] ??= {}) as Record<string, Record<string, unknown>>;
         for (const [owner, timelines] of Object.entries(value as Record<string, Record<string, unknown>>)) {
           // A constraint keyed in the document replaces the file's timeline.
-          if (group === "ik") { if (!into[owner]) into[owner] = timelines; continue; }
+          if (group === "ik" || group === "transform") { if (!into[owner]) into[owner] = timelines; continue; }
           into[owner] = { ...into[owner], ...timelines };
         }
       } else out[group] = value;
@@ -969,6 +995,79 @@ function ikTimelines(
         const [x1, y1, x2, y2] = key.tween.curve as [number, number, number, number];
         const t0 = key.frame / fps, span = (next.frame - key.frame) / fps, dv = next.mix - key.mix, ds = softOf(next) - soft;
         o.curve = [t0 + x1 * span, key.mix + y1 * dv, t0 + x2 * span, key.mix + y2 * dv, t0 + x1 * span, soft + y1 * ds, t0 + x2 * span, soft + y2 * ds];
+      }
+      return o;
+    });
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/* ── transform constraints ───────────────────────────────────────────────── */
+
+const TC_MIX: Record<TcChannel, "mixRotate" | "mixX" | "mixY" | "mixScaleX" | "mixScaleY" | "mixShearY"> = {
+  rotate: "mixRotate", x: "mixX", y: "mixY", scaleX: "mixScaleX", scaleY: "mixScaleY", shearY: "mixShearY",
+};
+const TC_OFFSET: Record<TcChannel, "rotation" | "x" | "y" | "scaleX" | "scaleY" | "shearY"> = {
+  rotate: "rotation", x: "x", y: "y", scaleX: "scaleX", scaleY: "scaleY", shearY: "shearY",
+};
+
+/**
+ * A transform constraint as Spine 4.3 writes it. Every mix a property maps
+ * to is written, the defaults included: the runtime reads a missing `mixY`
+ * as `mixX` and a missing `mixScaleY` as `mixScaleX`, not as 1.
+ */
+function transformConstraintOf(k: TransformConstraint, name: string, bones: string[], source: string): SpineTransformConstraint {
+  const out: SpineTransformConstraint = { type: "transform", name, bones, source };
+  if (k.localSource) out.localSource = true;
+  if (k.localTarget) out.localTarget = true;
+  if (k.additive) out.additive = true;
+  if (k.clamp) out.clamp = true;
+  const properties: NonNullable<SpineTransformConstraint["properties"]> = {};
+  for (const p of k.properties) {
+    const to: Record<string, { offset?: number; max?: number; scale?: number }> = {};
+    for (const t of p.to) {
+      const e: { offset?: number; max?: number; scale?: number } = {};
+      if (t.offset) e.offset = t.offset;
+      if (t.max !== 1) e.max = t.max;
+      if (t.scale !== 1) e.scale = t.scale;
+      to[t.to] = e;
+    }
+    properties[p.from] = p.offset ? { offset: p.offset, to } : { to };
+  }
+  out.properties = properties;
+  for (const c of TC_CHANNELS) {
+    const o = k.offsets?.[c];
+    if (o) out[TC_OFFSET[c]] = o;
+  }
+  for (const c of usedMixes(k)) out[TC_MIX[c]] = k.mix[c];
+  if (k.spine) Object.assign(out, k.spine);
+  return out;
+}
+
+/** The animation's transform constraint keys as Spine's `transform`
+ *  timelines: all six mixes on every key; a tween is one cubic over each. */
+function transformTimelines(
+  sym: SymbolItem, anim: Animation, written: ReadonlyMap<TcId, SpineTransformConstraint>, fps: number,
+): Record<string, SpineTransformKey[]> | null {
+  const out: Record<string, SpineTransformKey[]> = {};
+  for (const k of sym.transforms ?? []) {
+    const keys = anim.transforms?.[k.id];
+    const c = written.get(k.id);
+    if (!keys?.length || !c) continue;
+    out[c.name] = keys.map((key, i) => {
+      const o: SpineTransformKey = {};
+      const time = keyTime(key.frame, fps);
+      if (time) o.time = time;
+      for (const ch of TC_CHANNELS) o[TC_MIX[ch]] = key.mix[ch];
+      const next = keys[i + 1];
+      if (next && key.tween?.kind === "none") o.curve = "stepped";
+      else if (next && key.tween?.kind === "curve") {
+        const [x1, y1, x2, y2] = key.tween.curve as [number, number, number, number];
+        const t0 = key.frame / fps, span = (next.frame - key.frame) / fps;
+        o.curve = TC_CHANNELS.flatMap((ch) => {
+          const v = key.mix[ch], dv = next.mix[ch] - v;
+          return [t0 + x1 * span, v + y1 * dv, t0 + x2 * span, v + y2 * dv];
+        });
       }
       return o;
     });

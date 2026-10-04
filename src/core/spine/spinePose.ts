@@ -1,9 +1,10 @@
 import {
-  AtlasAttachmentLoader, type Bone, ClippingAttachment, IkConstraint, MeshAttachment, MixFrom, Physics, RegionAttachment, Skeleton,
+  AtlasAttachmentLoader, type Bone, ClippingAttachment, IkConstraint, MeshAttachment, TransformConstraint, MixFrom, Physics, RegionAttachment, Skeleton,
   SkeletonJson, Skin, type Slot, TextureAtlas, TextureAtlasRegion, type Animation as SpineRuntimeAnimation,
 } from "@esotericsoftware/spine-core";
 import { orderAt } from "@/core/doc/drawOrder";
 import { ikPoseAt } from "@/core/doc/ikKeys";
+import { tcMixAt } from "@/core/doc/transformKeys";
 import type { ItemId, NodeId } from "@/core/doc/ids";
 import type { Animation, ColorTransform, Project, SymbolItem } from "@/core/doc/types";
 import { isImage } from "@/core/doc/types";
@@ -79,9 +80,10 @@ function structureKey(project: Project, sym: SymbolItem): string {
     idOf(n.spine?.bone), idOf(n.spine?.slot),
   ]);
   const layers = sym.layers.map((l) => [l.nodeId, l.excludeFromExport, l.isMask, l.maskedBy]);
-  const ik = sym.ik.map((k) => [k.name, k.boneId, k.targetId, k.chain, k.bendPositive, k.weight, idOf(k.spine)]);
+  const ik = sym.ik.map((k) => [k.name, k.boneId, k.targetId, k.chain, k.bendPositive, k.weight, k.softness, idOf(k.spine)]);
+  const tcs = (sym.transforms ?? []).map((k) => JSON.stringify(k));
   const anims = sym.animations.map((a) => [a.name, idOf(a.spine)]);
-  return JSON.stringify([idOf(sym.spine), project.frameRate, nodes, layers, ik, anims]);
+  return JSON.stringify([idOf(sym.spine), project.frameRate, nodes, layers, ik, tcs, anims]);
 }
 
 function rigFor(project: Project, sym: SymbolItem, skins: readonly string[]): { rig: Rig | null; error?: string } {
@@ -272,6 +274,17 @@ function applyRig(
       c.pose.mix = mix;
       c.pose.bendDirection = bendPositive ? -1 : 1;
       c.pose.softness = softness;
+    }
+  }
+  // The document's transform constraint keys, likewise.
+  if (mode === "animate" && animation?.transforms) {
+    for (const k of sym.transforms ?? []) {
+      if (!animation.transforms[k.id]?.length) continue;
+      const c = sk.constraints.find((x) => x instanceof TransformConstraint && x.data.name === k.name) as TransformConstraint | undefined;
+      if (!c) continue;
+      const m = tcMixAt(k, animation, frame);
+      c.pose.mixRotate = m.rotate; c.pose.mixX = m.x; c.pose.mixY = m.y;
+      c.pose.mixScaleX = m.scaleX; c.pose.mixScaleY = m.scaleY; c.pose.mixShearY = m.shearY;
     }
   }
   // The document's draw order keys (`Animation.drawOrder`): the rig is built

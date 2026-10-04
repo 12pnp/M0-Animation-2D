@@ -11,7 +11,8 @@ import type { Panel } from "@/view/widgets/Dock";
 import { type MenuEntry, showMenu } from "@/view/widgets/Dock";
 import { attachOptionsMenu } from "./onionButton";
 import type { Store } from "@/app/Store";
-import type { IkId, NodeId } from "@/core/doc/ids";
+import type { IkId, NodeId, TcId } from "@/core/doc/ids";
+import { deleteTcKeys, tcMixAt, tcTweenOf, withTcKey, withTcTween } from "@/core/doc/transformKeys";
 import { deleteEventKeys, uniqueEventName, withEventKey } from "@/core/doc/events";
 import { deleteIkKeys, ikPoseAt, type IkTween, ikTweenOf, withIkKey, withIkTween } from "@/core/doc/ikKeys";
 import type { Keyframe, Layer, RotateDir } from "@/core/doc/types";
@@ -31,6 +32,7 @@ import {
     doSetDrawOrder,
     doSetIkKeys,
     doSetEventKeys,
+    doSetTcKeys,
     doSetEvents,
     doReorder,
     ensureTrack,
@@ -116,6 +118,7 @@ export class TimelinePanel implements Panel {
       onEditDrawOrder: (keys, label, kind) => doSetDrawOrder(store, keys, label, kind),
       onDrawOrderMenu: (frame, x, y) => this.drawOrderMenu(frame, x, y),
       onEditIk: (ik, keys, label, kind) => doSetIkKeys(store, ik, keys, label, kind),
+      onEditTc: (tc, keys, label, kind) => doSetTcKeys(store, tc, keys, label, kind),
       onEditEvents: (keys, label, kind) => doSetEventKeys(store, keys, label, kind),
       onEventsMenu: (frame, x, y) => this.eventsMenu(frame, x, y),
       onDragSpanEnd: (nodeId, endFrame) => doSetEndFrame(store, nodeId, endFrame),
@@ -847,6 +850,44 @@ export class TimelinePanel implements Panel {
     ]);
   }
 
+  /** The picked transform keys gone; false with none picked. */
+  deleteTcKeys(): boolean {
+    const sel = this.grid.tcSel;
+    const keys = sel && this.store.currentAnimation?.transforms?.[sel.tc];
+    if (!sel?.frames.length || !keys) return false;
+    doSetTcKeys(this.store, sel.tc, deleteTcKeys(keys, sel.frames), sel.frames.length > 1 ? "Delete Transform Keys" : "Delete Transform Key");
+    this.grid.tcSel = null;
+    return true;
+  }
+
+  /** A transform constraint row's menu: key the mixes in force here, the
+   *  picked keys' ease, or delete them. */
+  private tcMenu(tc: TcId, frame: number, x: number, y: number): void {
+    const anim = this.store.currentAnimation;
+    const k = this.store.currentSymbol.transforms?.find((c) => c.id === tc);
+    if (!anim || !k) return;
+    const keys = anim.transforms?.[tc] ?? [];
+    const at = keys.find((key) => key.frame === frame);
+    if (at && !(this.grid.tcSel?.tc === tc && this.grid.tcSel.frames.includes(frame))) this.grid.tcSel = { tc, frames: [frame] };
+    if (!at && this.grid.tcSel?.tc !== tc) this.grid.tcSel = null;
+    this.store.setFrame(frame);
+    const sel = this.grid.tcSel?.frames ?? [];
+    const picked = keys.filter((key) => sel.includes(key.frame));
+    const tween = (t: IkTween): MenuEntry => ({
+      label: t === "linear" ? "Linear" : t === "stepped" ? "Stepped" : "Smooth",
+      enabled: picked.length > 0,
+      checked: picked.length > 0 && picked.every((key) => tcTweenOf(key) === t),
+      run: () => doSetTcKeys(this.store, tc, withTcTween(keys, sel, t), "Transform Key Ease"),
+    });
+    showMenu(this.menuAnchor(x, y), [
+      { label: "Key Transform Here", enabled: !at, run: () => doSetTcKeys(this.store, tc, withTcKey(keys, frame, tcMixAt(k, anim, frame)), "Key Transform") },
+      "-",
+      tween("linear"), tween("stepped"), tween("smooth"),
+      "-",
+      { label: sel.length > 1 ? `Delete ${sel.length} Transform Keys` : "Delete Transform Key", enabled: sel.length > 0, run: () => { this.deleteTcKeys(); } },
+    ]);
+  }
+
   /** The picked IK keys gone; false with none picked. */
   deleteIkKeys(): boolean {
     const sel = this.grid.ikSel;
@@ -966,6 +1007,8 @@ export class TimelinePanel implements Panel {
     if (prop) { this.propMenu(nodeId, prop, frame, x, y); return; }
     const ik = this.grid.visibleRows()[row]?.ik;
     if (ik) { this.ikMenu(ik, frame, x, y); return; }
+    const tc = this.grid.visibleRows()[row]?.tc;
+    if (tc) { this.tcMenu(tc, frame, x, y); return; }
     // Right-clicking outside the selection moves it, as in Flash; inside it,
     // the selection is what the menu acts on.
     if (!this.store.selection.frames.includes(`${nodeId}:${frame}`)) {

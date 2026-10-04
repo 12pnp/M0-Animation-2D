@@ -142,7 +142,7 @@ export class LayerList {
     const rows = timelineRows(this.store);
     const lines = treeLines(rows.map((r) => r.depth));
     rows.forEach((row, i) => this.list.appendChild(
-      row.prop ? this.propRow(row) : row.ik ? this.ikRow(row) : this.row(row, i, roles, lines[i]!)));
+      row.prop ? this.propRow(row) : row.ik ? this.ikRow(row) : row.tc ? this.tcRow(row) : this.row(row, i, roles, lines[i]!)));
 
     // Selecting from somewhere else — the stage, or a name in the Properties
     // panel's IK section — has to be visible. Only on an actual CHANGE, and
@@ -180,6 +180,23 @@ export class LayerList {
       style: { height: `${this.cb.rowHeight}px` },
       title: `IK "${name}": its mix and bend keys, as Spine's. Drag up or down on a key, or on an empty frame, to key the mix; drag sideways to move a key; Bend in Properties ▸ IK keys the bend. Delete removes, right-click sets the ease.`,
     }, h("span", { class: "prop-glyph" }, "⟡"), h("div", { class: "name" }, `IK ${name}`));
+    on(el, "pointerdown", (ev) => {
+      if ((ev as unknown as PointerEvent).button !== 0) return;
+      this.store.clearFrameSelection();
+      this.store.selectNodes([row.layer.nodeId]);
+    });
+    return el;
+  }
+
+  /** A transform constraint's row: its mix keys, under the source. */
+  private tcRow(row: LayerRow): HTMLElement {
+    const k = this.store.currentSymbol.transforms?.find((c) => c.id === row.tc);
+    const name = k?.name ?? "Transform";
+    const el = h("div", {
+      class: "tl-layer tl-prop prop-tc",
+      style: { height: `${this.cb.rowHeight}px` },
+      title: `Transform constraint "${name}": its mix keys, as Spine's. Change a mix in Properties ▸ Transform in Animate mode to key it; drag a key to move it, Delete to remove, right-click for the ease.`,
+    }, h("span", { class: "prop-glyph" }, "⇄"), h("div", { class: "name" }, name));
     on(el, "pointerdown", (ev) => {
       if ((ev as unknown as PointerEvent).button !== 0) return;
       this.store.clearFrameSelection();

@@ -2,10 +2,11 @@ import type { Transform } from "@/core/math/Transform";
 import type { ExportSettings } from "@/core/export/settings";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
 import type { SpineInherit } from "@/core/spine/types";
-import type { AnimId, AssetId, FolderId, IkId, ItemId, LayerId, NodeId } from "./ids";
+import type { AnimId, AssetId, FolderId, IkId, ItemId, LayerId, NodeId, TcId } from "./ids";
+import type { TcChannel, TcFrom } from "@/core/math/transformConstraint";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 19;
+export const DOC_VERSION = 20;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -66,6 +67,9 @@ export interface SymbolItem {
    *  REVERSED order, because DragonBones draws later array entries in front. */
   layers: Layer[];
   ik: IkConstraint[];
+  /** Transform constraints, applied after the IK, in this order
+   *  (`core/math/transformConstraint.ts`, ARCHITECTURE ▸ Transform constraints). */
+  transforms?: TransformConstraint[];
   animations: Animation[];
   /** The library folder holding it; absent: the top level. */
   folderId?: FolderId;
@@ -282,6 +286,42 @@ export interface IkConstraint {
   spine?: Record<string, unknown>;
 }
 
+/* ── Transform constraints ────────────────────────────────────────────────
+   Spine 4.3's: `boneIds` follow `sourceId` through `properties`, a map from
+   a source property to target properties. Every value as Spine writes it,
+   y up (rotation counter-clockwise).                                      */
+
+export interface TransformConstraint {
+  id: TcId;
+  name: string;
+  boneIds: NodeId[];
+  sourceId: NodeId;
+  /** Read the source's local values rather than its world ones. */
+  localSource?: boolean;
+  /** Write the bones' local values rather than their world ones. */
+  localTarget?: boolean;
+  /** Add to the bones' values rather than replace them ("Relative"). */
+  additive?: boolean;
+  /** Keep each result between its property's offset and max. */
+  clamp?: boolean;
+  /** Added to what the source reads, per property; absent: 0. */
+  offsets?: Partial<Record<TcChannel, number>>;
+  /** How far each target property goes, 0..1 (the runtime allows more). */
+  mix: Record<TcChannel, number>;
+  properties: TcFrom[];
+  /** Fields of an opened constraint the editor does not model (skin),
+   *  merged into the export. */
+  spine?: Record<string, unknown>;
+}
+
+/** One transform constraint key: its mixes from `frame` on, tweened to the
+ *  next key by `tween` (linear when absent, `none` stepped, one cubic). */
+export interface TcKey {
+  frame: number;
+  mix: Record<TcChannel, number>;
+  tween?: TweenSpec;
+}
+
 /* ── Animation ────────────────────────────────────────────────────────────
    Keyframes hold ABSOLUTE local transforms, Flash-style, so the editor never
    has to think in offsets. The exporter subtracts the bind pose. Angles are
@@ -370,6 +410,9 @@ export interface Animation {
   /** Event keys (`core/doc/events.ts`), sorted by frame; several may share
    *  one, fired in this order. */
   events?: EventKey[];
+  /** Transform constraint keys per constraint (`core/doc/transformKeys.ts`),
+   *  each list sorted by frame. Absent for a constraint: its own mixes. */
+  transforms?: Record<TcId, TcKey[]>;
 }
 
 /** One IK key. `tween` eases the mix (and softness) to the next key: linear when absent,

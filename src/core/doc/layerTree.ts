@@ -1,5 +1,5 @@
 import type { Animation, Layer, Node, SymbolItem } from "./types";
-import type { IkId, LayerId, NodeId } from "./ids";
+import type { IkId, LayerId, NodeId, TcId } from "./ids";
 import { ikChain } from "./ikGraph";
 import { TIMELINE_PROPS, type TimelineProp } from "./propertyKeys";
 
@@ -16,6 +16,9 @@ export interface LayerRow {
   /** An IK constraint's row (`focusRows`): its mix and bend keys, under the
    *  constraint's target. */
   ik?: IkId;
+  /** A transform constraint's row (`focusRows`): its mix keys, under the
+   *  constraint's source. */
+  tc?: TcId;
 }
 
 /**
@@ -319,10 +322,12 @@ export function focusRows(sym: SymbolItem, focus: readonly NodeId[], on: boolean
   const rows = layerRows(sym);
   if (!on || !focus.some((id) => sym.nodes[id]?.kind === "bone")) {
     const keyed = sym.ik.filter((k) => anim?.ik?.[k.id]?.length);
-    if (!keyed.length) return rows;
+    const keyedTc = (sym.transforms ?? []).filter((k) => anim?.transforms?.[k.id]?.length);
+    if (!keyed.length && !keyedTc.length) return rows;
     return rows.flatMap((r) => [
       r,
       ...keyed.filter((k) => k.targetId === r.node.id).map((k) => ({ ...r, depth: r.depth + 1, hasChildren: false, ik: k.id })),
+      ...keyedTc.filter((k) => k.sourceId === r.node.id).map((k) => ({ ...r, depth: r.depth + 1, hasChildren: false, tc: k.id })),
     ]);
   }
   const keep = new Set<string>(focus);
@@ -333,11 +338,19 @@ export function focusRows(sym: SymbolItem, focus: readonly NodeId[], on: boolean
     const host = keep.has(k.targetId) ? k.targetId : ikChain(sym, k).find((id) => keep.has(id));
     if (host) ikHost.set(k.id, host);
   }
+  const tcHost = new Map<TcId, NodeId>();
+  for (const k of sym.transforms ?? []) {
+    const host = keep.has(k.sourceId) ? k.sourceId : k.boneIds.find((id) => keep.has(id));
+    if (host) tcHost.set(k.id, host);
+  }
   return layerRows(sym, true)
     .filter((r) => keep.has(r.node.id))
     .flatMap((r) => {
       const row = { ...r, depth: 0, hasChildren: false, hiddenByCollapse: false };
-      const iks = sym.ik.filter((k) => ikHost.get(k.id) === r.node.id).map((k) => ({ ...row, depth: 1, ik: k.id }));
+      const iks = [
+        ...sym.ik.filter((k) => ikHost.get(k.id) === r.node.id).map((k) => ({ ...row, depth: 1, ik: k.id })),
+        ...(sym.transforms ?? []).filter((k) => tcHost.get(k.id) === r.node.id).map((k) => ({ ...row, depth: 1, tc: k.id })),
+      ];
       return r.node.kind === "bone"
         ? [row, ...TIMELINE_PROPS.map((prop) => ({ ...row, depth: 1, prop })), ...iks]
         : [row, ...iks];

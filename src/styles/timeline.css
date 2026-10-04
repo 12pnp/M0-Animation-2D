@@ -71,6 +71,7 @@
 .tl-prop.prop-scale .prop-glyph { color: #ff6b6b; }
 .tl-prop.prop-shear .prop-glyph { color: #f0c94a; }
 .tl-prop.prop-ik .prop-glyph { color: var(--ik-target); }
+.tl-prop.prop-tc .prop-glyph { color: #c792ea; }
 /* The Draw order row, under the head, above the scrolling layers. */
 .tl-layer.tl-order-row { flex: none; color: var(--fg); background: var(--bg-panel-alt); border-bottom: 1px solid var(--line); }
 .tl-layer.tl-order-row[hidden] { display: none; }

@@ -4,7 +4,8 @@ import {
   AtlasAttachmentLoader, ClippingAttachment, type Event as SpineEvent, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
 } from "@esotericsoftware/spine-core";
 import { eventValues } from "@/core/doc/events";
-import { newIkId, reseed, type AssetId, type ItemId } from "@/core/doc/ids";
+import { newIkId, newTcId, reseed, type AssetId, type ItemId } from "@/core/doc/ids";
+import { identityProperties } from "@/core/doc/transformKeys";
 import { maskGroups } from "@/core/doc/layerTree";
 import { createAnimation, createImageItem, createLayer, createNode, createProject, createSymbol } from "@/core/doc/defaults";
 import { isImage, isSymbol, type Keyframe, type Node, type Project, type SymbolItem } from "@/core/doc/types";
@@ -430,6 +431,80 @@ function randomIkRig(seed: number): Project {
   return project;
 }
 
+/** A source bone keyed in every channel, two constrained bones each with a
+ *  child (the subtree follows), the flags, offsets, mixes and a property map
+ *  drawn at random; some seeds add an IK chain under a constrained bone. */
+function randomTransformRig(seed: number): Project {
+  let st = seed;
+  const r = () => ((st = (st * 16807) % 2147483647) / 2147483647);
+  const pick = <T,>(xs: T[]) => xs[Math.floor(r() * xs.length)]!;
+  const scale = () => pick([1, 1, 1.3, 0.8, -1]);
+  const angle = () => (r() - 0.5) * 300;
+  const project = createProject("TC");
+  const sym = project.items[project.rootSymbolId] as SymbolItem;
+  const add = (node: Node): Node => {
+    sym.nodes[node.id] = node;
+    sym.layers.unshift(createLayer(node.id, node.name, sym.layers.length));
+    return node;
+  };
+  const holder = add(createNode("bone", "holder"));
+  holder.bind = tf(250, 250, angle(), angle() * 0.5 + 10, scale(), 1);
+  const source = add(createNode("bone", "source", { parentId: holder.id }));
+  source.bind = tf(40, 10, 20, 20);
+  source.boneLength = 60;
+  const bones = [0, 1].map((i) => {
+    const b = add(createNode("bone", `bone${i}`));
+    b.bind = tf(100 + 200 * i, 400, angle(), angle(), scale(), scale());
+    b.boneLength = 50;
+    const c = add(createNode("bone", `child${i}`, { parentId: b.id }));
+    c.bind = tf(50, 0, 30, 30);
+    c.boneLength = 40;
+    return b;
+  });
+  const channels = ["rotate", "x", "y", "scaleX", "scaleY", "shearY"] as const;
+  const remap = r() < 0.3;
+  const properties = remap
+    ? [{ from: "rotate" as const, offset: 10, to: [{ to: "x" as const, offset: 5, max: 80, scale: 0.5 }, { to: "rotate" as const, offset: 0, max: 1, scale: 1 }] },
+       { from: "y" as const, offset: 0, to: [{ to: "scaleX" as const, offset: 1, max: 2, scale: 0.01 }] }]
+    : identityProperties();
+  sym.transforms = [{
+    id: newTcId(), name: "follow", boneIds: bones.map((b) => b.id), sourceId: source.id,
+    localSource: r() < 0.4, localTarget: r() < 0.4, additive: r() < 0.4, clamp: remap && r() < 0.5,
+    offsets: { rotate: pick([0, 0, 30, -45]), x: pick([0, 0, 12]), y: pick([0, -8]), scaleX: pick([0, 0.2]), scaleY: 0, shearY: pick([0, 0, 15]) },
+    mix: Object.fromEntries(channels.map((c) => [c, pick([1, 1, 0.5, 0.25, 0])])) as Record<(typeof channels)[number], number>,
+    properties,
+  }];
+  if (r() < 0.4) {
+    const shin = add(createNode("bone", "shin", { parentId: sym.nodes[bones[0]!.id] ? Object.values(sym.nodes).find((n) => n.name === "child0")!.id : null }));
+    shin.bind = tf(40, 0, 20, 20);
+    shin.boneLength = 40;
+    const target = add(createNode("bone", "target"));
+    target.bind = tf(200, 500);
+    sym.ik.push({ id: newIkId(), name: "limb", boneId: shin.id, targetId: target.id, chain: 1, bendPositive: r() < 0.5, weight: 1 });
+  }
+  const anim = sym.animations[0]!;
+  anim.duration = 12;
+  if (r() < 0.5) {
+    const m = () => Object.fromEntries(channels.map((c) => [c, pick([1, 0.5, 0, 0.75])])) as Record<(typeof channels)[number], number>;
+    anim.transforms = { [sym.transforms[0]!.id]: [
+      { frame: 2, mix: m(), tween: { kind: "curve", curve: [0.42, 0, 0.58, 1] } },
+      { frame: 6, mix: m(), tween: { kind: "none" } },
+      { frame: 9, mix: m() },
+    ] };
+  }
+  anim.tracks[source.id] = {
+    nodeId: source.id, endFrame: 11,
+    keys: Array.from({ length: 4 }, (_, i) => {
+      const a = angle();
+      // A scale that crosses 0 leaves the source with no axis to read an
+      // angle from (atan2 of signed zeros), so keyed scales stay positive.
+      const sc = () => pick([1, 1.3, 0.8]);
+      return key(i * 4 - (i === 3 ? 1 : 0), tf(40 + (r() - 0.5) * 80, 10 + (r() - 0.5) * 80, a + pick([0, 15]), a, sc(), sc()));
+    }),
+  };
+  return project;
+}
+
 /**
  * Nesting, every rule the flattening follows: a child looping several times
  * inside the root animation; an instance blanked then shown again (restarted
@@ -569,6 +644,18 @@ describe("the Spine runtime plays the export the way the stage draws it", () => 
       } catch (err) {
         const k = (project.items[project.rootSymbolId] as SymbolItem).ik[0]!;
         throw new Error(`seed ${seed * 7919} (chain ${k.chain}, weight ${k.weight}): ${(err as Error).message}`);
+      }
+    }
+  });
+
+  it("transform constraints: 60 random rigs, world and local, additive, clamp, remapped, keyed mixes", () => {
+    for (let seed = 1; seed <= 60; seed++) {
+      const project = randomTransformRig(seed * 7919);
+      try {
+        checkParity(project, project.rootSymbolId);
+      } catch (err) {
+        const k = (project.items[project.rootSymbolId] as SymbolItem).transforms![0]!;
+        throw new Error(`seed ${seed * 7919} (local ${k.localSource}/${k.localTarget}, additive ${k.additive}, clamp ${k.clamp}): ${(err as Error).message}`);
       }
     }
   });
