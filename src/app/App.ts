@@ -122,6 +122,7 @@ export class App {
     root.appendChild(this.shell.el);
 
     this.viewport = new Viewport(this.shell.stageHost, this.store, this.assets);
+    this.viewport.onNotify = (message) => this.toast.show(message);
     this.viewport.onContextMenu = (x, y) => this.stageMenu(x, y);
     this.viewport.assetsRef = this.assets;
 

@@ -169,6 +169,7 @@ export function validateProject(raw: unknown): ValidationResult {
         const d = Number(node.setupDisplay);
         if (!Number.isInteger(d) || d < -1 || d >= Math.max(1, displaysOf(node).length) || d === 0) delete node.setupDisplay;
       }
+      if (node.pathDrag !== undefined && node.pathDrag !== "parent") delete node.pathDrag;
       if (node.motionBlur !== undefined) {
         const m = Number(node.motionBlur);
         if (!Number.isFinite(m) || m === 1) delete node.motionBlur;
@@ -394,6 +395,9 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // 11 -> 12: `Animation.poses`, the user's key-pose frames. Additive; an
   // older build would drop the list on save without saying so.
   11: (p) => ({ ...p, version: 12 }),
+  // 12 -> 13: `Node.pathDrag`, how dragging a bone's path turns it. Additive;
+  // an older build would drop it on save.
+  12: (p) => ({ ...p, version: 13 }),
 };
 
 /** A tween read from disk, or null when it is not one this build knows. */

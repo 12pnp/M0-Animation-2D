@@ -48,6 +48,9 @@ export class Viewport {
   private ghostPoses: Array<{ frame: number; pose: Pose }> = [];
   private ghosts = new GhostPainter();
   private pathCache = new PathCache();
+  private lastBonePaths: BonePathsDraw | null = null;
+  /** Where a tool's status messages go; the app points it at its toast. */
+  onNotify: ((message: string) => void) | null = null;
 
   guides: Guide[] = [];
   private draftGuide: Guide | null = null;
@@ -108,6 +111,8 @@ export class Viewport {
       snapDelta: (dx, dy, free) => this.snapDelta(dx, dy, free),
       endSnap: () => { this.snapSession = null; this.snapLines = []; },
       setCursor: (c) => { if (!this.spaceDown) this.host.style.cursor = c; },
+      bonePaths: () => this.lastBonePaths?.paths ?? [],
+      notify: (message) => this.onNotify?.(message),
     };
 
     this.sceneCanvas = h("canvas");
@@ -263,7 +268,7 @@ export class Viewport {
     oc.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     oc.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
     this.overlay.draw(oc, camera, project, store.currentSymbol, this.lastPose, {
-      bonePaths: this.bonePathsToDraw(),
+      bonePaths: (this.lastBonePaths = this.bonePathsToDraw()),
       showRulers: store.ui.showRulers,
       showGrid: store.ui.showGrid,
       showGuides: store.ui.showGuides,

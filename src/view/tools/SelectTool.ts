@@ -8,6 +8,7 @@ import type { Transform } from "@/core/math/Transform";
 import { quantize } from "@/core/math/Transform";
 import { mat } from "@/core/math/Matrix2D";
 import { pickBone } from "./boneGeom";
+import { PathDrag, pathDotUnder } from "./pathDrag";
 
 /**
  * The Selection tool: click to select, drag to move, marquee on empty space.
@@ -22,12 +23,22 @@ export class SelectTool implements Tool {
   private startContent = { x: 0, y: 0 };
   private snaps: NodeSnapshot[] = [];
   private additive = false;
+  /** A press on a bone path's dot: it handles the gesture to the end. */
+  private path: PathDrag | null = null;
 
   onPointerDown(e: PointerEvent, ctx: ToolContext): void {
     if (e.button !== 0) return;
     this.startWorld = ctx.toWorld(e);
     this.startContent = ctx.toContent(e);
     this.additive = e.shiftKey;
+
+    // Path dots before artwork and bones: they sit on the bone's tip, where
+    // the limb's artwork is.
+    const dot = pathDotUnder(ctx, this.startWorld);
+    if (dot) {
+      this.path = new PathDrag(ctx, dot.id, dot.frame, dot, this.startWorld, e);
+      return;
+    }
 
     const hit = hitAt(ctx, this.startWorld.x, this.startWorld.y);
     if (hit) {
@@ -47,6 +58,11 @@ export class SelectTool implements Tool {
   }
 
   onPointerMove(e: PointerEvent, ctx: ToolContext): void {
+    if (this.path) {
+      this.path.move(e, ctx.toWorld(e));
+      ctx.invalidate();
+      return;
+    }
     if (this.mode === "none") return;
     const world = ctx.toWorld(e);
     const content = ctx.toContent(e);
@@ -86,6 +102,12 @@ export class SelectTool implements Tool {
   }
 
   onPointerUp(e: PointerEvent, ctx: ToolContext): void {
+    if (this.path) {
+      this.path.up(e);
+      this.path = null;
+      ctx.invalidate();
+      return;
+    }
     if (this.mode === "marquee") {
       const content = ctx.toContent(e);
       const r = rectFromPoints(this.startContent.x, this.startContent.y, content.x, content.y);
@@ -116,6 +138,8 @@ export class SelectTool implements Tool {
   }
 
   onCancel(ctx: ToolContext): void {
+    this.path?.cancel();
+    this.path = null;
     ctx.endSnap();
     if (this.mode === "dragging") ctx.store.history.abortInteraction();
     this.mode = "none";
@@ -126,7 +150,7 @@ export class SelectTool implements Tool {
 
   onHover(e: PointerEvent, ctx: ToolContext): void {
     const w = ctx.toWorld(e);
-    ctx.setCursor(hitAt(ctx, w.x, w.y) ? "move" : "");
+    ctx.setCursor(pathDotUnder(ctx, w) ? "pointer" : hitAt(ctx, w.x, w.y) ? "move" : "");
   }
 
   /** Returns false when nothing draggable is selected. */

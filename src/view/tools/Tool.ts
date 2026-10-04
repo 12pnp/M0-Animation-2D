@@ -4,6 +4,7 @@ import type { Camera } from "@/view/viewport/Camera";
 import type { Pose } from "@/core/doc/pose";
 import type { Point } from "@/core/math/geom";
 import type { Gizmo } from "./gizmo";
+import type { BonePath } from "@/core/doc/bonePath";
 
 /** What the viewport hands to a tool. Tools never touch the DOM. */
 export interface ToolContext {
@@ -45,6 +46,10 @@ export interface ToolContext {
   /** End the session and clear the smart guides. */
   endSnap(): void;
   setCursor(cursor: string): void;
+  /** The bone paths the last draw showed; empty when none are shown. */
+  bonePaths(): BonePath[];
+  /** A short status message (the app's toast). */
+  notify(message: string): void;
 }
 
 export interface Tool {

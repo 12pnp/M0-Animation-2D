@@ -413,6 +413,44 @@ function assignColor(n: Node, c: ColorTransform | undefined): void {
  * Blend mode is a SETUP-pose property: the runtime has no blendMode timeline
  * (`Slot.init` reads it once from `_slotData`), so it cannot be keyed.
  */
+/** How dragging a bone's path turns it: alone, or with its parent. */
+export class SetPathDrag implements Command {
+  readonly kind = "node.pathDrag";
+  readonly touches: TouchSet;
+  readonly label = "Path Drag Option";
+  private before = new Map<NodeId, "parent" | undefined>();
+
+  constructor(
+    private readonly symbolId: ItemId,
+    private readonly nodeIds: NodeId[],
+    private readonly value: "parent" | undefined,
+  ) {
+    this.touches = { symbols: [symbolId], nodes: [...nodeIds] };
+  }
+
+  apply(p: Project): void {
+    const sym = symbolOf(p, this.symbolId);
+    this.before.clear();
+    for (const id of this.nodeIds) {
+      const n = sym.nodes[id];
+      if (!n) continue;
+      this.before.set(id, n.pathDrag);
+      if (this.value) n.pathDrag = this.value;
+      else delete n.pathDrag;
+    }
+  }
+
+  revert(p: Project): void {
+    const sym = symbolOf(p, this.symbolId);
+    for (const [id, v] of this.before) {
+      const n = sym.nodes[id];
+      if (!n) continue;
+      if (v) n.pathDrag = v;
+      else delete n.pathDrag;
+    }
+  }
+}
+
 export class SetNodeBlendMode implements Command {
   readonly kind = "node.blendMode";
   readonly touches: TouchSet;

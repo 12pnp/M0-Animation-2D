@@ -8,6 +8,7 @@ import {
     RenameNode,
     SetDocumentSettings,
     SetNodeBlendMode,
+    SetPathDrag,
     SetNodeMotionBlur,
     SetPivot,
 } from "@/core/history/commands";
@@ -370,7 +371,16 @@ export class PropertiesPanel implements Panel {
       },
     });
     length.set(node.boneLength ?? 0);
-    return this.section("Bone", true, [this.row("Length", [length.el])]);
+
+    // What dragging this bone's path on the stage turns (core/doc/pathEdit.ts).
+    const drag = h("select", { class: "preview-anim", title: "Dragging this bone's path turns this bone alone, or it and its parent. Hold ⌥ to use the other for one drag." },
+      h("option", { value: "" }, "This bone"), h("option", { value: "parent" }, "With parent"));
+    drag.value = node.pathDrag ?? "";
+    on(drag, "change", () => {
+      this.store.apply(new SetPathDrag(this.store.currentSymbolId, [node.id], drag.value === "parent" ? "parent" : undefined));
+      this.store.emit("doc");
+    });
+    return this.section("Bone", true, [this.row("Length", [length.el]), this.row("Path drag", [drag])]);
   }
 
   /**

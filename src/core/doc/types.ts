@@ -5,7 +5,7 @@ import type { SpineInherit } from "@/core/spine/types";
 import type { AnimId, AssetId, FolderId, IkId, ItemId, LayerId, NodeId } from "./ids";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 12;
+export const DOC_VERSION = 13;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -160,6 +160,9 @@ export interface Node {
   motionBlur?: number;
   /** Bone length in px — display only, for the bone overlay. */
   boneLength?: number;
+  /** Dragging this bone's path turns its parent too (`core/doc/pathEdit.ts`).
+   *  Absent: the bone alone. Editor only; never exported. */
+  pathDrag?: "parent";
   /** What the bone takes from its parent, Spine's `inherit`. Absent: all of
    *  it. Only the Spine pose applies the other modes (`spinePose.ts`). */
   inherit?: SpineInherit;
