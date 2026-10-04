@@ -99,6 +99,9 @@ export const ICON = {
   close:       `<path d="M4 4l8 8M12 4l-8 8"/>`,
   sidebarLeft: `<rect x="2" y="3" width="12" height="10" rx="1.2"/><path d="M6 3v10"/>`,
   sidebarRight: `<rect x="2" y="3" width="12" height="10" rx="1.2"/><path d="M10 3v10"/>`,
+  // The second column on each side: the first's line, and one further in.
+  sidebarLeft2: `<rect x="2" y="3" width="12" height="10" rx="1.2"/><path d="M5.5 3v10M9 3v10"/>`,
+  sidebarRight2: `<rect x="2" y="3" width="12" height="10" rx="1.2"/><path d="M7 3v10M10.5 3v10"/>`,
   ai:          `<path d="M8 2.5 9.3 6.7 13.5 8 9.3 9.3 8 13.5 6.7 9.3 2.5 8 6.7 6.7Z"/>`,
   link:        `<path d="M6.4 9.6 9.6 6.4"/>
                 <path d="M7.2 4.8 8.6 3.4a2.6 2.6 0 0 1 3.7 3.7l-1.4 1.4"/>

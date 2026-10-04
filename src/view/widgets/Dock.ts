@@ -90,22 +90,18 @@ export class Dock {
    * Arrange every dock at once, as a workspace saved them. A panel goes to the
    * dock whose layout places it, so one dragged across docks follows; a panel
    * no layout mentions (new since the save) stays where it is, unless its dock
-   * is in `retiring`: then it goes to the first dock. Retiring docks are
-   * disposed.
+   * is a key of `fallback`: a column the workspace knows nothing of, whose
+   * panels go to the column given, so none is left in a hidden one.
    */
-  static applyLayouts(entries: Array<[Dock, DockLayout]>, retiring: Dock[] = []): void {
+  static applyLayouts(entries: Array<[Dock, DockLayout]>, fallback: ReadonlyMap<Dock, Dock> = new Map()): void {
     const all = new Map<string, [Panel, Dock]>();
-    for (const d of [...entries.map(([x]) => x), ...retiring]) {
-      for (const [id, p] of d.panels) all.set(id, [p, d]);
-    }
+    for (const [d] of entries) for (const [id, p] of d.panels) all.set(id, [p, d]);
     for (const [id, [panel, owner]] of all) {
-      const home = entries.find(([, l]) => placesPanel(l, id))?.[0]
-        ?? (retiring.includes(owner) ? entries[0]![0] : owner);
+      const home = entries.find(([, l]) => placesPanel(l, id))?.[0] ?? fallback.get(owner) ?? owner;
       if (home === owner) continue;
       owner.panels.delete(id);
       home.panels.set(id, panel);
     }
-    for (const d of retiring) d.dispose();
     for (const [d, l] of entries) {
       d.layout = structuredClone(l);
       d.layout.floats ??= {};
@@ -115,17 +111,6 @@ export class Dock {
       d.save();
     }
     for (const [d] of entries) d.render();
-  }
-
-  /** Remove this dock for good: its element, its float windows, its stored layout. */
-  dispose(): void {
-    for (const win of this.floatWins.values()) win.dispose();
-    this.floatWins.clear();
-    this.panels.clear();
-    this.el.remove();
-    try { localStorage.removeItem(this.storageKey); } catch { /* ignore */ }
-    const i = docks.indexOf(this);
-    if (i >= 0) docks.splice(i, 1);
   }
 
   /** Did the stored layout place this panel here? A tab dragged across docks
@@ -505,7 +490,7 @@ export class Dock {
 
   private showGroupMenu(anchor: HTMLElement, group: GroupState): void {
     const panel = this.panels.get(group.activeId);
-    const items: Array<{ label: string; run: () => void } | "-"> = [];
+    const items: Array<MenuEntry | "-"> = [];
     if (panel?.menu) items.push(...panel.menu(), "-");
     items.push({
       label: group.collapsed ? "Expand Group" : "Collapse Group",
@@ -513,11 +498,30 @@ export class Dock {
     });
     if (panel) {
       items.push(
+        // The tab out of its group into one of its own just below: both
+        // panels show at once, one over the other.
+        {
+          label: `Split ${panel.title} Below`,
+          enabled: group.panelIds.length > 1,
+          run: () => this.splitBelow(group, panel.id),
+        },
         { label: `Float ${panel.title}`, run: () => this.float(panel.id) },
         { label: `Close ${panel.title}`, run: () => this.close(panel.id) },
       );
     }
     showMenu(anchor, items);
+  }
+
+  /** The tab `panelId` into a new group right below `group`. */
+  private splitBelow(group: GroupState, panelId: string): void {
+    const at = this.layout.groups.indexOf(group);
+    const me = docks.indexOf(this);
+    if (at < 0 || me < 0) return;
+    const next = moveTab(docks.map((d) => d.layout), me, panelId, { dock: me, group: at, edge: "after" });
+    if (!next) return;
+    this.layout = next[me]!;
+    this.save();
+    this.render();
   }
 
   // ── Persistence ────────────────────────────────────────────────────────

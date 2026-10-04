@@ -1865,13 +1865,21 @@ layouts plus the shell's region sizes, stored per browser under `animo.workspace
 live — `Shell.applyWorkspace` → `Dock.applyLayouts`, which also moves panels between docks — not
 a reload, which would put unsaved work through the restore banner. Reset Layout still reloads.
 
-The right dock is a row of `Dock` columns (`animo.dock.right`, `animo.dock.right.2`, …; the
-count is `rightColumns` in `animo.sizes`). A workspace stores the first as `right` and the rest
-as `columns`; one saved before columns existed has none, i.e. one column. The built-in grids
-(1 × 1 … 2 × 3) are `LAYOUT_PRESETS`, and each must place every panel, the AI panel in the
-left dock included (tested). A workspace's `left` is the left panel; one saved before that
-existed leaves the left panel alone. A column a
-workspace drops is disposed after its panels move to the first column, so none is lost.
+There are four side columns, each a `Dock` with its own width, resize edge and rail toggle
+(`Shell.buildColumn`): L1 and L2 left of the stage (`animo.dock.left`, `animo.dock.left.2`; L1
+by the rail, the AI panel's home) and R1 and R2 right of it (`animo.dock.right`,
+`animo.dock.right.2`; R2 by the rail). Any panel can be dragged into any of them and stacked.
+`animo.sizes` keeps each column's width and whether it shows; the old names stay (`ai` /
+`aiOpen` are L1, `right` / `rightHidden` R1), and sizes saved when R1 and R2 shared one width
+(`rightColumns`) are read by `columnSizes`. A column keeps the width it was given; what is
+DRAWN is `fitColumns`, which shrinks the open ones in proportion so they fit beside a
+`STAGE_MIN` stage, so four columns never push the stage or a rail off the window. Closing a
+column's last panel folds it, and so does a workspace that leaves it empty — all but R1.
+
+A workspace stores L1 as `left`, L2 as `left2`, R1 as `right` and R2 as `columns[0]`. A column
+it was saved without hands its panels to its side's first column (`Dock.applyLayouts`'
+`fallback`), so none is left in a hidden column. The built-in grids (1 × 1 … 2 × 3) are
+`LAYOUT_PRESETS`, and each must place every panel, the AI panel in L1 included (tested).
 
 Floating is deliberately *not* `window.open`. In an embedded browser pane a same-origin
 `window.open` can navigate the current tab rather than opening a popup, losing the editor and

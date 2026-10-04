@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { PANEL_COMMANDS } from "@/core/keys/commands";
 import {
-  type Workspace, LAYOUT_PRESETS, MAX_WORKSPACE_NAME, PRESET_COLUMN_WIDTH, clampRightWidth, findWorkspace,
+  type Workspace, LAYOUT_PRESETS, MAX_WORKSPACE_NAME, COLUMN_MIN, PRESET_COLUMN_WIDTH, clampColumnWidth, columnSizes, findWorkspace, fitColumns, storedColumns,
   parseWorkspaces, presetWorkspace, putWorkspace, removeWorkspace, workspaceNameError,
 } from "@/view/widgets/workspaces";
 
@@ -107,8 +107,10 @@ describe("LAYOUT_PRESETS", () => {
         const w = presetWorkspace(p);
         expect([w.right, ...(w.columns ?? [])].map((l) => l.groups.map((g) => g.panelIds))).toEqual(p.right);
         expect(w.left!.groups.map((g) => g.panelIds)).toEqual(p.left);
+        // One column of PRESET_COLUMN_WIDTH each; R2 shows for two columns.
         expect(w.sizes).toEqual({
-          right: PRESET_COLUMN_WIDTH * p.right.length, rightHidden: false, rightColumns: p.right.length,
+          right: PRESET_COLUMN_WIDTH, rightHidden: false,
+          right2: PRESET_COLUMN_WIDTH, right2Open: p.right.length > 1,
         });
         // A preset leaves the timeline height and the AI column alone.
         expect(w.sizes.bottom).toBeUndefined();
@@ -141,20 +143,69 @@ describe("parseWorkspaces with columns", () => {
   });
 });
 
-describe("clampRightWidth", () => {
-  const cases: Array<[number, number, number, number]> = [
-    // width, columns, viewport → width
-    [268, 1, 1600, 268],
-    [100, 1, 1600, 180],
-    [900, 1, 1600, 560],
-    [536, 2, 1600, 536],
-    [900, 2, 1600, 600],
-    [536, 2, 1024, 512],
-    [100, 2, 1024, 300],
+describe("clampColumnWidth", () => {
+  const cases: Array<[number, number, number]> = [
+    // width, viewport → width
+    [268, 1600, 268],
+    [100, 1600, 180],
+    [900, 1600, 700],
+    [600, 1024, 461],
     // A window too narrow for even the minimum keeps the minimum.
-    [536, 3, 600, 420],
+    [268, 300, 180],
   ];
-  for (const [w, cols, vw, want] of cases) {
-    it(`${w}px, ${cols} column(s), ${vw}px window`, () => expect(clampRightWidth(w, cols, vw)).toBe(want));
+  for (const [w, vw, want] of cases) {
+    it(`${w}px in a ${vw}px window`, () => expect(clampColumnWidth(w, vw)).toBe(want));
   }
+});
+
+describe("columnSizes", () => {
+  it("defaults: the right panel open, everything else shut", () => {
+    expect(columnSizes({})).toEqual({
+      l1: { width: 380, open: false }, l2: { width: 300, open: false },
+      r1: { width: 268, open: true }, r2: { width: 268, open: false },
+    });
+  });
+
+  it("reads the old format: one right width shared by two columns, one toggle", () => {
+    const c = columnSizes({ right: 536, rightColumns: 2, ai: 400, aiOpen: true });
+    expect(c.r1).toEqual({ width: 268, open: true });
+    expect(c.r2).toEqual({ width: 268, open: true });
+    expect(c.l1).toEqual({ width: 400, open: true });
+    const hidden = columnSizes({ right: 536, rightColumns: 2, rightHidden: true });
+    expect([hidden.r1.open, hidden.r2.open]).toEqual([false, false]);
+  });
+
+  it("round-trips the new format", () => {
+    const c = {
+      l1: { width: 390, open: true }, l2: { width: 250, open: true },
+      r1: { width: 300, open: false }, r2: { width: 220, open: true },
+    };
+    expect(columnSizes(storedColumns(c))).toEqual(c);
+  });
+});
+
+describe("fitColumns", () => {
+  const cols = (l1: number, l2: number, r1: number, r2: number, open = [true, true, true, false]) => ({
+    l1: { width: l1, open: open[0]! }, l2: { width: l2, open: open[1]! },
+    r1: { width: r1, open: open[2]! }, r2: { width: r2, open: open[3]! },
+  });
+
+  it("draws every column at its own width while they fit", () => {
+    expect(fitColumns(cols(380, 300, 268, 268), 1200)).toEqual({ l1: 380, l2: 300, r1: 268, r2: 268 });
+  });
+
+  it("shrinks the open ones in proportion when they do not, never under the minimum", () => {
+    const out = fitColumns(cols(460, 300, 268, 268), 724);
+    expect(out.l1 + out.l2 + out.r1).toBeLessThanOrEqual(724);
+    expect(Math.min(out.l1, out.l2, out.r1)).toBeGreaterThanOrEqual(COLUMN_MIN);
+    // Wider ones give up more.
+    expect(out.l1 - COLUMN_MIN).toBeGreaterThan(out.l2 - COLUMN_MIN);
+    // A closed column keeps its width for when it opens.
+    expect(out.r2).toBe(268);
+  });
+
+  it("with no room even for the minimums, each is drawn at the minimum", () => {
+    const out = fitColumns(cols(400, 400, 400, 400, [true, true, true, true]), 500);
+    expect(Object.values(out)).toEqual([COLUMN_MIN, COLUMN_MIN, COLUMN_MIN, COLUMN_MIN]);
+  });
 });

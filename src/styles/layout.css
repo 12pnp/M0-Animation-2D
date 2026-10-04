@@ -160,21 +160,30 @@
   min-height: 0;
 }
 
-/* ── Right dock ─────────────────────────────────────────────────────────── */
-.dock-right {
-  grid-area: dockR;
-  display: flex;
-  flex-direction: column;
-  width: 268px;
-  min-width: 180px;
+/* ── Side columns (Shell.buildColumn) ─────────────────────────────────────
+   Up to four: L1 and L2 in the left area, R1 and R2 in the right. Each has
+   its own width and a resize edge on the side facing the stage. */
+.side { display: flex; min-height: 0; }
+.side-left { grid-area: aiL; }
+.side-right { grid-area: dockR; }
+.side-col {
+  position: relative;
+  display: flex; flex-direction: column;
+  width: 268px; min-width: 180px; min-height: 0;
   background: var(--bg-panel);
-  border-left: 1px solid var(--line);
-  min-height: 0;
 }
-.dock-right.collapsed { display: none; }
-/* The right dock's columns, side by side (Window ▸ Workspace ▸ 2 × 3). */
-.dock-cols { display: flex; flex: 1 1 auto; min-height: 0; }
-.dock-cols > .dock-col + .dock-col { border-left: 1px solid var(--line); }
+.side-col[hidden] { display: none; }
+.side-col.left { border-right: 1px solid var(--line); }
+.side-col.right { border-left: 1px solid var(--line); }
+.side-col > .dock-col { flex: 1 1 auto; min-width: 0; }
+.col-split {
+  position: absolute; top: 0; bottom: 0; width: 5px; z-index: 5;
+  cursor: ew-resize;
+}
+.side-col.left > .col-split { right: -3px; }
+.side-col.right > .col-split { left: -3px; }
+.col-split:hover { background: rgba(var(--accent-rgb), 0.35); }
+.col-split.dragging { background: var(--accent); }
 /* An empty dock column: a drop zone, saying so. */
 .dock-empty {
   flex: 1 1 auto;
@@ -203,28 +212,6 @@
 .splitter:hover { background: rgba(var(--accent-rgb), 0.35); }
 .splitter.dragging { background: var(--accent); }
 
-/* The left panel: a dock column left of the stage, the AI panel's home. */
-.dock-left {
-  grid-area: aiL;
-  display: flex;
-  flex-direction: column;
-  width: 380px;
-  min-width: 220px;
-  min-height: 0;
-  background: var(--bg-panel);
-  border-right: 1px solid var(--line);
-}
-.dock-left.collapsed { display: none; }
-.shell > .splitter.v.left-split {
-  grid-area: aiL;
-  justify-self: end;
-  height: 100%;
-  width: 5px;
-  margin-right: -3px;
-  display: none;
-}
-.shell.left-open > .splitter.v.left-split { display: block; }
-
 .ai-toggle {
   flex: none;
   height: var(--h-field);
@@ -237,15 +224,6 @@
 }
 .ai-toggle:hover { color: var(--fg-strong); }
 .ai-toggle.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-
-/* Vertical splitter sitting between stage and right dock */
-.shell > .splitter.v {
-  grid-area: dockR;
-  justify-self: start;
-  height: 100%;
-  width: 5px;
-  margin-left: -3px;
-}
 
 body.resizing-ns, body.resizing-ns * { cursor: ns-resize !important; }
 body.resizing-ew, body.resizing-ew * { cursor: ew-resize !important; }

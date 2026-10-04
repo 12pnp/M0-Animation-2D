@@ -1,8 +1,10 @@
 import { clear, cls, drag, h, on } from "@/view/widgets/dom";
 import { icon, type IconName } from "@/view/icons";
 import { Dock, type MenuEntry, type Panel, showMenu } from "@/view/widgets/Dock";
-import { type ShellSizes, type Workspace, clampRightWidth } from "@/view/widgets/workspaces";
-import type { DockLayout } from "@/view/widgets/dockDrop";
+import {
+  type ColumnKey, type ShellSizes, type Workspace, STAGE_MIN, clampColumnWidth, columnSizes, fitColumns,
+  storedColumns,
+} from "@/view/widgets/workspaces";
 import { onAccelChange, withAccel } from "@/view/widgets/accel";
 import { APP_NAME, documentTitle } from "@/core/about";
 // The glyph alone, no rounded-square background: the menu bar already is a
@@ -59,32 +61,30 @@ export class Shell {
   readonly el: HTMLElement;
   readonly stageHost: HTMLElement;
   readonly bottomDock: Dock;
-  /** The right dock's columns, left to right; a workspace sets how many. */
-  private rightDocks: Dock[] = [];
-  private rightCols: HTMLElement = h("div", { class: "dock-cols" });
-  /** The left panel: a dock column between the tool rail and the stage. The
-   *  AI panel starts in it; any panel can be dragged in or out. */
-  readonly leftDock: Dock;
-  private leftWrap: HTMLElement = h("div", { class: "dock-left collapsed" });
-  /** The two side toggles and the panel buttons under each: the same
-   *  component on both sides (`railButton`), rebuilt by `syncRails`. */
-  private leftToggle: HTMLElement;
-  private rightToggle: HTMLElement;
+  /**
+   * The four side columns: L1 and L2 left of the stage (L1 by the rail, the
+   * AI panel's home), R1 and R2 right of it (R2 by the rail). Each is a dock
+   * with its own width, resize edge and rail toggle; any panel can be dragged
+   * into any of them and stacked there.
+   */
+  private cols!: Record<ColumnKey, SideColumn>;
+  private leftArea: HTMLElement = h("div", { class: "side side-left" });
+  private rightArea: HTMLElement = h("div", { class: "side side-right" });
+  /** The panel buttons under each rail's toggles: the same component on both
+   *  sides (`railButton`), rebuilt by `syncRails`. */
   private leftPanelsEl: HTMLElement = h("div", { class: "rail-panels" });
   private rightPanelsEl: HTMLElement = h("div", { class: "rail-panels" });
 
   private crumbEl: HTMLElement;
   private menubarEl: HTMLElement;
   private rightRail: HTMLElement;
-  private rightWrap: HTMLElement;
+  private toolsEl: HTMLElement | null = null;
   private bottomWrap: HTMLElement;
   private menus: MenuDef[] = [];
   private docNameEl: HTMLElement;
   private docTabEl: HTMLElement;
   /** Each panel's place in its rail: the order it was added in. */
   private panelOrder = new Map<string, number>();
-  /** The left panel's width while it is closed (a hidden element measures 0). */
-  private leftWidth = 380;
   private syncAiButton: () => void = () => {};
   /** Where App puts the Play-mode transport, built after the shell. */
   readonly playSlot: HTMLElement = h("div", { class: "stage-play" });
@@ -97,13 +97,19 @@ export class Shell {
   /** What the gear at the right of the menu bar opens. Set by `App`. */
 
   constructor(private readonly store: Store) {
-    this.leftDock = new Dock("animo.dock.left", "vertical");
-    for (let i = 0; i < storedColumnCount(); i++) this.addRightColumn();
+    this.cols = {
+      l1: this.buildColumn("l1", "animo.dock.left", "sidebarLeft", "the left panel"),
+      l2: this.buildColumn("l2", "animo.dock.left.2", "sidebarLeft2", "the second left panel"),
+      r1: this.buildColumn("r1", "animo.dock.right", "sidebarRight", "the right panel"),
+      // The key R2 had when it was "the right dock's second column".
+      r2: this.buildColumn("r2", "animo.dock.right.2", "sidebarRight2", "the second right panel"),
+    };
+    // Outer to inner on the left, inner to outer on the right: L1 and R2
+    // stand by their rails.
+    this.leftArea.append(this.cols.l1.wrap, this.cols.l2.wrap);
+    this.rightArea.append(this.cols.r1.wrap, this.cols.r2.wrap);
     this.bottomDock = new Dock("animo.dock.bottom", "vertical");
-    this.leftWrap.appendChild(this.leftDock.el);
-    for (const d of [this.leftDock, this.bottomDock]) d.onLayoutChange = () => this.syncRails();
-    this.leftToggle = this.railButton("sidebarLeft", "Show / hide the left panel", () => this.setLeftOpen(!this.leftOpen));
-    this.rightToggle = this.railButton("sidebarRight", "Show / hide the right panels", () => this.setRightOpen(this.rightCollapsed));
+    this.bottomDock.onLayoutChange = () => this.syncRails();
 
     this.menubarEl = h("div", { class: "menubar" });
     this.docNameEl = h("span", { class: "docname" });
@@ -113,35 +119,29 @@ export class Shell {
     this.stageHost = h("div", { class: "stage-host", tabIndex: 0 });
     this.rightRail = h("div", { class: "rail-right" });
 
-    const toolsEl = this.buildTools();
+    const toolsEl = this.toolsEl = this.buildTools();
     const stageRegion = this.buildStageRegion();
 
     this.bottomWrap = h("div", { class: "bottom" });
     this.bottomWrap.appendChild(this.bottomDock.el);
 
-    this.rightWrap = h("div", { class: "dock-right" });
-    this.rightWrap.appendChild(this.rightCols);
-
-    const vSplit = this.buildVerticalSplitter();
     const hSplit = this.buildHorizontalSplitter();
-    const leftSplit = this.buildLeftSplitter();
 
     this.el = h("div", { class: "shell" },
       this.menubarEl,
       toolsEl,
-      this.leftWrap,
-      leftSplit,
+      this.leftArea,
       stageRegion,
       hSplit,
       this.bottomWrap,
-      vSplit,
-      this.rightWrap,
+      this.rightArea,
       this.rightRail,
     );
 
     this.buildRightRail();
     this.restoreSizes();
     this.syncRails();
+    window.addEventListener("resize", () => this.layoutColumns());
     this.store.subscribe((topic) => {
       if (topic === "doc" || topic === "ui") { this.syncCrumb(); this.syncMenus(); }
     });
@@ -204,7 +204,7 @@ export class Shell {
   /** The rail left of everything: the left panel's toggle on top, its panel
    *  buttons at the foot. The tools are on the stage (`StageToolbar`). */
   private buildTools(): HTMLElement {
-    return h("div", { class: "tools" }, this.leftToggle, this.leftPanelsEl);
+    return h("div", { class: "tools" }, this.cols.l1.toggle, this.cols.l2.toggle, this.leftPanelsEl);
   }
 
   // ── Stage region ───────────────────────────────────────────────────────
@@ -396,21 +396,47 @@ export class Shell {
 
   // ── Docks ──────────────────────────────────────────────────────────────
 
-  /** The right dock's first column. */
-  get rightDock(): Dock { return this.rightDocks[0]!; }
+  /** The right panel (R1), where the right-hand panels start. */
+  get rightDock(): Dock { return this.cols.r1.dock; }
+  /** The left panel (L1), the AI panel's home. */
+  get leftDock(): Dock { return this.cols.l1.dock; }
 
-  private get docks(): Dock[] { return [this.leftDock, ...this.rightDocks, this.bottomDock]; }
+  private get docks(): Dock[] { return [...Object.values(this.cols).map((c) => c.dock), this.bottomDock]; }
 
-  private addRightColumn(): Dock {
-    const n = this.rightDocks.length;
-    const dock = new Dock(n === 0 ? "animo.dock.right" : `animo.dock.right.${n + 1}`, "vertical");
-    // Equal shares of the dock's width, whatever the panels inside would like.
-    dock.el.style.flex = "1 1 0";
-    dock.el.style.minWidth = "0";
+  /**
+   * One side column: its dock, in a box with a width of its own and a resize
+   * edge on the side facing the stage, and its toggle for the rail.
+   */
+  private buildColumn(key: ColumnKey, storageKey: string, iconName: IconName, what: string): SideColumn {
+    const left = key[0] === "l";
+    const dock = new Dock(storageKey, "vertical");
     dock.onLayoutChange = () => this.syncRails();
-    this.rightDocks.push(dock);
-    this.rightCols.appendChild(dock.el);
-    return dock;
+    const edge = h("div", { class: "col-split" });
+    const wrap = h("div", { class: `side-col ${left ? "left" : "right"}` }, dock.el, edge);
+    wrap.hidden = true;
+    const col: SideColumn = {
+      key, dock, wrap, width: 268,
+      toggle: this.railButton(iconName, `Show / hide ${what}`, () => this.setColumnOpen(key, wrap.hidden)),
+    };
+    let start = 0;
+    drag(edge, {
+      cursor: "ew-resize",
+      onStart: () => { start = wrap.offsetWidth; edge.classList.add("dragging"); },
+      onMove: (dx) => {
+        col.width = clampColumnWidth(left ? start + dx : start - dx, innerWidth);
+        this.layoutColumns();
+      },
+      onEnd: () => {
+        edge.classList.remove("dragging");
+        this.saveSizes();
+        window.dispatchEvent(new Event("resize"));
+      },
+    });
+    return col;
+  }
+
+  private columnOf(dock: Dock): SideColumn | undefined {
+    return Object.values(this.cols).find((c) => c.dock === dock);
   }
 
   addRightPanel(panel: Panel): void {
@@ -425,7 +451,7 @@ export class Shell {
 
   addLeftPanel(panel: Panel): void {
     this.panelOrder.set(panel.id, this.panelOrder.size);
-    this.homeDock(panel.id, this.leftDock).register(panel);
+    this.homeDock(panel.id, this.cols.l1.dock).register(panel);
   }
 
   /** A panel's tab can be dragged to another dock or column; the saved
@@ -449,21 +475,21 @@ export class Shell {
   showPanel(id: string): void {
     const dock = this.dockOf(id);
     if (!dock) return;
-    if (!dock.isFloating(id)) {
-      if (this.rightDocks.includes(dock)) this.expandRightDock();
-      if (dock === this.leftDock && !this.leftOpen) this.setLeftOpen(true);
-    }
+    const col = this.columnOf(dock);
+    if (col && !dock.isFloating(id) && col.wrap.hidden) this.setColumnOpen(col.key, true);
     dock.focus(id);
   }
 
   /** Hide a panel that is on screen, show one that is not. Closing the last
-   *  panel in the left column folds the column away rather than leaving it empty. */
+   *  panel in a column folds the column away rather than leaving it empty —
+   *  all but R1, the right panel, which stays as the place panels go. */
   togglePanel(id: string): void {
     const dock = this.dockOf(id);
     if (!dock) return;
     if (!this.isPanelShown(id)) { this.showPanel(id); return; }
     dock.close(id);
-    if (dock === this.leftDock && this.leftDock.isEmpty()) this.setLeftOpen(false);
+    const col = this.columnOf(dock);
+    if (col && col.key !== "r1" && dock.isEmpty()) this.setColumnOpen(col.key, false);
   }
 
   /** On screen right now: open, its tab active, and its column not hidden. */
@@ -475,9 +501,8 @@ export class Shell {
   }
 
   private columnShown(dock: Dock): boolean {
-    if (dock === this.leftDock) return this.leftOpen;
-    if (this.rightDocks.includes(dock)) return !this.rightCollapsed;
-    return true;
+    const col = this.columnOf(dock);
+    return col ? !col.wrap.hidden : true;
   }
 
   floatPanel(id: string): void {
@@ -496,30 +521,39 @@ export class Shell {
     return !!this.dockOf(id)?.isFloating(id);
   }
 
-  private get rightCollapsed(): boolean {
-    return this.rightWrap.classList.contains("collapsed");
+  /**
+   * Draw the open columns at widths that fit the window beside the stage
+   * (`fitColumns`); each keeps its own width for when there is room again.
+   */
+  private layoutColumns(): void {
+    const sizes = Object.fromEntries(Object.values(this.cols).map((c) =>
+      [c.key, { width: c.width, open: !c.wrap.hidden }])) as Record<ColumnKey, { width: number; open: boolean }>;
+    // Before the first layout both rails measure 0: they are 30px each.
+    const rails = (this.rightRail.offsetWidth + (this.toolsEl?.offsetWidth ?? 0)) || 60;
+    const drawn = fitColumns(sizes, innerWidth - rails - STAGE_MIN);
+    for (const c of Object.values(this.cols)) c.wrap.style.width = `${drawn[c.key]}px`;
   }
 
-  private expandRightDock(): void {
-    if (this.rightCollapsed) this.setRightOpen(true);
-  }
-
-  setRightOpen(open: boolean): void {
-    this.rightWrap.classList.toggle("collapsed", !open);
+  /** Show or hide one side column. The stage measures its host again. */
+  setColumnOpen(key: ColumnKey, open: boolean): void {
+    this.cols[key].wrap.hidden = !open;
+    this.layoutColumns();
     this.saveSizes();
     this.syncRails();
     window.dispatchEvent(new Event("resize"));
   }
 
   layoutDocks(right: string[][], bottom: string[][], left: string[][]): void {
-    this.leftDock.setDefault(left);
-    this.rightDocks.forEach((d, i) => d.setDefault(i === 0 ? right : []));
+    this.cols.l1.dock.setDefault(left);
+    this.cols.l2.dock.setDefault([]);
+    this.cols.r1.dock.setDefault(right);
+    this.cols.r2.dock.setDefault([]);
     this.bottomDock.setDefault(bottom);
     this.syncRails();
   }
 
   private buildRightRail(): void {
-    this.rightRail.append(this.rightToggle, this.rightPanelsEl);
+    this.rightRail.append(this.cols.r1.toggle, this.cols.r2.toggle, this.rightPanelsEl);
   }
 
   /** A rail button: the side toggles and the panel buttons look alike on both
@@ -548,56 +582,19 @@ export class Shell {
   }
 
   private syncRails(): void {
-    cls(this.leftToggle, "on", this.leftOpen);
-    cls(this.rightToggle, "on", !this.rightCollapsed);
-    this.fillRail(this.leftPanelsEl, this.leftDock.panelList());
-    this.fillRail(this.rightPanelsEl, this.rightDocks.flatMap((d) => d.panelList()));
+    for (const c of Object.values(this.cols)) cls(c.toggle, "on", !c.wrap.hidden);
+    const { l1, l2, r1, r2 } = this.cols;
+    this.fillRail(this.leftPanelsEl, [...l1.dock.panelList(), ...l2.dock.panelList()]);
+    this.fillRail(this.rightPanelsEl, [...r1.dock.panelList(), ...r2.dock.panelList()]);
     this.syncAiButton();
   }
 
   // ── Region splitters ───────────────────────────────────────────────────
 
-  private buildVerticalSplitter(): HTMLElement {
-    const sp = h("div", { class: "splitter v" });
-    let start = 268;
-    drag(sp, {
-      cursor: "ew-resize",
-      onStart: () => { start = this.rightWrap.offsetWidth; sp.classList.add("dragging"); },
-      onMove: (dx) => {
-        const w = clampRightWidth(start - dx, this.rightDocks.length, innerWidth);
-        this.rightWrap.style.width = `${w}px`;
-      },
-      onEnd: () => { sp.classList.remove("dragging"); this.saveSizes(); },
-    });
-    return sp;
-  }
+  /** The left panel (L1), open or not. */
+  get leftOpen(): boolean { return !this.cols.l1.wrap.hidden; }
 
-  /** The left panel's right edge. */
-  private buildLeftSplitter(): HTMLElement {
-    const sp = h("div", { class: "splitter v left-split" });
-    let start = 380;
-    drag(sp, {
-      cursor: "ew-resize",
-      onStart: () => { start = this.leftWrap.offsetWidth; sp.classList.add("dragging"); },
-      onMove: (dx) => {
-        const w = Math.max(220, Math.min(900, innerWidth - 480, start + dx));
-        this.leftWrap.style.width = `${w}px`;
-      },
-      onEnd: () => { sp.classList.remove("dragging"); this.saveSizes(); },
-    });
-    return sp;
-  }
-
-  get leftOpen(): boolean { return !this.leftWrap.classList.contains("collapsed"); }
-
-  setLeftOpen(open: boolean): void {
-    this.leftWrap.classList.toggle("collapsed", !open);
-    this.el.classList.toggle("left-open", open);
-    this.saveSizes();
-    this.syncRails();
-    // The stage canvas measures its host on resize.
-    window.dispatchEvent(new Event("resize"));
-  }
+  setLeftOpen(open: boolean): void { this.setColumnOpen("l1", open); }
 
   private buildHorizontalSplitter(): HTMLElement {
     const sp = h("div", { class: "splitter h" });
@@ -619,15 +616,23 @@ export class Shell {
   }
 
   private sizes(): ShellSizes {
-    if (this.leftOpen && this.leftWrap.offsetWidth) this.leftWidth = this.leftWrap.offsetWidth;
+    const c = this.cols;
+    const size = (col: SideColumn) => ({ width: col.width, open: !col.wrap.hidden });
     return {
-      right: this.rightWrap.offsetWidth,
+      ...storedColumns({ l1: size(c.l1), l2: size(c.l2), r1: size(c.r1), r2: size(c.r2) }),
       bottom: this.bottomWrap.offsetHeight,
-      rightHidden: this.rightWrap.classList.contains("collapsed"),
-      ai: this.leftWidth,
-      aiOpen: this.leftOpen,
-      rightColumns: this.rightDocks.length,
     };
+  }
+
+  /** Widths and visibility of the four columns, as `columnSizes` reads them. */
+  private applyColumns(s: ShellSizes): void {
+    const sizes = columnSizes(s);
+    for (const key of Object.keys(this.cols) as ColumnKey[]) {
+      const col = this.cols[key];
+      col.width = clampColumnWidth(sizes[key].width, innerWidth);
+      col.wrap.hidden = !sizes[key].open;
+    }
+    this.layoutColumns();
   }
 
   private saveSizes(): void {
@@ -636,27 +641,22 @@ export class Shell {
 
   private restoreSizes(): void {
     this.bottomWrap.style.height = "200px";
-    try {
-      const raw = localStorage.getItem("animo.sizes");
-      if (!raw) return;
-      const s = JSON.parse(raw) as ShellSizes;
-      if (s.ai) { this.leftWidth = s.ai; this.leftWrap.style.width = `${s.ai}px`; }
-      if (s.aiOpen) { this.leftWrap.classList.remove("collapsed"); this.el.classList.add("left-open"); }
-      if (s.right) this.rightWrap.style.width = `${s.right}px`;
-      if (s.bottom) this.bottomWrap.style.height = `${s.bottom}px`;
-      if (s.rightHidden) this.rightWrap.classList.add("collapsed");
-    } catch { /* ignore */ }
+    let s: ShellSizes = {};
+    try { s = JSON.parse(localStorage.getItem("animo.sizes") ?? "{}") as ShellSizes; } catch { /* ignore */ }
+    this.applyColumns(s);
+    if (s.bottom) this.bottomWrap.style.height = `${s.bottom}px`;
   }
 
   // ── Workspaces ─────────────────────────────────────────────────────────
 
-  /** The current arrangement of both docks and the regions around the stage. */
+  /** The current arrangement of every dock and the regions around the stage. */
   workspace(): Workspace {
-    const [first, ...rest] = this.rightDocks;
+    const c = this.cols;
     return {
-      left: this.leftDock.snapshot(),
-      right: first!.snapshot(),
-      ...(rest.length ? { columns: rest.map((d) => d.snapshot()) } : {}),
+      left: c.l1.dock.snapshot(),
+      left2: c.l2.dock.snapshot(),
+      right: c.r1.dock.snapshot(),
+      columns: [c.r2.dock.snapshot()],
       bottom: this.bottomDock.snapshot(),
       sizes: this.sizes(),
     };
@@ -665,22 +665,35 @@ export class Shell {
   /** Arrange the window as `ws` was saved. Live, without a reload: a reload
    *  would put unsaved work through the restore banner. */
   applyWorkspace(ws: Workspace): void {
-    const columns = [ws.right, ...(ws.columns ?? [])];
-    while (this.rightDocks.length < columns.length) this.addRightColumn();
-    const retiring = this.rightDocks.splice(columns.length);
+    const c = this.cols;
+    const empty = { groups: [], floats: {}, closed: [] };
+    // A column the workspace was saved without hands its panels to its
+    // side's first column, so none is left in a column that is now hidden.
+    const fallback = new Map<Dock, Dock>();
+    if (!ws.left2) fallback.set(c.l2.dock, c.l1.dock);
+    if (!ws.columns?.[0]) fallback.set(c.r2.dock, c.r1.dock);
     Dock.applyLayouts([
       // A workspace saved before the left panel existed leaves it as it is.
-      [this.leftDock, ws.left ?? this.leftDock.snapshot()],
-      ...this.rightDocks.map((d, i): [Dock, DockLayout] => [d, columns[i]!]),
+      [c.l1.dock, ws.left ?? c.l1.dock.snapshot()],
+      [c.l2.dock, ws.left2 ?? empty],
+      [c.r1.dock, ws.right],
+      [c.r2.dock, ws.columns?.[0] ?? empty],
       [this.bottomDock, ws.bottom],
-    ], retiring);
+    ], fallback);
     const s = ws.sizes;
-    if (s.ai) { this.leftWidth = s.ai; this.leftWrap.style.width = `${s.ai}px`; }
-    if (s.right) this.rightWrap.style.width = `${clampRightWidth(s.right, columns.length, innerWidth)}px`;
+    // Sizes the workspace leaves out (a preset does not decide the left
+    // panel or the timeline) stay as they are.
+    this.applyColumns({ ...this.sizes(), ...s, rightColumns: s.rightColumns });
+    // A column the workspace left empty folds away, as closing its last
+    // panel does — all but R1, where panels go.
+    for (const col of Object.values(c)) {
+      if (col.key !== "r1" && col.dock.isEmpty()) col.wrap.hidden = true;
+    }
+    this.layoutColumns();
     if (s.bottom) this.bottomWrap.style.height = `${s.bottom}px`;
-    if (s.rightHidden !== undefined) this.rightWrap.classList.toggle("collapsed", s.rightHidden);
-    // setLeftOpen saves the sizes and tells the stage to re-measure.
-    this.setLeftOpen(s.aiOpen ?? this.leftOpen);
+    this.saveSizes();
+    this.syncRails();
+    window.dispatchEvent(new Event("resize"));
   }
 
   resetLayout(): void {
@@ -693,11 +706,13 @@ export class Shell {
 /** The AI panel's dock id: the stage bar's AI button shows and hides it. */
 export const AI_PANEL = "ai";
 
-/** Columns the right dock had when the page last saved its sizes. */
-function storedColumnCount(): number {
-  try {
-    const n = (JSON.parse(localStorage.getItem("animo.sizes") ?? "{}") as ShellSizes).rightColumns;
-    return typeof n === "number" ? Math.max(1, Math.min(4, Math.round(n))) : 1;
-  } catch { return 1; }
+interface SideColumn {
+  key: ColumnKey;
+  dock: Dock;
+  /** The column's box; `hidden` while the column is closed. */
+  wrap: HTMLElement;
+  /** Kept while the column is hidden, when the box measures 0. */
+  width: number;
+  toggle: HTMLElement;
 }
 

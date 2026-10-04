@@ -7,24 +7,79 @@
 import type { DockLayout } from "./dockDrop";
 
 /** The shell's region sizes, as `Shell` stores them under `animo.sizes`. */
+/**
+ * The shell's region sizes, as stored under `animo.sizes`. Four side columns:
+ * L1 and L2 left of the stage, R1 and R2 right of it, each with its own width
+ * and its own toggle. The older names stay: `ai` / `aiOpen` are L1 (once the
+ * AI column), `right` / `rightHidden` R1. Sizes saved before R2 had its own
+ * width carry `rightColumns` and `right` as the whole dock (`columnSizes`).
+ */
 export interface ShellSizes {
   right?: number;
   bottom?: number;
   rightHidden?: boolean;
-  /** The left panel's width and whether it shows. Named for the AI column it
-   *  used to be, so sizes stored then still load. */
   ai?: number;
   aiOpen?: boolean;
-  /** Columns in the right dock; absent: one. */
+  left2?: number;
+  left2Open?: boolean;
+  right2?: number;
+  right2Open?: boolean;
+  /** Old format: how many columns shared `right`. */
   rightColumns?: number;
+}
+
+export type ColumnKey = "l1" | "l2" | "r1" | "r2";
+export interface ColumnSize { width: number; open: boolean }
+
+/** Default widths: the AI panel wants room, a second column less. */
+const COLUMN_DEFAULTS: Record<ColumnKey, ColumnSize> = {
+  l1: { width: 380, open: false },
+  l2: { width: 300, open: false },
+  r1: { width: 268, open: true },
+  r2: { width: 268, open: false },
+};
+
+/** Each column's width and visibility from stored sizes, old format included. */
+export function columnSizes(s: ShellSizes): Record<ColumnKey, ColumnSize> {
+  const out = structuredClone(COLUMN_DEFAULTS);
+  if (s.ai) out.l1.width = s.ai;
+  out.l1.open = !!s.aiOpen;
+  if (s.left2) out.l2.width = s.left2;
+  out.l2.open = !!s.left2Open;
+  out.r1.open = !s.rightHidden;
+  const legacyCols = s.right2 === undefined && (s.rightColumns ?? 1) >= 2;
+  if (legacyCols) {
+    // One width shared by the columns, and one toggle for all of them.
+    const each = Math.round((s.right ?? 536) / s.rightColumns!);
+    out.r1.width = each;
+    out.r2 = { width: each, open: !s.rightHidden };
+  } else {
+    if (s.right) out.r1.width = s.right;
+    if (s.right2) out.r2.width = s.right2;
+    out.r2.open = !!s.right2Open;
+  }
+  return out;
+}
+
+/** The stored form of the four columns (the bottom height is the shell's). */
+export function storedColumns(c: Record<ColumnKey, ColumnSize>): ShellSizes {
+  return {
+    ai: c.l1.width, aiOpen: c.l1.open,
+    left2: c.l2.width, left2Open: c.l2.open,
+    right: c.r1.width, rightHidden: !c.r1.open,
+    right2: c.r2.width, right2Open: c.r2.open,
+  };
 }
 
 export interface Workspace {
   /** The left panel; absent in a workspace saved before it was a dock. */
   left?: DockLayout;
+  /** The second left column; absent before it existed. */
+  left2?: DockLayout;
   /** The right dock's first column. */
   right: DockLayout;
-  /** Its further columns, left to right; absent in a workspace saved with one. */
+  /** The second right column (R2) as `columns[0]`; absent in a workspace
+   *  saved with one. Kept a list for workspaces saved before R2 had a name. */
   columns?: DockLayout[];
   bottom: DockLayout;
   sizes: ShellSizes;
@@ -54,11 +109,13 @@ export function parseWorkspaces(raw: string | null): NamedWorkspace[] {
     if (!isLayout(w.right) || !isLayout(w.bottom)) continue;
     if (w.columns !== undefined && !(Array.isArray(w.columns) && w.columns.every(isLayout))) continue;
     if (w.left !== undefined && !isLayout(w.left)) continue;
+    if (w.left2 !== undefined && !isLayout(w.left2)) continue;
     if (findWorkspace(out, e.name)) continue;
     out.push({
       name: e.name.trim(),
       workspace: {
         ...(w.left ? { left: withDefaults(w.left) } : {}),
+        ...(w.left2 ? { left2: withDefaults(w.left2) } : {}),
         right: withDefaults(w.right),
         ...(w.columns?.length ? { columns: w.columns.map(withDefaults) } : {}),
         bottom: withDefaults(w.bottom),
@@ -149,13 +206,37 @@ export const LAYOUT_PRESETS: LayoutPreset[] = [
 /** Width of one right-dock column when a preset lays it out. */
 export const PRESET_COLUMN_WIDTH = 268;
 
+/** The narrowest a side column is drawn, and the least the stage keeps. */
+export const COLUMN_MIN = 180;
+export const STAGE_MIN = 240;
+
 /**
- * How wide the right dock may be: wider with more columns, but never more
- * than half the window, so the stage keeps the other half.
+ * The widths the open columns are DRAWN at, so they fit beside the stage in
+ * `room` pixels: each keeps the width it was given while they fit, and all
+ * shrink in proportion when they do not, never under `COLUMN_MIN`. The
+ * given widths are not changed, so the columns grow back with the window.
  */
-export function clampRightWidth(width: number, columns: number, viewportWidth: number): number {
-  const min = 180 + 120 * (columns - 1);
-  const max = Math.max(min, Math.min(Math.max(560, 300 * columns), viewportWidth * 0.5));
+export function fitColumns(
+  cols: Readonly<Record<ColumnKey, ColumnSize>>, room: number,
+): Record<ColumnKey, number> {
+  const keys = Object.keys(cols) as ColumnKey[];
+  const open = keys.filter((k) => cols[k].open);
+  const total = open.reduce((sum, k) => sum + cols[k].width, 0);
+  const out = Object.fromEntries(keys.map((k) => [k, cols[k].width])) as Record<ColumnKey, number>;
+  if (total <= room || total === 0) return out;
+  const spare = Math.max(0, room - COLUMN_MIN * open.length);
+  const extra = open.reduce((sum, k) => sum + (cols[k].width - COLUMN_MIN), 0);
+  for (const k of open) {
+    out[k] = Math.floor(COLUMN_MIN + (extra > 0 ? (cols[k].width - COLUMN_MIN) * spare / extra : 0));
+  }
+  return out;
+}
+
+/** How wide one side column may be: never narrower than its content needs,
+ *  never more than 45% of the window, so the stage keeps the rest. */
+export function clampColumnWidth(width: number, viewportWidth: number): number {
+  const min = COLUMN_MIN;
+  const max = Math.max(min, Math.min(700, viewportWidth * 0.45));
   return Math.round(Math.max(min, Math.min(max, width)));
 }
 
@@ -174,6 +255,9 @@ export function presetWorkspace(p: LayoutPreset): Workspace {
     right: layoutOf(first!),
     ...(rest.length ? { columns: rest.map(layoutOf) } : {}),
     bottom: layoutOf(p.bottom),
-    sizes: { right: PRESET_COLUMN_WIDTH * p.right.length, rightHidden: false, rightColumns: p.right.length },
+    sizes: {
+      right: PRESET_COLUMN_WIDTH, rightHidden: false,
+      right2: PRESET_COLUMN_WIDTH, right2Open: p.right.length > 1,
+    },
   };
 }

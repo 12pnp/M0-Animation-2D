@@ -82,6 +82,12 @@ describe("moveTab", () => {
     expect(ids(next[0]!)).toEqual([["b"], ["a"], ["c"]]);
   });
 
+  it("splits a tab out of its own group, just below it (the group menu's Split Below)", () => {
+    const next = moveTab(two, 0, "history", { dock: 0, group: 0, edge: "after" })!;
+    expect(ids(next[0]!)).toEqual([["props"], ["history"], ["library"]]);
+    expect(next[0]!.groups[1]!.activeId).toBe("history");
+  });
+
   it("a lone tab dropped on its own group's edge stays", () => {
     expect(moveTab(two, 0, "library", { dock: 0, group: 1, edge: "before" })).toBeNull();
   });

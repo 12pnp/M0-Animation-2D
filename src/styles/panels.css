@@ -33,7 +33,16 @@
 .ptab:hover { color: var(--fg); }
 .ptab.active { background: var(--bg-panel); color: var(--fg-strong); }
 .ptab.dragging { opacity: 0.5; cursor: grabbing; }
-.ptabs .pmenu { margin-left: auto; padding: 0 6px; display: grid; place-items: center; color: var(--fg-dim); }
+.ptabs .pmenu {
+  margin-left: auto; padding: 0 6px; display: grid; place-items: center; color: var(--fg-dim);
+  /* Stays at the right end while the tabs scroll under it. */
+  position: sticky; right: 0; flex: none; background: var(--bg-header);
+}
+/* More tabs than fit: the strip scrolls sideways, on a thin bar. */
+.ptabs { overflow-x: auto; overflow-y: hidden; }
+.ptabs::-webkit-scrollbar { height: 4px; }
+.ptabs::-webkit-scrollbar-thumb { border: none; border-radius: 2px; }
+.ptab { flex: none; }
 .ptabs .pmenu:hover { color: var(--fg-strong); }
 
 /* Dragging a panel tab. Both are fixed overlays on <body>, above float windows,
@@ -52,6 +61,9 @@
 }
 
 .pbody { flex: 1 1 auto; min-height: 0; overflow: auto; }
+/* In a side column dragged narrower than a panel can lay itself out, the
+   panel keeps its width and the body scrolls sideways instead of crushing it. */
+.side-col .pbody > * { min-width: 240px; }
 .pfooter {
   display: flex; align-items: center; gap: 1px;
   padding: 2px 4px;
