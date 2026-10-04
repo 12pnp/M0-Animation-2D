@@ -2,6 +2,7 @@ import { clear, cls, drag, h, on } from "./dom";
 import { icon, type IconName } from "@/view/icons";
 import { clampRect, type FloatRect, FloatWindow } from "./FloatWindow";
 import { accelOf } from "./accel";
+import { type DockLayout, type DockRects, type DropTarget, type GroupState, type Rect, dropTargetAt, moveTab, placesPanel } from "./dockDrop";
 
 /**
  * A dock column of tabbed panel groups.
@@ -9,9 +10,10 @@ import { accelOf } from "./accel";
  * Animate lets you tear panels anywhere; that is more modularity than this
  * tool needs and a lot of surface to get wrong. What we take from it is the
  * part that actually earns its keep day to day: panels live in tabbed
- * groups, you can drag a tab into another group or between groups to make a
- * new one, you can collapse a group to its tab strip, and you can drag the
- * boundary between groups to reweight them. Layout persists.
+ * groups, you can drag a tab into another group (of this dock or another),
+ * between groups to make a new one, or off every dock to float it; you can
+ * collapse a group to its tab strip, and you can drag the boundary between
+ * groups to reweight them. Layout persists.
  */
 
 export interface Panel {
@@ -28,27 +30,6 @@ export interface Panel {
   menu?(): Array<{ label: string; run: () => void } | "-">;
 }
 
-interface GroupState {
-  panelIds: string[];
-  activeId: string;
-  collapsed: boolean;
-  /** Flex weight when expanded. */
-  weight: number;
-}
-
-interface DockLayout {
-  groups: GroupState[];
-  /** Panels torn out of the column, by id. */
-  floats: Record<string, FloatRect>;
-  /** Panels the user closed. Kept so they are not silently re-added. */
-  closed: string[];
-  /**
-   * For each closed panel, a panel it was grouped with. Reopening puts it
-   * back beside that one instead of stranding it in a group of its own.
-   */
-  closedNear?: Record<string, string>;
-}
-
 export class Dock {
   readonly el: HTMLElement;
   private panels = new Map<string, Panel>();
@@ -57,6 +38,7 @@ export class Dock {
   private defaults: string[][] = [];
   private groupEls: HTMLElement[] = [];
   private floatWins = new Map<string, FloatWindow>();
+  private stripEls: HTMLElement[] = [];
   /** Notified whenever a panel opens, closes, floats or docks. */
   onLayoutChange: (() => void) | null = null;
 
@@ -70,6 +52,7 @@ export class Dock {
     this.el.style.flex = "1 1 auto";
     this.el.style.minHeight = "0";
 
+    docks.push(this);
     window.addEventListener("resize", () => {
       for (const [id, win] of this.floatWins) {
         win.reclamp();
@@ -81,6 +64,12 @@ export class Dock {
 
   register(panel: Panel): void {
     this.panels.set(panel.id, panel);
+  }
+
+  /** Did the stored layout place this panel here? A tab dragged across docks
+   *  is stored in its new dock, and has to be registered there on reload. */
+  stores(panelId: string): boolean {
+    return placesPanel(this.load(), panelId);
   }
 
   /** Default arrangement, used when nothing is stored. */
@@ -223,6 +212,7 @@ export class Dock {
   render(): void {
     clear(this.el);
     this.groupEls = [];
+    this.stripEls = [];
 
     this.layout.groups.forEach((group, gi) => {
       const groupEl = h("div", { class: "pgroup" });
@@ -237,7 +227,7 @@ export class Dock {
         if (!panel) continue;
         const active = pid === group.activeId && !group.collapsed;
         const tab = h("div", { class: `ptab${active ? " active" : ""}`, title: panel.title }, panel.title);
-        this.wireTab(tab, group, gi, pid);
+        this.wireTab(tab, group, pid);
         tabs.appendChild(tab);
       }
       const menuBtn = h("button", { class: "pmenu iconbtn", title: "Panel menu" });
@@ -248,6 +238,7 @@ export class Dock {
       });
       tabs.appendChild(menuBtn);
       groupEl.appendChild(tabs);
+      this.stripEls.push(tabs);
 
       // Body + footer of the active panel
       if (!group.collapsed) {
@@ -334,7 +325,7 @@ export class Dock {
 
   // ── Tab interaction: activate, collapse, drag between groups ───────────
 
-  private wireTab(tab: HTMLElement, group: GroupState, groupIndex: number, panelId: string): void {
+  private wireTab(tab: HTMLElement, group: GroupState, panelId: string): void {
     on(tab, "click", () => {
       if (group.activeId === panelId && !group.collapsed) return;
       group.activeId = panelId;
@@ -350,83 +341,97 @@ export class Dock {
     });
 
     let dragging = false;
-    let indicator: HTMLElement | null = null;
+    let ghost: HTMLElement | null = null;
+    let marker: HTMLElement | null = null;
+    const target = () => dropTargetAt(docks.map((d) => d.measure()), lastPointer.x, lastPointer.y);
+    const cleanup = () => {
+      tab.classList.remove("dragging");
+      ghost?.remove(); marker?.remove();
+      ghost = marker = null;
+      dragging = false;
+    };
 
     drag(tab, {
       cursor: "grabbing",
       onMove: (dx, dy) => {
         if (!dragging && Math.hypot(dx, dy) < 5) return;
-        if (!dragging) { dragging = true; tab.classList.add("dragging"); }
-        const target = this.hitGroup(lastPointer.x, lastPointer.y);
-        indicator?.remove();
-        indicator = null;
-        if (target) {
-          indicator = h("div", { class: "drop-line" });
-          const el = this.groupEls[target.index];
-          if (el) {
-            if (target.edge === "before") this.el.insertBefore(indicator, el);
-            else this.el.insertBefore(indicator, el.nextSibling);
-          }
+        if (!dragging) {
+          dragging = true;
+          tab.classList.add("dragging");
+          ghost = h("div", { class: "ptab-ghost" }, this.panels.get(panelId)?.title ?? panelId);
+          marker = h("div", { class: "dock-drop" });
+          document.body.append(ghost, marker);
         }
+        ghost!.style.transform = `translate(${lastPointer.x + 10}px, ${lastPointer.y + 8}px)`;
+        Dock.placeMarker(marker!, target());
       },
       onEnd: (_ev, cancelled) => {
-        tab.classList.remove("dragging");
-        indicator?.remove();
-        indicator = null;
-        if (!dragging || cancelled) { dragging = false; return; }
-        dragging = false;
-
-        const target = this.hitGroup(lastPointer.x, lastPointer.y);
-        if (!target) return;
-
-        // Remove from the source group
-        group.panelIds = group.panelIds.filter((id) => id !== panelId);
-        if (group.activeId === panelId) group.activeId = group.panelIds[0] ?? "";
-
-        if (target.edge === "into") {
-          const dest = this.layout.groups[target.index];
-          if (dest && dest !== group) {
-            dest.panelIds.push(panelId);
-            dest.activeId = panelId;
-            dest.collapsed = false;
-          } else {
-            group.panelIds.push(panelId);
-            group.activeId = panelId;
-          }
-        } else {
-          const at = target.edge === "before" ? target.index : target.index + 1;
-          const insertAt = at > groupIndex ? at : at;
-          this.layout.groups.splice(insertAt, 0, {
-            panelIds: [panelId], activeId: panelId, collapsed: false, weight: 1,
-          });
+        const was = dragging;
+        cleanup();
+        if (!was || cancelled) return;
+        const t = target();
+        if (!t) {
+          this.float(panelId, { x: lastPointer.x - 60, y: lastPointer.y - 12, w: 420, h: 340 });
+          return;
         }
-
-        this.layout.groups = this.layout.groups.filter((g) => g.panelIds.length > 0);
-        this.save();
-        this.render();
+        const dest = docks[t.dock]!;
+        const next = moveTab(docks.map((d) => d.layout), docks.indexOf(this), panelId, t);
+        if (!next) return;
+        if (dest !== this) {
+          dest.panels.set(panelId, this.panels.get(panelId)!);
+          this.panels.delete(panelId);
+        }
+        next.forEach((l, i) => { docks[i]!.layout = l; });
+        for (const d of dest === this ? [this] : [this, dest]) { d.save(); d.render(); }
       },
     });
   }
 
-  /** Which group (and which edge of it) is under the pointer. */
-  private hitGroup(x: number, y: number): { index: number; edge: "before" | "into" | "after" } | null {
-    for (let i = 0; i < this.groupEls.length; i++) {
-      const r = this.groupEls[i]!.getBoundingClientRect();
-      if (x < r.left || x > r.right || y < r.top || y > r.bottom) continue;
-      const edgeBand = Math.min(28, r.height * 0.28);
-      if (y < r.top + edgeBand) return { index: i, edge: "before" };
-      if (y > r.bottom - edgeBand) return { index: i, edge: "after" };
-      return { index: i, edge: "into" };
-    }
-    // Past the end of the column
-    const last = this.groupEls[this.groupEls.length - 1];
-    if (last) {
-      const r = last.getBoundingClientRect();
-      if (y > r.bottom && x >= r.left && x <= r.right) {
-        return { index: this.groupEls.length - 1, edge: "after" };
+  /** Screen rectangles of the column, its groups and their tabs, for `dropTargetAt`. */
+  private measure(): DockRects {
+    const rect = (el: Element): Rect => el.getBoundingClientRect();
+    return {
+      rect: rect(this.el),
+      groups: this.groupEls.map((el, i) => ({
+        rect: rect(el),
+        strip: rect(this.stripEls[i]!),
+        tabs: Array.from(this.stripEls[i]!.querySelectorAll(".ptab"), rect),
+      })),
+    };
+  }
+
+  /** Show where a drop would land: a bar between tabs or groups, or a whole area. */
+  private static placeMarker(marker: HTMLElement, t: DropTarget | null): void {
+    marker.hidden = !t;
+    if (!t) return;
+    const d = docks[t.dock]!;
+    let r: Rect;
+    let area = false;
+    if (t.edge === "empty") {
+      r = d.el.getBoundingClientRect();
+      area = true;
+    } else {
+      const g = d.groupEls[t.group]!.getBoundingClientRect();
+      const strip = d.stripEls[t.group]!.getBoundingClientRect();
+      if (t.edge !== "into") {
+        const y = t.edge === "before" ? g.top : g.bottom;
+        r = { left: g.left, right: g.right, top: y - 1, bottom: y + 1 };
+      } else if (lastPointer.y > strip.bottom) {
+        r = g;
+        area = true;
+      } else {
+        const tabs = d.stripEls[t.group]!.querySelectorAll(".ptab");
+        const x = t.tab < tabs.length
+          ? tabs[t.tab]!.getBoundingClientRect().left
+          : (tabs[tabs.length - 1]?.getBoundingClientRect().right ?? strip.left);
+        r = { left: x - 1, right: x + 1, top: strip.top, bottom: strip.bottom };
       }
     }
-    return null;
+    cls(marker, "area", area);
+    Object.assign(marker.style, {
+      left: `${r.left}px`, top: `${r.top}px`,
+      width: `${r.right - r.left}px`, height: `${r.bottom - r.top}px`,
+    });
   }
 
   private showGroupMenu(anchor: HTMLElement, group: GroupState): void {
@@ -473,6 +478,9 @@ function defaultFloatRect(index: number): FloatRect {
   const step = 26 * (index % 6);
   return { x: Math.max(24, innerWidth - 520 + step), y: 90 + step, w: 420, h: 340 };
 }
+
+/** Every dock, in creation order: a tab can be dropped into any of them. */
+const docks: Dock[] = [];
 
 /* Track the pointer globally: `drag` gives deltas, and hit-testing wants
    absolute coordinates. */

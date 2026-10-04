@@ -96,7 +96,6 @@ export class Shell {
   private bottomWrap: HTMLElement;
   private menus: MenuDef[] = [];
   private railToggle: HTMLElement | null = null;
-  private panelDock = new Map<string, Dock>();
   private docNameEl: HTMLElement;
   private docTabEl: HTMLElement;
   /** The AI column's width while it is closed (a hidden element measures 0). */
@@ -429,13 +428,21 @@ export class Shell {
   // ── Docks ──────────────────────────────────────────────────────────────
 
   addRightPanel(panel: Panel): void {
-    this.rightDock.register(panel);
-    this.panelDock.set(panel.id, this.rightDock);
+    this.homeDock(panel.id, this.rightDock, this.bottomDock).register(panel);
   }
 
   addBottomPanel(panel: Panel): void {
-    this.bottomDock.register(panel);
-    this.panelDock.set(panel.id, this.bottomDock);
+    this.homeDock(panel.id, this.bottomDock, this.rightDock).register(panel);
+  }
+
+  /** A panel's tab can be dragged to the other dock; the saved layout says
+   *  where it went. */
+  private homeDock(id: string, usual: Dock, other: Dock): Dock {
+    return other.stores(id) && !usual.stores(id) ? other : usual;
+  }
+
+  private dockOf(id: string): Dock | undefined {
+    return [this.rightDock, this.bottomDock].find((d) => d.has(id));
   }
 
   // ── Panel visibility (the Window menu) ─────────────────────────────────
@@ -446,33 +453,33 @@ export class Shell {
    * column, without which every one of these does its job invisibly.
    */
   showPanel(id: string): void {
-    const dock = this.panelDock.get(id);
+    const dock = this.dockOf(id);
     if (!dock) return;
     if (dock === this.rightDock && !dock.isFloating(id)) this.expandRightDock();
     dock.focus(id);
   }
 
   togglePanel(id: string): void {
-    const dock = this.panelDock.get(id);
+    const dock = this.dockOf(id);
     if (!dock) return;
     if (dock.isOpen(id) && (dock.isFloating(id) || dock.isVisible(id))) dock.close(id);
     else this.showPanel(id);
   }
 
   floatPanel(id: string): void {
-    const dock = this.panelDock.get(id);
+    const dock = this.dockOf(id);
     if (!dock) return;
     if (dock.isFloating(id)) dock.dockPanel(id);
     else dock.float(id);
   }
 
   isPanelOpen(id: string): boolean {
-    const dock = this.panelDock.get(id);
+    const dock = this.dockOf(id);
     return !!dock && dock.isOpen(id) && (dock !== this.rightDock || !this.rightCollapsed || dock.isFloating(id));
   }
 
   isPanelFloating(id: string): boolean {
-    return !!this.panelDock.get(id)?.isFloating(id);
+    return !!this.dockOf(id)?.isFloating(id);
   }
 
   private get rightCollapsed(): boolean {

@@ -36,9 +36,19 @@
 .ptabs .pmenu { margin-left: auto; padding: 0 6px; display: grid; place-items: center; color: var(--fg-dim); }
 .ptabs .pmenu:hover { color: var(--fg-strong); }
 
-/* Drop indicator when reordering panel groups */
-.dock-right .drop-line, .bottom .drop-line {
-  height: 2px; background: var(--accent); flex: none; margin: -1px 0; z-index: 10;
+/* Dragging a panel tab. Both are fixed overlays on <body>, above float windows,
+   so the layout under the pointer never shifts while it is being hit-tested. */
+.dock-drop {
+  position: fixed; z-index: 1900; pointer-events: none;
+  background: var(--accent);
+}
+.dock-drop.area { background: rgba(var(--accent-rgb), 0.18); outline: 1px solid var(--accent); outline-offset: -1px; }
+.ptab-ghost {
+  position: fixed; left: 0; top: 0; z-index: 1901; pointer-events: none;
+  padding: 3px 10px;
+  background: var(--bg-panel); color: var(--fg-strong);
+  border: 1px solid var(--accent); border-radius: var(--radius);
+  white-space: nowrap; opacity: 0.9;
 }
 
 .pbody { flex: 1 1 auto; min-height: 0; overflow: auto; }
