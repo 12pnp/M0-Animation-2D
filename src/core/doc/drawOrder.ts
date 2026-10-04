@@ -209,3 +209,30 @@ export function withFront(order: readonly NodeId[], front: readonly NodeId[]): N
   places.forEach((at, n) => { out[at] = backFirst[n]!; });
   return out;
 }
+
+/** `order` with `moving` put just in front of the frontmost of `ref`,
+ *  keeping their order. Null when there is nothing to move or to place by. */
+export function placedInFront(order: readonly NodeId[], moving: readonly NodeId[], ref: readonly NodeId[]): NodeId[] | null {
+  const pick = new Set(moving);
+  const rest = order.filter((id) => !pick.has(id));
+  const mv = order.filter((id) => pick.has(id));
+  const at = Math.max(...ref.map((id) => rest.indexOf(id)));
+  if (!mv.length || at < 0) return null;
+  return [...rest.slice(0, at + 1), ...mv, ...rest.slice(at + 1)];
+}
+
+/**
+ * A layer row dragged onto another in Animate: what it draws goes just in
+ * front of what the row it lands on draws (the timeline lists front first,
+ * so dropped above it), keyed at `frame`. Null when that changes nothing.
+ */
+export function dropOrderAt(
+  sym: SymbolItem, anim: Animation, frame: number, dragged: NodeId, target: NodeId,
+): DrawOrderKey[] | null {
+  const before = orderAt(sym, anim, frame);
+  const next = placedInFront(before, reorderTargets(sym, [dragged]), reorderTargets(sym, [target]));
+  if (!next) return null;
+  const keys = withDrawOrderKey(anim.drawOrder ?? [], frame, next, drawingLayers(sym));
+  // Units (a mask with its layers) may undo the move: then nothing changes.
+  return sameOrder(before, orderAt(sym, { ...anim, drawOrder: keys }, frame)) ? null : keys;
+}

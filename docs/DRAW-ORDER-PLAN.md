@@ -1,7 +1,6 @@
 # Draw order keys
 
-Done: steps 1 to 6 (ARCHITECTURE ▸ Draw order keys). The editing in step 5 is
-Modify ▸ Draw Order and the layer menu, not dragging layers in the layer list.
+Done: steps 1 to 6 (ARCHITECTURE ▸ Draw order keys).
 
 Spine animates the order slots draw in with a **Draw order** row: a key holds the
 whole order from that frame on, as offsets from the setup order. This editor has

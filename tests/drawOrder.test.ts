@@ -9,7 +9,9 @@ import {
 import { migrate, validateProject } from "@/core/doc/schema";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { importSpine } from "@/core/spine/importSpine";
-import { deleteDrawOrderKeys, drawUnits, moveDrawOrderKeys, reorderAt, withFront } from "@/core/doc/drawOrder";
+import {
+  deleteDrawOrderKeys, dropOrderAt, drawUnits, moveDrawOrderKeys, placedInFront, reorderAt, withFront,
+} from "@/core/doc/drawOrder";
 
 beforeEach(() => reseed());
 
@@ -211,5 +213,39 @@ describe("withFront", () => {
     { front: ["c", "x", "c"], want: ["a", "b", "c", "d"] },
   ])("$front front first", ({ front, want }) => {
     expect(withFront(ids("a", "b", "c", "d"), ids(...front))).toEqual(want);
+  });
+});
+
+describe("placedInFront", () => {
+  it.each([
+    { moving: ["a"], ref: ["c"], want: ["b", "c", "a", "d"] },
+    { moving: ["d"], ref: ["a"], want: ["a", "d", "b", "c"] },
+    { moving: ["a", "b"], ref: ["c"], want: ["c", "a", "b", "d"] },
+    { moving: ["b"], ref: ["a", "c"], want: ["a", "c", "b", "d"] },
+    { moving: ["x"], ref: ["a"], want: null },
+    { moving: ["a"], ref: ["a"], want: null },
+  ])("$moving in front of $ref", ({ moving, ref, want }) => {
+    expect(placedInFront(ids("a", "b", "c", "d"), ids(...moving), ids(...ref))).toEqual(want);
+  });
+});
+
+describe("a layer dropped on a row in Animate", () => {
+  it("keys the draw order: in front of that row's layer, from the playhead on", () => {
+    const project = createProject("L");
+    const s = project.items[project.rootSymbolId] as SymbolItem;
+    const add = (name: string) => {
+      const n = createNode("image", name);
+      s.nodes[n.id] = n;
+      s.layers.push(createLayer(n.id, name, s.layers.length));
+      return n.id;
+    };
+    const top = add("top"), mid = add("mid"), bottom = add("bottom");
+    const anim = s.animations[0]!;
+    const keys = dropOrderAt(s, anim, 4, bottom, top)!;
+    expect(keys).toEqual([{ frame: 4, order: [mid, top, bottom] }]);
+    anim.drawOrder = keys;
+    // Already in front of it: nothing to key.
+    expect(dropOrderAt(s, anim, 4, bottom, top)).toBeNull();
+    expect(dropOrderAt(s, anim, 4, top, bottom)).toEqual([{ frame: 4, order: [mid, bottom, top] }]);
   });
 });

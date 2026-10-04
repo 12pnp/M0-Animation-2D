@@ -1,4 +1,6 @@
 import { clear, cls, h, on } from "@/view/widgets/dom";
+import { dropOrderAt } from "@/core/doc/drawOrder";
+import { doSetDrawOrder } from "@/app/TimelineOps";
 import { mayReparent } from "@/view/widgets/ikReparentGuard";
 import { icon } from "@/view/icons";
 import type { Store } from "@/app/Store";
@@ -267,8 +269,9 @@ export class LayerList {
       // Dropping on the middle of a group re-parents INTO it; the top and
       // bottom thirds reorder around it, so a layer can still be moved past a
       // group without being swallowed by it.
+      // In Animate a drop only keys the draw order: nothing goes into a group.
       const r = el.getBoundingClientRect();
-      const into = isGroup && e.clientY > r.top + r.height * 0.3 && e.clientY < r.bottom - r.height * 0.3;
+      const into = !this.keysDrawOrder() && isGroup && e.clientY > r.top + r.height * 0.3 && e.clientY < r.bottom - r.height * 0.3;
       el.style.outline = into ? "1px solid var(--accent)" : "";
       el.style.borderTop = into ? "" : "1px solid var(--accent)";
     });
@@ -282,6 +285,15 @@ export class LayerList {
       const dragged = rows[this.dragIndex]?.layer;
       this.dragIndex = -1;
       if (!dragged || dragged.id === layer.id) return;
+
+      // Animate: the layer draws in front of this row's from the playhead on,
+      // keyed there, as dragging in Spine's tree does; the stack stays.
+      const anim = this.store.currentAnimation;
+      if (this.keysDrawOrder() && anim) {
+        const keys = dropOrderAt(sym, anim, this.store.ui.frame, dragged.nodeId, layer.nodeId);
+        if (keys) doSetDrawOrder(this.store, keys, "Draw Order");
+        return;
+      }
 
       const r = el.getBoundingClientRect();
       const into = isGroup && e.clientY > r.top + r.height * 0.3 && e.clientY < r.bottom - r.height * 0.3;
@@ -310,6 +322,11 @@ export class LayerList {
     });
 
     return el;
+  }
+
+  /** Whether a layer drag keys the draw order instead of restacking. */
+  private keysDrawOrder(): boolean {
+    return this.store.ui.mode === "animate" && !!this.store.currentAnimation;
   }
 
   /**

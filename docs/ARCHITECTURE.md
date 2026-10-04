@@ -472,7 +472,10 @@ against spine-core's `SkeletonJson` in `tests/drawOrder.test.ts`).
   menu keys the order in force or the setup order at a frame. Modify ▸ Draw Order (and the
   layer menu; ⌘↑ ⌘↓, ⌘⇧↑ ⌘⇧↓) moves the selected layers at the playhead and keys it there,
   in Animate only (`doReorder`, `reorderAt`); a selected bone moves the pictures on it
-  (`reorderTargets`). The AI's `key_draw_order` does the same; `get_animation` lists the keys.
+  (`reorderTargets`). In Animate, dragging a layer row onto another keys the draw order
+  too, the dragged layer's pictures just in front of the row's (`dropOrderAt`,
+  `placedInFront`), as dragging in Spine's tree does; it never restacks or re-parents
+  there, and Setup keeps restacking. The AI's `key_draw_order` does the same; `get_animation` lists the keys.
 
 ### The timeline fills its panel, and only the layers scroll
 
