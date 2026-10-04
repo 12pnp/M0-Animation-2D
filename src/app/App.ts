@@ -24,6 +24,7 @@ import { ReferencePanel } from "@/view/panels/ReferencePanel";
 import { ReferenceService } from "./ReferenceService";
 import { PosesService } from "./PosesService";
 import { PosesPanel } from "@/view/panels/PosesPanel";
+import { PathPanel } from "@/view/panels/PathPanel";
 import { PreviewPanel } from "@/view/panels/PreviewPanel";
 import { AgentApi } from "@/app/agent/AgentApi";
 import { AgentBridge, DEFAULT_BRIDGE } from "@/app/agent/AgentBridge";
@@ -103,6 +104,7 @@ export class App {
   private play: StagePlay;
   private preview: PreviewPanel;
   readonly timeline: TimelinePanel;
+  pathPanel!: PathPanel;
   readonly project: ProjectService;
   private toast = new Toast();
   private workspaces: Workspaces;
@@ -176,7 +178,7 @@ export class App {
 
     this.registerPanels();
     this.shell.layoutDocks(
-      [["properties"], ["library", "outline", "animations", "skins"], ["subtree"], ["preview"]],
+      [["properties"], ["library", "outline", "animations", "skins"], ["subtree", "preview"], ["path"], ["worldPath"]],
       [["timeline", "reference", "poses"]],
       [[AI_PANEL]],
     );
@@ -271,6 +273,9 @@ export class App {
     this.shell.addRightPanel(new SkinsPanel(this.store));
     this.shell.addRightPanel(new HistoryPanel(this.store));
     this.shell.addRightPanel(this.preview);
+    this.pathPanel = new PathPanel(this.store, this.assets, (m) => this.toast.show(m));
+    this.shell.addRightPanel(this.pathPanel);
+    this.shell.addRightPanel(new PathPanel(this.store, this.assets, (m) => this.toast.show(m), "world"));
     this.shell.addLeftPanel(this.aiPanel);
 
     this.shell.addBottomPanel(this.timeline);

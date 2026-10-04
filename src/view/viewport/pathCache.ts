@@ -2,6 +2,8 @@ import type { Pose } from "@/core/doc/pose";
 import type { Animation, Project, SymbolItem } from "@/core/doc/types";
 import { posedSymbol } from "@/core/spine/spinePose";
 
+export type PathSampler = (frame: number, force?: boolean) => Pose | null;
+
 /**
  * Posed frames for the bone paths (`core/doc/bonePath.ts`), kept between
  * draws. A playhead move only changes which dot is filled, so it reuses every
@@ -22,10 +24,13 @@ export class PathCache {
 
   constructor(private readonly budgetMs = 6) {}
 
-  /** A sampler for `bonePaths`, valid for one draw. */
+  /** A sampler for `bonePaths`, valid for one draw. Past its budget a frame
+   *  with no pose at all comes back null (left out of the path until a later
+   *  draw), unless `force`d: a big rig's first look at a long animation is
+   *  spread over several draws instead of freezing the stage. */
   sampler(
     project: Project, sym: SymbolItem, anim: Animation, revision: number, now: () => number = () => performance.now(),
-  ): (frame: number) => Pose {
+  ): PathSampler {
     const key = `${sym.id}|${anim.id}`;
     if (key !== this.key) {
       this.key = key;
@@ -39,13 +44,13 @@ export class PathCache {
     this.revision = revision;
     this.pending = false;
     const until = now() + this.budgetMs;
-    return (frame) => {
+    return (frame, force = false) => {
       const hit = this.fresh.get(frame);
       if (hit) return hit;
       const old = this.stale.get(frame);
-      if (old && now() > until) {
+      if (!force && now() > until) {
         this.pending = true;
-        return old;
+        return old ?? null;
       }
       const pose = posedSymbol(project, sym, anim, frame, "animate");
       this.fresh.set(frame, pose);

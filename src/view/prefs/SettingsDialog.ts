@@ -244,6 +244,10 @@ const CATEGORIES: Category[] = [
             kind: "select", cat: "gizmos", key: "bonePathBones", label: "Bone paths for",
             options: [{ value: "selected", text: "Selected bones" }, { value: "all", text: "Every bone" }],
           },
+          {
+            kind: "select", cat: "gizmos", key: "bonePathSpace", label: "Bone paths are",
+            options: [{ value: "parent", text: "Relative to the parent" }, { value: "world", text: "Where it goes on the stage" }],
+          },
           { kind: "number", cat: "gizmos", key: "handleSize", label: "Handle size", unit: "px" },
         ],
       },

@@ -1,17 +1,25 @@
 import type { ToolContext } from "./Tool";
 import type { NodeId } from "@/core/doc/ids";
 import type { Track } from "@/core/doc/types";
-import { DRAWN_BONE_LENGTH } from "@/core/doc/bonePath";
+import { DRAWN_BONE_LENGTH, pathBoneIds } from "@/core/doc/bonePath";
 import { seamFrame } from "@/core/doc/cycle";
 import {
   type BakeFrame, bakePlan, type DragFrame, keyAt, pathDotAt, withBakedKeys, pathDragMode, type PathDragMode, type Point, rotateTo, rotateWithParentTo,
   shiftKeys, translateTo, withKeyTransform, withoutRedundantKeys,
 } from "@/core/doc/pathEdit";
-import { apply, invert, mat, type Matrix2D } from "@/core/math/Matrix2D";
+import { apply, invert, mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { handleAt, type PathHandle, type Spline, splineAt, splineSegments, withSpline } from "@/core/doc/pathSpline";
 import { quantize, type Transform } from "@/core/math/Transform";
 import { posedSymbol } from "@/core/spine/spinePose";
 import { EditTracks } from "@/core/history/timelineCommands";
+
+/**
+ * While a dot is held: the frame whose parent pose its path was drawn in. A
+ * press moves the playhead to the dot's frame, and a path drawn relative to
+ * the parent at the playhead would re-anchor under the pointer; the stage
+ * keeps drawing it at this frame until the press ends.
+ */
+export let pathDragAnchor: number | null = null;
 
 /** Screen pixels within which a press picks a path dot. */
 const DOT_RADIUS = 7;
@@ -44,18 +52,22 @@ export class PathDrag {
   private refused: string | null = null;
   private moving: Moving[] = [];
   private last: Point;
+  /** Relative paths: a drawn point into the dragged frame's space. */
+  private back: Matrix2D | null = null;
 
   constructor(
     private readonly ctx: ToolContext,
     id: NodeId,
     private readonly frame: number,
-    private readonly dot: Point,
+    private readonly dot: Point & { relativeAt?: number },
     private readonly startWorld: Point,
     e: PointerEvent,
   ) {
     this.last = dot;
+    pathDragAnchor = dot.relativeAt ?? null;
     const store = ctx.store;
-    if (!store.selection.nodes.includes(id)) store.selectNodes([id]);
+    // A selected picture shows its bone's path; keep it selected.
+    if (!pathBoneIds(store.currentSymbol.nodes, store.selection.nodes).includes(id)) store.selectNodes([id]);
     store.setFrame(frame);
 
     const sym = store.currentSymbol;
@@ -82,6 +94,14 @@ export class PathDrag {
     const length = which === "tip" && node.kind === "bone" ? node.boneLength ?? DRAWN_BONE_LENGTH : 0;
     const own = frameOf(id, length);
     if (!own) { this.mode = null; return; }
+    // A path drawn relative to the parent: a point drawn in the parent's pose
+    // at `relativeAt` is in this frame's space through the parent's pose here.
+    if (dot.relativeAt !== undefined) {
+      const at = posedSymbol(store.project, sym, anim, dot.relativeAt, "animate");
+      const atParent = node.parentId ? at.byNode.get(node.parentId)?.world : undefined;
+      const inv = mat();
+      if (atParent && invert(inv, atParent)) this.back = mul(mat(), own.parentWorld, inv);
+    }
     this.moving.push({ id, frame: own, base: anim.tracks[id] });
     if (this.mode === "rotateWithParent" && node.parentId) {
       const parent = frameOf(node.parentId, 0);
@@ -101,17 +121,20 @@ export class PathDrag {
       ctx.store.history.beginInteraction("path.drag");
     }
     if (!this.mode) return;
-    this.last = { x: this.dot.x + world.x - this.startWorld.x, y: this.dot.y + world.y - this.startWorld.y };
+    const shown = { x: this.dot.x + world.x - this.startWorld.x, y: this.dot.y + world.y - this.startWorld.y };
+    this.last = this.back ? apply({ x: 0, y: 0 }, this.back, shown.x, shown.y) : shown;
     this.apply(e.shiftKey, false);
   }
 
   up(e: PointerEvent): void {
+    pathDragAnchor = null;
     if (!this.dragging || !this.mode) return;
     this.apply(e.shiftKey, true);
     this.ctx.store.history.endInteraction();
   }
 
   cancel(): void {
+    pathDragAnchor = null;
     if (this.dragging && this.mode) this.ctx.store.history.abortInteraction();
   }
 
@@ -201,17 +224,15 @@ export class HandleDrag {
     const store = ctx.store;
     const sym = store.currentSymbol;
     const anim = store.currentAnimation;
-    this.id = store.selection.nodes[0]!;
-    const node = sym.nodes[this.id];
+    this.id = pathBoneIds(sym.nodes, store.selection.nodes)[0]!;
     this.base = anim!.tracks[this.id]!;
     const seg = splineSegments(this.base).find((s) => s.from === handle.from)!;
     this.spline = seg.spline;
-    const frame = handle.end === "out" ? seg.from : seg.to;
-    const pose = posedSymbol(store.project, sym, anim!, frame, "animate");
-    const parent = node?.parentId ? pose.byNode.get(node.parentId)?.world : undefined;
-    const lin = parent ? { ...parent, tx: 0, ty: 0 } : mat();
+    // The matrix the handle was drawn through: its key's parent pose, or the
+    // parent's pose the path is shown in.
+    const l = handle.lin ?? { a: 1, b: 0, c: 0, d: 1 };
     const inv = mat();
-    this.toLocal = invert(inv, lin) ? inv : null;
+    this.toLocal = invert(inv, { ...l, tx: 0, ty: 0 }) ? inv : null;
   }
 
   move(world: Point): void {
@@ -275,6 +296,8 @@ export class BakeDrag {
   private readonly frames: BakeFrame[] = [];
   private readonly bases: Map<NodeId, Track | undefined> = new Map();
   private readonly to: number;
+  /** Relative paths: the inverse of the parent's pose they are drawn in. */
+  private atInv: Matrix2D | null = null;
 
   constructor(
     private readonly ctx: ToolContext,
@@ -284,8 +307,14 @@ export class BakeDrag {
     const store = ctx.store;
     const sym = store.currentSymbol;
     const anim = store.currentAnimation!;
-    this.id = store.selection.nodes[0]!;
+    this.id = pathBoneIds(sym.nodes, store.selection.nodes)[0]!;
     const node = sym.nodes[this.id]!;
+    if (handle.relativeAt !== undefined) {
+      const at = posedSymbol(store.project, sym, anim, handle.relativeAt, "animate");
+      const m = node.parentId ? at.byNode.get(node.parentId)?.world : undefined;
+      const inv = mat();
+      if (m && invert(inv, m)) this.atInv = inv;
+    }
     this.to = anim.tracks[this.id]!.keys.find((k) => k.frame > handle.from)!.frame;
     const withParent = node.pathDrag === "parent" && !!node.parentId && sym.nodes[node.parentId]?.kind === "bone";
     this.parentId = withParent ? node.parentId : null;
@@ -338,7 +367,12 @@ export class BakeDrag {
       ? { ...s0, p1: { x: s0.p1.x + dx, y: s0.p1.y + dy } }
       : { ...s0, p2: { x: s0.p2.x + dx, y: s0.p2.y + dy } };
     const span = this.to - this.handle.from;
-    const frames = this.frames.map((f) => ({ ...f, target: splineAt(s, (f.frame - this.handle.from) / span) }));
+    const frames = this.frames.map((f) => {
+      const p = splineAt(s, (f.frame - this.handle.from) / span);
+      // Drawn relative to the parent: into this frame through its parent pose.
+      const target = this.atInv ? apply({ x: 0, y: 0 }, mul(mat(), f.own.parentWorld, this.atInv), p.x, p.y) : p;
+      return { ...f, target };
+    });
     const kept = bakePlan(frames).filter((k) => k.frame > this.handle.from && k.frame < this.to);
     const q = (t: Transform) => (final ? quantize(t) : t);
 
@@ -358,4 +392,22 @@ export class BakeDrag {
     store.emit("timeline");
     store.emit("stage");
   }
+}
+
+/**
+ * What a press at `world` takes: a handle or a dot, whichever is nearer.
+ * Short handles sit on their key's dot, and a handle winning outright made
+ * the dot impossible to grab; a tie goes to the dot.
+ */
+export function pathPick(ctx: ToolContext, world: Point):
+  | { handle: PathHandle }
+  | { dot: NonNullable<ReturnType<typeof pathDotUnder>> }
+  | null {
+  const handle = handleUnder(ctx, world);
+  const dot = pathDotUnder(ctx, world);
+  if (handle && dot) {
+    const dh = Math.hypot(handle.x - world.x, handle.y - world.y), dd = Math.hypot(dot.x - world.x, dot.y - world.y);
+    return dh < dd ? { handle } : { dot };
+  }
+  return handle ? { handle } : dot ? { dot } : null;
 }

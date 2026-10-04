@@ -18,9 +18,9 @@ import { keyIndexAt } from "@/core/doc/timeline";
 import { withDescendants } from "@/core/doc/layerTree";
 import { GhostPainter } from "./ghost";
 import { PathCache } from "./pathCache";
-import { bonePaths, keyedIn, pathFrames, pathPoint } from "@/core/doc/bonePath";
-import { fitCubic, type PathHandle, splineSegments } from "@/core/doc/pathSpline";
-import { pathDragMode } from "@/core/doc/pathEdit";
+import { pathBoneIds, pathFrames } from "@/core/doc/bonePath";
+import { pathScene } from "./pathScene";
+import { pathDragAnchor } from "@/view/tools/pathDrag";
 import { seamFrame } from "@/core/doc/cycle";
 import type { BonePathsDraw } from "./Overlay";
 import { drawReference } from "./reference";
@@ -320,68 +320,23 @@ export class Viewport {
     const sym = store.currentSymbol;
     const g = store.prefs.value.gizmos;
     const shown = new Set(sym.layers.filter((l) => l.visible && !l.locked).map((l) => l.nodeId));
-    const selected = new Set(store.selection.nodes);
-    const ids = Object.values(sym.nodes)
-      .filter((n) => n.kind === "bone" && shown.has(n.id) && (g.bonePathBones === "all" || selected.has(n.id)))
-      .map((n) => n.id);
+    const picked = pathBoneIds(sym.nodes, store.selection.nodes);
+    const ids = (g.bonePathBones === "all"
+      ? Object.values(sym.nodes).filter((n) => n.kind === "bone").map((n) => n.id)
+      : picked).filter((id) => shown.has(id));
     if (!ids.length) return null;
     const { frames, closed } = pathFrames(anim, ui.onionSkin ? store.onionSpan : null);
-    const sample = this.pathCache.sampler(store.project, sym, anim, store.history.revision);
-    const paths = bonePaths({ sample, ids, frames, closed, which: g.bonePathPoint, isKey: keyedIn(anim) });
-
-    // Handles: on the one selected bone. A bone that moves gets spline
-    // handles (its keys' eases); one that turns gets handles fitted to the
-    // arc its tip draws, which bake when dragged.
-    const handles: PathHandle[] = [];
-    const one = store.selection.nodes.length === 1 ? store.selection.nodes[0]! : null;
-    const node = one ? sym.nodes[one] : undefined;
-    const rule = one && node && ids.includes(one)
-      ? pathDragMode(sym, anim, one, g.bonePathPoint, node.pathDrag === "parent") : null;
-    if (one && rule && "mode" in rule && rule.mode !== "translate") {
-      const shownFrames = new Set(frames);
-      for (const seg of splineSegments(anim.tracks[one])) {
-        const join = seamFrame(anim);
-        if (!shownFrames.has(seg.from) || !shownFrames.has(seg.to === join ? 0 : seg.to)) continue;
-        const span = seg.to - seg.from;
-        // A one-frame interval has no frame inside it to bake.
-        if (span < 2) continue;
-        const tip = (f: number) => pathPoint(sample(f), one, g.bonePathPoint)!;
-        const samples = Array.from({ length: Math.max(0, span - 1) }, (_, i) => {
-          const f = seg.from + i + 1;
-          return { t: (f - seg.from) / span, p: tip(f) };
-        });
-        const s = fitCubic(tip(seg.from), tip(seg.to), samples);
-        handles.push({ from: seg.from, to: seg.to, end: "out", x: s.p1.x, y: s.p1.y, anchorX: s.p0.x, anchorY: s.p0.y, bake: s });
-        handles.push({ from: seg.from, to: seg.to, end: "in", x: s.p2.x, y: s.p2.y, anchorX: s.p3.x, anchorY: s.p3.y, bake: s });
-      }
-    }
-    if (one && node && rule && "mode" in rule && rule.mode === "translate") {
-      const shownFrames = new Set(frames);
-      const linearAt = (f: number) => {
-        const parent = node.parentId ? sample(f).byNode.get(node.parentId)?.world : undefined;
-        return parent ?? { a: 1, b: 0, c: 0, d: 1 };
-      };
-      const hang = (f: number, dx: number, dy: number, from: number, to: number, end: "out" | "in") => {
-        const anchor = pathPoint(sample(f), one, g.bonePathPoint);
-        if (!anchor) return;
-        const m = linearAt(f);
-        handles.push({
-          from, to, end, anchorX: anchor.x, anchorY: anchor.y,
-          x: anchor.x + m.a * dx + m.c * dy, y: anchor.y + m.b * dx + m.d * dy,
-        });
-      };
-      const join = seamFrame(anim);
-      for (const seg of splineSegments(anim.tracks[one])) {
-        const s = seg.spline;
-        if (shownFrames.has(seg.from)) hang(seg.from, s.p1.x - s.p0.x, s.p1.y - s.p0.y, seg.from, seg.to, "out");
-        if (shownFrames.has(seg.to === join ? 0 : seg.to)) hang(seg.to, s.p2.x - s.p3.x, s.p2.y - s.p3.y, seg.from, seg.to, "in");
-      }
-    }
+    const scene = pathScene({
+      sym, anim, sample: this.pathCache.sampler(store.project, sym, anim, store.history.revision),
+      ids, frames, closed, which: g.bonePathPoint,
+      ...(g.bonePathSpace === "parent" ? { relativeAt: pathDragAnchor ?? ui.frame } : {}),
+      handlesFor: picked.length === 1 ? picked[0]! : null,
+    });
     if (this.pathCache.pending) this.invalidate();
     const t = store.prefs.value.timeline;
     // On a cycle's join the stage shows frame 0, and that is the dot to fill.
     const frame = ui.frame === seamFrame(anim) ? 0 : ui.frame;
-    return { paths, handles, frame, past: t.onionPastColor, future: t.onionFutureColor, current: t.playhead };
+    return { ...scene, frame, past: t.onionPastColor, future: t.onionFutureColor, current: t.playhead };
   }
 
   /**

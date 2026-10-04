@@ -116,6 +116,9 @@ export interface GizmoPrefs {
   showBonePaths: boolean;
   bonePathPoint: "tip" | "origin";
   bonePathBones: "selected" | "all";
+  /** "parent": a path shows the bone's motion against its parent, drawn in
+   *  the parent's pose at the playhead; "world": where it goes on the stage. */
+  bonePathSpace: "parent" | "world";
   /** The toolbar at the foot of the stage (Spine's), and what it holds. */
   showToolbar: boolean;
   /** Which frame Rotate / Translate values are read in (`core/math/axes.ts`). */
@@ -261,6 +264,7 @@ export const DEFAULT_PREFS: Prefs = {
     showBonePaths: true,
     bonePathPoint: "tip",
     bonePathBones: "selected",
+    bonePathSpace: "parent",
     showToolbar: true,
     axes: "parent",
     compensateBones: false,
@@ -336,6 +340,7 @@ export const PREF_ENUMS: Record<string, readonly string[]> = {
   "stage.wheel": ["zoom", "pan"],
   "gizmos.bonePathPoint": ["tip", "origin"],
   "gizmos.bonePathBones": ["selected", "all"],
+  "gizmos.bonePathSpace": ["parent", "world"],
   "gizmos.axes": ["local", "parent", "world"],
 };
 

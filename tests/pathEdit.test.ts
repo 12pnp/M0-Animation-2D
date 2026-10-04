@@ -233,3 +233,18 @@ describe("Node.pathDrag in the file", () => {
     expect(nodes[b.id]!.pathDrag).toBeUndefined();
   });
 });
+
+describe("rotateTo on a bone a constraint has moved", () => {
+  it("aims from where the bone is, not where its keys put it", () => {
+    const local = { ...tf(10, 20), skewX: 5, skewY: 5 };
+    // A transform constraint shifted the posed bone 6 px right of its keys.
+    const world = toMatrix(mat(), { ...local, x: 16 });
+    const f: DragFrame = { local, parentWorld: mat(), world, length: 50 };
+    const target = { x: -200, y: 300 };
+    const t = rotateTo(f, target);
+    const posed = toMatrix(mat(), { ...t, x: 16 });
+    const p = apply({ x: 0, y: 0 }, posed, 50, 0);
+    const cross = (p.x - 16) * (target.y - 20) - (p.y - 20) * (target.x - 16);
+    expect(Math.abs(cross) / Math.hypot(target.x - 16, target.y - 20)).toBeLessThan(1e-6);
+  });
+});

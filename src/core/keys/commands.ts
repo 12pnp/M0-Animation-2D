@@ -41,6 +41,8 @@ export const PANEL_COMMANDS = [
   { id: "skins", label: "Skins" },
   { id: "history", label: "History" },
   { id: "preview", label: "Preview" },
+  { id: "path", label: "Local Path" },
+  { id: "worldPath", label: "World Path" },
   { id: "reference", label: "Reference" },
   { id: "poses", label: "Poses" },
   { id: "timeline", label: "Timeline" },

@@ -184,9 +184,14 @@ export interface PathHandle {
   end: "out" | "in";
   x: number; y: number;
   anchorX: number; anchorY: number;
-  /** On a bone that turns: the curve its tip draws over the interval, in the
-   *  symbol's space, fitted to the arc. Dragging bakes it (`bakePlan`). */
+  /** On a bone that turns: the curve its tip draws over the interval, as
+   *  shown, fitted to the arc. Dragging bakes it (`bakePlan`). */
   bake?: Spline;
+  /** A spline handle's offset is in the parent's space; this is the matrix it
+   *  is drawn through (its translation unused). */
+  lin?: { a: number; b: number; c: number; d: number };
+  /** Shown relative to the parent, in its pose at this frame (`parentSpace`). */
+  relativeAt?: number;
 }
 
 /**

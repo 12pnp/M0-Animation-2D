@@ -55,12 +55,22 @@ describe("PathCache", () => {
     const { project, sym, anim } = scene();
     const other = createAnimation("b", 5);
     const c = clock();
-    const cache = new PathCache(0);
+    const cache = new PathCache(6);
     const a = cache.sampler(project, sym, anim, 1, c.now)(0);
-    c.tick(1);
-    // No stale pose to fall back on: it is posed whatever the budget.
     expect(cache.sampler(project, sym, other, 1, c.now)(0)).not.toBe(a);
-    expect(cache.pending).toBe(false);
+  });
+
+  it("past its budget with nothing to show, leaves a frame for a later draw unless forced", () => {
+    const { project, sym, anim } = scene();
+    const c = clock();
+    const cache = new PathCache(6);
+    const first = cache.sampler(project, sym, anim, 1, c.now);
+    c.tick(10);
+    expect(first(3)).toBeNull();
+    expect(cache.pending).toBe(true);
+    const forced = first(3, true);
+    expect(forced).not.toBeNull();
+    expect(cache.sampler(project, sym, anim, 1, c.now)(3)).toBe(forced);
   });
 });
 

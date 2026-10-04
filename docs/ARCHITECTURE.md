@@ -1657,6 +1657,49 @@ flowchart LR
   another draw, so a drag lags the path by a frame or two instead of stuttering. 120
   frames with all 15 stickman bones: 0.8 ms per scrub draw, 3.6 ms per edit draw.
 
+**Relative to the parent** (default; Preferences ▸ Selection & Gizmos ▸ Bone paths are,
+`gizmos.bonePathSpace`). A path in world space mostly shows the parent moving: a hip
+that travels draws a long line for a leg that only swings. So each frame's point is
+taken into the parent's space at that frame and drawn in the parent's pose at one
+frame (`parentSpace`, `bonePaths({ relativeAt })`): the stage uses the playhead's
+frame, the Local Path panel frame 0. `back` maps a drawn point into the dragged frame's
+space, so every drag (`PathDrag`, `HandleDrag` through the handle's `lin`, `BakeDrag`)
+solves where the frame's own parent pose puts the pointer. A press moves the playhead
+to the dot's frame, so while a dot is held the stage keeps the path anchored where it
+was pressed (`pathDragAnchor`), or the path would re-anchor under the pointer. A
+selected picture shows the path of the bone it hangs on (`pathBoneIds`), so clicking a
+leg's artwork shows the leg.
+
+**The Path panels** (`view/panels/PathPanel.ts`, Window ▸ Local Path and World Path,
+below the Preview): the one bone the selection points at, drawn alone with what it
+carries, and its path over the whole animation. They are one class in two spaces
+(`PATH_PANELS`), shown at once, whatever the stage's preference: Local is the bone's
+own motion and World adds its parent's, where the path runs on the stage. Each has its
+own camera and `PathCache`. In Local the parent holds still in its frame-0
+pose and the artwork at the playhead is carried into it (`shown` = parent at 0 · parent
+at the playhead⁻¹), so scrubbing moves only the bone. A Spine rig often hangs a limb's
+picture on a control bone above the bones that bend it (the leg mesh on
+`leg-control-front`, the leg bones under it), so a bone that carries no picture shows
+its parent's, and so on up. Fit frames the path and the bone, not the whole picture.
+The left button only edits: a dot or a handle, or anywhere else the bone itself at the
+playhead (a `PathDrag` on the playhead's dot, moved by as much as the pointer). The view
+never moves under it: the wheel zooms, and the middle or right button, or Space + drag,
+pans. Its dots and handles are the stage's: the same
+`pathPick` (the nearer of a handle and a dot; short handles sit on their dot) and the
+same drags, through a `ToolContext` over the panel's own camera. The paths come from
+`pathScene` (`view/viewport/pathScene.ts`), shared with the stage, and are drawn by
+`drawBonePaths` (`pathDraw.ts`).
+
+**A big rig** (Spine's mix-and-match: 146 bones posed through spine-core, 0.4 ms a
+frame) would stall on its first look at a 208-frame animation, so past its budget
+`PathCache` leaves a frame with no pose at all out of the path (`null`) and a later
+draw adds it; only what must be exact now (the parent pose a path is drawn in, a
+handle's anchors) is posed whatever the budget (`force`).
+
+**A Spine constraint can move a bone off its keys** (`hair-side-front-control`, a
+transform constraint, shifts that bone 5 px): `rotateTo` aims from where the bone is
+posed, not from its keyed x, y, or the tip misses the pointer by a few degrees.
+
 **Pressing a dot** (Selection tool, before artwork and bones: a dot sits on the limb's
 artwork). Dots pile up where a loop comes back to its start; `pathDotAt` takes the
 playhead's frame, then a key, then the nearest. That rule exists because the first

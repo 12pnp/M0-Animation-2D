@@ -3,7 +3,7 @@ import { MixFrom, Physics, Skeleton, SkeletonJson } from "@esotericsoftware/spin
 import { reseed } from "@/core/doc/ids";
 import { createAnimation, createKeyframe, createLayer, createNode, createSymbol } from "@/core/doc/defaults";
 import { evaluateSymbol } from "@/core/doc/pose";
-import { bonePaths, keyedIn, pathFrames, pathPoint } from "@/core/doc/bonePath";
+import { bonePaths, keyedIn, parentSpace, pathBoneIds, pathFrames, pathPoint } from "@/core/doc/bonePath";
 import { TWEEN_LINEAR, type TweenSpec } from "@/core/math/easing";
 import { exportSpine, spineJson } from "@/core/spine/exportSpine";
 import type { Animation, Keyframe, Node, SymbolItem } from "@/core/doc/types";
@@ -139,5 +139,78 @@ describe("the path of an IK-solved bone is the one spine-core plays", () => {
     }
     // A run moves the foot a long way: the comparison is not of a still bone.
     expect(moved).toBeGreaterThan(50);
+  });
+});
+
+describe("paths relative to the parent", () => {
+  /** A hip sliding 100 px right over 10 frames, a leg hanging from it. */
+  function walker(legTurns: boolean) {
+    const sym: SymbolItem = createSymbol("S");
+    const hip = createNode("bone", "hip");
+    const leg = createNode("bone", "leg", { parentId: hip.id, x: 20 });
+    leg.boneLength = 50;
+    for (const n of [hip, leg]) { sym.nodes[n.id] = n; sym.layers.push(createLayer(n.id, n.name, sym.layers.length)); }
+    const anim = createAnimation("a", 11);
+    const k = (n: Node, f: number, t: Partial<Keyframe["transform"]>) => {
+      const base = createKeyframe(f, n);
+      return { ...base, transform: { ...base.transform, ...t }, tween: TWEEN_LINEAR };
+    };
+    anim.tracks[hip.id] = { nodeId: hip.id, endFrame: 10, keys: [k(hip, 0, { x: 0 }), k(hip, 10, { x: 100 })] };
+    anim.tracks[leg.id] = { nodeId: leg.id, endFrame: 10, keys: [k(leg, 0, { x: 20, skewX: 90, skewY: 90 }), k(leg, 10, { x: 20, skewX: legTurns ? 0 : 90, skewY: legTurns ? 0 : 90 })] };
+    sym.animations = [anim];
+    const sample = (f: number) => evaluateSymbol(sym, anim, f);
+    return { sym, anim, hip, leg, sample };
+  }
+
+  it("shows only the bone's own motion: a leg that does not turn stays put", () => {
+    const { anim, leg, sample } = walker(false);
+    const { frames, closed } = pathFrames(anim);
+    const world = bonePaths({ sample, ids: [leg.id], frames, closed, which: "tip" })[0]!;
+    expect(world.points.at(-1)!.x - world.points[0]!.x).toBeCloseTo(100, 6);
+    const rel = bonePaths({ sample, ids: [leg.id], frames, closed, which: "tip", relativeAt: 4 })[0]!;
+    expect(rel.relativeAt).toBe(4);
+    // Every frame lands where the leg's tip is at frame 4.
+    for (const p of rel.points) {
+      expect(p.x).toBeCloseTo(world.points[4]!.x, 6);
+      expect(p.y).toBeCloseTo(world.points[4]!.y, 6);
+    }
+  });
+
+  it("draws a turning leg's arc about its joint, in the parent's pose at the playhead", () => {
+    const { anim, leg, sample } = walker(true);
+    const { frames, closed } = pathFrames(anim);
+    const rel = bonePaths({ sample, ids: [leg.id], frames, closed, which: "tip", relativeAt: 10 })[0]!;
+    // The joint is at x 20 on the hip, which is at x 100 at frame 10.
+    for (const p of rel.points) expect(Math.hypot(p.x - 120, p.y)).toBeCloseTo(50, 6);
+    expect(rel.points[0]).toMatchObject({ x: expect.closeTo(120, 6), y: expect.closeTo(50, 6) });
+    expect(rel.points.at(-1)).toMatchObject({ x: expect.closeTo(170, 6), y: expect.closeTo(0, 6) });
+  });
+
+  it("maps a drawn point back into its frame, and a root bone is its own space", () => {
+    const { hip, leg, sample } = walker(true);
+    const space = parentSpace(sample, leg.id, 10)!;
+    const p = { x: 3, y: 7 };
+    const back = space.back(2, space.shown(2, p));
+    expect(back.x).toBeCloseTo(3, 9);
+    expect(back.y).toBeCloseTo(7, 9);
+    // At frame 2 the hip is at x 20, at frame 10 at x 100.
+    expect(space.shown(2, p).x).toBeCloseTo(83, 9);
+    const root = parentSpace(sample, hip.id, 10)!;
+    expect(root.shown(2, p)).toEqual(p);
+  });
+});
+
+describe("pathBoneIds", () => {
+  it("takes a bone, or the bone a picture hangs on, each once", () => {
+    const hip = createNode("bone", "hip");
+    const leg = createNode("bone", "leg", { parentId: hip.id });
+    const art = createNode("image", "leg_art", { parentId: leg.id });
+    const slot = createNode("image", "slot");
+    slot.slotBone = hip.id;
+    const loose = createNode("image", "loose");
+    const nodes = Object.fromEntries([hip, leg, art, slot, loose].map((n) => [n.id, n]));
+    expect(pathBoneIds(nodes, [art.id])).toEqual([leg.id]);
+    expect(pathBoneIds(nodes, [slot.id, hip.id, leg.id, art.id])).toEqual([hip.id, leg.id]);
+    expect(pathBoneIds(nodes, [loose.id])).toEqual([]);
   });
 });

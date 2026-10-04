@@ -115,9 +115,13 @@ export function rotateTo(f: DragFrame, target: Point): Transform {
 function aim(f: DragFrame, carried: Point, target: Point): Transform {
   const goal = { x: target.x, y: target.y };
   if (!applyInverse(goal, f.parentWorld, target.x, target.y)) return cloneTf(f.local);
+  // Turned about where the bone IS, which a Spine constraint can move off
+  // where its keys put it (a transform constraint's offset).
+  const origin = { x: f.world.tx, y: f.world.ty };
+  applyInverse(origin, f.parentWorld, f.world.tx, f.world.ty);
   const m = toMatrix(mat(), { ...f.local, x: 0, y: 0 });
   const now = apply({ x: 0, y: 0 }, m, carried.x, carried.y);
-  const want = angleOf({ x: f.local.x, y: f.local.y }, goal);
+  const want = angleOf(origin, goal);
   return turned(cloneTf(f.local), wrapTo180(want - angleOf({ x: 0, y: 0 }, now)));
 }
 
@@ -240,8 +244,8 @@ export function withoutRedundantKeys(
  */
 export function pathDotAt(
   paths: readonly BonePath[], x: number, y: number, radius: number, current?: number,
-): { id: NodeId; frame: number; x: number; y: number } | null {
-  let best: { id: NodeId; frame: number; x: number; y: number } | null = null;
+): { id: NodeId; frame: number; x: number; y: number; relativeAt?: number } | null {
+  let best: { id: NodeId; frame: number; x: number; y: number; relativeAt?: number } | null = null;
   let bestRank: [number, number, number] | null = null;
   for (const path of paths) {
     for (const p of path.points) {
@@ -252,7 +256,7 @@ export function pathDotAt(
         || (rank[0] === bestRank[0] && (rank[1] < bestRank[1] || (rank[1] === bestRank[1] && rank[2] < bestRank[2])));
       if (better) {
         bestRank = rank;
-        best = { id: path.id, frame: p.frame, x: p.x, y: p.y };
+        best = { id: path.id, frame: p.frame, x: p.x, y: p.y, ...(path.relativeAt !== undefined ? { relativeAt: path.relativeAt } : {}) };
       }
     }
   }

@@ -8,7 +8,7 @@ import type { Transform } from "@/core/math/Transform";
 import { quantize } from "@/core/math/Transform";
 import { mat } from "@/core/math/Matrix2D";
 import { pickBone } from "./boneGeom";
-import { BakeDrag, HandleDrag, handleUnder, PathDrag, pathDotUnder } from "./pathDrag";
+import { BakeDrag, HandleDrag, PathDrag, pathPick } from "./pathDrag";
 
 /**
  * The Selection tool: click to select, drag to move, marquee on empty space.
@@ -35,16 +35,16 @@ export class SelectTool implements Tool {
 
     // Path handles and dots before artwork and bones: they sit on the bone's
     // tip, where the limb's artwork is.
-    const handle = handleUnder(ctx, this.startWorld);
-    if (handle) {
+    const pick = pathPick(ctx, this.startWorld);
+    if (pick && "handle" in pick) {
+      const { handle } = pick;
       this.handle = handle.bake
         ? new BakeDrag(ctx, { ...handle, bake: handle.bake }, this.startWorld)
         : new HandleDrag(ctx, handle, this.startWorld);
       return;
     }
-    const dot = pathDotUnder(ctx, this.startWorld);
-    if (dot) {
-      this.path = new PathDrag(ctx, dot.id, dot.frame, dot, this.startWorld, e);
+    if (pick) {
+      this.path = new PathDrag(ctx, pick.dot.id, pick.dot.frame, pick.dot, this.startWorld, e);
       return;
     }
 
@@ -159,7 +159,7 @@ export class SelectTool implements Tool {
 
   onHover(e: PointerEvent, ctx: ToolContext): void {
     const w = ctx.toWorld(e);
-    ctx.setCursor(handleUnder(ctx, w) || pathDotUnder(ctx, w) ? "pointer" : hitAt(ctx, w.x, w.y) ? "move" : "");
+    ctx.setCursor(pathPick(ctx, w) ? "pointer" : hitAt(ctx, w.x, w.y) ? "move" : "");
   }
 
   /** Returns false when nothing draggable is selected. */
