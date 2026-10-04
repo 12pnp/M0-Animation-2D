@@ -123,6 +123,14 @@ export interface GizmoPrefs {
   pathZoomLock: boolean;
   /** A grid under the Path panels' drawing. */
   pathGrid: boolean;
+  /** Each Path panel's own onion skin, apart from the stage's: on/off and the
+   *  frames before and after the playhead. Its look is the timeline's. */
+  localPathOnion: boolean;
+  localPathOnionBefore: number;
+  localPathOnionAfter: number;
+  worldPathOnion: boolean;
+  worldPathOnionBefore: number;
+  worldPathOnionAfter: number;
   /** The toolbar at the foot of the stage (Spine's), and what it holds. */
   showToolbar: boolean;
   /** Which frame Rotate / Translate values are read in (`core/math/axes.ts`). */
@@ -282,6 +290,12 @@ export const DEFAULT_PREFS: Prefs = {
     bonePathSpace: "parent",
     pathZoomLock: false,
     pathGrid: false,
+    localPathOnion: false,
+    localPathOnionBefore: 2,
+    localPathOnionAfter: 2,
+    worldPathOnion: false,
+    worldPathOnionBefore: 2,
+    worldPathOnionAfter: 2,
     showToolbar: true,
     axes: "parent",
     compensateBones: false,
@@ -346,6 +360,10 @@ export const PREF_LIMITS: Record<string, { min: number; max: number; step?: numb
   "stage.referenceOpacity": { min: 0.05, max: 1, step: 0.05, decimals: 2 },
   "snap.tolerancePx": { min: 1, max: 64 },
   "gizmos.handleSize": { min: 3, max: 14, step: 0.5, decimals: 1 },
+  "gizmos.localPathOnionBefore": { min: 0, max: 100 },
+  "gizmos.localPathOnionAfter": { min: 0, max: 100 },
+  "gizmos.worldPathOnionBefore": { min: 0, max: 100 },
+  "gizmos.worldPathOnionAfter": { min: 0, max: 100 },
   "timeline.frameWidth": { min: 4, max: 40 },
   "timeline.onionBefore": { min: 0, max: 100 },
   "timeline.onionAfter": { min: 0, max: 100 },

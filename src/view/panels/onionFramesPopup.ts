@@ -1,7 +1,5 @@
 import { h, on } from "@/view/widgets/dom";
 import { NumberField } from "@/view/widgets/NumberField";
-import type { Store } from "@/app/Store";
-import { clampPref, PREF_LIMITS } from "@/core/prefs/prefs";
 
 export interface Box { left: number; top: number; right: number; bottom: number }
 
@@ -20,61 +18,56 @@ export function popupAt(anchor: Box, w: number, hgt: number, viewW: number, view
   return { x: Math.max(MARGIN, x), y: Math.max(MARGIN, Math.min(y, viewH - MARGIN - hgt)) };
 }
 
+/** The two counts a popup edits, wherever they are kept. */
+export interface OnionCounts {
+  get(): { before: number; after: number };
+  set(patch: { before?: number; after?: number }): void;
+  /** Calls `fn` when they may have changed; returns the unsubscribe. */
+  subscribe(fn: () => void): () => void;
+}
+
+/** As the timeline's onion counts. */
+const COUNT_MAX = 100;
+
 let open: { el: HTMLElement; close: () => void } | null = null;
 
 /**
- * The onion frame counts, from a Path panel's button: frames before and after
- * the playhead. They are the timeline's onion preferences, so the stage's
- * onion skin and its markers take them too. Setting one lets anchored markers
- * follow the playhead again, as the timeline's Range menu does.
+ * Onion frame counts, from a button: frames before and after the playhead,
+ * typed or picked from equal presets. A second click on the same button
+ * closes it, as do a click elsewhere and Escape.
  */
-export function openOnionFrames(store: Store, button: HTMLElement): void {
+export function openOnionFrames(button: HTMLElement, counts: OnionCounts, title = "Onion frames"): void {
   if (open) {
     const was = open.el;
     open.close();
-    // A second click on the same button closes it.
     if (was.dataset.for === button.dataset.onionFor) return;
   }
-  const t = () => store.prefs.value.timeline;
-  const setCount = (key: "onionBefore" | "onionAfter", v: number) => {
-    store.setUi({ onionAnchor: null }, "stage");
-    store.prefs.set("timeline", { [key]: clampPref(`timeline.${key}`, v) });
-  };
-  const field = (key: "onionBefore" | "onionAfter") => {
-    const lim = PREF_LIMITS[`timeline.${key}`]!;
-    const f = new NumberField({ min: lim.min, max: lim.max, step: 1, decimals: 0, unit: "f",
-      onInput: (v, committing) => { if (committing) setCount(key, v); } });
-    f.set(t()[key]);
+  const field = (key: "before" | "after") => {
+    const f = new NumberField({ min: 0, max: COUNT_MAX, step: 1, decimals: 0, unit: "f",
+      onInput: (v, committing) => { if (committing) counts.set({ [key]: Math.round(v) }); } });
+    f.set(counts.get()[key]);
     return f;
   };
-  const before = field("onionBefore");
-  const after = field("onionAfter");
+  const before = field("before");
+  const after = field("after");
   const preset = (n: number) => {
     const b = h("button", { class: "btn", title: `${n} frame${n === 1 ? "" : "s"} each side` }, String(n));
-    on(b, "click", () => {
-      store.setUi({ onionAnchor: null }, "stage");
-      store.prefs.set("timeline", { onionBefore: n, onionAfter: n });
-    });
+    on(b, "click", () => counts.set({ before: n, after: n }));
     return b;
   };
-  const anchored = h("div", { class: "onion-pop-note" }, "The markers are anchored on the timeline; a count here makes them follow the playhead.");
   const row = (label: string, f: NumberField) => h("label", { class: "onion-pop-row" }, h("span", null, label), f.el);
   const el = h("div", { class: "popmenu onion-pop" },
-    h("div", { class: "onion-pop-title" }, "Onion frames"),
+    h("div", { class: "onion-pop-title" }, title),
     row("Before", before),
     row("After", after),
-    h("div", { class: "onion-pop-presets" }, h("span", null, "Both"), preset(1), preset(2), preset(3), preset(5), preset(10)),
-    anchored);
+    h("div", { class: "onion-pop-presets" }, h("span", null, "Both"), preset(1), preset(2), preset(3), preset(5), preset(10)));
   el.dataset.for = button.dataset.onionFor ?? "";
 
-  const sync = () => {
-    before.show(t().onionBefore);
-    after.show(t().onionAfter);
-    anchored.hidden = !store.ui.onionAnchor;
-  };
-  sync();
-  const unPrefs = store.prefs.subscribe(sync);
-  const unStore = store.subscribe(sync);
+  const unsubscribe = counts.subscribe(() => {
+    const c = counts.get();
+    before.show(c.before);
+    after.show(c.after);
+  });
 
   document.body.appendChild(el);
   const place = () => {
@@ -91,8 +84,7 @@ export function openOnionFrames(store: Store, button: HTMLElement): void {
   const key = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); close(); } };
   const close = () => {
     el.remove();
-    unPrefs();
-    unStore();
+    unsubscribe();
     window.removeEventListener("pointerdown", outside, true);
     window.removeEventListener("keydown", key, true);
     window.removeEventListener("resize", place);

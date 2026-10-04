@@ -10,8 +10,10 @@ import type { PathZoomLink, ZoomLinked } from "./pathZoom";
 import { PATH_GRID_MAJOR, pathGridStep } from "./pathGrid";
 import { heldParent } from "./pathHeld";
 import { openOnionFrames } from "./onionFramesPopup";
+import { PATH_ONION_KEYS, pathOnionSpan } from "./pathOnion";
 import { GhostPainter } from "@/view/viewport/ghost";
 import { onionFrames } from "@/core/doc/onion";
+import { clampPref } from "@/core/prefs/prefs";
 import { keyIndexAt } from "@/core/doc/timeline";
 import { pathScene } from "@/view/viewport/pathScene";
 import { drawBonePaths } from "@/view/viewport/pathDraw";
@@ -92,10 +94,18 @@ export class PathPanel implements Panel, ZoomLinked {
     this.lock = h("button", { class: "iconbtn", title: "Lock zoom: the Local and World Path panels zoom together" }, icon("lock", 14)) as HTMLButtonElement;
     this.lock.hidden = !link;
     this.gridBtn = h("button", { class: "iconbtn", title: "Show grid (both Path panels)" }, icon("grid", 14)) as HTMLButtonElement;
-    this.onionBtn = h("button", { class: "iconbtn", title: "Onion skin (with the timeline's): the bone's artwork at the frames between the onion markers" }, icon("onion", 14)) as HTMLButtonElement;
+    this.onionBtn = h("button", { class: "iconbtn", title: `Onion skin in ${PATH_PANELS[space].title}: the bone's artwork at the frames around the playhead (this panel's own, apart from the stage's)` }, icon("onion", 14)) as HTMLButtonElement;
     const framesBtn = h("button", { class: "iconbtn", title: "Onion frames: how many frames before and after the playhead" }, icon("onionFrames", 14));
     framesBtn.dataset.onionFor = this.id;
-    on(framesBtn, "click", () => openOnionFrames(store, framesBtn));
+    const keys = PATH_ONION_KEYS[space];
+    on(framesBtn, "click", () => openOnionFrames(framesBtn, {
+      get: () => ({ before: store.prefs.value.gizmos[keys.before], after: store.prefs.value.gizmos[keys.after] }),
+      set: (c) => store.prefs.set("gizmos", {
+        ...(c.before !== undefined ? { [keys.before]: clampPref(`gizmos.${keys.before}`, c.before) } : {}),
+        ...(c.after !== undefined ? { [keys.after]: clampPref(`gizmos.${keys.after}`, c.after) } : {}),
+      }),
+      subscribe: (fn) => store.prefs.subscribe(fn),
+    }, `${PATH_PANELS[space].title} onion frames`));
     const bar = h("div", { style: "display:flex;align-items:center;gap:8px;padding:4px 8px;flex:none" },
       // The buttons first: a narrow column clips the bar's right end.
       fit,
@@ -112,8 +122,7 @@ export class PathPanel implements Panel, ZoomLinked {
 
     on(fit, "click", () => { this.fittedFor = ""; this.invalidate(); });
     on(this.gridBtn, "click", () => store.prefs.set("gizmos", { pathGrid: !store.prefs.value.gizmos.pathGrid }));
-    // The stage's onion skin: one switch with the timeline's button and View ▸ Onion Skin.
-    on(this.onionBtn, "click", () => store.setUi({ onionSkin: !store.ui.onionSkin }, "stage"));
+    on(this.onionBtn, "click", () => store.prefs.set("gizmos", { [keys.on]: !store.prefs.value.gizmos[keys.on] }));
     on(this.lock, "click", () => {
       const locked = !store.prefs.value.gizmos.pathZoomLock;
       store.prefs.set("gizmos", { pathZoomLock: locked });
@@ -122,11 +131,7 @@ export class PathPanel implements Panel, ZoomLinked {
     });
     this.wireInput();
     new ResizeObserver(() => this.resize()).observe(area);
-    store.subscribe(() => {
-      // At once, not at the next draw: the timeline's button changes with it.
-      this.onionBtn.classList.toggle("on", store.ui.onionSkin);
-      this.invalidate();
-    });
+    store.subscribe(() => this.invalidate());
     store.prefs.subscribe(() => this.invalidate());
     this.resize();
   }
@@ -186,7 +191,7 @@ export class PathPanel implements Panel, ZoomLinked {
     const { store, ctx } = this;
     this.lock.classList.toggle("on", store.prefs.value.gizmos.pathZoomLock);
     this.gridBtn.classList.toggle("on", store.prefs.value.gizmos.pathGrid);
-    this.onionBtn.classList.toggle("on", store.ui.onionSkin);
+    this.onionBtn.classList.toggle("on", store.prefs.value.gizmos[PATH_ONION_KEYS[this.space].on]);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = "#2a2a2a";
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -240,7 +245,7 @@ export class PathPanel implements Panel, ZoomLinked {
       this.drawGrid();
     }
     const screen = mul(mat(), matOf(this.dpr, 0, 0, this.dpr, 0, 0), this.camera.matrix);
-    if (store.ui.onionSkin) this.drawGhosts(sym, anim, bone, keep, hidden, screen, (f) => held(sample(f, true)!));
+    if (g[PATH_ONION_KEYS[this.space].on]) this.drawGhosts(sym, anim, bone, keep, hidden, screen, (f) => held(sample(f, true)!));
     this.renderer.draw(ctx, sym, anim, frame, "animate", mul(mat(), screen, this.shown), { hiddenLayers: hidden });
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.drawBones(pose, bone, this.shown);
@@ -248,8 +253,8 @@ export class PathPanel implements Panel, ZoomLinked {
   }
 
   /**
-   * The onion skin: the frames between the stage's onion markers, faded and
-   * coloured by the timeline's onion preferences, each with the artwork the
+   * This panel's onion skin: its own frame counts around the playhead
+   * (`pathOnionSpan`), faded and coloured by the timeline's onion preferences, each with the artwork the
    * bone carries and the bone itself. In Local each is carried into the
    * frame-0 parent pose like the current frame.
    */
@@ -262,9 +267,12 @@ export class PathPanel implements Panel, ZoomLinked {
     const tracks = [...keep].map((id) => anim.tracks[id as NodeId]).filter((t) => !!t);
     const isKey = o.onionKeyframesOnly ? (f: number) => tracks.some((t) => keyIndexAt(t, f) >= 0) : undefined;
     const sample = this.cache.sampler(store.project, sym, anim, store.history.revision);
+    const keys = PATH_ONION_KEYS[this.space];
+    const g = store.prefs.value.gizmos;
+    const frame = store.ui.frame;
     for (const gh of onionFrames({
-      frame: store.ui.frame, span: store.onionSpan, opacity: o.onionOpacity, falloff: o.onionFalloff,
-      isKey, period: store.onionPeriod,
+      frame, span: pathOnionSpan(frame, anim, g[keys.before], g[keys.after]),
+      opacity: o.onionOpacity, falloff: o.onionFalloff, isKey, period: seamFrame(anim),
     })) {
       const tint = o.onionTint ? (gh.side === "past" ? o.onionPastColor : o.onionFutureColor) : null;
       const shown = heldAt(gh.frame);
