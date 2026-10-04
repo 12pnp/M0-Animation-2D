@@ -22,7 +22,8 @@ paths; the decisions are pure in `core/doc/cycle.ts`, `bonePath.ts`, `pathEdit.t
 `pathSpline.ts`). Draw order is keyable per animation (ARCHITECTURE ▸ Draw order keys,
 `core/doc/drawOrder.ts`), and so are IK mix, bend and softness (ARCHITECTURE ▸ IK keys,
 `core/doc/ikKeys.ts`). Animations fire events, with sounds (ARCHITECTURE ▸ Events,
-`core/doc/events.ts`). An exporter change must keep
+`core/doc/events.ts`), and a Graph panel edits property curves and their eases
+(ARCHITECTURE ▸ Graph editor, `core/doc/graphEdit.ts`). An exporter change must keep
 `tests/spineParity.test.ts` passing: it plays every fixture through spine-core
 and compares it with the stage frame by frame. An importer or exporter change
 must keep `tests/spineImport.test.ts` (every M0 sample round-trips) and

@@ -594,6 +594,39 @@ with the keys a rename or delete changed).
   at a frame with overrides, or removes it. `get_rig` lists the events and `get_animation`
   the keys.
 
+### Graph editor
+
+The Graph panel (`view/panels/GraphPanel.ts`, a tab beside Timeline; docs/GRAPH-PLAN.md) shows
+the first selected node's property values over time, and the mix of each IK constraint it takes
+part in, as Spine's Graph view does. It edits the same channels as the timeline's property
+rows: `channelKeys` reads a property as `{ frame, values, eases }` per key, one value and ease
+per leaf (Rotate, X, Y, Scale X, Scale Y, Shear), and every edit is written back with
+`setChannel`, so no other property moves. An IK mix is a channel of the same shape, written
+back to `Animation.ik` with each key's bend and softness kept. The rules are pure in
+`core/doc/graphEdit.ts`, tested in `tests/graphEdit.test.ts`.
+
+- **Curves are what the runtime plays**: `graphSamples` reads `sampleChannel` (which uses
+  `applyTween`, the runtime's polyline) every quarter frame and at each key.
+- **One curve shows its own values on the axis; several are each scaled to their own range**
+  (0–100%), as Spine's normalized view. While a drag runs, each curve keeps the range it had at
+  the press, or the view would rescale under the pointer.
+- **Handles**: an interval's ease as one cubic (`cubicOf`: a custom cubic as it is, linear as
+  the straight cubic, a preset or a several-piece curve fitted with `fitCubic`, none for a
+  stepped key). The handles of the intervals beside each picked key show; dragging one
+  (`withHandle`) writes a custom cubic into that leaf's ease only (`Keyframe.eases`): time
+  clamped to the interval, value a fraction of the change within `CURVE_Y_LIMIT`. An interval
+  whose ends are equal cannot bend (the editor's eases are fractions of the change), so its
+  handles only slide in time.
+- **Keys**: a press picks a point (⇧ adds), a drag moves the picked keys whole frames across
+  and each curve's units up (⇧ held: the larger axis only; `moveGraphKeys`, landing on a key of
+  the channel replaces it). Delete removes them (`deleteChannelKeys`, also through Edit ▸
+  Delete); a double-click on a curve keys it there (`keyChannelAt`, or an IK key). Each drag
+  is one undo step from the track as it was at the press.
+- **View**: the wheel zooms time about the pointer (⌥: values), the middle or right button
+  pans, F or Fit fits the animation. A view fitted while the panel had no size (a tab never
+  shown) fits again once it has one. Chips switch curves on and off; a property without keys
+  is off until switched on.
+
 ### The timeline fills its panel, and only the layers scroll
 
 The frame grid is a CANVAS with no scroll of its own, and the horizontal bar is an

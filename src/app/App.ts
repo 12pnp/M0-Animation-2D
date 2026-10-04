@@ -21,6 +21,7 @@ import { StageToolbar } from "@/view/viewport/StageToolbar";
 import { AnimationsPanel } from "@/view/panels/AnimationsPanel";
 import { SkinsPanel } from "@/view/panels/SkinsPanel";
 import { EventsPanel } from "@/view/panels/EventsPanel";
+import { GraphPanel } from "@/view/panels/GraphPanel";
 import { SoundStore } from "./SoundStore";
 import { HistoryPanel } from "@/view/panels/HistoryPanel";
 import { ReferencePanel } from "@/view/panels/ReferencePanel";
@@ -108,6 +109,7 @@ export class App {
   private previewSession: PreviewSession;
   private preview: PreviewPanel;
   readonly timeline: TimelinePanel;
+  readonly graph: GraphPanel;
   pathPanel!: PathPanel;
   readonly project: ProjectService;
   private toast = new Toast();
@@ -176,11 +178,12 @@ export class App {
       this.sounds,
     );
     this.timeline = new TimelinePanel(this.store, this.clipboard, () => this.onionPopup());
+    this.graph = new GraphPanel(this.store);
 
     this.registerPanels();
     this.shell.layoutDocks(
       [["properties"], ["library", "outline", "animations", "skins", "events"], ["subtree", "preview"], ["path"], ["worldPath"]],
-      [["timeline", "reference", "poses"]],
+      [["timeline", "graph", "reference", "poses"]],
       [[AI_PANEL]],
     );
 
@@ -286,6 +289,7 @@ export class App {
     this.shell.addLeftPanel(this.aiPanel);
 
     this.shell.addBottomPanel(this.timeline);
+    this.shell.addBottomPanel(this.graph);
     this.shell.addBottomPanel(new ReferencePanel(this.store, this.assets, this.references, (m, e) => this.toast.show(m, e)));
     this.shell.addBottomPanel(new PosesPanel(
       this.store, this.agent, this.poses,
@@ -1500,7 +1504,7 @@ export class App {
     // last click was on, and the bone stays selected under them.
     reg("edit.delete", () => {
       if (this.timeline.deletePropKeys() || this.timeline.deleteDrawOrderKeys() || this.timeline.deleteIkKeys()
-        || this.timeline.deleteEventKeys()) return;
+        || this.timeline.deleteEventKeys() || this.graph.deletePicked()) return;
       s.apply(new RemoveNodes(s.currentSymbolId, [...s.selection.nodes]));
       s.clearSelection();
       s.emit("doc");

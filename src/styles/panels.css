@@ -706,3 +706,12 @@
 .skins-choice.on { background: var(--accent-row); color: var(--accent-row-ink); border-color: transparent; }
 .skins-folder { color: var(--fg-dim); font-size: var(--fs-sm); margin-top: 4px; }
 .skins-row.nested { padding-left: 12px; }
+.graph-panel { position: relative; height: 100%; min-height: 0; overflow: hidden; outline: none; }
+.graph-canvas { display: block; position: absolute; inset: 0; cursor: default; }
+.graph-footer { gap: 4px; flex-wrap: wrap; }
+.graph-chips { display: flex; flex-wrap: wrap; gap: 3px; align-items: center; min-width: 0; }
+.graph-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: 9px; border: 1px solid var(--line); background: transparent; color: var(--fg-dim); font-size: 11px; cursor: pointer; }
+.graph-chip.on { color: var(--fg); background: rgba(255, 255, 255, 0.06); }
+.graph-chip.empty { opacity: 0.55; }
+.graph-swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
+.graph-chip:not(.on) .graph-swatch { opacity: 0.35; }

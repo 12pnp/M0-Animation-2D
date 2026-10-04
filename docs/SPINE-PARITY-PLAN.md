@@ -71,8 +71,7 @@ Legend:
 - ✅ Event keys and the event list (an Events row and panel; ARCHITECTURE ▸ Events)
 - ◐ Transform, path, physics and slider constraint keys: carried
 - ◐ Inherit keys: carried
-- ☐ Graph editor: values over time as curves, with handles (Spine's Graph view). The Ease
-  dialog edits one interval's ease, not the curve of a value
+- ✅ Graph editor: values over time as curves, with handles (ARCHITECTURE ▸ Graph editor)
 - ✅ Audio: an event's sound kept in the project, exported to `audio/`, played in the
   Preview at its volume and balance
 - ☐ A waveform of an event's sound on the timeline
@@ -132,7 +131,7 @@ an animator see transitions, which today needs the game.
    (`AnimationState.setMix`); the stage stays one animation.
 6. **AI.** `key_event`, `define_event`; `get_animation` lists events.
 
-### Phase B: graph editor
+### Phase B: graph editor (done, docs/GRAPH-PLAN.md)
 
 Why: the property rows already key one value at a time; a graph view is how Spine animators
 shape those values, and it reuses the easing code.
