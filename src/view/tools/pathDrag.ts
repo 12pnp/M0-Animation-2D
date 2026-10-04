@@ -7,7 +7,8 @@ import {
   type DragFrame, keyAt, pathDotAt, pathDragMode, type PathDragMode, type Point, rotateTo, rotateWithParentTo,
   shiftKeys, translateTo, withKeyTransform, withoutRedundantKeys,
 } from "@/core/doc/pathEdit";
-import { mat } from "@/core/math/Matrix2D";
+import { apply, invert, mat, type Matrix2D } from "@/core/math/Matrix2D";
+import { handleAt, type PathHandle, type Spline, splineSegments, withSpline } from "@/core/doc/pathSpline";
 import { quantize, type Transform } from "@/core/math/Transform";
 import { posedSymbol } from "@/core/spine/spinePose";
 import { EditTracks } from "@/core/history/timelineCommands";
@@ -163,6 +164,96 @@ export class PathDrag {
     }
     if (!tracks.size) return;
     store.apply(new EditTracks("Drag Path", store.currentSymbolId, anim.id, tracks, "path.drag"));
+    store.emit("timeline");
+    store.emit("stage");
+  }
+}
+
+/** The spline handle under a world point, if the selected bone shows any. */
+export function handleUnder(ctx: ToolContext, world: Point): PathHandle | null {
+  const handles = ctx.pathHandles();
+  return handles.length ? handleAt(handles, world.x, world.y, DOT_RADIUS / ctx.camera.screenScale) : null;
+}
+
+/**
+ * Dragging a spline handle (B5 ▸ Spline handles): the interval leaving
+ * `handle.from` bends so the handle follows the pointer. Written as x and y
+ * eases (`withSpline`); where an axis that does not travel has to bend, a key
+ * is cut in the middle of the interval. One undo step.
+ */
+export class HandleDrag {
+  private started = false;
+  private told = false;
+  private readonly id: NodeId;
+  private readonly base: Track;
+  private readonly spline: Spline;
+  /** The parent's linear part at the handle's key, inverted: world deltas
+   *  into the parent's space, where the keys are. */
+  private readonly toLocal: Matrix2D | null;
+
+  constructor(
+    private readonly ctx: ToolContext,
+    private readonly handle: PathHandle,
+    private readonly startWorld: Point,
+  ) {
+    const store = ctx.store;
+    const sym = store.currentSymbol;
+    const anim = store.currentAnimation;
+    this.id = store.selection.nodes[0]!;
+    const node = sym.nodes[this.id];
+    this.base = anim!.tracks[this.id]!;
+    const seg = splineSegments(this.base).find((s) => s.from === handle.from)!;
+    this.spline = seg.spline;
+    const frame = handle.end === "out" ? seg.from : seg.to;
+    const pose = posedSymbol(store.project, sym, anim!, frame, "animate");
+    const parent = node?.parentId ? pose.byNode.get(node.parentId)?.world : undefined;
+    const lin = parent ? { ...parent, tx: 0, ty: 0 } : mat();
+    const inv = mat();
+    this.toLocal = invert(inv, lin) ? inv : null;
+  }
+
+  move(world: Point): void {
+    const ctx = this.ctx;
+    if (!this.started) {
+      const s = ctx.toScreen(this.startWorld), n = ctx.toScreen(world);
+      if (Math.hypot(n.x - s.x, n.y - s.y) < 3) return;
+      this.started = true;
+      ctx.store.history.beginInteraction("path.handle");
+    }
+    this.apply(world, false);
+  }
+
+  up(world: Point): void {
+    if (!this.started) return;
+    this.apply(world, true);
+    this.ctx.store.history.endInteraction();
+  }
+
+  cancel(): void {
+    if (this.started) this.ctx.store.history.abortInteraction();
+  }
+
+  private apply(world: Point, final: boolean): void {
+    const store = this.ctx.store;
+    const anim = store.currentAnimation;
+    const node = store.currentSymbol.nodes[this.id];
+    if (!anim || !node || !this.toLocal) return;
+    const d = apply({ x: 0, y: 0 }, this.toLocal, world.x - this.startWorld.x, world.y - this.startWorld.y);
+    const s = this.spline;
+    const moved = (p: Point): Point => {
+      const q = { x: p.x + d.x, y: p.y + d.y };
+      return final ? { x: Math.round(q.x * 100) / 100, y: Math.round(q.y * 100) / 100 } : q;
+    };
+    const next: Spline = this.handle.end === "out" ? { ...s, p1: moved(s.p1) } : { ...s, p2: moved(s.p2) };
+    const edit = withSpline(this.base, node, this.handle.from, next);
+    if ("refused" in edit) {
+      if (!this.told) this.ctx.notify(edit.refused);
+      this.told = true;
+      return;
+    }
+    if (edit.clamped && final) this.ctx.notify("The handle was pulled in: that axis moves too little for it to reach further.");
+    const track = final && edit.split !== null ? withoutRedundantKeys(edit.track, [edit.split]) : edit.track;
+    store.apply(new EditTracks("Bend Path", store.currentSymbolId, anim.id, new Map([[this.id, track]]), "path.handle"));
     store.emit("timeline");
     store.emit("stage");
   }

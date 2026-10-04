@@ -15,6 +15,7 @@ import { exportSpine, spineJson } from "@/core/spine/exportSpine";
 import { loadFixture } from "./fixtures/realProject";
 import { loadStickman } from "./fixtures/stickman";
 import { cyclePlan } from "@/core/doc/cycle";
+import { splineAt, straightSpline, withSpline } from "@/core/doc/pathSpline";
 
 /**
  * The export played by the Spine runtime itself (spine-core 4.3.13) must
@@ -601,6 +602,48 @@ describe("the Spine runtime plays the export the way the stage draws it", () => 
       const start = worlds(0, anim.name).flat(), join = worlds(animation.duration - 1e-9, anim.name).flat();
       start.forEach((v, i) => expect(Math.abs(v - join[i]!), `${anim.name} value ${i}`).toBeLessThan(1e-3));
     }
+  });
+
+  it("a bone bent with spline handles: two eases, and a key cut where an axis has to bend", () => {
+    const project = createProject("Spline");
+    const sym = project.items[project.rootSymbolId] as SymbolItem;
+    const item = createImageItem("dot", "asset_dot" as AssetId, 20, 20);
+    project.items[item.id] = item;
+    project.itemOrder.push(item.id);
+    const bone = createNode("bone", "mover", { x: 100, y: 300 });
+    const art = createNode("image", "art", { itemId: item.id, parentId: bone.id, pivotX: 10, pivotY: 10 });
+    for (const n of [art, bone]) { sym.nodes[n.id] = n; sym.layers.push(createLayer(n.id, n.name, sym.layers.length)); }
+    const anim = sym.animations[0]!;
+    anim.duration = 31;
+    let track = {
+      nodeId: bone.id, endFrame: 30,
+      keys: [key(0, tf(100, 300)), key(12, tf(260, 240)), key(30, tf(400, 240))],
+    };
+    // A bend on both axes, with eases only.
+    const first = straightSpline(track.keys[0]!, track.keys[1]!);
+    let edit = withSpline(track, bone, 0, { ...first, p1: { x: 120, y: 150 }, p2: { x: 300, y: 120 } });
+    if ("refused" in edit) throw new Error(edit.refused);
+    track = edit.track;
+    // y does not travel from 12 to 30, so bending it cuts a key at 21.
+    const flat = straightSpline(track.keys[1]!, track.keys[2]!);
+    const bent = { ...flat, p1: { x: 300, y: 330 }, p2: { x: 380, y: 330 } };
+    edit = withSpline(track, bone, 12, bent);
+    if ("refused" in edit) throw new Error(edit.refused);
+    expect(edit.split).toBe(21);
+    track = edit.track;
+    anim.tracks[bone.id] = track;
+
+    expect(checkParity(project, project.rootSymbolId).checks).toBeGreaterThanOrEqual(60);
+    // And the stage is on the drawn curve where Spine's polyline is exact.
+    const at = (f: number) => evaluateSymbol(sym, anim, f).byNode.get(bone.id)!.world;
+    for (const f of [0, 6, 12]) {
+      const p = splineAt({ ...first, p1: { x: 120, y: 150 }, p2: { x: 300, y: 120 } }, f / 12);
+      expect(at(f).tx).toBeCloseTo(p.x, 3);
+      expect(at(f).ty).toBeCloseTo(p.y, 3);
+    }
+    const mid = splineAt(bent, 0.5);
+    expect(at(21).tx).toBeCloseTo(mid.x, 3);
+    expect(at(21).ty).toBeCloseTo(mid.y, 3);
   });
 
 });

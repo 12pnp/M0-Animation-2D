@@ -20,6 +20,7 @@ import { AXIS_LENGTH, axisTips, drivenBox, positionAxisTips, SCENE_FRAME, showsP
 import { DEFAULT_COLORS, type OverlayColors } from "./overlayColors";
 import type { SnapLine } from "@/core/math/snap";
 import { type BonePath, DRAWN_BONE_LENGTH } from "@/core/doc/bonePath";
+import type { PathHandle } from "@/core/doc/pathSpline";
 
 export { localBox };
 
@@ -38,6 +39,8 @@ export interface Guide { axis: "x" | "y"; at: number; }
 /** Bone paths to draw, and the frame the playhead is on. */
 export interface BonePathsDraw {
   paths: BonePath[];
+  /** Spline handles of the one selected bone's path. */
+  handles: PathHandle[];
   frame: number;
   past: string;
   future: string;
@@ -765,6 +768,21 @@ export class Overlay {
           ctx.fill();
         }
       }
+    }
+
+    // Handles: a thin line from the key's dot, and a square to drag.
+    ctx.globalAlpha = 1;
+    for (const h of d.handles) {
+      const a = cam.toScreen(h.anchorX, h.anchorY), p = cam.toScreen(h.x, h.y);
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(p.x, p.y);
+      ctx.strokeStyle = this.C.select;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.fillStyle = this.C.boneCore;
+      ctx.fillRect(p.x - 3, p.y - 3, 6, 6);
+      ctx.strokeRect(p.x - 3, p.y - 3, 6, 6);
     }
     ctx.restore();
   }

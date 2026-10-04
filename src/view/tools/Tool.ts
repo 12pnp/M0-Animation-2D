@@ -5,6 +5,7 @@ import type { Pose } from "@/core/doc/pose";
 import type { Point } from "@/core/math/geom";
 import type { Gizmo } from "./gizmo";
 import type { BonePath } from "@/core/doc/bonePath";
+import type { PathHandle } from "@/core/doc/pathSpline";
 
 /** What the viewport hands to a tool. Tools never touch the DOM. */
 export interface ToolContext {
@@ -48,6 +49,8 @@ export interface ToolContext {
   setCursor(cursor: string): void;
   /** The bone paths the last draw showed; empty when none are shown. */
   bonePaths(): BonePath[];
+  /** The spline handles the last draw showed. */
+  pathHandles(): PathHandle[];
   /** A short status message (the app's toast). */
   notify(message: string): void;
 }

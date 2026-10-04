@@ -18,7 +18,9 @@ import { keyIndexAt } from "@/core/doc/timeline";
 import { withDescendants } from "@/core/doc/layerTree";
 import { GhostPainter } from "./ghost";
 import { PathCache } from "./pathCache";
-import { bonePaths, keyedIn, pathFrames } from "@/core/doc/bonePath";
+import { bonePaths, keyedIn, pathFrames, pathPoint } from "@/core/doc/bonePath";
+import { type PathHandle, splineSegments } from "@/core/doc/pathSpline";
+import { pathDragMode } from "@/core/doc/pathEdit";
 import { seamFrame } from "@/core/doc/cycle";
 import type { BonePathsDraw } from "./Overlay";
 import { drawReference } from "./reference";
@@ -112,6 +114,7 @@ export class Viewport {
       endSnap: () => { this.snapSession = null; this.snapLines = []; },
       setCursor: (c) => { if (!this.spaceDown) this.host.style.cursor = c; },
       bonePaths: () => this.lastBonePaths?.paths ?? [],
+      pathHandles: () => this.lastBonePaths?.handles ?? [],
       notify: (message) => this.onNotify?.(message),
     };
 
@@ -315,15 +318,41 @@ export class Viewport {
       .map((n) => n.id);
     if (!ids.length) return null;
     const { frames, closed } = pathFrames(anim, ui.onionSkin ? store.onionSpan : null);
-    const paths = bonePaths({
-      sample: this.pathCache.sampler(store.project, sym, anim, store.history.revision),
-      ids, frames, closed, which: g.bonePathPoint, isKey: keyedIn(anim),
-    });
+    const sample = this.pathCache.sampler(store.project, sym, anim, store.history.revision);
+    const paths = bonePaths({ sample, ids, frames, closed, which: g.bonePathPoint, isKey: keyedIn(anim) });
+
+    // Spline handles: on the one selected bone, when a drag moves it.
+    const handles: PathHandle[] = [];
+    const one = store.selection.nodes.length === 1 ? store.selection.nodes[0]! : null;
+    const node = one ? sym.nodes[one] : undefined;
+    const rule = one && node && ids.includes(one) ? pathDragMode(sym, anim, one, g.bonePathPoint, false) : null;
+    if (one && node && rule && "mode" in rule && rule.mode === "translate") {
+      const shownFrames = new Set(frames);
+      const linearAt = (f: number) => {
+        const parent = node.parentId ? sample(f).byNode.get(node.parentId)?.world : undefined;
+        return parent ?? { a: 1, b: 0, c: 0, d: 1 };
+      };
+      const hang = (f: number, dx: number, dy: number, from: number, end: "out" | "in") => {
+        const anchor = pathPoint(sample(f), one, g.bonePathPoint);
+        if (!anchor) return;
+        const m = linearAt(f);
+        handles.push({
+          from, end, anchorX: anchor.x, anchorY: anchor.y,
+          x: anchor.x + m.a * dx + m.c * dy, y: anchor.y + m.b * dx + m.d * dy,
+        });
+      };
+      const join = seamFrame(anim);
+      for (const seg of splineSegments(anim.tracks[one])) {
+        const s = seg.spline;
+        if (shownFrames.has(seg.from)) hang(seg.from, s.p1.x - s.p0.x, s.p1.y - s.p0.y, seg.from, "out");
+        if (shownFrames.has(seg.to === join ? 0 : seg.to)) hang(seg.to, s.p2.x - s.p3.x, s.p2.y - s.p3.y, seg.from, "in");
+      }
+    }
     if (this.pathCache.pending) this.invalidate();
     const t = store.prefs.value.timeline;
     // On a cycle's join the stage shows frame 0, and that is the dot to fill.
     const frame = ui.frame === seamFrame(anim) ? 0 : ui.frame;
-    return { paths, frame, past: t.onionPastColor, future: t.onionFutureColor, current: t.playhead };
+    return { paths, handles, frame, past: t.onionPastColor, future: t.onionFutureColor, current: t.playhead };
   }
 
   /**
