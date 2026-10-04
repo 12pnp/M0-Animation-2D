@@ -179,18 +179,63 @@ export function splineSegments(track: Track | undefined): SplineSegment[] {
  *  hangs from. */
 export interface PathHandle {
   from: number;
+  /** The key the interval runs to. */
+  to: number;
   end: "out" | "in";
   x: number; y: number;
   anchorX: number; anchorY: number;
+  /** On a bone that turns: the curve its tip draws over the interval, in the
+   *  symbol's space, fitted to the arc. Dragging bakes it (`bakePlan`). */
+  bake?: Spline;
 }
 
-/** The handle under (x, y) within `radius`, the nearest. */
-export function handleAt(handles: readonly PathHandle[], x: number, y: number, radius: number): PathHandle | null {
+/**
+ * The handle under (x, y) within `radius`. Handles pile up where a loop
+ * comes back to where it started: the interval the playhead (`current`) is in
+ * wins, then the nearest, then the first listed.
+ */
+export function handleAt(
+  handles: readonly PathHandle[], x: number, y: number, radius: number, current?: number,
+): PathHandle | null {
   let best: PathHandle | null = null;
-  let bestD = radius;
+  let bestRank: [number, number] | null = null;
   for (const h of handles) {
     const d = Math.hypot(h.x - x, h.y - y);
-    if (d <= bestD) { bestD = d; best = h; }
+    if (d > radius) continue;
+    const inside = current !== undefined && current >= h.from && current <= h.to ? 0 : 1;
+    if (!bestRank || inside < bestRank[0] || (inside === bestRank[0] && d < bestRank[1])) {
+      bestRank = [inside, d];
+      best = h;
+    }
   }
   return best;
+}
+
+/**
+ * The cubic from `p0` to `p3` closest to `samples` (least squares, each
+ * sample at its own parameter `t`): the handles that match a path already
+ * drawn, such as the arc a turning bone's tip makes. With too few samples to
+ * pin two handles, the straight ones.
+ */
+export function fitCubic(p0: Pt, p3: Pt, samples: ReadonlyArray<{ t: number; p: Pt }>): Spline {
+  let a11 = 0, a12 = 0, a22 = 0;
+  const r1 = { x: 0, y: 0 }, r2 = { x: 0, y: 0 };
+  for (const { t, p } of samples) {
+    const l = 1 - t;
+    const b1 = 3 * l * l * t, b2 = 3 * l * t * t, b0 = l * l * l, b3 = t * t * t;
+    const rx = p.x - b0 * p0.x - b3 * p3.x, ry = p.y - b0 * p0.y - b3 * p3.y;
+    a11 += b1 * b1; a12 += b1 * b2; a22 += b2 * b2;
+    r1.x += b1 * rx; r1.y += b1 * ry; r2.x += b2 * rx; r2.y += b2 * ry;
+  }
+  const det = a11 * a22 - a12 * a12;
+  const cx: [number, number] = [1 / 3, 2 / 3];
+  if (samples.length < 2 || Math.abs(det) < 1e-12) {
+    const at = (u: number): Pt => ({ x: p0.x + (p3.x - p0.x) * u, y: p0.y + (p3.y - p0.y) * u });
+    return { p0, p1: at(1 / 3), p2: at(2 / 3), p3, cx };
+  }
+  return {
+    p0, p3, cx,
+    p1: { x: (a22 * r1.x - a12 * r2.x) / det, y: (a22 * r1.y - a12 * r2.y) / det },
+    p2: { x: (a11 * r2.x - a12 * r1.x) / det, y: (a11 * r2.y - a12 * r1.y) / det },
+  };
 }

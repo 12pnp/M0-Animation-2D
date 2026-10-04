@@ -118,3 +118,15 @@ describe("withSpline", () => {
     expect(withSpline(track(key(0, 0, 0)), node, 0, { ...arc })).toMatchObject({ refused: expect.any(String) });
   });
 });
+
+describe("handleAt", () => {
+  it("prefers the interval the playhead is in where handles pile up, then the nearest", async () => {
+    const { handleAt } = await import("@/core/doc/pathSpline");
+    const h = (from: number, to: number, x: number) => ({ from, to, end: "out" as const, x, y: 0, anchorX: 0, anchorY: 0 });
+    const piled = [h(0, 8, 0), h(8, 16, 0)];
+    expect(handleAt(piled, 0, 0, 5, 4)!.from).toBe(0);
+    expect(handleAt(piled, 0, 0, 5, 12)!.from).toBe(8);
+    expect(handleAt([h(0, 8, 3), h(8, 16, 1)], 0, 0, 5, 20)!.from).toBe(8);
+    expect(handleAt(piled, 50, 0, 5, 4)).toBeNull();
+  });
+});

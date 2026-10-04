@@ -4,11 +4,11 @@ import type { Track } from "@/core/doc/types";
 import { DRAWN_BONE_LENGTH } from "@/core/doc/bonePath";
 import { seamFrame } from "@/core/doc/cycle";
 import {
-  type DragFrame, keyAt, pathDotAt, pathDragMode, type PathDragMode, type Point, rotateTo, rotateWithParentTo,
+  type BakeFrame, bakePlan, type DragFrame, keyAt, pathDotAt, withBakedKeys, pathDragMode, type PathDragMode, type Point, rotateTo, rotateWithParentTo,
   shiftKeys, translateTo, withKeyTransform, withoutRedundantKeys,
 } from "@/core/doc/pathEdit";
 import { apply, invert, mat, type Matrix2D } from "@/core/math/Matrix2D";
-import { handleAt, type PathHandle, type Spline, splineSegments, withSpline } from "@/core/doc/pathSpline";
+import { handleAt, type PathHandle, type Spline, splineAt, splineSegments, withSpline } from "@/core/doc/pathSpline";
 import { quantize, type Transform } from "@/core/math/Transform";
 import { posedSymbol } from "@/core/spine/spinePose";
 import { EditTracks } from "@/core/history/timelineCommands";
@@ -172,7 +172,9 @@ export class PathDrag {
 /** The spline handle under a world point, if the selected bone shows any. */
 export function handleUnder(ctx: ToolContext, world: Point): PathHandle | null {
   const handles = ctx.pathHandles();
-  return handles.length ? handleAt(handles, world.x, world.y, DOT_RADIUS / ctx.camera.screenScale) : null;
+  return handles.length
+    ? handleAt(handles, world.x, world.y, DOT_RADIUS / ctx.camera.screenScale, ctx.store.ui.frame)
+    : null;
 }
 
 /**
@@ -254,6 +256,105 @@ export class HandleDrag {
     if (edit.clamped && final) this.ctx.notify("The handle was pulled in: that axis moves too little for it to reach further.");
     const track = final && edit.split !== null ? withoutRedundantKeys(edit.track, [edit.split]) : edit.track;
     store.apply(new EditTracks("Bend Path", store.currentSymbolId, anim.id, new Map([[this.id, track]]), "path.handle"));
+    store.emit("timeline");
+    store.emit("stage");
+  }
+}
+
+/**
+ * Dragging a handle on a bone that turns (B5 ▸ Rotation bones: bake): the
+ * handle reshapes the curve fitted to the tip's arc, and the interval is
+ * baked onto it: the bone (and its parent, with the bone's "With parent"
+ * option) turned at every frame to follow it, then only the keys a linear
+ * turn needs within 0.5 px kept (`bakePlan`). One undo step.
+ */
+export class BakeDrag {
+  private started = false;
+  private readonly id: NodeId;
+  private readonly parentId: NodeId | null;
+  private readonly frames: BakeFrame[] = [];
+  private readonly bases: Map<NodeId, Track | undefined> = new Map();
+  private readonly to: number;
+
+  constructor(
+    private readonly ctx: ToolContext,
+    private readonly handle: PathHandle & { bake: Spline },
+    private readonly startWorld: Point,
+  ) {
+    const store = ctx.store;
+    const sym = store.currentSymbol;
+    const anim = store.currentAnimation!;
+    this.id = store.selection.nodes[0]!;
+    const node = sym.nodes[this.id]!;
+    this.to = anim.tracks[this.id]!.keys.find((k) => k.frame > handle.from)!.frame;
+    const withParent = node.pathDrag === "parent" && !!node.parentId && sym.nodes[node.parentId]?.kind === "bone";
+    this.parentId = withParent ? node.parentId : null;
+    const length = node.boneLength ?? DRAWN_BONE_LENGTH;
+    for (let f = handle.from; f <= this.to; f++) {
+      const pose = posedSymbol(store.project, sym, anim, f, "animate");
+      const own = pose.byNode.get(this.id)!;
+      const parent = node.parentId ? pose.byNode.get(node.parentId) : undefined;
+      const grand = parent?.node.parentId ? pose.byNode.get(parent.node.parentId)?.world : undefined;
+      this.frames.push({
+        frame: f,
+        own: { local: own.local, world: own.world, parentWorld: parent?.world ?? mat(), length },
+        ...(withParent && parent ? { parent: { local: parent.local, world: parent.world, parentWorld: grand ?? mat(), length: 0 } } : {}),
+        target: { x: 0, y: 0 },
+      });
+    }
+    this.bases.set(this.id, anim.tracks[this.id]);
+    if (this.parentId) this.bases.set(this.parentId, anim.tracks[this.parentId]);
+  }
+
+  move(world: Point): void {
+    const ctx = this.ctx;
+    if (!this.started) {
+      const s = ctx.toScreen(this.startWorld), n = ctx.toScreen(world);
+      if (Math.hypot(n.x - s.x, n.y - s.y) < 3) return;
+      this.started = true;
+      ctx.store.history.beginInteraction("path.bake");
+    }
+    this.apply(world, false);
+  }
+
+  up(world: Point): void {
+    if (!this.started) return;
+    this.apply(world, true);
+    this.ctx.store.history.endInteraction();
+  }
+
+  cancel(): void {
+    if (this.started) this.ctx.store.history.abortInteraction();
+  }
+
+  private apply(world: Point, final: boolean): void {
+    const store = this.ctx.store;
+    const anim = store.currentAnimation;
+    const sym = store.currentSymbol;
+    if (!anim) return;
+    const dx = world.x - this.startWorld.x, dy = world.y - this.startWorld.y;
+    const s0 = this.handle.bake;
+    const s = this.handle.end === "out"
+      ? { ...s0, p1: { x: s0.p1.x + dx, y: s0.p1.y + dy } }
+      : { ...s0, p2: { x: s0.p2.x + dx, y: s0.p2.y + dy } };
+    const span = this.to - this.handle.from;
+    const frames = this.frames.map((f) => ({ ...f, target: splineAt(s, (f.frame - this.handle.from) / span) }));
+    const kept = bakePlan(frames).filter((k) => k.frame > this.handle.from && k.frame < this.to);
+    const q = (t: Transform) => (final ? quantize(t) : t);
+
+    const tracks = new Map<NodeId, Track | undefined>();
+    const node = sym.nodes[this.id]!;
+    tracks.set(this.id, withBakedKeys(this.bases.get(this.id)!, node, this.handle.from, kept.map((k) => ({ frame: k.frame, t: q(k.own) }))));
+    if (this.parentId) {
+      const parent = sym.nodes[this.parentId]!;
+      // Pin the parent at the interval's ends, so it turns only inside it.
+      let base = keyAt(this.bases.get(this.parentId), parent, this.handle.from, anim.duration).track;
+      base = keyAt(base, parent, this.to, anim.duration).track;
+      // The bake replaces whatever the parent had inside the interval.
+      base = { ...base, keys: base.keys.filter((k) => k.frame <= this.handle.from || k.frame >= this.to) };
+      tracks.set(this.parentId, withBakedKeys(base, parent, this.handle.from, kept.map((k) => ({ frame: k.frame, t: q(k.parent!) }))));
+    }
+    store.apply(new EditTracks("Bake Path", store.currentSymbolId, anim.id, tracks, "path.bake"));
     store.emit("timeline");
     store.emit("stage");
   }

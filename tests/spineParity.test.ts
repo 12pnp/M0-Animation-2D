@@ -8,7 +8,7 @@ import { createAnimation, createImageItem, createLayer, createNode, createProjec
 import { isImage, isSymbol, type Keyframe, type Node, type Project, type SymbolItem } from "@/core/doc/types";
 import { childFrame, displayContext, evaluateSymbol, type FrameContext, type PoseEntry } from "@/core/doc/pose";
 import { apply, type Matrix2D, mat, mul, translate } from "@/core/math/Matrix2D";
-import { tf, type Transform } from "@/core/math/Transform";
+import { tf, toMatrix, type Transform } from "@/core/math/Transform";
 import type { PackedPage } from "@/core/atlas/packed";
 import { atlasText } from "@/core/spine/atlas";
 import { exportSpine, spineJson } from "@/core/spine/exportSpine";
@@ -16,6 +16,7 @@ import { loadFixture } from "./fixtures/realProject";
 import { loadStickman } from "./fixtures/stickman";
 import { cyclePlan } from "@/core/doc/cycle";
 import { splineAt, straightSpline, withSpline } from "@/core/doc/pathSpline";
+import { bakePlan, withBakedKeys } from "@/core/doc/pathEdit";
 
 /**
  * The export played by the Spine runtime itself (spine-core 4.3.13) must
@@ -646,4 +647,33 @@ describe("the Spine runtime plays the export the way the stage draws it", () => 
     expect(at(21).ty).toBeCloseTo(mid.y, 3);
   });
 
+  it("a bone baked onto a curve: only ordinary keys, played as the stage draws them", () => {
+    const project = createProject("Bake");
+    const sym = project.items[project.rootSymbolId] as SymbolItem;
+    const item = createImageItem("dot", "asset_dot" as AssetId, 20, 20);
+    project.items[item.id] = item;
+    project.itemOrder.push(item.id);
+    const arm = createNode("bone", "arm", { x: 300, y: 300 });
+    arm.boneLength = 100;
+    const art = createNode("image", "art", { itemId: item.id, parentId: arm.id, x: 100, pivotX: 10, pivotY: 10 });
+    for (const n of [art, arm]) { sym.nodes[n.id] = n; sym.layers.push(createLayer(n.id, n.name, sym.layers.length)); }
+    const anim = sym.animations[0]!;
+    anim.duration = 21;
+    const track = { nodeId: arm.id, endFrame: 20, keys: [key(0, tf(300, 300, 0, 0)), key(20, tf(300, 300, 0, 0))] };
+    anim.tracks[arm.id] = track;
+    // The tip swept across a line under the shoulder and back up.
+    const frames = Array.from({ length: 21 }, (_, f) => {
+      const local = tf(300, 300, 0, 0);
+      return {
+        frame: f,
+        own: { local, world: toMatrix(mat(), local), parentWorld: mat(), length: 100 },
+        target: { x: 300 + 120 * Math.cos(Math.PI * f / 20), y: 300 + 80 * Math.sin(Math.PI * f / 20) },
+      };
+    });
+    const kept = bakePlan(frames).filter((k) => k.frame > 0 && k.frame < 20);
+    expect(kept.length).toBeGreaterThan(2);
+    anim.tracks[arm.id] = withBakedKeys(track, arm, 0, kept.map((k) => ({ frame: k.frame, t: k.own })));
+    expect(checkParity(project, project.rootSymbolId).checks).toBeGreaterThanOrEqual(40);
+  });
 });
+

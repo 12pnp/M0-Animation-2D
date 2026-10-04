@@ -8,7 +8,7 @@ import type { Transform } from "@/core/math/Transform";
 import { quantize } from "@/core/math/Transform";
 import { mat } from "@/core/math/Matrix2D";
 import { pickBone } from "./boneGeom";
-import { HandleDrag, handleUnder, PathDrag, pathDotUnder } from "./pathDrag";
+import { BakeDrag, HandleDrag, handleUnder, PathDrag, pathDotUnder } from "./pathDrag";
 
 /**
  * The Selection tool: click to select, drag to move, marquee on empty space.
@@ -25,7 +25,7 @@ export class SelectTool implements Tool {
   private additive = false;
   /** A press on a bone path's dot: it handles the gesture to the end. */
   private path: PathDrag | null = null;
-  private handle: HandleDrag | null = null;
+  private handle: HandleDrag | BakeDrag | null = null;
 
   onPointerDown(e: PointerEvent, ctx: ToolContext): void {
     if (e.button !== 0) return;
@@ -37,7 +37,9 @@ export class SelectTool implements Tool {
     // tip, where the limb's artwork is.
     const handle = handleUnder(ctx, this.startWorld);
     if (handle) {
-      this.handle = new HandleDrag(ctx, handle, this.startWorld);
+      this.handle = handle.bake
+        ? new BakeDrag(ctx, { ...handle, bake: handle.bake }, this.startWorld)
+        : new HandleDrag(ctx, handle, this.startWorld);
       return;
     }
     const dot = pathDotUnder(ctx, this.startWorld);

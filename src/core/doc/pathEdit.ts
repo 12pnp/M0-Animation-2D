@@ -128,7 +128,7 @@ function aim(f: DragFrame, carried: Point, target: Point): Transform {
  * child's; `parent.length` is unused.
  */
 export function rotateWithParentTo(
-  child: DragFrame, parent: DragFrame, target: Point,
+  child: DragFrame, parent: DragFrame, target: Point, bend: 1 | -1 = bendOf(child, parent),
 ): { child: Transform; parent: Transform } {
   const a = { x: parent.world.tx, y: parent.world.ty };
   const c = { x: child.world.tx, y: child.world.ty };
@@ -139,8 +139,6 @@ export function rotateWithParentTo(
   if (l1 === 0 || l2 === 0 || !applyInverse(inParent, parent.world, c.x, c.y)) {
     return { child: rotateTo(child, target), parent: cloneTf(parent.local) };
   }
-  const cross = (c.x - a.x) * (t.y - c.y) - (c.y - a.y) * (t.x - c.x);
-  const bend = cross < 0 ? -1 : 1;
   const d = Math.max(Math.abs(l1 - l2), 1e-9, Math.min(l1 + l2, Math.hypot(target.x - a.x, target.y - a.y)));
   const cosA = Math.max(-1, Math.min(1, (l1 * l1 + d * d - l2 * l2) / (2 * l1 * d)));
   // The elbow on the side that keeps the bend.
@@ -152,6 +150,15 @@ export function rotateWithParentTo(
   const parentWorld = worldOfLocal(parent.parentWorld, parentLocal);
   const childWorld = worldOfLocal(parentWorld, child.local);
   return { parent: parentLocal, child: rotateTo({ ...child, parentWorld, world: childWorld }, target) };
+}
+
+/** Which way the chain from `parent` through `child` to its tip bends now:
+ *  the sign of the turn at the child, 1 when it is straight. */
+export function bendOf(child: DragFrame, parent: DragFrame): 1 | -1 {
+  const a = { x: parent.world.tx, y: parent.world.ty };
+  const c = { x: child.world.tx, y: child.world.ty };
+  const t = tipOf(child);
+  return (c.x - a.x) * (t.y - c.y) - (c.y - a.y) * (t.x - c.x) < 0 ? -1 : 1;
 }
 
 /** `track` with a key at `frame` (F6's rule: what the stage shows there),
@@ -250,4 +257,124 @@ export function pathDotAt(
     }
   }
   return best;
+}
+
+/** One frame of an interval to bake: the bone (and its parent, for a
+ *  two-bone bake) as the stage shows it there, and where the tip should go. */
+export interface BakeFrame {
+  frame: number;
+  own: DragFrame;
+  /** The parent, when it turns too. Its `parentWorld` is the grandparent's. */
+  parent?: DragFrame;
+  target: Point;
+}
+
+/** A key a bake writes: the frame, the bone's local transform, and the
+ *  parent's for a two-bone bake. */
+export interface BakedKey { frame: number; own: Transform; parent?: Transform }
+
+function lerpTf(a: Transform, b: Transform, t: number): Transform {
+  return {
+    x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t,
+    skewX: a.skewX + (b.skewX - a.skewX) * t, skewY: a.skewY + (b.skewY - a.skewY) * t,
+    scaleX: a.scaleX + (b.scaleX - a.scaleX) * t, scaleY: a.scaleY + (b.scaleY - a.scaleY) * t,
+  };
+}
+
+/** The same turn as `t`, moved by whole turns to lie within half a turn of
+ *  `near`: solved frame by frame, angles must not jump a turn between two. */
+function unwrapNear(t: Transform, near: Transform): Transform {
+  const turns = Math.round((near.skewY - t.skewY) / 360) * 360;
+  return turns ? { ...t, skewX: t.skewX + turns, skewY: t.skewY + turns } : t;
+}
+
+/**
+ * Bake Path (B5 ▸ Rotation bones): turn the bone, or the bone and its parent,
+ * at every frame so its tip follows the targets, then keep only the keys
+ * needed. Linear tweens between kept keys must put the tip within `tol` of
+ * where the per-frame solve puts it, which is the nearest the bone can reach:
+ * a bone that only turns keeps its tip on a circle. Keys are added where the
+ * error is largest until none is over (Douglas–Peucker over frames). The
+ * first and last frame are always kept.
+ */
+export function bakePlan(frames: readonly BakeFrame[], tol = 0.5): BakedKey[] {
+  if (frames.length < 2) return [];
+  // Solve every frame, then unwrap so the angles run on without jumps. A
+  // chain bends one way for the whole interval, the way it bends at the
+  // start: decided frame by frame, a nearly straight chain flips between the
+  // two solutions.
+  const solved: BakedKey[] = [];
+  const first = frames[0]!;
+  const bend = first.parent ? bendOf(first.own, first.parent) : 1;
+  for (const f of frames) {
+    const prev = solved[solved.length - 1];
+    if (f.parent) {
+      const both = rotateWithParentTo(f.own, f.parent, f.target, bend);
+      solved.push({
+        frame: f.frame,
+        own: unwrapNear(both.child, prev?.own ?? f.own.local),
+        parent: unwrapNear(both.parent, prev?.parent ?? f.parent.local),
+      });
+    } else {
+      solved.push({ frame: f.frame, own: unwrapNear(rotateTo(f.own, f.target), prev?.own ?? f.own.local) });
+    }
+  }
+
+  const tipFor = (i: number, own: Transform, parent?: Transform): Point => {
+    const f = frames[i]!;
+    const parentWorld = f.parent && parent ? worldOfLocal(f.parent.parentWorld, parent) : f.own.parentWorld;
+    return apply({ x: 0, y: 0 }, worldOfLocal(parentWorld, own), f.own.length, 0);
+  };
+  const want = solved.map((k, i) => tipFor(i, k.own, k.parent));
+
+  const kept = new Set<number>([0, frames.length - 1]);
+  for (;;) {
+    const idx = [...kept].sort((a, b) => a - b);
+    let worst = -1, worstErr = tol;
+    for (let s = 0; s + 1 < idx.length; s++) {
+      const i0 = idx[s]!, i1 = idx[s + 1]!;
+      const k0 = solved[i0]!, k1 = solved[i1]!;
+      const span = frames[i1]!.frame - frames[i0]!.frame;
+      for (let i = i0 + 1; i < i1; i++) {
+        const t = (frames[i]!.frame - frames[i0]!.frame) / span;
+        const own = lerpTf(k0.own, k1.own, t);
+        const parent = k0.parent && k1.parent ? lerpTf(k0.parent, k1.parent, t) : undefined;
+        const p = tipFor(i, own, parent);
+        const err = Math.hypot(p.x - want[i]!.x, p.y - want[i]!.y);
+        if (err > worstErr) { worstErr = err; worst = i; }
+      }
+    }
+    if (worst < 0) break;
+    kept.add(worst);
+  }
+  return [...kept].sort((a, b) => a - b).map((i) => solved[i]!);
+}
+
+/**
+ * `track` with baked keys written into the interval from `from` to the next
+ * key: a key at each of `keys` (inside the interval) holding its transform,
+ * and the turn linear on every interval between `from` and that next key, as
+ * `bakePlan` measured it. Only the turn's ease changes: x, y and scale keep
+ * theirs. The interval's ends are not rewritten.
+ */
+export function withBakedKeys(
+  track: Track, node: Node, from: number, keys: ReadonlyArray<{ frame: number; t: Transform }>,
+): Track {
+  const next = track.keys.find((k) => k.frame > from)?.frame ?? track.endFrame;
+  let out = track;
+  for (const k of keys) {
+    if (k.frame <= from || k.frame >= next) continue;
+    out = withKeyTransform(keyAt(out, node, k.frame, track.endFrame + 1).track, k.frame, k.t);
+  }
+  return {
+    ...out,
+    keys: out.keys.map((k) => {
+      if (k.frame < from || k.frame >= next) return k;
+      const key = { ...k, eases: { ...k.eases, rotation: { kind: "linear" as const }, shear: { kind: "linear" as const } } };
+      if (key.tween.kind === "none") key.tween = { kind: "linear" };
+      delete key.rotateDir;
+      delete key.rotateTurns;
+      return key;
+    }),
+  };
 }
