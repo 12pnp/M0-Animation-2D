@@ -83,7 +83,7 @@ export class PathDrag {
     if (!anim || !node) return;
     const which = store.prefs.value.gizmos.bonePathPoint;
     const withParent = (node.pathDrag === "parent") !== e.altKey;
-    const rule = pathDragMode(sym, anim, id, which, withParent);
+    const rule = pathDragMode(sym, anim, id, which, withParent, frame);
     if ("refused" in rule) {
       this.refused = rule.refused;
       return;

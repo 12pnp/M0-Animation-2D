@@ -1,6 +1,6 @@
 import type { Animation, ColorTransform, DisplayRef, ImageItem, Layer, Node, Project, SymbolItem, Track } from "@/core/doc/types";
 import { DEFAULT_COLOR, isImage, isSymbol, producesSlot } from "@/core/doc/types";
-import type { ItemId, NodeId } from "@/core/doc/ids";
+import type { IkId, ItemId, NodeId } from "@/core/doc/ids";
 import { descendantsOf, maskGroups } from "@/core/doc/layerTree";
 import { orderAt, toOffsets } from "@/core/doc/drawOrder";
 import type { Contour } from "@/core/atlas/contour";
@@ -27,6 +27,7 @@ import {
   type SpineCurve,
   type SpineDrawOrderKey,
   type SpineIkConstraint,
+  type SpineIkKey,
   type SpineRaw,
   type SpineSkin,
   type SpineRegionAttachment,
@@ -177,6 +178,9 @@ export function exportSpine(
   const displayKeys = new Map<string, Map<number, string>>();
   const attachments: Record<string, Record<string, SpineAttachment>> = {};
   const constraints: SpineIkConstraint[] = [];
+  /** The exported symbol's constraints as written, for its IK keys. */
+  const rootIk = new Map<IkId, SpineIkConstraint>();
+  const ikKeysWarned = new Set<ItemId>();
   const setups = new Map<string, SpineLocal>();
   const paths = new Map<string, string>();
   const plans: SlotPlan[] = [];
@@ -255,6 +259,11 @@ export function exportSpine(
       if (k.bendPositive) ik.bendPositive = false;
       if (k.spine) Object.assign(ik, k.spine);
       constraints.push(ik);
+      if (scope.depth === 0) rootIk.set(k.id, ik);
+    }
+    if (scope.depth > 0 && !ikKeysWarned.has(s.id) && s.animations.some((a) => a.ik && Object.keys(a.ik).length)) {
+      ikKeysWarned.add(s.id);
+      diagnostics.push({ severity: "warning", message: `"${s.name}" keys its IK, but only the exported symbol's IK keys are written; a nested symbol's play its constraints' own mix and bend.` });
     }
 
     const emitLayer = (layer: Layer): void => {
@@ -539,13 +548,20 @@ export function exportSpine(
     }
     const order = drawOrderTimeline(sym, anim, slots.map((sl) => sl.name), slotBlocks, fps);
     if (order) out.drawOrder = order;
+    const ikKeys = ikTimelines(sym, anim, rootIk, fps);
+    if (ikKeys) {
+      out.ik = ikKeys;
+      for (const keys of Object.values(anim.ik ?? {})) lastFrame = Math.max(lastFrame, keys[keys.length - 1]?.frame ?? 0);
+    }
     // Carried timelines (an opened file's) join the generated ones; draw
     // order keys the document holds replace a carried timeline.
     const carried = order ? omitKey(anim.spine ?? {}, "drawOrder") : anim.spine ?? {};
     for (const [group, value] of Object.entries(carried)) {
-      if ((group === "bones" || group === "slots") && value && typeof value === "object") {
+      if ((group === "bones" || group === "slots" || group === "ik") && value && typeof value === "object") {
         const into = (out[group] ??= {}) as Record<string, Record<string, unknown>>;
         for (const [owner, timelines] of Object.entries(value as Record<string, Record<string, unknown>>)) {
+          // A constraint keyed in the document replaces the file's timeline.
+          if (group === "ik") { if (!into[owner]) into[owner] = timelines; continue; }
           into[owner] = { ...into[owner], ...timelines };
         }
       } else out[group] = value;
@@ -900,6 +916,45 @@ function boneTimelines(
   }
 
   return Object.keys(out).length ? { timelines: out, lastFrame } : null;
+}
+
+/* ── IK keys ─────────────────────────────────────────────────────────────── */
+
+/**
+ * The animation's IK keys as Spine's `ik` timelines, one per constraint the
+ * export wrote. The bend is inverted like the constraint's (the y flip); the
+ * softness, compress and stretch an opened constraint carries are repeated
+ * on every key, since a key without them sets them back to Spine's defaults.
+ * A tween is one cubic over the mix; the softness curve beside it is flat.
+ */
+function ikTimelines(
+  sym: SymbolItem, anim: Animation, written: ReadonlyMap<IkId, SpineIkConstraint>, fps: number,
+): Record<string, SpineIkKey[]> | null {
+  const out: Record<string, SpineIkKey[]> = {};
+  for (const k of sym.ik) {
+    const keys = anim.ik?.[k.id];
+    const c = written.get(k.id);
+    if (!keys?.length || !c) continue;
+    out[c.name] = keys.map((key, i) => {
+      const o: SpineIkKey = {};
+      const time = keyTime(key.frame, fps);
+      if (time) o.time = time;
+      if (key.mix !== 1) o.mix = key.mix;
+      if (c.softness) o.softness = c.softness;
+      if (key.bendPositive) o.bendPositive = false;
+      if (c.compress) o.compress = true;
+      if (c.stretch) o.stretch = true;
+      const next = keys[i + 1];
+      if (next && key.tween?.kind === "none") o.curve = "stepped";
+      else if (next && key.tween?.kind === "curve") {
+        const [x1, y1, x2, y2] = key.tween.curve as [number, number, number, number];
+        const t0 = key.frame / fps, span = (next.frame - key.frame) / fps, dv = next.mix - key.mix, s = c.softness ?? 0;
+        o.curve = [t0 + x1 * span, key.mix + y1 * dv, t0 + x2 * span, key.mix + y2 * dv, t0 + x1 * span, s, t0 + x2 * span, s];
+      }
+      return o;
+    });
+  }
+  return Object.keys(out).length ? out : null;
 }
 
 /* ── draw order ──────────────────────────────────────────────────────────── */

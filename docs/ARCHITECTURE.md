@@ -477,6 +477,56 @@ against spine-core's `SkeletonJson` in `tests/drawOrder.test.ts`).
   `placedInFront`), as dragging in Spine's tree does; it never restacks or re-parents
   there, and Setup keeps restacking. The AI's `key_draw_order` does the same; `get_animation` lists the keys.
 
+### IK keys
+
+An animation keys an IK constraint's mix and bend, as Spine's `ik` timeline does
+(`Animation.ik`, schema 17: per constraint, keys `{ frame, mix, bendPositive, tween? }`).
+The pure rules are in `core/doc/ikKeys.ts`: `ikPoseAt`, `withIkKey`, `moveIkKeys`,
+`deleteIkKeys` and `withIkTween`, tested in `tests/ikKeys.test.ts`.
+
+- **Spine's semantics.** Before the first key the constraint's own weight and bend hold
+  (the runtime's setup branch). From a key on, the mix tweens to the next key by the key's
+  tween and the bend is the key's, stepped. A tween is linear (absent), stepped (`none`) or
+  one cubic (`curve`, 4 numbers; "smooth" is 0.42, 0, 0.58, 1), which is what one Spine
+  key's curve holds. `applyTween` samples the cubic the way the runtime does.
+- **The stage.** `applyIk` takes the mix and bend from `ikPoseAt` in Animate; a mix of 0
+  skips the solve, as the weight did. An opened rig (`spinePose.ts` ▸ `applyRig`) sets the
+  constraint's `pose.mix` and `pose.bendDirection` after the carried animation, the bend
+  inverted as the exporter writes it.
+- **Export** (`ikTimelines`): one `ik` timeline per constraint of the exported symbol, the
+  bend inverted. The softness, compress and stretch an opened constraint carries are
+  repeated on every key: a key without them sets them back to Spine's defaults. A cubic
+  writes 8 numbers, the mix's and a flat softness's. Spine's `readCurve` reads the
+  softness half too, and with 4 numbers that half is NaN. A constraint keyed in the
+  document replaces a carried timeline of the same name. A nested symbol's IK keys are not
+  written, and the export warns.
+- **Import** (`ikKeysOf`): a file's `ik` timeline becomes keys when every key lands on a
+  frame and changes only the mix and bend (softness, compress and stretch equal to the
+  constraint's, a curve whose softness half is flat). Otherwise that constraint's timeline
+  is carried. On the samples, spineboy-pro's nine and both of Stretchyman's convert; four of
+  raptor-pro-and-mask's twelve convert.
+- **Checked.** `spineParity` plays the stickman with keyed mixes (linear, stepped, smooth)
+  and flipped bends against spine-core. `spinePose` and `spineImport` cover the samples'
+  converted keys. A stage that ignores the keys fails the parity case.
+- **The timeline.** An IK row (`LayerRow.ik`, `focusRows`, `LayerList.ikRow`,
+  `FrameGrid.drawIkRow`) draws a diamond per key in the IK target colour, joined where the
+  mix tweens. A key where the bend flips is hollow.
+  - Where it shows: under the target, for each constraint the animation keys; in the
+    focused view, under the target (or the first chain bone shown), after the property
+    rows.
+  - Editing: a press picks a key (⇧ adds), a drag moves the picked keys (one undo step,
+    `SetIkKeys`, kind `timeline.ikMove`), and Delete removes them. Right-click gives
+    Key IK Here, Linear / Stepped / Smooth, and Delete.
+  - Q / W stop on IK keys too.
+- **Properties ▸ IK in Animate** keys at the playhead: Bend flips the bend in force there,
+  Mix keys the mix (a scrub is one undo step), and Key keys both as they are. The section
+  shows the values at the playhead. Setup still edits the constraint's own weight and bend.
+- A path drag through the target (Bone paths) treats a constraint whose keyed mix is 0 at
+  that frame like weight 0: the bone's own rules apply. The knee still cannot be dragged
+  across: flip the bend with a key instead.
+- The AI's `key_ik` keys a constraint's mix, bend and ease at a frame, or deletes a key.
+  `get_animation` lists the keys under `ik`.
+
 ### The timeline fills its panel, and only the layers scroll
 
 The frame grid is a CANVAS with no scroll of its own, and the horizontal bar is an
@@ -1571,7 +1621,8 @@ ones; the DragonBones solver it replaced disagreed on three of the seven.
   world matrices are composed and mutates them in place; nothing is written back to the
   document. The file carries the chain's rest pose plus `ik[]`, and the runtime solves on
   playback — so a keyframe must never be written on a chain bone. Dragging an IK target
-  keys the TARGET, and so does dragging a chain bone's path (Bone paths).
+  keys the TARGET, and so does dragging a chain bone's path (Bone paths). The mix and bend can be keyed
+  per animation (IK keys).
 - The runtime's own rule decides the chain: `chain > 0 && bone.parent !== null` is the
   two-bone solve rooted at the parent; anything else is the one-bone look-at.
 - The effector's `length` is the second segment. A bone with no length makes the solve

@@ -4,6 +4,7 @@ import { DRAWN_BONE_LENGTH, type PathPointKind } from "./bonePath";
 import { createKeyframe } from "./defaults";
 import type { IkId, NodeId } from "./ids";
 import { ikChain } from "./ikGraph";
+import { ikPoseAt } from "./ikKeys";
 import { withTransform } from "./keyed";
 import type { Pose } from "./pose";
 import { insertKeyframe, keyIndexAt } from "./timeline";
@@ -30,9 +31,10 @@ export interface IkPathDrag {
 export interface Point { x: number; y: number }
 
 /** How a drag on `id`'s path goes through its IK target, or why it cannot;
- *  null when no constraint solves `id`. */
+ *  null when no constraint solves `id`. With `anim` and `frame` the mix is
+ *  the keyed one there (`ikPoseAt`), else the constraint's weight. */
 export function ikPathDrag(
-  sym: SymbolItem, id: NodeId, which: PathPointKind,
+  sym: SymbolItem, id: NodeId, which: PathPointKind, anim?: Animation | null, frame?: number,
 ): IkPathDrag | { refused: string } | null {
   const node = sym.nodes[id];
   if (!node) return null;
@@ -40,7 +42,7 @@ export function ikPathDrag(
     const chain = ikChain(sym, k);
     if (!chain.includes(id)) continue;
     // With no weight the bone plays its own keys: the plain rules apply.
-    if (k.weight === 0) return null;
+    if ((frame === undefined ? k.weight : ikPoseAt(k, anim, frame).mix) === 0) return null;
     const target = sym.nodes[k.targetId];
     if (!target) return { refused: `${node.name} is moved by IK, and its target is missing.` };
     if (insideChain(sym, k.targetId, chain[0]!)) {

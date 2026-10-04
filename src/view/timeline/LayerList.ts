@@ -134,7 +134,8 @@ export class LayerList {
     const roles = ikRoles(sym);
     const rows = timelineRows(this.store);
     const lines = treeLines(rows.map((r) => r.depth));
-    rows.forEach((row, i) => this.list.appendChild(row.prop ? this.propRow(row) : this.row(row, i, roles, lines[i]!)));
+    rows.forEach((row, i) => this.list.appendChild(
+      row.prop ? this.propRow(row) : row.ik ? this.ikRow(row) : this.row(row, i, roles, lines[i]!)));
 
     // Selecting from somewhere else — the stage, or a name in the Properties
     // panel's IK section — has to be visible. Only on an actual CHANGE, and
@@ -154,6 +155,24 @@ export class LayerList {
       style: { height: `${this.cb.rowHeight}px` },
       title: `${label}: this bone's ${label.toLowerCase()} keys. Drag one to move it, shift-click to pick several, Delete to remove, right-click to key ${label} at a frame.`,
     }, h("span", { class: "prop-glyph" }, glyph), h("div", { class: "name" }, label));
+    on(el, "pointerdown", (ev) => {
+      if ((ev as unknown as PointerEvent).button !== 0) return;
+      this.store.clearFrameSelection();
+      this.store.selectNodes([row.layer.nodeId]);
+    });
+    return el;
+  }
+
+  /** An IK constraint's row (`focusRows`): its mix and bend keys, under the
+   *  target. A press selects the target. */
+  private ikRow(row: LayerRow): HTMLElement {
+    const k = this.store.currentSymbol.ik.find((c) => c.id === row.ik);
+    const name = k?.name ?? "IK";
+    const el = h("div", {
+      class: "tl-layer tl-prop prop-ik",
+      style: { height: `${this.cb.rowHeight}px` },
+      title: `IK "${name}": its mix and bend keys, as Spine's. Change Mix or Bend in Properties ▸ IK in Animate mode to key them; drag a key to move it, Delete to remove, right-click for the ease.`,
+    }, h("span", { class: "prop-glyph" }, "⟡"), h("div", { class: "name" }, `IK ${name}`));
     on(el, "pointerdown", (ev) => {
       if ((ev as unknown as PointerEvent).button !== 0) return;
       this.store.clearFrameSelection();

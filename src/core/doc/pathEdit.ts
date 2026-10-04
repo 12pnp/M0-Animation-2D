@@ -41,12 +41,12 @@ function varies(track: Track | undefined, pick: (t: Transform) => number[]): boo
  *   does not solve.
  */
 export function pathDragMode(
-  sym: SymbolItem, anim: Animation, id: NodeId, which: PathPointKind, withParent: boolean,
+  sym: SymbolItem, anim: Animation, id: NodeId, which: PathPointKind, withParent: boolean, frame?: number,
 ): PathDragRule {
   const node = sym.nodes[id];
   if (!node) return { refused: "Nothing to drag." };
   if (sym.ik.some((k) => k.targetId === id)) return { mode: "translate" };
-  const ik = ikPathDrag(sym, id, which);
+  const ik = ikPathDrag(sym, id, which, anim, frame);
   if (ik) return "refused" in ik ? ik : { mode: "throughTarget", ik };
   if (which === "origin" || node.kind !== "bone") return { mode: "translate" };
   const track = anim.tracks[id];

@@ -1,5 +1,6 @@
-import type { Layer, Node, SymbolItem } from "./types";
-import type { LayerId, NodeId } from "./ids";
+import type { Animation, Layer, Node, SymbolItem } from "./types";
+import type { IkId, LayerId, NodeId } from "./ids";
+import { ikChain } from "./ikGraph";
 import { TIMELINE_PROPS, type TimelineProp } from "./propertyKeys";
 
 export interface LayerRow {
@@ -12,6 +13,9 @@ export interface LayerRow {
   /** One of a focused bone's property rows (`focusRows`): the bone's layer,
    *  showing only where this property is keyed. */
   prop?: TimelineProp;
+  /** An IK constraint's row (`focusRows`): its mix and bend keys, under the
+   *  constraint's target. */
+  ik?: IkId;
 }
 
 /**
@@ -305,20 +309,37 @@ export function groupPlan(
  * The timeline's rows while a bone is selected, as Spine's dopesheet shows
  * them: only the `focus` nodes' rows (the selection made outside the
  * timeline), flat, in layer order, each bone followed by its property rows
- * (Rotate, Translate X, Translate Y, Scale, Shear). No focus, or no bone in
- * it, and every row stays (`timeline.focusSelected` off does the same). A
- * focused row hidden in a collapsed group is shown.
+ * (Rotate, Translate X, Translate Y, Scale, Shear) and the IK rows of the
+ * constraints it takes part in. No focus, or no bone in it, and every row
+ * stays (`timeline.focusSelected` off does the same), with an IK row under
+ * each target whose constraint `anim` keys. A focused row hidden in a
+ * collapsed group is shown.
  */
-export function focusRows(sym: SymbolItem, focus: readonly NodeId[], on: boolean): LayerRow[] {
+export function focusRows(sym: SymbolItem, focus: readonly NodeId[], on: boolean, anim?: Animation | null): LayerRow[] {
   const rows = layerRows(sym);
-  if (!on || !focus.some((id) => sym.nodes[id]?.kind === "bone")) return rows;
+  if (!on || !focus.some((id) => sym.nodes[id]?.kind === "bone")) {
+    const keyed = sym.ik.filter((k) => anim?.ik?.[k.id]?.length);
+    if (!keyed.length) return rows;
+    return rows.flatMap((r) => [
+      r,
+      ...keyed.filter((k) => k.targetId === r.node.id).map((k) => ({ ...r, depth: r.depth + 1, hasChildren: false, ik: k.id })),
+    ]);
+  }
   const keep = new Set<string>(focus);
+  // Each constraint once: under its target when the target is shown, else
+  // under the first of its bones that is.
+  const ikHost = new Map<IkId, NodeId>();
+  for (const k of sym.ik) {
+    const host = keep.has(k.targetId) ? k.targetId : ikChain(sym, k).find((id) => keep.has(id));
+    if (host) ikHost.set(k.id, host);
+  }
   return layerRows(sym, true)
     .filter((r) => keep.has(r.node.id))
     .flatMap((r) => {
       const row = { ...r, depth: 0, hasChildren: false, hiddenByCollapse: false };
+      const iks = sym.ik.filter((k) => ikHost.get(k.id) === r.node.id).map((k) => ({ ...row, depth: 1, ik: k.id }));
       return r.node.kind === "bone"
-        ? [row, ...TIMELINE_PROPS.map((prop) => ({ ...row, depth: 1, prop }))]
-        : [row];
+        ? [row, ...TIMELINE_PROPS.map((prop) => ({ ...row, depth: 1, prop })), ...iks]
+        : [row, ...iks];
     });
 }

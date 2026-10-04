@@ -11,7 +11,8 @@ import type { Panel } from "@/view/widgets/Dock";
 import { type MenuEntry, showMenu } from "@/view/widgets/Dock";
 import { attachOptionsMenu } from "./onionButton";
 import type { Store } from "@/app/Store";
-import type { NodeId } from "@/core/doc/ids";
+import type { IkId, NodeId } from "@/core/doc/ids";
+import { deleteIkKeys, ikPoseAt, type IkTween, ikTweenOf, withIkKey, withIkTween } from "@/core/doc/ikKeys";
 import type { Keyframe, Layer, RotateDir } from "@/core/doc/types";
 import { FrameGrid, ROW_HEIGHT } from "./FrameGrid";
 import { LayerList } from "./LayerList";
@@ -27,6 +28,7 @@ import {
     doMoveKeyframes,
     doSetTrack,
     doSetDrawOrder,
+    doSetIkKeys,
     doReorder,
     ensureTrack,
     doRemoveFrame,
@@ -110,6 +112,7 @@ export class TimelinePanel implements Panel {
       onEditTrack: (nodeId, track, label, kind) => doSetTrack(store, nodeId, track, label, kind),
       onEditDrawOrder: (keys, label, kind) => doSetDrawOrder(store, keys, label, kind),
       onDrawOrderMenu: (frame, x, y) => this.drawOrderMenu(frame, x, y),
+      onEditIk: (ik, keys, label, kind) => doSetIkKeys(store, ik, keys, label, kind),
       onDragSpanEnd: (nodeId, endFrame) => doSetEndFrame(store, nodeId, endFrame),
       onDragFrames: (row, frame, copy) => this.dragFrames(row, frame, copy),
       onBeginInteraction: (kind) => store.history.beginInteraction(kind),
@@ -783,6 +786,49 @@ export class TimelinePanel implements Panel {
     return true;
   }
 
+  /** The picked IK keys gone; false with none picked. */
+  deleteIkKeys(): boolean {
+    const sel = this.grid.ikSel;
+    const keys = sel && this.store.currentAnimation?.ik?.[sel.ik];
+    if (!sel?.frames.length || !keys) return false;
+    doSetIkKeys(this.store, sel.ik, deleteIkKeys(keys, sel.frames), sel.frames.length > 1 ? "Delete IK Keys" : "Delete IK Key");
+    this.grid.ikSel = null;
+    return true;
+  }
+
+  /**
+   * An IK row's menu: key the mix and bend in force here, the picked keys'
+   * ease (linear, stepped, smooth), or delete them.
+   */
+  private ikMenu(ik: IkId, frame: number, x: number, y: number): void {
+    const anim = this.store.currentAnimation;
+    const k = this.store.currentSymbol.ik.find((c) => c.id === ik);
+    if (!anim || !k) return;
+    const keys = anim.ik?.[ik] ?? [];
+    const at = keys.find((key) => key.frame === frame);
+    if (at && !(this.grid.ikSel?.ik === ik && this.grid.ikSel.frames.includes(frame))) this.grid.ikSel = { ik, frames: [frame] };
+    if (!at && this.grid.ikSel?.ik !== ik) this.grid.ikSel = null;
+    this.store.setFrame(frame);
+    const sel = this.grid.ikSel?.frames ?? [];
+    const picked = keys.filter((key) => sel.includes(key.frame));
+    const tween = (t: IkTween): MenuEntry => ({
+      label: t === "linear" ? "Linear" : t === "stepped" ? "Stepped" : "Smooth",
+      enabled: picked.length > 0,
+      checked: picked.length > 0 && picked.every((key) => ikTweenOf(key) === t),
+      run: () => doSetIkKeys(this.store, ik, withIkTween(keys, sel, t), "IK Key Ease"),
+    });
+    showMenu(this.menuAnchor(x, y), [
+      { label: "Key IK Here", enabled: !at, run: () => doSetIkKeys(this.store, ik, withIkKey(keys, frame, ikPoseAt(k, anim, frame)), "Key IK") },
+      "-",
+      tween("linear"), tween("stepped"), tween("smooth"),
+      "-",
+      {
+        label: sel.length > 1 ? `Delete ${sel.length} IK Keys` : "Delete IK Key",
+        enabled: sel.length > 0, run: () => { this.deleteIkKeys(); },
+      },
+    ]);
+  }
+
   /** The picked draw order keys gone; false with none picked. */
   deleteDrawOrderKeys(): boolean {
     const sel = this.grid.orderSel;
@@ -857,6 +903,8 @@ export class TimelinePanel implements Panel {
     const nodeId = layer.nodeId;
     const prop = this.grid.visibleRows()[row]?.prop;
     if (prop) { this.propMenu(nodeId, prop, frame, x, y); return; }
+    const ik = this.grid.visibleRows()[row]?.ik;
+    if (ik) { this.ikMenu(ik, frame, x, y); return; }
     // Right-clicking outside the selection moves it, as in Flash; inside it,
     // the selection is what the menu acts on.
     if (!this.store.selection.frames.includes(`${nodeId}:${frame}`)) {

@@ -693,4 +693,23 @@ describe("the Spine runtime plays the export the way the stage draws it", () => 
       expect(checkParity(project, project.rootSymbolId).checks).toBeGreaterThan(50);
     }
   });
+
+  it("IK keys: the mix tweened linear, stepped and smooth, and the bend flipped", async () => {
+    const { project } = await loadStickman();
+    const sym = project.items[project.rootSymbolId] as SymbolItem;
+    const [a, b] = sym.ik;
+    for (const anim of sym.animations) {
+      const end = anim.duration - 1, mid = Math.round(end / 2);
+      anim.ik = {
+        [a!.id]: [
+          { frame: 2, mix: 1, bendPositive: a!.bendPositive },
+          { frame: 6, mix: 0.2, bendPositive: a!.bendPositive, tween: { kind: "curve", curve: [0.42, 0, 0.58, 1] } },
+          { frame: mid, mix: 0.7, bendPositive: !a!.bendPositive, tween: { kind: "none" } },
+          { frame: end, mix: 1, bendPositive: !a!.bendPositive },
+        ],
+        [b!.id]: [{ frame: 0, mix: 0.5, bendPositive: !b!.bendPositive }, { frame: mid, mix: 0, bendPositive: b!.bendPositive }],
+      };
+    }
+    expect(checkParity(project, project.rootSymbolId).checks).toBeGreaterThanOrEqual(500);
+  });
 });

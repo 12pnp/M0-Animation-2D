@@ -1,4 +1,4 @@
-import type { DisplayRef, LibraryFolder, Node, Project } from "./types";
+import type { DisplayRef, IkKey, LibraryFolder, Node, Project } from "./types";
 import { DEFAULT_MOTION_BLUR, DOC_VERSION, type MotionBlurSettings, TIMELINE_PROPS } from "./types";
 import { observeId } from "./ids";
 import { isDefaultExport, sanitizeExportSettings } from "@/core/export/settings";
@@ -315,6 +315,31 @@ export function validateProject(raw: unknown): ValidationResult {
     // An IK constraint pointing at a missing bone would crash the exporter.
     item.ik = item.ik.filter((k) => !!item.nodes[k.boneId] && !!item.nodes[k.targetId]);
     for (const k of item.ik) observeId(k.id);
+    // IK keys of constraints the symbol has: one key per frame, in order, the
+    // mix in 0..1, a tween the timeline writes (linear, stepped, one cubic).
+    const ikIds = new Set<string>(item.ik.map((k) => k.id));
+    for (const anim of item.animations) {
+      if (anim.ik === undefined) continue;
+      const raw = anim.ik && typeof anim.ik === "object" ? (anim.ik as Record<string, unknown>) : {};
+      const out: Record<string, IkKey[]> = {};
+      for (const [id, list] of Object.entries(raw)) {
+        if (!ikIds.has(id) || !Array.isArray(list)) continue;
+        const byFrame = new Map<number, IkKey>();
+        for (const k of list as unknown[]) {
+          if (!k || typeof k !== "object") continue;
+          const r = k as Record<string, unknown>;
+          const frame = clampInt(r.frame, 0, 100000, 0);
+          const key: IkKey = { frame, mix: Math.min(1, Math.max(0, finiteOr(r.mix, 1))), bendPositive: r.bendPositive === true };
+          const tween = sanitizeTween(r.tween);
+          if (tween?.kind === "none" || (tween?.kind === "curve" && tween.curve.length === 4)) key.tween = tween;
+          byFrame.set(frame, key);
+        }
+        const keys = [...byFrame.values()].sort((a, b) => a.frame - b.frame);
+        if (keys.length) out[id] = keys;
+      }
+      if (Object.keys(out).length) anim.ik = out as never;
+      else delete anim.ik;
+    }
     const masks = normalizeMasks(item).masks.size;
     if (masks) {
       diagnostics.push({
@@ -430,6 +455,9 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // 15 -> 16: `Animation.drawOrder`, draw order keys. Additive; an older
   // build would drop them on save.
   15: (p) => ({ ...p, version: 16 }),
+  // 16 -> 17: `Animation.ik`, IK mix and bend keys. Additive; an older build
+  // would drop them on save.
+  16: (p) => ({ ...p, version: 17 }),
 };
 
 /** A tween read from disk, or null when it is not one this build knows. */

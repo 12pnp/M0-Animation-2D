@@ -1,9 +1,10 @@
 import { h, on, raf } from "@/view/widgets/dom";
 import { FRAME_WIDTH_MAX, FRAME_WIDTH_MIN, anchoredScroll, fitFrameWidth, steppedFrameWidth } from "./zoom";
 import type { Store } from "@/app/Store";
-import type { DrawOrderKey, Layer, Node, Track } from "@/core/doc/types";
+import type { DrawOrderKey, IkKey, Layer, Node, Track } from "@/core/doc/types";
+import { moveIkKeys } from "@/core/doc/ikKeys";
 import { moveDrawOrderKeys } from "@/core/doc/drawOrder";
-import type { NodeId } from "@/core/doc/ids";
+import type { IkId, NodeId } from "@/core/doc/ids";
 import { describeFrame, ensureTrack } from "@/app/TimelineOps";
 import { keyIndexAt, MAX_FRAMES, spanIndexAt } from "@/core/doc/timeline";
 import { easeTag } from "@/core/math/easing";
@@ -47,6 +48,8 @@ export interface FrameGridCallbacks {
   onEditDrawOrder(keys: DrawOrderKey[], label: string, kind?: string): void;
   /** Right-click on the Draw order row. */
   onDrawOrderMenu(frame: number, x: number, y: number): void;
+  /** An IK row's edit: the constraint's keys as they are to be. */
+  onEditIk(ik: IkId, keys: IkKey[], label: string, kind?: string): void;
   /** A frame selection dragged somewhere else: its top-left cell lands on
    *  `row`/`frame`. `copy` is ⌥ held at the release. */
   onDragFrames(row: number, frame: number, copy: boolean): void;
@@ -565,6 +568,10 @@ export class FrameGrid {
         this.drawPropRow(ctx, track, rows[i]!.prop!, y, layer.nodeId);
         continue;
       }
+      if (rows[i]!.ik) {
+        this.drawIkRow(ctx, rows[i]!.ik!, y);
+        continue;
+      }
       // A group has no artwork of its own, so it gets a thinner band: it is
       // a container, and drawing it like content would suggest otherwise. An
       // empty layer gets an outlined band with a hollow keyframe — Flash's
@@ -738,6 +745,73 @@ export class FrameGrid {
       if (!started) { started = true; this.cb.onBeginInteraction("timeline.drawOrderMove"); }
       this.cb.onEditDrawOrder(moveDrawOrderKeys(base, frames, delta), "Move Draw Order Keys", "timeline.drawOrderMove");
       this.orderSel = frames.map((f) => f + delta);
+      lastDelta = delta;
+      this.invalidate();
+    };
+    const up = () => {
+      offMove(); offUp(); offCancel();
+      this.el.releasePointerCapture?.(e.pointerId);
+      if (started) this.cb.onEndInteraction();
+    };
+    const offMove = on(this.el, "pointermove", move as (x: Event) => void);
+    const offUp = on(this.el, "pointerup", up);
+    const offCancel = on(this.el, "pointercancel", up);
+  }
+
+  /** The keys picked on an IK row. */
+  ikSel: { ik: IkId; frames: number[] } | null = null;
+
+  /**
+   * An IK row: a diamond per key in the IK colour, joined where the mix
+   * tweens (none after a stepped key), the picked ones ringed; a key whose
+   * bend differs from the one before is hollow.
+   */
+  private drawIkRow(ctx: CanvasRenderingContext2D, ik: IkId, y: number): void {
+    ctx.fillStyle = "rgba(0,0,0,0.12)";
+    ctx.fillRect(0, y, this.el.clientWidth, this.rowHeight);
+    const keys = this.store.currentAnimation?.ik?.[ik] ?? [];
+    if (!keys.length) return;
+    const sel = this.ikSel?.ik === ik ? this.ikSel.frames : [];
+    const color = this.store.prefs.value.gizmos.ikTarget;
+    const mid = Math.round(y + this.rowHeight / 2 - 0.5) + 0.5;
+    const half = this.frameWidth / 2;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 1; i < keys.length; i++) {
+      if (keys[i - 1]!.tween?.kind === "none") continue;
+      ctx.moveTo(this.xOfFrame(keys[i - 1]!.frame) + half, mid);
+      ctx.lineTo(this.xOfFrame(keys[i]!.frame) + half, mid);
+    }
+    ctx.stroke();
+    const r = Math.max(3, Math.min(5.5, half, this.rowHeight / 2 - 2.5));
+    keys.forEach((k, i) => {
+      const cx = Math.round(this.xOfFrame(k.frame) + half - 0.5) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, mid - r); ctx.lineTo(cx + r, mid); ctx.lineTo(cx, mid + r); ctx.lineTo(cx - r, mid); ctx.closePath();
+      const flips = i > 0 && keys[i - 1]!.bendPositive !== k.bendPositive;
+      ctx.fillStyle = flips ? this.C.keyDot : color;
+      ctx.fill();
+      const picked = sel.includes(k.frame);
+      ctx.lineWidth = picked ? 2 : 1;
+      ctx.strokeStyle = picked ? "#ffffff" : flips ? color : this.C.keyDot;
+      ctx.stroke();
+    });
+  }
+
+  /** Move the picked IK keys by whole frames, from the keys at pointerdown. */
+  private beginIkDrag(e: PointerEvent, ik: IkId, frames: number[], base: IkKey[]): void {
+    this.el.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const first = Math.min(...frames);
+    let lastDelta = 0;
+    let started = false;
+    const move = (m: PointerEvent) => {
+      const delta = Math.max(-first, Math.round((m.clientX - startX) / this.frameWidth));
+      if (delta === lastDelta) return;
+      if (!started) { started = true; this.cb.onBeginInteraction("timeline.ikMove"); }
+      this.cb.onEditIk(ik, moveIkKeys(base, frames, delta), "Move IK Keys", "timeline.ikMove");
+      this.ikSel = { ik, frames: frames.map((f) => f + delta) };
       lastDelta = delta;
       this.invalidate();
     };
@@ -1040,6 +1114,7 @@ export class FrameGrid {
             ? (mine.includes(frame) ? mine.filter((f) => f !== frame) : [...mine, frame])
             : (mine.includes(frame) ? mine : [frame]);
           this.propSel = null;
+          this.ikSel = null;
           this.cb.onScrub(frame);
           this.invalidate();
           if (!e.shiftKey) this.beginOrderDrag(e, this.orderSel, keys);
@@ -1056,6 +1131,28 @@ export class FrameGrid {
       // Below the last layer there are no frames: a press there deselects
       // them, as a press on the empty stage does.
       if (!layer) { this.store.clearFrameSelection(); return; }
+      // An IK row: a press on a key picks it (shift adds or drops one), a
+      // drag moves the picked keys; elsewhere it moves the playhead.
+      const ik = this.visibleRows()[row]?.ik;
+      if (ik) {
+        this.propSel = null;
+        const keys = this.store.currentAnimation?.ik?.[ik] ?? [];
+        if (keys.some((k) => k.frame === frame)) {
+          const mine = this.ikSel?.ik === ik ? this.ikSel.frames : [];
+          const frames = e.shiftKey
+            ? (mine.includes(frame) ? mine.filter((f) => f !== frame) : [...mine, frame])
+            : (mine.includes(frame) ? mine : [frame]);
+          this.ikSel = { ik, frames };
+          this.cb.onScrub(frame);
+          this.invalidate();
+          if (!e.shiftKey) this.beginIkDrag(e, ik, frames, keys);
+          return;
+        }
+        this.ikSel = null;
+        this.beginScrub(e, frame);
+        return;
+      }
+      this.ikSel = null;
       // A property row: a press on one of its keys picks it (shift adds or
       // drops one) and a drag moves the picked keys of that property alone.
       const prop = this.visibleRows()[row]?.prop;

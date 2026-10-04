@@ -324,6 +324,24 @@
     }
   },
   {
+    "name": "key_ik",
+    "description": "Key an IK constraint's mix and bend at a frame of an animation, in one undoable step (Spine's IK keys). From the key on the mix tweens to the next key by `ease` (linear by default; stepped holds; smooth eases in and out) and the bend is the key's until the next key. Before the first key the constraint's own mix and bend hold. A mix of 0 lets the chain bones play their own keys (FK); 1 is full IK. `bendPositive` has add_ik's sense: flip it to bend the knee or elbow the other way from that frame on. Leaving mix or bendPositive out keys the value in force there. `delete: true` removes the key at that frame. get_animation's `ik` lists the keys.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "animation": { "type": "string" },
+        "ik": { "type": "string", "description": "The constraint's name, as get_rig lists it." },
+        "frame": { "type": "integer", "minimum": 0 },
+        "mix": { "type": "number", "minimum": 0, "maximum": 1 },
+        "bendPositive": { "type": "boolean" },
+        "ease": { "type": "string", "enum": ["linear", "stepped", "smooth"] },
+        "delete": { "type": "boolean" }
+      },
+      "required": ["animation", "ik", "frame"],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "set_cycle",
     "description": "Make an animation a cycle, or let it play once. A cycle loops with its last frame showing frame 0 again: an animation that did not end that way grows by one frame for it, and every bone that reaches the end without a key there gets frame 0's pose keyed at that frame. Turning it off only stops the looping; keys stay. One undoable step. get_animation's `seam` then lists any bone that still does not close.",
     "input_schema": {

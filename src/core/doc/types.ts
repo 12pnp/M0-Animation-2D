@@ -5,7 +5,7 @@ import type { SpineInherit } from "@/core/spine/types";
 import type { AnimId, AssetId, FolderId, IkId, ItemId, LayerId, NodeId } from "./ids";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 16;
+export const DOC_VERSION = 17;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -332,6 +332,21 @@ export interface Animation {
    *  key's frame on, the symbol's drawing layers draw in its order. Absent:
    *  the layer stack, at every frame. */
   drawOrder?: DrawOrderKey[];
+  /** IK keys per constraint (`core/doc/ikKeys.ts`), each list sorted by
+   *  frame: the constraint's mix and bend from each key on, as Spine's `ik`
+   *  timeline. Absent for a constraint: its own weight and bend. */
+  ik?: Record<IkId, IkKey[]>;
+}
+
+/** One IK key. `tween` eases the mix to the next key: linear when absent,
+ *  `none` stepped, or one cubic `curve` (4 numbers). The bend is stepped,
+ *  as Spine's is; `bendPositive` is the editor's sense (y down), like
+ *  `IkConstraint.bendPositive`. */
+export interface IkKey {
+  frame: number;
+  mix: number;
+  bendPositive: boolean;
+  tween?: TweenSpec;
 }
 
 /** One draw order key: the drawing layers back to front from `frame` on.

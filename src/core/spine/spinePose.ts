@@ -1,8 +1,9 @@
 import {
-  AtlasAttachmentLoader, type Bone, ClippingAttachment, MeshAttachment, MixFrom, Physics, RegionAttachment, Skeleton,
+  AtlasAttachmentLoader, type Bone, ClippingAttachment, IkConstraint, MeshAttachment, MixFrom, Physics, RegionAttachment, Skeleton,
   SkeletonJson, Skin, type Slot, TextureAtlas, TextureAtlasRegion, type Animation as SpineRuntimeAnimation,
 } from "@esotericsoftware/spine-core";
 import { orderAt } from "@/core/doc/drawOrder";
+import { ikPoseAt } from "@/core/doc/ikKeys";
 import type { ItemId, NodeId } from "@/core/doc/ids";
 import type { Animation, ColorTransform, Project, SymbolItem } from "@/core/doc/types";
 import { isImage } from "@/core/doc/types";
@@ -259,6 +260,18 @@ function applyRig(
   }
   if (mode === "animate" && animation) {
     rig.animations.get(animation.name)?.apply(sk, 0, frame / fps, false, null, 1, MixFrom.setup, false, false, false);
+  }
+  // The document's IK keys (`Animation.ik`), applied over the setup pose like
+  // the draw order below. The bend is written inverted, as the exporter does.
+  if (mode === "animate" && animation?.ik) {
+    for (const k of sym.ik) {
+      if (!animation.ik[k.id]?.length) continue;
+      const c = sk.constraints.find((x) => x instanceof IkConstraint && x.data.name === k.name) as IkConstraint | undefined;
+      if (!c) continue;
+      const { mix, bendPositive } = ikPoseAt(k, animation, frame);
+      c.pose.mix = mix;
+      c.pose.bendDirection = bendPositive ? -1 : 1;
+    }
   }
   // The document's draw order keys (`Animation.drawOrder`): the rig is built
   // once per structure, so they are applied here rather than baked into it,

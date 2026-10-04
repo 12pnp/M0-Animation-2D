@@ -1,5 +1,6 @@
 import { applyInverse, clone, mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { orderAt } from "./drawOrder";
+import { ikPoseAt } from "./ikKeys";
 import { type IkBone, type IkWorld, ikApply1, ikApply2 } from "@/core/math/ik";
 import { fromSpineLocal, toSpineLocal } from "@/core/spine/transform";
 import { cloneTf, toMatrix, type Transform } from "@/core/math/Transform";
@@ -273,7 +274,7 @@ export function evaluateSymbol(
 
   for (const e of entries) resolve(e);
 
-  applyIk(symbol, byNode);
+  applyIk(symbol, byNode, mode === "animate" ? animation : null, frame);
 
   return { entries, byNode };
 }
@@ -292,9 +293,10 @@ export function evaluateSymbol(
  * flipped to y up, the result's local rotations back through
  * `fromSpineLocal`. It mirrors the exporter: the bend written inverted (the
  * flip mirrors the chain), a bone length only on bone nodes, and a zero
- * weight skipping the solve, as the runtime does.
+ * weight skipping the solve, as the runtime does. The weight and bend are the
+ * animation's IK keys at the frame (`ikPoseAt`), the constraint's own without.
  */
-function applyIk(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>): void {
+function applyIk(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>, animation: Animation | null, frame: number): void {
   if (symbol.ik.length === 0) return;
 
   const children = new Map<NodeId, PoseEntry[]>();
@@ -337,7 +339,8 @@ function applyIk(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>): void {
   const ikBone = (e: PoseEntry): IkBone => ({ ...toSpineLocal(localOf(e)), ...spineWorld(e.world) });
 
   for (const constraint of symbol.ik) {
-    if (constraint.weight === 0) continue;
+    const { mix, bendPositive } = ikPoseAt(constraint, animation, frame);
+    if (mix === 0) continue;
     const effector = byNode.get(constraint.boneId);
     const target = byNode.get(constraint.targetId);
     if (!effector || !target || effector === target) continue;
@@ -356,12 +359,12 @@ function applyIk(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>): void {
     if (twoBone) {
       const p = ikBone(root), c = ikBone(effector);
       const length = effector.node.kind === "bone" ? effector.node.boneLength ?? 0 : 0;
-      ikApply2(p, c, spineWorld(rootParentWorld), length, tx, ty, constraint.bendPositive ? -1 : 1, constraint.weight);
+      ikApply2(p, c, spineWorld(rootParentWorld), length, tx, ty, bendPositive ? -1 : 1, mix);
       solved.set(root.nodeId, fromSpineLocal(p));
       solved.set(effector.nodeId, fromSpineLocal(c));
     } else {
       const b = ikBone(root);
-      ikApply1(b, spineWorld(rootParentWorld), tx, ty, constraint.weight);
+      ikApply1(b, spineWorld(rootParentWorld), tx, ty, mix);
       solved.set(root.nodeId, fromSpineLocal(b));
     }
     mul(root.world, rootParentWorld, toMatrix(mat(), localOf(root)));

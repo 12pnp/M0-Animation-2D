@@ -2,7 +2,7 @@ import type { AssetId, NodeId } from "@/core/doc/ids";
 import { fromOffsets } from "@/core/doc/drawOrder";
 import { newAnimId, newIkId } from "@/core/doc/ids";
 import type {
-  Animation, BlendMode, DrawOrderKey, ColorTransform, DisplayRef, IkConstraint, ImageItem, Keyframe, Layer, Node, Project,
+  Animation, BlendMode, DrawOrderKey, ColorTransform, DisplayRef, IkConstraint, IkKey, ImageItem, Keyframe, Layer, Node, Project,
   SpineAttachmentRef, SymbolItem, Track,
 } from "@/core/doc/types";
 import { isDefaultColor } from "@/core/doc/types";
@@ -344,6 +344,20 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
         delete carried.drawOrder;
       }
     }
+    // IK keys become the document's (`Animation.ik`) per constraint when each
+    // lands on a frame and changes only what the editor keys (the mix, the
+    // bend); otherwise that constraint's timeline is carried as it came.
+    if (obj(animRaw.ik)) {
+      const rest: SpineRaw = {};
+      for (const [name, list] of Object.entries(animRaw.ik)) {
+        const k = sym.ik.find((c) => c.name === name);
+        const keys = k && Array.isArray(list) ? ikKeysOf(list, k, rate) : null;
+        if (keys && k) (anim.ik ??= {})[k.id] = keys;
+        else rest[name] = list;
+      }
+      if (Object.keys(rest).length) carried.ik = rest;
+      else delete carried.ik;
+    }
     if (Object.keys(carried).length) anim.spine = carried;
     sym.animations.push(anim);
   }
@@ -590,6 +604,39 @@ function trackOf(
  * the y flip (the exporter's rule, inverted). What it does not solve rides
  * along in `spine` and the Spine pose applies it.
  */
+/**
+ * A Spine `ik` timeline as the document's keys, or null when it holds what
+ * the editor does not key: a time off the frames, a softness, compress or
+ * stretch other than the constraint's own, or a curve that bends the
+ * softness. The bend is inverted, as `ikOf` does.
+ */
+function ikKeysOf(list: unknown[], k: IkConstraint, rate: number): IkKey[] | null {
+  const softness = num(k.spine?.softness, 0), compress = k.spine?.compress === true, stretch = k.spine?.stretch === true;
+  const keys: IkKey[] = [];
+  for (let i = 0; i < list.length; i++) {
+    const r = list[i];
+    if (!obj(r)) return null;
+    const at = num(r.time, 0) * rate;
+    if (Math.abs(at - Math.round(at)) > 1e-6) return null;
+    if (Math.abs(num(r.softness, 0) - softness) > 1e-6 || (r.compress === true) !== compress || (r.stretch === true) !== stretch) return null;
+    const key: IkKey = { frame: Math.round(at), mix: Math.min(1, Math.max(0, num(r.mix, 1))), bendPositive: r.bendPositive === false };
+    const next = list[i + 1];
+    if (r.curve === "stepped") key.tween = { kind: "none" };
+    else if (Array.isArray(r.curve) && obj(next)) {
+      const c = r.curve.map((v) => num(v, 0));
+      if (c.length >= 8 && (Math.abs(c[5]! - softness) > 1e-6 || Math.abs(c[7]! - softness) > 1e-6)) return null;
+      const t0 = num(r.time, 0), span = num(next.time, 0) - t0, dv = num(next.mix, 1) - key.mix;
+      if (span <= 0) return null;
+      if (Math.abs(dv) > 1e-9) {
+        const curve = [(c[0]! - t0) / span, (c[1]! - key.mix) / dv, (c[2]! - t0) / span, (c[3]! - key.mix) / dv];
+        key.tween = { kind: "curve", curve: curve.map((v) => v + 0) };
+      }
+    }
+    keys.push(key);
+  }
+  return keys.length && new Set(keys.map((x) => x.frame)).size === keys.length ? keys : null;
+}
+
 function ikOf(c: SpineRaw, bones: Map<string, Node>, warn: (m: string) => void): IkConstraint | null {
   const names = Array.isArray(c.bones) ? c.bones.map(String) : [];
   const chain = names.map((n) => bones.get(n));

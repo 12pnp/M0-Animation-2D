@@ -1489,7 +1489,7 @@ export class App {
     // Keys picked on a timeline property row go first: they are what the
     // last click was on, and the bone stays selected under them.
     reg("edit.delete", () => {
-      if (this.timeline.deletePropKeys() || this.timeline.deleteDrawOrderKeys()) return;
+      if (this.timeline.deletePropKeys() || this.timeline.deleteDrawOrderKeys() || this.timeline.deleteIkKeys()) return;
       s.apply(new RemoveNodes(s.currentSymbolId, [...s.selection.nodes]));
       s.clearSelection();
       s.emit("doc");

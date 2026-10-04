@@ -57,7 +57,7 @@ describe("the AI's tools", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
       "get_reference", "render_frame", "add_bones", "attach", "add_ik", "auto_rig", "list_motions", "apply_motion", "draw_order",
-      "key_draw_order", "set_cycle", "get_bone_path", "set_bone_path",
+      "key_draw_order", "key_ik", "set_cycle", "get_bone_path", "set_bone_path",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -710,6 +710,24 @@ describe("cycles and bone paths through the AI's tools", () => {
     await api.call("key_draw_order", { animation: "dance", frame: 12, setup: true });
     const again = await api.call("get_animation", { animation: "dance" }) as { drawOrder: Array<{ frame: number; frontToBack: unknown }> };
     expect(again.drawOrder[1]).toEqual({ frame: 12, frontToBack: "setup" });
+  });
+
+  it("key an IK constraint's mix and bend in one undo step", async () => {
+    const { store, api } = await setup();
+    const rig = await api.call("get_rig", {}) as { ik: Array<{ name: string; mix: number }> };
+    const name = rig.ik[0]!.name;
+    await api.call("key_ik", { animation: "run", ik: name, frame: 4, mix: 0.25, ease: "stepped" });
+    expect(store.history.undoLabel).toBe(`AI: IK "${name}" at 5`);
+    const out = await api.call("key_ik", { animation: "run", ik: name, frame: 10 }) as { keys: unknown[] };
+    // Left out, the mix and bend are what is in force there: key 4's, stepped.
+    expect(out.keys).toEqual([
+      { frame: 4, mix: 0.25, bendPositive: expect.any(Boolean), ease: "stepped" },
+      { frame: 10, mix: 0.25, bendPositive: expect.any(Boolean), ease: "linear" },
+    ]);
+    const anim = await api.call("get_animation", { animation: "run" }) as { ik: Record<string, unknown[]> };
+    expect(anim.ik[name]).toHaveLength(2);
+    await api.call("key_ik", { animation: "run", ik: name, frame: 10, delete: true });
+    await expect(api.call("key_ik", { animation: "run", ik: "nope", frame: 1 })).rejects.toThrow(/no IK constraint "nope"/);
   });
 
   it("make a cycle in one undo step, and say where the loop does not close", async () => {

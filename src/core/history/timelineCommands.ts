@@ -1,7 +1,7 @@
 import type { Command, TouchSet } from "./Command";
-import type { Animation, AnimationReference, DrawOrderKey, Keyframe, Project, SymbolItem, Track } from "@/core/doc/types";
+import type { Animation, AnimationReference, DrawOrderKey, IkKey, Keyframe, Project, SymbolItem, Track } from "@/core/doc/types";
 import { isSymbol } from "@/core/doc/types";
-import type { AnimId, ItemId, NodeId } from "@/core/doc/ids";
+import type { AnimId, IkId, ItemId, NodeId } from "@/core/doc/ids";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
 import { createAnimation } from "@/core/doc/defaults";
 import { endAfterResize } from "@/core/doc/timeline";
@@ -471,6 +471,55 @@ export class SetDrawOrder implements Command {
   mergeWith(next: Command): boolean {
     if (!(next instanceof SetDrawOrder) || next.kind !== this.kind) return false;
     if (next.symbolId !== this.symbolId || next.animId !== this.animId) return false;
+    this.after = next.after;
+    return true;
+  }
+}
+
+/** One IK constraint's keys in an animation replaced (`core/doc/ikKeys.ts`).
+ *  Steps of one drag share a `kind` and merge into one undo. */
+export class SetIkKeys implements Command {
+  readonly touches: TouchSet;
+  private before: IkKey[] | undefined;
+  private captured = false;
+
+  constructor(
+    readonly label: string,
+    private readonly symbolId: ItemId,
+    private readonly animId: AnimId,
+    private readonly ikId: IkId,
+    private after: IkKey[],
+    readonly kind = "timeline.ik",
+  ) {
+    this.touches = { symbols: [symbolId], timeline: true, stage: true };
+  }
+
+  private write(anim: Animation, keys: IkKey[] | undefined): void {
+    const out = { ...anim.ik };
+    if (keys?.length) out[this.ikId] = keys;
+    else delete out[this.ikId];
+    if (Object.keys(out).length) anim.ik = out;
+    else delete anim.ik;
+  }
+
+  apply(p: Project): void {
+    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
+    if (!anim) return;
+    if (!this.captured) { this.before = anim.ik?.[this.ikId]; this.captured = true; }
+    this.write(anim, this.after);
+    invalidateBounds([this.symbolId]);
+  }
+
+  revert(p: Project): void {
+    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
+    if (!anim) return;
+    this.write(anim, this.before);
+    invalidateBounds([this.symbolId]);
+  }
+
+  mergeWith(next: Command): boolean {
+    if (!(next instanceof SetIkKeys) || next.kind !== this.kind) return false;
+    if (next.symbolId !== this.symbolId || next.animId !== this.animId || next.ikId !== this.ikId) return false;
     this.after = next.after;
     return true;
   }

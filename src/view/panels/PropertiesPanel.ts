@@ -17,9 +17,11 @@ import {
     applyEdit,
     colorAtFrame,
     displayAtFrame,
+    doSetIkKeys,
     editsMultipleFrames,
     transformAtFrame,
 } from "@/app/TimelineOps";
+import { type IkPose, ikPoseAt, withIkKey } from "@/core/doc/ikKeys";
 import { cloneTf, type Transform } from "@/core/math/Transform";
 import type { NodeId } from "@/core/doc/ids";
 import type { Rect } from "@/core/math/geom";
@@ -91,6 +93,9 @@ export class PropertiesPanel implements Panel {
    *  section used to be rebuilt on every "frame" event, which during playback
    *  destroyed the field under the cursor sixty times a second. */
   private docSync: Array<() => void> = [];
+  /** The IK section's values at the playhead in Animate mode, refreshed on
+   *  every sync. */
+  private ikSync: Array<() => void> = [];
   private rebuilding = false;
   /** A field scrub in progress: one interaction from the first step to the
    *  commit, so Edit Multiple Frames edits the keys as they were when it
@@ -146,7 +151,9 @@ export class PropertiesPanel implements Panel {
     if (nodes.length === 0) return `doc:${this.store.project.motionBlur?.enabled === true}`;
     // The display shown decides the Instance and Colour sections, and
     // changes under the playhead on a layer that switches artwork.
-    return nodes.map((n) => `${n.id}:${n.kind}:${displayAtFrame(this.store, n).display?.itemId ?? ""}`).join("|");
+    // Animate mode keys the IK section's mix and bend, Setup edits the constraint.
+    const anim = this.store.ui.mode === "animate" ? this.store.currentAnimation?.id ?? "" : "setup";
+    return `${anim}|` + nodes.map((n) => `${n.id}:${n.kind}:${displayAtFrame(this.store, n).display?.itemId ?? ""}`).join("|");
   }
 
   /**
@@ -178,6 +185,7 @@ export class PropertiesPanel implements Panel {
     this.fields.clear();
     this.nameInput = null;
     this.docSync = [];
+    this.ikSync = [];
     this.signature = this.signatureOf();
     const nodes = this.store.selectedNodes;
 
@@ -425,18 +433,48 @@ export class PropertiesPanel implements Panel {
       chainSel.value = String(constraint.chain);
       on(chainSel, "change", () => write({ chain: chainSel.value === "1" ? 1 : 0 }));
 
+      // In Animate mode the mix and bend are keyed at the playhead (Spine's
+      // IK timeline); in Setup mode they are the constraint's own.
+      const animate = this.store.ui.mode === "animate" ? this.store.currentAnimation : null;
+      const keysOf = () => this.store.currentAnimation?.ik?.[constraint.id] ?? [];
+      const poseNow = () => ikPoseAt(constraint, this.store.currentAnimation, this.store.ui.frame);
+      const keyAt = (pose: IkPose, label: string, kind?: string) =>
+        doSetIkKeys(this.store, constraint.id, withIkKey(keysOf(), this.store.ui.frame, pose), label, kind);
+
       const bend = h("button", { class: "btn" }, constraint.bendPositive ? "Positive" : "Negative");
-      on(bend, "click", () => write({ bendPositive: !constraint.bendPositive }));
+      on(bend, "click", () => {
+        if (!animate) { write({ bendPositive: !constraint.bendPositive }); return; }
+        const now = poseNow();
+        keyAt({ ...now, bendPositive: !now.bendPositive }, "IK Bend");
+      });
 
       const weight = new NumberField({
-        glyph: "W", min: 0, max: 1, step: 0.05, decimals: 2, sensitivity: 200,
+        glyph: animate ? "M" : "W", min: 0, max: 1, step: 0.05, decimals: 2, sensitivity: 200,
         onInput: (v, committing) => {
-          this.scrubStep("ik.options", committing);
-          write({ weight: v });
+          if (animate) {
+            this.scrubStep("ik.key", committing);
+            keyAt({ ...poseNow(), mix: v }, "IK Mix", "ik.key");
+          } else {
+            this.scrubStep("ik.options", committing);
+            write({ weight: v });
+          }
           if (committing) this.store.history.endInteraction();
         },
       });
       weight.set(constraint.weight);
+
+      const key = h("button", { class: "btn", title: "Key the mix and bend in force here" }, "Key");
+      on(key, "click", () => keyAt(poseNow(), "Key IK"));
+      if (animate) {
+        this.ikSync.push(() => {
+          const now = poseNow();
+          bend.textContent = now.bendPositive ? "Positive" : "Negative";
+          weight.show(now.mix);
+          const keyed = keysOf().some((k) => k.frame === this.store.ui.frame);
+          key.textContent = keyed ? "Keyed" : "Key";
+          (key as HTMLButtonElement).disabled = keyed;
+        });
+      }
 
       const remove = h("button", { class: "btn" }, "Remove");
       on(remove, "click", () => {
@@ -478,7 +516,8 @@ export class PropertiesPanel implements Panel {
         ])]),
         this.row("Chain", [chainSel]),
         this.row("Bend", [bend]),
-        this.row("Weight", [weight.el]),
+        this.row(animate ? "Mix" : "Weight", [weight.el]),
+        ...(animate ? [this.row("", [key])] : []),
         this.row("", [remove]),
       );
     }
@@ -492,7 +531,8 @@ export class PropertiesPanel implements Panel {
       "To add IK, pick the IK tool (K) and click the last bone of a chain: a target "
       + "appears at its end. Drag the target to pose the chain. In Animate mode that "
       + "sets a keyframe on the target, in Setup mode it changes the rest pose. The "
-      + "bones themselves never get keyframes: they follow the target.",
+      + "bones themselves never get keyframes: they follow the target. In Animate mode "
+      + "Mix and Bend are keyed at the playhead, on the constraint's IK row.",
     ));
 
     return this.section("IK", true, rows);
@@ -830,6 +870,7 @@ export class PropertiesPanel implements Panel {
     }
 
     this.syncFrameNote(nodes);
+    for (const update of this.ikSync) update();
 
     this.suppress = true;
     const first = nodes[0]!;

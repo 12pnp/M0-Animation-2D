@@ -1,7 +1,7 @@
 import type { Store } from "@/app/Store";
 import { drawingLayers, orderAt, reorderTargets, withDrawOrderKey, withFront } from "@/core/doc/drawOrder";
 import { type AnimId, type AssetId, newIkId, type NodeId } from "@/core/doc/ids";
-import { type Animation, type ImageItem, isImage, type Keyframe, type Node, type SymbolItem, type Track } from "@/core/doc/types";
+import { type Animation, type IkKey, type ImageItem, isImage, type Keyframe, type Node, type SymbolItem, type Track } from "@/core/doc/types";
 import { entryBox, type FrameContext } from "@/core/doc/pose";
 import { type ImageFrame, imageFrame, referenceEnd, referenceFrameOf, referenceIndexAt, referenceRect } from "@/core/doc/reference";
 import { apply } from "@/core/math/Matrix2D";
@@ -11,7 +11,8 @@ import { ikChain, ikRoles } from "@/core/doc/ikGraph";
 import { boneSide, guessRoles, type MotionClip, type RigBone, retarget } from "@/core/rig/motion";
 import MOTIONS from "@/core/rig/motions.json";
 import { insertKeyframe, keyIndexAt, setEndFrame } from "@/core/doc/timeline";
-import { AddAnimation, EditTracks, SetCycle, SetDrawOrder } from "@/core/history/timelineCommands";
+import { AddAnimation, EditTracks, SetCycle, SetDrawOrder, SetIkKeys } from "@/core/history/timelineCommands";
+import { deleteIkKeys, ikPoseAt, type IkTween, ikTweenOf, withIkKey, withIkTween } from "@/core/doc/ikKeys";
 import { cyclePlan, isCycle, SEAM_TOLERANCE, seamFrame, seamGap } from "@/core/doc/cycle";
 import { bonePaths, keyedIn, pathFrames } from "@/core/doc/bonePath";
 import { easesToSpline, type Spline, straightSpline, withSpline } from "@/core/doc/pathSpline";
@@ -132,6 +133,7 @@ export class AgentApi {
       case "draw_order": return this.drawOrder(typeof args.parent === "string" ? args.parent : null, list<string>(args, "front"));
       case "set_cycle": return this.setCycle(str(args, "animation"), args.on);
       case "key_draw_order": return this.keyDrawOrder(str(args, "animation"), int(args, "frame", 0), args);
+      case "key_ik": return this.keyIk(str(args, "animation"), str(args, "ik"), int(args, "frame", 0), args);
       case "get_bone_path": return this.getBonePath(str(args, "animation"), str(args, "bone"), args.point);
       case "set_bone_path": return this.setBonePath(str(args, "animation"), str(args, "bone"), list<PathKeyIn>(args, "keys"));
       default: throw new AgentError(`There is no tool "${name}".`);
@@ -229,6 +231,11 @@ export class AgentApi {
           frame: k.frame,
           frontToBack: k.order ? [...orderAt(this.sym, anim, k.frame)].reverse().map((id) => this.sym.nodes[id]!.name) : "setup",
         })),
+      } : {}),
+      ...(anim.ik && Object.keys(anim.ik).length ? {
+        ik: Object.fromEntries(this.sym.ik.filter((k) => anim.ik?.[k.id]?.length).map((k) => [k.name, anim.ik![k.id]!.map((key) => ({
+          frame: key.frame, mix: round(key.mix, 3), bendPositive: key.bendPositive, ease: ikTweenOf(key),
+        }))])),
       } : {}) };
   }
 
@@ -760,6 +767,35 @@ export class AgentApi {
     this.store.emit("stage");
     const now = orderAt(s, this.animation(animName), frame);
     return { animation: anim.name, frame, frontToBack: [...now].reverse().map((id) => s.nodes[id]!.name) };
+  }
+
+  private keyIk(animName: string, ikName: string, frame: number, args: Args) {
+    const anim = this.animation(animName);
+    const k = this.sym.ik.find((c) => c.name === ikName);
+    if (!k) throw new AgentError(`There is no IK constraint "${ikName}". get_rig lists them.`);
+    if (args.mix !== undefined && (typeof args.mix !== "number" || !(args.mix >= 0 && args.mix <= 1))) throw new AgentError("mix is a number from 0 to 1.");
+    if (args.bendPositive !== undefined && typeof args.bendPositive !== "boolean") throw new AgentError("bendPositive is true or false.");
+    if (args.ease !== undefined && args.ease !== "linear" && args.ease !== "stepped" && args.ease !== "smooth") throw new AgentError(`ease is "linear", "stepped" or "smooth".`);
+    const before = anim.ik?.[k.id] ?? [];
+    let keys: IkKey[];
+    if (args.delete === true) {
+      if (!before.some((key) => key.frame === frame)) throw new AgentError(`"${ikName}" has no key at frame ${frame}.`);
+      keys = deleteIkKeys(before, [frame]);
+    } else {
+      const now = ikPoseAt(k, anim, frame);
+      keys = withIkKey(before, frame, {
+        mix: typeof args.mix === "number" ? args.mix : now.mix,
+        bendPositive: typeof args.bendPositive === "boolean" ? args.bendPositive : now.bendPositive,
+      });
+      if (args.ease) keys = withIkTween(keys, [frame], args.ease as IkTween);
+    }
+    this.store.apply(new SetIkKeys(`AI: IK "${k.name}" at ${frame + 1}`, this.store.currentSymbolId, anim.id, k.id, keys));
+    this.store.emit("timeline");
+    this.store.emit("stage");
+    return {
+      animation: anim.name, ik: k.name,
+      keys: keys.map((key) => ({ frame: key.frame, mix: round(key.mix, 3), bendPositive: key.bendPositive, ease: ikTweenOf(key) })),
+    };
   }
 
   private setCycle(animName: string, on: unknown) {
