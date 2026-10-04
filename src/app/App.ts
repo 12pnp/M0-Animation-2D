@@ -1,4 +1,6 @@
-import { h, on } from "@/view/widgets/dom";
+import { cls, h, on } from "@/view/widgets/dom";
+import { icon } from "@/view/icons";
+import { onAccelChange, withAccel } from "@/view/widgets/accel";
 import { SNAP_TARGETS, Store, type ToolId } from "./Store";
 import { AI_PANEL, type MenuDef, type MenuItemDef, Shell } from "./Shell";
 import { Keymap } from "./Keymap";
@@ -132,7 +134,11 @@ export class App {
     this.viewport.onContextMenu = (x, y) => this.stageMenu(x, y);
     this.viewport.assetsRef = this.assets;
     // Spine's toolbar, floating at the foot of the stage.
-    this.shell.stageHost.appendChild(new StageToolbar(this.store, () => this.viewport.pose).el);
+    const toolbar = new StageToolbar(this.store, () => this.viewport.pose);
+    this.shell.stageHost.appendChild(toolbar.el);
+    // 8px: the gap the bar keeps from the stage's edge.
+    this.viewport.fitInset = () => (toolbar.el.hidden ? 0 : toolbar.el.offsetHeight + 8);
+    this.shell.stageHost.appendChild(this.fitButton());
 
 
     this.library = new LibraryPanel(
@@ -1247,6 +1253,21 @@ export class App {
         ],
       },
     ];
+  }
+
+  /** Fit to Stage, in the stage's top-right corner, under the ruler. It
+   *  stops the pointer itself, or the click would also start a drag on the stage. */
+  private fitButton(): HTMLElement {
+    const b = h("button", { class: "stage-fit" }, icon("fit", 14));
+    const title = () => { b.title = withAccel("Fit to Stage", "view.fitStage"); };
+    title();
+    onAccelChange(title);
+    for (const ev of ["pointerdown", "wheel", "dblclick", "contextmenu"]) on(b, ev, (e) => e.stopPropagation());
+    on(b, "click", () => this.viewport.fitToStage());
+    const sync = () => cls(b, "under-ruler", this.store.ui.showRulers);
+    this.store.subscribe((t) => { if (t === "stage" || t === "ui") sync(); });
+    sync();
+    return b;
   }
 
   /** Window ▸ Workspace: the built-in grids, then the saved arrangements with

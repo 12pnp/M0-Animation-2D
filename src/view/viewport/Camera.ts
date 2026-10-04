@@ -89,15 +89,20 @@ export class Camera {
   }
 
   /** Frame a world rect with padding, clamped to a sane zoom. */
-  fit(r: Rect, padding = 40): void {
+  /** Frame `r`. `bottomInset` screen pixels at the foot are covered (the
+   *  stage toolbar): the fit goes in the space above them, at most 40% of
+   *  the view given up, so a tall bar cannot squeeze the fit to nothing. */
+  fit(r: Rect, padding = 40, bottomInset = 0): void {
     if (r.w <= 0 || r.h <= 0 || this.width <= 0 || this.height <= 0) return;
+    const inset = Math.max(0, Math.min(bottomInset, this.height * 0.4));
+    const height = this.height - inset;
     const zoom = Math.min(
       (this.width - padding * 2) / r.w,
-      (this.height - padding * 2) / r.h,
+      (height - padding * 2) / r.h,
     );
     this.zoom = Math.max(0.02, Math.min(64, zoom));
     this.panX = this.width / 2 - (r.x + r.w / 2) * this.zoom;
-    this.panY = this.height / 2 - (r.y + r.h / 2) * this.zoom;
+    this.panY = height / 2 - (r.y + r.h / 2) * this.zoom;
   }
 
   centerOn(x: number, y: number): void {

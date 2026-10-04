@@ -1067,6 +1067,10 @@ export class Viewport {
    *  clamped the zoom to 2% and left the stage a dot in the corner. */
   private fitPending = false;
 
+  /** Screen pixels at the foot of the stage something covers (App sets it:
+   *  the stage toolbar). Fit to Stage frames the space above. */
+  fitInset: () => number = () => 0;
+
   fitToStage(): void {
     const s = this.store.project.stage;
     this.fitPending = this.camera.width < 100 || this.camera.height < 100;
@@ -1076,9 +1080,9 @@ export class Viewport {
     const rig = sym.spine ? spineBounds(this.store.project, sym) : null;
     if (rig) {
       const m = Math.max(rig.w, rig.h) * 0.08;
-      this.camera.fit({ x: rig.x - m, y: rig.y - m, w: rig.w + 2 * m, h: rig.h + 2 * m });
+      this.camera.fit({ x: rig.x - m, y: rig.y - m, w: rig.w + 2 * m, h: rig.h + 2 * m }, 40, this.fitInset());
     } else {
-      this.camera.fit({ x: 0, y: 0, w: s.width, h: s.height });
+      this.camera.fit({ x: 0, y: 0, w: s.width, h: s.height }, 40, this.fitInset());
     }
     this.store.setUi({ zoom: this.camera.zoom }, "ui");
     this.invalidate();
