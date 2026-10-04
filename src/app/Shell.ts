@@ -81,6 +81,8 @@ export class Shell {
   private menus: MenuDef[] = [];
   private docNameEl: HTMLElement;
   private docTabEl: HTMLElement;
+  /** Each panel's place in its rail: the order it was added in. */
+  private panelOrder = new Map<string, number>();
   /** The left panel's width while it is closed (a hidden element measures 0). */
   private leftWidth = 380;
   private syncAiButton: () => void = () => {};
@@ -93,8 +95,6 @@ export class Shell {
    *  dialog: the shell knows the layout, not what is in it. */
   onBrand: (() => void) | null = null;
   /** What the gear at the right of the menu bar opens. Set by `App`. */
-  onSettings: (() => void) | null = null;
-  private gearEl: HTMLElement;
 
   constructor(private readonly store: Store) {
     this.leftDock = new Dock("animo.dock.left", "vertical");
@@ -109,7 +109,6 @@ export class Shell {
     this.docNameEl = h("span", { class: "docname" });
     this.crumbEl = h("div", { class: "crumb" });
     this.docTabEl = this.buildDocTab();
-    this.gearEl = this.buildGear();
     this.syncDocName();
     this.stageHost = h("div", { class: "stage-host", tabIndex: 0 });
     this.rightRail = h("div", { class: "rail-right" });
@@ -172,17 +171,7 @@ export class Shell {
       });
       this.menubarEl.appendChild(btn);
     }
-    this.menubarEl.append(this.docTabEl, this.gearEl);
-  }
-
-  private buildGear(): HTMLElement {
-    const btn = h("button", { class: "menu-gear iconbtn" });
-    btn.appendChild(icon("settings", 14));
-    const title = () => { btn.title = withAccel("Preferences", "edit.preferences"); };
-    title();
-    onAccelChange(title);
-    on(btn, "click", () => this.onSettings?.());
-    return btn;
+    this.menubarEl.append(this.docTabEl);
   }
 
   private syncMenus(): void { /* enabled/checked are read lazily on open */ }
@@ -428,14 +417,17 @@ export class Shell {
   }
 
   addRightPanel(panel: Panel): void {
+    this.panelOrder.set(panel.id, this.panelOrder.size);
     this.homeDock(panel.id, this.rightDock).register(panel);
   }
 
   addBottomPanel(panel: Panel): void {
+    this.panelOrder.set(panel.id, this.panelOrder.size);
     this.homeDock(panel.id, this.bottomDock).register(panel);
   }
 
   addLeftPanel(panel: Panel): void {
+    this.panelOrder.set(panel.id, this.panelOrder.size);
     this.homeDock(panel.id, this.leftDock).register(panel);
   }
 
@@ -548,7 +540,10 @@ export class Shell {
     clear(el);
     if (panels.length === 0) return;
     el.appendChild(h("div", { class: "rule" }));
-    for (const p of panels) {
+    // In the order the panels were added, not the layout's: closing, floating
+    // or dragging a tab within a side must not move its button.
+    const order = (p: Panel) => this.panelOrder.get(p.id) ?? Infinity;
+    for (const p of [...panels].sort((a, b) => order(a) - order(b))) {
       const btn = this.railButton(p.icon, `Show / hide ${p.title}`, () => this.togglePanel(p.id));
       cls(btn, "on", this.isPanelShown(p.id));
       el.appendChild(btn);

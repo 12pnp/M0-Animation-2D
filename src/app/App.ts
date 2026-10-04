@@ -123,7 +123,6 @@ export class App {
     this.keymap = new Keymap(this.store);
     this.shell = new Shell(this.store);
     this.shell.onBrand = () => this.openPreferences("about");
-    this.shell.onSettings = () => this.openPreferences();
     this.workspaces = new Workspaces(this.shell);
     root.appendChild(this.shell.el);
 
