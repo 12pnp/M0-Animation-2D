@@ -124,21 +124,25 @@ export interface GizmoPrefs {
   /** A grid under the Path panels' drawing. */
   pathGrid: boolean;
   /** Each Path panel's own onion skin, apart from the stage's: on/off, the
-   *  frames before and after the playhead, the nearest ghost's opacity and the
-   *  past and future colours. Falloff, outline and "keyframes only" are the
-   *  timeline's. */
+   *  frames before and after the playhead, the nearest ghost's opacity, how
+   *  much each further one loses, the past and future colours and outline
+   *  mode. "Keyframes only" is the timeline's. */
   localPathOnion: boolean;
   localPathOnionBefore: number;
   localPathOnionAfter: number;
   localPathOnionOpacity: number;
   localPathOnionPast: string;
   localPathOnionFuture: string;
+  localPathOnionFalloff: number;
+  localPathOnionOutline: boolean;
   worldPathOnion: boolean;
   worldPathOnionBefore: number;
   worldPathOnionAfter: number;
   worldPathOnionOpacity: number;
   worldPathOnionPast: string;
   worldPathOnionFuture: string;
+  worldPathOnionFalloff: number;
+  worldPathOnionOutline: boolean;
   /** The toolbar at the foot of the stage (Spine's), and what it holds. */
   showToolbar: boolean;
   /** Which frame Rotate / Translate values are read in (`core/math/axes.ts`). */
@@ -304,12 +308,16 @@ export const DEFAULT_PREFS: Prefs = {
     localPathOnionOpacity: 0.28,
     localPathOnionPast: "#3d6bff",
     localPathOnionFuture: "#35c05a",
+    localPathOnionFalloff: 0.25,
+    localPathOnionOutline: false,
     worldPathOnion: false,
     worldPathOnionBefore: 2,
     worldPathOnionAfter: 2,
     worldPathOnionOpacity: 0.28,
     worldPathOnionPast: "#3d6bff",
     worldPathOnionFuture: "#35c05a",
+    worldPathOnionFalloff: 0.25,
+    worldPathOnionOutline: false,
     showToolbar: true,
     axes: "parent",
     compensateBones: false,
@@ -380,6 +388,8 @@ export const PREF_LIMITS: Record<string, { min: number; max: number; step?: numb
   "gizmos.worldPathOnionAfter": { min: 0, max: 100 },
   "gizmos.localPathOnionOpacity": { min: 0.05, max: 1, step: 0.01, decimals: 2 },
   "gizmos.worldPathOnionOpacity": { min: 0.05, max: 1, step: 0.01, decimals: 2 },
+  "gizmos.localPathOnionFalloff": { min: 0, max: 0.9, step: 0.01, decimals: 2 },
+  "gizmos.worldPathOnionFalloff": { min: 0, max: 0.9, step: 0.01, decimals: 2 },
   "timeline.frameWidth": { min: 4, max: 40 },
   "timeline.onionBefore": { min: 0, max: 100 },
   "timeline.onionAfter": { min: 0, max: 100 },

@@ -36,6 +36,13 @@ describe("the Path panels' onion prefs", () => {
     expect([g.worldPathOnionPast, g.localPathOnionPast]).toEqual(["#ff0000", DEFAULT_PREFS.gizmos.localPathOnionPast]);
   });
 
+  it("falloff and outline are each panel's own", () => {
+    const g = mergePrefs({ gizmos: { worldPathOnionFalloff: 0.5, localPathOnionOutline: true } }).gizmos;
+    expect([g.worldPathOnionFalloff, g.localPathOnionFalloff]).toEqual([0.5, DEFAULT_PREFS.gizmos.localPathOnionFalloff]);
+    expect([g.localPathOnionOutline, g.worldPathOnionOutline]).toEqual([true, false]);
+    expect(mergePrefs({ gizmos: { localPathOnionFalloff: 2 } }).gizmos.localPathOnionFalloff).toBe(0.9);
+  });
+
   it("counts are clamped", () => {
     expect(mergePrefs({ gizmos: { worldPathOnionBefore: 500, localPathOnionAfter: -3 } }).gizmos)
       .toMatchObject({ worldPathOnionBefore: 100, localPathOnionAfter: 0 });

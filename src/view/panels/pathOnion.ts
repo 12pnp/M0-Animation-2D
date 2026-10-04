@@ -9,12 +9,14 @@ export const PATH_ONION_KEYS = {
   local: {
     on: "localPathOnion", before: "localPathOnionBefore", after: "localPathOnionAfter",
     opacity: "localPathOnionOpacity", past: "localPathOnionPast", future: "localPathOnionFuture",
+    falloff: "localPathOnionFalloff", outline: "localPathOnionOutline",
   },
   world: {
     on: "worldPathOnion", before: "worldPathOnionBefore", after: "worldPathOnionAfter",
     opacity: "worldPathOnionOpacity", past: "worldPathOnionPast", future: "worldPathOnionFuture",
+    falloff: "worldPathOnionFalloff", outline: "worldPathOnionOutline",
   },
-} as const satisfies Record<PathPanelSpace, Record<"on" | "before" | "after" | "opacity" | "past" | "future", keyof GizmoPrefs>>;
+} as const satisfies Record<PathPanelSpace, Record<"on" | "before" | "after" | "opacity" | "past" | "future" | "falloff" | "outline", keyof GizmoPrefs>>;
 
 /**
  * A Path panel's onion frames: `before` and `after` frames either side of the

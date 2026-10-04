@@ -101,7 +101,10 @@ export class PathPanel implements Panel, ZoomLinked {
     on(framesBtn, "click", () => openOnionFrames(framesBtn, {
       get: () => {
         const g = store.prefs.value.gizmos;
-        return { before: g[keys.before], after: g[keys.after], opacity: g[keys.opacity], past: g[keys.past], future: g[keys.future] };
+        return {
+          before: g[keys.before], after: g[keys.after], opacity: g[keys.opacity],
+          past: g[keys.past], future: g[keys.future], falloff: g[keys.falloff], outline: g[keys.outline],
+        };
       },
       set: (c) => store.prefs.set("gizmos", {
         ...(c.before !== undefined ? { [keys.before]: clampPref(`gizmos.${keys.before}`, c.before) } : {}),
@@ -109,6 +112,8 @@ export class PathPanel implements Panel, ZoomLinked {
         ...(c.opacity !== undefined ? { [keys.opacity]: clampPref(`gizmos.${keys.opacity}`, c.opacity) } : {}),
         ...(c.past !== undefined ? { [keys.past]: c.past } : {}),
         ...(c.future !== undefined ? { [keys.future]: c.future } : {}),
+        ...(c.falloff !== undefined ? { [keys.falloff]: clampPref(`gizmos.${keys.falloff}`, c.falloff) } : {}),
+        ...(c.outline !== undefined ? { [keys.outline]: c.outline } : {}),
       }),
       subscribe: (fn) => store.prefs.subscribe(fn),
     }, `${PATH_PANELS[space].title} onion`));
@@ -260,8 +265,8 @@ export class PathPanel implements Panel, ZoomLinked {
 
   /**
    * This panel's onion skin: its own frame counts around the playhead
-   * (`pathOnionSpan`), opacity and colours, and the timeline's falloff, outline
-   * and "keyframes only", each with the artwork the
+   * (`pathOnionSpan`), opacity, falloff, colours and outline, and the
+   * timeline's "keyframes only", each with the artwork the
    * bone carries and the bone itself. In Local each is carried into the
    * frame-0 parent pose like the current frame.
    */
@@ -279,12 +284,12 @@ export class PathPanel implements Panel, ZoomLinked {
     const frame = store.ui.frame;
     for (const gh of onionFrames({
       frame, span: pathOnionSpan(frame, anim, g[keys.before], g[keys.after]),
-      opacity: g[keys.opacity], falloff: o.onionFalloff, isKey, period: seamFrame(anim),
+      opacity: g[keys.opacity], falloff: g[keys.falloff], isKey, period: seamFrame(anim),
     })) {
       const tint = gh.side === "past" ? g[keys.past] : g[keys.future];
       const shown = heldAt(gh.frame);
       const pose = sample(gh.frame, true);
-      this.ghosts.paint(this.ctx, this.dpr, { alpha: gh.alpha, tint, outline: o.onionOutline }, (c) => {
+      this.ghosts.paint(this.ctx, this.dpr, { alpha: gh.alpha, tint, outline: g[keys.outline] }, (c) => {
         this.renderer.draw(c, sym, anim, gh.frame, "animate", mul(mat(), screen, shown), { hiddenLayers: hidden });
         if (!pose) return;
         c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);

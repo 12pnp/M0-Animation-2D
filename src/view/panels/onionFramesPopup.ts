@@ -26,6 +26,10 @@ export interface OnionSettings {
   /** `#rrggbb`. */
   past: string;
   future: string;
+  /** What each further ghost loses, 0–0.9. */
+  falloff: number;
+  /** Only a ring round each ghost's silhouette. */
+  outline: boolean;
 }
 
 /** What a popup edits, wherever it is kept. */
@@ -43,8 +47,8 @@ let open: { el: HTMLElement; close: () => void } | null = null;
 
 /**
  * Onion settings, from a button: frames before and after the playhead, typed
- * or picked from equal presets, and the ghosts' opacity and past and future
- * colours. A second click on the same button
+ * or picked from equal presets, and the ghosts' opacity, falloff, past and
+ * future colours and outline mode. A second click on the same button
  * closes it, as do a click elsewhere and Escape.
  */
 export function openOnionFrames(button: HTMLElement, counts: OnionCounts, title = "Onion frames"): void {
@@ -74,6 +78,12 @@ export function openOnionFrames(button: HTMLElement, counts: OnionCounts, title 
     on(c, "input", () => counts.set({ [key]: c.value }));
     return c;
   };
+  const falloff = new NumberField({ min: 0, max: 90, step: 1, decimals: 0, unit: "%",
+    onInput: (v, committing) => { if (committing) counts.set({ falloff: Math.round(v) / 100 }); } });
+  falloff.set(Math.round(counts.get().falloff * 100));
+  const outline = h("input", { type: "checkbox", class: "switch", title: "Only a ring round each ghost" }) as HTMLInputElement;
+  outline.checked = counts.get().outline;
+  on(outline, "change", () => counts.set({ outline: outline.checked }));
   const past = swatch("past");
   const future = swatch("future");
   const row = (label: string, control: HTMLElement) => h("label", { class: "onion-pop-row" }, h("span", null, label), control);
@@ -84,8 +94,10 @@ export function openOnionFrames(button: HTMLElement, counts: OnionCounts, title 
     h("div", { class: "onion-pop-presets" }, h("span", null, "Both"), preset(1), preset(2), preset(3), preset(5), preset(10)),
     h("div", { class: "onion-pop-sep" }),
     row("Opacity", opacity.el),
+    row("Falloff", falloff.el),
     row("Past", past),
-    row("Future", future));
+    row("Future", future),
+    row("Outline", outline));
   el.dataset.for = button.dataset.onionFor ?? "";
 
   const unsubscribe = counts.subscribe(() => {
@@ -93,6 +105,8 @@ export function openOnionFrames(button: HTMLElement, counts: OnionCounts, title 
     before.show(c.before);
     after.show(c.after);
     opacity.show(Math.round(c.opacity * 100));
+    falloff.show(Math.round(c.falloff * 100));
+    outline.checked = c.outline;
     // Not while its picker is open: the value it is sending would bounce back.
     if (document.activeElement !== past) past.value = c.past;
     if (document.activeElement !== future) future.value = c.future;
