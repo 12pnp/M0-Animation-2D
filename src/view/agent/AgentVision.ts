@@ -1,5 +1,5 @@
 import type { AssetStore } from "@/app/AssetStore";
-import { UI_FONT_FAMILY } from "@/core/prefs/fonts";
+import { uiFontStack } from "@/core/prefs/fonts";
 import type { Store } from "@/app/Store";
 import type { AgentImage, AgentVision, BoneMark, PathMark } from "@/app/agent/AgentApi";
 import type { AssetId } from "@/core/doc/ids";
@@ -105,7 +105,7 @@ function drawBones(ctx: CanvasRenderingContext2D, bones: BoneMark[], width: numb
   }
   // Names without overlaps, the longest bones (the limbs) first; the rest go
   // unnamed here and are listed in render_frame's text.
-  ctx.font = `11px ${UI_FONT_FAMILY}`;
+  ctx.font = `11px ${uiFontStack()}`;
   ctx.textBaseline = "middle";
   const placed: Array<[number, number, number, number]> = [];
   const hits = (r: [number, number, number, number]) => placed.some((p) => r[0] < p[0] + p[2] && p[0] < r[0] + r[2] && r[1] < p[1] + p[3] && p[1] < r[1] + r[3]);

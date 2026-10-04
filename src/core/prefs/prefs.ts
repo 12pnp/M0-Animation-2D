@@ -12,7 +12,7 @@
  */
 
 import { type Overrides, sanitizeOverrides } from "@/core/keys/keymap";
-import { UI_FONT_SIZES, type UiFontSize } from "@/core/prefs/fonts";
+import { UI_FONT_FAMILY_IDS, UI_FONT_SIZES, type UiFontFamily, type UiFontSize } from "@/core/prefs/fonts";
 import type { Axes } from "@/core/math/axes";
 import { DEFAULT_THEME_ID, THEME_IDS } from "@/core/prefs/themes";
 
@@ -49,6 +49,7 @@ export interface InterfacePrefs {
    *  has to read as a different kind of signal. */
   warn: string;
   fontSize: UiFontSize;
+  fontFamily: UiFontFamily;
 }
 
 export interface StagePrefs {
@@ -199,6 +200,7 @@ export const DEFAULT_PREFS: Prefs = {
     setup: "#4fd1c5",
     warn: "#d89a2e",
     fontSize: "small",
+    fontFamily: "jetbrains",
   },
   stage: {
     showGrid: true,
@@ -310,6 +312,7 @@ export const PREF_LIMITS: Record<string, { min: number; max: number; step?: numb
  *  four steps has no UI to get back out of. */
 export const PREF_ENUMS: Record<string, readonly string[]> = {
   "interface.fontSize": UI_FONT_SIZES,
+  "interface.fontFamily": UI_FONT_FAMILY_IDS,
   "interface.theme": THEME_IDS,
   "stage.wheel": ["zoom", "pan"],
   "gizmos.bonePathPoint": ["tip", "origin"],

@@ -6,7 +6,7 @@ import "@/styles/timeline.css";
 import "@/styles/settings.css";
 import { App } from "@/app/App";
 import { valueFreeze } from "@/core/doc/freeze";
-import { UI_FONT_FAMILY } from "@/core/prefs/fonts";
+import { fontStack } from "@/core/prefs/fonts";
 
 const root = document.getElementById("app");
 if (!root) throw new Error("#app not found");
@@ -23,4 +23,4 @@ const start = (): void => {
 // The timeline and rulers are canvases: what they draw before the font
 // arrives stays in the fallback until something repaints them. The font is
 // bundled, so waiting for it costs a few milliseconds; a failure starts anyway.
-document.fonts.load(`11px ${UI_FONT_FAMILY}`).then(start, start);
+document.fonts.load(`11px ${fontStack("jetbrains")}`).then(start, start);

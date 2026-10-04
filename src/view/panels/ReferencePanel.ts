@@ -1,5 +1,5 @@
 import type { Store } from "@/app/Store";
-import { UI_FONT_FAMILY } from "@/core/prefs/fonts";
+import { uiFontStack } from "@/core/prefs/fonts";
 import type { AssetStore } from "@/app/AssetStore";
 import type { ReferenceService, SheetLayout } from "@/app/ReferenceService";
 import type { Panel } from "@/view/widgets/Dock";
@@ -324,7 +324,7 @@ async function openSheetDialog(file: File, done: (layout: SheetLayout) => void):
     ctx.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
     const cells = sheetCells(W, H, layout.columns, layout.rows, layout.count);
     ctx.lineWidth = 1;
-    ctx.font = `11px ${UI_FONT_FAMILY}`;
+    ctx.font = `11px ${uiFontStack()}`;
     cells.forEach((c, i) => {
       ctx.strokeStyle = "rgba(0,188,217,0.95)";
       ctx.strokeRect(Math.round(c.x * s) + 0.5, Math.round(c.y * s) + 0.5, Math.round(c.w * s) - 1, Math.round(c.h * s) - 1);

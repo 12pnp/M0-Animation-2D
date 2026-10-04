@@ -78,8 +78,9 @@
 
   /* Text. Every `font-size` in the app is one of these tokens; a literal
      would not follow Interface ▸ Text. */
-  /* JetBrains Mono everywhere (main.ts loads it; UI_FONT_FAMILY in
-     core/prefs/fonts.ts is the same stack for the canvases). */
+  /* JetBrains Mono, the default of Interface ▸ Text ▸ Font: applyTheme
+     replaces it with the chosen stack (core/prefs/fonts.ts), which the
+     canvases draw with too. */
   --font-family:      "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
   --font-mono-family: var(--font-family);
 

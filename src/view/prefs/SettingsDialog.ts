@@ -2,6 +2,7 @@ import type { Store, ViewFlag } from "@/app/Store";
 import { PREF_LIMITS, type PrefsCategory } from "@/core/prefs/prefs";
 import { shade } from "@/core/prefs/color";
 import { THEMES } from "@/core/prefs/themes";
+import { UI_FONT_FAMILIES } from "@/core/prefs/fonts";
 import { Modal } from "@/view/widgets/Modal";
 import { NumberField } from "@/view/widgets/NumberField";
 import { clear, h, on } from "@/view/widgets/dom";
@@ -123,6 +124,10 @@ const CATEGORIES: Category[] = [
       },
       {
         title: "Text", rows: [
+          {
+            kind: "select", cat: "interface", key: "fontFamily", label: "Font",
+            options: UI_FONT_FAMILIES.map((f) => ({ value: f.id, text: f.label })),
+          },
           {
             kind: "select", cat: "interface", key: "fontSize", label: "Font size",
             options: [

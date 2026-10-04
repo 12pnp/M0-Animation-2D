@@ -1,6 +1,6 @@
 import type { Prefs } from "@/core/prefs/prefs";
 import { inkOn, rgbTriplet } from "@/core/prefs/color";
-import { UI_FONT_SCALES, uiPx } from "@/core/prefs/fonts";
+import { fontStack, setUiFontFamily, UI_FONT_SCALES, uiPx } from "@/core/prefs/fonts";
 import { themeById } from "@/core/prefs/themes";
 
 /**
@@ -34,7 +34,7 @@ import { themeById } from "@/core/prefs/themes";
  */
 export function applyTheme(prefs: Prefs): void {
   const root = document.documentElement.style;
-  const { theme, accent, accentRow, accentHot, accentBlue, setup, warn, fontSize } = prefs.interface;
+  const { theme, accent, accentRow, accentHot, accentBlue, setup, warn, fontSize, fontFamily } = prefs.interface;
 
   for (const [token, value] of Object.entries(themeById(theme).tokens)) {
     root.setProperty(token, value);
@@ -58,6 +58,8 @@ export function applyTheme(prefs: Prefs): void {
   root.setProperty("--ik-target", prefs.gizmos.ikTarget);
   root.setProperty("--bg-stage", prefs.stage.pasteboard);
 
+  root.setProperty("--font-family", fontStack(fontFamily));
+  setUiFontFamily(fontFamily);
   root.setProperty("--ui-scale", String(UI_FONT_SCALES[fontSize]));
   for (const [token, base] of SIZE_TOKENS) {
     root.setProperty(token, `${uiPx(base, fontSize)}px`);
