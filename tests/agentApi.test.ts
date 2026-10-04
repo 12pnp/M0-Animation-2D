@@ -57,7 +57,7 @@ describe("the AI's tools", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
       "get_reference", "render_frame", "add_bones", "attach", "add_ik", "auto_rig", "list_motions", "apply_motion", "draw_order",
-      "set_cycle", "get_bone_path", "set_bone_path",
+      "key_draw_order", "set_cycle", "get_bone_path", "set_bone_path",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -698,6 +698,19 @@ describe("auto_rig through the AI's tools", () => {
 
 describe("cycles and bone paths through the AI's tools", () => {
   type Seam = { lastFrame: number; closes: boolean; gaps?: Array<{ bone: string; pixels?: number }> };
+
+  it("key the draw order at a frame in one undo step", async () => {
+    const { store, api } = await setup();
+    const out = await api.call("key_draw_order", { animation: "dance", frame: 6, front: ["arm_far_1", "thigh_near"] }) as { frontToBack: string[] };
+    expect(out.frontToBack[0]).toBe("arm_far_1");
+    expect(store.history.undoLabel).toBe("AI: Draw Order at 7");
+    const anim = await api.call("get_animation", { animation: "dance" }) as { drawOrder: Array<{ frame: number; frontToBack: string[] | "setup" }> };
+    expect(anim.drawOrder).toHaveLength(1);
+    expect(anim.drawOrder[0]!.frame).toBe(6);
+    await api.call("key_draw_order", { animation: "dance", frame: 12, setup: true });
+    const again = await api.call("get_animation", { animation: "dance" }) as { drawOrder: Array<{ frame: number; frontToBack: unknown }> };
+    expect(again.drawOrder[1]).toEqual({ frame: 12, frontToBack: "setup" });
+  });
 
   it("make a cycle in one undo step, and say where the loop does not close", async () => {
     const { store, api } = await setup();

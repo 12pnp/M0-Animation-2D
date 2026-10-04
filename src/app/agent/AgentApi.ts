@@ -1,4 +1,5 @@
 import type { Store } from "@/app/Store";
+import { drawingLayers, orderAt, reorderTargets, withDrawOrderKey, withFront } from "@/core/doc/drawOrder";
 import { type AnimId, type AssetId, newIkId, type NodeId } from "@/core/doc/ids";
 import { type Animation, type ImageItem, isImage, type Keyframe, type Node, type SymbolItem, type Track } from "@/core/doc/types";
 import { entryBox, type FrameContext } from "@/core/doc/pose";
@@ -10,7 +11,7 @@ import { ikChain, ikRoles } from "@/core/doc/ikGraph";
 import { boneSide, guessRoles, type MotionClip, type RigBone, retarget } from "@/core/rig/motion";
 import MOTIONS from "@/core/rig/motions.json";
 import { insertKeyframe, keyIndexAt, setEndFrame } from "@/core/doc/timeline";
-import { AddAnimation, EditTracks, SetCycle } from "@/core/history/timelineCommands";
+import { AddAnimation, EditTracks, SetCycle, SetDrawOrder } from "@/core/history/timelineCommands";
 import { cyclePlan, isCycle, SEAM_TOLERANCE, seamFrame, seamGap } from "@/core/doc/cycle";
 import { bonePaths, keyedIn, pathFrames } from "@/core/doc/bonePath";
 import { easesToSpline, type Spline, straightSpline, withSpline } from "@/core/doc/pathSpline";
@@ -130,6 +131,7 @@ export class AgentApi {
       case "apply_motion": return this.applyMotion(str(args, "motion"), args);
       case "draw_order": return this.drawOrder(typeof args.parent === "string" ? args.parent : null, list<string>(args, "front"));
       case "set_cycle": return this.setCycle(str(args, "animation"), args.on);
+      case "key_draw_order": return this.keyDrawOrder(str(args, "animation"), int(args, "frame", 0), args);
       case "get_bone_path": return this.getBonePath(str(args, "animation"), str(args, "bone"), args.point);
       case "set_bone_path": return this.setBonePath(str(args, "animation"), str(args, "bone"), list<PathKeyIn>(args, "keys"));
       default: throw new AgentError(`There is no tool "${name}".`);
@@ -221,7 +223,13 @@ export class AgentApi {
     }
     const seam = this.seamOf(anim);
     return { name: anim.name, frames: this.frames(anim), loops: anim.playTimes === 0, cycle: isCycle(anim), ...(seam ? { seam } : {}), fps: this.store.project.frameRate, bones,
-      ...(anim.poses?.length ? { poses: [...anim.poses], note: "poses: the user's key-pose frames, already keyed — keep them as they are" } : {}) };
+      ...(anim.poses?.length ? { poses: [...anim.poses], note: "poses: the user's key-pose frames, already keyed — keep them as they are" } : {}),
+      ...(anim.drawOrder?.length ? {
+        drawOrder: anim.drawOrder.map((k) => ({
+          frame: k.frame,
+          frontToBack: k.order ? [...orderAt(this.sym, anim, k.frame)].reverse().map((id) => this.sym.nodes[id]!.name) : "setup",
+        })),
+      } : {}) };
   }
 
   private getPose(args: Args) {
@@ -733,6 +741,25 @@ export class AgentApi {
         ...(g.display ? { attachment: true } : {}),
       }));
     return { lastFrame: join, closes: gaps.length === 0, ...(gaps.length ? { gaps } : {}) };
+  }
+
+  private keyDrawOrder(animName: string, frame: number, args: Args) {
+    const anim = this.animation(animName);
+    const s = this.sym;
+    let order: NodeId[] | null = null;
+    if (args.setup !== true) {
+      const names = list<string>(args, "front");
+      if (!names.length) throw new AgentError("front lists layers, front first; or pass setup: true.");
+      const front = names.flatMap((n) => reorderTargets(s, [this.node(n).id]));
+      if (!front.length) throw new AgentError(`None of ${names.map((n) => `"${n}"`).join(", ")} draws anything.`);
+      order = withFront(orderAt(s, anim, frame), front);
+    }
+    const keys = withDrawOrderKey(anim.drawOrder ?? [], frame, order, drawingLayers(s));
+    this.store.apply(new SetDrawOrder(`AI: Draw Order at ${frame + 1}`, this.store.currentSymbolId, anim.id, keys));
+    this.store.emit("timeline");
+    this.store.emit("stage");
+    const now = orderAt(s, this.animation(animName), frame);
+    return { animation: anim.name, frame, frontToBack: [...now].reverse().map((id) => s.nodes[id]!.name) };
   }
 
   private setCycle(animName: string, on: unknown) {

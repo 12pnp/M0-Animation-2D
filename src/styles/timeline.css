@@ -70,6 +70,10 @@
 .tl-prop.prop-x .prop-glyph, .tl-prop.prop-y .prop-glyph { color: #4fb3ff; }
 .tl-prop.prop-scale .prop-glyph { color: #ff6b6b; }
 .tl-prop.prop-shear .prop-glyph { color: #f0c94a; }
+/* The Draw order row, under the head, above the scrolling layers. */
+.tl-layer.tl-order-row { flex: none; color: var(--fg); background: var(--bg-panel-alt); border-bottom: 1px solid var(--line); }
+.tl-layer.tl-order-row[hidden] { display: none; }
+.tl-order-row .prop-glyph { width: 12px; flex: none; text-align: center; color: #7fa8ff; }
 
 /* Mask layers. The tint on the icon is what tells a mask apart from a group
    at a glance; the left rule ties a masked row to the mask above it. */

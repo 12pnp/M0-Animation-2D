@@ -9,7 +9,7 @@ import { migrate, validateProject } from "@/core/doc/schema";
 import { withKeyframe } from "@/core/history/timelineCommands";
 import { tf, type Transform } from "@/core/math/Transform";
 import { applyTween, TWEEN_LINEAR, type TweenSpec } from "@/core/math/easing";
-import type { Node, Project, SymbolItem, Track } from "@/core/doc/types";
+import { DOC_VERSION, type Node, type Project, type SymbolItem, type Track } from "@/core/doc/types";
 import type { NodeId } from "@/core/doc/ids";
 import { loadStickman } from "./fixtures/stickman";
 
@@ -151,7 +151,7 @@ describe("Keyframe.keyed", () => {
     const raw = JSON.parse(JSON.stringify({ ...project, version: 14 }));
     const out = validateProject(migrate(raw)).project;
     const key = (out.items[out.rootSymbolId] as SymbolItem).animations[0]!.tracks[b.id]!.keys[0]!;
-    expect(out.version).toBe(15);
+    expect(out.version).toBe(DOC_VERSION);
     expect(key.keyed).toEqual(["rotate", "x"]);
   });
 });

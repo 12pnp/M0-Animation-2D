@@ -1,4 +1,6 @@
 import type { Store } from "./Store";
+import { type Reorder, reorderAt } from "@/core/doc/drawOrder";
+import type { DrawOrderKey } from "@/core/doc/types";
 import type {
     BlendMode,
     ColorTransform,
@@ -36,7 +38,7 @@ import {
     spanIndexAt,
 } from "@/core/doc/timeline";
 import { applyFrameEdit, deriveEdit } from "@/core/math/multiEdit";
-import { EditTracks, SetAnimationDuration, SetCycle, withEases, withKeyframe, withTween, } from "@/core/history/timelineCommands";
+import { EditTracks, SetAnimationDuration, SetCycle, SetDrawOrder, withEases, withKeyframe, withTween, } from "@/core/history/timelineCommands";
 import { cyclePlan, isCycle, seamKeys } from "@/core/doc/cycle";
 import {
     SetBindColor,
@@ -92,6 +94,27 @@ function commit(store: Store, label: string, tracks: TrackMap, kind?: string): v
   store.apply(new EditTracks(label, store.currentSymbolId, anim.id, tracks, kind));
   store.emit("timeline");
   store.emit("stage");
+}
+
+/** The current animation's draw order keys replaced. */
+export function doSetDrawOrder(store: Store, keys: DrawOrderKey[], label: string, kind?: string): void {
+  const anim = store.currentAnimation;
+  if (!anim) return;
+  store.apply(new SetDrawOrder(label, store.currentSymbolId, anim.id, keys, kind));
+  store.emit("timeline");
+  store.emit("stage");
+}
+
+/** The selected layers moved in the draw order at the playhead, keyed there
+ *  (Modify ▸ Draw Order). False when that changes nothing. */
+export function doReorder(store: Store, how: Reorder): boolean {
+  const anim = store.currentAnimation;
+  if (!anim || store.ui.mode !== "animate") return false;
+  const keys = reorderAt(store.currentSymbol, anim, store.ui.frame, store.selection.nodes, how);
+  if (!keys) return false;
+  const label = { forward: "Draw Order Forward", backward: "Draw Order Backward", front: "Draw Order to Front", back: "Draw Order to Back" }[how];
+  doSetDrawOrder(store, keys, label);
+  return true;
 }
 
 /** One track replaced: the timeline's property rows edit through here. */

@@ -1,5 +1,5 @@
 import type { Command, TouchSet } from "./Command";
-import type { Animation, AnimationReference, Keyframe, Project, SymbolItem, Track } from "@/core/doc/types";
+import type { Animation, AnimationReference, DrawOrderKey, Keyframe, Project, SymbolItem, Track } from "@/core/doc/types";
 import { isSymbol } from "@/core/doc/types";
 import type { AnimId, ItemId, NodeId } from "@/core/doc/ids";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
@@ -431,5 +431,47 @@ export class SetAnimationPoses implements Command {
     if (!anim) return;
     if (this.before && this.before.length) anim.poses = [...this.before];
     else delete anim.poses;
+  }
+}
+
+/** An animation's draw order keys replaced (`core/doc/drawOrder.ts`). Steps of
+ *  one drag share a `kind` and merge into one undo. */
+export class SetDrawOrder implements Command {
+  readonly touches: TouchSet;
+  private before: DrawOrderKey[] | undefined;
+  private captured = false;
+
+  constructor(
+    readonly label: string,
+    private readonly symbolId: ItemId,
+    private readonly animId: AnimId,
+    private after: DrawOrderKey[],
+    readonly kind = "timeline.drawOrder",
+  ) {
+    this.touches = { symbols: [symbolId], timeline: true, stage: true };
+  }
+
+  apply(p: Project): void {
+    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
+    if (!anim) return;
+    if (!this.captured) { this.before = anim.drawOrder; this.captured = true; }
+    if (this.after.length) anim.drawOrder = this.after;
+    else delete anim.drawOrder;
+    invalidateBounds([this.symbolId]);
+  }
+
+  revert(p: Project): void {
+    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
+    if (!anim) return;
+    if (this.before) anim.drawOrder = this.before;
+    else delete anim.drawOrder;
+    invalidateBounds([this.symbolId]);
+  }
+
+  mergeWith(next: Command): boolean {
+    if (!(next instanceof SetDrawOrder) || next.kind !== this.kind) return false;
+    if (next.symbolId !== this.symbolId || next.animId !== this.animId) return false;
+    this.after = next.after;
+    return true;
   }
 }

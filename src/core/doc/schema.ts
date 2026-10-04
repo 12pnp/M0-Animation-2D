@@ -224,6 +224,24 @@ export function validateProject(raw: unknown): ValidationResult {
         if (poses.length) (anim as { poses?: number[] }).poses = poses;
         else delete anim.poses;
       }
+      if (anim.drawOrder !== undefined) {
+        // One key per frame, in order; an order lists layers of this symbol
+        // once each (`withOrder` fills in the rest when it is read).
+        const raw = Array.isArray(anim.drawOrder) ? (anim.drawOrder as unknown[]) : [];
+        const byFrame = new Map<number, { frame: number; order?: string[] }>();
+        for (const k of raw) {
+          if (!k || typeof k !== "object") continue;
+          const r = k as { frame?: unknown; order?: unknown };
+          const frame = clampInt(r.frame, 0, 100000, 0);
+          const order = Array.isArray(r.order)
+            ? [...new Set(r.order.filter((id): id is string => typeof id === "string" && !!item.nodes[id as never]))]
+            : undefined;
+          byFrame.set(frame, order ? { frame, order } : { frame });
+        }
+        const keys = [...byFrame.values()].sort((a, b) => a.frame - b.frame);
+        if (keys.length) anim.drawOrder = keys as never;
+        else delete anim.drawOrder;
+      }
       for (const [nodeId, track] of Object.entries(anim.tracks)) {
         if (!item.nodes[nodeId as never] || !track?.keys?.length) {
           delete anim.tracks[nodeId as never];
@@ -409,6 +427,9 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // 14 -> 15: `Keyframe.keyed`, which bone properties a key is a key of on
   // the timeline's property rows. Additive; an older build would drop it.
   14: (p) => ({ ...p, version: 15 }),
+  // 15 -> 16: `Animation.drawOrder`, draw order keys. Additive; an older
+  // build would drop them on save.
+  15: (p) => ({ ...p, version: 16 }),
 };
 
 /** A tween read from disk, or null when it is not one this build knows. */

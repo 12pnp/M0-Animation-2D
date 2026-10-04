@@ -1,5 +1,6 @@
 import { clear, cls, drag, h, on } from "@/view/widgets/dom";
 import { deleteChannelKeys, keyChannelAt, propertyKeys, type TimelineProp } from "@/core/doc/propertyKeys";
+import { deleteDrawOrderKeys, drawingLayers, orderAt, type Reorder, withDrawOrderKey } from "@/core/doc/drawOrder";
 import { SPEED_SLIDER_MAX, sliderFromSpeed, speedFromSlider, speedLabel } from "./playSpeed";
 import { PLAY_RATES } from "./playStep";
 import { uniqueAnimationName } from "@/core/doc/animationList";
@@ -25,6 +26,8 @@ import {
     doInsertKeyframe,
     doMoveKeyframes,
     doSetTrack,
+    doSetDrawOrder,
+    doReorder,
     ensureTrack,
     doRemoveFrame,
     doRemoveFrames,
@@ -49,6 +52,17 @@ import { groupPlan, layerRows } from "@/core/doc/layerTree";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { mayReparent } from "@/view/widgets/ikReparentGuard";
 import { uiPx } from "@/core/prefs/fonts";
+
+/** Modify ▸ Draw Order's items: the selected layers moved in the draw order
+ *  at the playhead, keyed there. */
+export function drawOrderItems(enabled: boolean, run: (how: Reorder) => void): MenuEntry[] {
+  return [
+    { label: "Bring Forward", command: "modify.orderForward", enabled, run: () => run("forward") },
+    { label: "Send Backward", command: "modify.orderBackward", enabled, run: () => run("backward") },
+    { label: "Bring to Front", command: "modify.orderFront", enabled, run: () => run("front") },
+    { label: "Send to Back", command: "modify.orderBack", enabled, run: () => run("back") },
+  ];
+}
 
 /** The property rows' names, as Spine writes them. */
 const PROP_NAMES: Record<TimelineProp, string> = {
@@ -94,6 +108,8 @@ export class TimelinePanel implements Panel {
       onSelectRange: (rowFrom, rowTo, from, to) => this.selectRange(rowFrom, rowTo, from, to),
       onMoveKeyframes: (nodeId, from, to, delta, base) => doMoveKeyframes(store, nodeId, from, to, delta, base),
       onEditTrack: (nodeId, track, label, kind) => doSetTrack(store, nodeId, track, label, kind),
+      onEditDrawOrder: (keys, label, kind) => doSetDrawOrder(store, keys, label, kind),
+      onDrawOrderMenu: (frame, x, y) => this.drawOrderMenu(frame, x, y),
       onDragSpanEnd: (nodeId, endFrame) => doSetEndFrame(store, nodeId, endFrame),
       onDragFrames: (row, frame, copy) => this.dragFrames(row, frame, copy),
       onBeginInteraction: (kind) => store.history.beginInteraction(kind),
@@ -646,6 +662,11 @@ export class TimelinePanel implements Panel {
       { label: "Select All Frames", command: "edit.selectAllFrames", enabled: n > 0, run: () => this.selectAllFrames() },
       "-",
       {
+        // Keyed at the playhead, in Animate (Spine's draw order keys).
+        label: "Draw Order", items: drawOrderItems(this.store.ui.mode === "animate" && n > 0, (how) => doReorder(this.store, how)),
+      },
+      "-",
+      {
         label: excluded ? "Include in Export" : "Exclude from Export",
         enabled: n > 0,
         checked: excluded,
@@ -760,6 +781,46 @@ export class TimelinePanel implements Panel {
     doSetTrack(this.store, sel.nodeId, deleteChannelKeys(track, node, sel.prop, sel.frames), "Delete Keys");
     this.grid.propSel = null;
     return true;
+  }
+
+  /** The picked draw order keys gone; false with none picked. */
+  deleteDrawOrderKeys(): boolean {
+    const sel = this.grid.orderSel;
+    const keys = this.store.currentAnimation?.drawOrder;
+    if (!sel?.length || !keys) return false;
+    doSetDrawOrder(this.store, deleteDrawOrderKeys(keys, sel), sel.length > 1 ? "Delete Draw Order Keys" : "Delete Draw Order Key");
+    this.grid.orderSel = null;
+    return true;
+  }
+
+  /**
+   * The Draw order row's menu: key the order in force here (to edit it with
+   * Modify ▸ Draw Order), back to the setup order from here, or delete the
+   * picked keys.
+   */
+  private drawOrderMenu(frame: number, x: number, y: number): void {
+    const anim = this.store.currentAnimation;
+    if (!anim) return;
+    this.store.setFrame(frame);
+    const keys = anim.drawOrder ?? [];
+    const sym = this.store.currentSymbol;
+    const keyed = keys.some((k) => k.frame === frame);
+    const sel = this.grid.orderSel ?? [];
+    showMenu(this.menuAnchor(x, y), [
+      {
+        label: "Key Draw Order Here", enabled: !keyed,
+        run: () => doSetDrawOrder(this.store, withDrawOrderKey(keys, frame, orderAt(sym, anim, frame), drawingLayers(sym)), "Key Draw Order"),
+      },
+      {
+        label: "Setup Draw Order From Here",
+        run: () => doSetDrawOrder(this.store, withDrawOrderKey(keys, frame, null, drawingLayers(sym)), "Setup Draw Order"),
+      },
+      "-",
+      {
+        label: sel.length > 1 ? `Delete ${sel.length} Draw Order Keys` : "Delete Draw Order Key",
+        enabled: sel.length > 0, run: () => { this.deleteDrawOrderKeys(); },
+      },
+    ]);
   }
 
   /** A property row's menu: key the property at the frame, or delete its

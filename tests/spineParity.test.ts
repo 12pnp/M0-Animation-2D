@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { drawingLayers } from "@/core/doc/drawOrder";
 import {
   AtlasAttachmentLoader, ClippingAttachment, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
 } from "@esotericsoftware/spine-core";
@@ -675,5 +676,21 @@ describe("the Spine runtime plays the export the way the stage draws it", () => 
     anim.tracks[arm.id] = withBakedKeys(track, arm, 0, kept.map((k) => ({ frame: k.frame, t: k.own })));
     expect(checkParity(project, project.rootSymbolId).checks).toBeGreaterThanOrEqual(40);
   });
-});
 
+  it("draw order keys: layers and nested symbols restacked, and back to the setup order", () => {
+    for (const project of [featureRig().project, nestedRig()]) {
+      const sym = project.items[project.rootSymbolId] as SymbolItem;
+      const setup = drawingLayers(sym);
+      expect(setup.length).toBeGreaterThan(1);
+      for (const anim of sym.animations) {
+        const last = Math.max(1, anim.duration - 2);
+        anim.drawOrder = [
+          { frame: 1, order: [...setup].reverse() },
+          { frame: Math.ceil(last / 2), order: [setup[setup.length - 1]!, ...setup.slice(0, -1)] },
+          { frame: last },
+        ];
+      }
+      expect(checkParity(project, project.rootSymbolId).checks).toBeGreaterThan(50);
+    }
+  });
+});

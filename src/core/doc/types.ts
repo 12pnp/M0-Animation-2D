@@ -5,7 +5,7 @@ import type { SpineInherit } from "@/core/spine/types";
 import type { AnimId, AssetId, FolderId, IkId, ItemId, LayerId, NodeId } from "./ids";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 15;
+export const DOC_VERSION = 16;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -328,6 +328,18 @@ export interface Animation {
    *  unique: the Poses panel's list, which the AI animates between. Never
    *  exported. */
   poses?: number[];
+  /** Draw order keys (`core/doc/drawOrder.ts`), sorted by frame: from each
+   *  key's frame on, the symbol's drawing layers draw in its order. Absent:
+   *  the layer stack, at every frame. */
+  drawOrder?: DrawOrderKey[];
+}
+
+/** One draw order key: the drawing layers back to front from `frame` on.
+ *  No `order`: the setup order (the layer stack) again. A layer the order
+ *  does not list keeps its place in the stack beside its neighbours. */
+export interface DrawOrderKey {
+  frame: number;
+  order?: NodeId[];
 }
 
 /**

@@ -79,6 +79,7 @@ import {
     doInsertFrame,
     doInsertKeyframe,
     doRemoveFrame,
+    doReorder,
     doToggleCycle,
     fillEmptyNode,
     transformAtFrame,
@@ -1244,6 +1245,11 @@ export class App {
           "-",
           it("modify.setupMode"),
           it("modify.autoKey"),
+          "-",
+          {
+            label: "Draw Order",
+            items: [it("modify.orderForward"), it("modify.orderBackward"), it("modify.orderFront"), it("modify.orderBack")],
+          },
         ],
       },
       {
@@ -1482,11 +1488,11 @@ export class App {
     // Keys picked on a timeline property row go first: they are what the
     // last click was on, and the bone stays selected under them.
     reg("edit.delete", () => {
-      if (this.timeline.deletePropKeys()) return;
+      if (this.timeline.deletePropKeys() || this.timeline.deleteDrawOrderKeys()) return;
       s.apply(new RemoveNodes(s.currentSymbolId, [...s.selection.nodes]));
       s.clearSelection();
       s.emit("doc");
-    }, () => !!this.timeline.grid.propSel?.frames.length || hasNodes());
+    }, () => !!this.timeline.grid.propSel?.frames.length || !!this.timeline.grid.orderSel?.length || hasNodes());
 
     reg("view.zoomIn", () => s.setUi({ zoom: s.ui.zoom * 1.25 }, "stage"));
     reg("view.zoomOut", () => s.setUi({ zoom: s.ui.zoom / 1.25 }, "stage"));
@@ -1544,6 +1550,12 @@ export class App {
     reg("modify.setupMode", () => s.setMode(s.ui.mode === "setup" ? "animate" : "setup"),
       undefined, () => s.ui.mode === "setup");
     reg("modify.autoKey", () => s.setUi({ autoKey: !s.ui.autoKey }), undefined, () => s.ui.autoKey);
+    // Draw order changes are keys of the animation, at the playhead: Animate only.
+    const canReorder = () => s.ui.mode === "animate" && !!s.currentAnimation && hasNodes();
+    reg("modify.orderForward", () => { doReorder(s, "forward"); }, canReorder);
+    reg("modify.orderBackward", () => { doReorder(s, "backward"); }, canReorder);
+    reg("modify.orderFront", () => { doReorder(s, "front"); }, canReorder);
+    reg("modify.orderBack", () => { doReorder(s, "back"); }, canReorder);
 
     // A frame selection, when there is one, is what the F-keys act on.
     reg("timeline.insertFrame", () => {

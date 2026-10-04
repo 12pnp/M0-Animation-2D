@@ -2,6 +2,7 @@ import {
   AtlasAttachmentLoader, type Bone, ClippingAttachment, MeshAttachment, MixFrom, Physics, RegionAttachment, Skeleton,
   SkeletonJson, Skin, type Slot, TextureAtlas, TextureAtlasRegion, type Animation as SpineRuntimeAnimation,
 } from "@esotericsoftware/spine-core";
+import { orderAt } from "@/core/doc/drawOrder";
 import type { ItemId, NodeId } from "@/core/doc/ids";
 import type { Animation, ColorTransform, Project, SymbolItem } from "@/core/doc/types";
 import { isImage } from "@/core/doc/types";
@@ -258,6 +259,16 @@ function applyRig(
   }
   if (mode === "animate" && animation) {
     rig.animations.get(animation.name)?.apply(sk, 0, frame / fps, false, null, 1, MixFrom.setup, false, false, false);
+  }
+  // The document's draw order keys (`Animation.drawOrder`): the rig is built
+  // once per structure, so they are applied here rather than baked into it,
+  // the slots that have a place in the order taking those places.
+  if (mode === "animate" && animation?.drawOrder?.length) {
+    const rank = new Map(orderAt(sym, animation, frame).map((id, i) => [id, i]));
+    const order = sk.drawOrder.appliedPose as Slot[];
+    const at = order.map((sl, i) => (rank.has(rig.slotNode.get(sl)!) ? i : -1)).filter((i) => i >= 0);
+    const ranked = at.map((i) => order[i]!).sort((a, b) => rank.get(rig.slotNode.get(a)!)! - rank.get(rig.slotNode.get(b)!)!);
+    at.forEach((i, n) => { order[i] = ranked[n]!; });
   }
   sk.updateWorldTransform(Physics.reset);
 

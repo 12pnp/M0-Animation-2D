@@ -1,7 +1,8 @@
 import type { AssetId, NodeId } from "@/core/doc/ids";
+import { fromOffsets } from "@/core/doc/drawOrder";
 import { newAnimId, newIkId } from "@/core/doc/ids";
 import type {
-  Animation, BlendMode, ColorTransform, DisplayRef, IkConstraint, ImageItem, Keyframe, Layer, Node, Project,
+  Animation, BlendMode, DrawOrderKey, ColorTransform, DisplayRef, IkConstraint, ImageItem, Keyframe, Layer, Node, Project,
   SpineAttachmentRef, SymbolItem, Track,
 } from "@/core/doc/types";
 import { isDefaultColor } from "@/core/doc/types";
@@ -320,6 +321,28 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
         });
       anim.tracks[node.id] = made.track;
       baked += made.baked;
+    }
+    // Draw order keys become the document's (`Animation.drawOrder`) when each
+    // lands on a frame and reads as an order of known slots; otherwise the
+    // timeline is carried as it came.
+    if (Array.isArray(animRaw.drawOrder)) {
+      const setup = slotsIn.map((sl) => slotNode.get(String(sl.name))?.id).filter((id): id is NodeId => !!id);
+      const keys: DrawOrderKey[] = [];
+      for (const k of animRaw.drawOrder) {
+        if (!obj(k)) { keys.length = 0; break; }
+        const at = num(k.time, 0) * rate;
+        if (Math.abs(at - Math.round(at)) > 1e-6) { keys.length = 0; break; }
+        const offsets = Array.isArray(k.offsets) ? k.offsets.filter(obj) : [];
+        const mapped = offsets.map((o) => ({ item: slotNode.get(String(o.slot))?.id, offset: num(o.offset, 0) }));
+        if (mapped.some((o) => !o.item)) { keys.length = 0; break; }
+        const order = fromOffsets(mapped as Array<{ item: NodeId; offset: number }>, setup);
+        if (!order) { keys.length = 0; break; }
+        keys.push(offsets.length ? { frame: Math.round(at), order } : { frame: Math.round(at) });
+      }
+      if (keys.length === animRaw.drawOrder.length && keys.length) {
+        anim.drawOrder = keys;
+        delete carried.drawOrder;
+      }
     }
     if (Object.keys(carried).length) anim.spine = carried;
     sym.animations.push(anim);

@@ -2,6 +2,7 @@ import type { Animation, ColorTransform, DisplayRef, ImageItem, Layer, Node, Pro
 import { DEFAULT_COLOR, isImage, isSymbol, producesSlot } from "@/core/doc/types";
 import type { ItemId, NodeId } from "@/core/doc/ids";
 import { descendantsOf, maskGroups } from "@/core/doc/layerTree";
+import { orderAt, toOffsets } from "@/core/doc/drawOrder";
 import type { Contour } from "@/core/atlas/contour";
 import { nz } from "@/core/math/angle";
 import { displaysOf } from "@/core/doc/displays";
@@ -193,6 +194,9 @@ export function exportSpine(
 
   /** Bones, slots, skin entries and constraints of one scope, in draw order,
    *  instances recursing where they sit. */
+  /** The top-level layers' runs of slots, in setup order (`drawOrderTimeline`). */
+  const slotBlocks: Array<{ ids: NodeId[]; start: number; end: number }> = [];
+
   const emitScope = (scope: Scope): void => {
     const s = scope.sym;
     const local = uniqueNames(s, diagnostics, scope.depth === 0, scope.depth === 0 ? ownRoot : undefined);
@@ -376,14 +380,24 @@ export function exportSpine(
     };
 
     // layers[0] is the TOP layer; Spine draws slot 0 first, at the back.
+    // At the top, each layer's run of slots (its own, and a nested symbol's
+    // flattened under it) is recorded: draw order keys move them as one block.
     const done = new Set<string>();
+    const block = (ids: NodeId[], emit: () => void) => {
+      const start = slots.length;
+      emit();
+      if (scope.depth === 0 && slots.length > start) slotBlocks.push({ ids, start, end: slots.length });
+    };
     for (const layer of [...s.layers].reverse()) {
       if (done.has(layer.id) || maskIds.has(layer.id)) continue;
       const group = layer.maskedBy ? groups.get(layer.maskedBy) : undefined;
-      if (!group) { emitLayer(layer); continue; }
+      if (!group) { block([layer.nodeId], () => emitLayer(layer)); continue; }
       const members = [...group].reverse();
       for (const m of members) done.add(m.id);
-      emitMasked(s.layers.find((l) => l.id === layer.maskedBy), members);
+      // A mask's clip spans its layers: they move together, or the clip would
+      // end in the wrong place.
+      const maskLayer = s.layers.find((l) => l.id === layer.maskedBy);
+      block([...(maskLayer ? [maskLayer.nodeId] : []), ...members.map((m) => m.nodeId)], () => emitMasked(maskLayer, members));
     }
   };
 
@@ -523,8 +537,11 @@ export function exportSpine(
         lastFrame = Math.max(lastFrame, st.lastFrame);
       }
     }
-    // Carried timelines (an opened file's) join the generated ones.
-    const carried = anim.spine ?? {};
+    const order = drawOrderTimeline(sym, anim, slots.map((sl) => sl.name), slotBlocks, fps);
+    if (order) out.drawOrder = order;
+    // Carried timelines (an opened file's) join the generated ones; draw
+    // order keys the document holds replace a carried timeline.
+    const carried = order ? omitKey(anim.spine ?? {}, "drawOrder") : anim.spine ?? {};
     for (const [group, value] of Object.entries(carried)) {
       if ((group === "bones" || group === "slots") && value && typeof value === "object") {
         const into = (out[group] ??= {}) as Record<string, Record<string, unknown>>;
@@ -883,6 +900,43 @@ function boneTimelines(
   }
 
   return Object.keys(out).length ? { timelines: out, lastFrame } : null;
+}
+
+/* ── draw order ──────────────────────────────────────────────────────────── */
+
+/**
+ * The animation's draw order keys as Spine's `drawOrder` timeline: each key's
+ * order of the top-level layers, as their runs of slots (`blocks`, in setup
+ * order) laid out in that order, written as offsets from the setup slot
+ * order. A block of layers that do not draw keeps its setup place. A key that
+ * is the setup order writes no offsets. Null with no keys.
+ */
+function drawOrderTimeline(
+  sym: SymbolItem, anim: Animation, setup: readonly string[],
+  blocks: ReadonlyArray<{ ids: NodeId[]; start: number; end: number }>, fps: number,
+): SpineDrawOrderKey[] | null {
+  if (!anim.drawOrder?.length) return null;
+  return anim.drawOrder.map((k) => {
+    const rank = new Map(orderAt(sym, anim, k.frame).map((id, i) => [id, i]));
+    // A block goes where the first of its layers is.
+    const at = blocks.map((b) => Math.min(...b.ids.map((id) => rank.get(id) ?? Infinity)));
+    const moving = blocks.map((b, i) => ({ b, at: at[i]! })).filter((p) => p.at !== Infinity).sort((x, y) => x.at - y.at);
+    let m = 0;
+    const seq = blocks.map((b, i) => (at[i] === Infinity ? b : moving[m++]!.b));
+    const names = seq.flatMap((b) => setup.slice(b.start, b.end));
+    const offsets = toOffsets(names, setup).map((o) => ({ slot: o.item, offset: o.offset }));
+    const key: SpineDrawOrderKey = {};
+    const time = keyTime(k.frame, fps);
+    if (time) key.time = time;
+    if (offsets.length) key.offsets = offsets;
+    return key;
+  });
+}
+
+function omitKey(o: Record<string, unknown>, key: string): Record<string, unknown> {
+  const out = { ...o };
+  delete out[key];
+  return out;
 }
 
 /* ── slot timelines ──────────────────────────────────────────────────────── */

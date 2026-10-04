@@ -1,4 +1,5 @@
 import { applyInverse, clone, mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
+import { orderAt } from "./drawOrder";
 import { type IkBone, type IkWorld, ikApply1, ikApply2 } from "@/core/math/ik";
 import { fromSpineLocal, toSpineLocal } from "@/core/spine/transform";
 import { cloneTf, toMatrix, type Transform } from "@/core/math/Transform";
@@ -225,6 +226,17 @@ export function evaluateSymbol(
       visible: layer.visible && onTrack && displayIndex >= 0 && (display !== null || !node.itemId),
       drawIndex: entries.length,
     });
+  }
+
+  // Draw order keys: the drawing layers' places in the list take the key's
+  // order; groups and bones keep theirs (they draw nothing).
+  if (mode === "animate" && animation?.drawOrder?.length) {
+    const order = orderAt(symbol, animation, frame);
+    const drawing = new Set(order);
+    const at = new Map(entries.map((e) => [e.nodeId as NodeId, e]));
+    const slots = entries.map((e, i) => (drawing.has(e.nodeId) ? i : -1)).filter((i) => i >= 0);
+    slots.forEach((i, n) => { entries[i] = at.get(order[n]!)!; });
+    entries.forEach((e, i) => { e.drawIndex = i; });
   }
 
   for (const e of entries) byNode.set(e.nodeId, e);

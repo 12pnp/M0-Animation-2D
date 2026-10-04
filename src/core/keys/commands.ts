@@ -124,6 +124,10 @@ export const COMMANDS: CommandDef[] = [
   c("Modify", "modify.documentSettings", "Document Settings…"),
   c("Modify", "modify.setupMode", "Setup Pose Mode", ["Mod+Shift+M"], true),
   c("Modify", "modify.autoKey", "Auto Keyframe"),
+  c("Modify", "modify.orderForward", "Draw Order: Bring Forward", ["Mod+ArrowUp"]),
+  c("Modify", "modify.orderBackward", "Draw Order: Send Backward", ["Mod+ArrowDown"]),
+  c("Modify", "modify.orderFront", "Draw Order: Bring to Front", ["Mod+Shift+ArrowUp"]),
+  c("Modify", "modify.orderBack", "Draw Order: Send to Back", ["Mod+Shift+ArrowDown"]),
 
   c("Timeline", "timeline.insertFrame", "Insert Frames", ["F5"], true),
   c("Timeline", "timeline.removeFrame", "Remove Frames", ["Shift+F5"], true),

@@ -1,7 +1,8 @@
 import { h, on, raf } from "@/view/widgets/dom";
 import { FRAME_WIDTH_MAX, FRAME_WIDTH_MIN, anchoredScroll, fitFrameWidth, steppedFrameWidth } from "./zoom";
 import type { Store } from "@/app/Store";
-import type { Layer, Node, Track } from "@/core/doc/types";
+import type { DrawOrderKey, Layer, Node, Track } from "@/core/doc/types";
+import { moveDrawOrderKeys } from "@/core/doc/drawOrder";
 import type { NodeId } from "@/core/doc/ids";
 import { describeFrame, ensureTrack } from "@/app/TimelineOps";
 import { keyIndexAt, MAX_FRAMES, spanIndexAt } from "@/core/doc/timeline";
@@ -9,6 +10,9 @@ import { easeTag } from "@/core/math/easing";
 import type { LayerRow } from "@/core/doc/layerTree";
 import { timelineRows } from "./rows";
 import { moveChannelKeys, propertyKeys, type TimelineProp } from "@/core/doc/propertyKeys";
+
+/** The Draw order row's keys. */
+const DRAW_ORDER_COLOR = "#7fa8ff";
 
 /** The property rows' key colours: Spine's, green rotate, blue translate,
  *  red scale, yellow shear. */
@@ -39,6 +43,10 @@ export interface FrameGridCallbacks {
   /** A property row's edit: the bone's track as it is to be. `kind` merges
    *  the steps of one drag into one undo. */
   onEditTrack(nodeId: NodeId, track: Track, label: string, kind?: string): void;
+  /** The Draw order row's edit: the animation's keys as they are to be. */
+  onEditDrawOrder(keys: DrawOrderKey[], label: string, kind?: string): void;
+  /** Right-click on the Draw order row. */
+  onDrawOrderMenu(frame: number, x: number, y: number): void;
   /** A frame selection dragged somewhere else: its top-left cell lands on
    *  `row`/`frame`. `copy` is ⌥ held at the release. */
   onDragFrames(row: number, frame: number, copy: boolean): void;
@@ -193,8 +201,12 @@ export class FrameGrid {
 
   get viewWidth(): number { return this.el.clientWidth; }
   get viewHeight(): number {
-    return this.el.clientHeight - this.headerHeight - this.bottomGutter;
+    return this.el.clientHeight - this.bodyTop - this.bottomGutter;
   }
+  /** The Draw order row, under the ruler: one row tall while an animation is open. */
+  get stripHeight(): number { return this.store.currentAnimation ? this.rowHeight : 0; }
+  /** Where the layer rows start: below the ruler and the Draw order row. */
+  get bodyTop(): number { return this.headerHeight + this.stripHeight; }
   /** Bottom of the drawable row area, above the scrollbar strip. */
   private get bodyBottom(): number {
     return Math.max(this.headerHeight, this.el.clientHeight - this.bottomGutter);
@@ -228,7 +240,7 @@ export class FrameGrid {
   }
   rowAtY(y: number): number {
     if (y >= this.bodyBottom) return -1;      // the scrollbar strip, not a row
-    return Math.floor((y - this.headerHeight + this.scrollY) / this.rowHeight);
+    return Math.floor((y - this.bodyTop + this.scrollY) / this.rowHeight);
   }
 
   // ── Drawing ────────────────────────────────────────────────────────────
@@ -257,6 +269,7 @@ export class FrameGrid {
     const last = Math.min(MAX_FRAMES - 1, first + Math.ceil(w / this.frameWidth) + 1);
 
     this.drawBody(ctx, rows, first, last, w, h, duration);
+    this.drawOrderStrip(ctx, first, last, w);
     this.drawHeader(ctx, first, last, w, fps);
     this.drawSeam(ctx, rows, h);
     this.drawOnionMarkers(ctx);
@@ -377,17 +390,18 @@ export class FrameGrid {
     ctx.fillText("↻", x + (fw - 1) / 2, H / 2);
     ctx.textAlign = "left";
 
+    const top = this.bodyTop;
     ctx.save();
     ctx.beginPath();
-    ctx.rect(0, H, this.el.clientWidth, h - H);
+    ctx.rect(0, top, this.el.clientWidth, h - top);
     ctx.clip();
     ctx.fillStyle = withAlpha(this.C.loop, 0.6);
-    ctx.fillRect(x + fw - 2, H, 1, Math.min(h, H + rows.length * this.rowHeight - this.scrollY) - H);
+    ctx.fillRect(x + fw - 2, top, 1, Math.min(h, top + rows.length * this.rowHeight - this.scrollY) - top);
     const gaps = this.seamGaps();
     ctx.fillStyle = this.C.seamWarn;
     for (let i = 0; i < rows.length; i++) {
       if (!gaps.has(rows[i]!.layer.nodeId)) continue;
-      const y = H + i * this.rowHeight - this.scrollY;
+      const y = top + i * this.rowHeight - this.scrollY;
       ctx.beginPath();
       ctx.arc(x + (fw - 1) / 2, y + 5, Math.min(3, fw / 3), 0, Math.PI * 2);
       ctx.fill();
@@ -514,7 +528,7 @@ export class FrameGrid {
     first: number, last: number, w: number, h: number, duration: number,
   ): void {
     const anim = this.store.currentAnimation;
-    const H = this.headerHeight;
+    const H = this.bodyTop;
     const rowH = this.rowHeight;
 
     ctx.save();
@@ -600,7 +614,7 @@ export class FrameGrid {
    *  the destination is readable over the cells it covers. */
   private drawFrameDrop(ctx: CanvasRenderingContext2D, d: FrameRect, w: number): void {
     const x = this.xOfFrame(d.from);
-    const y = this.headerHeight + d.top * this.rowHeight - this.scrollY;
+    const y = this.bodyTop + d.top * this.rowHeight - this.scrollY;
     const width = (d.to - d.from + 1) * this.frameWidth - 1;
     const height = (d.bottom - d.top + 1) * this.rowHeight - 1;
     if (x > w || x + width < 0) return;
@@ -667,6 +681,74 @@ export class FrameGrid {
   private drawSpanEdge(ctx: CanvasRenderingContext2D, x: number, y: number, pad: number): void {
     ctx.fillStyle = this.C.spanEdge;
     ctx.fillRect(Math.round(x), y + pad, 1, this.rowHeight - pad * 2 - 1);
+  }
+
+  /** The draw order keys picked on the Draw order row, by frame. */
+  orderSel: number[] | null = null;
+
+  /**
+   * The Draw order row, under the ruler: a key where the order changes, the
+   * picked ones ringed. Spine's dopesheet has it at the top.
+   */
+  private drawOrderStrip(ctx: CanvasRenderingContext2D, first: number, last: number, w: number): void {
+    const h = this.stripHeight;
+    if (!h) return;
+    const y = this.headerHeight;
+    ctx.fillStyle = this.C.headerBg;
+    ctx.fillRect(0, y, w, h);
+    this.drawCells(ctx, y, first, last);
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.fillRect(0, y, w, h);
+    const keys = this.store.currentAnimation?.drawOrder ?? [];
+    const half = this.frameWidth / 2;
+    const mid = Math.round(y + h / 2 - 0.5) + 0.5;
+    const r = Math.max(3, Math.min(5, half - 0.5, h / 2 - 3));
+    for (const k of keys) {
+      if (k.frame < first || k.frame > last) continue;
+      const cx = Math.round(this.xOfFrame(k.frame) + half - 0.5) + 0.5;
+      ctx.beginPath();
+      ctx.rect(cx - r, mid - r, r * 2, r * 2);
+      // A key back to the setup order is hollow.
+      ctx.fillStyle = k.order ? DRAW_ORDER_COLOR : this.C.headerBg;
+      ctx.fill();
+      const picked = this.orderSel?.includes(k.frame);
+      ctx.lineWidth = picked ? 2 : 1;
+      ctx.strokeStyle = picked ? "#ffffff" : DRAW_ORDER_COLOR;
+      ctx.stroke();
+    }
+    ctx.strokeStyle = this.C.rowLine;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, y + h - 0.5);
+    ctx.lineTo(w, y + h - 0.5);
+    ctx.stroke();
+  }
+
+  /** Move the picked draw order keys by whole frames, from the keys as they
+   *  were at pointerdown. */
+  private beginOrderDrag(e: PointerEvent, frames: number[], base: DrawOrderKey[]): void {
+    this.el.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const first = Math.min(...frames);
+    let lastDelta = 0;
+    let started = false;
+    const move = (m: PointerEvent) => {
+      const delta = Math.max(-first, Math.round((m.clientX - startX) / this.frameWidth));
+      if (delta === lastDelta) return;
+      if (!started) { started = true; this.cb.onBeginInteraction("timeline.drawOrderMove"); }
+      this.cb.onEditDrawOrder(moveDrawOrderKeys(base, frames, delta), "Move Draw Order Keys", "timeline.drawOrderMove");
+      this.orderSel = frames.map((f) => f + delta);
+      lastDelta = delta;
+      this.invalidate();
+    };
+    const up = () => {
+      offMove(); offUp(); offCancel();
+      this.el.releasePointerCapture?.(e.pointerId);
+      if (started) this.cb.onEndInteraction();
+    };
+    const offMove = on(this.el, "pointermove", move as (x: Event) => void);
+    const offUp = on(this.el, "pointerup", up);
+    const offCancel = on(this.el, "pointercancel", up);
   }
 
   /** The property keys picked on a property row: one bone, one property. */
@@ -921,6 +1003,13 @@ export class FrameGrid {
         this.cb.onRulerContextMenu(frame, e.clientX, e.clientY);
         return;
       }
+      if (localY < this.bodyTop) {
+        const keyed = this.store.currentAnimation?.drawOrder?.some((k) => k.frame === frame);
+        if (keyed && !this.orderSel?.includes(frame)) this.orderSel = [frame];
+        this.invalidate();
+        this.cb.onDrawOrderMenu(frame, e.clientX, e.clientY);
+        return;
+      }
       this.cb.onContextMenu(this.rowAtY(localY), frame, e.clientX, e.clientY);
     });
 
@@ -940,6 +1029,27 @@ export class FrameGrid {
         this.beginScrub(e, frame);
         return;
       }
+
+      // The Draw order row: a press on a key picks it (shift adds or drops
+      // one) and a drag moves the picked keys; elsewhere it moves the playhead.
+      if (localY < this.bodyTop) {
+        const keys = this.store.currentAnimation?.drawOrder ?? [];
+        if (keys.some((k) => k.frame === frame)) {
+          const mine = this.orderSel ?? [];
+          this.orderSel = e.shiftKey
+            ? (mine.includes(frame) ? mine.filter((f) => f !== frame) : [...mine, frame])
+            : (mine.includes(frame) ? mine : [frame]);
+          this.propSel = null;
+          this.cb.onScrub(frame);
+          this.invalidate();
+          if (!e.shiftKey) this.beginOrderDrag(e, this.orderSel, keys);
+          return;
+        }
+        this.orderSel = null;
+        this.beginScrub(e, frame);
+        return;
+      }
+      this.orderSel = null;
 
       const row = this.rowAtY(localY);
       const layer = this.visibleRows()[row]?.layer;
@@ -1075,7 +1185,7 @@ export class FrameGrid {
     const move = (m: PointerEvent) => {
       copy = copy || m.altKey;
       const f = Math.max(0, rect.from + this.frameAtX(m.clientX - r.left) - frame);
-      const y = Math.min(this.bodyBottom - 1, Math.max(this.headerHeight, m.clientY - r.top));
+      const y = Math.min(this.bodyBottom - 1, Math.max(this.bodyTop, m.clientY - r.top));
       // Clamped so the whole rectangle stays on existing rows: dragging frames
       // off the bottom of the stack would otherwise create layers, which no
       // frame drag in Flash does.
@@ -1114,8 +1224,8 @@ export class FrameGrid {
       // rectangle on the rows rather than collapsing it.
       const rowCount = this.visibleRows().length;
       const rawRow = Math.floor(
-        (Math.min(this.bodyBottom - 1, Math.max(this.headerHeight, m.clientY - r.top))
-          - this.headerHeight + this.scrollY) / this.rowHeight,
+        (Math.min(this.bodyBottom - 1, Math.max(this.bodyTop, m.clientY - r.top))
+          - this.bodyTop + this.scrollY) / this.rowHeight,
       );
       const row = Math.max(0, Math.min(rowCount - 1, rawRow));
       if (frame === lastFrame && row === lastRow) return;

@@ -439,6 +439,37 @@ properties adds the ones it changed (`withTransform` in `core/doc/keyed.ts`, thr
 move, delete or key leaves every other property the same at every frame. The export is
 unchanged: it samples the whole keys, so a channel moved alone plays as it does on the stage.
 
+### Draw order keys
+
+Spine animates the order slots draw in; so does the editor (`Animation.drawOrder`, schema 16,
+`core/doc/drawOrder.ts`). A key holds a whole order of the symbol's drawing layers (not groups,
+not bones), back to front, from its frame to the next key; a key with no order goes back to the
+setup order, the layer stack. A whole order rather than Spine's offsets, so a key survives
+layers being added, removed or restacked (`withOrder` puts a layer it does not list beside the
+one below it in the stack); offsets exist only in the file (`toOffsets`, `fromOffsets`, checked
+against spine-core's `SkeletonJson` in `tests/drawOrder.test.ts`).
+
+- **Units.** A mask and the layers it clips move as one (`drawUnits`): Spine clips from the
+  clipping slot to its `end` slot, so they must stay together. `orderAt` places each unit where
+  the first of its layers is in the key's order.
+- **Stage.** `evaluateSymbol` gives the drawing layers' places in its entries the order in force
+  (fractional frames included); an opened Spine file's rig is built once per structure, so
+  `applyRig` sorts the runtime's draw order the same way instead of baking keys into it.
+- **Export.** At the top level each layer's run of slots (its own and a nested symbol's,
+  flattened under it; a mask with its layers) is a block; a key lays the blocks out in its order
+  and writes the offsets (`drawOrderTimeline`). Keys the document holds replace a carried
+  `drawOrder`. Nested symbols' own keys are not exported (one skeleton, one timeline).
+  `tests/spineParity.test.ts` plays restacked layers, a mask group and nested symbols.
+- **Import.** An opened file's keys become the document's when every one lands on a frame and
+  reads as an order of known slots; otherwise the timeline is carried as before.
+- **Editing.** The timeline's **Draw order** row sits under the ruler (`FrameGrid.stripHeight`,
+  `bodyTop`; the layer column has its label): click picks a key, shift adds, drag moves,
+  Delete removes (`edit.delete` asks `deleteDrawOrderKeys` after the property keys), and its
+  menu keys the order in force or the setup order at a frame. Modify ▸ Draw Order (and the
+  layer menu; ⌘↑ ⌘↓, ⌘⇧↑ ⌘⇧↓) moves the selected layers at the playhead and keys it there,
+  in Animate only (`doReorder`, `reorderAt`); a selected bone moves the pictures on it
+  (`reorderTargets`). The AI's `key_draw_order` does the same; `get_animation` lists the keys.
+
 ### The timeline fills its panel, and only the layers scroll
 
 The frame grid is a CANVAS with no scroll of its own, and the horizontal bar is an
