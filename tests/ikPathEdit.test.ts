@@ -1,11 +1,13 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { ikPathDrag, ikTargetFor, targetLocalAt, withTargetAt, type IkPathDrag, type Point } from "@/core/doc/ikPathEdit";
+import { ikPathDrag, ikTargetFor, targetLocalAt, withBendFlippedAt, withTargetAt, type IkPathDrag, type Point } from "@/core/doc/ikPathEdit";
 import { pathDragMode } from "@/core/doc/pathEdit";
 import { apply } from "@/core/math/Matrix2D";
 import { posedSymbol } from "@/core/spine/spinePose";
 import type { Animation, IkConstraint, Project, SymbolItem } from "@/core/doc/types";
 import type { NodeId } from "@/core/doc/ids";
 import { loadStickman, type Stickman } from "./fixtures/stickman";
+import { History } from "@/core/history/History";
+import { EditTracks, EditTracksAndIk, SetIkKeys } from "@/core/history/timelineCommands";
 
 let s: Stickman, project: Project, rig: SymbolItem, run: Animation;
 beforeAll(async () => {
@@ -20,10 +22,10 @@ const legIk = (): IkConstraint => rig.ik.find((k) => k.boneId === s.node("leg_ne
 function dragged(sym: SymbolItem, anim: Animation, drag: IkPathDrag, frame: number, delta: Point) {
   const k = sym.ik.find((c) => c.id === drag.ik)!;
   const start = posedSymbol(project, sym, anim, frame, "animate");
-  const poseWith = (w: Point) =>
-    posedSymbol(project, sym, withTargetAt(anim, sym, k.targetId, frame, targetLocalAt(start, k.targetId, w)!), frame, "animate");
-  const world = ikTargetFor(sym, drag, start, delta, poseWith);
-  return { start, after: world ? poseWith(world) : null, k };
+  const poseWith = (w: Point, flip: boolean) => posedSymbol(project, sym,
+    withTargetAt(flip ? withBendFlippedAt(anim, k, frame) : anim, sym, k.targetId, frame, targetLocalAt(start, k.targetId, w)!), frame, "animate");
+  const fit = ikTargetFor(sym, drag, start, delta, poseWith);
+  return { start, after: fit ? poseWith(fit.target, fit.flip) : null, flip: fit?.flip ?? false, k };
 }
 
 const origin = (p: ReturnType<typeof posedSymbol>, id: NodeId) => { const m = p.byNode.get(id)!.world; return { x: m.tx, y: m.ty }; };
@@ -71,7 +73,7 @@ describe("dragging an IK chain's path keys its target", () => {
     expect(Math.hypot(k1.x - r.x, k1.y - r.y)).toBeCloseTo(Math.hypot(k0.x - r.x, k0.y - r.y), 3);
   });
 
-  it("a knee pulled across the leg stops", () => {
+  it("a knee pulled across the leg keys the bend flipped, and lands there", () => {
     const drag = { ik: legIk().id, role: "joint" } as const;
     const thigh = s.node("leg_near_thigh"), shin = s.node("leg_near_shin");
     const start = posedSymbol(project, rig, run, 5, "animate");
@@ -82,7 +84,13 @@ describe("dragging an IK chain's path keys its target", () => {
     const phi = Math.atan2(uy, ux) + was * 0.1, l1 = Math.hypot(k.x - r.x, k.y - r.y);
     const knee = { x: r.x + l1 * Math.cos(phi), y: r.y + l1 * Math.sin(phi) };
     expect(l).toBeGreaterThan(0);
-    expect(dragged(rig, run, drag, 5, { x: knee.x - k.x, y: knee.y - k.y }).after).toBeNull();
+    const out = dragged(rig, run, drag, 5, { x: knee.x - k.x, y: knee.y - k.y });
+    expect(out.flip).toBe(true);
+    const k1 = origin(out.after!, shin);
+    expect(Math.hypot(k1.x - knee.x, k1.y - knee.y)).toBeLessThan(1e-2);
+    expect(Math.abs(angle(out.after!, shin) - angle(start, shin))).toBeLessThan(1e-4);
+    // Short of the line it does not flip.
+    expect(dragged(rig, run, drag, 5, { x: 2, y: -2 }).flip).toBe(false);
   });
 
   it("a look-at chain points at the pointer", () => {
@@ -110,5 +118,36 @@ describe("dragging an IK chain's path keys its target", () => {
     const off: SymbolItem = { ...rig, ik: rig.ik.map((k) => (k.id === legIk().id ? { ...k, weight: 0 } : k)) };
     expect(ikPathDrag(off, s.node("leg_near_shin"), "tip")).toBeNull();
     expect("mode" in pathDragMode(off, run, s.node("leg_near_shin"), "tip", false)).toBe(true);
+  });
+});
+
+describe("a knee drag's bend flip in the history", () => {
+  it("flipped, then pulled back: one undo step, and the bend keys as they were", async () => {
+    const { project, rig } = await loadStickman();
+    const anim = rig.animations[0]!;
+    const k = rig.ik[0]!;
+    const history = new History(project);
+    const base = { ...anim };
+    const step = (flip: boolean, x: number) => {
+      const target = base.tracks[k.targetId]!;
+      const tracks = new Map([[k.targetId, { ...target, keys: target.keys.map((key, i) => (i ? key : { ...key, transform: { ...key.transform, x } })) }]]);
+      const keys = (flip ? withBendFlippedAt(base, k, 3) : base).ik?.[k.id] ?? [];
+      return new EditTracksAndIk("Drag Path (IK)", new EditTracks("Drag Path (IK)", rig.id, anim.id, tracks, "path.drag"),
+        new SetIkKeys("Drag Path (IK)", rig.id, anim.id, k.id, keys, "path.drag"), "path.drag");
+    };
+    const x0 = base.tracks[k.targetId]!.keys[0]!.transform.x;
+    history.beginInteraction("path.drag");
+    history.apply(step(true, x0 + 5));
+    const now = () => (project.items[rig.id] as SymbolItem).animations[0]!;
+    expect(now().ik?.[k.id]).toEqual([{ frame: 3, mix: k.weight, bendPositive: !k.bendPositive }]);
+    history.apply(step(false, x0 + 9));
+    history.endInteraction();
+    expect(now().ik).toBeUndefined();
+    expect(history.position).toBe(1);
+    history.apply(step(true, x0 + 1));
+    history.undo();
+    expect(now().ik).toBeUndefined();
+    history.undo();
+    expect(now().tracks[k.targetId]!.keys[0]!.transform.x).toBe(x0);
   });
 });

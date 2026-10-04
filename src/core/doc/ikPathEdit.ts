@@ -4,7 +4,7 @@ import { DRAWN_BONE_LENGTH, type PathPointKind } from "./bonePath";
 import { createKeyframe } from "./defaults";
 import type { IkId, NodeId } from "./ids";
 import { ikChain } from "./ikGraph";
-import { ikPoseAt } from "./ikKeys";
+import { ikPoseAt, withIkKey } from "./ikKeys";
 import { withTransform } from "./keyed";
 import type { Pose } from "./pose";
 import { insertKeyframe, keyIndexAt } from "./timeline";
@@ -17,7 +17,8 @@ import type { Animation, IkConstraint, SymbolItem, Track } from "./types";
  *
  * - `tip`: the effector's tip of a two-bone chain;
  * - `joint`: the knee (the root's tip or the effector's origin): it turns
- *   about the root's origin and the effector keeps its world angle;
+ *   about the root's origin and the effector keeps its world angle; pulled
+ *   across the leg it keys the bend flipped at that frame;
  * - `aim`: a one-bone chain's tip: the target goes on the ray from the bone
  *   through the pointer, at its own distance.
  */
@@ -114,6 +115,17 @@ export function withTargetAt(anim: Animation, sym: SymbolItem, targetId: NodeId,
   return { ...anim, tracks: { ...anim.tracks, [targetId]: track } };
 }
 
+/** `anim` with the constraint's bend keyed flipped at `frame`, the mix kept:
+ *  a knee dragged across the leg. */
+export function withBendFlippedAt(anim: Animation, k: IkConstraint, frame: number): Animation {
+  const now = ikPoseAt(k, anim, frame);
+  const keys = withIkKey(anim.ik?.[k.id] ?? [], frame, { mix: now.mix, bendPositive: !now.bendPositive });
+  return { ...anim, ik: { ...anim.ik, [k.id]: keys } };
+}
+
+/** Where the target goes, and whether the bend flips there. */
+export interface IkTargetFit { target: Point; flip: boolean }
+
 /** Within this many pixels the solved tip counts as on the pointer. */
 const REACHED = 1e-3;
 
@@ -121,14 +133,14 @@ const REACHED = 1e-3;
  * Where to put the target (world) so the dot dragged by `drag` follows the
  * pointer: the pointer is `dot` (where the dot was at the press) moved by
  * `delta`. `start` is the frame's pose at the press; `poseWith` poses the
- * frame with the target at a world point. Null when nothing fits: a knee
- * pulled across the line from the root to the tip, which would make the
- * solver bend the other way.
+ * frame with the target at a world point, the bend flipped when asked. A
+ * knee pulled across the leg (the turn at the knee changing sign) flips the
+ * bend, since the solver only bends the way the constraint says.
  */
 export function ikTargetFor(
   sym: SymbolItem, drag: IkPathDrag, start: Pose, delta: Point,
-  poseWith: (targetWorld: Point) => Pose,
-): Point | null {
+  poseWith: (targetWorld: Point, flip: boolean) => Pose,
+): IkTargetFit | null {
   const k: IkConstraint | undefined = sym.ik.find((c) => c.id === drag.ik);
   if (!k) return null;
   const chain = ikChain(sym, k);
@@ -143,10 +155,11 @@ export function ikTargetFor(
     const o = originOf(effector.world);
     const goal = add(tip0, delta);
     const d = len(sub(target0, o));
-    return along(o, goal, d > 1e-6 ? d : length);
+    return { target: along(o, goal, d > 1e-6 ? d : length), flip: false };
   }
 
   let goal = add(tip0, delta);
+  let flip = false;
   if (drag.role === "joint") {
     const root = start.byNode.get(chain[0]!);
     if (!root) return null;
@@ -154,10 +167,8 @@ export function ikTargetFor(
     const shin = sub(tip0, j);
     const knee = along(r, add(j, delta), len(sub(j, r)));
     goal = add(knee, shin);
-    // The solver bends the chain the way the constraint says; a knee on the
-    // other side of root→tip is a pose it never makes.
     const was = cross(sub(j, r), shin), now = cross(sub(knee, r), shin);
-    if (Math.abs(was) > 1e-9 && Math.sign(was) !== Math.sign(now)) return null;
+    flip = Math.abs(was) > 1e-9 && Math.abs(now) > 1e-9 && Math.sign(was) !== Math.sign(now);
   }
 
   // The solved tip is a smooth function of the target: move the target by
@@ -167,13 +178,13 @@ export function ikTargetFor(
   let t = add(target0, sub(goal, tip0));
   let best: { t: Point; err: number } | null = null;
   for (let i = 0; i < 12; i++) {
-    const e = poseWith(t).byNode.get(k.boneId);
+    const e = poseWith(t, flip).byNode.get(k.boneId);
     if (!e) return null;
     const miss = sub(goal, tipOf(e.world, length));
     const err = len(miss);
     if (!best || err < best.err) best = { t, err };
-    if (err < REACHED) return t;
+    if (err < REACHED) return { target: t, flip };
     t = add(t, miss);
   }
-  return best && best.err < 0.5 ? best.t : goal;
+  return { target: best && best.err < 0.5 ? best.t : goal, flip };
 }

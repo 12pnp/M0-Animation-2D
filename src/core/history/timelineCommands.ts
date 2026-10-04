@@ -1,4 +1,4 @@
-import type { Command, TouchSet } from "./Command";
+import { type Command, mergeTouches, type TouchSet } from "./Command";
 import type { Animation, AnimationReference, DrawOrderKey, IkKey, Keyframe, Project, SymbolItem, Track } from "@/core/doc/types";
 import { isSymbol } from "@/core/doc/types";
 import type { AnimId, IkId, ItemId, NodeId } from "@/core/doc/ids";
@@ -522,5 +522,34 @@ export class SetIkKeys implements Command {
     if (next.symbolId !== this.symbolId || next.animId !== this.animId || next.ikId !== this.ikId) return false;
     this.after = next.after;
     return true;
+  }
+}
+
+/** Tracks and one IK constraint's keys in one step, merging as a pair: a
+ *  path drag that keys the target and may flip the bend
+ *  (`core/doc/ikPathEdit.ts`). Both parts share `kind`. */
+export class EditTracksAndIk implements Command {
+  constructor(
+    readonly label: string,
+    private readonly tracks: EditTracks,
+    private readonly ik: SetIkKeys,
+    readonly kind: string,
+  ) {}
+
+  get touches(): TouchSet { return mergeTouches(this.tracks.touches, this.ik.touches); }
+
+  apply(p: Project): void {
+    this.tracks.apply(p);
+    this.ik.apply(p);
+  }
+
+  revert(p: Project): void {
+    this.ik.revert(p);
+    this.tracks.revert(p);
+  }
+
+  mergeWith(next: Command): boolean {
+    if (!(next instanceof EditTracksAndIk) || next.kind !== this.kind) return false;
+    return this.tracks.mergeWith(next.tracks) && this.ik.mergeWith(next.ik);
   }
 }

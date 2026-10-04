@@ -138,4 +138,5 @@ That needs:
 - a parity case.
 
 It is a feature of its own, on the model of Draw order keys (DRAW-ORDER-PLAN.md).
-Until then, a knee pulled across the line stays on its side.
+Done since: IK keys (ARCHITECTURE ▸ IK keys), and a knee pulled across the line keys the
+bend flipped at that frame.

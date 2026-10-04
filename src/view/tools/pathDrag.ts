@@ -1,6 +1,6 @@
 import type { ToolContext } from "./Tool";
 import type { NodeId } from "@/core/doc/ids";
-import type { Track } from "@/core/doc/types";
+import type { Animation, IkConstraint, Track } from "@/core/doc/types";
 import { DRAWN_BONE_LENGTH, pathBoneIds } from "@/core/doc/bonePath";
 import { seamFrame } from "@/core/doc/cycle";
 import {
@@ -10,10 +10,10 @@ import {
 import { apply, invert, mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { handleAt, type PathHandle, type Spline, splineAt, splineSegments, withSpline } from "@/core/doc/pathSpline";
 import { quantize, type Transform } from "@/core/math/Transform";
-import { type IkPathDrag, ikTargetFor, targetLocalAt, withTargetAt } from "@/core/doc/ikPathEdit";
+import { type IkPathDrag, ikTargetFor, targetLocalAt, withBendFlippedAt, withTargetAt } from "@/core/doc/ikPathEdit";
 import type { Pose } from "@/core/doc/pose";
 import { posedSymbol } from "@/core/spine/spinePose";
-import { EditTracks } from "@/core/history/timelineCommands";
+import { EditTracks, EditTracksAndIk, SetIkKeys } from "@/core/history/timelineCommands";
 
 /**
  * While a dot is held: the frame whose parent pose its path was drawn in. A
@@ -52,9 +52,10 @@ interface Moving {
 export class PathDrag {
   private dragging = false;
   private mode: PathDragMode | "throughTarget" | null = null;
-  /** Through the IK target: the constraint, the frame's pose at the press,
-   *  and the last target that fitted (a knee pulled across stops there). */
-  private ik: { drag: IkPathDrag; start: Pose; last: Transform } | null = null;
+  /** Through the IK target: the constraint, the frame's pose and the
+   *  animation at the press, the last target that fitted, and whether the
+   *  bend is flipped (a knee pulled across the leg). */
+  private ik: { drag: IkPathDrag; k: IkConstraint; start: Pose; base: Animation; last: Transform; flip: boolean } | null = null;
   private refused: string | null = null;
   private moving: Moving[] = [];
   private last: Point;
@@ -96,7 +97,9 @@ export class PathDrag {
       const target = pose.byNode.get(k.targetId);
       const tparent = target?.node.parentId ? pose.byNode.get(target.node.parentId)?.world : undefined;
       if (!target) { this.mode = null; return; }
-      this.ik = { drag: rule.ik, start: pose, last: target.local };
+      // A copy: the drag's own steps write into the live animation.
+      const base: Animation = { ...anim, tracks: { ...anim.tracks }, ...(anim.ik ? { ik: { ...anim.ik } } : {}) };
+      this.ik = { drag: rule.ik, k, start: pose, base, last: target.local, flip: false };
       this.moving.push({ id: k.targetId, frame: { local: target.local, world: target.world, parentWorld: tparent ?? mat(), length: 0 }, base: anim.tracks[k.targetId] });
     }
     const frameOf = (nid: NodeId, length: number): DragFrame | null => {
@@ -164,14 +167,15 @@ export class PathDrag {
     if (this.ik) {
       const ik = this.ik;
       const store = this.ctx.store;
-      const sym = store.currentSymbol, anim = store.currentAnimation!;
+      const sym = store.currentSymbol;
       const delta = { x: this.last.x - this.pressed.x, y: this.last.y - this.pressed.y };
-      const world = ikTargetFor(sym, ik.drag, ik.start, delta, (w) => {
+      const fit = ikTargetFor(sym, ik.drag, ik.start, delta, (w, flip) => {
         const local = targetLocalAt(ik.start, own.id, w) ?? ik.last;
+        const anim = flip ? withBendFlippedAt(ik.base, ik.k, this.frame) : ik.base;
         return posedSymbol(store.project, sym, withTargetAt(anim, sym, own.id, this.frame, local), this.frame, "animate");
       });
-      const local = world ? targetLocalAt(ik.start, own.id, world) : null;
-      if (local) ik.last = local;
+      const local = fit ? targetLocalAt(ik.start, own.id, fit.target) : null;
+      if (fit && local) { ik.last = local; ik.flip = fit.flip; }
       out.set(own.id, ik.last);
       return out;
     }
@@ -218,7 +222,15 @@ export class PathDrag {
       tracks.set(id, final && added.length ? withoutRedundantKeys(track, added) : track);
     }
     if (!tracks.size) return;
-    store.apply(new EditTracks(this.ik ? "Drag Path (IK)" : "Drag Path", store.currentSymbolId, anim.id, tracks, "path.drag"));
+    const label = this.ik ? "Drag Path (IK)" : "Drag Path";
+    const edit = new EditTracks(label, store.currentSymbolId, anim.id, tracks, "path.drag");
+    // The knee: every step also writes the bend keys, flipped at the frame
+    // or as they were, so the steps merge and pulling back unflips it.
+    if (this.ik?.drag.role === "joint") {
+      const { k, base, flip } = this.ik;
+      const keys = (flip ? withBendFlippedAt(base, k, this.frame) : base).ik?.[k.id] ?? [];
+      store.apply(new EditTracksAndIk(label, edit, new SetIkKeys(label, store.currentSymbolId, anim.id, k.id, keys, "path.drag"), "path.drag"));
+    } else store.apply(edit);
     store.emit("timeline");
     store.emit("stage");
   }

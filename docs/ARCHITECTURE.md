@@ -522,8 +522,8 @@ The pure rules are in `core/doc/ikKeys.ts`: `ikPoseAt`, `withIkKey`, `moveIkKeys
   Mix keys the mix (a scrub is one undo step), and Key keys both as they are. The section
   shows the values at the playhead. Setup still edits the constraint's own weight and bend.
 - A path drag through the target (Bone paths) treats a constraint whose keyed mix is 0 at
-  that frame like weight 0: the bone's own rules apply. The knee still cannot be dragged
-  across: flip the bend with a key instead.
+  that frame like weight 0: the bone's own rules apply. Dragging the knee across the leg
+  keys the bend flipped at that frame, holding until the next IK key, as Spine's bend does.
 - The AI's `key_ik` keys a constraint's mix, bend and ease at a frame, or deletes a key.
   `get_animation` lists the keys under `ik`.
 
@@ -1852,8 +1852,12 @@ step, "Drag Path", built from the tracks as they were at pointer-down):
   real pose, so a partial weight or an opened Spine rig lands too); out of reach the target
   goes on the pointer and the chain points at it. The knee (the root's tip or the
   effector's origin): it turns about the root's origin toward the pointer, the effector
-  keeps its world angle, and the target goes where that puts the tip; a knee pulled across
-  root→tip stops, since the solver bends one way only (`bendPositive` is not keyed). A
+  keeps its world angle, and the target goes where that puts the tip. A knee pulled across
+  the leg (the turn at the knee changing sign) keys the bend flipped at that frame
+  (`withBendFlippedAt`, IK keys), since the solver bends only the way the bend says; pulled
+  back, the step writes the bend keys as they were. Target and bend go in one command
+  (`EditTracksAndIk`), so the steps merge into one undo. The drag copies the animation at
+  the press: its own steps write into the live one, and flipping that again unflipped it. A
   look-at chain: the target goes on the ray from the bone through the pointer, at its
   distance. The root's origin is refused (the IK only turns it), as are a locked or hidden
   target and a target inside its chain; weight 0 is the plain rules. Such a bone shows no
