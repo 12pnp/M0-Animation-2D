@@ -63,6 +63,13 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.menubar .menu-gear {
+  flex: none;
+  width: calc(22px * var(--ui-scale)); height: calc(20px * var(--ui-scale));
+  display: grid; place-items: center;
+  color: var(--fg-dim);
+}
+.menubar .menu-gear:hover { color: var(--fg-strong); }
 
 /* ── Tool rail (left) ───────────────────────────────────────────────────── */
 .tools {

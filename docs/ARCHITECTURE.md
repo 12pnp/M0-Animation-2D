@@ -1806,6 +1806,12 @@ the other dock is stored in that dock's layout, so `Shell.addRightPanel`/`addBot
 register a panel wherever a stored layout places it (`Dock.stores`), and `Shell` asks the
 docks which one holds a panel rather than keeping its own map.
 
+A **workspace** (Window ▸ Workspace / Save Workspace… / Delete Workspace) is both docks'
+layouts plus the shell's region sizes, stored per browser under `animo.workspaces`
+(`app/Workspaces.ts`; the list rules are pure in `view/widgets/workspaces.ts`). Loading one is
+live — `Shell.applyWorkspace` → `Dock.applyLayouts`, which also moves panels between docks — not
+a reload, which would put unsaved work through the restore banner. Reset Layout still reloads.
+
 Floating is deliberately *not* `window.open`. In an embedded browser pane a same-origin
 `window.open` can navigate the current tab rather than opening a popup, losing the editor and
 any unsaved work — a blocked popup returns null, but that one does not. Never open a same-origin

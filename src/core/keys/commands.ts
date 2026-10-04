@@ -156,6 +156,7 @@ export const COMMANDS: CommandDef[] = [
   ...PANEL_COMMANDS.map((p) => c("Window", `window.${p.id}`, p.label)),
   ...PANEL_COMMANDS.filter((p) => p.id !== "timeline")
     .map((p) => c("Window", `window.float.${p.id}`, `Float / Dock ${p.label}`)),
+  c("Window", "window.saveWorkspace", "Save Workspace…"),
   c("Window", "window.resetLayout", "Reset Layout"),
 
   c("AI", "ai.connect", "Connect to AI"),

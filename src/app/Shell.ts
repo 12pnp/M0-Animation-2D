@@ -1,6 +1,7 @@
 import { clear, cls, drag, h, on } from "@/view/widgets/dom";
 import { icon, type IconName } from "@/view/icons";
 import { Dock, type MenuEntry, type Panel, showMenu } from "@/view/widgets/Dock";
+import type { ShellSizes, Workspace } from "@/view/widgets/workspaces";
 import { onAccelChange, withAccel } from "@/view/widgets/accel";
 import { APP_NAME } from "@/core/about";
 // The glyph alone, no rounded-square background: the menu bar already is a
@@ -109,6 +110,9 @@ export class Shell {
   /** What the brand in the menu bar does. Set by `App`, which owns the About
    *  dialog: the shell knows the layout, not what is in it. */
   onBrand: (() => void) | null = null;
+  /** What the gear at the right of the menu bar opens. Set by `App`. */
+  onSettings: (() => void) | null = null;
+  private gearEl: HTMLElement;
 
   constructor(private readonly store: Store) {
     this.rightDock = new Dock("animo.dock.right", "vertical");
@@ -118,6 +122,7 @@ export class Shell {
     this.docNameEl = h("span", { class: "docname" });
     this.crumbEl = h("div", { class: "crumb" });
     this.docTabEl = this.buildDocTab();
+    this.gearEl = this.buildGear();
     this.syncDocName();
     this.stageHost = h("div", { class: "stage-host", tabIndex: 0 });
     this.rightRail = h("div", { class: "rail-right" });
@@ -180,7 +185,17 @@ export class Shell {
       });
       this.menubarEl.appendChild(btn);
     }
-    this.menubarEl.appendChild(this.docTabEl);
+    this.menubarEl.append(this.docTabEl, this.gearEl);
+  }
+
+  private buildGear(): HTMLElement {
+    const btn = h("button", { class: "menu-gear iconbtn" });
+    btn.appendChild(icon("settings", 14));
+    const title = () => { btn.title = withAccel("Preferences", "edit.preferences"); };
+    title();
+    onAccelChange(title);
+    on(btn, "click", () => this.onSettings?.());
+    return btn;
   }
 
   private syncMenus(): void { /* enabled/checked are read lazily on open */ }
@@ -592,17 +607,19 @@ export class Shell {
     return sp;
   }
 
-  private saveSizes(): void {
+  private sizes(): ShellSizes {
     if (this.aiOpen && this.aiWrap.offsetWidth) this.aiWidth = this.aiWrap.offsetWidth;
-    try {
-      localStorage.setItem("animo.sizes", JSON.stringify({
-        right: this.rightWrap.offsetWidth,
-        bottom: this.bottomWrap.offsetHeight,
-        rightHidden: this.rightWrap.classList.contains("collapsed"),
-        ai: this.aiWidth,
-        aiOpen: this.aiOpen,
-      }));
-    } catch { /* private mode */ }
+    return {
+      right: this.rightWrap.offsetWidth,
+      bottom: this.bottomWrap.offsetHeight,
+      rightHidden: this.rightWrap.classList.contains("collapsed"),
+      ai: this.aiWidth,
+      aiOpen: this.aiOpen,
+    };
+  }
+
+  private saveSizes(): void {
+    try { localStorage.setItem("animo.sizes", JSON.stringify(this.sizes())); } catch { /* private mode */ }
   }
 
   private restoreSizes(): void {
@@ -610,13 +627,34 @@ export class Shell {
     try {
       const raw = localStorage.getItem("animo.sizes");
       if (!raw) return;
-      const s = JSON.parse(raw) as { right?: number; bottom?: number; rightHidden?: boolean; ai?: number; aiOpen?: boolean };
+      const s = JSON.parse(raw) as ShellSizes;
       if (s.ai) { this.aiWidth = s.ai; this.aiWrap.style.width = `${s.ai}px`; }
       if (s.aiOpen) { this.aiWrap.classList.remove("collapsed"); this.el.classList.add("ai-open"); }
       if (s.right) this.rightWrap.style.width = `${s.right}px`;
       if (s.bottom) this.bottomWrap.style.height = `${s.bottom}px`;
       if (s.rightHidden) this.rightWrap.classList.add("collapsed");
     } catch { /* ignore */ }
+  }
+
+  // ── Workspaces ─────────────────────────────────────────────────────────
+
+  /** The current arrangement of both docks and the regions around the stage. */
+  workspace(): Workspace {
+    return { right: this.rightDock.snapshot(), bottom: this.bottomDock.snapshot(), sizes: this.sizes() };
+  }
+
+  /** Arrange the window as `ws` was saved. Live, without a reload: a reload
+   *  would put unsaved work through the restore banner. */
+  applyWorkspace(ws: Workspace): void {
+    Dock.applyLayouts([[this.rightDock, ws.right], [this.bottomDock, ws.bottom]]);
+    const s = ws.sizes;
+    if (s.ai) { this.aiWidth = s.ai; this.aiWrap.style.width = `${s.ai}px`; }
+    if (s.right) this.rightWrap.style.width = `${s.right}px`;
+    if (s.bottom) this.bottomWrap.style.height = `${s.bottom}px`;
+    this.rightWrap.classList.toggle("collapsed", !!s.rightHidden);
+    this.syncRailToggle();
+    // setAiOpen saves the sizes and tells the stage to re-measure.
+    this.setAiOpen(!!s.aiOpen);
   }
 
   resetLayout(): void {

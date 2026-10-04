@@ -66,6 +66,36 @@ export class Dock {
     this.panels.set(panel.id, panel);
   }
 
+  /** A copy of the current arrangement, for a workspace. */
+  snapshot(): DockLayout {
+    return structuredClone(this.layout);
+  }
+
+  /**
+   * Arrange every dock at once, as a workspace saved them. A panel goes to the
+   * dock whose layout places it, so one dragged across docks follows; a panel
+   * no layout mentions (new since the save) stays where it is.
+   */
+  static applyLayouts(entries: Array<[Dock, DockLayout]>): void {
+    const all = new Map<string, Panel>();
+    for (const [d] of entries) for (const [id, p] of d.panels) all.set(id, p);
+    for (const [id, panel] of all) {
+      const home = entries.find(([, l]) => placesPanel(l, id))?.[0];
+      if (!home || home.panels.has(id)) continue;
+      for (const [d] of entries) d.panels.delete(id);
+      home.panels.set(id, panel);
+    }
+    for (const [d, l] of entries) {
+      d.layout = structuredClone(l);
+      d.layout.floats ??= {};
+      d.layout.closed ??= [];
+      d.layout.closedNear ??= {};
+      d.prune();
+      d.save();
+    }
+    for (const [d] of entries) d.render();
+  }
+
   /** Did the stored layout place this panel here? A tab dragged across docks
    *  is stored in its new dock, and has to be registered there on reload. */
   stores(panelId: string): boolean {

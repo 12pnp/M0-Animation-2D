@@ -84,6 +84,8 @@ import { cloneTf, type Transform } from "@/core/math/Transform";
 import { applyVec, mat } from "@/core/math/Matrix2D";
 import { moveBy, snapshotOf, topmostSelected } from "@/view/tools/transformOps";
 import { alertDialog, confirmDialog, promptText } from "@/view/widgets/dialogs";
+import { workspaceNameError } from "@/view/widgets/workspaces";
+import { Workspaces } from "./Workspaces";
 import { AtlasTooSmall, oversizeAdvice } from "@/core/atlas/oversize";
 import { busy } from "@/view/widgets/Busy";
 import { phase } from "./busy";
@@ -100,6 +102,7 @@ export class App {
   readonly timeline: TimelinePanel;
   readonly project: ProjectService;
   private toast = new Toast();
+  private workspaces: Workspaces;
   /** The AI's way in: `AgentApi` over the Store, reached through the local
    *  bridge (AI ▸ Connect to AI). */
   readonly agent: AgentApi;
@@ -119,6 +122,8 @@ export class App {
     this.keymap = new Keymap(this.store);
     this.shell = new Shell(this.store);
     this.shell.onBrand = () => openAbout();
+    this.shell.onSettings = () => this.openPreferences();
+    this.workspaces = new Workspaces(this.shell);
     root.appendChild(this.shell.el);
 
     this.viewport = new Viewport(this.shell.stageHost, this.store, this.assets);
@@ -1210,6 +1215,15 @@ export class App {
             label: this.shell.isPanelFloating(id) ? `Dock ${label}` : `Float ${label}`,
           })),
           "-",
+          { label: "Workspace", items: this.workspaceItems() },
+          it("window.saveWorkspace"),
+          {
+            label: "Delete Workspace",
+            enabled: () => this.workspaces.list().length > 0,
+            items: this.workspaces.list().map((w) => ({
+              label: w.name, run: () => void this.deleteWorkspace(w.name),
+            })),
+          },
           it("window.resetLayout"),
         ],
       },
@@ -1228,6 +1242,48 @@ export class App {
         ],
       },
     ];
+  }
+
+  /** Window ▸ Workspace: the saved arrangements, the current one ticked. */
+  private workspaceItems(): MenuItemDef[] {
+    const list = this.workspaces.list();
+    if (list.length === 0) return [{ label: "No saved workspaces", enabled: () => false }];
+    const current = this.workspaces.current;
+    return list.map((w) => ({
+      label: w.name,
+      checked: () => w.name === current,
+      run: () => {
+        if (this.workspaces.load(w.name)) this.toast.show(`Workspace “${w.name}”`);
+      },
+    }));
+  }
+
+  private async saveWorkspace(): Promise<void> {
+    const name = await promptText({
+      title: "Save Workspace",
+      label: "Name",
+      value: this.workspaces.current ?? "",
+      ok: "Save",
+      validate: workspaceNameError,
+    });
+    if (name === null) return;
+    if (this.workspaces.has(name) && !await confirmDialog({
+      title: "Replace Workspace",
+      message: `A workspace named “${name}” already exists. Replace it with the current layout?`,
+      ok: "Replace",
+    })) return;
+    this.workspaces.save(name);
+    this.toast.show(`Workspace “${name}” saved`);
+  }
+
+  private async deleteWorkspace(name: string): Promise<void> {
+    if (!await confirmDialog({
+      title: "Delete Workspace",
+      message: `Delete the workspace “${name}”? The current layout stays as it is.`,
+      ok: "Delete",
+      danger: true,
+    })) return;
+    this.workspaces.remove(name);
   }
 
   /** A menu row for a registered command: label, key, state and action all
@@ -1466,7 +1522,8 @@ export class App {
       reg(`window.${id}`, () => this.shell.togglePanel(id), undefined, () => this.shell.isPanelOpen(id));
       if (id !== "timeline") reg(`window.float.${id}`, () => this.shell.floatPanel(id));
     }
-    reg("window.resetLayout", () => this.shell.resetLayout());
+    reg("window.saveWorkspace", () => void this.saveWorkspace());
+    reg("window.resetLayout", () => { this.workspaces.clearCurrent(); this.shell.resetLayout(); });
 
     reg("help.shortcuts", () => this.openShortcuts());
   }
