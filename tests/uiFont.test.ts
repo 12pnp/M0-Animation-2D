@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  UI_FONT_FAMILIES, UI_FONT_SIZES, UI_FONT_SCALES, fontStack, setUiFontFamily, uiFont, uiFontStack, uiPx,
+  UI_FONT_FAMILIES, UI_FONT_SIZES, UI_FONT_SCALES, cleanFontName, fontStack, setUiFontFamily, uiFont, uiFontStack, uiPx,
 } from "@/core/prefs/fonts";
 import { DEFAULT_PREFS, mergePrefs } from "@/core/prefs/prefs";
 
@@ -43,15 +43,25 @@ describe("Interface ▸ Text ▸ Font", () => {
   });
 
   it("the canvases draw with the chosen family", () => {
-    setUiFontFamily("classic");
-    expect(uiFont(9, "small")).toBe(`9px ${fontStack("classic")}`);
-    expect(uiFontStack()).toBe(fontStack("classic"));
+    setUiFontFamily("inter");
+    expect(uiFont(9, "small")).toBe(`9px ${fontStack("inter")}`);
+    expect(uiFontStack()).toBe(fontStack("inter"));
     setUiFontFamily("jetbrains");
     expect(uiFont(9, "small")).toBe(`9px ${fontStack("jetbrains")}`);
   });
 
+  it("Custom puts the typed font first, cleaned so it cannot break the CSS", () => {
+    expect(fontStack("custom", "Avenir Next")).toBe(`'Avenir Next', ${fontStack("system")}`);
+    expect(fontStack("custom", "Evil'; } body { x")).toMatch(/^'Evil body x', /);
+    expect(cleanFontName("  Noto  Sans  Thai ")).toBe("Noto Sans Thai");
+    // Nothing typed yet: the system font.
+    expect(fontStack("custom", "  ")).toBe(fontStack("system"));
+  });
+
   it("a stored family is kept, an unknown one falls back to the default", () => {
-    expect(mergePrefs({ interface: { fontFamily: "system" } }).interface.fontFamily).toBe("system");
+    expect(mergePrefs({ interface: { fontFamily: "inter" } }).interface.fontFamily).toBe("inter");
+    // Choices that were dropped, or never existed.
+    expect(mergePrefs({ interface: { fontFamily: "classic" } }).interface.fontFamily).toBe("jetbrains");
     expect(mergePrefs({ interface: { fontFamily: "Comic Sans" } }).interface.fontFamily).toBe("jetbrains");
   });
 });

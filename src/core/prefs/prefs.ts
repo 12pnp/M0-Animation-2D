@@ -50,6 +50,8 @@ export interface InterfacePrefs {
   warn: string;
   fontSize: UiFontSize;
   fontFamily: UiFontFamily;
+  /** The installed font typed in for Font ▸ Custom. */
+  fontCustom: string;
 }
 
 export interface StagePrefs {
@@ -201,6 +203,7 @@ export const DEFAULT_PREFS: Prefs = {
     warn: "#d89a2e",
     fontSize: "small",
     fontFamily: "jetbrains",
+    fontCustom: "",
   },
   stage: {
     showGrid: true,

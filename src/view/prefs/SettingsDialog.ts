@@ -2,7 +2,7 @@ import type { Store, ViewFlag } from "@/app/Store";
 import { PREF_LIMITS, type PrefsCategory } from "@/core/prefs/prefs";
 import { shade } from "@/core/prefs/color";
 import { THEMES } from "@/core/prefs/themes";
-import { UI_FONT_FAMILIES } from "@/core/prefs/fonts";
+import { type UiFontFamily, UI_FONT_FAMILIES, fontStack } from "@/core/prefs/fonts";
 import { Modal } from "@/view/widgets/Modal";
 import { NumberField } from "@/view/widgets/NumberField";
 import { clear, h, on } from "@/view/widgets/dom";
@@ -32,6 +32,8 @@ type Row =
   | { kind: "select"; cat: PrefsCategory; key: string; label: string;
       options: Array<{ value: string; text: string }> }
   | { kind: "note"; text: string }
+  /** A row with its own layout. */
+  | { kind: "custom"; render(store: Store): HTMLElement }
   | { kind: "button"; label: string; text: string;
       /** `again` redraws the pane: a button that writes other rows' values
        *  leaves their fields showing what they were built with otherwise. */
@@ -124,10 +126,7 @@ const CATEGORIES: Category[] = [
       },
       {
         title: "Text", rows: [
-          {
-            kind: "select", cat: "interface", key: "fontFamily", label: "Font",
-            options: UI_FONT_FAMILIES.map((f) => ({ value: f.id, text: f.label })),
-          },
+          { kind: "custom", render: fontRow },
           {
             kind: "select", cat: "interface", key: "fontSize", label: "Font size",
             options: [
@@ -361,6 +360,7 @@ export function openSettings(store: Store, hooks: Hooks, initial?: SettingsPage)
 
 function renderRow(store: Store, hooks: Hooks, row: Row, again: () => void): HTMLElement {
   if (row.kind === "note") return h("div", { class: "pnote" }, row.text);
+  if (row.kind === "custom") return row.render(store);
 
   if (row.kind === "button") {
     const b = h("button", { class: "btn" }, row.text);
@@ -417,4 +417,31 @@ function renderRow(store: Store, hooks: Hooks, row: Row, again: () => void): HTM
   return h("div", { class: "prow" },
     h("label", null, row.label),
     h("div", { class: "fields" }, nf.el));
+}
+
+/**
+ * Interface ▸ Text ▸ Font: the choice, a name box for Custom, and a line of
+ * sample text in the font itself, so the difference shows before OK.
+ */
+function fontRow(store: Store): HTMLElement {
+  const prefs = store.prefs;
+  const sel = h("select", { class: "preview-anim" },
+    ...UI_FONT_FAMILIES.map((f) => h("option", { value: f.id }, f.label))) as HTMLSelectElement;
+  const name = h("input", {
+    type: "text", class: "set-font-name", placeholder: "Font name, e.g. Avenir", spellcheck: false,
+  }) as HTMLInputElement;
+  const sample = h("div", { class: "set-font-sample" }, "Timeline · Library · 0123456789 · The quick brown fox");
+  const sync = () => {
+    const { fontFamily, fontCustom } = prefs.value.interface;
+    sel.value = fontFamily;
+    if (document.activeElement !== name) name.value = fontCustom;
+    name.hidden = fontFamily !== "custom";
+    sample.style.fontFamily = fontStack(fontFamily, fontCustom);
+  };
+  on(sel, "change", () => { prefs.set("interface", { fontFamily: sel.value as UiFontFamily }); sync(); });
+  on(name, "input", () => { prefs.set("interface", { fontCustom: name.value }); sync(); });
+  sync();
+  return h("div", { class: "prow set-font" },
+    h("label", null, "Font"),
+    h("div", { class: "fields set-font-fields" }, sel, name, sample));
 }

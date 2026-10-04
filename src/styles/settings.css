@@ -582,3 +582,18 @@
 .ai-pics { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
 .ai-pic { height: 72px; max-width: 160px; object-fit: contain; border-radius: 4px; background: #0003; cursor: zoom-in; }
 .ai-note .ai-pics { justify-content: center; }
+
+/* Interface ▸ Text ▸ Font (SettingsDialog fontRow). */
+.set-font-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.set-font-name {
+  width: 160px; height: var(--h-field); padding: 0 6px;
+  background: var(--bg-field); border: 1px solid var(--line); border-radius: var(--radius);
+  color: var(--fg-strong);
+}
+.set-font-name[hidden] { display: none; }
+.set-font-sample {
+  flex-basis: 100%;
+  padding: 6px 8px;
+  border: 1px dashed var(--line); border-radius: var(--radius);
+  color: var(--fg-strong); font-size: 13px;
+}

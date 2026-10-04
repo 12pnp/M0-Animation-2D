@@ -29,24 +29,37 @@ export function uiPx(base: number, size: UiFontSize): number {
 }
 
 /**
- * The typeface of the whole UI, Interface ▸ Text ▸ Font. Only JetBrains Mono
- * is bundled (`@fontsource-variable/jetbrains-mono`, loaded by main.ts); the
- * others are what every system already has, so none needs the network.
+ * The typeface of the whole UI, Interface ▸ Text ▸ Font. Choices that look
+ * clearly different: a monospace and a sans-serif, both bundled
+ * (`@fontsource-variable/*`, loaded by main.ts, so no network), the system's
+ * own, or any font installed on the machine, typed by name.
  */
-export type UiFontFamily = "jetbrains" | "system" | "classic" | "systemMono";
+export type UiFontFamily = "jetbrains" | "inter" | "system" | "custom";
 
 export const UI_FONT_FAMILIES: ReadonlyArray<{ id: UiFontFamily; label: string; stack: string }> = [
   { id: "jetbrains", label: "JetBrains Mono", stack: "'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace" },
+  { id: "inter", label: "Inter", stack: "'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" },
   { id: "system", label: "System", stack: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" },
-  // What the interface used before JetBrains Mono.
-  { id: "classic", label: "Classic (Helvetica)", stack: "'Helvetica Neue', -apple-system, 'Segoe UI', Roboto, sans-serif" },
-  { id: "systemMono", label: "System monospace", stack: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace" },
+  { id: "custom", label: "Custom…", stack: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" },
 ];
 
 export const UI_FONT_FAMILY_IDS: readonly UiFontFamily[] = UI_FONT_FAMILIES.map((f) => f.id);
 
-export function fontStack(id: UiFontFamily): string {
-  return (UI_FONT_FAMILIES.find((f) => f.id === id) ?? UI_FONT_FAMILIES[0]!).stack;
+/**
+ * A font name typed by the user, safe to put in CSS: letters, digits,
+ * spaces, hyphens and underscores only, so a quote or a semicolon cannot
+ * end the declaration.
+ */
+export function cleanFontName(name: string): string {
+  return name.replace(/[^\p{L}\p{N} _-]/gu, "").replace(/\s+/g, " ").trim().slice(0, 64);
+}
+
+/** The CSS stack for a choice. Custom puts the typed font first, then the
+ *  system's, which shows while the name matches nothing installed. */
+export function fontStack(id: UiFontFamily, custom = ""): string {
+  const found = UI_FONT_FAMILIES.find((f) => f.id === id) ?? UI_FONT_FAMILIES[0]!;
+  const name = id === "custom" ? cleanFontName(custom) : "";
+  return name ? `'${name}', ${found.stack}` : found.stack;
 }
 
 /**
@@ -55,7 +68,7 @@ export function fontStack(id: UiFontFamily): string {
  * preferences change and picks it up.
  */
 let currentStack = fontStack("jetbrains");
-export function setUiFontFamily(id: UiFontFamily): void { currentStack = fontStack(id); }
+export function setUiFontFamily(id: UiFontFamily, custom = ""): void { currentStack = fontStack(id, custom); }
 export function uiFontStack(): string { return currentStack; }
 
 /** The `ctx.font` string for a canvas that cannot inherit anything. */

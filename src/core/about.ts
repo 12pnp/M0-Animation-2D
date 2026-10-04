@@ -114,7 +114,13 @@ export const CREDITS: readonly Credit[] = Object.freeze([
     name: "JetBrains Mono",
     license: "OFL-1.1",
     url: "https://github.com/JetBrains/JetBrainsMono",
-    what: "The typeface of the whole interface.",
+    what: "The interface's default typeface.",
+  },
+  {
+    name: "Inter",
+    license: "OFL-1.1",
+    url: "https://github.com/rsms/inter",
+    what: "The interface typeface, when chosen in Preferences.",
   },
   {
     name: "Vite, TypeScript, Vitest",

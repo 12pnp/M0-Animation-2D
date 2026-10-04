@@ -1,4 +1,5 @@
 import "@fontsource-variable/jetbrains-mono";
+import "@fontsource-variable/inter";
 import "@/styles/theme.css";
 import "@/styles/layout.css";
 import "@/styles/panels.css";
@@ -21,6 +22,8 @@ const start = (): void => {
 };
 
 // The timeline and rulers are canvases: what they draw before the font
-// arrives stays in the fallback until something repaints them. The font is
-// bundled, so waiting for it costs a few milliseconds; a failure starts anyway.
-document.fonts.load(`11px ${fontStack("jetbrains")}`).then(start, start);
+// arrives stays in the fallback until something repaints them. Both bundled
+// fonts are local, so waiting for them costs a few milliseconds; a failure
+// starts anyway.
+Promise.all([fontStack("jetbrains"), fontStack("inter")].map((f) => document.fonts.load(`11px ${f}`)))
+  .then(start, start);
