@@ -224,8 +224,9 @@ export class SetCycle implements Command {
     private readonly animId: AnimId,
     private readonly on: boolean,
     private readonly plan: { duration: number; tracks: Track[] } = { duration: 0, tracks: [] },
+    label?: string,
   ) {
-    this.label = on ? "Cycle" : "Play Once";
+    this.label = label ?? (on ? "Cycle" : "Play Once");
     this.touches = { symbols: [symbolId], nodes: plan.tracks.map((t) => t.nodeId), timeline: true, stage: true };
   }
 

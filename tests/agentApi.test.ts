@@ -57,6 +57,7 @@ describe("the AI's tools", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
       "get_reference", "render_frame", "add_bones", "attach", "add_ik", "auto_rig", "list_motions", "apply_motion", "draw_order",
+      "set_cycle", "get_bone_path", "set_bone_path",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -692,5 +693,108 @@ describe("auto_rig through the AI's tools", () => {
     await expect(api.call("auto_rig", { joints: { ...joints, tail: [0, 0] } })).rejects.toThrow(/no joint "tail"/);
     await expect(api.call("auto_rig", { joints, view: "top" })).rejects.toThrow(/view is/);
     expect(store.history.position).toBe(position);
+  });
+});
+
+describe("cycles and bone paths through the AI's tools", () => {
+  type Seam = { lastFrame: number; closes: boolean; gaps?: Array<{ bone: string; pixels?: number }> };
+
+  it("make a cycle in one undo step, and say where the loop does not close", async () => {
+    const { store, api } = await setup();
+    expect(await api.call("get_animation", { animation: "run" })).toMatchObject({ cycle: false });
+    const on = await api.call("set_cycle", { animation: "run", on: true }) as { cycle: boolean; frames: number; seam: Seam };
+    expect(on).toMatchObject({ cycle: true, frames: 17, seam: { lastFrame: 17, closes: true } });
+    expect(store.history.undoLabel).toBe('AI: Cycle "run"');
+
+    await api.call("set_keys", { animation: "run", keys: [{ bone: "foot_near_target", frame: 17, x: 30 }] });
+    const seam = (await api.call("get_animation", { animation: "run" }) as { seam: Seam }).seam;
+    expect(seam.closes).toBe(false);
+    expect(seam.gaps!.map((g) => g.bone)).toContain("foot_near_target");
+
+    const off = await api.call("set_cycle", { animation: "run", on: false }) as { cycle: boolean; seam?: Seam };
+    expect(off.cycle).toBe(false);
+    expect(off.seam).toBeUndefined();
+    await expect(api.call("set_cycle", { animation: "run", on: "yes" })).rejects.toBeInstanceOf(AgentError);
+  });
+
+  it("report the seam with check_preview", async () => {
+    const { store } = await setup();
+    const api = new AgentApi(store, { matricesAt: async () => ({}) });
+    await api.call("set_cycle", { animation: "run", on: true });
+    const out = await api.call("check_preview", { animation: "run", frames: [0] }) as { seam: Seam };
+    expect(out.seam).toMatchObject({ lastFrame: 17, closes: true });
+  });
+
+  it("give a bone's path in get_pose's space, IK included, keys marked", async () => {
+    const { api } = await setup();
+    const path = await api.call("get_bone_path", { animation: "run", bone: "leg_near_shin" }) as {
+      closed: boolean; points: Array<{ frame: number; x: number; y: number; key?: boolean }>;
+    };
+    expect(path.closed).toBe(false);
+    expect(path.points.map((p) => p.frame)).toEqual(Array.from({ length: 17 }, (_, i) => i));
+    // The shin is moved by IK: no keys of its own.
+    expect(path.points.some((p) => p.key)).toBe(false);
+    const target = await api.call("get_bone_path", { animation: "run", bone: "foot_near_target", point: "origin" }) as typeof path;
+    const pose = await api.call("get_pose", { animation: "run", frame: 6, bones: ["foot_near_target"] }) as { bones: Record<string, { x: number; y: number }> };
+    expect(target.points[6]).toMatchObject({ x: pose.bones.foot_near_target!.x, y: pose.bones.foot_near_target!.y, key: true });
+    await expect(api.call("get_bone_path", { animation: "run", bone: "foot_near_target", point: "middle" })).rejects.toBeInstanceOf(AgentError);
+  });
+
+  it("key a path with handles as eases, in one undo step, and the export plays it", async () => {
+    const { store, api } = await setup();
+    await api.call("new_animation", { name: "hop", frames: 20 });
+    const out = await api.call("set_bone_path", {
+      animation: "hop", bone: "hand_near_target",
+      keys: [{ frame: 0, x: 400, y: -300, out: [420, -200] }, { frame: 10, x: 500, y: -300, in: [480, -200] }, { frame: 20, x: 400, y: -300 }],
+    }) as { keys: number; addedKeys?: number[] };
+    // y does not move from 0 to 10, so bending it adds a key at 5.
+    expect(out).toMatchObject({ keys: 3, addedKeys: [5] });
+    expect(store.history.undoLabel).toBe('AI: Path of "hand_near_target"');
+    const keyed = (await api.call("get_animation", { animation: "hop" }) as { bones: Record<string, Array<{ frame: number; y: number; eases?: unknown }>> }).bones.hand_near_target!;
+    expect(keyed.map((k) => k.frame)).toEqual([0, 5, 10, 20]);
+    // On the curve at its middle: a quarter of the way up to the handles' height.
+    expect(keyed[1]!.y).toBeCloseTo(-300 + 0.75 * 100, 6);
+    expect(keyed[0]!.eases).toBeDefined();
+    // The runtime plays what the stage shows.
+    const play = played(store, "hop", 3);
+    const pose = await api.call("get_pose", { animation: "hop", frame: 3, bones: ["hand_near_target"] }) as { bones: Record<string, { x: number; y: number }> };
+    expect(play.world("hand_near_target").worldX).toBeCloseTo(pose.bones.hand_near_target!.x, 1);
+    expect(play.world("hand_near_target").worldY).toBeCloseTo(pose.bones.hand_near_target!.y, 1);
+
+    store.undo();
+    expect((await api.call("get_animation", { animation: "hop" }) as { bones: Record<string, unknown> }).bones.hand_near_target).toBeUndefined();
+  });
+
+  it("refuse a bone the IK moves, a key between two handled keys, and a frame twice", async () => {
+    const { api } = await setup();
+    await expect(api.call("set_bone_path", { animation: "run", bone: "leg_near_shin", keys: [{ frame: 0, x: 0, y: 0 }] }))
+      .rejects.toThrow(/foot_near_target/);
+    await expect(api.call("set_bone_path", { animation: "run", bone: "foot_near_target", keys: [{ frame: 0, x: 0, y: 0, out: [1, 1] }, { frame: 4, x: 9, y: 0 }] }))
+      .rejects.toThrow(/between 0 and 4/);
+    await expect(api.call("set_bone_path", { animation: "run", bone: "foot_near_target", keys: [{ frame: 2, x: 0, y: 0 }, { frame: 2, x: 1, y: 0 }] }))
+      .rejects.toThrow(/same frame/);
+  });
+
+  it("draw named bones' paths in render_frame, framed to hold them", async () => {
+    const { store } = await setup();
+    const renders: Array<Parameters<AgentVision["render"]>[0]> = [];
+    const vision: AgentVision = {
+      image: async () => ({ mimeType: "image/png", data: "" }),
+      render: async (req) => { renders.push(req); return { mimeType: "image/png", data: "RENDER" }; },
+    };
+    const api = new AgentApi(store, undefined, vision);
+    const out = await api.call("render_frame", { animation: "run", frame: 4, paths: ["foot_near_target"] }) as { paths: Record<string, { frames: number; keyedFrames: number[] }> };
+    expect(out.paths.foot_near_target).toMatchObject({ frames: 17, keyedFrames: [0, 2, 4, 6, 8, 10, 12, 14, 16] });
+    const mark = renders[0]!.paths![0]!;
+    expect(mark.points).toHaveLength(17);
+    expect(mark.current).toBe(4);
+    for (const [x, y] of mark.points) {
+      expect(x).toBeGreaterThanOrEqual(0);
+      expect(y).toBeGreaterThanOrEqual(0);
+      expect(x).toBeLessThanOrEqual(renders[0]!.view.width);
+      expect(y).toBeLessThanOrEqual(renders[0]!.view.height);
+    }
+    await expect(api.call("render_frame", { frame: 0, paths: ["hips"] })).rejects.toBeInstanceOf(AgentError);
+    await expect(api.call("render_frame", { animation: "run", paths: ["tail"] })).rejects.toBeInstanceOf(AgentError);
   });
 });

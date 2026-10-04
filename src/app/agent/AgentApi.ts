@@ -10,7 +10,11 @@ import { ikChain, ikRoles } from "@/core/doc/ikGraph";
 import { boneSide, guessRoles, type MotionClip, type RigBone, retarget } from "@/core/rig/motion";
 import MOTIONS from "@/core/rig/motions.json";
 import { insertKeyframe, keyIndexAt, setEndFrame } from "@/core/doc/timeline";
-import { AddAnimation, EditTracks } from "@/core/history/timelineCommands";
+import { AddAnimation, EditTracks, SetCycle } from "@/core/history/timelineCommands";
+import { cyclePlan, isCycle, SEAM_TOLERANCE, seamFrame, seamGap } from "@/core/doc/cycle";
+import { bonePaths, keyedIn, pathFrames } from "@/core/doc/bonePath";
+import { easesToSpline, type Spline, straightSpline, withSpline } from "@/core/doc/pathSpline";
+import { pathDragMode } from "@/core/doc/pathEdit";
 import { AddNode, createsCycle, SetLayerOrder, SetParent, SetPivot, SetStageSkins } from "@/core/history/commands";
 import { AddIkConstraint, SetIkOptions } from "@/core/history/ikCommands";
 import { autoRigPlan, jointNames, type RigLayer } from "@/core/rig/autoRig";
@@ -58,6 +62,10 @@ export interface AgentImage { mimeType: string; data: string }
  *  them out into image blocks (MCP, Claude, GLM's vision models). */
 export const IMAGES_KEY = "__images";
 
+/** A bone's path drawn over a picture, in pixels: one point per frame, the
+ *  keyed ones marked, `closed` for a cycle. */
+export interface PathMark { name: string; points: Array<[number, number]>; keys: boolean[]; closed: boolean; current: number }
+
 /** A bone drawn over a picture: from its origin to its tip, in pixels, and
  *  its side by name (`boneSide`). */
 export interface BoneMark { name: string; from: [number, number]; to: [number, number]; side?: "near" | "far" }
@@ -70,7 +78,7 @@ export interface AgentVision {
   /** The symbol at a frame as the stage draws it, through `view`, over its
    *  reference image when `reference` is set, with `bones` marked and named.
    *  `artwork: false` leaves the pictures out and shows only the bones. */
-  render(req: { symbol: SymbolItem; animation: Animation | null; frame: number; view: ImageFrame; reference: boolean; bones: BoneMark[]; artwork?: boolean }): Promise<AgentImage>;
+  render(req: { symbol: SymbolItem; animation: Animation | null; frame: number; view: ImageFrame; reference: boolean; bones: BoneMark[]; artwork?: boolean; paths?: PathMark[] }): Promise<AgentImage>;
 }
 
 /** How a pose is captured (`renderPoses`): the bones alone, the artwork
@@ -86,6 +94,7 @@ export const MOTION_CLIPS = MOTIONS as unknown as MotionClip[];
 type Args = Record<string, unknown>;
 type BoneIn = { name: string; parent?: string; from?: number[]; to?: number[]; x?: number; y?: number; rotation?: number; length?: number };
 type AttachIn = { bone: string; image?: string; layer?: string; name?: string; pivot?: number[]; at?: number[]; rotation?: number; scale?: number };
+type PathKeyIn = { frame: number; x: number; y: number; out?: number[]; in?: number[] };
 type SpineKeyIn = {
   bone: string; frame: number; x?: number; y?: number; rotation?: number; scaleX?: number; scaleY?: number;
   ease?: string | number[]; eases?: Partial<Record<AxisName, string | number[]>>;
@@ -112,7 +121,7 @@ export class AgentApi {
       case "redo": return this.step("redo", typeof args.steps === "number" ? args.steps : 1);
       case "check_preview": return this.checkPreview(str(args, "animation"), args.frames);
       case "get_reference": return this.getReference(str(args, "animation"), args.frames);
-      case "render_frame": return this.renderFrame(typeof args.animation === "string" ? args.animation : null, args.frame === undefined ? 0 : int(args, "frame", 0), args.reference !== false, args.bones !== false);
+      case "render_frame": return this.renderFrame(typeof args.animation === "string" ? args.animation : null, args.frame === undefined ? 0 : int(args, "frame", 0), args.reference !== false, args.bones !== false, args.paths);
       case "add_bones": return this.addBones(list<BoneIn>(args, "bones"));
       case "attach": return this.attach(list<AttachIn>(args, "items"));
       case "add_ik": return this.addIk(str(args, "bone"), args);
@@ -120,6 +129,9 @@ export class AgentApi {
       case "list_motions": return this.listMotions();
       case "apply_motion": return this.applyMotion(str(args, "motion"), args);
       case "draw_order": return this.drawOrder(typeof args.parent === "string" ? args.parent : null, list<string>(args, "front"));
+      case "set_cycle": return this.setCycle(str(args, "animation"), args.on);
+      case "get_bone_path": return this.getBonePath(str(args, "animation"), str(args, "bone"), args.point);
+      case "set_bone_path": return this.setBonePath(str(args, "animation"), str(args, "bone"), list<PathKeyIn>(args, "keys"));
       default: throw new AgentError(`There is no tool "${name}".`);
     }
   }
@@ -207,7 +219,8 @@ export class AgentApi {
         return { frame: k.frame, ...spine(toSpineLocal(k.transform)), ease: easeName(k.tween), ...(own ? { eases: own } : {}) };
       });
     }
-    return { name: anim.name, frames: this.frames(anim), loops: anim.playTimes === 0, fps: this.store.project.frameRate, bones,
+    const seam = this.seamOf(anim);
+    return { name: anim.name, frames: this.frames(anim), loops: anim.playTimes === 0, cycle: isCycle(anim), ...(seam ? { seam } : {}), fps: this.store.project.frameRate, bones,
       ...(anim.poses?.length ? { poses: [...anim.poses], note: "poses: the user's key-pose frames, already keyed — keep them as they are" } : {}) };
   }
 
@@ -690,12 +703,118 @@ export class AgentApi {
     }
     const matches = worstDeg < 1 && worstPx < 1;
     return {
-      animation: name, frames, motion: clip.name, facing,
+      animation: name, frames, motion: clip.name, facing, cycle: isCycle(this.animation(name)),
       map: Object.fromEntries(Object.entries(map).sort()),
       keys: result.keys.length,
       ...(result.ground !== undefined ? { ground: round(result.ground, 2) } : {}),
       check: { matches, worstDegrees: round(worstDeg, 3), worstPixels: round(worstPx, 3), ...(matches ? {} : { at, hint: "An IK chain may bend the other way (add_ik's bendPositive), or a role is on the wrong bone: look with render_frame." }) },
       notes: [...guess.notes, ...result.notes.map((n) => n.replace(/"([^"]+)"/g, (_, id: string) => `"${nameOf(id)}"`))],
+    };
+  }
+
+  /* ── cycles and paths ── */
+
+  /** For a cycle: the bones whose pose on the last frame (frame 0 again)
+   *  is not frame 0's, each where the difference starts (`seamGap`, in the
+   *  parent's frame). Null for an animation that is not a cycle. */
+  private seamOf(anim: Animation) {
+    const join = seamFrame(anim);
+    if (join === null) return null;
+    const p = this.store.project;
+    const names = new Map(this.bones().map((n) => [n.id, n.name]));
+    const gaps = seamGap(posedSymbol(p, this.sym, anim, 0, "animate"), posedSymbol(p, this.sym, anim, join, "animate"), SEAM_TOLERANCE, true)
+      .filter((g) => names.has(g.nodeId))
+      .map((g) => ({
+        bone: names.get(g.nodeId)!,
+        ...(g.distance > SEAM_TOLERANCE.px ? { pixels: round(g.distance, 2) } : {}),
+        ...(Math.abs(g.rotation) > SEAM_TOLERANCE.deg ? { degrees: round(-g.rotation, 2) } : {}),
+        ...(g.scale > SEAM_TOLERANCE.scale ? { scale: round(g.scale, 4) } : {}),
+        ...(g.color ? { color: true } : {}),
+        ...(g.display ? { attachment: true } : {}),
+      }));
+    return { lastFrame: join, closes: gaps.length === 0, ...(gaps.length ? { gaps } : {}) };
+  }
+
+  private setCycle(animName: string, on: unknown) {
+    if (typeof on !== "boolean") throw new AgentError(`"on" is true or false.`);
+    const anim = this.animation(animName);
+    if (isCycle(anim) !== on) {
+      const plan = on ? cyclePlan(anim, this.sym.nodes) : undefined;
+      this.store.apply(new SetCycle(this.store.currentSymbolId, anim.id, on, plan, `AI: ${on ? "Cycle" : "Play Once"} "${anim.name}"`));
+      this.store.emit("timeline");
+      this.store.emit("stage");
+    }
+    const now = this.animation(animName);
+    const seam = this.seamOf(now);
+    return { animation: now.name, cycle: isCycle(now), frames: this.frames(now), ...(seam ? { seam } : {}) };
+  }
+
+  private pathOf(anim: Animation, node: Node, point: "tip" | "origin") {
+    const { frames, closed } = pathFrames(anim);
+    const p = this.store.project;
+    return bonePaths({
+      sample: (f) => posedSymbol(p, this.sym, anim, f, "animate"),
+      ids: [node.id], frames, closed, which: point, isKey: keyedIn(anim),
+    })[0]!;
+  }
+
+  private getBonePath(animName: string, boneName: string, pointArg: unknown) {
+    if (pointArg !== undefined && pointArg !== "tip" && pointArg !== "origin") throw new AgentError(`point is "tip" or "origin".`);
+    const anim = this.animation(animName);
+    const node = this.bone(boneName);
+    const path = this.pathOf(anim, node, (pointArg as "tip" | "origin" | undefined) ?? "tip");
+    return {
+      animation: anim.name, bone: node.name, point: pointArg ?? "tip", closed: path.closed, fps: this.store.project.frameRate,
+      // y up, as get_pose reports.
+      points: path.points.map((q) => ({ frame: q.frame, x: round(q.x, 2), y: round(-q.y, 2), ...(q.key ? { key: true } : {}) })),
+    };
+  }
+
+  private setBonePath(animName: string, boneName: string, keys: PathKeyIn[]) {
+    const anim = this.animation(animName);
+    const node = this.bone(boneName);
+    const rule = pathDragMode(this.sym, anim, node.id, "origin", false);
+    if ("refused" in rule) throw new AgentError(rule.refused);
+    const pair = (v: unknown, where: string): { x: number; y: number } => {
+      const [x, y] = point(v, where);
+      return { x, y: -y };
+    };
+    for (const k of keys) {
+      if (!Number.isInteger(k.frame) || k.frame < 0) throw new AgentError("Each key's frame is a whole number, 0 or more.");
+      if (typeof k.x !== "number" || typeof k.y !== "number" || !Number.isFinite(k.x) || !Number.isFinite(k.y)) throw new AgentError(`Key at ${k.frame}: x and y are numbers.`);
+    }
+    const sorted = [...keys].sort((a, b) => a.frame - b.frame);
+    if (new Set(sorted.map((k) => k.frame)).size !== sorted.length) throw new AgentError("Two keys at the same frame.");
+    const label = `AI: Path of "${node.name}"`;
+    const splits: number[] = [];
+    let clamped = false;
+    this.store.transaction(label, () => {
+      this.setKeys(anim.name, sorted.map((k) => ({ bone: node.name, frame: k.frame, x: k.x, y: k.y })));
+      let track = this.animation(animName).tracks[node.id]!;
+      for (let i = 0; i + 1 < sorted.length; i++) {
+        const a = sorted[i]!, b = sorted[i + 1]!;
+        if (!a.out && !b.in) continue;
+        const ka = track.keys[keyIndexAt(track, a.frame)]!;
+        const kb = track.keys[keyIndexAt(track, a.frame) + 1]!;
+        if (kb.frame !== b.frame) throw new AgentError(`"${node.name}" has a key at frame ${kb.frame}, between ${a.frame} and ${b.frame}: a handle bends one interval between two keys next to each other.`);
+        const base: Spline = easesToSpline(ka, kb) ?? straightSpline(ka, kb);
+        const s: Spline = {
+          ...base,
+          p1: a.out ? pair(a.out, `Key at ${a.frame}: out`) : base.p1,
+          p2: b.in ? pair(b.in, `Key at ${b.frame}: in`) : base.p2,
+        };
+        const edit = withSpline(track, node, a.frame, s);
+        if ("refused" in edit) throw new AgentError(`Between ${a.frame} and ${b.frame}: ${edit.refused}`);
+        if (edit.split !== null) splits.push(edit.split);
+        clamped ||= edit.clamped;
+        track = edit.track;
+      }
+      this.commit(this.animation(animName), label, new Map([[node.id, track]]));
+    });
+    return {
+      animation: anim.name, bone: node.name, keys: sorted.length,
+      ...(splits.length ? { addedKeys: splits, note: "An axis that did not move between two keys had to bend: a key was added in the middle of that interval." } : {}),
+      ...(clamped ? { clamped: "A handle was pulled in: that axis moves too little between its keys for the handle to reach so far." } : {}),
     };
   }
 
@@ -733,9 +852,14 @@ export class AgentApi {
 
   /** The skeleton at a frame as the stage draws it, over its reference, with
    *  every bone drawn and named; and where each bone lands in the picture. */
-  private async renderFrame(animName: string | null, frame: number, withReference: boolean, withBones: boolean) {
+  private async renderFrame(animName: string | null, frame: number, withReference: boolean, withBones: boolean, pathsArg?: unknown) {
     const anim = animName === null ? null : this.animation(animName);
     const { boxes, bones } = this.frameView(anim, frame);
+    if (pathsArg !== undefined && (!Array.isArray(pathsArg) || !pathsArg.every((n) => typeof n === "string"))) throw new AgentError("paths is a list of bone names.");
+    if (pathsArg && !anim) throw new AgentError("paths needs an animation: a path is where a bone goes over it.");
+    const paths = anim ? ((pathsArg as string[] | undefined) ?? []).map((name) => ({ name, path: this.pathOf(anim, this.bone(name), "tip") })) : [];
+    // Framed to hold the paths whole.
+    for (const { path } of paths) for (const q of path.points) boxes.push({ x: q.x, y: q.y, w: 1e-3, h: 1e-3 });
     // Framed on what is drawn: helper bones far from the artwork (an aim
     // target, a crosshair) would shrink the body to a corner. A rig that
     // draws nothing is framed on its bones.
@@ -745,7 +869,15 @@ export class AgentApi {
     const view = imageFrame(boxes, RENDER_SIDE);
     const marks = bones.map((b) => mark(b, view));
     const inside = (p: [number, number]) => p[0] >= 0 && p[1] >= 0 && p[0] <= view.width && p[1] <= view.height;
-    const image = await this.needVision().render({ symbol: this.sym, animation: anim, frame, view, reference: !!ref, bones: withBones ? marks : [] });
+    const join = anim ? seamFrame(anim) : null;
+    const shownFrame = frame === join ? 0 : frame;
+    const pathMarks: PathMark[] = paths.map(({ name, path }) => ({
+      name, closed: path.closed,
+      points: path.points.map((q) => view.toPixel(q.x, q.y)),
+      keys: path.points.map((q) => q.key),
+      current: path.points.findIndex((q) => q.frame === shownFrame),
+    }));
+    const image = await this.needVision().render({ symbol: this.sym, animation: anim, frame, view, reference: !!ref, bones: withBones ? marks : [], ...(pathMarks.length ? { paths: pathMarks } : {}) });
     const [lx, ly] = view.fromPixel(0, 0);
     return {
       animation: anim?.name ?? null, frame,
@@ -757,7 +889,8 @@ export class AgentApi {
       bones: Object.fromEntries(marks.map((m) => [m.name, {
         origin: m.from.map((v) => round(v, 1)), tip: m.to.map((v) => round(v, 1)), ...(inside(m.from) ? {} : { outside: true }),
       }])),
-      note: "Bones named far or right are drawn blue, the others magenta. Names that would overlap are left off the picture; every bone is listed here. Bones marked outside are beyond the picture's edges.",
+      ...(pathMarks.length ? { paths: Object.fromEntries(pathMarks.map((m) => [m.name, { frames: m.points.length, closed: m.closed, keyedFrames: paths.find((p) => p.name === m.name)!.path.points.filter((q) => q.key).map((q) => q.frame) }])) } : {}),
+      note: "Bones named far or right are drawn blue, the others magenta. Names that would overlap are left off the picture; every bone is listed here. Bones marked outside are beyond the picture's edges." + (pathMarks.length ? " Each path is an orange line through the tip at every frame, a ring on each keyed frame, a filled dot on this frame." : ""),
       [IMAGES_KEY]: [image],
     };
   }
@@ -858,7 +991,8 @@ export class AgentApi {
         if (d > worst) { worst = d; where = `"${n.name}" at frame ${f}`; }
       }
     }
-    return { animation: anim.name, framesChecked: new Set(frames).size, worstPixels: round(worst, 6), ...(where ? { worstAt: where } : {}), matches: worst <= 0.01 };
+    const seam = this.seamOf(anim);
+    return { animation: anim.name, framesChecked: new Set(frames).size, worstPixels: round(worst, 6), ...(where ? { worstAt: where } : {}), matches: worst <= 0.01, ...(seam ? { seam } : {}) };
   }
 }
 

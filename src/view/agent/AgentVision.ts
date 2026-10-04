@@ -1,6 +1,6 @@
 import type { AssetStore } from "@/app/AssetStore";
 import type { Store } from "@/app/Store";
-import type { AgentImage, AgentVision, BoneMark } from "@/app/agent/AgentApi";
+import type { AgentImage, AgentVision, BoneMark, PathMark } from "@/app/agent/AgentApi";
 import type { AssetId } from "@/core/doc/ids";
 import { matOf } from "@/core/math/Matrix2D";
 import { SceneRenderer } from "@/view/viewport/SceneRenderer";
@@ -49,8 +49,35 @@ export class PageVision implements AgentVision {
     if (ref) drawReference(ctx, m, ref, req.frame, this.assets, 1);
     if (req.artwork !== false) this.renderer.draw(ctx, req.symbol, req.animation, req.frame, req.animation ? "animate" : "setup", m, ref ? { alpha: 0.55 } : {});
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (req.paths) drawPaths(ctx, req.paths);
     drawBones(ctx, req.bones, view.width, view.height);
     return encode(canvas);
+  }
+}
+
+/** Paths under the bones: an orange line through the tip at every frame, a
+ *  ring on each key, a filled dot on the frame drawn. */
+function drawPaths(ctx: CanvasRenderingContext2D, paths: PathMark[]): void {
+  ctx.lineJoin = "round";
+  for (const p of paths) {
+    if (p.points.length < 2) continue;
+    ctx.beginPath();
+    ctx.moveTo(...p.points[0]!);
+    for (const q of p.points.slice(1)) ctx.lineTo(...q);
+    if (p.closed) ctx.closePath();
+    ctx.strokeStyle = "rgba(0,0,0,0.6)";
+    ctx.lineWidth = 3.5;
+    ctx.stroke();
+    ctx.strokeStyle = "#ff9a1f";
+    ctx.lineWidth = 1.8;
+    ctx.stroke();
+    p.points.forEach((q, i) => {
+      ctx.beginPath();
+      ctx.arc(q[0], q[1], i === p.current ? 4.5 : p.keys[i] ? 4 : 2, 0, Math.PI * 2);
+      if (i === p.current) { ctx.fillStyle = "#ff3b30"; ctx.fill(); }
+      else if (p.keys[i]) { ctx.fillStyle = "#000"; ctx.fill(); ctx.strokeStyle = "#ff9a1f"; ctx.lineWidth = 1.5; ctx.stroke(); }
+      else { ctx.fillStyle = "#ff9a1f"; ctx.fill(); }
+    });
   }
 }
 
