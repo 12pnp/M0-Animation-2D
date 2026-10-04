@@ -407,6 +407,25 @@ frame 0, so the two must be the same pose or the loop hitches.
 - `tests/cycle.test.ts`; `tests/spineParity.test.ts` turns the stickman's animations
   into cycles and checks the length in seconds and that the join plays as frame 0.
 
+### A selected bone narrows the timeline
+
+As Spine's dopesheet does: select a bone on the stage or in the Tree and the timeline shows
+only the selected nodes' rows, flat (`focusRows` in `core/doc/layerTree.ts`); select nothing,
+or only pictures, and every row is back. The layer column and the frame grid both take their
+rows from `timelineRows` (`view/timeline/rows.ts`), so they cannot drift apart by a row. The
+rows follow `ui.timelineFocus`, not the selection: `TimelinePanel` copies the selection into it
+only when the selection changes from outside the timeline, because a click on a row or a frame
+in there selects that node too, and the list would collapse under the pointer. The toolbar's
+Sub Tree button (`timeline.focusSelected`) turns it off.
+
+Each focused bone is followed by its property rows, Rotate, Translate X, Translate Y, Scale
+and Shear (`LayerRow.prop`), with a key where that property is keyed (`propertyKeys` in
+`core/doc/propertyKeys.ts`, values as Spine reads them through `toSpineLocal`). A key here
+holds the whole pose, so a property is keyed where it differs from the key before or after,
+and one that never changes has none, as the exporter writes no timeline for it. The rows
+only show: a press selects the frame on the bone, and keys are dragged on the bone's row,
+since moving one property's key alone would need per-property keys in the document.
+
 ### The timeline fills its panel, and only the layers scroll
 
 The frame grid is a CANVAS with no scroll of its own, and the horizontal bar is an
@@ -432,7 +451,7 @@ thing that scrolls — rests on two CSS rules, and both look removable until the
 short:
 `.pbody > .tl { height: 100% }` and `.tl-main { grid-template-rows: minmax(0, 1fr) }`.
 The panel body scrolls (`overflow: auto`), so without the first the timeline sizes itself
-to its layers and the transport bar — Play, the animation picker, the zoom slider — is
+to its layers and the transport bar — Play, the animation picker, the speed slider — is
 pushed below the fold on any rig with two dozen rows. The second is the grid's automatic
 minimum size: a grid item refuses to shrink below its content, so the row would stay open
 at the full height of the layer list and there would be nothing left for `.tl-llist` to
@@ -554,8 +573,7 @@ it.
 frame is drawn into a scratch canvas, tinted with `source-atop` (or reduced to a one-pixel ring
 for Outline: the silhouette stamped at eight offsets minus itself), then composited once at the
 ghost's alpha — overlapping parts of one frame do not darken each other. **Locked layers are
-never onion-skinned** (Animate's rule, and the way to keep a layer out of it). Animate mode only,
-never in Play mode.
+never onion-skinned** (Animate's rule, and the way to keep a layer out of it). Animate mode only.
 
 The toggle is `ui.onionSkin`; there are buttons in the layer-list header AND the timeline
 footer, so each follows the STATE on the `stage`/`ui` channels instead of flipping a local flag.
@@ -633,26 +651,29 @@ the skeleton JSON, the `.atlas` text and the page images. It is not a second ren
 the stage and the preview disagree, the export is wrong. An excluded layer therefore disappears
 from the preview too, which is the point rather than a side effect.
 
-The session owns the export and the 250 ms coalescing; its VIEWS own the iframes. There are two:
-the Preview panel and the stage's **Play mode** (`view/viewport/StagePlay.ts`, the toggle centred
-in the stage bar, ⌘P). They cannot share one iframe — `Dock.render` re-appends a panel's element
-on every focus and tab drag, and moving an iframe reloads it — but they must not build the atlas
-twice, which is the whole reason the session exists. A Spine file holds ONE skeleton, so each view
-gets the export of its own symbol (the panel: the one being edited; Play mode: the scene), built
-together over one shared atlas by `buildExports`.
+The session owns the export and the 250 ms coalescing; its VIEWS own the iframes. There is one
+now, the Preview panel: the stage's Play mode (the runtime over the whole stage) was removed, the
+Preview and the timeline's own playback cover it. The session still takes several views, each
+with its own iframe and the export of its own symbol (`scope`), built together over one shared
+atlas by `buildExports`, so a second view would not build the atlas twice.
 
 `refresh` clears `stale` when a build STARTS, and a request that arrives while one is running
 sets `rerun`; the finished build reschedules if the document moved on meanwhile. Clearing it at
 the end swallowed any edit made during the build, and the preview sat on the older document
 until the next change (`tests/previewSession.test.ts`, with the build mocked).
 
-In Play mode the **runtime owns the clock**: the editor's `Playback` is stopped and the playhead
-FOLLOWS the `tick` messages coming back, because re-driving the runtime frame by frame would show
-the editor's timing rather than the runtime's. The skeleton is built with `autoUpdate: false` and
+The skeleton is built with `autoUpdate: false` and
 the client's own ticker calls `update(dt)` only while playing, so a pause is exact and a seek is
 not overwritten by the next tick. `resume` carries on from the track's current time; `play` and
-`setAnimation` restart it; `setLoop` sets the track entry's `loop`. The stage keeps its canvases — `visibility: hidden` under `.stage-host.playing`, never
-`display: none`, or the Viewport's `ResizeObserver` measures 0×0.
+`setAnimation` restart it; `setLoop` sets the track entry's `loop`. The timeline toolbar's speed
+slider (`timeline.playSpeed`, 0.01×–5×, logarithmic, `view/timeline/playSpeed.ts`) scales
+`Playback`'s clock and, through `setSpeed` (sent by `PreviewSession` on every `loaded` and
+on a change), the runtime's `update(dt)`. Beside it, 1× resets the speed and the fps popup (30, 60 or 120,
+`timeline.playRate`) sets how many times a second playback redraws: `playStep` keeps the
+playhead fractional, `Store.setPlayhead` splits it into `ui.frame` (what the timeline
+shows) and `ui.subFrame`, and the stage poses `stageFrame`, between frames while
+playing (spine-core and the editor's tweens both take a fractional frame). Pause rests on
+the whole frame. The runtime gets the rate as its ticker's `maxFPS` (`setFps`).
 
 - **A tick reports the frame on screen** (`tickFrame` in `preview/protocol.ts`): the floor of
   time × fps, clamped to the last frame. Rounding reported the NEXT frame for half of every
@@ -665,12 +686,6 @@ not overwritten by the next tick. `resume` carries on from the track's current t
   drew empty frames, and fitting on the next frame drew one at the origin and full size — the
   flash on every edit while playing. The ticker body is wrapped: an exception in a Pixi ticker
   listener ENDS the loop, and the preview then sits frozen, unposed, with nothing said.
-- **Entering Play mode reveals the runtime only once it has loaded.** The iframe goes in at
-  opacity 0 and the stage stays visible until the first `loaded`; hiding the stage at once
-  showed an empty grey frame while the page, Pixi and the export loaded. Leaving calls
-  `PreviewHost.detach`, which forgets the queue and the last payload, so the page that comes
-  back is not handed the previous visit's export first. `setLoop` is re-sent after every
-  `loaded`: each build starts the animation looping.
 - **An empty export CLEARS the frame.** A document with no artwork and no slots
   (File ▸ New Project) used to return early from `refresh`, leaving the previous
   project's rig on screen behind a status line saying there was nothing to show —
@@ -681,7 +696,7 @@ not overwritten by the next tick. `resume` carries on from the track's current t
   runtime reports the load (`errorFor`): the panel clears its status on `loaded`.
 - **Only edits rebuild the preview.** `PreviewSession` listens to `doc` and `library`; every
   edit goes through History, which emits `doc` first. `stage` and `timeline` also come from
-  view state — entering Play mode, a view flag, folding a group — and each one rebuilt the
+  view state — a view flag, folding a group — and each one rebuilt the
   export and restarted the animation a quarter of a second after Play. A view that comes on
   screen with nothing changed gets the last build (`show`, `present`), and only that view.
 
@@ -704,15 +719,12 @@ fires, so a harness waiting on it hangs — and one left running keeps moving th
 a frame does fire, which reads as a stray seek. Seeks do not need rAF; the client poses on the
 message.
 
-Play mode has TWO scopes, a `Scene` / `Symbol` toggle in the play cluster,
-defaulting to Scene: pressing Play usually means "show me the thing", and the
-scene is the only scope that answers it. `PreviewSession.symbolFor` and
-`targetFor` pick the symbol, the animation and the frame per VIEW, so the panel
-and the stage can disagree — and the editor's playhead is handed over (`seek`,
-and the `tick` follower in `StagePlay`) only when the runtime is on the timeline
-the user is actually editing, which `followsPlayhead` decides. The Preview panel
-declares no scope and therefore stays symbol-scoped: the playhead belongs to the
-open symbol's timeline. The panel frames that symbol against the scene's stage
+A view may declare a scope, `scene` or `symbol` (the removed Play mode ran the scene).
+`PreviewSession.symbolFor` and `targetFor` pick the symbol, the animation and the frame per
+VIEW, and the editor's playhead is handed over (`seek`) only when the runtime is on the
+timeline the user is actually editing, which `followsPlayhead` decides. The Preview panel
+declares no scope and therefore stays symbol-scoped: the playhead belongs to the open
+symbol's timeline. The panel frames that symbol against the scene's stage
 rectangle, which means little in a symbol's own space (inherited from Animo).
 
 ## The Spine 4.3 contract
@@ -1025,8 +1037,8 @@ flowchart LR
   itself, or a click on a button would also start a drag on the stage. Its cards:
   - Tools. Only those the mode offers, Spine's way (`availableTools` in `app/toolModes.ts`):
     Setup all; Animate no Bone / IK Target / Transform Point (they change the skeleton, not a
-    key; IK targets still drag with Pose); Play mode Hand and Zoom. A hidden tool keeps its
-    slot, so the bar does not shift. `Store.setMode` and a `playMode` change drop a tool the
+    key; IK targets still drag with Pose). A hidden tool keeps its
+    slot, so the bar does not shift. `Store.setMode` drops a tool the
     mode hides (`toolForMode`), and `Store.setTool` refuses one, so its shortcut does nothing.
   - Rotate / Translate / Scale / Shear: tools (`view/tools/AxisTool.ts`, R T S E) that act on
     the selection from a drag anywhere, about each node's own origin, and fields with the
@@ -1036,9 +1048,13 @@ flowchart LR
     Translate's Shift lock (`core/math/axes.ts`). World is the edited symbol's root space.
   - Compensation: Bones / Images keep a transformed node's direct children where they are
     (`core/doc/compensate.ts`, `reexpress`); in Animate that keys them too. Pixels rounds x/y.
-  - Visibility: Bones / Images / IK × pick, show, name (`SelectTool.hitAt` and `unpickable`,
-    the renderer's `hiddenLayers`, the overlay). A bone wins a click only within 5 px of its
-    line, so the art around it stays clickable.
+  - Visibility, its own card in the stage's top-left corner, over the rulers
+    (`StageToolbar.corner`): Bones / Images / IK / Primary × pick, show, name
+    (`SelectTool.hitAt` and `unpickable`, the renderer's `hiddenLayers`, the overlay). A bone
+    wins a click only within 5 px of its line, so the art around it stays clickable. A bone
+    marked Primary (Properties ▸ Bone, `Node.primary`, schema 14, never exported) follows the
+    Primary row instead of Bones (`core/doc/boneRow.ts`): hide Bones and the legs, arms and
+    head stay. IK targets keep the IK row, and need Bones shown.
 
   Every edit from the bar, drag or field, goes `captureEditBase` → `finishEdit` (Pixels,
   compensation) → `applyEdit`, so Setup writes the rest pose and Animate keys, one undo step
@@ -1647,7 +1663,7 @@ flowchart LR
 - **Drawing** (`Overlay.drawBonePaths`, under the bones, screen-sized): a dot per frame,
   spaced by speed, the played part in the onion past colour and the rest in the future
   colour, a ring on each key, the playhead's frame filled (frame 0 on a cycle's join).
-  Animate mode only, never in Play mode, off with the gizmos; selected bones or every
+  Animate mode only, off with the gizmos; selected bones or every
   bone by preference, never on a locked or hidden layer. `ui.showBonePaths` is a view
   switch remembered in `gizmos.showBonePaths`: the stage bar, View ▸ Show Bone Paths,
   ⌥B.
@@ -1675,7 +1691,11 @@ below the Preview): the one bone the selection points at, drawn alone with what 
 carries, and its path over the whole animation. They are one class in two spaces
 (`PATH_PANELS`), shown at once, whatever the stage's preference: Local is the bone's
 own motion and World adds its parent's, where the path runs on the stage. Each has its
-own camera and `PathCache`. In Local the parent holds still in its frame-0
+own camera and `PathCache`; the lock button (`gizmos.pathZoomLock`, `PathZoomLink` in
+`pathZoom.ts`) makes a zoom in one the other's, about its centre, and a fit leaves both at
+the smaller fit (`lockedZoom`), so each path is whole. The grid button (`gizmos.pathGrid`, both panels) draws
+lines under the artwork every `pathGridStep` stage pixels, 1, 2 or 5 × 10ⁿ chosen so they
+are at least 16 px apart at the panel's zoom, every fifth brighter. In Local the parent holds still in its frame-0
 pose and the artwork at the playhead is carried into it (`shown` = parent at 0 · parent
 at the playhead⁻¹), so scrubbing moves only the bone. A Spine rig often hangs a limb's
 picture on a control bone above the bones that bend it (the leg mesh on

@@ -451,6 +451,45 @@ export class SetPathDrag implements Command {
   }
 }
 
+/** Mark bones as primary, or unmark them (`Node.primary`). */
+export class SetBonePrimary implements Command {
+  readonly kind = "node.primary";
+  readonly touches: TouchSet;
+  readonly label: string;
+  private before = new Map<NodeId, true | undefined>();
+
+  constructor(
+    private readonly symbolId: ItemId,
+    private readonly nodeIds: NodeId[],
+    private readonly value: boolean,
+  ) {
+    this.touches = { symbols: [symbolId], nodes: [...nodeIds] };
+    this.label = value ? "Mark Primary" : "Unmark Primary";
+  }
+
+  apply(p: Project): void {
+    const sym = symbolOf(p, this.symbolId);
+    this.before.clear();
+    for (const id of this.nodeIds) {
+      const n = sym.nodes[id];
+      if (!n || n.kind !== "bone") continue;
+      this.before.set(id, n.primary);
+      if (this.value) n.primary = true;
+      else delete n.primary;
+    }
+  }
+
+  revert(p: Project): void {
+    const sym = symbolOf(p, this.symbolId);
+    for (const [id, v] of this.before) {
+      const n = sym.nodes[id];
+      if (!n) continue;
+      if (v) n.primary = v;
+      else delete n.primary;
+    }
+  }
+}
+
 export class SetNodeBlendMode implements Command {
   readonly kind = "node.blendMode";
   readonly touches: TouchSet;

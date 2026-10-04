@@ -30,6 +30,13 @@ export interface UiState {
   editPath: ItemId[];
   animId: AnimId | null;
   frame: number;
+  /** The selection the timeline narrows to (`focusRows`): the nodes last
+   *  selected outside the timeline, so a click on a row or a frame there
+   *  does not collapse the list under the pointer. */
+  timelineFocus: NodeId[];
+  /** While playing, how far past `frame` the stage poses (0..1): smooth
+   *  playback draws between frames (`playStep`). 0 otherwise. */
+  subFrame: number;
   playing: boolean;
   loop: boolean;
   onionSkin: boolean;
@@ -61,17 +68,6 @@ export interface UiState {
   /** Setup pose vs animation editing. Bones and IK need a bind pose, so this
    *  mode is not overhead — it is the standard skeletal-animation model. */
   mode: "setup" | "animate";
-  /** The stage is showing the DragonBones runtime instead of the editable
-   *  scene — Unity's Play. Nothing about the document changes; what changes
-   *  is which of the two is on screen. */
-  playMode: boolean;
-  /**
-   * What Play mode runs: the whole scene, or just the symbol being edited.
-   * The scene is the default — pressing Play usually means "show me the
-   * thing", and the symbol scope is the narrower question you ask while
-   * authoring inside one.
-   */
-  previewScope: "scene" | "symbol";
 }
 
 export type ViewFlag =
@@ -116,9 +112,9 @@ export class Store {
     editPath: [],
     animId: null,
     frame: 0,
+    timelineFocus: [],
+    subFrame: 0,
     playing: false,
-    playMode: false,
-    previewScope: "scene",
     loop: true,
     onionSkin: false,
     editMultipleFrames: false,
@@ -246,7 +242,7 @@ export class Store {
   /** A mode hides the tools it has no use for (`availableTools`); the one in
    *  hand falls back to the mode's first tool. */
   private fitToolToMode(): void {
-    const tool = toolForMode(this.ui.tool, this.ui.mode, this.ui.playMode);
+    const tool = toolForMode(this.ui.tool, this.ui.mode);
     if (tool === this.ui.tool) return;
     this.ui.tool = tool;
     this.emit("tool");
@@ -541,7 +537,6 @@ export class Store {
       if (ui[k] !== v) { ui[k] = v; changed = true; }
     }
     if (changed) this.emit(topic);
-    if (changed && "playMode" in patch) this.fitToolToMode();
   }
 
   /**
@@ -553,15 +548,32 @@ export class Store {
    */
   setFrame(frame: number): void {
     const clamped = clampFrame(frame);
-    if (clamped === this.ui.frame) return;
+    if (clamped === this.ui.frame && this.ui.subFrame === 0) return;
     this.ui.frame = clamped;
+    this.ui.subFrame = 0;
     this.emit("frame");
+  }
+
+  /** Playback's fractional playhead: the frame, and how far past it the
+   *  stage poses. One "frame" event. */
+  setPlayhead(pos: number): void {
+    const frame = clampFrame(Math.floor(pos));
+    const sub = Math.max(0, Math.min(0.999999, pos - frame));
+    if (frame === this.ui.frame && sub === this.ui.subFrame) return;
+    this.ui.frame = frame;
+    this.ui.subFrame = sub;
+    this.emit("frame");
+  }
+
+  /** Where the stage poses: the playhead, between frames while playing. */
+  get stageFrame(): number {
+    return this.ui.playing ? this.ui.frame + this.ui.subFrame : this.ui.frame;
   }
 
   setTool(tool: ToolId): void {
     if (this.ui.tool === tool) return;
     // A tool the mode hides: its shortcut does nothing, as its button is gone.
-    if (!availableTools(this.ui.mode, this.ui.playMode).includes(tool)) return;
+    if (!availableTools(this.ui.mode).includes(tool)) return;
     this.ui.tool = tool;
     // Picking a skeleton tool while bones are hidden would leave the user
     // clicking at things they cannot see.

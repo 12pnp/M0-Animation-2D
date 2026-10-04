@@ -119,6 +119,10 @@ export interface GizmoPrefs {
   /** "parent": a path shows the bone's motion against its parent, drawn in
    *  the parent's pose at the playhead; "world": where it goes on the stage. */
   bonePathSpace: "parent" | "world";
+  /** The Local and World Path panels zoom together. */
+  pathZoomLock: boolean;
+  /** A grid under the Path panels' drawing. */
+  pathGrid: boolean;
   /** The toolbar at the foot of the stage (Spine's), and what it holds. */
   showToolbar: boolean;
   /** Which frame Rotate / Translate values are read in (`core/math/axes.ts`). */
@@ -139,6 +143,11 @@ export interface GizmoPrefs {
   selectIk: boolean;
   /** Every IK constraint's name, not only the one the selection drives. */
   nameIk: boolean;
+  /** The Primary row: bones marked primary (`Node.primary`) follow it
+   *  instead of the Bones row (`boneRow`). */
+  showPrimary: boolean;
+  selectPrimary: boolean;
+  namePrimary: boolean;
   handleSize: number;
   select: string;
   marquee: string;
@@ -177,6 +186,12 @@ export interface TimelinePrefs {
   onionFutureColor: string;
   onionKeyframesOnly: boolean;
   onionOutline: boolean;
+  /** Playback speed: the timeline and the Preview (1 = the fps). */
+  playSpeed: number;
+  /** Redraws a second while playing (`playStep`): 30, 60 or 120. */
+  playRate: number;
+  /** A selected bone narrows the timeline to the selection (`focusRows`). */
+  focusSelected: boolean;
 }
 
 export interface Prefs {
@@ -265,6 +280,8 @@ export const DEFAULT_PREFS: Prefs = {
     bonePathPoint: "tip",
     bonePathBones: "selected",
     bonePathSpace: "parent",
+    pathZoomLock: false,
+    pathGrid: false,
     showToolbar: true,
     axes: "parent",
     compensateBones: false,
@@ -278,6 +295,9 @@ export const DEFAULT_PREFS: Prefs = {
     showIk: true,
     selectIk: true,
     nameIk: false,
+    showPrimary: true,
+    selectPrimary: true,
+    namePrimary: false,
     handleSize: 5.5,
     select: "#0090a7",
     marquee: "rgba(74,144,217,0.18)",
@@ -306,6 +326,9 @@ export const DEFAULT_PREFS: Prefs = {
     onionFutureColor: "#35c05a",
     onionKeyframesOnly: false,
     onionOutline: false,
+    playSpeed: 1,
+    playRate: 60,
+    focusSelected: true,
   },
   keys: {},
 };
@@ -328,6 +351,8 @@ export const PREF_LIMITS: Record<string, { min: number; max: number; step?: numb
   "timeline.onionAfter": { min: 0, max: 100 },
   "timeline.onionOpacity": { min: 0.05, max: 1, step: 0.01, decimals: 2 },
   "timeline.onionFalloff": { min: 0, max: 0.9, step: 0.01, decimals: 2 },
+  "timeline.playSpeed": { min: 0.01, max: 5, step: 0.01, decimals: 2 },
+  "timeline.playRate": { min: 30, max: 120 },
 };
 
 /** The string settings that are a CHOICE, not free text. Every colour is free

@@ -47,12 +47,14 @@ type FieldKey = "rotate" | "tx" | "ty" | "sx" | "sy" | "shear";
 type Flag = keyof Pick<GizmoPrefs,
   "compensateBones" | "compensateImages" | "snapPixels"
   | "selectBones" | "nameBones" | "showImages" | "selectImages" | "nameImages"
-  | "showIk" | "selectIk" | "nameIk">;
+  | "showIk" | "selectIk" | "nameIk" | "showPrimary" | "selectPrimary" | "namePrimary">;
 
 /**
  * Spine's toolbar, at the foot of the stage: the tools; Rotate / Translate /
  * Scale / Shear with the selection's values, editable; the axes those values
- * are read in; compensation; and what the stage shows and lets you pick.
+ * are read in; compensation. What the stage shows and lets you pick (Bones,
+ * Images, IK, Primary) is its own card, `corner`, in the stage's top-left
+ * corner, over the rulers.
  *
  * Its settings are preferences (`gizmos`), so they persist. Built once: state
  * only toggles classes and values (the DOM trap in ARCHITECTURE.md). Pointer
@@ -61,21 +63,24 @@ type Flag = keyof Pick<GizmoPrefs,
  */
 export class StageToolbar {
   readonly el: HTMLElement;
+  /** The visibility table, mounted by the caller in the stage's top-left corner. */
+  readonly corner: HTMLElement;
   private toolButtons = new Map<ToolId, HTMLElement>();
   private fields = {} as Record<FieldKey, NumberField>;
   private axisButtons = new Map<Axes, HTMLElement>();
   private flagButtons = new Map<Flag, HTMLElement>();
   private bonesShown!: HTMLElement;
-  private editCards: HTMLElement[] = [];
   private base: EditBase | null = null;
   private scrubbing = false;
 
   constructor(private readonly store: Store, private readonly pose: () => Pose | null) {
     this.el = h("div", { class: "sbar" },
-      this.buildTools(), this.buildTransform(), this.buildAxes(),
-      this.buildCompensation(), this.buildVisibility());
-    for (const ev of ["pointerdown", "wheel", "dblclick", "contextmenu"]) {
-      on(this.el, ev, (e) => e.stopPropagation());
+      this.buildTools(), this.buildTransform(), this.buildAxes(), this.buildCompensation());
+    this.corner = h("div", { class: "sbar sbar-corner" }, this.buildVisibility());
+    for (const el of [this.el, this.corner]) {
+      for (const ev of ["pointerdown", "wheel", "dblclick", "contextmenu"]) {
+        on(el, ev, (e) => e.stopPropagation());
+      }
     }
     // After the stage's own render, which is also on the next frame: World
     // values come from the pose it draws.
@@ -132,7 +137,6 @@ export class StageToolbar {
       return h("div", { class: "sbar-row" }, b, ...cells);
     });
     const card = h("div", { class: "sbar-card sbar-transform" }, ...rows);
-    this.editCards.push(card);
     return card;
   }
 
@@ -148,7 +152,6 @@ export class StageToolbar {
       this.axisButtons.set(a.id, b);
       return b;
     }));
-    this.editCards.push(card);
     return card;
   }
 
@@ -164,7 +167,6 @@ export class StageToolbar {
       this.flagButtons.set(it.flag, b);
       return b;
     }));
-    this.editCards.push(card);
     return card;
   }
 
@@ -185,7 +187,9 @@ export class StageToolbar {
       h("span", null), head("select", "Can be picked on the stage"), head("eye", "Shown on the stage"), head("tag", "Name written on the stage"),
       h("span", { class: "sbar-label" }, "Bones"), dot("selectBones", "Pick bones"), dot("showBones", "Show bones"), dot("nameBones", "Bone names"),
       h("span", { class: "sbar-label" }, "Images"), dot("selectImages", "Pick images"), dot("showImages", "Show images"), dot("nameImages", "Image names"),
-      h("span", { class: "sbar-label" }, "IK"), dot("selectIk", "Pick IK targets"), dot("showIk", "Show IK targets"), dot("nameIk", "Every IK constraint's name"));
+      h("span", { class: "sbar-label" }, "IK"), dot("selectIk", "Pick IK targets"), dot("showIk", "Show IK targets"), dot("nameIk", "Every IK constraint's name"),
+      h("span", { class: "sbar-label", title: "Bones marked Primary (Properties ▸ Bone): they follow this row instead of Bones" }, "Primary"),
+      dot("selectPrimary", "Pick primary bones"), dot("showPrimary", "Show primary bones"), dot("namePrimary", "Primary bone names"));
   }
 
   private toggle(flag: Flag): void {
@@ -196,21 +200,20 @@ export class StageToolbar {
   // ── State ──────────────────────────────────────────────────────────────
 
   private syncTools(): void {
-    const { tool, mode, playMode } = this.store.ui;
-    const shown = new Set(availableTools(mode, playMode));
+    const { tool, mode } = this.store.ui;
+    const shown = new Set(availableTools(mode));
     // A tool the mode hides keeps its slot, so nothing on the bar moves
     // when the mode changes.
     for (const [id, b] of this.toolButtons) {
       cls(b, "unavail", !shown.has(id));
       cls(b, "on", tool === id);
     }
-    // Play mode moves only the view: the editing cards have nothing to act on.
-    for (const card of this.editCards) card.hidden = playMode;
   }
 
   private syncFlags(): void {
     const g = this.store.prefs.value.gizmos;
     this.el.hidden = !g.showToolbar;
+    this.corner.hidden = !g.showToolbar;
     for (const [a, b] of this.axisButtons) cls(b, "on", g.axes === a);
     for (const [flag, b] of this.flagButtons) cls(b, "on", g[flag]);
     cls(this.bonesShown, "on", this.store.ui.showBones);

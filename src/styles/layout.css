@@ -143,11 +143,6 @@
 }
 .guide-tip.doomed { color: #ff8a80; }
 
-/* Play mode: the runtime iframe covers the stage and the editable canvases
-   step aside. `visibility`, not `display`, because the Viewport's
-   ResizeObserver would measure a display:none canvas as 0x0. */
-.stage-host.playing canvas { visibility: hidden; }
-
 /* ── Bottom dock (timeline) ─────────────────────────────────────────────── */
 .bottom {
   grid-area: bottom;
@@ -212,19 +207,6 @@
 .splitter:hover { background: rgba(var(--accent-rgb), 0.35); }
 .splitter.dragging { background: var(--accent); }
 
-.ai-toggle {
-  flex: none;
-  height: var(--h-field);
-  padding: 0 10px;
-  font-weight: 600;
-  color: var(--fg);
-  background: var(--bg-field);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-.ai-toggle:hover { color: var(--fg-strong); }
-.ai-toggle.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-
 body.resizing-ns, body.resizing-ns * { cursor: ns-resize !important; }
 body.resizing-ew, body.resizing-ew * { cursor: ew-resize !important; }
 
@@ -256,26 +238,6 @@ body.resizing-ew, body.resizing-ew * { cursor: ew-resize !important; }
 /* The stage takes keyboard focus for shortcuts; it should not show a ring. */
 .stage-host:focus, .stage-host:focus-visible { outline: none; }
 
-/* ── Play mode transport ────────────────────────────────────────────────── */
-.stage-play { display: flex; align-items: center; }
-.playsw { display: flex; align-items: center; gap: 4px; }
-.playsw .seg {
-  display: flex; align-items: center; justify-content: center;
-  width: calc(30px * var(--ui-scale)); height: var(--h-field);
-  color: var(--fg-dim);
-  background: var(--bg-field);
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
-}
-.playsw .seg:hover { color: var(--fg-strong); }
-.playsw .seg.on { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
-/* Scene / Symbol: a word, not an icon — which of the two is running is not
-   something a glyph can say unambiguously. */
-.playsw .seg.scope {
-  width: auto; padding: 0 7px; font-size: var(--fs-sm); letter-spacing: 0.02em;
-}
-.playsw select { height: var(--h-field); max-width: 130px; }
-
 /* ── Setup / Animate switch ─────────────────────────────────────────────── */
 .modesw { display: flex; align-items: center; border-radius: var(--radius); overflow: hidden; }
 .modesw .seg {
@@ -302,36 +264,46 @@ body.resizing-ew, body.resizing-ew * { cursor: ew-resize !important; }
 .sbar {
   position: absolute; left: 8px; bottom: 8px;
   z-index: 6;
-  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px;
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 4px;
   width: max-content; max-width: calc(100% - 16px);
   font-size: var(--fs-sm);
   --sbar-row: calc(19px * var(--ui-scale));
 }
 .sbar[hidden], .sbar-card[hidden], .sbar-btn[hidden] { display: none; }
+/* Compact: the cards hug their buttons; the font and row height stay. */
 .sbar-card {
-  display: flex; gap: 3px; padding: 4px;
+  display: flex; gap: 2px; padding: 1px;
   background: var(--bg-panel);
-  border: 1px solid var(--line);
+  border: none;
   border-radius: 6px;
   box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
 }
-.sbar-col { display: flex; flex-direction: column; gap: 2px; }
-.sbar-grid { display: grid; grid-template-rows: repeat(3, auto); grid-auto-flow: column; gap: 2px; align-content: start; }
+.sbar-col { display: flex; flex-direction: column; gap: 1px; }
+.sbar-grid { display: grid; grid-template-rows: repeat(3, auto); grid-auto-flow: column; gap: 1px; align-content: start; }
 .sbar-btn {
-  display: flex; align-items: center; gap: 5px;
-  height: var(--sbar-row); padding: 0 6px;
+  display: flex; align-items: center; gap: 4px;
+  height: var(--sbar-row); padding: 0 5px;
   border-radius: var(--radius);
   background: var(--bg-field);
   color: var(--fg);
   white-space: nowrap;
 }
-.sbar-btn.icon-only { padding: 0 5px; }
+.sbar-btn.icon-only { padding: 0 4px; }
 .sbar-btn.unavail { visibility: hidden; }
 .sbar-btn:hover { background: var(--hover); color: var(--fg-strong); }
 .sbar-btn.on { background: var(--accent-row); color: var(--accent-row-ink); }
-.sbar-transform { flex-direction: column; gap: 2px; }
-.sbar-row { display: grid; grid-template-columns: 84px 64px 64px; gap: 2px; align-items: center; }
+.sbar-transform { flex-direction: column; gap: 1px; }
+.sbar-row { display: grid; grid-template-columns: auto 64px 64px; gap: 1px; align-items: center; }
 .sbar-row .field { height: var(--sbar-row); }
+/* The visibility table, in the stage's very top-left corner, over the
+   rulers: square where it meets the edges, compact rows. */
+.sbar.sbar-corner { top: 0; left: 0; bottom: auto; --sbar-row: calc(16px * var(--ui-scale)); }
+.sbar-corner .sbar-card {
+  padding: 1px 2px 2px 1px;
+  border-radius: 0 0 6px 0;
+}
+.sbar-corner .sbar-vis { grid-template-columns: auto repeat(3, 16px); gap: 0 1px; }
+.sbar-corner .sbar-label { padding: 0 4px 0 3px; }
 .sbar-vis { display: grid; grid-template-columns: auto repeat(3, 18px); gap: 1px 2px; align-items: center; }
 .sbar-head { display: grid; place-items: center; color: var(--fg-dim); }
 .sbar-label { color: var(--fg); padding: 0 6px 0 2px; }
@@ -343,14 +315,15 @@ body.resizing-ew, body.resizing-ew * { cursor: ew-resize !important; }
 }
 .sbar-dot.on::after { background: var(--accent); opacity: 1; }
 
-/* Fit to Stage, in the stage's top-right corner (App.fitButton). */
+/* Fit to Stage, in the stage's very top-right corner over the ruler, as the
+   visibility table is top left (App.fitButton): square where it meets the edges,
+   no border line. */
 .stage-fit {
-  position: absolute; top: 6px; right: 6px; z-index: 6;
+  position: absolute; top: 0; right: 0; z-index: 6;
   width: 24px; height: 24px; display: grid; place-items: center;
-  border-radius: var(--radius);
-  background: var(--bg-panel); border: 1px solid var(--line);
+  border-radius: 0 0 0 6px;
+  background: var(--bg-panel); border: none;
   color: var(--fg);
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
 }
-.stage-fit.under-ruler { top: calc(18px + 6px); }
 .stage-fit:hover { color: var(--fg-strong); background: var(--hover); }

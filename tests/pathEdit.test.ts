@@ -9,6 +9,7 @@ import { apply, mat, matOf, mul } from "@/core/math/Matrix2D";
 import { tf, toMatrix, type Transform } from "@/core/math/Transform";
 import { TWEEN_LINEAR } from "@/core/math/easing";
 import type { Animation, Keyframe, Node, SymbolItem, Track } from "@/core/doc/types";
+import { DOC_VERSION } from "@/core/doc/types";
 import { createProject } from "@/core/doc/defaults";
 import { migrate, validateProject } from "@/core/doc/schema";
 
@@ -228,7 +229,7 @@ describe("Node.pathDrag in the file", () => {
     const raw = JSON.parse(JSON.stringify({ ...project, version: 12 }));
     const out = validateProject(migrate(raw)).project;
     const nodes = (out.items[out.rootSymbolId] as SymbolItem).nodes;
-    expect(out.version).toBe(13);
+    expect(out.version).toBe(DOC_VERSION);
     expect(nodes[a.id]!.pathDrag).toBe("parent");
     expect(nodes[b.id]!.pathDrag).toBeUndefined();
   });

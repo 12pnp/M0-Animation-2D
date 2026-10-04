@@ -45,6 +45,8 @@ let stageBox: { width: number; height: number; background: string } | null = nul
 let stageGfx: PIXI.Graphics | null = null;
 let showStage = true;
 let frameRate = 24;
+let speed = 1;
+let maxFps = 60;
 let lastReportedFrame = -1;
 let lastReportedPlaying = false;
 /** Bumped by every `load`; a load that a newer one overtook while it was
@@ -62,6 +64,7 @@ async function ensureApp(): Promise<PIXI.Application> {
     resolution: window.devicePixelRatio || 1,
   });
   document.body.appendChild(a.canvas);
+  a.ticker.maxFPS = maxFps;
 
   // The skeleton is created with autoUpdate off and advanced here, so a
   // pause is exact and a seek is not overwritten by the next tick.
@@ -69,7 +72,7 @@ async function ensureApp(): Promise<PIXI.Application> {
     // An exception in a Pixi ticker listener ends the loop, and the preview
     // would sit frozen with nothing said: report it and carry on.
     try {
-      if (view && playing) view.update(ticker.deltaMS / 1000);
+      if (view && playing) view.update((ticker.deltaMS / 1000) * speed);
       reportTick();
     } catch (err) {
       fail(err);
@@ -305,6 +308,15 @@ window.addEventListener("message", (event: MessageEvent) => {
         if (entry) entry.loop = loop;
         break;
       }
+
+      case "setSpeed":
+        speed = msg.speed;
+        break;
+
+      case "setFps":
+        maxFps = msg.fps;
+        if (app) app.ticker.maxFPS = maxFps;
+        break;
 
       case "seek":
         seekTo(msg.frame);

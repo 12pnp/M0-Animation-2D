@@ -1,5 +1,6 @@
 import type { Layer, Node, SymbolItem } from "./types";
 import type { LayerId, NodeId } from "./ids";
+import { TIMELINE_PROPS, type TimelineProp } from "./propertyKeys";
 
 export interface LayerRow {
   layer: Layer;
@@ -8,6 +9,9 @@ export interface LayerRow {
   hasChildren: boolean;
   /** Hidden because an ancestor group is collapsed. */
   hiddenByCollapse: boolean;
+  /** One of a focused bone's property rows (`focusRows`): the bone's layer,
+   *  showing only where this property is keyed. */
+  prop?: TimelineProp;
 }
 
 /**
@@ -295,4 +299,26 @@ export function groupPlan(
     : { x: 0, y: 0 };
   const indices = members.map((id) => sym.layers.findIndex((l) => l.nodeId === id)).filter((i) => i >= 0);
   return { members, parent, origin, index: indices.length ? Math.min(...indices) : 0 };
+}
+
+/**
+ * The timeline's rows while a bone is selected, as Spine's dopesheet shows
+ * them: only the `focus` nodes' rows (the selection made outside the
+ * timeline), flat, in layer order, each bone followed by its property rows
+ * (Rotate, Translate X, Translate Y, Scale, Shear). No focus, or no bone in
+ * it, and every row stays (`timeline.focusSelected` off does the same). A
+ * focused row hidden in a collapsed group is shown.
+ */
+export function focusRows(sym: SymbolItem, focus: readonly NodeId[], on: boolean): LayerRow[] {
+  const rows = layerRows(sym);
+  if (!on || !focus.some((id) => sym.nodes[id]?.kind === "bone")) return rows;
+  const keep = new Set<string>(focus);
+  return layerRows(sym, true)
+    .filter((r) => keep.has(r.node.id))
+    .flatMap((r) => {
+      const row = { ...r, depth: 0, hasChildren: false, hiddenByCollapse: false };
+      return r.node.kind === "bone"
+        ? [row, ...TIMELINE_PROPS.map((prop) => ({ ...row, depth: 1, prop }))]
+        : [row];
+    });
 }

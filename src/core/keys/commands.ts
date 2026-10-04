@@ -122,7 +122,6 @@ export const COMMANDS: CommandDef[] = [
   c("Modify", "modify.mask", "Mask"),
   c("Modify", "modify.masked", "Masked"),
   c("Modify", "modify.documentSettings", "Document Settings…"),
-  c("Modify", "modify.playMode", "Play Mode", ["Mod+P"], true),
   c("Modify", "modify.setupMode", "Setup Pose Mode", ["Mod+Shift+M"], true),
   c("Modify", "modify.autoKey", "Auto Keyframe"),
 

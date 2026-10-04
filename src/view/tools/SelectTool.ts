@@ -1,4 +1,5 @@
 import type { Tool, ToolContext } from "./Tool";
+import { boneRow } from "@/core/doc/boneRow";
 import type { NodeId } from "@/core/doc/ids";
 import { shownDisplay } from "@/core/doc/pose";
 import { rectFromPoints } from "@/core/math/geom";
@@ -211,21 +212,23 @@ export function hitAt(ctx: ToolContext, wx: number, wy: number): NodeId | null {
   const g = ctx.store.prefs.value.gizmos;
   const skip = unpickable(ctx);
   const pose = ctx.pose();
-  if (pose && ctx.store.ui.showBones) {
+  const showBones = ctx.store.ui.showBones;
+  if (pose && (showBones || g.showPrimary)) {
     const targets = new Set<string>(sym.ik.map((k) => k.targetId));
     const p = { x: wx, y: wy };
-    if (targets.size && g.showIk && g.selectIk) {
+    if (showBones && targets.size && g.showIk && g.selectIk) {
       const target = pickBone(pose, p, 10 / ctx.camera.screenScale,
         (id) => targets.has(id) && !skip.has(id));
       if (target) return target;
     }
     // A bone wins over the artwork under it only close to its line, so the
     // art around a bone stays clickable.
-    if (g.selectBones) {
-      const bone = pickBone(pose, p, BONE_PICK_PX / ctx.camera.screenScale,
-        (id) => !targets.has(id) && !skip.has(id));
-      if (bone) return bone;
-    }
+    // A primary bone follows the Primary row, the rest the Bones row.
+    const bones = { pick: g.selectBones, show: showBones, name: false };
+    const primary = { pick: g.selectPrimary, show: g.showPrimary, name: false };
+    const bone = pickBone(pose, p, BONE_PICK_PX / ctx.camera.screenScale,
+      (id) => !targets.has(id) && !skip.has(id) && boneRow(!!sym.nodes[id]?.primary, bones, primary).pick);
+    if (bone) return bone;
   }
   return ctx.hitTest(wx, wy, skip) as NodeId | null;
 }

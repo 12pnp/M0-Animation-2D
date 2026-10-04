@@ -43,7 +43,7 @@ export async function buildExport(
 
 /**
  * Several symbols at once, as the preview wants them (the edited symbol for
- * the panel, the scene for Play mode). Each gets its own skeleton; they share
+ * the panel, or the scene for a scene-scoped view). Each gets its own skeleton; they share
  * ONE atlas holding every image any of them draws, so two views cost one pack
  * per edit rather than two thrashing the atlas cache. A region nobody uses is
  * harmless to the runtime.

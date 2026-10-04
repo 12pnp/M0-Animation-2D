@@ -67,4 +67,18 @@ describe("what a click picks", () => {
     expect(hitAt(ctx, 50, 2)).toBe(art.id);
     store.setViewFlag("showBones", true);
   });
+
+  it.each([
+    { name: "a primary bone with Bones hidden", bones: false, prefs: {}, want: "arm" },
+    { name: "a primary bone with Bones unpickable", bones: true, prefs: { selectBones: false }, want: "arm" },
+    { name: "not a primary bone the Primary row makes unpickable", bones: true, prefs: { selectPrimary: false }, want: "art" },
+    { name: "not a hidden primary bone", bones: true, prefs: { showPrimary: false }, want: "art" },
+  ])("$name", ({ bones, prefs, want }) => {
+    const { store, ctx, art, arm } = scene();
+    store.currentSymbol.nodes[arm.id]!.primary = true;
+    store.setViewFlag("showBones", bones);
+    store.prefs.set("gizmos", prefs);
+    expect(hitAt(ctx, 50, 2)).toBe(want === "arm" ? arm.id : art.id);
+    store.setViewFlag("showBones", true);
+  });
 });

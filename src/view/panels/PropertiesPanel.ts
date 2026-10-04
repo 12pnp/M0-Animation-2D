@@ -8,7 +8,7 @@ import {
     RenameNode,
     SetDocumentSettings,
     SetNodeBlendMode,
-    SetPathDrag,
+    SetPathDrag, SetBonePrimary,
     SetNodeMotionBlur,
     SetPivot,
 } from "@/core/history/commands";
@@ -380,7 +380,17 @@ export class PropertiesPanel implements Panel {
       this.store.apply(new SetPathDrag(this.store.currentSymbolId, [node.id], drag.value === "parent" ? "parent" : undefined));
       this.store.emit("doc");
     });
-    return this.section("Bone", true, [this.row("Length", [length.el]), this.row("Path drag", [drag])]);
+    // A main bone (a leg, an arm, the head): the stage toolbar's Primary row governs it.
+    const primary = h("input", { type: "checkbox", class: "switch", title: "A main bone: the stage toolbar's Primary row shows, picks and names it instead of the Bones row" }) as HTMLInputElement;
+    primary.checked = !!node.primary;
+    on(primary, "change", () => {
+      const ids = this.store.selection.nodes.filter((id) => this.store.currentSymbol.nodes[id]?.kind === "bone");
+      this.store.apply(new SetBonePrimary(this.store.currentSymbolId, ids.length ? ids : [node.id], primary.checked));
+      this.store.emit("doc");
+    });
+    return this.section("Bone", true, [
+      this.row("Length", [length.el]), this.row("Path drag", [drag]), this.row("Primary", [primary]),
+    ]);
   }
 
   /**
@@ -584,7 +594,7 @@ export class PropertiesPanel implements Panel {
     });
 
     // Motion blur is the export's, not the stage's: the runtime extension
-    // draws it, so it shows in Play mode and the Preview only.
+    // draws it, so it shows in the Preview only.
     const blur = p.motionBlur ?? DEFAULT_MOTION_BLUR;
     const blurOn = h("input", { type: "checkbox", checked: blur.enabled });
     on(blurOn, "change", () => {
@@ -615,7 +625,7 @@ export class PropertiesPanel implements Panel {
         this.row("Max trail", [blurField("", () => blurOf().maxLength, 1, 4096, "px", (v) => ({ motionBlur: { maxLength: v } }))]),
         h("div", { class: "prow wide" },
           h("div", { class: "hint", style: "padding:2px 0" },
-            "Motion blur shows only while the animation plays (Play mode and the Preview), " +
+            "Motion blur shows only while the animation plays in the Preview, " +
             "not while you edit. Shutter sets the length of the blur: 180° looks like a film " +
             "camera, 360° is twice as long. Max trail caps it in pixels. Each layer's amount " +
             "is under Color Effect.")),

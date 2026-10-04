@@ -63,6 +63,13 @@
 .tl-layer:hover { background: var(--hover); }
 .tl-layer.selected { background: var(--accent-row); color: var(--accent-row-ink); }
 .tl-layer .kind { width: 12px; height: 12px; flex: none; opacity: 0.85; }
+/* A focused bone's property rows (Spine's dopesheet), indented under it. */
+.tl-layer.tl-prop { padding-left: 22px; color: var(--fg-dim); background: rgba(0,0,0,0.12); }
+.tl-layer.tl-prop .prop-glyph { width: 12px; flex: none; text-align: center; }
+.tl-prop.prop-rotate .prop-glyph { color: #5fd35f; }
+.tl-prop.prop-x .prop-glyph, .tl-prop.prop-y .prop-glyph { color: #4fb3ff; }
+.tl-prop.prop-scale .prop-glyph { color: #ff6b6b; }
+.tl-prop.prop-shear .prop-glyph { color: #f0c94a; }
 
 /* Mask layers. The tint on the icon is what tells a mask apart from a group
    at a glance; the left rule ties a masked row to the mask above it. */
@@ -175,6 +182,17 @@
   border: 1px solid var(--line);
 }
 .tl-zoom .mark { color: var(--fg-dim); font-size: var(--fs-xs); }
+.tl-speed { color: var(--fg-dim); }
+.tl-speed input[type="range"] { width: 128px; }
+.tl-speed .speed-value { min-width: 3.4em; font-variant-numeric: tabular-nums; cursor: default; }
+.tl-rate { margin-right: 6px; }
+.tl-chip {
+  height: 18px; padding: 0 5px; border: 1px solid var(--line); border-radius: 3px;
+  background: var(--bg-field); color: var(--fg-dim); font-size: var(--fs-xs);
+  font-variant-numeric: tabular-nums; white-space: nowrap; flex: none; cursor: pointer;
+}
+.tl-chip:hover { color: var(--fg-strong); }
+.tl-chip.on { color: var(--accent-ink); background: var(--accent); border-color: var(--accent); }
 
 .tl-anim { max-width: 120px; height: var(--h-field); }
 .tl-foot .readout .fps { font-size: var(--fs-sm); }

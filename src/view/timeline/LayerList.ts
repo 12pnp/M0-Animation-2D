@@ -5,8 +5,19 @@ import type { Store } from "@/app/Store";
 import type { Layer, NodeKind } from "@/core/doc/types";
 import { isSymbol } from "@/core/doc/types";
 import { RenameLayer, ReorderLayer, SetLayerFlag, SetParent } from "@/core/history/commands";
-import { indexAbove, type LayerRow, layerRows } from "@/core/doc/layerTree";
+import { indexAbove, type LayerRow } from "@/core/doc/layerTree";
 import { type TreeLine, lineColorIndex, treeLines } from "@/core/doc/treeLines";
+import { timelineRows } from "./rows";
+import type { TimelineProp } from "@/core/doc/propertyKeys";
+
+/** Spine's names for a bone's property rows, and a glyph for each. */
+const PROP_LABELS: Record<TimelineProp, { label: string; glyph: string }> = {
+  rotate: { label: "Rotate", glyph: "↻" },
+  x: { label: "Translate X", glyph: "↔" },
+  y: { label: "Translate Y", glyph: "↕" },
+  scale: { label: "Scale", glyph: "⤢" },
+  shear: { label: "Shear", glyph: "▱" },
+};
 import { ikRoles, ikSummary } from "@/core/doc/ikGraph";
 import type { NodeId } from "@/core/doc/ids";
 import { attachOptionsMenu } from "./onionButton";
@@ -111,9 +122,9 @@ export class LayerList {
     // targets and which bones a solver drives is the one relationship the
     // indentation cannot show, since a target hangs outside the chain.
     const roles = ikRoles(sym);
-    const rows = layerRows(sym);
+    const rows = timelineRows(this.store);
     const lines = treeLines(rows.map((r) => r.depth));
-    rows.forEach((row, i) => this.list.appendChild(this.row(row, i, roles, lines[i]!)));
+    rows.forEach((row, i) => this.list.appendChild(row.prop ? this.propRow(row) : this.row(row, i, roles, lines[i]!)));
 
     // Selecting from somewhere else — the stage, or a name in the Properties
     // panel's IK section — has to be visible. Only on an actual CHANGE, and
@@ -122,6 +133,23 @@ export class LayerList {
     if (this.selectionKey !== previous && this.store.selection.nodes.length > 0) {
       this.list.querySelector(".tl-layer.selected")?.scrollIntoView({ block: "nearest" });
     }
+  }
+
+  /** A focused bone's property row (`focusRows`): its name, under the bone.
+   *  A press selects the bone, as a press on the bone's own row does. */
+  private propRow(row: LayerRow): HTMLElement {
+    const { label, glyph } = PROP_LABELS[row.prop!];
+    const el = h("div", {
+      class: `tl-layer tl-prop prop-${row.prop}`,
+      style: { height: `${this.cb.rowHeight}px` },
+      title: `${label}: where this bone's ${label.toLowerCase()} is keyed. Keys hold the whole pose, so they are edited on the bone's row.`,
+    }, h("span", { class: "prop-glyph" }, glyph), h("div", { class: "name" }, label));
+    on(el, "pointerdown", (ev) => {
+      if ((ev as unknown as PointerEvent).button !== 0) return;
+      this.store.clearFrameSelection();
+      this.store.selectNodes([row.layer.nodeId]);
+    });
+    return el;
   }
 
   private row(
@@ -242,7 +270,7 @@ export class LayerList {
       e.preventDefault();
       el.style.borderTop = "";
       el.style.outline = "";
-      const rows = layerRows(sym);
+      const rows = timelineRows(this.store);
       const dragged = rows[this.dragIndex]?.layer;
       this.dragIndex = -1;
       if (!dragged || dragged.id === layer.id) return;

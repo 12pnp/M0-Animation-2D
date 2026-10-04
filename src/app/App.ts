@@ -1,4 +1,4 @@
-import { cls, h, on } from "@/view/widgets/dom";
+import { h, on } from "@/view/widgets/dom";
 import { icon } from "@/view/icons";
 import { onAccelChange, withAccel } from "@/view/widgets/accel";
 import { SNAP_TARGETS, Store, type ToolId } from "./Store";
@@ -25,6 +25,7 @@ import { ReferenceService } from "./ReferenceService";
 import { PosesService } from "./PosesService";
 import { PosesPanel } from "@/view/panels/PosesPanel";
 import { PathPanel } from "@/view/panels/PathPanel";
+import { PathZoomLink } from "@/view/panels/pathZoom";
 import { PreviewPanel } from "@/view/panels/PreviewPanel";
 import { AgentApi } from "@/app/agent/AgentApi";
 import { AgentBridge, DEFAULT_BRIDGE } from "@/app/agent/AgentBridge";
@@ -34,7 +35,6 @@ import { AiPanel } from "@/view/agent/AiPanel";
 import { PageVision } from "@/view/agent/AgentVision";
 import { PreviewSession } from "@/preview/PreviewSession";
 import { APP_NAME } from "@/core/about";
-import { StagePlay } from "@/view/viewport/StagePlay";
 import { TimelinePanel } from "@/view/timeline/TimelinePanel";
 import { buildExport, bundleZip, exportFiles, exportSettingsOf, safeFileName } from "@/io/export/ExportBundle";
 import {
@@ -101,7 +101,6 @@ export class App {
   readonly viewport: Viewport;
   private library: LibraryPanel;
   private previewSession: PreviewSession;
-  private play: StagePlay;
   private preview: PreviewPanel;
   readonly timeline: TimelinePanel;
   pathPanel!: PathPanel;
@@ -137,6 +136,7 @@ export class App {
     // Spine's toolbar, floating at the foot of the stage.
     const toolbar = new StageToolbar(this.store, () => this.viewport.pose);
     this.shell.stageHost.appendChild(toolbar.el);
+    this.shell.stageHost.appendChild(toolbar.corner);
     // 8px: the gap the bar keeps from the stage's edge.
     this.viewport.fitInset = () => (toolbar.el.hidden ? 0 : toolbar.el.offsetHeight + 8);
     this.shell.stageHost.appendChild(this.fitButton());
@@ -170,11 +170,6 @@ export class App {
       () => this.shell.floatPanel("preview"),
     );
     this.timeline = new TimelinePanel(this.store, this.clipboard, () => this.onionPopup());
-    this.play = new StagePlay(
-      this.store, this.previewSession, this.shell.stageHost,
-      () => this.timeline.playback.pause(),
-    );
-    this.shell.playSlot.appendChild(this.play.controls);
 
     this.registerPanels();
     this.shell.layoutDocks(
@@ -273,9 +268,13 @@ export class App {
     this.shell.addRightPanel(new SkinsPanel(this.store));
     this.shell.addRightPanel(new HistoryPanel(this.store));
     this.shell.addRightPanel(this.preview);
-    this.pathPanel = new PathPanel(this.store, this.assets, (m) => this.toast.show(m));
+    const pathZoom = new PathZoomLink(() => this.store.prefs.value.gizmos.pathZoomLock);
+    this.pathPanel = new PathPanel(this.store, this.assets, (m) => this.toast.show(m), "local", pathZoom);
+    const worldPath = new PathPanel(this.store, this.assets, (m) => this.toast.show(m), "world", pathZoom);
+    pathZoom.add(this.pathPanel);
+    pathZoom.add(worldPath);
     this.shell.addRightPanel(this.pathPanel);
-    this.shell.addRightPanel(new PathPanel(this.store, this.assets, (m) => this.toast.show(m), "world"));
+    this.shell.addRightPanel(worldPath);
     this.shell.addLeftPanel(this.aiPanel);
 
     this.shell.addBottomPanel(this.timeline);
@@ -530,7 +529,6 @@ export class App {
     // `loadFrom` swaps the document before it stores the new file handle, so
     // the tab has to be re-read here rather than on the "doc" it emits.
     this.shell.syncDocName();
-    this.play.setMode(false);
     this.viewport.clearCaches();
     this.viewport.clearGuides();
     this.viewport.fitToStage();
@@ -1244,7 +1242,6 @@ export class App {
           "-",
           it("modify.documentSettings"),
           "-",
-          it("modify.playMode"),
           it("modify.setupMode"),
           it("modify.autoKey"),
         ],
@@ -1291,7 +1288,7 @@ export class App {
     ];
   }
 
-  /** Fit to Stage, in the stage's top-right corner, under the ruler. It
+  /** Fit to Stage, in the stage's top-right corner, over the ruler. It
    *  stops the pointer itself, or the click would also start a drag on the stage. */
   private fitButton(): HTMLElement {
     const b = h("button", { class: "stage-fit" }, icon("fit", 14));
@@ -1300,9 +1297,6 @@ export class App {
     onAccelChange(title);
     for (const ev of ["pointerdown", "wheel", "dblclick", "contextmenu"]) on(b, ev, (e) => e.stopPropagation());
     on(b, "click", () => this.viewport.fitToStage());
-    const sync = () => cls(b, "under-ruler", this.store.ui.showRulers);
-    this.store.subscribe((t) => { if (t === "stage" || t === "ui") sync(); });
-    sync();
     return b;
   }
 
@@ -1544,11 +1538,8 @@ export class App {
     reg("modify.masked", () => this.toggleMasked(), () => this.canToggleMasked(),
       () => !!this.selectedLayer()?.maskedBy);
     reg("modify.documentSettings", () => { s.clearSelection(); this.shell.showPanel("properties"); });
-    reg("modify.playMode", () => this.play.toggle(), undefined, () => s.ui.playMode);
-    // Editing the bind pose while the runtime is on screen would change a
-    // stage nobody can see.
     reg("modify.setupMode", () => s.setMode(s.ui.mode === "setup" ? "animate" : "setup"),
-      () => !s.ui.playMode, () => s.ui.mode === "setup");
+      undefined, () => s.ui.mode === "setup");
     reg("modify.autoKey", () => s.setUi({ autoKey: !s.ui.autoKey }), undefined, () => s.ui.autoKey);
 
     // A frame selection, when there is one, is what the F-keys act on.

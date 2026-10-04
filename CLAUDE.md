@@ -8,7 +8,7 @@ phases, the DragonBones→Spine mapping, and the checklist of export tests to
 rebuild. Phases 0–9 are done: DragonBones is gone, `src/core/spine/` holds the
 Spine 4.3 contract, the transform mapping and the exporter (ARCHITECTURE ▸ The
 Spine 4.3 contract, The Spine exporter), File ▸ Export writes Spine files, and
-the Preview panel and Play mode run spine-pixi-v8 (ARCHITECTURE ▸ The preview is
+the Preview panel runs spine-pixi-v8 (ARCHITECTURE ▸ The preview is
 ground truth, Vendored runtime), and the stage's eases and IK are Spine's own
 (ARCHITECTURE ▸ Easing, Bones and IK). Nested symbols are flattened into the one
 skeleton (ARCHITECTURE ▸ The Spine exporter ▸ Nested symbols are flattened), masks

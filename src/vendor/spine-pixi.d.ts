@@ -24,7 +24,7 @@ declare namespace PIXI {
     fill(style: { color: number; alpha?: number }): this;
     stroke(style: { color: number; alpha?: number; width?: number }): this;
   }
-  interface Ticker { readonly deltaMS: number; add(fn: (ticker: Ticker) => void): void }
+  interface Ticker { readonly deltaMS: number; maxFPS: number; add(fn: (ticker: Ticker) => void): void }
   class Application {
     init(options: Record<string, unknown>): Promise<void>;
     readonly canvas: HTMLCanvasElement;

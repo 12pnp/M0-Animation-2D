@@ -13,7 +13,7 @@ import type { PreviewSession, PreviewView } from "@/preview/PreviewSession";
  * export is wrong, and that is worth finding out while authoring rather than
  * after shipping.
  *
- * The export itself belongs to `PreviewSession`, which the stage's Play mode
+ * The export itself belongs to `PreviewSession`, which any other runtime view
  * shares: this panel is one VIEW of that runtime, with its own iframe and its
  * own toggles.
  */

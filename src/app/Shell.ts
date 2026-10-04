@@ -85,9 +85,7 @@ export class Shell {
   private docTabEl: HTMLElement;
   /** Each panel's place in its rail: the order it was added in. */
   private panelOrder = new Map<string, number>();
-  private syncAiButton: () => void = () => {};
   /** Where App puts the Play-mode transport, built after the shell. */
-  readonly playSlot: HTMLElement = h("div", { class: "stage-play" });
   /** The name of the file on disk. Supplied by App, because ProjectService —
    *  which owns the file handle — is built after the shell. */
   docTitle: (() => string) | null = null;
@@ -249,18 +247,10 @@ export class Shell {
         (v) => this.store.setViewFlag("showBonePaths", v)),
     );
 
-    // Two spacers, so the play cluster is CENTRED rather than pushed to one
-    // side: it is the mode the whole stage is in, not another toggle.
-    const aiBtn = h("button", { class: "ai-toggle", title: "Show or hide the AI panel" }, "✦ AI");
-    on(aiBtn, "click", () => this.togglePanel(AI_PANEL));
-    this.syncAiButton = () => cls(aiBtn, "on", this.isPanelShown(AI_PANEL));
-
+    // The AI panel's button is on the left rail; the runtime plays in the
+    // Preview panel.
     const bar = h("div", { class: "stage-bar" },
-      aiBtn,
-      h("div", { class: "sep-v" }),
       this.crumbEl,
-      h("div", { class: "spacer" }),
-      this.playSlot,
       h("div", { class: "spacer" }),
       this.buildSkinPicker(),
       this.buildModeSwitch(),
@@ -596,7 +586,6 @@ export class Shell {
     const { l1, l2, r1, r2 } = this.cols;
     this.fillRail(this.leftPanelsEl, [...l1.dock.panelList(), ...l2.dock.panelList()]);
     this.fillRail(this.rightPanelsEl, [...r1.dock.panelList(), ...r2.dock.panelList()]);
-    this.syncAiButton();
   }
 
   // ── Region splitters ───────────────────────────────────────────────────

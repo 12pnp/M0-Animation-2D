@@ -6,7 +6,15 @@ import type { NodeId } from "@/core/doc/ids";
 import { describeFrame, ensureTrack } from "@/app/TimelineOps";
 import { keyIndexAt, MAX_FRAMES, spanIndexAt } from "@/core/doc/timeline";
 import { easeTag } from "@/core/math/easing";
-import { type LayerRow, layerRows } from "@/core/doc/layerTree";
+import type { LayerRow } from "@/core/doc/layerTree";
+import { timelineRows } from "./rows";
+import { propertyKeys, type TimelineProp } from "@/core/doc/propertyKeys";
+
+/** The property rows' key colours: Spine's, green rotate, blue translate,
+ *  red scale, yellow shear. */
+const PROP_COLORS: Record<TimelineProp, string> = {
+  rotate: "#5fd35f", x: "#4fb3ff", y: "#4fb3ff", scale: "#ff6b6b", shear: "#f0c94a",
+};
 import { withAlpha } from "@/view/viewport/overlayColors";
 import { DEFAULT_PREFS } from "@/core/prefs/prefs";
 import { uiFont, type UiFontSize, uiPx } from "@/core/prefs/fonts";
@@ -205,7 +213,7 @@ export class FrameGrid {
 
   /** The rows currently on screen, matching the layer column exactly. */
   visibleRows(): LayerRow[] {
-    return layerRows(this.store.currentSymbol);
+    return timelineRows(this.store);
   }
 
   frameAtX(x: number): number {
@@ -231,13 +239,12 @@ export class FrameGrid {
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, w, this.el.clientHeight);
 
-    const sym = this.store.currentSymbol;
     const anim = this.store.currentAnimation;
     const duration = anim?.duration ?? 1;
     const fps = this.store.project.frameRate;
     // The grid must show exactly the rows the layer column shows, collapsed
     // groups included, or the two panes drift apart by a row.
-    const rows = layerRows(sym);
+    const rows = timelineRows(this.store);
 
     // The visible range, NOT the animation's: the ruler is numbered and the
     // cells are drawn all the way out to `MAX_FRAMES`, so the playhead can be
@@ -394,7 +401,7 @@ export class FrameGrid {
     const x = clientX - r.left, y = clientY - r.top;
     if (this.frameAtX(x) !== join) return "";
     if (y < this.headerHeight) return `Frame ${join + 1} is the loop's join: it shows frame 1 again.`;
-    const row = layerRows(this.store.currentSymbol)[this.rowAtY(y)];
+    const row = timelineRows(this.store)[this.rowAtY(y)];
     const g = row && this.seamGaps().get(row.layer.nodeId);
     if (!g) return "";
     const parts: string[] = [];
@@ -537,6 +544,10 @@ export class FrameGrid {
       }
 
       const track: Track | undefined = anim?.tracks[layer.nodeId];
+      if (rows[i]!.prop) {
+        this.drawPropRow(ctx, track, rows[i]!.prop!, y);
+        continue;
+      }
       // A group has no artwork of its own, so it gets a thinner band: it is
       // a container, and drawing it like content would suggest otherwise. An
       // empty layer gets an outlined band with a hollow keyframe — Flash's
@@ -653,6 +664,40 @@ export class FrameGrid {
   private drawSpanEdge(ctx: CanvasRenderingContext2D, x: number, y: number, pad: number): void {
     ctx.fillStyle = this.C.spanEdge;
     ctx.fillRect(Math.round(x), y + pad, 1, this.rowHeight - pad * 2 - 1);
+  }
+
+  /**
+   * A focused bone's property row: a diamond where that property is keyed
+   * (`propertyKeys`), in the property's colour, joined by a line where it
+   * changes between two of them. Spine's dopesheet draws the same.
+   */
+  private drawPropRow(ctx: CanvasRenderingContext2D, track: Track | undefined, prop: TimelineProp, y: number): void {
+    ctx.fillStyle = "rgba(0,0,0,0.12)";
+    ctx.fillRect(0, y, this.el.clientWidth, this.rowHeight);
+    const frames = propertyKeys(track, prop);
+    if (!frames.length) return;
+    const color = PROP_COLORS[prop];
+    const mid = Math.round(y + this.rowHeight / 2 - 0.5) + 0.5;
+    const half = this.frameWidth / 2;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 1; i < frames.length; i++) {
+      ctx.moveTo(this.xOfFrame(frames[i - 1]!) + half, mid);
+      ctx.lineTo(this.xOfFrame(frames[i]!) + half, mid);
+    }
+    ctx.stroke();
+    const r = Math.max(3, Math.min(5, half - 0.5, this.rowHeight / 2 - 3));
+    for (const f of frames) {
+      const cx = Math.round(this.xOfFrame(f) + half - 0.5) + 0.5;
+      ctx.beginPath();
+      ctx.rect(cx - r, mid - r, r * 2, r * 2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = this.C.keyDot;
+      ctx.stroke();
+    }
   }
 
   private drawTrackRow(
@@ -891,6 +936,13 @@ export class FrameGrid {
       // Below the last layer there are no frames: a press there deselects
       // them, as a press on the empty stage does.
       if (!layer) { this.store.clearFrameSelection(); return; }
+      // A property row only shows: its keys are the bone's whole-pose keys,
+      // edited on the bone's row. A press selects the frame there.
+      if (this.visibleRows()[row]?.prop) {
+        this.anchor = { row, frame };
+        this.cb.onSelectCell(row, frame, false);
+        return;
+      }
 
       const track = this.store.currentAnimation?.tracks[layer.nodeId];
       // A layer with no track still shows a full-length span, so its end is

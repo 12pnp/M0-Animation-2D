@@ -1,4 +1,6 @@
 import { clear, cls, drag, h, on } from "@/view/widgets/dom";
+import { SPEED_SLIDER_MAX, sliderFromSpeed, speedFromSlider, speedLabel } from "./playSpeed";
+import { PLAY_RATES } from "./playStep";
 import { uniqueAnimationName } from "@/core/doc/animationList";
 import { promptText } from "@/view/widgets/dialogs";
 import { onAccelChange, withAccel } from "@/view/widgets/accel";
@@ -141,7 +143,14 @@ export class TimelinePanel implements Panel {
     // The toolbar sits on top, over the layers and the ruler, as in Spine.
     this.el = h("div", { class: "tl" }, this.buildFooter(), main);
 
+    // A selection made in here (a row, a frame) leaves the focus as it was.
+    let pressedHere = false;
+    on(this.el, "pointerdown", () => { pressedHere = true; }, { capture: true });
+    on(window, "pointerup", () => { setTimeout(() => { pressedHere = false; }); });
     store.subscribe((topic) => {
+      if (topic === "selection" && !pressedHere && !this.el.contains(document.activeElement)) {
+        store.ui.timelineFocus = [...store.selection.nodes];
+      }
       if (topic === "doc" || topic === "timeline" || topic === "selection") {
         this.layers.render();
         this.grid.invalidate();
@@ -194,6 +203,14 @@ export class TimelinePanel implements Panel {
       this.store.setUi({ onionSkin: !this.store.ui.onionSkin }, "stage");
     });
     attachOptionsMenu(onionBtn, () => showMenu(onionBtn, this.onionMenu()));
+    // Spine's dopesheet: a bone selected on the stage or in the Tree shows
+    // only its own rows here.
+    const focusBtn = iconBtn("subtree", "Show only the selected bones' rows (select a bone on the stage or in the Tree)", () => {
+      this.store.prefs.set("timeline", { focusSelected: !this.store.prefs.value.timeline.focusSelected });
+    });
+    const syncFocus = () => cls(focusBtn, "on", this.store.prefs.value.timeline.focusSelected);
+    this.store.prefs.subscribe(syncFocus);
+    syncFocus();
     const multiBtn = iconBtn("multiFrames", "Edit multiple frames: a change applies to every frame between the onion markers", () => {
       this.store.setUi({ editMultipleFrames: !this.store.ui.editMultipleFrames }, "stage");
     });
@@ -237,17 +254,47 @@ export class TimelinePanel implements Panel {
       ]);
     });
 
-    const zoom = h("input", { type: "range", min: "4", max: "40", value: String(this.grid.frameWidth) }) as HTMLInputElement;
-    on(zoom, "input", () => this.grid.setFrameWidth(Number(zoom.value)));
-    // The wheel over the ruler and Fit zoom too: the slider follows the pref.
-    this.store.prefs.subscribe(() => {
-      if (document.activeElement !== zoom) zoom.value = String(this.store.prefs.value.timeline.frameWidth);
-    });
     const fit = iconBtn("fit", "Fit the animation to the timeline's width", () => {
       this.grid.fitToView(this.store.currentAnimation?.duration ?? 1);
     });
 
     this.fpsLabel = h("span", { class: "fps" }, `${this.store.project.frameRate} fps`);
+
+    const speedOf = () => this.store.prefs.value.timeline.playSpeed;
+    const speed = h("input", {
+      type: "range", min: "0", max: String(SPEED_SLIDER_MAX), value: String(sliderFromSpeed(speedOf())),
+    }) as HTMLInputElement;
+    const speedText = h("span", { class: "mark speed-value" }, speedLabel(speedOf()));
+    const setSpeed = (v: number) => this.store.prefs.set("timeline", { playSpeed: v });
+    on(speed, "input", () => setSpeed(speedFromSlider(Number(speed.value))));
+    // The slider has the focus after a double-click, so the sync below skips it.
+    const reset = () => { setSpeed(1); speed.value = String(sliderFromSpeed(1)); };
+    on(speed, "dblclick", reset);
+    on(speedText, "dblclick", reset);
+    const one = h("button", { class: "tl-chip", title: "Playback speed back to 1×" }, "1×");
+    on(one, "click", reset);
+    // Redraws a second while playing: the stage poses between frames.
+    const rateOf = () => this.store.prefs.value.timeline.playRate;
+    const rateBtn = h("button", {
+      class: "tl-chip tl-rate", title: "Smooth playback: how many times a second the timeline and the Preview redraw",
+    }) as HTMLButtonElement;
+    on(rateBtn, "click", () => showMenu(rateBtn, PLAY_RATES.map((rate) => ({
+      label: `${rate} fps`, checked: rateOf() === rate,
+      run: () => this.store.prefs.set("timeline", { playRate: rate }),
+    }))));
+    const syncSpeed = () => {
+      speedText.textContent = speedLabel(speedOf());
+      if (document.activeElement !== speed) speed.value = String(sliderFromSpeed(speedOf()));
+      cls(one, "on", speedOf() === 1);
+      rateBtn.textContent = `${rateOf()} fps ▾`;
+    };
+    this.store.prefs.subscribe(syncSpeed);
+    syncSpeed();
+    const speedBox = h("div", { class: "tl-zoom tl-speed" },
+      rateBtn,
+      h("span", { title: "Playback speed (double-click: 1×). The timeline and the Preview play at it.", style: "display:flex;align-items:center;gap:5px" },
+        icon("play", 11), speed, speedText),
+      one);
 
     return h("div", { class: "tl-foot" },
       newLayer, newGroup, del,
@@ -257,13 +304,13 @@ export class TimelinePanel implements Panel {
       this.playBtn,
       iconBtn("next", "Next frame", () => this.playback.stepBy(1)),
       iconBtn("last", "Last frame", () => this.playback.toEnd()),
-      loopBtn, onionBtn, multiBtn,
+      loopBtn, onionBtn, multiBtn, focusBtn,
       h("div", { class: "sep-v" }),
       this.animSelect, animMenu,
       h("div", { class: "readout" },
         this.frameLabel, this.fpsLabel, this.elapsedLabel, this.tweenLabel),
       h("div", { class: "spacer" }),
-      h("div", { class: "tl-zoom" }, h("span", { class: "mark" }, "▁"), zoom, h("span", { class: "mark" }, "▆")),
+      speedBox,
       fit,
     );
   }
@@ -298,7 +345,7 @@ export class TimelinePanel implements Panel {
   /**
    * The horizontal scrollbar is a sibling of the canvas, not the canvas's own
    * overflow, so nothing updates it implicitly. Its inner width has to follow
-   * `contentWidth` — which the zoom slider changes without emitting any store
+   * `contentWidth` — which a zoom changes without emitting any store
    * event, so the bar simply never appeared when the frames were widened —
    * and its thumb has to follow a `scrollX` the grid moved itself, as
    * `revealFrame` does while playing.

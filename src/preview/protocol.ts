@@ -33,6 +33,10 @@ export type HostToFrame =
   | { type: "resume" }
   | { type: "pause" }
   | { type: "setLoop"; on: boolean }
+  /** Playback speed, 1 = the skeleton's fps (`timeline.playSpeed`). */
+  | { type: "setSpeed"; speed: number }
+  /** Redraws a second at most while playing (`timeline.playRate`). */
+  | { type: "setFps"; fps: number }
   | { type: "seek"; frame: number }
   | { type: "setAnimation"; name: string }
   | { type: "setDebug"; on: boolean }

@@ -41,9 +41,9 @@ function isEmpty(result: ExportResult): boolean {
 /**
  * One build, many runtimes.
  *
- * The preview panel and the stage's Play mode both need the project run
- * through the ACTUAL Spine runtime, and both must be fed the exact bytes that
- * would go to disk — that is what makes either of them ground truth. A Spine
+ * Every preview view needs the project run through the ACTUAL Spine runtime,
+ * fed the exact bytes that would go to disk — that is what makes it ground
+ * truth. A Spine
  * file holds one skeleton, so each view gets the export of ITS symbol; what
  * they must not do is pack the atlas twice (by far the expensive half, and a
  * drag emits dozens of document changes a second), so one build exports
@@ -70,10 +70,22 @@ export class PreviewSession {
     /** Every build's outcome: the error, or null when it succeeded. */
     private readonly onBuilt: (error: unknown) => void = () => {},
   ) {
+    let { playSpeed: speed, playRate: fps } = store.prefs.value.timeline;
+    this.store.prefs.subscribe(() => {
+      const t = this.store.prefs.value.timeline;
+      if (t.playSpeed !== speed) {
+        speed = t.playSpeed;
+        for (const v of this.views) v.host.post({ type: "setSpeed", speed });
+      }
+      if (t.playRate !== fps) {
+        fps = t.playRate;
+        for (const v of this.views) v.host.post({ type: "setFps", fps });
+      }
+    });
     this.store.subscribe((topic) => {
       // Every edit goes through History, which emits "doc" first. "stage" and
-      // "timeline" also come from view state — entering Play mode, a view
-      // flag, folding a group — and each one rebuilt the export and restarted
+      // "timeline" also come from view state — a view flag, folding a
+      // group — and each one rebuilt the export and restarted
       // the animation a quarter of a second after it had begun.
       if (topic === "doc" || topic === "library") {
         this.stale = true;
@@ -96,6 +108,12 @@ export class PreviewSession {
   register(view: PreviewView): void {
     this.views.add(view);
     view.host.onMessage((msg) => {
+      // The iframe may be new: it starts at 1×.
+      if (msg.type === "loaded") {
+        const t = this.store.prefs.value.timeline;
+        view.host.post({ type: "setSpeed", speed: t.playSpeed });
+        view.host.post({ type: "setFps", fps: t.playRate });
+      }
       if (msg.type === "loaded") {
         this.animations = msg.animations;
         for (const fn of this.animListeners) fn(msg.animations);
@@ -147,7 +165,7 @@ export class PreviewSession {
   /**
    * `show`, without waiting for the coalescing timer. When nothing changed
    * only this view is loaded: rebuilding for everyone restarted the Preview
-   * panel's animation every time Play mode was entered.
+   * panel's animation every time another view came on screen.
    */
   present(view: PreviewView): void {
     const built = this.builtFor(view);
@@ -164,7 +182,7 @@ export class PreviewSession {
 
   /**
    * Build and load. `force` skips the "nothing changed" guard, which is what
-   * entering Play mode and revealing the panel both need — the document may
+   * revealing a view needs — the document may
    * be untouched but this view has never been given it.
    */
   async refresh(force = false): Promise<void> {

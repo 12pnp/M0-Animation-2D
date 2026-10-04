@@ -78,7 +78,7 @@ describe("the fixture itself", () => {
     // the "empty" node kind existed. Loading it must land on the current one, not be
     // refused and not stay at 2.
     expect(fx.project.version).toBe(DOC_VERSION);
-    expect(DOC_VERSION).toBe(13);
+    expect(DOC_VERSION).toBe(14);
     expect(fx.diagnostics.filter((d) => d.severity === "error")).toHaveLength(0);
   });
 

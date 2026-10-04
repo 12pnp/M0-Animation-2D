@@ -170,6 +170,7 @@ export function validateProject(raw: unknown): ValidationResult {
         if (!Number.isInteger(d) || d < -1 || d >= Math.max(1, displaysOf(node).length) || d === 0) delete node.setupDisplay;
       }
       if (node.pathDrag !== undefined && node.pathDrag !== "parent") delete node.pathDrag;
+      if (node.primary !== undefined && (node.primary !== true || node.kind !== "bone")) delete node.primary;
       if (node.motionBlur !== undefined) {
         const m = Number(node.motionBlur);
         if (!Number.isFinite(m) || m === 1) delete node.motionBlur;
@@ -398,6 +399,9 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // 12 -> 13: `Node.pathDrag`, how dragging a bone's path turns it. Additive;
   // an older build would drop it on save.
   12: (p) => ({ ...p, version: 13 }),
+  // 13 -> 14: `Node.primary`, a bone the stage toolbar's Primary row governs.
+  // Additive; an older build would drop it on save.
+  13: (p) => ({ ...p, version: 14 }),
 };
 
 /** A tween read from disk, or null when it is not one this build knows. */

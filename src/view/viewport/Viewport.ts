@@ -260,7 +260,7 @@ export class Viewport {
       Object.values(store.currentSymbol.nodes).filter((n) => n.kind !== "bone").map((n) => n.id as string),
     );
     this.lastPose = this.renderer.draw(
-      sc, store.currentSymbol, store.currentAnimation, store.ui.frame, store.ui.mode, view,
+      sc, store.currentSymbol, store.currentAnimation, store.stageFrame, store.ui.mode, view,
       { hiddenLayers: hiddenArt },
     );
     if (ref && stagePrefs.referenceAbove) drawReference(sc, view, ref, store.ui.frame, this.assets, stagePrefs.referenceOpacity);
@@ -284,6 +284,7 @@ export class Viewport {
       showBones: store.ui.showBones,
       showIk: gizmoPrefs.showIk,
       names: { bones: gizmoPrefs.nameBones, images: gizmoPrefs.nameImages, ik: gizmoPrefs.nameIk },
+      primary: { show: gizmoPrefs.showPrimary, name: gizmoPrefs.namePrimary },
       showGizmos: store.ui.showGizmos,
       setupMode: store.ui.mode === "setup",
       showOrigin: store.prefs.value.stage.showOrigin,
@@ -310,13 +311,13 @@ export class Viewport {
    * The bone paths for this draw (docs/CYCLE-PATH-PLAN.md, B4): the selected
    * bones, or every bone, by preference; never on a locked or hidden layer.
    * Over the onion span when the onion skin is on, else the whole animation.
-   * Animate mode only, never in Play mode, and off with the gizmos.
+   * Animate mode only, and off with the gizmos.
    */
   private bonePathsToDraw(): BonePathsDraw | null {
     const { store } = this;
     const anim = store.currentAnimation;
     const ui = store.ui;
-    if (!anim || !ui.showBonePaths || !ui.showGizmos || ui.mode !== "animate" || ui.playMode) return null;
+    if (!anim || !ui.showBonePaths || !ui.showGizmos || ui.mode !== "animate") return null;
     const sym = store.currentSymbol;
     const g = store.prefs.value.gizmos;
     const shown = new Set(sym.layers.filter((l) => l.visible && !l.locked).map((l) => l.nodeId));
@@ -366,7 +367,7 @@ export class Viewport {
   private drawOtherFrames(sc: CanvasRenderingContext2D, view: Matrix2D): void {
     const { store } = this;
     const anim = store.currentAnimation;
-    if (!anim || store.ui.mode !== "animate" || store.ui.playMode) return;
+    if (!anim || store.ui.mode !== "animate") return;
     if (!store.ui.onionSkin && !store.ui.editMultipleFrames) return;
 
     const sym = store.currentSymbol;
@@ -412,7 +413,7 @@ export class Viewport {
       const anim = store.currentAnimation;
       const sym = store.currentSymbol;
       const out: PoseAt[] = [{ pose: posedSymbol(store.project, sym, anim, ctx.frame, ctx.mode), when: ctx }];
-      if (anim && store.ui.editMultipleFrames && ctx.mode === "animate" && !store.ui.playMode) {
+      if (anim && store.ui.editMultipleFrames && ctx.mode === "animate") {
         const span = store.onionSpan;
         for (let f = span.start; f <= span.end; f++) {
           if (f !== ctx.frame) out.push({ pose: posedSymbol(store.project, sym, anim, f, "animate"), when: { ...ctx, frame: f } });

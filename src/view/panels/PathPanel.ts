@@ -6,6 +6,8 @@ import { icon } from "@/view/icons";
 import { Camera } from "@/view/viewport/Camera";
 import { SceneRenderer } from "@/view/viewport/SceneRenderer";
 import { PathCache } from "@/view/viewport/pathCache";
+import type { PathZoomLink, ZoomLinked } from "./pathZoom";
+import { PATH_GRID_MAJOR, pathGridStep } from "./pathGrid";
 import { pathScene } from "@/view/viewport/pathScene";
 import { drawBonePaths } from "@/view/viewport/pathDraw";
 import type { BonePathsDraw } from "@/view/viewport/Overlay";
@@ -39,7 +41,7 @@ export const PATH_PANELS: Record<PathPanelSpace, { id: string; title: string; hi
  * animation, in one space (Local or World). Its dots and handles edit as the
  * stage's do, through the same drags.
  */
-export class PathPanel implements Panel {
+export class PathPanel implements Panel, ZoomLinked {
   readonly id: string;
   readonly title: string;
   readonly icon = "bonePath" as const;
@@ -48,7 +50,10 @@ export class PathPanel implements Panel {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly note: HTMLElement;
   private readonly nameEl: HTMLElement;
-  private readonly camera = new Camera();
+  readonly camera = new Camera();
+  fitZoom: number | null = null;
+  private readonly lock: HTMLButtonElement;
+  private readonly gridBtn: HTMLButtonElement;
   private readonly renderer: SceneRenderer;
   private readonly cache = new PathCache();
   private readonly invalidate: () => void;
@@ -66,6 +71,7 @@ export class PathPanel implements Panel {
   constructor(
     private readonly store: Store, assets: AssetStore, notify: (message: string) => void,
     private readonly space: PathPanelSpace = "local",
+    private readonly link?: PathZoomLink,
   ) {
     this.id = PATH_PANELS[space].id;
     this.title = PATH_PANELS[space].title;
@@ -73,11 +79,17 @@ export class PathPanel implements Panel {
     this.canvas = h("canvas", { style: "position:absolute;inset:0;width:100%;height:100%;touch-action:none" }) as HTMLCanvasElement;
     this.ctx = this.canvas.getContext("2d")!;
     this.note = h("div", { class: "hint", style: "position:absolute;left:8px;right:8px;top:8px;pointer-events:none" });
-    this.nameEl = h("span", { style: "font-weight:600;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap", title: PATH_PANELS[space].hint });
+    this.nameEl = h("span", { style: "font-weight:600;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap", title: PATH_PANELS[space].hint });
     const fit = h("button", { class: "iconbtn", title: "Fit: frame the bone and its path" }, icon("fit", 14));
+    this.lock = h("button", { class: "iconbtn", title: "Lock zoom: the Local and World Path panels zoom together" }, icon("lock", 14)) as HTMLButtonElement;
+    this.lock.hidden = !link;
+    this.gridBtn = h("button", { class: "iconbtn", title: "Show grid (both Path panels)" }, icon("grid", 14)) as HTMLButtonElement;
     const bar = h("div", { style: "display:flex;align-items:center;gap:8px;padding:4px 8px;flex:none" },
-      this.nameEl,
-      fit);
+      // The buttons first: a narrow column clips the bar's right end.
+      fit,
+      this.lock,
+      this.gridBtn,
+      this.nameEl);
     const area = h("div", { style: "position:relative;flex:1;min-height:0;overflow:hidden" }, this.canvas, this.note);
     this.el = h("div", { class: "path-panel", style: "display:flex;flex-direction:column;height:100%" }, bar, area);
 
@@ -85,6 +97,13 @@ export class PathPanel implements Panel {
     this.toolCtx = this.makeToolContext(assets, notify);
 
     on(fit, "click", () => { this.fittedFor = ""; this.invalidate(); });
+    on(this.gridBtn, "click", () => store.prefs.set("gizmos", { pathGrid: !store.prefs.value.gizmos.pathGrid }));
+    on(this.lock, "click", () => {
+      const locked = !store.prefs.value.gizmos.pathZoomLock;
+      store.prefs.set("gizmos", { pathZoomLock: locked });
+      // Locking takes this panel's zoom to the other.
+      if (locked) this.link?.zoomed(this);
+    });
     this.wireInput();
     new ResizeObserver(() => this.resize()).observe(area);
     store.subscribe(() => this.invalidate());
@@ -94,6 +113,8 @@ export class PathPanel implements Panel {
 
   // The dock may call this before the panel is back in the page, where it
   // measures 0; the observer sees no change once it is back at its old size.
+  redraw(): void { this.invalidate(); }
+
   onShow(): void { this.resize(); requestAnimationFrame(() => this.resize()); }
 
   private resize(): void {
@@ -143,6 +164,8 @@ export class PathPanel implements Panel {
 
   private render(): void {
     const { store, ctx } = this;
+    this.lock.classList.toggle("on", store.prefs.value.gizmos.pathZoomLock);
+    this.gridBtn.classList.toggle("on", store.prefs.value.gizmos.pathGrid);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = "#2a2a2a";
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -194,11 +217,43 @@ export class PathPanel implements Panel {
       if (!this.cache.pending) this.fittedFor = fitKey;
     }
 
+    if (store.prefs.value.gizmos.pathGrid) {
+      ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+      this.drawGrid();
+    }
     const view = mul(mat(), mul(mat(), matOf(this.dpr, 0, 0, this.dpr, 0, 0), this.camera.matrix), this.shown);
     this.renderer.draw(ctx, sym, anim, frame, "animate", view, { hiddenLayers: hidden });
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     this.drawBones(pose, bone);
     drawBonePaths(ctx, (x, y) => this.camera.toScreen(x, y), this.scene, { core: "#161616", handle: "#00bcd9" });
+  }
+
+  /** Lines every `pathGridStep` stage pixels under the artwork, every fifth
+   *  brighter. */
+  private drawGrid(): void {
+    const { ctx, camera } = this;
+    const step = pathGridStep(camera.zoom);
+    const tl = camera.toWorld(0, 0), br = camera.toWorld(camera.width, camera.height);
+    const x0 = Math.min(tl.x, br.x), x1 = Math.max(tl.x, br.x), y0 = Math.min(tl.y, br.y), y1 = Math.max(tl.y, br.y);
+    const lines = (major: boolean) => {
+      ctx.beginPath();
+      for (let i = Math.ceil(x0 / step); i * step <= x1; i++) {
+        if ((i % PATH_GRID_MAJOR === 0) !== major) continue;
+        const x = Math.round(camera.toScreen(i * step, 0).x) + 0.5;
+        ctx.moveTo(x, 0); ctx.lineTo(x, camera.height);
+      }
+      for (let i = Math.ceil(y0 / step); i * step <= y1; i++) {
+        if ((i % PATH_GRID_MAJOR === 0) !== major) continue;
+        const y = Math.round(camera.toScreen(0, i * step).y) + 0.5;
+        ctx.moveTo(0, y); ctx.lineTo(camera.width, y);
+      }
+      ctx.stroke();
+    };
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(255,255,255,0.07)";
+    lines(false);
+    ctx.strokeStyle = "rgba(255,255,255,0.17)";
+    lines(true);
   }
 
   /** The parent faint, the bone itself solid: the frame the path is read against. */
@@ -253,6 +308,8 @@ export class PathPanel implements Panel {
     // Then 35% further out, about the centre: framed edge to edge the path
     // sat too close to read what is around it.
     this.camera.zoomAt(this.camera.width / 2, this.camera.height / 2, FIT_ZOOM_OUT);
+    this.fitZoom = this.camera.zoom;
+    this.link?.fitted(this);
   }
 
   private local(e: PointerEvent | WheelEvent): { x: number; y: number } {
@@ -266,6 +323,7 @@ export class PathPanel implements Panel {
       e.preventDefault();
       const p = this.local(e);
       this.camera.zoomAt(p.x, p.y, Math.exp(-e.deltaY * 0.0015));
+      this.link?.zoomed(this);
       this.invalidate();
     });
     // The left button edits; the view pans with the middle or right button,

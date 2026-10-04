@@ -1,4 +1,5 @@
 import type { Camera } from "./Camera";
+import { boneRow } from "@/core/doc/boneRow";
 import { uiFont, type UiFontSize } from "@/core/prefs/fonts";
 import type { Pose } from "@/core/doc/pose";
 import {
@@ -60,6 +61,8 @@ export interface OverlayOptions {
    *  which names are written on the stage. */
   showIk: boolean;
   names: { bones: boolean; images: boolean; ik: boolean };
+  /** The Primary row, for bones marked primary. Absent: they follow Bones. */
+  primary?: { show: boolean; name: boolean };
   /** The reference marks on a selected node — never the selection box itself,
    *  which is what says something IS selected. */
   showGizmos: boolean;
@@ -127,7 +130,7 @@ export class Overlay {
     if (opts.showGuides) this.drawGuides(ctx, camera, opts.guides, opts.draftGuide);
     this.drawEmptySymbols(ctx, camera, project, pose);
     if (opts.bonePaths) this.drawBonePaths(ctx, camera, opts.bonePaths);
-    if (opts.showBones) this.drawBones(ctx, camera, symbol, pose, opts);
+    if (opts.showBones || opts.primary?.show) this.drawBones(ctx, camera, symbol, pose, opts);
     if (opts.names.images) this.drawImageNames(ctx, camera, pose);
     this.drawSelection(
       ctx, camera, project, symbol, pose, opts.selection, !!opts.gizmo, opts.when,
@@ -740,9 +743,15 @@ export class Overlay {
       const isTarget = targets.has(e.nodeId);
 
       if (isTarget) {
-        if (opts.showIk) this.drawIkTarget(ctx, a, selected);
+        if (opts.showIk && opts.showBones) this.drawIkTarget(ctx, a, selected);
         continue;
       }
+      const row = boneRow(
+        !!e.node.primary && !!opts.primary,
+        { pick: false, show: opts.showBones, name: opts.names.bones },
+        { pick: false, show: !!opts.primary?.show, name: !!opts.primary?.name },
+      );
+      if (!row.show) continue;
 
       const dx = b.x - a.x, dy = b.y - a.y;
       const l = Math.hypot(dx, dy) || 1;
@@ -771,7 +780,7 @@ export class Overlay {
       ctx.fillStyle = this.C.boneCore;
       ctx.fill();
 
-      if (opts.names.bones) this.drawName(ctx, e.node.name, (a.x + b.x) / 2, (a.y + b.y) / 2 - 6, this.C.bone);
+      if (row.name) this.drawName(ctx, e.node.name, (a.x + b.x) / 2, (a.y + b.y) / 2 - 6, this.C.bone);
     }
 
     // A line from each effector's tip to its target, so a constraint is
@@ -784,7 +793,7 @@ export class Overlay {
     ctx.lineWidth = 1;
     ctx.font = uiFont(9, this.F);
     ctx.textAlign = "center";
-    for (const k of opts.showIk ? symbol.ik : []) {
+    for (const k of opts.showIk && opts.showBones ? symbol.ik : []) {
       const bone = pose.byNode.get(k.boneId);
       const target = pose.byNode.get(k.targetId);
       if (!bone || !target) continue;
