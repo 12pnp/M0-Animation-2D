@@ -123,14 +123,22 @@ export interface GizmoPrefs {
   pathZoomLock: boolean;
   /** A grid under the Path panels' drawing. */
   pathGrid: boolean;
-  /** Each Path panel's own onion skin, apart from the stage's: on/off and the
-   *  frames before and after the playhead. Its look is the timeline's. */
+  /** Each Path panel's own onion skin, apart from the stage's: on/off, the
+   *  frames before and after the playhead, the nearest ghost's opacity and the
+   *  past and future colours. Falloff, outline and "keyframes only" are the
+   *  timeline's. */
   localPathOnion: boolean;
   localPathOnionBefore: number;
   localPathOnionAfter: number;
+  localPathOnionOpacity: number;
+  localPathOnionPast: string;
+  localPathOnionFuture: string;
   worldPathOnion: boolean;
   worldPathOnionBefore: number;
   worldPathOnionAfter: number;
+  worldPathOnionOpacity: number;
+  worldPathOnionPast: string;
+  worldPathOnionFuture: string;
   /** The toolbar at the foot of the stage (Spine's), and what it holds. */
   showToolbar: boolean;
   /** Which frame Rotate / Translate values are read in (`core/math/axes.ts`). */
@@ -293,9 +301,15 @@ export const DEFAULT_PREFS: Prefs = {
     localPathOnion: false,
     localPathOnionBefore: 2,
     localPathOnionAfter: 2,
+    localPathOnionOpacity: 0.28,
+    localPathOnionPast: "#3d6bff",
+    localPathOnionFuture: "#35c05a",
     worldPathOnion: false,
     worldPathOnionBefore: 2,
     worldPathOnionAfter: 2,
+    worldPathOnionOpacity: 0.28,
+    worldPathOnionPast: "#3d6bff",
+    worldPathOnionFuture: "#35c05a",
     showToolbar: true,
     axes: "parent",
     compensateBones: false,
@@ -364,6 +378,8 @@ export const PREF_LIMITS: Record<string, { min: number; max: number; step?: numb
   "gizmos.localPathOnionAfter": { min: 0, max: 100 },
   "gizmos.worldPathOnionBefore": { min: 0, max: 100 },
   "gizmos.worldPathOnionAfter": { min: 0, max: 100 },
+  "gizmos.localPathOnionOpacity": { min: 0.05, max: 1, step: 0.01, decimals: 2 },
+  "gizmos.worldPathOnionOpacity": { min: 0.05, max: 1, step: 0.01, decimals: 2 },
   "timeline.frameWidth": { min: 4, max: 40 },
   "timeline.onionBefore": { min: 0, max: 100 },
   "timeline.onionAfter": { min: 0, max: 100 },

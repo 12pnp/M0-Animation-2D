@@ -30,8 +30,15 @@ describe("the Path panels' onion prefs", () => {
     expect([p.gizmos.worldPathOnionBefore, p.gizmos.worldPathOnionAfter]).toEqual([DEFAULT_PREFS.gizmos.worldPathOnionBefore, 9]);
   });
 
+  it("opacity and colours are each panel's own", () => {
+    const g = mergePrefs({ gizmos: { localPathOnionOpacity: 0.6, worldPathOnionPast: "#ff0000" } }).gizmos;
+    expect([g.localPathOnionOpacity, g.worldPathOnionOpacity]).toEqual([0.6, DEFAULT_PREFS.gizmos.worldPathOnionOpacity]);
+    expect([g.worldPathOnionPast, g.localPathOnionPast]).toEqual(["#ff0000", DEFAULT_PREFS.gizmos.localPathOnionPast]);
+  });
+
   it("counts are clamped", () => {
     expect(mergePrefs({ gizmos: { worldPathOnionBefore: 500, localPathOnionAfter: -3 } }).gizmos)
       .toMatchObject({ worldPathOnionBefore: 100, localPathOnionAfter: 0 });
+    expect(mergePrefs({ gizmos: { localPathOnionOpacity: 0 } }).gizmos.localPathOnionOpacity).toBe(0.05);
   });
 });

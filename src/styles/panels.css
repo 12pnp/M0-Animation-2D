@@ -370,7 +370,8 @@
 .onion-pop-presets { display: flex; align-items: center; gap: 3px; }
 .onion-pop-presets > span { flex: 1; color: var(--fg-dim); }
 .onion-pop-presets .btn { min-width: 0; padding: 0 6px; }
-.onion-pop-note { color: var(--fg-dim); font-size: var(--fs-sm); line-height: 1.4; }
+.onion-pop-sep { height: 1px; margin: 2px -10px; background: var(--scrollbar); }
+.onion-pop-row input[type="color"] { width: 90px; height: calc(18px * var(--ui-scale)); padding: 0 2px; }
 .iconbtn.open { background: var(--active); }
 
 /* ── Placeholder body used by panels not yet implemented ────────────────── */

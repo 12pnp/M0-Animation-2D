@@ -1741,11 +1741,12 @@ the smaller fit (`lockedZoom`), so each path is whole. The grid button (`gizmos.
 lines under the artwork every `pathGridStep` stage pixels, 1, 2 or 5 × 10ⁿ chosen so they
 are at least 16 px apart at the panel's zoom, every fifth brighter. Each panel has its own onion skin, apart from the stage's
 and from the other panel's (`gizmos.localPathOnion*`, `worldPathOnion*`, `pathOnion.ts`):
-its button switches it, and the button beside it opens its frame counts
-(`onionFramesPopup.ts`, Before and After and equal presets). Its frames always follow the
-playhead (`pathOnionSpan`; the timeline's anchored markers are the stage's) and wrap round
-a cycle's join; the ghosts take the timeline's onion look (opacity, falloff, colours,
-outline, keyframes only) through the stage's `GhostPainter`, with the carried artwork and
+its button switches it, and the button beside it opens its settings
+(`onionFramesPopup.ts`: Before and After and equal presets, the nearest ghost's opacity,
+the past and future colours). Its frames always follow the playhead (`pathOnionSpan`; the
+timeline's anchored markers are the stage's) and wrap round a cycle's join; the ghosts are
+always tinted, and take the timeline's falloff, outline and "keyframes only", through the
+stage's `GhostPainter`, with the carried artwork and
 the bone, and in Local each is carried into the frame-0 parent pose too (`heldParent`). In Local the parent holds still in its frame-0
 pose and the artwork at the playhead is carried into it (`shown` = parent at 0 · parent
 at the playhead⁻¹), so scrubbing moves only the bone. A Spine rig often hangs a limb's

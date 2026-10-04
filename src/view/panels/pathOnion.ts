@@ -6,9 +6,15 @@ import type { PathPanelSpace } from "./PathPanel";
 
 /** Each Path panel's onion preferences, apart from the stage's and each other's. */
 export const PATH_ONION_KEYS = {
-  local: { on: "localPathOnion", before: "localPathOnionBefore", after: "localPathOnionAfter" },
-  world: { on: "worldPathOnion", before: "worldPathOnionBefore", after: "worldPathOnionAfter" },
-} as const satisfies Record<PathPanelSpace, { on: keyof GizmoPrefs; before: keyof GizmoPrefs; after: keyof GizmoPrefs }>;
+  local: {
+    on: "localPathOnion", before: "localPathOnionBefore", after: "localPathOnionAfter",
+    opacity: "localPathOnionOpacity", past: "localPathOnionPast", future: "localPathOnionFuture",
+  },
+  world: {
+    on: "worldPathOnion", before: "worldPathOnionBefore", after: "worldPathOnionAfter",
+    opacity: "worldPathOnionOpacity", past: "worldPathOnionPast", future: "worldPathOnionFuture",
+  },
+} as const satisfies Record<PathPanelSpace, Record<"on" | "before" | "after" | "opacity" | "past" | "future", keyof GizmoPrefs>>;
 
 /**
  * A Path panel's onion frames: `before` and `after` frames either side of the

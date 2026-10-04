@@ -18,10 +18,20 @@ export function popupAt(anchor: Box, w: number, hgt: number, viewW: number, view
   return { x: Math.max(MARGIN, x), y: Math.max(MARGIN, Math.min(y, viewH - MARGIN - hgt)) };
 }
 
-/** The two counts a popup edits, wherever they are kept. */
+export interface OnionSettings {
+  before: number;
+  after: number;
+  /** The nearest ghost's, 0.05–1. */
+  opacity: number;
+  /** `#rrggbb`. */
+  past: string;
+  future: string;
+}
+
+/** What a popup edits, wherever it is kept. */
 export interface OnionCounts {
-  get(): { before: number; after: number };
-  set(patch: { before?: number; after?: number }): void;
+  get(): OnionSettings;
+  set(patch: Partial<OnionSettings>): void;
   /** Calls `fn` when they may have changed; returns the unsubscribe. */
   subscribe(fn: () => void): () => void;
 }
@@ -32,8 +42,9 @@ const COUNT_MAX = 100;
 let open: { el: HTMLElement; close: () => void } | null = null;
 
 /**
- * Onion frame counts, from a button: frames before and after the playhead,
- * typed or picked from equal presets. A second click on the same button
+ * Onion settings, from a button: frames before and after the playhead, typed
+ * or picked from equal presets, and the ghosts' opacity and past and future
+ * colours. A second click on the same button
  * closes it, as do a click elsewhere and Escape.
  */
 export function openOnionFrames(button: HTMLElement, counts: OnionCounts, title = "Onion frames"): void {
@@ -55,18 +66,36 @@ export function openOnionFrames(button: HTMLElement, counts: OnionCounts, title 
     on(b, "click", () => counts.set({ before: n, after: n }));
     return b;
   };
-  const row = (label: string, f: NumberField) => h("label", { class: "onion-pop-row" }, h("span", null, label), f.el);
+  const opacity = new NumberField({ min: 5, max: 100, step: 1, decimals: 0, unit: "%",
+    onInput: (v, committing) => { if (committing) counts.set({ opacity: Math.round(v) / 100 }); } });
+  opacity.set(Math.round(counts.get().opacity * 100));
+  const swatch = (key: "past" | "future") => {
+    const c = h("input", { type: "color", class: "swatch", value: counts.get()[key] }) as HTMLInputElement;
+    on(c, "input", () => counts.set({ [key]: c.value }));
+    return c;
+  };
+  const past = swatch("past");
+  const future = swatch("future");
+  const row = (label: string, control: HTMLElement) => h("label", { class: "onion-pop-row" }, h("span", null, label), control);
   const el = h("div", { class: "popmenu onion-pop" },
     h("div", { class: "onion-pop-title" }, title),
-    row("Before", before),
-    row("After", after),
-    h("div", { class: "onion-pop-presets" }, h("span", null, "Both"), preset(1), preset(2), preset(3), preset(5), preset(10)));
+    row("Before", before.el),
+    row("After", after.el),
+    h("div", { class: "onion-pop-presets" }, h("span", null, "Both"), preset(1), preset(2), preset(3), preset(5), preset(10)),
+    h("div", { class: "onion-pop-sep" }),
+    row("Opacity", opacity.el),
+    row("Past", past),
+    row("Future", future));
   el.dataset.for = button.dataset.onionFor ?? "";
 
   const unsubscribe = counts.subscribe(() => {
     const c = counts.get();
     before.show(c.before);
     after.show(c.after);
+    opacity.show(Math.round(c.opacity * 100));
+    // Not while its picker is open: the value it is sending would bounce back.
+    if (document.activeElement !== past) past.value = c.past;
+    if (document.activeElement !== future) future.value = c.future;
   });
 
   document.body.appendChild(el);
