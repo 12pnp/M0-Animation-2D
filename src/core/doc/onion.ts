@@ -27,9 +27,15 @@ export interface OnionRangePrefs {
  * The frames between the markers. Following markers sit `onionBefore` /
  * `onionAfter` frames either side of the playhead; anchored ones stay where
  * they were put. Either way the span is clamped to `0..maxFrame`.
+ *
+ * `period`: the animation is a cycle whose join is frame `period` (frame 0
+ * again, `core/doc/cycle.ts`). Following markers then run past either end and
+ * wrap round the loop, so the span is UNWRAPPED (start may be negative, end
+ * past the join), at most `period − 1` frames each side so it never reaches
+ * the playhead again. `onionFrames` and `wrapSpan` map it back.
  */
 export function onionSpan(
-  frame: number, maxFrame: number, prefs: OnionRangePrefs, anchor: OnionSpan | null,
+  frame: number, maxFrame: number, prefs: OnionRangePrefs, anchor: OnionSpan | null, period?: number | null,
 ): OnionSpan {
   const top = Math.max(0, maxFrame);
   const clamp = (f: number) => Math.max(0, Math.min(top, Math.round(f)));
@@ -38,7 +44,32 @@ export function onionSpan(
     const b = clamp(Math.max(anchor.start, anchor.end));
     return { start: a, end: b };
   }
+  if (period && period >= 2) {
+    const reach = period - 1;
+    return {
+      start: frame - Math.min(reach, Math.max(0, Math.round(prefs.onionBefore))),
+      end: frame + Math.min(reach, Math.max(0, Math.round(prefs.onionAfter))),
+    };
+  }
   return { start: clamp(frame - prefs.onionBefore), end: clamp(frame + prefs.onionAfter) };
+}
+
+/** `f` brought into `0..period − 1`: the frame a cycle shows at `f`. */
+export function wrapFrame(f: number, period: number): number {
+  return ((f % period) + period) % period;
+}
+
+/**
+ * Where an unwrapped span (`onionSpan` with `period`) lies on the timeline:
+ * one piece, or two when it runs across the join. Frames past the join show
+ * from 0 again and frames before 0 from the end, so the join frame itself is
+ * never part of a piece. The first piece holds the span's first frame and the
+ * last piece its last frame, which is where the brackets go.
+ */
+export function wrapSpan(span: OnionSpan, period: number): OnionSpan[] {
+  if (span.end - span.start + 1 >= period) return [{ start: 0, end: period - 1 }];
+  const a = wrapFrame(span.start, period), b = wrapFrame(span.end, period);
+  return a <= b ? [{ start: a, end: b }] : [{ start: a, end: period - 1 }, { start: 0, end: b }];
 }
 
 export interface OnionFramesArgs {
@@ -50,6 +81,8 @@ export interface OnionFramesArgs {
   falloff: number;
   /** Given, only frames it accepts are drawn ("Keyframes only"). */
   isKey?: (frame: number) => boolean;
+  /** A cycle's join (`onionSpan`): frames outside `0..period − 1` wrap. */
+  period?: number | null;
 }
 
 /**
@@ -61,17 +94,27 @@ export interface OnionFramesArgs {
  * frames rather than keys, so a ghost's faintness says how far away it is.
  */
 export function onionFrames(a: OnionFramesArgs): OnionFrame[] {
-  const out: OnionFrame[] = [];
+  const byDistance: OnionFrame[][] = [];
+  const period = a.period && a.period >= 2 ? a.period : null;
+  const shown = (f: number) => (period ? wrapFrame(f, period) : f);
+  const current = shown(a.frame);
+  // Wrapped, a frame can be reached both ways round the loop; it is drawn
+  // once, at the nearer distance (`seen` is filled nearest first).
+  const seen = new Map<number, number>();
   const reach = Math.max(a.frame - a.span.start, a.span.end - a.frame);
-  for (let d = reach; d >= 1; d--) {
-    const alpha = a.opacity * Math.pow(1 - a.falloff, d - 1);
+  for (let d = 1; d <= reach; d++) {
+    const ring: OnionFrame[] = [];
+    byDistance.push(ring);
     for (const f of [a.frame - d, a.frame + d]) {
       if (f < a.span.start || f > a.span.end) continue;
-      if (a.isKey && !a.isKey(f)) continue;
-      out.push({ frame: f, alpha, side: f < a.frame ? "past" : "future" });
+      const g = shown(f);
+      if (g === current || seen.has(g)) continue;
+      if (a.isKey && !a.isKey(g)) continue;
+      seen.set(g, d);
+      ring.push({ frame: g, alpha: a.opacity * Math.pow(1 - a.falloff, d - 1), side: f < a.frame ? "past" : "future" });
     }
   }
-  return out;
+  return byDistance.reverse().flat();
 }
 
 export type MarkerDrag = "start" | "end" | "both" | "range";
@@ -86,9 +129,14 @@ export type MarkerDrag = "start" | "end" | "both" | "range";
  * has to keep containing it, because what it stores is two distances from it.
  */
 export function dragMarkers(
-  base: OnionSpan, which: MarkerDrag, delta: number, maxFrame: number, playhead?: number,
+  base: OnionSpan, which: MarkerDrag, delta: number, maxFrame: number, playhead?: number, period?: number | null,
 ): OnionSpan {
-  const top = Math.max(0, maxFrame);
+  // A following range on a cycle is unwrapped (`onionSpan`): it may run
+  // `period − 1` frames past the playhead either way instead of stopping at
+  // the ends of the animation.
+  const wraps = playhead !== undefined && !!period && period >= 2;
+  const bottom = wraps ? playhead - (period - 1) : 0;
+  const top = wraps ? playhead + (period - 1) : Math.max(0, maxFrame);
   let { start, end } = base;
   switch (which) {
     case "start": start = base.start + delta; break;
@@ -97,15 +145,15 @@ export function dragMarkers(
     case "range": {
       const width = base.end - base.start;
       let d = delta;
-      d = Math.max(-base.start, Math.min(top - base.end, d));
+      d = Math.max(bottom - base.start, Math.min(top - base.end, d));
       if (playhead !== undefined) {
         d = Math.max(playhead - base.end, Math.min(playhead - base.start, d));
       }
       return { start: base.start + d, end: base.start + d + width };
     }
   }
-  start = Math.max(0, Math.min(top, start));
-  end = Math.max(0, Math.min(top, end));
+  start = Math.max(bottom, Math.min(top, start));
+  end = Math.max(bottom, Math.min(top, end));
   if (playhead !== undefined) {
     start = Math.min(start, playhead);
     end = Math.max(end, playhead);

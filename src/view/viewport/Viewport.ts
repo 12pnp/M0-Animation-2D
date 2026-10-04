@@ -334,7 +334,7 @@ export class Viewport {
     const isKey = o.onionKeyframesOnly
       ? (f: number) => shown.some((t) => !!t && keyIndexAt(t, f) >= 0)
       : undefined;
-    for (const g of onionFrames({ frame, span, opacity: o.onionOpacity, falloff: o.onionFalloff, isKey })) {
+    for (const g of onionFrames({ frame, span, opacity: o.onionOpacity, falloff: o.onionFalloff, isKey, period: store.onionPeriod })) {
       const tint = o.onionTint ? (g.side === "past" ? o.onionPastColor : o.onionFutureColor) : null;
       this.ghosts.paint(sc, this.dpr, { alpha: g.alpha, tint, outline: o.onionOutline }, (ctx) => {
         this.renderer.draw(ctx, sym, anim, g.frame, "animate", view, { hiddenLayers });

@@ -9,7 +9,7 @@ import { type LayerRow, layerRows } from "@/core/doc/layerTree";
 import { withAlpha } from "@/view/viewport/overlayColors";
 import { DEFAULT_PREFS } from "@/core/prefs/prefs";
 import { uiFont, type UiFontSize, uiPx } from "@/core/prefs/fonts";
-import { dragMarkers, type MarkerDrag } from "@/core/doc/onion";
+import { dragMarkers, type MarkerDrag, type OnionSpan, wrapSpan } from "@/core/doc/onion";
 import { SEAM_TOLERANCE, type SeamGap, seamFrame, seamGap } from "@/core/doc/cycle";
 import { posedSymbol } from "@/core/spine/spinePose";
 
@@ -415,15 +415,14 @@ export class FrameGrid {
    */
   private drawOnionMarkers(ctx: CanvasRenderingContext2D): void {
     if (!this.markersShown) return;
-    const span = this.store.onionSpan;
     const o = this.store.prefs.value.timeline;
     const H = this.headerHeight;
-    const x0 = Math.round(this.xOfFrame(span.start)) + 0.5;
-    const x1 = Math.round(this.xOfFrame(span.end + 1)) - 0.5;
     const top = 1.5, bottom = H - 2.5;
+    const pieces = this.markerPieces();
+    const xs = pieces.map((p) => [Math.round(this.xOfFrame(p.start)) + 0.5, Math.round(this.xOfFrame(p.end + 1)) - 0.5] as const);
 
     ctx.fillStyle = "rgba(255,255,255,0.13)";
-    ctx.fillRect(x0, top, x1 - x0, bottom - top);
+    for (const [x0, x1] of xs) ctx.fillRect(x0, top, x1 - x0, bottom - top);
 
     const anchored = !!this.store.ui.onionAnchor;
     const bracket = (x: number, dir: 1 | -1, color: string) => {
@@ -442,18 +441,27 @@ export class FrameGrid {
       ctx.lineWidth = 1;
       ctx.stroke();
     };
-    bracket(x0, 1, o.onionPastColor);
-    bracket(x1, -1, o.onionFutureColor);
+    bracket(xs[0]![0], 1, o.onionPastColor);
+    bracket(xs[xs.length - 1]![1], -1, o.onionFutureColor);
+  }
+
+  /** The markers' span as drawn: one band, or two when a cycle's onion skin
+   *  runs across the join (`wrapSpan`). The start bracket is on the first,
+   *  the end bracket on the last. */
+  private markerPieces(): OnionSpan[] {
+    const span = this.store.onionSpan;
+    const period = this.store.onionPeriod;
+    return period ? wrapSpan(span, period) : [span];
   }
 
   /** Which marker a press on the ruler at `x` grabs, if any. */
   private markerAt(x: number, e: PointerEvent): MarkerDrag | null {
     if (!this.markersShown) return null;
-    const span = this.store.onionSpan;
-    const x0 = this.xOfFrame(span.start);
-    const x1 = this.xOfFrame(span.end + 1);
+    const pieces = this.markerPieces();
+    const x0 = this.xOfFrame(pieces[0]!.start);
+    const x1 = this.xOfFrame(pieces[pieces.length - 1]!.end + 1);
     const near = (a: number) => Math.abs(x - a) <= 5;
-    if (e.shiftKey && x >= x0 - 5 && x <= x1 + 5) return "range";
+    if (e.shiftKey && pieces.some((p) => x >= this.xOfFrame(p.start) - 5 && x <= this.xOfFrame(p.end + 1) + 5)) return "range";
     const which: MarkerDrag | null = near(x0) ? "start" : near(x1) ? "end" : null;
     if (!which) return null;
     return e.metaKey || e.ctrlKey ? "both" : which;
@@ -467,12 +475,13 @@ export class FrameGrid {
     // A following range must keep the playhead inside it: what it stores is
     // two distances from it.
     const playhead = this.store.ui.onionAnchor ? undefined : this.store.ui.frame;
+    const period = this.store.onionPeriod;
     let last = 0;
     const move = (m: PointerEvent) => {
       const delta = Math.round((m.clientX - startX) / this.frameWidth);
       if (delta === last) return;
       last = delta;
-      this.store.setOnionSpan(dragMarkers(base, which, delta, maxFrame, playhead));
+      this.store.setOnionSpan(dragMarkers(base, which, delta, maxFrame, playhead, period));
     };
     const up = () => {
       offMove(); offUp(); offCancel();

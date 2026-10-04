@@ -6,6 +6,7 @@ import type { Command, TouchSet } from "@/core/history/Command";
 import { createProject } from "@/core/doc/defaults";
 import { clampFrame } from "@/core/doc/timeline";
 import { onionSpan, type OnionSpan } from "@/core/doc/onion";
+import { seamFrame } from "@/core/doc/cycle";
 import { clone, invert, mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { invalidateBounds } from "@/core/doc/pose";
 import { PrefsStore } from "./Prefs";
@@ -368,7 +369,18 @@ export class Store {
   /** The frames between the onion markers — also what Edit Multiple Frames
    *  edits. */
   get onionSpan(): OnionSpan {
-    return onionSpan(this.ui.frame, this.maxFrame, this.prefs.value.timeline, this.ui.onionAnchor);
+    return onionSpan(this.ui.frame, this.maxFrame, this.prefs.value.timeline, this.ui.onionAnchor, this.onionPeriod);
+  }
+
+  /**
+   * The join of a cycle the onion markers wrap round, or null. Only following
+   * markers wrap, and not under Edit Multiple Frames, which edits one real
+   * range of frames: with either, the span stays inside the animation.
+   */
+  get onionPeriod(): number | null {
+    const anim = this.currentAnimation;
+    if (!anim || this.ui.onionAnchor || this.ui.editMultipleFrames) return null;
+    return seamFrame(anim);
   }
 
   node(id: NodeId): Node | undefined { return this.currentSymbol.nodes[id]; }

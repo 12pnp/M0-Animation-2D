@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { loadFixture } from "./fixtures/realProject";
-import { onionFrames, onionSpan, dragMarkers, type OnionFramesArgs } from "@/core/doc/onion";
+import { onionFrames, onionSpan, dragMarkers, wrapFrame, wrapSpan, type OnionFramesArgs } from "@/core/doc/onion";
 import { isSymbol } from "@/core/doc/types";
 import type { NodeId } from "@/core/doc/ids";
 
@@ -160,5 +160,67 @@ describe("onion markers", () => {
   it("keeps a following range around the playhead", () => {
     expect(dragMarkers(base, "range", 5, 100, 10)).toEqual({ start: 10, end: 14 });
     expect(dragMarkers(base, "start", 5, 100, 10)).toEqual({ start: 10, end: 12 });
+  });
+});
+
+describe("onion skin on a cycle", () => {
+  // A 25-frame cycle: frame 24 is the join, frame 0 again; the loop is 0..23.
+  const P = 24;
+  const prefs = { onionBefore: 3, onionAfter: 2 };
+  const ghosts = (frame: number, p = prefs) =>
+    onionFrames({ frame, span: onionSpan(frame, P, p, null, P), opacity: 0.3, falloff: 0.25, period: P });
+
+  it("runs past both ends unwrapped, at most period - 1 each way", () => {
+    expect(onionSpan(1, P, prefs, null, P)).toEqual({ start: -2, end: 3 });
+    expect(onionSpan(22, P, prefs, null, P)).toEqual({ start: 19, end: 24 });
+    expect(onionSpan(5, P, { onionBefore: 100, onionAfter: 100 }, null, P)).toEqual({ start: 5 - 23, end: 5 + 23 });
+    // Anchored markers do not wrap.
+    expect(onionSpan(1, P, prefs, { start: 0, end: 4 }, P)).toEqual({ start: 0, end: 4 });
+  });
+
+  it.each([
+    [1, [22, 23, 0, 2, 3]],
+    [0, [21, 22, 23, 1, 2]],
+    [22, [19, 20, 21, 23, 0]],
+    // The join shows frame 0, so its ghosts are frame 0's.
+    [24, [21, 22, 23, 1, 2]],
+  ])("at frame %s the ghosts are %j", (frame, want) => {
+    expect(ghosts(frame).map((g) => g.frame).sort((a, b) => a - b)).toEqual([...want].sort((a, b) => a - b));
+  });
+
+  it("never draws the join, and keeps past and future by the way round they were reached", () => {
+    const list = ghosts(0);
+    expect(list.map((g) => g.frame)).not.toContain(24);
+    expect(list.find((g) => g.frame === 23)).toMatchObject({ side: "past", alpha: 0.3 });
+    expect(list.find((g) => g.frame === 1)).toMatchObject({ side: "future", alpha: 0.3 });
+    expect(list.at(-1)!.frame).toBe(1);
+  });
+
+  it("draws a frame reached both ways round once, at the nearer distance", () => {
+    const list = ghosts(5, { onionBefore: 23, onionAfter: 23 });
+    expect(list).toHaveLength(23);
+    expect(new Set(list.map((g) => g.frame)).size).toBe(23);
+    const far = list.find((g) => g.frame === 17)!;
+    expect(far.side).toBe("past");
+    expect(far.alpha).toBeCloseTo(0.3 * Math.pow(0.75, 11));
+  });
+
+  it("is drawn as one band, or two across the join", () => {
+    expect(wrapFrame(-2, P)).toBe(22);
+    expect(wrapFrame(24, P)).toBe(0);
+    expect(wrapSpan({ start: 2, end: 6 }, P)).toEqual([{ start: 2, end: 6 }]);
+    expect(wrapSpan({ start: -2, end: 3 }, P)).toEqual([{ start: 22, end: 23 }, { start: 0, end: 3 }]);
+    expect(wrapSpan({ start: 19, end: 24 }, P)).toEqual([{ start: 19, end: 23 }, { start: 0, end: 0 }]);
+    expect(wrapSpan({ start: -18, end: 28 }, P)).toEqual([{ start: 0, end: 23 }]);
+  });
+
+  it("lets following markers be dragged past the ends, up to period - 1 from the playhead", () => {
+    const base = onionSpan(1, P, prefs, null, P);
+    expect(dragMarkers(base, "start", -5, P, 1, P)).toEqual({ start: -7, end: 3 });
+    expect(dragMarkers(base, "start", -50, P, 1, P)).toEqual({ start: 1 - 23, end: 3 });
+    // A following range still has to contain the playhead.
+    expect(dragMarkers(base, "range", -50, P, 1, P)).toEqual({ start: -4, end: 1 });
+    // Not a cycle: clamped to the animation as before.
+    expect(dragMarkers({ start: 0, end: 3 }, "start", -5, P, 1)).toEqual({ start: 0, end: 3 });
   });
 });
