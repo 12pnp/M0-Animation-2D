@@ -76,8 +76,11 @@ const DEFAULT_GRID_COLORS = {
   blank: "#4a4a4a",
   tween: "#7a7fb0",
   tweenLine: "#c2c6ec",
+  /** A key's outline (the Timeline preference) and its fill: a light diamond
+   *  outlined dark reads on a tween, a static span and an empty cell alike. */
   keyDot: "#161616",
   keyRing: "#161616",
+  keyFill: "#ececec",
   endMark: "#161616",
   playhead: "#e8483f",
   /** A cycle's join, and the rows whose pose there is not frame 0's. */
@@ -612,6 +615,37 @@ export class FrameGrid {
   }
 
   /** The line down the left of a keyframe, or the right end of a span. */
+  /**
+   * A keyframe as Spine draws it: a diamond in the middle of its cell, as
+   * large as the cell allows, light with a dark outline. Hollow, for a blank
+   * keyframe: a light ring over a dark one, so it still shows on the grid.
+   */
+  private drawKey(ctx: CanvasRenderingContext2D, cellX: number, rowY: number, hollow: boolean): void {
+    const cx = Math.round(cellX + this.frameWidth / 2 - 0.5) + 0.5;
+    const cy = Math.round(rowY + this.rowHeight / 2 - 0.5) + 0.5;
+    const r = Math.max(3, Math.min(5, this.frameWidth / 2 - 0.5, this.rowHeight / 2 - 3));
+    ctx.beginPath();
+    ctx.moveTo(cx, cy - r);
+    ctx.lineTo(cx + r, cy);
+    ctx.lineTo(cx, cy + r);
+    ctx.lineTo(cx - r, cy);
+    ctx.closePath();
+    if (hollow) {
+      ctx.lineWidth = 3;
+      ctx.strokeStyle = this.C.keyRing;
+      ctx.stroke();
+      ctx.lineWidth = 1.2;
+      ctx.strokeStyle = this.C.keyFill;
+      ctx.stroke();
+    } else {
+      ctx.fillStyle = this.C.keyFill;
+      ctx.fill();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = this.C.keyDot;
+      ctx.stroke();
+    }
+  }
+
   private drawSpanEdge(ctx: CanvasRenderingContext2D, x: number, y: number, pad: number): void {
     ctx.fillStyle = this.C.spanEdge;
     ctx.fillRect(Math.round(x), y + pad, 1, this.rowHeight - pad * 2 - 1);
@@ -639,10 +673,7 @@ export class FrameGrid {
         ctx.strokeStyle = this.C.emptyRow;
         ctx.lineWidth = 1;
         ctx.strokeRect(x0 + 0.5, y + 1.5, x1 - x0 - 2, this.rowHeight - 4);
-        ctx.beginPath();
-        ctx.arc(x0 + fw / 2 - 0.5, y + this.rowHeight - 6, 3, 0, Math.PI * 2);
-        ctx.strokeStyle = this.C.keyRing;
-        ctx.stroke();
+        this.drawKey(ctx, x0, y, true);
         return;
       }
 
@@ -654,10 +685,7 @@ export class FrameGrid {
       // edges a static layer has.
       this.drawSpanEdge(ctx, x0, y, inset);
       this.drawSpanEdge(ctx, x1 - 1, y, inset);
-      ctx.beginPath();
-      ctx.arc(x0 + fw / 2 - 0.5, y + this.rowHeight - 6, 3, 0, Math.PI * 2);
-      ctx.fillStyle = this.C.keyDot;
-      ctx.fill();
+      this.drawKey(ctx, x0, y, false);
       ctx.fillStyle = this.C.endMark;
       ctx.fillRect(this.xOfFrame(duration - 1) + fw - 4, y + 3, 2, this.rowHeight - 8);
       return;
@@ -724,22 +752,10 @@ export class FrameGrid {
       this.drawSpanEdge(ctx, this.xOfFrame(track.endFrame + 1) - 1, y, pad);
     }
 
-    // Keyframe markers.
-    const cy = y + rowH - 6;
+    // Keyframe markers. A blank keyframe is hollow, as Flash's ring was.
     for (const key of track.keys) {
       if (key.frame < first - 1 || key.frame > last + 1) continue;
-      const cx = this.xOfFrame(key.frame) + fw / 2 - 0.5;
-      ctx.beginPath();
-      ctx.arc(cx, cy, 3, 0, Math.PI * 2);
-      if (key.displayIndex < 0) {
-        // A blank keyframe reads as a hollow circle, as in Flash.
-        ctx.strokeStyle = this.C.keyRing;
-        ctx.lineWidth = 1.2;
-        ctx.stroke();
-      } else {
-        ctx.fillStyle = this.C.keyDot;
-        ctx.fill();
-      }
+      this.drawKey(ctx, this.xOfFrame(key.frame), y, key.displayIndex < 0);
     }
 
     // End-of-span marker.
