@@ -15,7 +15,11 @@ skeleton (ARCHITECTURE ▸ The Spine exporter ▸ Nested symbols are flattened),
 are clipping attachments and colour offsets two-colour tint (ARCHITECTURE ▸ Mask
 layers, Colour, alpha and blend mode). File ▸ Open Spine opens existing Spine
 JSON for editing, and the stage poses such a rig through spine-core
-(ARCHITECTURE ▸ Opening Spine files). An exporter change must keep
+(ARCHITECTURE ▸ Opening Spine files). Any animation can be a cycle whose
+last frame is frame 0 again, and each selected bone draws its path, which can be
+dragged, bent with handles or baked to edit the animation (ARCHITECTURE ▸ Cycles, Bone
+paths; the decisions are pure in `core/doc/cycle.ts`, `bonePath.ts`, `pathEdit.ts`,
+`pathSpline.ts`). An exporter change must keep
 `tests/spineParity.test.ts` passing: it plays every fixture through spine-core
 and compares it with the stage frame by frame. An importer or exporter change
 must keep `tests/spineImport.test.ts` (every M0 sample round-trips) and

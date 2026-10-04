@@ -180,6 +180,8 @@ export const GESTURES: Array<{ chord: string; suffix?: string; label: string }> 
   { chord: "Mod", suffix: "while dragging", label: "Suspend snapping" },
   { chord: "Alt", suffix: "drag a bone tip", label: "Re-aim the bone (Bone tool)" },
   { chord: "Escape", suffix: "while dragging a guide", label: "Put the guide back" },
+  { chord: "Shift", suffix: "drag a bone path's dot", label: "Move every key of the bone by as much" },
+  { chord: "Alt", suffix: "drag a bone path's dot", label: "Turn the parent too, or not, for this drag (the bone's Path drag option, flipped)" },
   { chord: "", suffix: "Double-click empty stage", label: "Exit the symbol being edited" },
   { chord: "", suffix: "Double-click a guide", label: "Type its coordinate" },
 ];

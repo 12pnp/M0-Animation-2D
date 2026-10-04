@@ -16,7 +16,7 @@
 > ground truth" and "Vendored runtime" describe the Spine preview (phase 3); "Colour,
 > alpha and blend mode" and "Mask layers" describe Spine's tint and clipping (phase 6);
 > "Opening Spine files" is new (phase 7), "Checked in Unity" (phase 8), "The AI bridge"
-> (phase 9).
+> (phase 9). "Cycles" and "Bone paths" are new (`docs/CYCLE-PATH-PLAN.md`).
 
 How Animo is built, and — mostly — the things in it that fail **silently** when
 you get them wrong. This is not a style guide: it is the record of decisions
@@ -376,6 +376,37 @@ inherits the governing key's ease, which is what splitting a tween means.
 in the grid, or under the rows in the layer list — as a press on the empty stage does. It
 used to scrub from there, which moved the playhead by surprise.
 
+### Cycles
+
+A **cycle** is an animation that loops forever on Spine's timing: `playTimes === 0 &&
+endsAtLastFrame` (`isCycle`, `core/doc/cycle.ts`). Nothing else is stored. Its last
+frame, the **join** (`seamFrame`), is frame 0 again: the runtime shows it and then
+frame 0, so the two must be the same pose or the loop hitches.
+
+- **Cycle on** (`cyclePlan`, `SetCycle`, one undo step; the animation options menu and
+  the ruler's context menu, `timeline.cycle`): an animation on Flash's timing grows by
+  ONE frame and the new last frame is the join. It played its last frame and then frame
+  0 before, and still does, so the loop plays as it did and the exported length in
+  seconds is unchanged. Every track that reaches the end and has no key at the join gets
+  frame 0's pose there. A key already at the join is the user's and stays; a track that
+  stops earlier stays partial. The seam check reports either.
+- **Cycle off** sets `playTimes = 1`: keys and timing stay. `playTimes` is not in the
+  Spine file (a game loops by `setAnimation`); it drives the editor's playback. Turning
+  `endsAtLastFrame` off instead would have changed the export by a frame.
+- **Close Loop** (`seamKeys`, `timeline.closeLoop`) keys frame 0's transform, colour and
+  display at the join on the selected layers, or every layer. It replaces a key already
+  there. Angles keep the whole turns the track makes by the join: a bone that spins once
+  ends at frame 0's angle + 360, not back the way it came.
+- **The seam check** (`seamGap`) compares POSED frames, not keys, so a bone the IK
+  solves shows a gap when its target does not close, and a node without keys never
+  does. `own` compares each node in its parent's frame, so a hip that does not close
+  marks the hip and not every child under it. The timeline draws a ↻ over the join's
+  column and an orange dot on each row that does not close (`FrameGrid.drawSeam`,
+  measured once per `History.revision`, tooltip with the gap); the animation picker
+  lists a cycle as `name ↻`.
+- `tests/cycle.test.ts`; `tests/spineParity.test.ts` turns the stickman's animations
+  into cycles and checks the length in seconds and that the join plays as frame 0.
+
 ### The timeline fills its panel, and only the layers scroll
 
 The frame grid is a CANVAS with no scroll of its own, and the horizontal bar is an
@@ -508,6 +539,16 @@ timeline ruler. `core/doc/onion.ts` is pure and canvas-free so the arithmetic ca
 filled = anchored), and the ruler's pointerdown hit-tests them BEFORE scrubbing, as the stage
 does for guides. They show whenever something reads them: the onion skin or Edit Multiple
 Frames.
+
+**On a cycle the markers wrap round the join** (`Store.onionPeriod`: a cycle, markers
+following the playhead, Edit Multiple Frames off). The span is then UNWRAPPED (start
+below 0, end past the join), at most `period − 1` frames each side so it never reaches
+the playhead again; `onionFrames` wraps each frame into the loop, never draws the join
+(it is frame 0), and draws a frame reached both ways round once, at the nearer
+distance. The ruler shows the span as one band or two (`wrapSpan`), the start bracket
+on the first, and `dragMarkers` lets following markers run past the ends. Anchored
+markers and Edit Multiple Frames keep a real range: Edit Multiple Frames edits keys in
+it.
 
 `view/viewport/ghost.ts` paints a ghost: Canvas2D can fade a draw but not colour one, so the
 frame is drawn into a scratch canvas, tinted with `source-atop` (or reduced to a one-pixel ring
@@ -945,8 +986,8 @@ flowchart LR
 - **Tools** (`src/app/agent/tools.json`, shared by the page and the bridge): `get_rig`,
   `get_animation`, `get_pose`, `new_animation`, `set_keys`, `delete_keys`, `show`, `undo`,
   `redo`, `check_preview`, `get_reference`, `render_frame`, for rigging `add_bones`,
-  `attach`, `add_ik`, `draw_order`, `auto_rig`, and the motion library `list_motions`,
-  `apply_motion`. Values are Spine's: y up, degrees counter-clockwise, local to
+  `attach`, `add_ik`, `draw_order`, `auto_rig`, the motion library `list_motions`,
+  `apply_motion`, and for cycles and paths `set_cycle`, `get_bone_path`, `set_bone_path`. Values are Spine's: y up, degrees counter-clockwise, local to
   the parent bone, absolute. A model knows them better than the editor's Flash
   conventions, and `toSpineLocal` / `fromSpineLocal` convert exactly.
 - **Every call that edits is one history step** labelled "AI: …". `set_keys` for many
@@ -1019,6 +1060,12 @@ flowchart LR
     a chain too straight to tell is left as the clip has it.
   `apply_motion` compares the runtime pose (`posedSymbol`) with what `retarget` posed and says
   so (`check`); `guessRoles` reads roles off bone names and the model can override any.
+- **Cycles and paths.** `set_cycle` is the Cycle command (Cycles above); `get_animation`
+  and `check_preview` give a cycle's `seam`, the bones whose last frame is not frame 0's.
+  `get_bone_path` is `bonePaths` in get_pose's space; `render_frame`'s `paths` draws named
+  bones' paths into the picture (`PathMark`, orange, keys as rings). `set_bone_path`
+  keys x, y and bends each interval through `withSpline`, the stage's handles (Bone
+  paths), reporting a key it had to add (`addedKeys`); it refuses a bone the IK moves.
 - **A wrong call is the model's to fix**: `AgentError` messages go back as tool errors
   (`isError`), saying what exists ("There is no bone "tail". get_rig lists them.").
 
@@ -1516,6 +1563,101 @@ ones; the DragonBones solver it replaced disagreed on three of the seven.
   `__preview.display.armature.getBone(name).globalTransformMatrix` at several target
   positions (reachable, out of reach, folded, bend flipped). Currently ≤0.0016 px, which
   is the exporter's four-decimal rounding.
+
+## Bone paths
+
+Each selected bone draws the path its tip (or origin, Preferences ▸ Selection & Gizmos)
+follows over the animation, and the path is a handle: dragging it re-keys the bone.
+Everything that decides is pure in `core/doc/` (`bonePath.ts`, `pathEdit.ts`,
+`pathSpline.ts`); the view only draws and applies.
+
+```mermaid
+flowchart LR
+    POSE["posedSymbol per frame<br/>(PathCache)"] --> PATHS["bonePaths<br/>points, keys, closed"]
+    PATHS --> DRAW["Overlay.drawBonePaths"]
+    PATHS --> DOT["pathDotAt"]
+    DOT -->|"click"| FRAME["playhead"]
+    DOT -->|"drag"| MODE["pathDragMode"]
+    MODE -->|translate| T["translateTo"]
+    MODE -->|rotate| R["rotateTo / rotateWithParentTo"]
+    HANDLE["handleAt"] -->|"bone that moves"| SPL["withSpline<br/>x and y eases"]
+    HANDLE -->|"bone that turns"| BAKE["bakePlan<br/>withBakedKeys"]
+```
+
+- **The path is the runtime's** (`bonePaths` over `posedSymbol`), IK included: a thigh
+  the solver turns draws the arc the game will play. `tests/bonePath.test.ts` checks the
+  stickman's IK-solved shin against spine-core at every frame of the run. A bone with no
+  length is followed at the tip the stage draws (`DRAWN_BONE_LENGTH`, 40, shared with
+  `Overlay.drawBones`).
+- **Frames** (`pathFrames`): the whole animation, or the onion span while the onion skin
+  is on (wrapped on a cycle). A cycle's path stops before the join and is `closed`.
+- **Drawing** (`Overlay.drawBonePaths`, under the bones, screen-sized): a dot per frame,
+  spaced by speed, the played part in the onion past colour and the rest in the future
+  colour, a ring on each key, the playhead's frame filled (frame 0 on a cycle's join).
+  Animate mode only, never in Play mode, off with the gizmos; selected bones or every
+  bone by preference, never on a locked or hidden layer. `ui.showBonePaths` is a view
+  switch remembered in `gizmos.showBonePaths`: the stage bar, View ▸ Show Bone Paths,
+  ⌥B.
+- **Cost** (`PathCache`, `view/viewport/pathCache.ts`): one pose per frame for the current
+  symbol and animation; a playhead move reuses them all. After an edit each draw
+  re-poses what fits in 6 ms and takes the rest from the previous revision, then asks for
+  another draw, so a drag lags the path by a frame or two instead of stuttering. 120
+  frames with all 15 stickman bones: 0.8 ms per scrub draw, 3.6 ms per edit draw.
+
+**Pressing a dot** (Selection tool, before artwork and bones: a dot sits on the limb's
+artwork). Dots pile up where a loop comes back to its start; `pathDotAt` takes the
+playhead's frame, then a key, then the nearest. That rule exists because the first
+version took the last of three coincident dots and dragging the head at frame 8 edited
+frame 16. A click moves the playhead; a drag re-keys at that frame (`PathDrag`, one undo
+step, "Drag Path", built from the tracks as they were at pointer-down):
+
+| `pathDragMode` | The drag | Written |
+|---|---|---|
+| IK target; origin; a bone whose keys move it without turning it; a root that does not turn | `translateTo`: moves it, the angle kept | x, y |
+| any other tip, **This bone** | `rotateTo`: turns it so the tip points at the pointer | rotation |
+| any other tip, **With parent** | `rotateWithParentTo`: two segments reach the pointer, the bend kept | rotation on both |
+| a bone the IK solves | refused, naming the target to drag | nothing |
+
+- `rotateTo` is exact under any affine parent (mirrored, unevenly scaled): it aims in the
+  parent's space, where the parent maps the ray to the pointer onto a ray. A parent the
+  IK solves is never turned along.
+- **Path drag** is a per-bone option (`Node.pathDrag?: "parent"`, schema 13, Properties ▸
+  Bone, `SetPathDrag`), never exported; ⌥ flips it for one drag, ⇧ moves every key of the
+  bone by what the dragged frame moved (`shiftKeys`).
+- A dot without a key gets one by F6's rule (`keyAt`). On release the keys the drag ADDED
+  are dropped again if they change no whole frame (`withoutRedundantKeys`); keys that
+  were there stay. Frame 0 of a cycle moves the join key with it.
+
+**Handles** (the one selected bone, `PathHandle`, picked before dots; on a loop the
+interval holding the playhead wins, `handleAt`):
+
+- **A bone that moves** gets spline handles at each end of every interval that tweens.
+  A cubic Bezier at even speed is, per axis, a cubic in time with control times 1/3 and
+  2/3, so a handle is two custom eases, x and y, and Spine plays it natively
+  (`splineToEases`, `easesToSpline`; shared control times other than 1/3, 2/3 are kept:
+  they change the speed, not the shape). Linear and the quad eases read as splines; a
+  preset shows straight handles and the first drag replaces it. An axis that does not
+  travel cannot bend: `withSpline` cuts a key at the interval's middle frame, on the
+  curve, F6's rule for the other channels, and refuses a one-frame interval. A handle
+  past ±`CURVE_Y_LIMIT` is pulled in. Handles are in the parent's space, hung from the
+  dot through the parent's matrix at that key's frame; the two at a key are independent
+  (corners), and moving a key afterwards stretches the bend with it.
+- **A bone that turns** draws arcs, which no rotation ease bends. Its handles are fitted
+  to the arc (`fitCubic`), so grabbing one changes nothing; dragging one **bakes** the
+  interval (`bakePlan`): the bone (or the bone and its parent) turned at every frame so
+  the tip follows the curve, angles unwrapped, ONE bend for the interval (`bendOf` at its
+  first frame: decided per frame, a nearly straight chain flips), then keys added where
+  the error is worst until linear turning stays within 0.5 px of that solve. The
+  tolerance is against the solve, not the curve: a turning bone keeps its tip on a
+  circle, and a chain out of reach straightens. `withBakedKeys` writes the kept keys and
+  linear rotation and shear eases inside the interval, its ends untouched; a parent's
+  keys inside the interval are replaced and it is pinned at both ends.
+- `tests/pathEdit.test.ts`, `tests/pathSpline.test.ts`, `tests/pathBake.test.ts`; parity
+  cases in `tests/spineParity.test.ts` play a bent bone (with a split) and a baked one
+  through spine-core.
+
+Not built: snapping while dragging a dot, smooth (mirrored) handles, one curve across a
+cycle's join, and an Ease panel note when a bend replaced a preset.
 
 ## PSD import
 
