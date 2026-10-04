@@ -86,7 +86,7 @@ import type { AssetId, ItemId, LayerId, NodeId } from "@/core/doc/ids";
 import { cloneTf, type Transform } from "@/core/math/Transform";
 import { applyVec, mat } from "@/core/math/Matrix2D";
 import { moveBy, snapshotOf, topmostSelected } from "@/view/tools/transformOps";
-import { alertDialog, confirmDialog, promptText } from "@/view/widgets/dialogs";
+import { alertDialog, chooseDialog, confirmDialog, promptText } from "@/view/widgets/dialogs";
 import { LAYOUT_PRESETS, presetWorkspace, workspaceNameError } from "@/view/widgets/workspaces";
 import { Workspaces } from "./Workspaces";
 import { AtlasTooSmall, oversizeAdvice } from "@/core/atlas/oversize";
@@ -991,6 +991,34 @@ export class App {
     input.click();
   }
 
+  /**
+   * File ▸ Open Spine Folder…: a folder holding an export (the .json, the
+   * .atlas and the pages, or a zip of them), subfolders included. A folder
+   * with several skeletons asks which one (`chooseSkeleton`).
+   */
+  private pickSpineFolder(): void {
+    const input = h("input", { type: "file" }) as HTMLInputElement;
+    input.webkitdirectory = true;
+    input.style.display = "none";
+    document.body.appendChild(input);
+    on(input, "change", () => {
+      const files = [...(input.files ?? [])].filter((f) => SPINE_FILE.test(f.name));
+      input.remove();
+      if (!input.files?.length) return;
+      if (files.length === 0) {
+        this.toast.show("No Spine export in that folder: it needs a .json, an .atlas and its images, or a zip of them.", true);
+        return;
+      }
+      void this.project.openSpine(files, (skeletons) => chooseDialog({
+        title: "Open Spine Folder",
+        message: "The folder holds more than one skeleton. Which one?",
+        options: skeletons,
+        ok: "Open",
+      }));
+    });
+    input.click();
+  }
+
   /** File ▸ Import PSD… — the same path as dropping one on the Library.
    *  `flat` (Import PSD as Layers…): every layer into the symbol being
    *  edited, for rigging, instead of one symbol per group. */
@@ -1120,6 +1148,7 @@ export class App {
           it("file.new"),
           it("file.open"),
           it("file.openSpine"),
+          it("file.openSpineFolder"),
           ...this.recentItems(),
           "-",
           it("file.save"),
@@ -1407,6 +1436,7 @@ export class App {
     reg("file.importPsd", () => this.pickPsd());
     reg("file.importPsdLayers", () => this.pickPsd(true));
     reg("file.openSpine", () => this.pickSpine());
+    reg("file.openSpineFolder", () => this.pickSpineFolder());
     reg("ai.connect", () => this.toggleAgent(), undefined, () => this.agentBridge.state !== "off");
     reg("ai.ask", () => { this.shell.showPanel(AI_PANEL); this.aiPanel.focus(); });
     reg("ai.panel", () => this.shell.togglePanel(AI_PANEL), undefined, () => this.shell.isPanelShown(AI_PANEL));
@@ -1568,6 +1598,9 @@ export class App {
     openKeymapDialog(this.keymap, () => this.openPreferences("keys"));
   }
 }
+
+/** What a Spine export is made of; anything else in a picked folder is left alone. */
+const SPINE_FILE = /\.(json|atlas|txt|png|jpe?g|webp|zip|skel|bytes)$/i;
 
 const TOOL_IDS: ToolId[] = [
   "select", "freeTransform", "pivot", "bone", "ik", "hand", "zoom",

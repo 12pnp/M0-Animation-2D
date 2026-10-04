@@ -864,7 +864,11 @@ flowchart TD
 
 File ▸ Open Spine reads a Spine 4.3 export (the skeleton `.json`, its `.atlas` or Unity's
 `.atlas.txt`, and the page images, or a zip of them) into a new, unsaved project whose scene
-symbol is the skeleton.
+symbol is the skeleton. File ▸ Open Spine Folder takes a whole folder (subfolders and zips
+included; Unity's `.meta` / `.asset` files are left alone). Which skeleton the files mean is
+`chooseSkeleton` in `io/import/spineFiles.ts`: one with an atlas of its own name, or a lone
+skeleton with a lone atlas; a folder with several asks (`chooseDialog`), before the progress
+card, which a dialog under it could not be answered through.
 
 ```mermaid
 flowchart LR

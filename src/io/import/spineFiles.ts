@@ -18,7 +18,58 @@ export interface SpineFiles {
 
 const base = (path: string) => path.split(/[\\/]/).pop() ?? path;
 
-export async function readSpineFiles(picked: File[]): Promise<SpineFiles> {
+/** A file's name without its Spine extension, for pairing a skeleton with its atlas. */
+const stem = (name: string) => name.replace(/\.(json|atlas\.txt|atlas)$/i, "").toLowerCase();
+
+export type SkeletonChoice =
+  | { json: string; atlas: string }
+  /** More than one skeleton could be meant: the user picks. */
+  | { candidates: string[] }
+  | { error: string };
+
+/**
+ * Which skeleton to open among a set of file names — a whole folder, which
+ * can hold several exports or JSON that is not a skeleton at all. A skeleton
+ * with an atlas of its own name wins; a lone skeleton takes a lone atlas
+ * whatever it is called. When that still leaves more than one, the user is
+ * asked.
+ */
+export function chooseSkeleton(names: readonly string[], picked?: string): SkeletonChoice {
+  const jsons = names.filter((n) => /\.json$/i.test(n));
+  const atlases = names.filter((n) => /\.atlas(\.txt)?$/i.test(n));
+  if (jsons.length === 0) {
+    return { error: names.some((n) => /\.skel(\.bytes)?$/i.test(n))
+      ? "Binary skeletons (.skel) cannot be opened. In Spine, export the skeleton as JSON instead."
+      : "No skeleton .json among the files. Pick the .json, the .atlas and the page images together." };
+  }
+  if (atlases.length === 0) return { error: "No .atlas among the files. Pick it with the .json and the page images." };
+  const atlasOf = (json: string) =>
+    atlases.find((a) => stem(a) === stem(json)) ?? (atlases.length === 1 ? atlases[0] : undefined);
+
+  if (picked) {
+    const atlas = atlasOf(picked);
+    return atlas ? { json: picked, atlas } : { error: `No .atlas named like ${picked}.` };
+  }
+  const paired = jsons.filter((j) => atlases.some((a) => stem(a) === stem(j)));
+  if (paired.length === 1) return { json: paired[0]!, atlas: atlasOf(paired[0]!)! };
+  if (paired.length > 1) return { candidates: paired };
+  if (jsons.length === 1 && atlases.length === 1) return { json: jsons[0]!, atlas: atlases[0]! };
+  if (atlases.length === 1) return { candidates: jsons };
+  return { error: "Several .atlas files and no .json named like any of them: pick the skeleton's files yourself." };
+}
+
+/** Thrown when the user closes the skeleton choice: not an error to report. */
+export class SpineOpenCancelled extends Error {
+  constructor() { super("Cancelled"); }
+}
+
+/**
+ * `choose` is asked when the files hold more than one skeleton (a folder of
+ * exports); without it, or when it returns null, the open is cancelled.
+ */
+export async function readSpineFiles(
+  picked: File[], choose?: (skeletons: string[]) => Promise<string | null>,
+): Promise<SpineFiles> {
   const files = new Map<string, Blob>();
   for (const f of picked) {
     if (/\.zip$/i.test(f.name)) {
@@ -31,13 +82,15 @@ export async function readSpineFiles(picked: File[]): Promise<SpineFiles> {
     }
   }
   const names = [...files.keys()];
-  if (names.some((n) => /\.skel(\.bytes)?$/i.test(n)) && !names.some((n) => /\.json$/i.test(n))) {
-    throw new Error("Binary skeletons (.skel) cannot be opened. In Spine, export the skeleton as JSON instead.");
+  let choice = chooseSkeleton(names);
+  if ("candidates" in choice) {
+    const pick = await choose?.(choice.candidates);
+    if (!pick) throw new SpineOpenCancelled();
+    choice = chooseSkeleton(names, pick);
   }
-  const jsonName = names.find((n) => /\.json$/i.test(n));
-  if (!jsonName) throw new Error("No skeleton .json among the files. Pick the .json, the .atlas and the page images together.");
-  const atlasName = names.find((n) => /\.atlas(\.txt)?$/i.test(n));
-  if (!atlasName) throw new Error("No .atlas among the files. Pick it with the .json and the page images.");
+  if ("error" in choice) throw new Error(choice.error);
+  if (!("json" in choice)) throw new SpineOpenCancelled();
+  const { json: jsonName, atlas: atlasName } = choice;
 
   let json: unknown;
   try {

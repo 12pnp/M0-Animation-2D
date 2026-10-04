@@ -143,6 +143,18 @@
 .modal-form .prow > label { text-align: left; }
 .modal-form .field { width: 120px; }
 .modal-form > p { margin: 0 0 12px; line-height: 1.4; }
+/* chooseDialog's list. */
+.modal-list {
+  /* Every select is one field high (theme.css); a list box takes its rows. */
+  height: auto;
+  width: 100%; padding: 2px;
+  background: var(--bg-field); border: 1px solid var(--line); border-radius: var(--radius);
+  color: var(--fg-strong);
+}
+/* No option padding: a list box sizes itself from its row count, and padded
+   rows overflow it. */
+.modal-list option { padding: 0 4px; line-height: 1.6; }
+.modal-list option:checked { background: var(--accent-row); color: var(--accent-row-ink); }
 .modal-msg { white-space: pre-line; }
 .modal-form .prow + .modal-error { margin-top: 6px; }
 .modal-error { min-height: calc(14px * var(--ui-scale)); color: var(--warn); font-size: var(--fs-sm); }

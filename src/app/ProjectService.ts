@@ -15,7 +15,7 @@ import {
 import { clearRecents, listRecents, type RecentEntry, rememberRecent, } from "@/io/project/Recents";
 import { Autosaver, type AutosaveRecord, clearAutosave, readAutosave, } from "@/io/project/Autosave";
 import { type RunBusy, runQuietly } from "./busy";
-import { cutRegions, readSpineFiles } from "@/io/import/spineFiles";
+import { SpineOpenCancelled, cutRegions, readSpineFiles } from "@/io/import/spineFiles";
 import { type AtlasImage, importSpine } from "@/core/spine/importSpine";
 import { type AssetId, newAssetId, reseed } from "@/core/doc/ids";
 
@@ -227,11 +227,13 @@ export class ProjectService {
    * the current project is let go, so a file that cannot be opened costs
    * nothing.
    */
-  async openSpine(picked: File[]): Promise<boolean> {
+  async openSpine(picked: File[], choose?: (skeletons: string[]) => Promise<string | null>): Promise<boolean> {
     if (!(await this.confirmDiscard())) return false;
     try {
+      // Read before the progress card: a folder of several exports asks
+      // which skeleton, and a dialog under the card could not be answered.
+      const files = await readSpineFiles(picked, choose);
       const { project, diagnostics, name } = await this.busy("Opening Spine files", async (report) => {
-        const files = await readSpineFiles(picked);
         const warnings: string[] = [];
         report(0.1);
         const regions = await cutRegions(files, (m) => warnings.push(m));
@@ -267,6 +269,7 @@ export class ProjectService {
       this.events.onStatus?.(diagnostics.length ? `Opened ${name} with ${diagnostics.length} note(s)` : `Opened ${name}`);
       return true;
     } catch (err) {
+      if (err instanceof SpineOpenCancelled) return false;
       this.events.onStatus?.(`Could not open the Spine files: ${message(err)}`, true);
       return false;
     }

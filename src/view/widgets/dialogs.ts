@@ -127,6 +127,35 @@ export function promptText(opts: PromptTextOptions): Promise<string | null> {
   });
 }
 
+export interface ChooseOptions {
+  title: string;
+  message: string;
+  options: string[];
+  ok?: string;
+}
+
+/** One of `options`, or null when cancelled. A list: arrows move, Enter or a
+ *  double-click takes the highlighted one. */
+export function chooseDialog(opts: ChooseOptions): Promise<string | null> {
+  return new Promise((resolve) => {
+    let answer: string | null = null;
+    const modal = new Modal({ title: opts.title, width: 400, onClose: () => resolve(answer) });
+    const list = h("select", { class: "modal-list", size: String(Math.min(8, Math.max(2, opts.options.length))) },
+      ...opts.options.map((o) => h("option", { value: o }, o))) as HTMLSelectElement;
+    list.selectedIndex = 0;
+    modal.body.appendChild(h("div", { class: "modal-form" }, h("p", { class: "modal-msg" }, opts.message), list));
+    const commit = () => {
+      if (list.selectedIndex < 0) return;
+      answer = list.value;
+      modal.close();
+    };
+    on(list, "dblclick", commit);
+    modal.footer.append(h("div", { class: "spacer" }), button("Cancel", false, () => modal.close()), button(opts.ok ?? "OK", true, commit));
+    onEnter(modal, commit);
+    list.focus();
+  });
+}
+
 function checkBox(opt: DontAskAgain | undefined): { el: HTMLElement; input: HTMLInputElement } | null {
   if (!opt) return null;
   const input = h("input", { type: "checkbox" }) as HTMLInputElement;
