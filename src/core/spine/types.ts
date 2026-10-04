@@ -187,6 +187,9 @@ export interface SpineEventData {
   int?: number;
   float?: number;
   string?: string;
+  audio?: string;
+  volume?: number;
+  balance?: number;
 }
 
 /**
@@ -258,6 +261,8 @@ export interface SpineEventKey {
   int?: number;
   float?: number;
   string?: string;
+  volume?: number;
+  balance?: number;
 }
 
 /**

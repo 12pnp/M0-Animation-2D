@@ -343,6 +343,46 @@
     }
   },
   {
+    "name": "define_event",
+    "description": "Add, change, rename or delete one of the skeleton's events (Spine's events: footsteps, hits, sounds), in one undoable step. An event has an int, a float and a string the game reads, and optionally a sound: `audio` is the sound file's path as the game finds it (the project's sound files are added by the user in the Events panel), with its volume (0..1) and balance (-1 left .. 1 right). A value left out is unchanged (new events start at 0, 0, \"\", no sound, volume 1, balance 0). `rename` gives the event a new name and its keys follow; `delete: true` deletes it and every key that fires it. get_rig lists the events.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "int": { "type": "integer" },
+        "float": { "type": "number" },
+        "string": { "type": "string" },
+        "audio": { "type": "string" },
+        "volume": { "type": "number", "minimum": 0, "maximum": 1 },
+        "balance": { "type": "number", "minimum": -1, "maximum": 1 },
+        "rename": { "type": "string" },
+        "delete": { "type": "boolean" }
+      },
+      "required": ["name"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "key_event",
+    "description": "Fire an event at a frame of an animation, in one undoable step: the game receives it when playback reaches that frame (Spine's event keys). Several events may fire on one frame, in the order they were keyed. int, float, string, volume and balance override the event's own values for this key only. `delete: true` removes that event's keys at that frame. get_animation's `events` lists the keys.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "animation": { "type": "string" },
+        "frame": { "type": "integer", "minimum": 0 },
+        "event": { "type": "string" },
+        "int": { "type": "integer" },
+        "float": { "type": "number" },
+        "string": { "type": "string" },
+        "volume": { "type": "number", "minimum": 0, "maximum": 1 },
+        "balance": { "type": "number", "minimum": -1, "maximum": 1 },
+        "delete": { "type": "boolean" }
+      },
+      "required": ["animation", "frame", "event"],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "set_cycle",
     "description": "Make an animation a cycle, or let it play once. A cycle loops with its last frame showing frame 0 again: an animation that did not end that way grows by one frame for it, and every bone that reaches the end without a key there gets frame 0's pose keyed at that frame. Turning it off only stops the looping; keys stay. One undoable step. get_animation's `seam` then lists any bone that still does not close.",
     "input_schema": {

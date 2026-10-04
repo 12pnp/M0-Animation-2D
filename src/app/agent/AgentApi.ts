@@ -1,7 +1,7 @@
 import type { Store } from "@/app/Store";
 import { drawingLayers, orderAt, reorderTargets, withDrawOrderKey, withFront } from "@/core/doc/drawOrder";
 import { type AnimId, type AssetId, newIkId, type NodeId } from "@/core/doc/ids";
-import { type Animation, type IkConstraint, type IkKey, type ImageItem, isImage, type Keyframe, type Node, type SymbolItem, type Track } from "@/core/doc/types";
+import { type Animation, type EventDef, type EventKey, type IkConstraint, type IkKey, type ImageItem, isImage, type Keyframe, type Node, type SymbolItem, type Track } from "@/core/doc/types";
 import { entryBox, type FrameContext } from "@/core/doc/pose";
 import { type ImageFrame, imageFrame, referenceEnd, referenceFrameOf, referenceIndexAt, referenceRect } from "@/core/doc/reference";
 import { apply } from "@/core/math/Matrix2D";
@@ -11,7 +11,8 @@ import { ikChain, ikRoles } from "@/core/doc/ikGraph";
 import { boneSide, guessRoles, type MotionClip, type RigBone, retarget } from "@/core/rig/motion";
 import MOTIONS from "@/core/rig/motions.json";
 import { insertKeyframe, keyIndexAt, setEndFrame } from "@/core/doc/timeline";
-import { AddAnimation, EditTracks, SetCycle, SetDrawOrder, SetIkKeys } from "@/core/history/timelineCommands";
+import { AddAnimation, EditTracks, SetCycle, SetDrawOrder, SetEventKeys, SetEvents, SetIkKeys } from "@/core/history/timelineCommands";
+import { renamedEvent, withEventDefValues, withEventKey, withEventKeyValues, withoutEvent } from "@/core/doc/events";
 import { deleteIkKeys, ikPoseAt, type IkTween, ikTweenOf, withIkKey, withIkTween } from "@/core/doc/ikKeys";
 import { cyclePlan, isCycle, SEAM_TOLERANCE, seamFrame, seamGap } from "@/core/doc/cycle";
 import { bonePaths, keyedIn, pathFrames } from "@/core/doc/bonePath";
@@ -134,6 +135,8 @@ export class AgentApi {
       case "set_cycle": return this.setCycle(str(args, "animation"), args.on);
       case "key_draw_order": return this.keyDrawOrder(str(args, "animation"), int(args, "frame", 0), args);
       case "key_ik": return this.keyIk(str(args, "animation"), str(args, "ik"), int(args, "frame", 0), args);
+      case "define_event": return this.defineEvent(str(args, "name"), args);
+      case "key_event": return this.keyEvent(str(args, "animation"), int(args, "frame", 0), str(args, "event"), args);
       case "get_bone_path": return this.getBonePath(str(args, "animation"), str(args, "bone"), args.point);
       case "set_bone_path": return this.setBonePath(str(args, "animation"), str(args, "bone"), list<PathKeyIn>(args, "keys"));
       default: throw new AgentError(`There is no tool "${name}".`);
@@ -202,6 +205,7 @@ export class AgentApi {
         const bones = k.chain > 0 && effector?.parentId ? [nameOf(effector.parentId), effector.name] : [effector?.name];
         return { name: k.name, bones, target: nameOf(k.targetId), mix: k.weight, ...(k.softness ? { softness: round(k.softness, 3) } : {}) };
       }),
+      ...(s.events?.length ? { events: s.events.map((d) => ({ ...d })) } : {}),
       animations: s.animations.map((a) => ({
         name: a.name, frames: this.frames(a), loops: a.playTimes === 0,
         ...(a.reference ? { reference: { images: a.reference.frames.length, frames: [referenceFrameOf(a.reference, 0), referenceEnd(a.reference)] } } : {}),
@@ -232,6 +236,7 @@ export class AgentApi {
           frontToBack: k.order ? [...orderAt(this.sym, anim, k.frame)].reverse().map((id) => this.sym.nodes[id]!.name) : "setup",
         })),
       } : {}),
+      ...(anim.events?.length ? { events: anim.events.map((k) => ({ ...k })) } : {}),
       ...(anim.ik && Object.keys(anim.ik).length ? {
         ik: Object.fromEntries(this.sym.ik.filter((k) => anim.ik?.[k.id]?.length).map((k) => [k.name, anim.ik![k.id]!.map((key) => ({
           frame: key.frame, ...ikKeyOut(k, key),
@@ -798,6 +803,79 @@ export class AgentApi {
       animation: anim.name, ik: k.name,
       keys: keys.map((key) => ({ frame: key.frame, ...ikKeyOut(k, key) })),
     };
+  }
+
+  private defineEvent(name: string, args: Args) {
+    const s = this.sym;
+    const defs = s.events ?? [];
+    const old = defs.find((d) => d.name === name);
+    if (args.delete === true) {
+      if (!old) throw new AgentError(`There is no event "${name}".`);
+      const out = withoutEvent(defs, s.animations, name);
+      const removed = s.animations.reduce((n, a) => n + (a.events?.length ?? 0) - (out.keys.get(a.id)?.length ?? a.events?.length ?? 0), 0);
+      this.store.apply(new SetEvents(`AI: Delete Event "${name}"`, this.store.currentSymbolId, out.defs, out.keys));
+      this.store.emit("timeline");
+      return { deleted: name, keysRemoved: removed };
+    }
+    for (const f of ["int", "float", "volume", "balance"] as const) {
+      if (args[f] !== undefined && (typeof args[f] !== "number" || !Number.isFinite(args[f]))) throw new AgentError(`${f} is a number.`);
+    }
+    if (args.string !== undefined && typeof args.string !== "string") throw new AgentError("string is text.");
+    if (args.audio !== undefined && typeof args.audio !== "string") throw new AgentError("audio is a sound file's path, or \"\" for none.");
+    let next = defs;
+    let keys = new Map<AnimId, EventKey[]>();
+    let current = name;
+    if (typeof args.rename === "string") {
+      if (!old) throw new AgentError(`There is no event "${name}" to rename.`);
+      const out = renamedEvent(defs, s.animations, name, args.rename);
+      if (!out) throw new AgentError(`"${args.rename}" is empty or already an event.`);
+      next = out.defs;
+      keys = out.keys;
+      current = args.rename.trim();
+    } else if (!old) {
+      if (!name.trim()) throw new AgentError("An event needs a name.");
+      next = [...defs, { name: name.trim() }];
+      current = name.trim();
+    }
+    const patch: Partial<Omit<EventDef, "name">> = {};
+    if (typeof args.int === "number") patch.int = Math.trunc(args.int);
+    if (typeof args.float === "number") patch.float = args.float;
+    if (typeof args.string === "string") patch.string = args.string;
+    if (typeof args.audio === "string") patch.audio = args.audio;
+    if (typeof args.volume === "number") patch.volume = Math.max(0, Math.min(1, args.volume));
+    if (typeof args.balance === "number") patch.balance = Math.max(-1, Math.min(1, args.balance));
+    next = next.map((d) => (d.name === current ? withEventDefValues(d, patch) : d));
+    this.store.apply(new SetEvents(`AI: Event "${current}"`, this.store.currentSymbolId, next, keys));
+    this.store.emit("timeline");
+    return { event: next.find((d) => d.name === current), events: next.map((d) => d.name) };
+  }
+
+  private keyEvent(animName: string, frame: number, eventName: string, args: Args) {
+    const anim = this.animation(animName);
+    const def = (this.sym.events ?? []).find((d) => d.name === eventName);
+    if (!def) throw new AgentError(`There is no event "${eventName}". define_event makes one; get_rig lists them.`);
+    let keys = anim.events ?? [];
+    if (args.delete === true) {
+      const at = keys.filter((k) => k.frame === frame && k.name === eventName);
+      if (!at.length) throw new AgentError(`"${eventName}" is not fired at frame ${frame}.`);
+      keys = keys.filter((k) => !(k.frame === frame && k.name === eventName));
+    } else {
+      for (const f of ["int", "float", "volume", "balance"] as const) {
+        if (args[f] !== undefined && (typeof args[f] !== "number" || !Number.isFinite(args[f]))) throw new AgentError(`${f} is a number.`);
+      }
+      keys = withEventKey(keys, frame, eventName);
+      const nth = keys.filter((k) => k.frame === frame).length - 1;
+      keys = withEventKeyValues(keys, frame, nth, {
+        ...(typeof args.int === "number" ? { int: Math.trunc(args.int) } : {}),
+        ...(typeof args.float === "number" ? { float: args.float } : {}),
+        ...(typeof args.string === "string" ? { string: args.string } : {}),
+        ...(typeof args.volume === "number" ? { volume: args.volume } : {}),
+        ...(typeof args.balance === "number" ? { balance: args.balance } : {}),
+      });
+    }
+    this.store.apply(new SetEventKeys(`AI: Event "${eventName}" at ${frame + 1}`, this.store.currentSymbolId, anim.id, keys));
+    this.store.emit("timeline");
+    return { animation: anim.name, events: keys.map((k) => ({ ...k })) };
   }
 
   private setCycle(animName: string, on: unknown) {

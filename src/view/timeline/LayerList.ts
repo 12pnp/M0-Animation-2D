@@ -41,6 +41,7 @@ export class LayerList {
   readonly el: HTMLElement;
   private list: HTMLElement;
   private readonly orderRow: HTMLElement;
+  private readonly eventsRow: HTMLElement;
   private dragIndex = -1;
   private onionHint: HTMLElement | null = null;
   /** What was selected at the last render, so a reveal only follows a change. */
@@ -56,7 +57,11 @@ export class LayerList {
       class: "tl-layer tl-order-row",
       title: "Draw order keys: from each one on, the layers draw in its order. Change it at the playhead with Modify ▸ Draw Order; right-click the row to key it or go back to the setup order.",
     }, h("span", { class: "prop-glyph" }, "☰"), h("div", { class: "name" }, "Draw order"));
-    this.el = h("div", { class: "tl-layers" }, this.buildHead(), this.orderRow, this.list);
+    this.eventsRow = h("div", {
+      class: "tl-layer tl-order-row tl-events-row",
+      title: "Event keys: the events this animation fires, as Spine's. Right-click a frame to add one; drag a flag to move its frame's keys, Delete to remove them. The Events panel lists the events and the picked keys' values.",
+    }, h("span", { class: "prop-glyph" }, "⚑"), h("div", { class: "name" }, "Events"));
+    this.el = h("div", { class: "tl-layers" }, this.buildHead(), this.orderRow, this.eventsRow, this.list);
 
     on(this.list, "scroll", () => this.cb.onScrollY(this.list.scrollTop));
     // The blank space under the rows, as below the frame grid.
@@ -119,6 +124,8 @@ export class LayerList {
   render(): void {
     this.orderRow.hidden = !this.store.currentAnimation;
     this.orderRow.style.height = `${this.cb.rowHeight}px`;
+    this.eventsRow.hidden = !this.store.currentAnimation;
+    this.eventsRow.style.height = `${this.cb.rowHeight}px`;
     const previous = this.selectionKey;
     this.selectionKey = this.store.selection.nodes.join(",");
     clear(this.list);

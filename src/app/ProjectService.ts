@@ -4,6 +4,7 @@ import { createProject } from "@/core/doc/defaults";
 import { invalidateBounds } from "@/core/doc/pose";
 import type { Diagnostic } from "@/core/doc/schema";
 import { deserializeProject, PROJECT_EXTENSION, serializeProject, } from "@/io/project/ProjectFile";
+import type { SoundStore } from "./SoundStore";
 import {
     type FileRef,
     hasNativeFiles,
@@ -49,12 +50,14 @@ export class ProjectService {
     private readonly assets: AssetStore,
     private readonly events: ProjectServiceEvents = {},
     private readonly onProjectReplaced: () => void = () => {},
+    /** Event sounds, saved and loaded with the project. */
+    private readonly sounds?: SoundStore,
   ) {
     const general = store.prefs.value.general;
     this.autosaver = new Autosaver(
       () => this.store.history.isDirty,
       async () => ({
-        blob: await serializeProject(this.store.project, this.assets),
+        blob: await serializeProject(this.store.project, this.assets, this.sounds),
         name: this.fileName,
       }),
       general.autosaveSeconds * 1000,
@@ -128,6 +131,7 @@ export class ProjectService {
     if (!(await this.confirmDiscard())) return false;
     reseed();
     this.assets.clear();
+    this.sounds?.clear();
     invalidateBounds();
     const p = this.store.prefs.value.general;
     this.store.replaceProject(createProject(name, {
@@ -161,7 +165,7 @@ export class ProjectService {
     try {
       const revision = this.store.history.revision;
       await this.busy(`Saving ${ref.name}`, async () => {
-        await writeFile(ref, await serializeProject(this.store.project, this.assets));
+        await writeFile(ref, await serializeProject(this.store.project, this.assets, this.sounds));
       });
       if (this.store.history.revision === revision) {
         this.store.history.markSaved();
@@ -200,7 +204,7 @@ export class ProjectService {
   async loadFrom(data: ArrayBuffer, ref: FileRef | null, remember = true): Promise<boolean> {
     try {
       const { project, diagnostics } = await this.busy(`Opening ${ref?.name ?? "project"}`,
-        (report) => deserializeProject(data, this.assets, report));
+        (report) => deserializeProject(data, this.assets, report, this.sounds));
       invalidateBounds();
       this.store.replaceProject(project);
       this.ref = ref;
@@ -245,6 +249,7 @@ export class ProjectService {
 
         reseed();
         this.assets.clear();
+        this.sounds?.clear();
         // Side by side, ids handed out in atlas order first.
         const ids = regions.map(() => newAssetId());
         const images = new Map<string, AtlasImage>();

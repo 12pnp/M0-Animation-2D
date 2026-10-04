@@ -4,6 +4,7 @@ import type { Project } from "@/core/doc/types";
 import { isImage, isSymbol } from "@/core/doc/types";
 import { referenceAssets } from "@/core/doc/reference";
 import type { AssetId } from "@/core/doc/ids";
+import type { SoundStore } from "@/app/SoundStore";
 import type { AssetStore } from "@/app/AssetStore";
 import { type Diagnostic, migrate, validateProject } from "@/core/doc/schema";
 
@@ -12,6 +13,17 @@ export const PROJECT_EXTENSION = "animo";
 interface Manifest {
   /** assetId -> file name inside the archive. */
   assets: Record<string, string>;
+  /** Event sound path (`EventDef.audio`) -> file name inside the archive. */
+  sounds?: Record<string, string>;
+}
+
+/** The sound paths the document's events name. */
+export function soundsUsed(project: Project): string[] {
+  const out = new Set<string>();
+  for (const item of Object.values(project.items)) {
+    if (isSymbol(item)) for (const d of item.events ?? []) if (d.audio) out.add(d.audio);
+  }
+  return [...out].sort();
 }
 
 export interface LoadedProject {
@@ -25,12 +37,13 @@ export interface LoadedProject {
  *   project.json      the document
  *   manifest.json     assetId -> archive path
  *   assets/<id>.png   the binaries
+ *   sounds/<n>.<ext>  event sounds, by the path events name them with
  *
  * Images live as real files rather than base64 inside the JSON: the document
  * stays readable and diffable, and a project with a few megabytes of art does
  * not become a JSON blob that no tool wants to open.
  */
-export async function serializeProject(project: Project, assets: AssetStore): Promise<Blob> {
+export async function serializeProject(project: Project, assets: AssetStore, sounds?: SoundStore): Promise<Blob> {
   const files: Record<string, Uint8Array> = {};
   const manifest: Manifest = { assets: {} };
 
@@ -54,6 +67,17 @@ export async function serializeProject(project: Project, assets: AssetStore): Pr
     manifest.assets[id] = path;
   }
 
+  // Event sounds the document names, under numbered names: a path may hold
+  // folders and characters an archive entry should not.
+  const named = sounds ? soundsUsed(project).filter((p) => sounds.has(p)) : [];
+  if (named.length) manifest.sounds = {};
+  for (const [i, path] of named.entries()) {
+    const ext = /\.([a-z0-9]{1,5})$/i.exec(path)?.[1]?.toLowerCase() ?? "bin";
+    const entry = `sounds/${i}.${ext}`;
+    files[entry] = new Uint8Array(await sounds!.get(path)!.arrayBuffer());
+    manifest.sounds![path] = entry;
+  }
+
   files["project.json"] = strToU8(json);
   files["manifest.json"] = strToU8(JSON.stringify(manifest, null, 2));
 
@@ -65,6 +89,7 @@ export async function deserializeProject(
   data: ArrayBuffer, assets: AssetStore,
   /** 0..1 as the images are decoded, which is most of the time a load takes. */
   onProgress: (fraction: number) => void = () => {},
+  sounds?: SoundStore,
 ): Promise<LoadedProject> {
   const entries = await unzipFiles(new Uint8Array(data));
 
@@ -114,6 +139,15 @@ export async function deserializeProject(
         message: `"${name}" could not be decoded and was skipped`,
         severity: "warning",
       });
+    }
+  }
+
+  if (sounds) {
+    sounds.clear();
+    for (const [path, entry] of Object.entries(manifest.sounds ?? {})) {
+      const bytes = entries[entry];
+      if (bytes) sounds.add(new Blob([bytes as unknown as BlobPart]), path);
+      else diagnostics.push({ path: `sounds.${path}`, message: `"${entry}" is missing from the archive; the event's sound will not play`, severity: "warning" });
     }
   }
 

@@ -75,6 +75,7 @@
 .tl-layer.tl-order-row { flex: none; color: var(--fg); background: var(--bg-panel-alt); border-bottom: 1px solid var(--line); }
 .tl-layer.tl-order-row[hidden] { display: none; }
 .tl-order-row .prop-glyph { width: 12px; flex: none; text-align: center; color: #7fa8ff; }
+.tl-events-row .prop-glyph { color: #ffb35c; }
 
 /* Mask layers. The tint on the icon is what tells a mask apart from a group
    at a glance; the left rule ties a masked row to the mask above it. */

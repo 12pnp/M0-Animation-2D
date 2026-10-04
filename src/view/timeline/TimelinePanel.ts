@@ -12,6 +12,7 @@ import { type MenuEntry, showMenu } from "@/view/widgets/Dock";
 import { attachOptionsMenu } from "./onionButton";
 import type { Store } from "@/app/Store";
 import type { IkId, NodeId } from "@/core/doc/ids";
+import { deleteEventKeys, uniqueEventName, withEventKey } from "@/core/doc/events";
 import { deleteIkKeys, ikPoseAt, type IkTween, ikTweenOf, withIkKey, withIkTween } from "@/core/doc/ikKeys";
 import type { Keyframe, Layer, RotateDir } from "@/core/doc/types";
 import { FrameGrid, ROW_HEIGHT } from "./FrameGrid";
@@ -29,6 +30,8 @@ import {
     doSetTrack,
     doSetDrawOrder,
     doSetIkKeys,
+    doSetEventKeys,
+    doSetEvents,
     doReorder,
     ensureTrack,
     doRemoveFrame,
@@ -113,6 +116,8 @@ export class TimelinePanel implements Panel {
       onEditDrawOrder: (keys, label, kind) => doSetDrawOrder(store, keys, label, kind),
       onDrawOrderMenu: (frame, x, y) => this.drawOrderMenu(frame, x, y),
       onEditIk: (ik, keys, label, kind) => doSetIkKeys(store, ik, keys, label, kind),
+      onEditEvents: (keys, label, kind) => doSetEventKeys(store, keys, label, kind),
+      onEventsMenu: (frame, x, y) => this.eventsMenu(frame, x, y),
       onDragSpanEnd: (nodeId, endFrame) => doSetEndFrame(store, nodeId, endFrame),
       onDragFrames: (row, frame, copy) => this.dragFrames(row, frame, copy),
       onBeginInteraction: (kind) => store.history.beginInteraction(kind),
@@ -784,6 +789,62 @@ export class TimelinePanel implements Panel {
     doSetTrack(this.store, sel.nodeId, deleteChannelKeys(track, node, sel.prop, sel.frames), "Delete Keys");
     this.grid.propSel = null;
     return true;
+  }
+
+  /** The picked frames' event keys gone; false with none picked. */
+  deleteEventKeys(): boolean {
+    const frames = this.store.ui.eventFrames;
+    const keys = this.store.currentAnimation?.events;
+    if (!frames.length || !keys?.some((k) => frames.includes(k.frame))) return false;
+    const n = keys.filter((k) => frames.includes(k.frame)).length;
+    doSetEventKeys(this.store, deleteEventKeys(keys, frames), n > 1 ? "Delete Event Keys" : "Delete Event Key");
+    this.store.ui.eventFrames = [];
+    return true;
+  }
+
+  /**
+   * The Events row's menu: fire an event here (each of the symbol's, or a new
+   * one, named first), or delete the picked frames' keys.
+   */
+  private eventsMenu(frame: number, x: number, y: number): void {
+    const anim = this.store.currentAnimation;
+    if (!anim) return;
+    this.store.setFrame(frame);
+    const sym = this.store.currentSymbol;
+    const defs = sym.events ?? [];
+    const keys = anim.events ?? [];
+    const picked = keys.filter((k) => this.store.ui.eventFrames.includes(k.frame)).length;
+    const add = (name: string) => {
+      doSetEventKeys(this.store, withEventKey(keys, frame, name), `Add Event "${name}"`);
+      this.store.ui.eventFrames = [frame];
+    };
+    showMenu(this.menuAnchor(x, y), [
+      {
+        label: "Add Event Here",
+        items: [
+          ...defs.map((d) => ({ label: d.name, run: () => add(d.name) })),
+          ...(defs.length ? ["-" as const] : []),
+          {
+            label: "New Event…",
+            run: async () => {
+              const name = await promptText({ title: "New Event", label: "Name", value: uniqueEventName(defs, "event") });
+              const now = this.store.currentSymbol;
+              const a = this.store.currentAnimation;
+              if (!name?.trim() || !a || now.id !== sym.id) return;
+              const fresh = uniqueEventName(now.events ?? [], name);
+              doSetEvents(this.store, [...(now.events ?? []), { name: fresh }],
+                new Map([[a.id, withEventKey(a.events ?? [], frame, fresh)]]), `New Event "${fresh}"`);
+              this.store.ui.eventFrames = [frame];
+            },
+          },
+        ],
+      },
+      "-",
+      {
+        label: picked > 1 ? `Delete ${picked} Event Keys` : "Delete Event Key",
+        enabled: picked > 0, run: () => { this.deleteEventKeys(); },
+      },
+    ]);
   }
 
   /** The picked IK keys gone; false with none picked. */

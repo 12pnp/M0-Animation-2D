@@ -1,4 +1,5 @@
-import type { DisplayRef, IkKey, LibraryFolder, Node, Project } from "./types";
+import type { DisplayRef, EventDef, EventKey, IkKey, LibraryFolder, Node, Project } from "./types";
+import { eventDefsFromSpine, withEventDefValues } from "./events";
 import { DEFAULT_MOTION_BLUR, DOC_VERSION, type MotionBlurSettings, TIMELINE_PROPS } from "./types";
 import { observeId } from "./ids";
 import { isDefaultExport, sanitizeExportSettings } from "@/core/export/settings";
@@ -346,6 +347,34 @@ export function validateProject(raw: unknown): ValidationResult {
       if (Object.keys(out).length) anim.ik = out as never;
       else delete anim.ik;
     }
+    // Events: names unique and not empty, values of the right type; keys of
+    // known events only, sorted by frame (keys sharing one keep their order).
+    if (item.events !== undefined) {
+      const raw = Array.isArray(item.events) ? (item.events as unknown[]) : [];
+      const defs: EventDef[] = [];
+      for (const d of raw) {
+        if (!d || typeof d !== "object") continue;
+        const r = d as Record<string, unknown>;
+        const name = typeof r.name === "string" ? r.name.trim() : "";
+        if (!name || defs.some((x) => x.name === name)) continue;
+        defs.push(withEventDefValues({ name }, eventFields(r, true)));
+      }
+      if (defs.length) item.events = defs;
+      else delete item.events;
+    }
+    const eventNames = new Set((item.events ?? []).map((d) => d.name));
+    for (const anim of item.animations) {
+      if (anim.events === undefined) continue;
+      const raw = Array.isArray(anim.events) ? (anim.events as unknown[]) : [];
+      const keys = raw
+        .filter((k): k is Record<string, unknown> => !!k && typeof k === "object" && typeof (k as { name?: unknown }).name === "string")
+        .filter((k) => eventNames.has(k.name as string))
+        .map((k, i) => ({ i, key: { frame: clampInt(k.frame, 0, 100000, 0), name: k.name as string, ...eventFields(k, false) } as EventKey }))
+        .sort((a, b) => a.key.frame - b.key.frame || a.i - b.i)
+        .map((x) => x.key);
+      if (keys.length) anim.events = keys;
+      else delete anim.events;
+    }
     const masks = normalizeMasks(item).masks.size;
     if (masks) {
       diagnostics.push({
@@ -467,6 +496,19 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // 17 -> 18: `IkConstraint.softness` and `IkKey.softness`. An opened
   // constraint carried its softness in `spine`; it moves to the field the
   // solver reads.
+  // 18 -> 19: `SymbolItem.events` and `Animation.events`. An opened file's
+  // events were carried in `spine.events`; they move to the list the editor
+  // edits (an animation's carried keys stay carried, naming them).
+  18: (p) => {
+    const items = (p.items ?? {}) as Record<string, { events?: unknown; spine?: Record<string, unknown> }>;
+    for (const item of Object.values(items)) {
+      const carried = item.spine?.events;
+      if (!carried || typeof carried !== "object" || item.events) continue;
+      item.events = eventDefsFromSpine(carried as Record<string, unknown>);
+      delete item.spine!.events;
+    }
+    return { ...p, version: 19 };
+  },
   17: (p) => {
     const items = (p.items ?? {}) as Record<string, { ik?: Array<{ softness?: unknown; spine?: Record<string, unknown> }> }>;
     for (const item of Object.values(items)) {
@@ -481,6 +523,19 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
     return { ...p, version: 18 };
   },
 };
+
+/** An event's or a key's values read from disk: the right types only. */
+function eventFields(r: Record<string, unknown>, def: boolean): Partial<EventDef> {
+  const out: Partial<EventDef> = {};
+  const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
+  if (finite(r.int)) out.int = Math.trunc(r.int);
+  if (finite(r.float)) out.float = r.float;
+  if (typeof r.string === "string") out.string = r.string;
+  if (def && typeof r.audio === "string" && r.audio) out.audio = r.audio;
+  if (finite(r.volume)) out.volume = Math.max(0, Math.min(1, r.volume));
+  if (finite(r.balance)) out.balance = Math.max(-1, Math.min(1, r.balance));
+  return out;
+}
 
 /** A tween read from disk, or null when it is not one this build knows. */
 function sanitizeTween(raw: unknown): TweenSpec | null {

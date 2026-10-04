@@ -57,7 +57,7 @@ describe("the AI's tools", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
       "get_reference", "render_frame", "add_bones", "attach", "add_ik", "auto_rig", "list_motions", "apply_motion", "draw_order",
-      "key_draw_order", "key_ik", "set_cycle", "get_bone_path", "set_bone_path",
+      "key_draw_order", "key_ik", "define_event", "key_event", "set_cycle", "get_bone_path", "set_bone_path",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -732,6 +732,24 @@ describe("cycles and bone paths through the AI's tools", () => {
     await expect(api.call("key_ik", { animation: "run", ik: name, frame: 1, softness: -1 })).rejects.toThrow(/softness/);
     await api.call("key_ik", { animation: "run", ik: name, frame: 10, delete: true });
     await expect(api.call("key_ik", { animation: "run", ik: "nope", frame: 1 })).rejects.toThrow(/no IK constraint "nope"/);
+  });
+
+  it("define events and fire them at frames, each one undo step", async () => {
+    const { store, api } = await setup();
+    await api.call("define_event", { name: "step", int: 1, audio: "sfx/step.ogg", volume: 0.5 });
+    expect(store.history.undoLabel).toBe('AI: Event "step"');
+    await api.call("key_event", { animation: "run", frame: 3, event: "step" });
+    await api.call("key_event", { animation: "run", frame: 3, event: "step", int: 4, balance: -1 });
+    expect(store.history.undoLabel).toBe('AI: Event "step" at 4');
+    const rig = await api.call("get_rig", {}) as { events: unknown[] };
+    expect(rig.events).toEqual([{ name: "step", int: 1, audio: "sfx/step.ogg", volume: 0.5 }]);
+    await api.call("define_event", { name: "step", rename: "foot" });
+    const anim = await api.call("get_animation", { animation: "run" }) as { events: unknown[] };
+    expect(anim.events).toEqual([{ frame: 3, name: "foot" }, { frame: 3, name: "foot", int: 4, balance: -1 }]);
+    await expect(api.call("key_event", { animation: "run", frame: 1, event: "nope" })).rejects.toThrow(/no event "nope"/);
+    const gone = await api.call("define_event", { name: "foot", delete: true }) as { keysRemoved: number };
+    expect(gone.keysRemoved).toBe(2);
+    expect(await api.call("get_animation", { animation: "run" })).not.toHaveProperty("events");
   });
 
   it("make a cycle in one undo step, and say where the loop does not close", async () => {

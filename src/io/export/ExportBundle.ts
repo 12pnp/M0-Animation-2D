@@ -25,6 +25,9 @@ export interface ExportResult {
   minifyJson?: boolean;
   /** Name the atlas `.atlas.txt`, for Unity. */
   atlasTxt?: boolean;
+  /** The exported events' sound files, written under `audio/` at the path
+   *  each event names (`EventDef.audio`). */
+  sounds?: Array<{ path: string; blob: Blob }>;
 }
 
 /**
@@ -129,6 +132,9 @@ export async function exportFiles(result: ExportResult): Promise<Record<string, 
   files[`${result.fileBase}.${result.atlasTxt ? "atlas.txt" : "atlas"}`] = strToU8(result.atlas);
   for (const page of result.pages) {
     files[`${page.fileStem}.${page.ext}`] = new Uint8Array(await page.blob.arrayBuffer());
+  }
+  for (const s of result.sounds ?? []) {
+    files[`audio/${s.path}`] = new Uint8Array(await s.blob.arrayBuffer());
   }
   return files;
 }

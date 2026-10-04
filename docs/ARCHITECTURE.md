@@ -542,6 +542,58 @@ The pure rules are in `core/doc/ikKeys.ts`: `ikPoseAt`, `withIkKey`, `moveIkKeys
   a key.
   `get_animation` lists the keys under `ik`.
 
+### Events
+
+A symbol's events and the frames its animations fire them at, as Spine's skeleton `events`
+and animation `events` timeline (docs/EVENTS-PLAN.md). `SymbolItem.events: EventDef[]`
+(name, int, float, string, audio, volume, balance; names unique) and `Animation.events:
+EventKey[]` (frame, name, and the values it overrides), schema 19. Several keys may share a
+frame and fire in list order. The pure rules are `core/doc/events.ts` (`eventValues`,
+`withEventKey`, `moveEventKeys`, `deleteEventKeys`, `withEventKeyValues`, `renamedEvent`,
+`withoutEvent`, `uniqueEventName`, `eventDefsFromSpine`), tested in `tests/events.test.ts`.
+Commands: `SetEventKeys` (one animation's keys; a drag merges) and `SetEvents` (the list,
+with the keys a rename or delete changed).
+
+- **Two spine-core 4.3.13 behaviours the export writes around**, both found by the parity
+  test (`spineParity` ▸ events), which fires every key through spine-core frame by frame:
+  - an event's missing `volume` reads as 0 (`Event.volume = 0`), not the 1 Spine's docs
+    give, so a sound left at volume 1 played silent: an event with a sound always writes
+    `volume` and `balance`;
+  - a key's missing `balance` reads as the event's VOLUME (`SkeletonJson`: "balance",
+    setup.volume): a key of an event with a sound always writes `balance`.
+- **Export** (`eventDefsOf`, `eventTimeline`): the exported symbol's events and each
+  animation's keys; an event key extends the animation's end like any key; keys replace a
+  carried `events` timeline. A nested symbol's event keys are not written, with a warning.
+- **Import** (`eventKeysOf`): the file's events become the list; an animation's keys
+  become the document's when each lands on a frame and names a known event, else the
+  timeline is carried. A key keeps only what differs from its event; a key of an event with a
+  sound and no balance gets the event's volume as its balance, which is what spine-core
+  played. Schema 19 moves an older document's carried `spine.events` to the list.
+- **The timeline** has an Events row under Draw order (`FrameGrid.eventStrip`,
+  `stripHeight` is two rows): a flag on each frame that fires events, the event's name
+  beside it while it fits before the next flag, a count when several share the frame. A
+  press picks the frame (⇧ adds; `ui.eventFrames`), a drag moves the picked frames' keys
+  (kind `timeline.eventMove`), Delete removes them, and right-click offers Add Event Here ▸
+  each event or New Event… (the event and its key in one undo step). Q / W stop on event
+  keys.
+- **The Events panel** (`view/panels/EventsPanel.ts`) lists the events (name, int, float,
+  string, sound, and volume and balance once there is a sound; New Event, Delete) and,
+  with one frame picked on the row, that frame's keys: each field blank fires the event's
+  value, shown as the placeholder. A field committed while the panel re-renders is safe:
+  a store change during typing renders on blur.
+- **Sounds** (`app/SoundStore.ts`) live outside the document like images: the event holds
+  the path (`soundPath` keeps it inside the folder), a save writes each sound an event names
+  under `sounds/` in the `.animo` (`manifest.sounds`), and the export writes it into
+  `audio/` beside the skeleton, at that path. The Events panel's Sound list adds files.
+- **The Preview** lists the events the runtime fires while playing (an `AnimationState`
+  listener; a seek does not fire), and plays their sounds at their volume and balance
+  (Web Audio, decoded once per file). Its mix bar plays "from" once and crossfades into the
+  chosen animation (`AnimationStateData.setMix`, `addAnimation`); ticks from the "from"
+  part are not sent, so the editor's playhead follows the second animation only.
+- The AI's `define_event` adds, changes, renames or deletes an event; `key_event` fires one
+  at a frame with overrides, or removes it. `get_rig` lists the events and `get_animation`
+  the keys.
+
 ### The timeline fills its panel, and only the layers scroll
 
 The frame grid is a CANVAS with no scroll of its own, and the horizontal bar is an

@@ -39,6 +39,9 @@ export type HostToFrame =
   | { type: "setFps"; fps: number }
   | { type: "seek"; frame: number }
   | { type: "setAnimation"; name: string }
+  /** Play `from` once, then `to` crossfaded in over `duration` seconds
+   *  (`AnimationStateData.setMix`), as a game changes animation. */
+  | { type: "playMix"; from: string; to: string; duration: number }
   | { type: "setDebug"; on: boolean }
   | { type: "setBackground"; color: string }
   | { type: "showStage"; on: boolean }
@@ -51,6 +54,9 @@ export type FrameToHost =
   /** `animation` is the one loaded, which the transport menus show. */
   | { type: "loaded"; animations: string[]; animation: string; duration: number }
   | { type: "tick"; frame: number; playing: boolean }
+  /** An event the runtime fired while playing, with the values it fired. */
+  | { type: "event"; animation: string; name: string; int: number; float: number; string: string;
+      audio: string | null; volume: number; balance: number }
   | { type: "matrices"; bones: Record<string, number[]>; attachments: Record<string, string | null> }
   | { type: "error"; message: string };
 

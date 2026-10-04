@@ -1,5 +1,5 @@
 import { type Command, mergeTouches, type TouchSet } from "./Command";
-import type { Animation, AnimationReference, DrawOrderKey, IkKey, Keyframe, Project, SymbolItem, Track } from "@/core/doc/types";
+import type { Animation, AnimationReference, DrawOrderKey, EventDef, EventKey, IkKey, Keyframe, Project, SymbolItem, Track } from "@/core/doc/types";
 import { isSymbol } from "@/core/doc/types";
 import type { AnimId, IkId, ItemId, NodeId } from "@/core/doc/ids";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
@@ -551,5 +551,101 @@ export class EditTracksAndIk implements Command {
   mergeWith(next: Command): boolean {
     if (!(next instanceof EditTracksAndIk) || next.kind !== this.kind) return false;
     return this.tracks.mergeWith(next.tracks) && this.ik.mergeWith(next.ik);
+  }
+}
+
+/** An animation's event keys replaced (`core/doc/events.ts`). Steps of one
+ *  drag share a `kind` and merge into one undo. */
+export class SetEventKeys implements Command {
+  readonly touches: TouchSet;
+  private before: EventKey[] | undefined;
+  private captured = false;
+
+  constructor(
+    readonly label: string,
+    private readonly symbolId: ItemId,
+    private readonly animId: AnimId,
+    private after: EventKey[],
+    readonly kind = "timeline.events",
+  ) {
+    this.touches = { symbols: [symbolId], timeline: true };
+  }
+
+  apply(p: Project): void {
+    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
+    if (!anim) return;
+    if (!this.captured) { this.before = anim.events; this.captured = true; }
+    if (this.after.length) anim.events = this.after;
+    else delete anim.events;
+  }
+
+  revert(p: Project): void {
+    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
+    if (!anim) return;
+    if (this.before) anim.events = this.before;
+    else delete anim.events;
+  }
+
+  mergeWith(next: Command): boolean {
+    if (!(next instanceof SetEventKeys) || next.kind !== this.kind) return false;
+    if (next.symbolId !== this.symbolId || next.animId !== this.animId) return false;
+    this.after = next.after;
+    return true;
+  }
+}
+
+/** A symbol's event list replaced, with the keys of the animations a rename
+ *  or a delete changed (`renamedEvent`, `withoutEvent`). A field edit's
+ *  steps share a `kind` and merge. */
+export class SetEvents implements Command {
+  readonly touches: TouchSet;
+  private before: { defs: EventDef[] | undefined; keys: Map<AnimId, EventKey[] | undefined> } | null = null;
+
+  constructor(
+    readonly label: string,
+    private readonly symbolId: ItemId,
+    private after: EventDef[],
+    private keys: Map<AnimId, EventKey[]> = new Map(),
+    readonly kind = "events.list",
+  ) {
+    this.touches = { symbols: [symbolId], timeline: true };
+  }
+
+  apply(p: Project): void {
+    const sym = symbolOf(p, this.symbolId);
+    if (!sym) return;
+    if (!this.before) {
+      const keys = new Map<AnimId, EventKey[] | undefined>();
+      for (const id of this.keys.keys()) keys.set(id, animOf(sym, id)?.events);
+      this.before = { defs: sym.events, keys };
+    }
+    if (this.after.length) sym.events = this.after;
+    else delete sym.events;
+    for (const [id, keys] of this.keys) {
+      const anim = animOf(sym, id);
+      if (!anim) continue;
+      if (keys.length) anim.events = keys;
+      else delete anim.events;
+    }
+  }
+
+  revert(p: Project): void {
+    const sym = symbolOf(p, this.symbolId);
+    if (!sym || !this.before) return;
+    if (this.before.defs) sym.events = this.before.defs;
+    else delete sym.events;
+    for (const [id, keys] of this.before.keys) {
+      const anim = animOf(sym, id);
+      if (!anim) continue;
+      if (keys) anim.events = keys;
+      else delete anim.events;
+    }
+  }
+
+  mergeWith(next: Command): boolean {
+    if (!(next instanceof SetEvents) || next.kind !== this.kind || next.symbolId !== this.symbolId) return false;
+    if (next.keys.size || this.keys.size) return false;
+    this.after = next.after;
+    return true;
   }
 }

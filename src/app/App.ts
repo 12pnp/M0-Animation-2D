@@ -20,6 +20,8 @@ import { OutlinePanel } from "@/view/panels/OutlinePanel";
 import { StageToolbar } from "@/view/viewport/StageToolbar";
 import { AnimationsPanel } from "@/view/panels/AnimationsPanel";
 import { SkinsPanel } from "@/view/panels/SkinsPanel";
+import { EventsPanel } from "@/view/panels/EventsPanel";
+import { SoundStore } from "./SoundStore";
 import { HistoryPanel } from "@/view/panels/HistoryPanel";
 import { ReferencePanel } from "@/view/panels/ReferencePanel";
 import { ReferenceService } from "./ReferenceService";
@@ -100,6 +102,7 @@ export class App {
   readonly store: Store;
   readonly shell: Shell;
   readonly assets = new AssetStore();
+  readonly sounds = new SoundStore();
   readonly viewport: Viewport;
   private library: LibraryPanel;
   private previewSession: PreviewSession;
@@ -170,12 +173,13 @@ export class App {
     this.preview = new PreviewPanel(
       this.previewSession,
       () => this.shell.floatPanel("preview"),
+      this.sounds,
     );
     this.timeline = new TimelinePanel(this.store, this.clipboard, () => this.onionPopup());
 
     this.registerPanels();
     this.shell.layoutDocks(
-      [["properties"], ["library", "outline", "animations", "skins"], ["subtree", "preview"], ["path"], ["worldPath"]],
+      [["properties"], ["library", "outline", "animations", "skins", "events"], ["subtree", "preview"], ["path"], ["worldPath"]],
       [["timeline", "reference", "poses"]],
       [[AI_PANEL]],
     );
@@ -199,6 +203,7 @@ export class App {
         },
       },
       () => this.afterProjectReplaced(),
+      this.sounds,
     );
 
     this.shell.docTitle = () => this.project.fileName;
@@ -268,6 +273,7 @@ export class App {
     this.shell.addRightPanel(new OutlinePanel(this.store, "subtree"));
     this.shell.addRightPanel(new AnimationsPanel(this.store));
     this.shell.addRightPanel(new SkinsPanel(this.store));
+    this.shell.addRightPanel(new EventsPanel(this.store, this.sounds));
     this.shell.addRightPanel(new HistoryPanel(this.store));
     this.shell.addRightPanel(this.preview);
     const pathZoom = new PathZoomLink(() => this.store.prefs.value.gizmos.pathZoomLock);
@@ -910,6 +916,10 @@ export class App {
   ): Promise<Awaited<ReturnType<typeof buildExport>> | null> {
     try {
       const result = await buildExport(this.store.project, this.assets, undefined, report);
+      const root = this.store.project.items[this.store.project.rootSymbolId];
+      result.sounds = (isSymbol(root) ? root.events ?? [] : [])
+        .filter((d) => d.audio && this.sounds.has(d.audio))
+        .map((d) => ({ path: d.audio!, blob: this.sounds.get(d.audio!)! }));
       for (const d of result.diagnostics) {
         (d.severity === "error" ? console.error : console.warn)(`[Export] ${d.message}`);
       }
@@ -1489,7 +1499,8 @@ export class App {
     // Keys picked on a timeline property row go first: they are what the
     // last click was on, and the bone stays selected under them.
     reg("edit.delete", () => {
-      if (this.timeline.deletePropKeys() || this.timeline.deleteDrawOrderKeys() || this.timeline.deleteIkKeys()) return;
+      if (this.timeline.deletePropKeys() || this.timeline.deleteDrawOrderKeys() || this.timeline.deleteIkKeys()
+        || this.timeline.deleteEventKeys()) return;
       s.apply(new RemoveNodes(s.currentSymbolId, [...s.selection.nodes]));
       s.clearSelection();
       s.emit("doc");

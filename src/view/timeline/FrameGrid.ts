@@ -1,9 +1,10 @@
 import { h, on, raf } from "@/view/widgets/dom";
 import { FRAME_WIDTH_MAX, FRAME_WIDTH_MIN, anchoredScroll, fitFrameWidth, steppedFrameWidth } from "./zoom";
 import type { Store } from "@/app/Store";
-import type { DrawOrderKey, IkKey, Layer, Node, Track } from "@/core/doc/types";
+import type { DrawOrderKey, EventKey, IkKey, Layer, Node, Track } from "@/core/doc/types";
 import { ikDragAxis, ikPoseAt, moveIkKeys, withIkKey, withIkMixDragged } from "@/core/doc/ikKeys";
 import { moveDrawOrderKeys } from "@/core/doc/drawOrder";
+import { eventFrames, moveEventKeys } from "@/core/doc/events";
 import type { IkId, NodeId } from "@/core/doc/ids";
 import { describeFrame, ensureTrack } from "@/app/TimelineOps";
 import { keyIndexAt, MAX_FRAMES, spanIndexAt } from "@/core/doc/timeline";
@@ -14,6 +15,8 @@ import { moveChannelKeys, propertyKeys, type TimelineProp } from "@/core/doc/pro
 
 /** The Draw order row's keys. */
 const DRAW_ORDER_COLOR = "#7fa8ff";
+/** The Events row's flags. */
+const EVENT_COLOR = "#ffb35c";
 
 /** The property rows' key colours: Spine's, green rotate, blue translate,
  *  red scale, yellow shear. */
@@ -48,6 +51,10 @@ export interface FrameGridCallbacks {
   onEditDrawOrder(keys: DrawOrderKey[], label: string, kind?: string): void;
   /** Right-click on the Draw order row. */
   onDrawOrderMenu(frame: number, x: number, y: number): void;
+  /** The Events row's edit: the animation's event keys as they are to be. */
+  onEditEvents(keys: EventKey[], label: string, kind?: string): void;
+  /** Right-click on the Events row. */
+  onEventsMenu(frame: number, x: number, y: number): void;
   /** An IK row's edit: the constraint's keys as they are to be. */
   onEditIk(ik: IkId, keys: IkKey[], label: string, kind?: string): void;
   /** A frame selection dragged somewhere else: its top-left cell lands on
@@ -207,7 +214,10 @@ export class FrameGrid {
     return this.el.clientHeight - this.bodyTop - this.bottomGutter;
   }
   /** The Draw order row, under the ruler: one row tall while an animation is open. */
-  get stripHeight(): number { return this.store.currentAnimation ? this.rowHeight : 0; }
+  /** The Draw order and Events rows under the ruler. */
+  get stripHeight(): number { return this.store.currentAnimation ? this.rowHeight * 2 : 0; }
+  /** The Events row's top: under the Draw order row. */
+  private get eventsTop(): number { return this.headerHeight + this.rowHeight; }
   /** Where the layer rows start: below the ruler and the Draw order row. */
   get bodyTop(): number { return this.headerHeight + this.stripHeight; }
   /** Bottom of the drawable row area, above the scrollbar strip. */
@@ -273,6 +283,7 @@ export class FrameGrid {
 
     this.drawBody(ctx, rows, first, last, w, h, duration);
     this.drawOrderStrip(ctx, first, last, w);
+    this.eventStrip(ctx, first, last, w);
     this.drawHeader(ctx, first, last, w, fps);
     this.drawSeam(ctx, rows, h);
     this.drawOnionMarkers(ctx);
@@ -698,8 +709,8 @@ export class FrameGrid {
    * picked ones ringed. Spine's dopesheet has it at the top.
    */
   private drawOrderStrip(ctx: CanvasRenderingContext2D, first: number, last: number, w: number): void {
-    const h = this.stripHeight;
-    if (!h) return;
+    if (!this.stripHeight) return;
+    const h = this.rowHeight;
     const y = this.headerHeight;
     ctx.fillStyle = this.C.headerBg;
     ctx.fillRect(0, y, w, h);
@@ -729,6 +740,100 @@ export class FrameGrid {
     ctx.moveTo(0, y + h - 0.5);
     ctx.lineTo(w, y + h - 0.5);
     ctx.stroke();
+  }
+
+  /**
+   * The Events row: a flag on each frame that fires events, a count beside it
+   * when several do, else the event's name while it fits before the next
+   * flag; the picked frames ringed.
+   */
+  private eventStrip(ctx: CanvasRenderingContext2D, first: number, last: number, w: number): void {
+    if (!this.stripHeight) return;
+    const y = this.eventsTop, h = this.rowHeight;
+    ctx.fillStyle = this.C.headerBg;
+    ctx.fillRect(0, y, w, h);
+    this.drawCells(ctx, y, first, last);
+    ctx.fillStyle = "rgba(0,0,0,0.18)";
+    ctx.fillRect(0, y, w, h);
+    const keys = this.store.currentAnimation?.events ?? [];
+    const frames = eventFrames(keys);
+    const picked = new Set(this.store.ui.eventFrames);
+    const half = this.frameWidth / 2;
+    ctx.font = uiFont(9, this.fontSize);
+    ctx.textBaseline = "middle";
+    frames.forEach((f, i) => {
+      if (f < first - 20 || f > last) return;
+      const x = Math.round(this.xOfFrame(f) + half) + 0.5;
+      const top = y + 3, bottom = y + h - 3;
+      ctx.strokeStyle = EVENT_COLOR;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, top);
+      ctx.lineTo(x, bottom);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(x, top);
+      ctx.lineTo(x + 7, top + 3.5);
+      ctx.lineTo(x, top + 7);
+      ctx.closePath();
+      ctx.fillStyle = EVENT_COLOR;
+      ctx.fill();
+      if (picked.has(f)) {
+        ctx.strokeStyle = "#ffffff";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(x - half + 1, y + 1.5, this.frameWidth - 2, h - 3);
+      }
+      const at = keys.filter((k) => k.frame === f);
+      const label = at.length > 1 ? `${at.length}` : at[0]!.name;
+      const room = (i + 1 < frames.length ? this.xOfFrame(frames[i + 1]!) : w) - (x + 9) - 4;
+      if (room > 8) {
+        ctx.fillStyle = this.C.text ?? "#ddd";
+        let text = label;
+        while (text.length > 1 && ctx.measureText(text).width > room) text = text.slice(0, -1);
+        ctx.fillText(text === label ? text : `${text.slice(0, -1)}…`, x + 9, y + h / 2);
+      }
+    });
+    ctx.strokeStyle = this.C.rowLine;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, y + h - 0.5);
+    ctx.lineTo(w, y + h - 0.5);
+    ctx.stroke();
+  }
+
+  /** Pick the Events row's frames (the Events panel edits their keys). */
+  private pickEventFrames(frames: number[]): void {
+    const now = this.store.ui.eventFrames;
+    if (now.length === frames.length && now.every((f, i) => f === frames[i])) return;
+    this.store.ui.eventFrames = frames;
+    this.store.emit("timeline");
+  }
+
+  /** Move the keys of the picked event frames by whole frames, from the keys
+   *  as they were at pointerdown. */
+  private beginEventDrag(e: PointerEvent, frames: number[], base: EventKey[]): void {
+    this.el.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const first = Math.min(...frames);
+    let lastDelta = 0;
+    let started = false;
+    const move = (m: PointerEvent) => {
+      const delta = Math.max(-first, Math.round((m.clientX - startX) / this.frameWidth));
+      if (delta === lastDelta) return;
+      if (!started) { started = true; this.cb.onBeginInteraction("timeline.eventMove"); }
+      this.cb.onEditEvents(moveEventKeys(base, frames, delta), "Move Event Keys", "timeline.eventMove");
+      this.pickEventFrames(frames.map((f) => f + delta));
+      lastDelta = delta;
+      this.invalidate();
+    };
+    const up = () => {
+      offMove(); offUp(); offCancel();
+      this.el.releasePointerCapture?.(e.pointerId);
+      if (started) this.cb.onEndInteraction();
+    };
+    const offMove = on(this.el, "pointermove", move as (x: Event) => void);
+    const offUp = on(this.el, "pointerup", up);
+    const offCancel = on(this.el, "pointercancel", up);
   }
 
   /** Move the picked draw order keys by whole frames, from the keys as they
@@ -1158,6 +1263,13 @@ export class FrameGrid {
         this.cb.onRulerContextMenu(frame, e.clientX, e.clientY);
         return;
       }
+      if (localY >= this.eventsTop && localY < this.bodyTop) {
+        const keyed = this.store.currentAnimation?.events?.some((k) => k.frame === frame);
+        if (keyed && !this.store.ui.eventFrames.includes(frame)) this.pickEventFrames([frame]);
+        this.invalidate();
+        this.cb.onEventsMenu(frame, e.clientX, e.clientY);
+        return;
+      }
       if (localY < this.bodyTop) {
         const keyed = this.store.currentAnimation?.drawOrder?.some((k) => k.frame === frame);
         if (keyed && !this.orderSel?.includes(frame)) this.orderSel = [frame];
@@ -1185,6 +1297,30 @@ export class FrameGrid {
         return;
       }
 
+      // The Events row: a press on a frame with events picks it (shift adds
+      // or drops one) and a drag moves the picked frames' keys; elsewhere it
+      // moves the playhead.
+      if (localY >= this.eventsTop && localY < this.bodyTop) {
+        this.orderSel = null;
+        this.propSel = null;
+        this.ikSel = null;
+        const keys = this.store.currentAnimation?.events ?? [];
+        if (keys.some((k) => k.frame === frame)) {
+          const mine = this.store.ui.eventFrames;
+          const frames = e.shiftKey
+            ? (mine.includes(frame) ? mine.filter((f) => f !== frame) : [...mine, frame].sort((a, b) => a - b))
+            : (mine.includes(frame) ? mine : [frame]);
+          this.pickEventFrames(frames);
+          this.cb.onScrub(frame);
+          this.invalidate();
+          if (!e.shiftKey) this.beginEventDrag(e, frames, keys);
+          return;
+        }
+        this.pickEventFrames([]);
+        this.beginScrub(e, frame);
+        return;
+      }
+      if (this.store.ui.eventFrames.length) this.pickEventFrames([]);
       // The Draw order row: a press on a key picks it (shift adds or drops
       // one) and a drag moves the picked keys; elsewhere it moves the playhead.
       if (localY < this.bodyTop) {

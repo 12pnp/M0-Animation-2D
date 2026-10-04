@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { drawingLayers } from "@/core/doc/drawOrder";
 import {
-  AtlasAttachmentLoader, ClippingAttachment, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
+  AtlasAttachmentLoader, ClippingAttachment, type Event as SpineEvent, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
 } from "@esotericsoftware/spine-core";
+import { eventValues } from "@/core/doc/events";
 import { newIkId, reseed, type AssetId, type ItemId } from "@/core/doc/ids";
 import { maskGroups } from "@/core/doc/layerTree";
 import { createAnimation, createImageItem, createLayer, createNode, createProject, createSymbol } from "@/core/doc/defaults";
@@ -729,5 +730,44 @@ describe("the Spine runtime plays the export the way the stage draws it", () => 
       };
     }
     expect(checkParity(project, project.rootSymbolId).checks).toBeGreaterThanOrEqual(500);
+  });
+});
+
+describe("events", () => {
+  it("spine-core fires each event key on its frame, with its values", async () => {
+    const { project } = await loadStickman();
+    const sym = project.items[project.rootSymbolId] as SymbolItem;
+    sym.events = [
+      { name: "step", int: 2, string: "left" },
+      { name: "hit", float: 0.5, audio: "sfx/hit.ogg", volume: 0.8, balance: -0.25 },
+      { name: "plain" },
+      { name: "loud", audio: "sfx/loud.ogg" },
+    ];
+    const anim = sym.animations[0]!;
+    anim.events = [
+      { frame: 0, name: "plain" },
+      { frame: 3, name: "step" },
+      { frame: 3, name: "hit", volume: 0.4 },
+      { frame: 7, name: "step", int: 5, string: "right" },
+      { frame: 9, name: "hit", balance: 0.75 },
+      { frame: 9, name: "loud" },
+    ];
+    const { skeleton } = runtimeFor(project, project.rootSymbolId);
+    const fps = project.frameRate;
+    const animation = skeleton.data.findAnimation(anim.name)!;
+    for (let f = 0; f < anim.duration; f++) {
+      const fired: SpineEvent[] = [];
+      animation.apply(skeleton, f === 0 ? -1 : (f - 1) / fps, f / fps, false, fired, 1, MixFrom.setup, false, false, false);
+      const want = anim.events.filter((k) => k.frame === f).map((k) => {
+        const v = eventValues(sym.events!.find((d) => d.name === k.name)!, k);
+        return { name: k.name, int: v.int, float: v.float, string: v.string, ...(v.audio ? { volume: v.volume, balance: v.balance } : {}) };
+      });
+      const got = fired.map((e) => ({
+        name: e.data.name, int: e.intValue, float: e.floatValue, string: e.stringValue,
+        ...(e.data.audioPath ? { volume: e.volume, balance: e.balance } : {}),
+      }));
+      expect(got.map((g) => ({ ...g, float: Math.fround(g.float) })), `frame ${f}`).toEqual(want.map((w) => ({ ...w, float: Math.fround(w.float) })));
+    }
+    expect(skeleton.data.findEvent("hit")!.audioPath).toBe("sfx/hit.ogg");
   });
 });

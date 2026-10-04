@@ -5,7 +5,7 @@ import type { SpineInherit } from "@/core/spine/types";
 import type { AnimId, AssetId, FolderId, IkId, ItemId, LayerId, NodeId } from "./ids";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 18;
+export const DOC_VERSION = 19;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -78,6 +78,34 @@ export interface SymbolItem {
    *  skin, or the first other one when it draws nothing (`stageSkinOf`).
    *  The editor's choice only: the export does not write it. */
   stageSkins?: string[];
+  /** The events its animations fire (`core/doc/events.ts`), names unique,
+   *  as Spine's skeleton `events`. */
+  events?: EventDef[];
+}
+
+/** A named event and its values, which a key may override. Absent: 0, 0,
+ *  "", no sound, volume 1, balance 0 (Spine's defaults). `audio` is the
+ *  sound's path as the game finds it; the project's sound files are keyed by
+ *  it (`SoundStore`). */
+export interface EventDef {
+  name: string;
+  int?: number;
+  float?: number;
+  string?: string;
+  audio?: string;
+  volume?: number;
+  balance?: number;
+}
+
+/** An event fired at a frame. A value it leaves out is the event's own. */
+export interface EventKey {
+  frame: number;
+  name: string;
+  int?: number;
+  float?: number;
+  string?: string;
+  volume?: number;
+  balance?: number;
 }
 
 /**
@@ -339,6 +367,9 @@ export interface Animation {
    *  frame: the constraint's mix and bend from each key on, as Spine's `ik`
    *  timeline. Absent for a constraint: its own weight and bend. */
   ik?: Record<IkId, IkKey[]>;
+  /** Event keys (`core/doc/events.ts`), sorted by frame; several may share
+   *  one, fired in this order. */
+  events?: EventKey[];
 }
 
 /** One IK key. `tween` eases the mix (and softness) to the next key: linear when absent,

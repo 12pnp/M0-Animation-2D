@@ -68,16 +68,15 @@ Legend:
 - ✅ Onion skin (Spine's ghosting), cycles, bone paths (drag, bend with handles, bake)
 - ✅ Auto key (`ui.autoKey`)
 - ◐ Deform (mesh) keys: carried
-- ◐ Event keys: carried; the skeleton's event list is carried (`SymbolItem.spine.events`)
+- ✅ Event keys and the event list (an Events row and panel; ARCHITECTURE ▸ Events)
 - ◐ Transform, path, physics and slider constraint keys: carried
 - ◐ Inherit keys: carried
 - ☐ Graph editor: values over time as curves, with handles (Spine's Graph view). The Ease
   dialog edits one interval's ease, not the curve of a value
-- ☐ Event keys authored here, with the event list (name, int, float, string, audio, volume,
-  balance) and a row on the timeline
-- ☐ Audio: an event's sound played in the Preview, a waveform on the timeline
-- ☐ Animation mixing: crossfading two animations in the Preview (`AnimationState.setMix`),
-  to see transitions as a game plays them
+- ✅ Audio: an event's sound kept in the project, exported to `audio/`, played in the
+  Preview at its volume and balance
+- ☐ A waveform of an event's sound on the timeline
+- ✅ Animation mixing: crossfading two animations in the Preview (`AnimationStateData.setMix`)
 - ☐ Offset keys in time across many bones at once (Spine's Offset tool); the frame drag moves
   whole selections only
 - ☐ Key everything, or key only what changed, from the timeline toolbar (Spine's key
@@ -101,7 +100,8 @@ Legend:
 
 - ✅ Preview panel runs spine-pixi-v8, the export's own runtime
 - ✅ spine-core parity tests: the stage against the export, frame by frame
-- ☐ Preview skin, animation queue and mixing controls (with Animation mixing above)
+- ✅ Preview mixing (Mix from … over … s, Play Mix) and the fired events listed
+- ☐ Preview animation queue of more than two
 - ☐ Unity check run after each format change in this plan (it has not been rerun since IK
   keys and softness)
 
@@ -114,7 +114,7 @@ Unity check after a format change, and the AI bridge getting a tool for each new
 The order puts what animators use every day first, and what later phases build on before
 them.
 
-### Phase A: events and animation mixing
+### Phase A: events and animation mixing (done, docs/EVENTS-PLAN.md)
 
 Why first: every game uses events (footsteps, hits, sounds), and they are small. Mixing lets
 an animator see transitions, which today needs the game.

@@ -97,7 +97,10 @@ export async function pickDirectory(id = "animo-export"): Promise<FileSystemDire
 export async function writeIntoDirectory(
   dir: FileSystemDirectoryHandle, name: string, blob: Blob,
 ): Promise<void> {
-  const handle = await dir.getFileHandle(name, { create: true });
+  // "audio/step.ogg": the folders are made on the way.
+  const parts = name.split("/").filter(Boolean);
+  for (const part of parts.slice(0, -1)) dir = await dir.getDirectoryHandle(part, { create: true });
+  const handle = await dir.getFileHandle(parts[parts.length - 1] ?? name, { create: true });
   const writable = await handle.createWritable();
   await writable.write(blob);
   await writable.close();

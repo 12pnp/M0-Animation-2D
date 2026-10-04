@@ -1,8 +1,9 @@
 import type { AssetId, NodeId } from "@/core/doc/ids";
 import { fromOffsets } from "@/core/doc/drawOrder";
+import { eventDefsFromSpine, eventValues } from "@/core/doc/events";
 import { newAnimId, newIkId } from "@/core/doc/ids";
 import type {
-  Animation, BlendMode, DrawOrderKey, ColorTransform, DisplayRef, IkConstraint, IkKey, ImageItem, Keyframe, Layer, Node, Project,
+  Animation, BlendMode, DrawOrderKey, ColorTransform, DisplayRef, EventDef, EventKey, IkConstraint, IkKey, ImageItem, Keyframe, Layer, Node, Project,
   SpineAttachmentRef, SymbolItem, Track,
 } from "@/core/doc/types";
 import { isDefaultColor } from "@/core/doc/types";
@@ -258,8 +259,12 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     constraints: carriedConstraints,
     constraintOrder: constraintsIn.map((c) => String(c.name)),
     skins: carriedSkins,
-    ...(obj(file.events) ? { events: file.events } : {}),
   };
+  // The events become the document's (`SymbolItem.events`).
+  if (obj(file.events)) {
+    const defs = eventDefsFromSpine(file.events);
+    if (defs.length) sym.events = defs;
+  }
 
   /* ── animations ── */
   let baked = 0;
@@ -342,6 +347,15 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
       if (keys.length === animRaw.drawOrder.length && keys.length) {
         anim.drawOrder = keys;
         delete carried.drawOrder;
+      }
+    }
+    // Event keys become the document's (`Animation.events`) when each lands
+    // on a frame and names a known event; otherwise the timeline is carried.
+    if (Array.isArray(animRaw.events)) {
+      const keys = eventKeysOf(animRaw.events, sym.events ?? [], rate);
+      if (keys) {
+        if (keys.length) anim.events = keys;
+        delete carried.events;
       }
     }
     // IK keys become the document's (`Animation.ik`) per constraint when each
@@ -604,6 +618,36 @@ function trackOf(
  * the y flip (the exporter's rule, inverted). What it does not solve rides
  * along in `spine` and the Spine pose applies it.
  */
+/**
+ * A Spine `events` timeline as the document's keys, or null when a key falls
+ * between frames or names an event the file does not define. A key keeps
+ * only the values that differ from its event's. A key of an event with a
+ * sound and no balance played the event's VOLUME as its balance in
+ * spine-core 4.3.13; that is the balance it gets.
+ */
+function eventKeysOf(list: unknown[], defs: readonly EventDef[], rate: number): EventKey[] | null {
+  const keys: EventKey[] = [];
+  for (const r of list) {
+    if (!obj(r) || !str(r.name)) return null;
+    const def = defs.find((d) => d.name === r.name);
+    if (!def) return null;
+    const at = num(r.time, 0) * rate;
+    if (Math.abs(at - Math.round(at)) > 1e-6) return null;
+    const own = eventValues(def);
+    const key: EventKey = { frame: Math.round(at), name: def.name };
+    if (typeof r.int === "number" && Math.trunc(r.int) !== own.int) key.int = Math.trunc(r.int);
+    if (typeof r.float === "number" && r.float !== own.float) key.float = r.float;
+    if (typeof r.string === "string" && r.string !== own.string) key.string = r.string;
+    if (def.audio) {
+      const volume = num(r.volume, own.volume), balance = num(r.balance, own.volume);
+      if (volume !== own.volume) key.volume = volume;
+      if (balance !== own.balance) key.balance = balance;
+    }
+    keys.push(key);
+  }
+  return keys;
+}
+
 /**
  * A Spine `ik` timeline as the document's keys, or null when it holds what
  * the editor does not key: a time off the frames, a compress or stretch

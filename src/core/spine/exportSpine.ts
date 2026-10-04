@@ -3,6 +3,7 @@ import { DEFAULT_COLOR, isImage, isSymbol, producesSlot } from "@/core/doc/types
 import type { IkId, ItemId, NodeId } from "@/core/doc/ids";
 import { descendantsOf, maskGroups } from "@/core/doc/layerTree";
 import { orderAt, toOffsets } from "@/core/doc/drawOrder";
+import { eventValues } from "@/core/doc/events";
 import type { Contour } from "@/core/atlas/contour";
 import { nz } from "@/core/math/angle";
 import { displaysOf } from "@/core/doc/displays";
@@ -26,6 +27,8 @@ import {
   type SpineConstraint,
   type SpineCurve,
   type SpineDrawOrderKey,
+  type SpineEventData,
+  type SpineEventKey,
   type SpineIkConstraint,
   type SpineIkKey,
   type SpineRaw,
@@ -181,6 +184,7 @@ export function exportSpine(
   /** The exported symbol's constraints as written, for its IK keys. */
   const rootIk = new Map<IkId, SpineIkConstraint>();
   const ikKeysWarned = new Set<ItemId>();
+  const eventKeysWarned = new Set<ItemId>();
   const setups = new Map<string, SpineLocal>();
   const paths = new Map<string, string>();
   const plans: SlotPlan[] = [];
@@ -265,6 +269,10 @@ export function exportSpine(
     if (scope.depth > 0 && !ikKeysWarned.has(s.id) && s.animations.some((a) => a.ik && Object.keys(a.ik).length)) {
       ikKeysWarned.add(s.id);
       diagnostics.push({ severity: "warning", message: `"${s.name}" keys its IK, but only the exported symbol's IK keys are written; a nested symbol's play its constraints' own mix and bend.` });
+    }
+    if (scope.depth > 0 && !eventKeysWarned.has(s.id) && s.animations.some((a) => a.events?.length)) {
+      eventKeysWarned.add(s.id);
+      diagnostics.push({ severity: "warning", message: `"${s.name}" fires events, but only the exported symbol's events are written.` });
     }
 
     const emitLayer = (layer: Layer): void => {
@@ -554,9 +562,15 @@ export function exportSpine(
       out.ik = ikKeys;
       for (const keys of Object.values(anim.ik ?? {})) lastFrame = Math.max(lastFrame, keys[keys.length - 1]?.frame ?? 0);
     }
+    const events = eventTimeline(sym, anim, fps);
+    if (events) {
+      out.events = events;
+      lastFrame = Math.max(lastFrame, anim.events![anim.events!.length - 1]!.frame);
+    }
     // Carried timelines (an opened file's) join the generated ones; draw
-    // order keys the document holds replace a carried timeline.
-    const carried = order ? omitKey(anim.spine ?? {}, "drawOrder") : anim.spine ?? {};
+    // order and event keys the document holds replace a carried timeline.
+    let carried = order ? omitKey(anim.spine ?? {}, "drawOrder") : anim.spine ?? {};
+    if (events) carried = omitKey(carried, "events");
     for (const [group, value] of Object.entries(carried)) {
       if ((group === "bones" || group === "slots" || group === "ik") && value && typeof value === "object") {
         const into = (out[group] ??= {}) as Record<string, Record<string, unknown>>;
@@ -627,7 +641,8 @@ export function exportSpine(
       }
     }
   }
-  if (carry?.events) skeleton.events = carry.events as SpineSkeletonFile["events"];
+  const eventDefs = { ...(carry?.events as SpineSkeletonFile["events"]), ...eventDefsOf(sym) };
+  if (Object.keys(eventDefs).length) skeleton.events = eventDefs;
   skeleton.skins = skins;
   if (Object.keys(animations).length) skeleton.animations = animations;
   if (carry) checkCarried(skeleton, sym, diagnostics);
@@ -959,6 +974,54 @@ function ikTimelines(
     });
   }
   return Object.keys(out).length ? out : null;
+}
+
+/* ── events ──────────────────────────────────────────────────────────────── */
+
+/** The symbol's events as Spine's skeleton `events`, defaults left off. An
+ *  event with a sound always writes its volume and balance: spine-core
+ *  4.3.13 reads a missing volume as 0 (`Event.volume = 0`), so a volume of 1
+ *  left off plays silent. */
+function eventDefsOf(sym: SymbolItem): Record<string, SpineEventData> {
+  const out: Record<string, SpineEventData> = {};
+  for (const d of sym.events ?? []) {
+    const e: SpineEventData = {};
+    if (d.int) e.int = d.int;
+    if (d.float) e.float = d.float;
+    if (d.string) e.string = d.string;
+    if (d.audio) {
+      e.audio = d.audio;
+      e.volume = d.volume ?? 1;
+      e.balance = d.balance ?? 0;
+    }
+    out[d.name] = e;
+  }
+  return out;
+}
+
+/**
+ * The animation's event keys as Spine's `events` timeline, each value only
+ * where the key overrides the event's. A key of an event with a sound always
+ * writes its balance: spine-core 4.3.13 defaults a key's balance to the
+ * event's VOLUME (`SkeletonJson`, "balance", setup.volume).
+ */
+function eventTimeline(sym: SymbolItem, anim: Animation, fps: number): SpineEventKey[] | null {
+  const keys = anim.events?.filter((k) => sym.events?.some((d) => d.name === k.name));
+  if (!keys?.length) return null;
+  return keys.map((k) => {
+    const def = sym.events!.find((d) => d.name === k.name)!;
+    const o: SpineEventKey = { name: k.name };
+    const time = keyTime(k.frame, fps);
+    if (time) o.time = time;
+    if (k.int !== undefined) o.int = k.int;
+    if (k.float !== undefined) o.float = k.float;
+    if (k.string !== undefined) o.string = k.string;
+    if (def.audio) {
+      if (k.volume !== undefined) o.volume = k.volume;
+      o.balance = eventValues(def, k).balance;
+    }
+    return o;
+  });
 }
 
 /* ── draw order ──────────────────────────────────────────────────────────── */

@@ -83,9 +83,27 @@ declare namespace spine {
     readonly animation: Animation;
     getAnimationTime(): number;
   }
+  interface SpineEvent {
+    readonly data: { readonly name: string; readonly audioPath: string | null };
+    readonly time: number;
+    intValue: number;
+    floatValue: number;
+    stringValue: string;
+    volume: number;
+    balance: number;
+  }
+  interface AnimationStateListener {
+    event?(entry: TrackEntry, event: SpineEvent): void;
+  }
+  interface AnimationStateData {
+    setMix(from: string, to: string, duration: number): void;
+  }
   interface AnimationState {
+    readonly data: AnimationStateData;
     setAnimation(track: number, name: string, loop: boolean): TrackEntry;
+    addAnimation(track: number, name: string, loop: boolean, delay: number): TrackEntry;
     getTrack(track: number): TrackEntry | null;
+    addListener(listener: AnimationStateListener): void;
   }
   class SpineDebugRenderer {}
   class Spine extends PIXI.Container {

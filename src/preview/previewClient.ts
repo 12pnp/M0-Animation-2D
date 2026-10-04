@@ -91,6 +91,9 @@ function frameCountOf(name: string): number {
 function reportTick(): void {
   if (!view || !currentAnimation) return;
   const entry = view.state.getTrack(0);
+  // Mixing: the "from" animation is still playing; the editor's playhead
+  // follows "to" only.
+  if (entry && entry.animation.name !== currentAnimation) return;
   // A non-looping animation stops advancing at its end: stop the clock and
   // say so, so the transport's play button comes back.
   if (playing && entry && !loop && entry.trackTime >= entry.animation.duration) playing = false;
@@ -143,6 +146,17 @@ async function load(msg: Extract<HostToFrame, { type: "load" }>): Promise<void> 
   disposeCurrent();
   textures = pageTextures;
   view = new spine.Spine({ skeletonData, autoUpdate: false });
+  // Events as the runtime fires them, while playing: a seek poses a frame
+  // and must not fire (or sound) what it lands on.
+  view.state.addListener({
+    event: (entry, e) => {
+      if (!playing) return;
+      post({
+        type: "event", animation: entry.animation.name, name: e.data.name, int: e.intValue, float: e.floatValue,
+        string: e.stringValue, audio: e.data.audioPath, volume: e.volume, balance: e.balance,
+      });
+    },
+  });
   // The stage's skins, combined as `spinePose.combineSkins` does.
   const skins = (msg.skins ?? []).map((n) => skeletonData.findSkin(n)).filter((s): s is spine.Skin => !!s);
   if (skins.length) {
@@ -321,6 +335,19 @@ window.addEventListener("message", (event: MessageEvent) => {
       case "seek":
         seekTo(msg.frame);
         break;
+
+      case "playMix": {
+        const data = view?.skeleton.data;
+        if (!view || !data?.findAnimation(msg.from) || !data.findAnimation(msg.to)) break;
+        view.state.data.setMix(msg.from, msg.to, Math.max(0, msg.duration));
+        view.skeleton.setupPose();
+        view.state.setAnimation(0, msg.from, false);
+        view.state.addAnimation(0, msg.to, loop, 0);
+        view.update(0);
+        currentAnimation = msg.to;
+        playing = true;
+        break;
+      }
 
       case "setAnimation":
         if (view && view.skeleton.data.findAnimation(msg.name)) {

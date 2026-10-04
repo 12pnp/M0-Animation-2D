@@ -413,6 +413,23 @@
   white-space: pre-wrap;
 }
 .preview-status.error { color: #ff8a80; }
+.preview-frame { position: relative; }
+.preview-events {
+  position: absolute; left: 6px; bottom: 6px; display: flex; flex-direction: column; gap: 2px;
+  pointer-events: none; font-size: 11px;
+}
+.preview-event {
+  padding: 1px 6px; border-radius: 3px; background: rgba(0, 0, 0, 0.6); color: #ffd39b;
+  transition: opacity 0.5s; opacity: 1;
+}
+.preview-event b { color: #ffb35c; font-weight: 600; }
+.preview-event.gone { opacity: 0; }
+.preview-mixbar { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 4px 6px; border-top: 1px solid var(--line); font-size: 11px; color: var(--fg-dim); }
+.preview-mixbar[hidden] { display: none; }
+.preview-mixbar select { flex: 1 1 80px; min-width: 60px; }
+.preview-mix-dur { width: 52px; }
+.events-panel .events-sep { height: 1px; background: var(--line); margin: 4px 0; opacity: 0.5; }
+.events-panel .events-keyname { color: #ffb35c; }
 
 /* Runtime features the skeleton itself cannot carry — see PreviewPanel. */
 .preview-extras {

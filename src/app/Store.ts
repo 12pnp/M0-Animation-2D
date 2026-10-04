@@ -34,6 +34,9 @@ export interface UiState {
    *  selected outside the timeline, so a click on a row or a frame there
    *  does not collapse the list under the pointer. */
   timelineFocus: NodeId[];
+  /** The frames whose event keys are picked on the timeline's Events row:
+   *  the Events panel edits their values. */
+  eventFrames: number[];
   /** While playing, how far past `frame` the stage poses (0..1): smooth
    *  playback draws between frames (`playStep`). 0 otherwise. */
   subFrame: number;
@@ -113,6 +116,7 @@ export class Store {
     animId: null,
     frame: 0,
     timelineFocus: [],
+    eventFrames: [],
     subFrame: 0,
     playing: false,
     loop: true,
