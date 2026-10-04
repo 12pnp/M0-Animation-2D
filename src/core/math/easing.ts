@@ -311,7 +311,7 @@ export function splitTween(spec: EaseSpec, span: number, at: number): [EaseSpec,
 
 /** A curve of straight segments through `values`, evenly spaced over 0..1,
  *  merging runs that lie on one line. */
-function polylineCurve(values: number[]): number[] {
+export function polylineCurve(values: number[]): number[] {
   const last = values.length - 1;
   const pts = values.map((y, j): [number, number] => [j / last, y]);
   const TOL = 1e-9;

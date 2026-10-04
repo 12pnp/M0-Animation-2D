@@ -136,13 +136,13 @@ export class LayerList {
   }
 
   /** A focused bone's property row (`focusRows`): its name, under the bone.
-   *  A press selects the bone, as a press on the bone's own row does. */
+   *  A press selects the bone; its keys are edited in the frame grid. */
   private propRow(row: LayerRow): HTMLElement {
     const { label, glyph } = PROP_LABELS[row.prop!];
     const el = h("div", {
       class: `tl-layer tl-prop prop-${row.prop}`,
       style: { height: `${this.cb.rowHeight}px` },
-      title: `${label}: where this bone's ${label.toLowerCase()} is keyed. Keys hold the whole pose, so they are edited on the bone's row.`,
+      title: `${label}: this bone's ${label.toLowerCase()} keys. Drag one to move it, shift-click to pick several, Delete to remove, right-click to key ${label} at a frame.`,
     }, h("span", { class: "prop-glyph" }, glyph), h("div", { class: "name" }, label));
     on(el, "pointerdown", (ev) => {
       if ((ev as unknown as PointerEvent).button !== 0) return;

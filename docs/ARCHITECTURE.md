@@ -419,12 +419,25 @@ in there selects that node too, and the list would collapse under the pointer. T
 Sub Tree button (`timeline.focusSelected`) turns it off.
 
 Each focused bone is followed by its property rows, Rotate, Translate X, Translate Y, Scale
-and Shear (`LayerRow.prop`), with a key where that property is keyed (`propertyKeys` in
-`core/doc/propertyKeys.ts`, values as Spine reads them through `toSpineLocal`). A key here
-holds the whole pose, so a property is keyed where it differs from the key before or after,
-and one that never changes has none, as the exporter writes no timeline for it. The rows
-only show: a press selects the frame on the bone, and keys are dragged on the bone's row,
-since moving one property's key alone would need per-property keys in the document.
+and Shear (`LayerRow.prop`), edited as in Spine: a press picks a key (shift adds), a drag
+moves the picked keys, Delete removes them (before it would delete the bone: `edit.delete`
+asks `TimelinePanel.deletePropKeys` first), and the row's menu keys the property at a frame.
+A key here still holds the whole pose, so a property is a CHANNEL over those keys
+(`core/doc/propertyKeys.ts`): its value at each key and the ease each interval gives it
+(`Keyframe.eases`, one per leaf: rotation, x, y, scaleX, scaleY, shear). Its own keys
+(`channelKeys`) are the keys that list it in `Keyframe.keyed` (schema 15), or, on keys that
+list nothing (every older file), the ones where it changes; across keys another property
+needs it is read as one ease through its value at every whole frame. `setChannel` rewrites one
+channel: it cuts in the whole keys the channel needs without moving anything else
+(`cutKeepingEase`, which splits each ease with `splitTween`), gives every whole key the
+channel's value and the part of its ease that interval covers, records `keyed`, and drops the
+keys left keying nothing (`withoutRedundantKeys`). Rotation is read unwrapped (`unwrapTurns`),
+shear as skewY − skewX so turning keeps it. A pose set on the stage at a key that lists its
+properties adds the ones it changed (`withTransform` in `core/doc/keyed.ts`, through
+`withKeyframe`, `mapKeyTransforms` and `withKeyTransform`), so the lists cannot go stale.
+`tests/propertyEdit.test.ts`: every stickman track rewritten as it was samples the same, and a
+move, delete or key leaves every other property the same at every frame. The export is
+unchanged: it samples the whole keys, so a channel moved alone plays as it does on the stage.
 
 ### The timeline fills its panel, and only the layers scroll
 

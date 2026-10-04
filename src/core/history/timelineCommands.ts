@@ -6,6 +6,7 @@ import type { ChannelEases, TweenSpec } from "@/core/math/easing";
 import { createAnimation } from "@/core/doc/defaults";
 import { endAfterResize } from "@/core/doc/timeline";
 import { invalidateBounds } from "@/core/doc/pose";
+import { withTransform } from "@/core/doc/keyed";
 
 function symbolOf(p: Project, id: ItemId): SymbolItem {
   const s = p.items[id];
@@ -344,7 +345,12 @@ export class RenameAnimation implements Command {
 export function withKeyframe(track: Track, frame: number, patch: Partial<Keyframe>): Track {
   return {
     ...track,
-    keys: track.keys.map((k) => (k.frame === frame ? { ...k, ...patch } : k)),
+    keys: track.keys.map((k) => {
+      if (k.frame !== frame) return k;
+      // A new pose keys the properties it changes (`Keyframe.keyed`).
+      const posed = patch.transform ? withTransform(k, patch.transform) : k;
+      return { ...posed, ...patch, ...(posed.keyed ? { keyed: posed.keyed } : {}) };
+    }),
   };
 }
 

@@ -5,7 +5,7 @@ import type { SpineInherit } from "@/core/spine/types";
 import type { AnimId, AssetId, FolderId, IkId, ItemId, LayerId, NodeId } from "./ids";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 14;
+export const DOC_VERSION = 15;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -282,8 +282,17 @@ export interface Keyframe {
    *  in that direction; without it signed, + clockwise, which is how files
    *  written before `rotateDir` store it. See `rotationDelta`. */
   rotateTurns?: number;
+  /** The bone properties this key is a key OF on the timeline's property
+   *  rows (`core/doc/propertyKeys.ts`). Absent: those whose value changes
+   *  here. A key a property merely passes through, because another property
+   *  needs it, leaves that property out. Editor only; the export samples. */
+  keyed?: TimelineProp[];
   label?: string;
 }
+
+/** A bone property with a row of its own on the timeline, as in Spine. */
+export type TimelineProp = "rotate" | "x" | "y" | "scale" | "shear";
+export const TIMELINE_PROPS: readonly TimelineProp[] = ["rotate", "x", "y", "scale", "shear"];
 
 export interface Track {
   nodeId: NodeId;

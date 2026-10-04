@@ -1,14 +1,14 @@
 import { h, on, raf } from "@/view/widgets/dom";
 import { FRAME_WIDTH_MAX, FRAME_WIDTH_MIN, anchoredScroll, fitFrameWidth, steppedFrameWidth } from "./zoom";
 import type { Store } from "@/app/Store";
-import type { Layer, Track } from "@/core/doc/types";
+import type { Layer, Node, Track } from "@/core/doc/types";
 import type { NodeId } from "@/core/doc/ids";
 import { describeFrame, ensureTrack } from "@/app/TimelineOps";
 import { keyIndexAt, MAX_FRAMES, spanIndexAt } from "@/core/doc/timeline";
 import { easeTag } from "@/core/math/easing";
 import type { LayerRow } from "@/core/doc/layerTree";
 import { timelineRows } from "./rows";
-import { propertyKeys, type TimelineProp } from "@/core/doc/propertyKeys";
+import { moveChannelKeys, propertyKeys, type TimelineProp } from "@/core/doc/propertyKeys";
 
 /** The property rows' key colours: Spine's, green rotate, blue translate,
  *  red scale, yellow shear. */
@@ -36,6 +36,9 @@ export interface FrameGridCallbacks {
    */
   onSelectRange(rowFrom: number, rowTo: number, from: number, to: number): void;
   onMoveKeyframes(nodeId: NodeId, from: number, to: number, delta: number, base?: Track): void;
+  /** A property row's edit: the bone's track as it is to be. `kind` merges
+   *  the steps of one drag into one undo. */
+  onEditTrack(nodeId: NodeId, track: Track, label: string, kind?: string): void;
   /** A frame selection dragged somewhere else: its top-left cell lands on
    *  `row`/`frame`. `copy` is ⌥ held at the release. */
   onDragFrames(row: number, frame: number, copy: boolean): void;
@@ -545,7 +548,7 @@ export class FrameGrid {
 
       const track: Track | undefined = anim?.tracks[layer.nodeId];
       if (rows[i]!.prop) {
-        this.drawPropRow(ctx, track, rows[i]!.prop!, y);
+        this.drawPropRow(ctx, track, rows[i]!.prop!, y, layer.nodeId);
         continue;
       }
       // A group has no artwork of its own, so it gets a thinner band: it is
@@ -666,12 +669,18 @@ export class FrameGrid {
     ctx.fillRect(Math.round(x), y + pad, 1, this.rowHeight - pad * 2 - 1);
   }
 
+  /** The property keys picked on a property row: one bone, one property. */
+  propSel: { nodeId: NodeId; prop: TimelineProp; frames: number[] } | null = null;
+
   /**
-   * A focused bone's property row: a diamond where that property is keyed
-   * (`propertyKeys`), in the property's colour, joined by a line where it
-   * changes between two of them. Spine's dopesheet draws the same.
+   * A focused bone's property row: a square where that property is keyed
+   * (`propertyKeys`), in the property's colour, joined by a line between two
+   * of them, the picked ones ringed. Spine's dopesheet draws the same.
    */
-  private drawPropRow(ctx: CanvasRenderingContext2D, track: Track | undefined, prop: TimelineProp, y: number): void {
+  private drawPropRow(
+    ctx: CanvasRenderingContext2D, track: Track | undefined, prop: TimelineProp, y: number, nodeId: NodeId,
+  ): void {
+    const sel = this.propSel?.nodeId === nodeId && this.propSel.prop === prop ? this.propSel.frames : [];
     ctx.fillStyle = "rgba(0,0,0,0.12)";
     ctx.fillRect(0, y, this.el.clientWidth, this.rowHeight);
     const frames = propertyKeys(track, prop);
@@ -694,8 +703,9 @@ export class FrameGrid {
       ctx.rect(cx - r, mid - r, r * 2, r * 2);
       ctx.fillStyle = color;
       ctx.fill();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = this.C.keyDot;
+      const picked = sel.includes(f);
+      ctx.lineWidth = picked ? 2 : 1;
+      ctx.strokeStyle = picked ? "#ffffff" : this.C.keyDot;
       ctx.stroke();
     }
   }
@@ -936,13 +946,29 @@ export class FrameGrid {
       // Below the last layer there are no frames: a press there deselects
       // them, as a press on the empty stage does.
       if (!layer) { this.store.clearFrameSelection(); return; }
-      // A property row only shows: its keys are the bone's whole-pose keys,
-      // edited on the bone's row. A press selects the frame there.
-      if (this.visibleRows()[row]?.prop) {
+      // A property row: a press on one of its keys picks it (shift adds or
+      // drops one) and a drag moves the picked keys of that property alone.
+      const prop = this.visibleRows()[row]?.prop;
+      if (prop) {
+        const track = this.store.currentAnimation?.tracks[layer.nodeId];
+        const node = this.store.currentSymbol.nodes[layer.nodeId];
+        if (track && node && propertyKeys(track, prop).includes(frame)) {
+          const mine = this.propSel?.nodeId === layer.nodeId && this.propSel.prop === prop ? this.propSel.frames : [];
+          const frames = e.shiftKey
+            ? (mine.includes(frame) ? mine.filter((f) => f !== frame) : [...mine, frame])
+            : (mine.includes(frame) ? mine : [frame]);
+          this.propSel = { nodeId: layer.nodeId, prop, frames };
+          this.cb.onScrub(frame);
+          this.invalidate();
+          if (!e.shiftKey) this.beginPropDrag(e, node, prop, frames, track);
+          return;
+        }
+        this.propSel = null;
         this.anchor = { row, frame };
         this.cb.onSelectCell(row, frame, false);
         return;
       }
+      this.propSel = null;
 
       const track = this.store.currentAnimation?.tracks[layer.nodeId];
       // A layer with no track still shows a full-length span, so its end is
@@ -1175,6 +1201,33 @@ export class FrameGrid {
         this.cb.onMoveKeyframes(nodeId, frame, frame, delta, base);
         lastDelta = delta;
       }
+    };
+    const up = () => {
+      offMove(); offUp(); offCancel();
+      this.el.releasePointerCapture?.(e.pointerId);
+      if (started) this.cb.onEndInteraction();
+    };
+    const offMove = on(this.el, "pointermove", move as (x: Event) => void);
+    const offUp = on(this.el, "pointerup", up);
+    const offCancel = on(this.el, "pointercancel", up);
+  }
+
+  /** Move the picked keys of one property by whole frames; every step is
+   *  computed from the track as it was at pointerdown. */
+  private beginPropDrag(e: PointerEvent, node: Node, prop: TimelineProp, frames: number[], base: Track): void {
+    this.el.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const first = Math.min(...frames);
+    let lastDelta = 0;
+    let started = false;
+    const move = (m: PointerEvent) => {
+      const delta = Math.max(-first, Math.round((m.clientX - startX) / this.frameWidth));
+      if (delta === lastDelta) return;
+      if (!started) { started = true; this.cb.onBeginInteraction("timeline.propMove"); }
+      this.cb.onEditTrack(node.id, moveChannelKeys(base, node, prop, frames, delta), "Move Keys", "timeline.propMove");
+      this.propSel = { nodeId: node.id, prop, frames: frames.map((f) => f + delta) };
+      lastDelta = delta;
+      this.invalidate();
     };
     const up = () => {
       offMove(); offUp(); offCancel();

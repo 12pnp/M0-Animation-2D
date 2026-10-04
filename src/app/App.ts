@@ -1479,11 +1479,14 @@ export class App {
     reg("edit.duplicateLayers", () => { tl.duplicateLayers(); }, hasNodes);
     reg("edit.preferences", () => this.openPreferences());
     reg("view.stageSettings", () => this.openPreferences("stage"));
+    // Keys picked on a timeline property row go first: they are what the
+    // last click was on, and the bone stays selected under them.
     reg("edit.delete", () => {
+      if (this.timeline.deletePropKeys()) return;
       s.apply(new RemoveNodes(s.currentSymbolId, [...s.selection.nodes]));
       s.clearSelection();
       s.emit("doc");
-    }, hasNodes);
+    }, () => !!this.timeline.grid.propSel?.frames.length || hasNodes());
 
     reg("view.zoomIn", () => s.setUi({ zoom: s.ui.zoom * 1.25 }, "stage"));
     reg("view.zoomOut", () => s.setUi({ zoom: s.ui.zoom / 1.25 }, "stage"));

@@ -1,5 +1,5 @@
 import type { DisplayRef, LibraryFolder, Node, Project } from "./types";
-import { DEFAULT_MOTION_BLUR, DOC_VERSION, type MotionBlurSettings } from "./types";
+import { DEFAULT_MOTION_BLUR, DOC_VERSION, type MotionBlurSettings, TIMELINE_PROPS } from "./types";
 import { observeId } from "./ids";
 import { isDefaultExport, sanitizeExportSettings } from "@/core/export/settings";
 import { normalizeMasks } from "./layerTree";
@@ -262,6 +262,10 @@ export function validateProject(raw: unknown): ValidationResult {
             else delete k.eases;
           }
           if (k.rotateDir !== undefined && k.rotateDir !== "cw" && k.rotateDir !== "ccw") delete k.rotateDir;
+          if (k.keyed !== undefined) {
+            const list = Array.isArray(k.keyed) ? k.keyed : [];
+            k.keyed = TIMELINE_PROPS.filter((p) => list.includes(p));
+          }
           if (k.rotateTurns !== undefined) {
             const turns = Math.round(Number(k.rotateTurns));
             if (Number.isFinite(turns) && turns !== 0) k.rotateTurns = turns;
@@ -402,6 +406,9 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // 13 -> 14: `Node.primary`, a bone the stage toolbar's Primary row governs.
   // Additive; an older build would drop it on save.
   13: (p) => ({ ...p, version: 14 }),
+  // 14 -> 15: `Keyframe.keyed`, which bone properties a key is a key of on
+  // the timeline's property rows. Additive; an older build would drop it.
+  14: (p) => ({ ...p, version: 15 }),
 };
 
 /** A tween read from disk, or null when it is not one this build knows. */

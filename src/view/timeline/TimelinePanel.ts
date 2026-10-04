@@ -1,4 +1,5 @@
 import { clear, cls, drag, h, on } from "@/view/widgets/dom";
+import { deleteChannelKeys, keyChannelAt, propertyKeys, type TimelineProp } from "@/core/doc/propertyKeys";
 import { SPEED_SLIDER_MAX, sliderFromSpeed, speedFromSlider, speedLabel } from "./playSpeed";
 import { PLAY_RATES } from "./playStep";
 import { uniqueAnimationName } from "@/core/doc/animationList";
@@ -23,6 +24,8 @@ import {
     doInsertFrames,
     doInsertKeyframe,
     doMoveKeyframes,
+    doSetTrack,
+    ensureTrack,
     doRemoveFrame,
     doRemoveFrames,
     doSetEndFrame,
@@ -46,6 +49,11 @@ import { groupPlan, layerRows } from "@/core/doc/layerTree";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { mayReparent } from "@/view/widgets/ikReparentGuard";
 import { uiPx } from "@/core/prefs/fonts";
+
+/** The property rows' names, as Spine writes them. */
+const PROP_NAMES: Record<TimelineProp, string> = {
+  rotate: "Rotate", x: "Translate X", y: "Translate Y", scale: "Scale", shear: "Shear",
+};
 
 /** The timeline: layer column, frame grid, transport. */
 export class TimelinePanel implements Panel {
@@ -85,6 +93,7 @@ export class TimelinePanel implements Panel {
       onSelectCell: (row, frame, additive) => this.selectCell(row, frame, additive),
       onSelectRange: (rowFrom, rowTo, from, to) => this.selectRange(rowFrom, rowTo, from, to),
       onMoveKeyframes: (nodeId, from, to, delta, base) => doMoveKeyframes(store, nodeId, from, to, delta, base),
+      onEditTrack: (nodeId, track, label, kind) => doSetTrack(store, nodeId, track, label, kind),
       onDragSpanEnd: (nodeId, endFrame) => doSetEndFrame(store, nodeId, endFrame),
       onDragFrames: (row, frame, copy) => this.dragFrames(row, frame, copy),
       onBeginInteraction: (kind) => store.history.beginInteraction(kind),
@@ -150,6 +159,7 @@ export class TimelinePanel implements Panel {
     store.subscribe((topic) => {
       if (topic === "selection" && !pressedHere && !this.el.contains(document.activeElement)) {
         store.ui.timelineFocus = [...store.selection.nodes];
+        this.grid.propSel = null;
       }
       if (topic === "doc" || topic === "timeline" || topic === "selection") {
         this.layers.render();
@@ -740,10 +750,52 @@ export class TimelinePanel implements Panel {
     });
   }
 
+  /** The picked property keys gone (`deleteChannelKeys`); false with none
+   *  picked, so Delete goes on to what else is selected. */
+  deletePropKeys(): boolean {
+    const sel = this.grid.propSel;
+    const track = sel && this.store.currentAnimation?.tracks[sel.nodeId];
+    const node = sel && this.store.currentSymbol.nodes[sel.nodeId];
+    if (!sel || !track || !node || !sel.frames.length) return false;
+    doSetTrack(this.store, sel.nodeId, deleteChannelKeys(track, node, sel.prop, sel.frames), "Delete Keys");
+    this.grid.propSel = null;
+    return true;
+  }
+
+  /** A property row's menu: key the property at the frame, or delete its
+   *  picked keys (or the one under the pointer). */
+  private propMenu(nodeId: NodeId, prop: TimelineProp, frame: number, x: number, y: number): void {
+    const track = this.store.currentAnimation?.tracks[nodeId];
+    const node = this.store.currentSymbol.nodes[nodeId];
+    if (!node) return;
+    const label = PROP_NAMES[prop];
+    const onKey = !!track && propertyKeys(track, prop).includes(frame);
+    const sel = this.grid.propSel;
+    if (onKey && !(sel?.nodeId === nodeId && sel.prop === prop && sel.frames.includes(frame))) {
+      this.grid.propSel = { nodeId, prop, frames: [frame] };
+    }
+    this.store.setFrame(frame);
+    showMenu(this.menuAnchor(x, y), [
+      {
+        label: `Key ${label} Here`, enabled: !onKey,
+        run: () => {
+          const base = track ?? ensureTrack(this.store, node);
+          doSetTrack(this.store, nodeId, keyChannelAt(base, node, prop, frame), `Key ${label}`);
+        },
+      },
+      {
+        label: this.grid.propSel && this.grid.propSel.frames.length > 1 ? `Delete ${this.grid.propSel.frames.length} ${label} Keys` : `Delete ${label} Key`,
+        enabled: onKey, run: () => { this.deletePropKeys(); },
+      },
+    ]);
+  }
+
   private frameMenu(row: number, frame: number, x: number, y: number): void {
     const layer = this.grid.visibleRows()[row]?.layer;
     if (!layer) return;
     const nodeId = layer.nodeId;
+    const prop = this.grid.visibleRows()[row]?.prop;
+    if (prop) { this.propMenu(nodeId, prop, frame, x, y); return; }
     // Right-clicking outside the selection moves it, as in Flash; inside it,
     // the selection is what the menu acts on.
     if (!this.store.selection.frames.includes(`${nodeId}:${frame}`)) {

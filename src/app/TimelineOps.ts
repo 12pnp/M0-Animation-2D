@@ -94,6 +94,11 @@ function commit(store: Store, label: string, tracks: TrackMap, kind?: string): v
   store.emit("stage");
 }
 
+/** One track replaced: the timeline's property rows edit through here. */
+export function doSetTrack(store: Store, nodeId: NodeId, track: Track, label: string, kind?: string): void {
+  commit(store, label, new Map([[nodeId, track]]), kind);
+}
+
 /* ── The F-keys ──────────────────────────────────────────────────────────*/
 
 export function doInsertFrame(store: Store, frame: number, ids?: NodeId[]): void {

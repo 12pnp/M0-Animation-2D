@@ -1,4 +1,5 @@
 import { apply, applyInverse, type Matrix2D, mat, mul } from "@/core/math/Matrix2D";
+import { withTransform } from "./keyed";
 import { cloneTf, toMatrix, type Transform } from "@/core/math/Transform";
 import { wrapTo180 } from "@/core/math/angle";
 import { createKeyframe } from "./defaults";
@@ -177,7 +178,7 @@ export function keyAt(
 
 /** `track` with the key at `frame` holding `t`. */
 export function withKeyTransform(track: Track, frame: number, t: Transform): Track {
-  return { ...track, keys: track.keys.map((k) => (k.frame === frame ? { ...k, transform: t } : k)) };
+  return { ...track, keys: track.keys.map((k) => (k.frame === frame ? withTransform(k, t) : k)) };
 }
 
 /** ⇧-drag: every key moved by what the dragged key moved, position or

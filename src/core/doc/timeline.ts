@@ -14,6 +14,7 @@
  *   frame     any position inside a span
  */
 
+import { withTransform } from "./keyed";
 import { cloneTf, type Transform } from "@/core/math/Transform";
 import {
     applyTween,
@@ -118,6 +119,8 @@ export function insertKeyframe(track: Track, frame: number, node: Node): Track |
       }
     : createKeyframe(frame, node);
 
+  // Which properties it is a key of is worked out from its values again.
+  delete key.keyed;
   let keys = [...track.keys, key];
   const next = govern ? track.keys.find((k) => k.frame > frame) : undefined;
   if (govern && next && (govern.rotateDir || govern.rotateTurns)) {
@@ -353,7 +356,7 @@ export function isolateRange(track: Track, from: number, to: number, node: Node)
 
 /** F6 at `frame`, with the interval it cuts eased in two parts that together
  *  run the original curve (`splitTween`). Plain F6 where that cannot be done. */
-function cutKeepingEase(track: Track, frame: number, node: Node): Track | null {
+export function cutKeepingEase(track: Track, frame: number, node: Node): Track | null {
   const next = insertKeyframe(track, frame, node);
   const i = spanIndexAt(track, frame);
   const a = track.keys[i];
@@ -389,7 +392,7 @@ export function mapKeyTransforms(
   return {
     ...track,
     keys: track.keys.map((k) =>
-      (k.frame >= from && k.frame <= to ? { ...k, transform: fn(k.transform) } : k)),
+      (k.frame >= from && k.frame <= to ? withTransform(k, fn(k.transform)) : k)),
   };
 }
 
