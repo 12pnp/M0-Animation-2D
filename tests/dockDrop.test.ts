@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { type DockLayout, type DockRects, dropTargetAt, moveTab, placesPanel } from "@/view/widgets/dockDrop";
+import { type DockLayout, type DockRects, dropTargetAt, moveGroup, moveTab, placesPanel, weightForHeight } from "@/view/widgets/dockDrop";
 
 const r = (left: number, top: number, right: number, bottom: number) => ({ left, top, right, bottom });
 
@@ -110,5 +110,48 @@ describe("placesPanel", () => {
     const l: DockLayout = { ...layout(["a"]), floats: { b: { x: 0, y: 0, w: 1, h: 1 } }, closed: ["c"] };
     expect(["a", "b", "c", "d"].map((id) => placesPanel(l, id))).toEqual([true, true, true, false]);
     expect(placesPanel(null, "a")).toBe(false);
+  });
+});
+
+describe("moveGroup", () => {
+  const cols = () => [layout(["props"], ["library", "outline"], ["preview"]), layout(["timeline"], ["poses"])];
+
+  it("moves every tab of the group, at the same place in the other column", () => {
+    const next = moveGroup(cols(), 0, 1, 1, 0.5)!;
+    expect(ids(next[0]!)).toEqual([["props"], ["preview"]]);
+    expect(ids(next[1]!)).toEqual([["timeline"], ["library", "outline"], ["poses"]]);
+    expect(next[1]!.groups[1]!.weight).toBe(0.5);
+  });
+
+  it("goes to the end of a shorter column", () => {
+    const next = moveGroup(cols(), 0, 2, 1, 1)!;
+    expect(ids(next[1]!)).toEqual([["timeline"], ["poses"], ["preview"]]);
+  });
+
+  it("fills an empty column", () => {
+    const next = moveGroup([layout(["a"], ["b"]), layout()], 0, 1, 1, 1)!;
+    expect(ids(next[1]!)).toEqual([["b"]]);
+  });
+
+  it("refuses a group that is not there, or a move onto itself", () => {
+    expect(moveGroup(cols(), 0, 9, 1, 1)).toBeNull();
+    expect(moveGroup(cols(), 0, 1, 0, 1)).toBeNull();
+  });
+});
+
+describe("weightForHeight", () => {
+  it("keeps the height: weight over the others' weight is height over what they keep", () => {
+    // 200px of a 600px column, beside groups weighing 2 in all: 200/400 × 2.
+    const w = weightForHeight(200, 600, 2);
+    expect(w).toBeCloseTo(1);
+    expect(600 * w / (w + 2)).toBeCloseTo(200);
+  });
+
+  it("alone in its column a group fills it", () => {
+    expect(weightForHeight(200, 600, 0)).toBe(1);
+  });
+
+  it("never asks for the whole column, which would leave the others nothing", () => {
+    expect(Number.isFinite(weightForHeight(900, 600, 1))).toBe(true);
   });
 });

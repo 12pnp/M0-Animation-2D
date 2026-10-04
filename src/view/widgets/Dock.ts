@@ -2,7 +2,10 @@ import { clear, cls, drag, h, on } from "./dom";
 import { icon, type IconName } from "@/view/icons";
 import { clampRect, type FloatRect, FloatWindow } from "./FloatWindow";
 import { accelOf } from "./accel";
-import { type DockLayout, type DockRects, type DropTarget, type GroupState, type Rect, dropTargetAt, moveTab, placesPanel } from "./dockDrop";
+import {
+  type DockLayout, type DockRects, type DropTarget, type GroupState, type Rect,
+  dropTargetAt, moveGroup, moveTab, placesPanel, weightForHeight,
+} from "./dockDrop";
 
 /**
  * A dock column of tabbed panel groups.
@@ -41,6 +44,11 @@ export class Dock {
   private stripEls: HTMLElement[] = [];
   /** Notified whenever a panel opens, closes, floats or docks. */
   onLayoutChange: (() => void) | null = null;
+  /** The column beside this one, left (-1) or right (+1), for the group
+   *  menu's Move Group; null where there is none. Set by `Shell`. */
+  neighbour: ((side: -1 | 1) => Dock | null) | null = null;
+  /** Show `dock`'s column if it is hidden, before a group moves into it. */
+  onReveal: ((dock: Dock) => void) | null = null;
 
   constructor(
     private readonly storageKey: string,
@@ -509,7 +517,41 @@ export class Dock {
         { label: `Close ${panel.title}`, run: () => this.close(panel.id) },
       );
     }
+    // The whole group into the next column, as tall as it is now.
+    const left = this.neighbour?.(-1) ?? null;
+    const right = this.neighbour?.(1) ?? null;
+    if (left || right) {
+      items.push("-",
+        { label: "Move Group Left", enabled: !!left, run: () => left && this.moveGroupTo(group, left) },
+        { label: "Move Group Right", enabled: !!right, run: () => right && this.moveGroupTo(group, right) });
+    }
     showMenu(anchor, items);
+  }
+
+  /**
+   * `group` with all its tabs into `target`, at the same place in the column,
+   * keeping the height it has here (`weightForHeight`); alone there, it fills
+   * the column.
+   */
+  private moveGroupTo(group: GroupState, target: Dock): void {
+    const at = this.layout.groups.indexOf(group);
+    const me = docks.indexOf(this), to = docks.indexOf(target);
+    if (at < 0 || me < 0 || to < 0) return;
+    const height = this.groupEls[at]?.offsetHeight ?? 0;
+    this.onReveal?.(target);
+    const others = target.layout.groups.filter((g) => !g.collapsed).reduce((sum, g) => sum + g.weight, 0);
+    const weight = weightForHeight(height, target.el.clientHeight, others);
+    const next = moveGroup(docks.map((d) => d.layout), me, at, to, weight);
+    if (!next) return;
+    for (const id of group.panelIds) {
+      const panel = this.panels.get(id);
+      if (!panel) continue;
+      this.panels.delete(id);
+      target.panels.set(id, panel);
+    }
+    this.layout = next[me]!;
+    target.layout = next[to]!;
+    for (const d of [this, target]) { d.save(); d.render(); }
   }
 
   /** The tab `panelId` into a new group right below `group`. */

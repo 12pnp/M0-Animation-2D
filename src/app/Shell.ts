@@ -414,6 +414,16 @@ export class Shell {
     const edge = h("div", { class: "col-split" });
     const wrap = h("div", { class: `side-col ${left ? "left" : "right"}` }, dock.el, edge);
     wrap.hidden = true;
+    // The columns in screen order, for the group menu's Move Group.
+    dock.neighbour = (side) => {
+      const order: ColumnKey[] = ["l1", "l2", "r1", "r2"];
+      const next = order[order.indexOf(key) + side];
+      return next ? this.cols[next].dock : null;
+    };
+    dock.onReveal = (d) => {
+      const target = this.columnOf(d);
+      if (target && target.wrap.hidden) this.setColumnOpen(target.key, true);
+    };
     const col: SideColumn = {
       key, dock, wrap, width: 268,
       toggle: this.railButton(iconName, `Show / hide ${what}`, () => this.setColumnOpen(key, wrap.hidden)),

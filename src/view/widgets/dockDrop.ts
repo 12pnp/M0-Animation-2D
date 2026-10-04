@@ -147,3 +147,32 @@ export function placesPanel(layout: DockLayout | null, panelId: string): boolean
     || panelId in (layout.floats ?? {})
     || (layout.closed ?? []).includes(panelId);
 }
+
+/**
+ * A whole group, every tab in it, from one dock to another: at the same place
+ * in the column where it can be (else the end), with its open state and the
+ * `weight` the caller worked out to keep its height. New layouts, or null when
+ * the group is not there.
+ */
+export function moveGroup(
+  layouts: DockLayout[], from: number, group: number, to: number, weight: number,
+): DockLayout[] | null {
+  if (from === to || !layouts[from]?.groups[group] || !layouts[to]) return null;
+  const next = structuredClone(layouts);
+  const [g] = next[from]!.groups.splice(group, 1);
+  const dest = next[to]!.groups;
+  dest.splice(Math.min(group, dest.length), 0, { ...g!, weight });
+  return next;
+}
+
+/**
+ * The flex weight that draws a group `height` pixels tall in a column
+ * `columnHeight` tall, beside groups whose weights add up to `othersWeight`
+ * (the space they share is what the moving group leaves them). Alone in its
+ * column a group fills it, whatever its weight.
+ */
+export function weightForHeight(height: number, columnHeight: number, othersWeight: number): number {
+  if (othersWeight <= 0 || columnHeight <= 0) return 1;
+  const h = Math.max(1, Math.min(height, columnHeight - 1));
+  return (h / (columnHeight - h)) * othersWeight;
+}
