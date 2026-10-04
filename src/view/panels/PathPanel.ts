@@ -8,6 +8,11 @@ import { SceneRenderer } from "@/view/viewport/SceneRenderer";
 import { PathCache } from "@/view/viewport/pathCache";
 import type { PathZoomLink, ZoomLinked } from "./pathZoom";
 import { PATH_GRID_MAJOR, pathGridStep } from "./pathGrid";
+import { heldParent } from "./pathHeld";
+import { openOnionFrames } from "./onionFramesPopup";
+import { GhostPainter } from "@/view/viewport/ghost";
+import { onionFrames } from "@/core/doc/onion";
+import { keyIndexAt } from "@/core/doc/timeline";
 import { pathScene } from "@/view/viewport/pathScene";
 import { drawBonePaths } from "@/view/viewport/pathDraw";
 import type { BonePathsDraw } from "@/view/viewport/Overlay";
@@ -18,8 +23,9 @@ import { seamFrame } from "@/core/doc/cycle";
 import { anchorOf } from "@/core/doc/displays";
 import type { NodeId } from "@/core/doc/ids";
 import { entryBox, type Pose } from "@/core/doc/pose";
+import type { Animation } from "@/core/doc/types";
 import type { SymbolItem } from "@/core/doc/types";
-import { apply, invert, mat, matOf, mul } from "@/core/math/Matrix2D";
+import { apply, mat, matOf, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { type Rect, transformCorners } from "@/core/math/geom";
 
 /** Fit leaves the framed path at 65% of the zoom that would fill the view. */
@@ -54,6 +60,8 @@ export class PathPanel implements Panel, ZoomLinked {
   fitZoom: number | null = null;
   private readonly lock: HTMLButtonElement;
   private readonly gridBtn: HTMLButtonElement;
+  private readonly onionBtn: HTMLButtonElement;
+  private readonly ghosts = new GhostPainter();
   private readonly renderer: SceneRenderer;
   private readonly cache = new PathCache();
   private readonly invalidate: () => void;
@@ -84,11 +92,17 @@ export class PathPanel implements Panel, ZoomLinked {
     this.lock = h("button", { class: "iconbtn", title: "Lock zoom: the Local and World Path panels zoom together" }, icon("lock", 14)) as HTMLButtonElement;
     this.lock.hidden = !link;
     this.gridBtn = h("button", { class: "iconbtn", title: "Show grid (both Path panels)" }, icon("grid", 14)) as HTMLButtonElement;
+    this.onionBtn = h("button", { class: "iconbtn", title: "Onion skin (with the timeline's): the bone's artwork at the frames between the onion markers" }, icon("onion", 14)) as HTMLButtonElement;
+    const framesBtn = h("button", { class: "iconbtn", title: "Onion frames: how many frames before and after the playhead" }, icon("onionFrames", 14));
+    framesBtn.dataset.onionFor = this.id;
+    on(framesBtn, "click", () => openOnionFrames(store, framesBtn));
     const bar = h("div", { style: "display:flex;align-items:center;gap:8px;padding:4px 8px;flex:none" },
       // The buttons first: a narrow column clips the bar's right end.
       fit,
       this.lock,
       this.gridBtn,
+      this.onionBtn,
+      framesBtn,
       this.nameEl);
     const area = h("div", { style: "position:relative;flex:1;min-height:0;overflow:hidden" }, this.canvas, this.note);
     this.el = h("div", { class: "path-panel", style: "display:flex;flex-direction:column;height:100%" }, bar, area);
@@ -98,6 +112,8 @@ export class PathPanel implements Panel, ZoomLinked {
 
     on(fit, "click", () => { this.fittedFor = ""; this.invalidate(); });
     on(this.gridBtn, "click", () => store.prefs.set("gizmos", { pathGrid: !store.prefs.value.gizmos.pathGrid }));
+    // The stage's onion skin: one switch with the timeline's button and View ▸ Onion Skin.
+    on(this.onionBtn, "click", () => store.setUi({ onionSkin: !store.ui.onionSkin }, "stage"));
     on(this.lock, "click", () => {
       const locked = !store.prefs.value.gizmos.pathZoomLock;
       store.prefs.set("gizmos", { pathZoomLock: locked });
@@ -106,7 +122,11 @@ export class PathPanel implements Panel, ZoomLinked {
     });
     this.wireInput();
     new ResizeObserver(() => this.resize()).observe(area);
-    store.subscribe(() => this.invalidate());
+    store.subscribe(() => {
+      // At once, not at the next draw: the timeline's button changes with it.
+      this.onionBtn.classList.toggle("on", store.ui.onionSkin);
+      this.invalidate();
+    });
     store.prefs.subscribe(() => this.invalidate());
     this.resize();
   }
@@ -166,6 +186,7 @@ export class PathPanel implements Panel, ZoomLinked {
     const { store, ctx } = this;
     this.lock.classList.toggle("on", store.prefs.value.gizmos.pathZoomLock);
     this.gridBtn.classList.toggle("on", store.prefs.value.gizmos.pathGrid);
+    this.onionBtn.classList.toggle("on", store.ui.onionSkin);
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.fillStyle = "#2a2a2a";
     ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
@@ -201,13 +222,10 @@ export class PathPanel implements Panel, ZoomLinked {
     // Only what the bone carries is drawn.
     const pose = sample(frame, true)!;
     // The artwork at the playhead, carried into that frame-0 parent pose.
-    this.shown = mat();
     const parentId = sym.nodes[bone] ? anchorOf(sym.nodes[bone]!) : null;
-    if (relative && parentId) {
-      const m0 = sample(0, true)!.byNode.get(parentId)?.world, now = pose.byNode.get(parentId)?.world;
-      const inv = mat();
-      if (m0 && now && invert(inv, now)) this.shown = mul(mat(), m0, inv);
-    }
+    const m0 = relative && parentId ? sample(0, true)!.byNode.get(parentId)?.world : undefined;
+    const held = (p: Pose) => (m0 && parentId ? heldParent(m0, p.byNode.get(parentId)?.world) : mat());
+    this.shown = held(pose);
     const keep = this.carried(sym, bone, pose);
     const hidden = new Set<string>(sym.layers.map((l) => l.nodeId).filter((id) => !keep.has(id)));
     const fitKey = `${bone}|${anim.id}`;
@@ -221,11 +239,43 @@ export class PathPanel implements Panel, ZoomLinked {
       ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
       this.drawGrid();
     }
-    const view = mul(mat(), mul(mat(), matOf(this.dpr, 0, 0, this.dpr, 0, 0), this.camera.matrix), this.shown);
-    this.renderer.draw(ctx, sym, anim, frame, "animate", view, { hiddenLayers: hidden });
+    const screen = mul(mat(), matOf(this.dpr, 0, 0, this.dpr, 0, 0), this.camera.matrix);
+    if (store.ui.onionSkin) this.drawGhosts(sym, anim, bone, keep, hidden, screen, (f) => held(sample(f, true)!));
+    this.renderer.draw(ctx, sym, anim, frame, "animate", mul(mat(), screen, this.shown), { hiddenLayers: hidden });
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
-    this.drawBones(pose, bone);
+    this.drawBones(pose, bone, this.shown);
     drawBonePaths(ctx, (x, y) => this.camera.toScreen(x, y), this.scene, { core: "#161616", handle: "#00bcd9" });
+  }
+
+  /**
+   * The onion skin: the frames between the stage's onion markers, faded and
+   * coloured by the timeline's onion preferences, each with the artwork the
+   * bone carries and the bone itself. In Local each is carried into the
+   * frame-0 parent pose like the current frame.
+   */
+  private drawGhosts(
+    sym: SymbolItem, anim: Animation, bone: NodeId, keep: Set<string>, hidden: Set<string>,
+    screen: Matrix2D, heldAt: (frame: number) => Matrix2D,
+  ): void {
+    const { store } = this;
+    const o = store.prefs.value.timeline;
+    const tracks = [...keep].map((id) => anim.tracks[id as NodeId]).filter((t) => !!t);
+    const isKey = o.onionKeyframesOnly ? (f: number) => tracks.some((t) => keyIndexAt(t, f) >= 0) : undefined;
+    const sample = this.cache.sampler(store.project, sym, anim, store.history.revision);
+    for (const gh of onionFrames({
+      frame: store.ui.frame, span: store.onionSpan, opacity: o.onionOpacity, falloff: o.onionFalloff,
+      isKey, period: store.onionPeriod,
+    })) {
+      const tint = o.onionTint ? (gh.side === "past" ? o.onionPastColor : o.onionFutureColor) : null;
+      const shown = heldAt(gh.frame);
+      const pose = sample(gh.frame, true);
+      this.ghosts.paint(this.ctx, this.dpr, { alpha: gh.alpha, tint, outline: o.onionOutline }, (c) => {
+        this.renderer.draw(c, sym, anim, gh.frame, "animate", mul(mat(), screen, shown), { hiddenLayers: hidden });
+        if (!pose) return;
+        c.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+        this.drawBones(pose, bone, shown, c, false);
+      });
+    }
   }
 
   /** Lines every `pathGridStep` stage pixels under the artwork, every fifth
@@ -256,14 +306,14 @@ export class PathPanel implements Panel, ZoomLinked {
     lines(true);
   }
 
-  /** The parent faint, the bone itself solid: the frame the path is read against. */
-  private drawBones(pose: Pose, bone: NodeId): void {
-    const { ctx } = this;
+  /** The parent faint, the bone itself solid: the frame the path is read
+   *  against. A ghost draws only the bone. */
+  private drawBones(pose: Pose, bone: NodeId, shown: Matrix2D, ctx = this.ctx, parent = true): void {
     const line = (id: NodeId | null | undefined, color: string, width: number) => {
       const e = id ? pose.byNode.get(id) : undefined;
       if (!e) return;
       const len = e.node.kind === "bone" ? e.node.boneLength ?? DRAWN_BONE_LENGTH : 0;
-      const w = mul(mat(), this.shown, e.world);
+      const w = mul(mat(), shown, e.world);
       const a = this.camera.toScreen(w.tx, w.ty);
       const tip = apply({ x: 0, y: 0 }, w, len, 0);
       const b = this.camera.toScreen(tip.x, tip.y);
@@ -274,7 +324,7 @@ export class PathPanel implements Panel, ZoomLinked {
       ctx.beginPath(); ctx.arc(a.x, a.y, width + 1.5, 0, Math.PI * 2); ctx.fill();
     };
     const node = pose.byNode.get(bone)?.node;
-    line(node?.parentId, "rgba(255,255,255,0.35)", 2);
+    if (parent) line(node?.parentId, "rgba(255,255,255,0.35)", 2);
     line(bone, "rgba(255,214,102,0.95)", 2.5);
   }
 

@@ -44,6 +44,8 @@ export const ICON = {
   loop:        `<path d="M3 8a5 5 0 0 1 5-5c2 0 3.6 1.1 4.4 2.7M13 8a5 5 0 0 1-5 5c-2 0-3.6-1.1-4.4-2.7"/>
                 <path d="M12.6 2.6v3.2h-3.2M3.4 13.4v-3.2h3.2"/>`,
   onion:       `<circle cx="6" cy="8" r="4"/><circle cx="10" cy="8" r="4" stroke-dasharray="1.8 1.6"/>`,
+  // The onion range: frames between two markers.
+  onionFrames: `<path d="M4.5 3H2.5v10h2M11.5 3h2v10h-2"/><circle cx="6" cy="8" r="0.9"/><circle cx="8" cy="8" r="0.9"/><circle cx="10" cy="8" r="0.9"/>`,
   // Animate's Edit Multiple Frames: stacked frames, all solid.
   multiFrames: `<rect x="2" y="5.5" width="7.5" height="7.5"/><path d="M4.5 5.5V3h7.5v7.5H9.5"/><path d="M7 3V1.5h7.5V9H12"/>`,
   eye:         `<path d="M1.6 8S4 4 8 4s6.4 4 6.4 4-2.4 4-6.4 4-6.4-4-6.4-4z"/><circle cx="8" cy="8" r="1.8"/>`,

@@ -1739,7 +1739,14 @@ own camera and `PathCache`; the lock button (`gizmos.pathZoomLock`, `PathZoomLin
 `pathZoom.ts`) makes a zoom in one the other's, about its centre, and a fit leaves both at
 the smaller fit (`lockedZoom`), so each path is whole. The grid button (`gizmos.pathGrid`, both panels) draws
 lines under the artwork every `pathGridStep` stage pixels, 1, 2 or 5 × 10ⁿ chosen so they
-are at least 16 px apart at the panel's zoom, every fifth brighter. In Local the parent holds still in its frame-0
+are at least 16 px apart at the panel's zoom, every fifth brighter. The onion button is the stage's onion skin (`ui.onionSkin`, one
+switch with the timeline's button and View ▸ Onion Skin): it draws the carried artwork and
+the bone at the frames between the onion markers (`Store.onionSpan`, `onionFrames`), faded
+and coloured by the timeline's onion preferences through the stage's `GhostPainter`; in
+Local each ghost is carried into the frame-0 parent pose too (`heldParent`). The
+button beside it opens the frame counts (`onionFramesPopup.ts`): Before and After, and
+equal presets. They are the timeline's `onionBefore/After`, so the stage takes them too, and
+setting one lets anchored markers follow the playhead again, as the Range menu does. In Local the parent holds still in its frame-0
 pose and the artwork at the playhead is carried into it (`shown` = parent at 0 · parent
 at the playhead⁻¹), so scrubbing moves only the bone. A Spine rig often hangs a limb's
 picture on a control bone above the bones that bend it (the leg mesh on

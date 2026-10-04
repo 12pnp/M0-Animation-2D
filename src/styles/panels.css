@@ -362,6 +362,17 @@
 .popitem:hover .accel { color: rgba(255, 255, 255, 0.75); }
 .popsep { height: 1px; margin: 3px 6px; background: var(--scrollbar); }
 
+/* The Path panels' onion frame counts. */
+.onion-pop { min-width: 0; width: 200px; padding: 8px 10px; display: flex; flex-direction: column; gap: 6px; }
+.onion-pop-title { font-weight: 600; color: var(--fg-strong); }
+.onion-pop-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.onion-pop-row .field { width: 90px; }
+.onion-pop-presets { display: flex; align-items: center; gap: 3px; }
+.onion-pop-presets > span { flex: 1; color: var(--fg-dim); }
+.onion-pop-presets .btn { min-width: 0; padding: 0 6px; }
+.onion-pop-note { color: var(--fg-dim); font-size: var(--fs-sm); line-height: 1.4; }
+.iconbtn.open { background: var(--active); }
+
 /* ── Placeholder body used by panels not yet implemented ────────────────── */
 .stub {
   padding: 10px 12px;
