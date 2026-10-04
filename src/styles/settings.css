@@ -347,7 +347,7 @@
 .exthelp-note { margin-top: 10px; color: var(--fg-dim); }
 
 /* ── Help ▸ About ────────────────────────────────────────────────────────── */
-/* See view/help/AboutDialog.ts. */
+/* Preferences ▸ About: see view/help/AboutPane.ts. */
 .about {
   flex: 1 1 auto;
   min-height: 0;
@@ -356,6 +356,7 @@
   line-height: 1.5;
 }
 .about p { margin: 0 0 8px; }
+.about-copy { margin-top: 14px; }
 .about h4 {
   margin: 20px 0 6px;
   font-size: var(--fs);

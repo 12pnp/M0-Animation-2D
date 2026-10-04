@@ -1,4 +1,3 @@
-import { Modal } from "@/view/widgets/Modal";
 import { h, on } from "@/view/widgets/dom";
 import appSvg from "@/assets/amino-logo.svg?raw";
 // The mark alone, not the full lockup: at this size the "morenoise" lettering
@@ -15,14 +14,13 @@ function link(href: string, text: string, cls = "about-link"): HTMLAnchorElement
 }
 
 /**
- * Who made this and what it stands on. The wording lives in `core/about.ts`
- * so the README and the notices file quote the same text.
+ * Who made this and what it stands on: Preferences ▸ About, which the app
+ * icon opens. The wording lives in `core/about.ts` so the README and the
+ * notices file quote the same text.
  */
-export function openAbout(): void {
-  const modal = new Modal({ title: `About ${APP_NAME}`, width: 520, height: 640 });
-
+export function renderAbout(pane: HTMLElement): void {
   const body = h("div", { class: "about" });
-  modal.body.appendChild(body);
+  pane.appendChild(body);
 
   // Injected with `innerHTML` rather than `svg()` from dom.ts, which forces a
   // 16x16 viewBox. The app icon carries its own rounded-square background; the
@@ -91,10 +89,5 @@ export function openAbout(): void {
       () => { copy.textContent = "Copy failed"; },
     );
   });
-  modal.footer.appendChild(copy);
-  modal.footer.appendChild(h("div", { class: "spacer" }));
-
-  const close = h("button", { class: "btn primary" }, "Close");
-  on(close, "pointerup", () => modal.close());
-  modal.footer.appendChild(close);
+  body.appendChild(h("div", { class: "about-copy" }, copy));
 }

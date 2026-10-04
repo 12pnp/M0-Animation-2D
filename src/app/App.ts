@@ -6,9 +6,8 @@ import { AI_PANEL, type MenuDef, type MenuItemDef, Shell } from "./Shell";
 import { Keymap } from "./Keymap";
 import { COMMANDS_BY_ID, PANEL_COMMANDS } from "@/core/keys/commands";
 import { openKeymapDialog } from "@/view/prefs/KeymapDialog";
-import { openSettings } from "@/view/prefs/SettingsDialog";
+import { type SettingsPage, openSettings } from "@/view/prefs/SettingsDialog";
 import { openExportSettings } from "@/view/export/ExportSettingsDialog";
-import type { PrefsCategory } from "@/core/prefs/prefs";
 import { applyTheme } from "@/view/prefs/theme";
 import { AssetStore } from "./AssetStore";
 import { createLayer, createNode, createProject } from "@/core/doc/defaults";
@@ -31,7 +30,6 @@ import { openAiHelp } from "@/view/agent/AskAiDialog";
 import { AiPanel } from "@/view/agent/AiPanel";
 import { PageVision } from "@/view/agent/AgentVision";
 import { PreviewSession } from "@/preview/PreviewSession";
-import { openAbout } from "@/view/help/AboutDialog";
 import { APP_NAME } from "@/core/about";
 import { StagePlay } from "@/view/viewport/StagePlay";
 import { TimelinePanel } from "@/view/timeline/TimelinePanel";
@@ -124,7 +122,7 @@ export class App {
     // Before the shell and the panels, which read accelerators as they build.
     this.keymap = new Keymap(this.store);
     this.shell = new Shell(this.store);
-    this.shell.onBrand = () => openAbout();
+    this.shell.onBrand = () => this.openPreferences("about");
     this.shell.onSettings = () => this.openPreferences();
     this.workspaces = new Workspaces(this.shell);
     root.appendChild(this.shell.el);
@@ -1128,7 +1126,7 @@ export class App {
 
   /** The Preferences dialog. One place for the parameters that used to be
    *  literals spread across the viewport, the timeline and the autosaver. */
-  openPreferences(category?: PrefsCategory): void {
+  openPreferences(category?: SettingsPage): void {
     openSettings(this.store, {
       resetLayout: () => this.shell.resetLayout(),
       keymap: this.keymap,
@@ -1278,7 +1276,7 @@ export class App {
           "-",
           // A plain menu row: it opens a dialog and carries no chord, so it
           // needs no entry in the command registry.
-          { label: `About ${APP_NAME}\u2026`, run: () => openAbout() },
+          { label: `About ${APP_NAME}\u2026`, run: () => this.openPreferences("about") },
         ],
       },
     ];

@@ -7,6 +7,7 @@ import { NumberField } from "@/view/widgets/NumberField";
 import { clear, h, on } from "@/view/widgets/dom";
 import { ColorField } from "./colorField";
 import { renderShortcutsPane } from "./ShortcutsPane";
+import { renderAbout } from "@/view/help/AboutPane";
 import type { Keymap } from "@/app/Keymap";
 
 /**
@@ -36,8 +37,11 @@ type Row =
       run(store: Store, hooks: Hooks, again: () => void): void };
 
 interface Section { title: string; rows: Row[] }
+/** A Preferences page: a category of settings, or About, which has none. */
+export type SettingsPage = PrefsCategory | "about";
+
 interface Category {
-  id: PrefsCategory;
+  id: SettingsPage;
   label: string;
   sections: Section[];
   /** A pane that is not a list of rows. */
@@ -280,9 +284,13 @@ const CATEGORIES: Category[] = [
     id: "keys", label: "Shortcuts", sections: [],
     render: (pane, store, hooks) => renderShortcutsPane(pane, store, hooks),
   },
+  {
+    id: "about", label: "About", sections: [],
+    render: (pane) => renderAbout(pane),
+  },
 ];
 
-export function openSettings(store: Store, hooks: Hooks, initial?: PrefsCategory): void {
+export function openSettings(store: Store, hooks: Hooks, initial?: SettingsPage): void {
   const prefs = store.prefs;
   const before = prefs.snapshot();
   let current = CATEGORIES.find((c) => c.id === initial) ?? CATEGORIES[0]!;
@@ -313,6 +321,8 @@ export function openSettings(store: Store, hooks: Hooks, initial?: PrefsCategory
 
   const renderPane = () => {
     clear(pane);
+    // About has nothing to restore.
+    reset.hidden = current.id === "about";
     if (current.render) { current.render(pane, store, hooks); return; }
     for (const section of current.sections) {
       const rows = section.rows.map((r) => renderRow(store, hooks, r, () => renderPane()));
@@ -323,7 +333,11 @@ export function openSettings(store: Store, hooks: Hooks, initial?: PrefsCategory
   };
 
   const reset = h("button", { class: "btn" }, "Restore Defaults");
-  on(reset, "pointerup", () => { prefs.resetCategory(current.id); renderPane(); });
+  on(reset, "pointerup", () => {
+    if (current.id === "about") return;
+    prefs.resetCategory(current.id);
+    renderPane();
+  });
 
   const cancel = h("button", { class: "btn" }, "Cancel");
   on(cancel, "pointerup", () => modal.close());

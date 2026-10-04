@@ -1,7 +1,7 @@
 /**
  * Who made this, what it stands on, and under what licence, as data.
  *
- * Pure, like the rest of `core/`: the About dialog renders it, and the same
+ * Pure, like the rest of `core/`: Preferences ▸ About renders it, and the same
  * table is what a THIRD-PARTY-NOTICES file has to agree with. Keeping it here
  * rather than in the dialog means a test can check it, and means the next
  * thing that needs to print the credits (an Electron About panel, a build
