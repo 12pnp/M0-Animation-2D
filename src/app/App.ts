@@ -11,6 +11,7 @@ import { openExportSettings } from "@/view/export/ExportSettingsDialog";
 import { applyTheme } from "@/view/prefs/theme";
 import { AssetStore } from "./AssetStore";
 import { createLayer, createNode, createProject } from "@/core/doc/defaults";
+import { adjacentKeyFrame, keyFrames } from "@/core/doc/keyNav";
 import { Viewport } from "@/view/viewport/Viewport";
 import { contentMatrixOf } from "@/view/viewport/SceneRenderer";
 import { countUsages, LibraryPanel } from "@/view/panels/LibraryPanel";
@@ -1584,6 +1585,17 @@ export class App {
     reg("playback.toggle", () => tl.playback.toggle());
     reg("playback.prev", () => tl.playback.stepBy(-1));
     reg("playback.next", () => tl.playback.stepBy(1));
+    const toKey = (dir: -1 | 1) => {
+      const anim = s.currentAnimation;
+      if (!anim) return;
+      const sel = s.selection.nodes;
+      const f = adjacentKeyFrame(keyFrames(anim, sel.length ? sel : null), s.ui.frame, dir);
+      if (f === null) return;
+      tl.playback.pause();
+      s.setFrame(f);
+    };
+    reg("playback.prevKey", () => toKey(-1), () => !!s.currentAnimation && s.ui.mode === "animate");
+    reg("playback.nextKey", () => toKey(1), () => !!s.currentAnimation && s.ui.mode === "animate");
     reg("playback.start", () => tl.playback.toStart());
     reg("playback.end", () => tl.playback.toEnd());
 

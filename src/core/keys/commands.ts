@@ -143,6 +143,8 @@ export const COMMANDS: CommandDef[] = [
   c("Playback", "playback.toggle", "Play / Pause", ["Space"]),
   c("Playback", "playback.prev", "Previous Frame", [","]),
   c("Playback", "playback.next", "Next Frame", ["."]),
+  c("Playback", "playback.prevKey", "Previous Keyframe", ["Q"]),
+  c("Playback", "playback.nextKey", "Next Keyframe", ["W"]),
   c("Playback", "playback.start", "First Frame", ["Home"]),
   c("Playback", "playback.end", "Last Frame", ["End"]),
 
@@ -156,7 +158,8 @@ export const COMMANDS: CommandDef[] = [
   c("Stage", "stage.nudgeDown10", "Nudge Down 10px", ["Shift+ArrowDown"]),
 
   c("Tools", "tool.select", "Selection Tool", ["V"]),
-  c("Tools", "tool.freeTransform", "Free Transform Tool", ["Q"]),
+  // Q and W step through keyframes, as in Spine.
+  c("Tools", "tool.freeTransform", "Free Transform Tool", ["Shift+Q"]),
   c("Tools", "tool.pivot", "Transform Point Tool", ["P"]),
   c("Tools", "tool.bone", "Bone Tool", ["M"]),
   c("Tools", "tool.ik", "IK Target Tool", ["K"]),

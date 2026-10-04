@@ -295,6 +295,10 @@ animation a hundred frames long".
   governs playback, looping and onion skin. `Playback.stepBy` keeps the arrow keys inside
   the animation — an arrow held down should not wander into the empty frames — but does
   not yank a playhead that is already out there back.
+- Q / W (Previous / Next Keyframe, as in Spine; Free Transform moved to ⇧Q) jump to the
+  nearest key before or after the playhead (`core/doc/keyNav.ts`): of the selected layers'
+  tracks, or with nothing selected every track and the draw order keys. Past the last key
+  W wraps to the first, and Q before the first to the last. Animate only.
 - `FrameGrid.contentWidth` always leaves a full viewport of empty frames past
   `max(duration, playhead + 1)`, so there is somewhere to scroll to, and the reach follows
   the playhead rather than stopping dead one frame past it.
