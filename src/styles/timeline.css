@@ -123,13 +123,14 @@
 }
 .tl-frames .hscroll > div { height: 1px; }
 
-/* ── Footer toolbar ─────────────────────────────────────────────────────── */
+/* ── Toolbar (above the layers and the ruler; `tl-foot` from when it sat
+   at the foot) ─────────────────────────────────────────────────────────── */
 .tl-foot {
   display: flex; align-items: center; gap: 1px;
   padding: 2px 4px;
   height: calc(24px * var(--ui-scale)); flex: none;
   background: var(--bg-panel);
-  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
 }
 .tl-foot .readout {
   display: flex; align-items: baseline; gap: 7px;

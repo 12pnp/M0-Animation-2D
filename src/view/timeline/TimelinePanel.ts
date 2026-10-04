@@ -137,7 +137,8 @@ export class TimelinePanel implements Panel {
     });
 
     const main = h("div", { class: "tl-main" }, this.layers.el, splitter, this.grid.el);
-    this.el = h("div", { class: "tl" }, main, this.buildFooter());
+    // The toolbar sits on top, over the layers and the ruler, as in Spine.
+    this.el = h("div", { class: "tl" }, this.buildFooter(), main);
 
     store.subscribe((topic) => {
       if (topic === "doc" || topic === "timeline" || topic === "selection") {
