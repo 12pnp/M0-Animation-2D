@@ -1,6 +1,6 @@
 import { Modal } from "@/view/widgets/Modal";
 import { h, on } from "@/view/widgets/dom";
-import animoSvg from "@/assets/animo-logo.svg?raw";
+import appSvg from "@/assets/amino-logo.svg?raw";
 // The mark alone, not the full lockup: at this size the "morenoise" lettering
 // in the lockup is a grey smudge. The name is right beside it as real text.
 import logoSvg from "@/assets/morenoise-mark.svg?raw";
@@ -28,7 +28,7 @@ export function openAbout(): void {
   // 16x16 viewBox. The app icon carries its own rounded-square background; the
   // Morenoise mark is drawn for light backgrounds, so its white disc is CSS.
   const appIcon = h("div", { class: "about-icon" });
-  appIcon.innerHTML = animoSvg;
+  appIcon.innerHTML = appSvg;
   const mark = h("span", { class: "about-mark" });
   mark.innerHTML = logoSvg;
 

@@ -5,7 +5,7 @@ import { onAccelChange, withAccel } from "@/view/widgets/accel";
 import { APP_NAME } from "@/core/about";
 // The glyph alone, no rounded-square background: the menu bar already is a
 // dark bar, and the app icon's own panel inside it reads as a second one.
-import markSvg from "@/assets/animo-mark.svg?raw";
+import markSvg from "@/assets/amino-mark.svg?raw";
 import type { Store, ToolId } from "./Store";
 import { SetStageSkins } from "@/core/history/commands";
 import { skinsOf, stageSkinOf } from "@/core/spine/spinePose";
