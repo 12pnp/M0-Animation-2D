@@ -243,7 +243,7 @@
   display: inline-flex; align-items: center; gap: 4px;
   height: calc(18px * var(--ui-scale));
   padding: 0 6px;
-  font: var(--font-mono);
+  font-family: var(--font-mono-family, ui-monospace, monospace); font-size: var(--fs-mono, 10px); line-height: 1.4;
   color: var(--fg-strong);
   background: var(--bg-field);
   border: 1px solid var(--line-soft);

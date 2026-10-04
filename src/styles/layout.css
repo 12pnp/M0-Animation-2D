@@ -144,7 +144,7 @@
   border: 1px solid var(--line-soft);
   border-radius: var(--radius);
   color: var(--fg-strong);
-  font: var(--font-mono);
+  font-family: var(--font-mono-family, ui-monospace, monospace); font-size: var(--fs-mono, 10px); line-height: 1.4;
   white-space: nowrap;
   pointer-events: none;
 }

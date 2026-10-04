@@ -93,9 +93,6 @@
   --fs-title: calc(22px * var(--ui-scale));  /* the app name in About                          */
   --fs-mono: calc(10px * var(--ui-scale));
 
-  --font:      var(--fs)/1.45 var(--font-family);
-  --font-mono: var(--fs-mono)/1.4 var(--font-mono-family);
-
   color-scheme: dark;
 }
 
@@ -107,8 +104,13 @@ html, body, #app {
   overflow: hidden;
 }
 
+/* Longhands, each with its own fallback, rather than `font: var(--font)`:
+   one var that fails to resolve voids a whole shorthand, and the page drops
+   to the browser's default serif. */
 body {
-  font: var(--font);
+  font-family: var(--font-family, system-ui, sans-serif);
+  font-size: var(--fs, 11px);
+  line-height: 1.45;
   color: var(--fg);
   background: var(--bg-app);
   -webkit-font-smoothing: antialiased;
@@ -189,12 +191,46 @@ input[type="checkbox"] {
   display: grid; place-items: center;
   flex: none;
 }
-input[type="checkbox"]:checked::after {
+/* The tick is an image written right here: no rotated borders (they came out
+   upside down in some previews), no pseudo-element, no variable, no mask —
+   nothing that can fail to resolve. Every theme is dark, so it is light. */
+input[type="checkbox"]:checked {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M1.6 5.2 4 7.6 8.6 2.4' fill='none' stroke='%23f0f0f0' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 10px 10px;
+}
+
+/* A checkbox drawn as a toggle switch: `<input type="checkbox" class="switch">`
+   in a `.switch-label` with its text. Only colours the theme sets from code. */
+input[type="checkbox"].switch {
+  width: 24px; height: 14px;
+  border-radius: 7px;
+  border: none;
+  background: var(--bg-field);
+  box-shadow: inset 0 0 0 1px var(--line-soft);
+  display: block;
+  position: relative;
+  transition: background-color 0.12s;
+}
+input[type="checkbox"].switch::before {
   content: "";
-  width: 6px; height: 3px;
-  border: 1.5px solid var(--fg-strong);
-  border-top: none; border-right: none;
-  transform: rotate(-45deg) translate(0.5px, -1px);
+  position: absolute; top: 2px; left: 2px;
+  width: 10px; height: 10px; border-radius: 50%;
+  background: var(--fg-dim);
+  transition: transform 0.12s, background-color 0.12s;
+}
+/* On: the knob carries the colour, the track only a muted tint of it. */
+input[type="checkbox"].switch:checked { background: rgba(var(--accent-rgb), 0.14); box-shadow: none; }
+/* Not the shared focus ring: a box-shadow ring on an OFF switch reads as ON.
+   Keyboard focus gets an outline clear of the switch instead. */
+input[type="checkbox"].switch:focus { box-shadow: inset 0 0 0 1px var(--line-soft); }
+input[type="checkbox"].switch:checked:focus { box-shadow: none; }
+input[type="checkbox"].switch:focus-visible { outline: 1px solid var(--accent-blue); outline-offset: 2px; }
+input[type="checkbox"].switch:checked::before { transform: translateX(10px); background: var(--accent-hot); }
+.switch-label {
+  display: flex; align-items: center; gap: 6px;
+  white-space: nowrap; cursor: pointer;
 }
 
 /* Scrubbable numeric value — dotted-underlined, in the bright accent */

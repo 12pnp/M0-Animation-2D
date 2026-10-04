@@ -358,7 +358,7 @@
 }
 .stub b { color: var(--fg); font-weight: 600; }
 .stub code {
-  font: var(--font-mono);
+  font-family: var(--font-mono-family, ui-monospace, monospace); font-size: var(--fs-mono, 10px); line-height: 1.4;
   background: var(--bg-sunken);
   padding: 1px 4px;
   border-radius: 2px;
@@ -383,7 +383,7 @@
   background: var(--bg-sunken);
   border-top: 1px solid var(--line);
   color: var(--fg-dim);
-  font: var(--font-mono);
+  font-family: var(--font-mono-family, ui-monospace, monospace); font-size: var(--fs-mono, 10px); line-height: 1.4;
   max-height: 40%;
   overflow: auto;
   white-space: pre-wrap;
