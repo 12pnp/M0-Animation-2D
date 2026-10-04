@@ -78,8 +78,10 @@
 
   /* Text. Every `font-size` in the app is one of these tokens; a literal
      would not follow Interface ▸ Text. */
-  --font-family:      "Helvetica Neue", -apple-system, "Segoe UI", Roboto, sans-serif;
-  --font-mono-family: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+  /* JetBrains Mono everywhere (main.ts loads it; UI_FONT_FAMILY in
+     core/prefs/fonts.ts is the same stack for the canvases). */
+  --font-family:      "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, Menlo, Consolas, monospace;
+  --font-mono-family: var(--font-family);
 
   --fs-xxs:   calc(7px * var(--ui-scale));   /* the ease marker                                */
   --fs-xs:    calc(9px * var(--ui-scale));   /* zoom marks, the smallest labels                */

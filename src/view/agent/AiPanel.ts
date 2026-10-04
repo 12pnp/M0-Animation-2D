@@ -1,10 +1,11 @@
 import { h, on } from "@/view/widgets/dom";
 import type { AgentBridge } from "@/app/agent/AgentBridge";
+import type { Panel } from "@/view/widgets/Dock";
 import { statusDot } from "./AskAiDialog";
 
 /**
- * The AI panel beside the stage (AI ▸ Show AI Panel, the stage bar's AI
- * button): a conversation with Claude or GLM about the open rig. The bridge
+ * The AI panel, a dock panel that starts in the left panel (AI ▸ Show AI
+ * Panel, the stage bar's AI button): a conversation with Claude or GLM about the open rig. The bridge
  * process runs the model with the editor's tools (the API key stays there);
  * every edit the model makes is an ordinary undo step, labelled "AI: …".
  * A panel rather than a dialog so the stage stays live beside it while the
@@ -25,7 +26,10 @@ const TABS: Array<{ id: Provider; label: string }> = [
   { id: "anthropic", label: "Claude" },
 ];
 
-export class AiPanel {
+export class AiPanel implements Panel {
+  readonly id = "ai";
+  readonly title = "AI";
+  readonly icon = "ai" as const;
   readonly el: HTMLElement;
   private readonly input: HTMLTextAreaElement;
   /** The tab on: its conversation shows, and the bridge routes to it. */
@@ -36,7 +40,7 @@ export class AiPanel {
   /** The constructor-built send, for `ask`. */
   private sender: ((text: string, pictures: Picture[]) => Promise<void>) | null = null;
 
-  constructor(private readonly bridge: AgentBridge, toggleConnection: () => void, close: () => void) {
+  constructor(private readonly bridge: AgentBridge, toggleConnection: () => void) {
     const status = statusDot(bridge, toggleConnection);
     const logOf = (p: Provider) => h("div", { class: "ai-log", style: p === this.provider ? "" : "display:none" });
     this.logs = { glm: logOf("glm"), anthropic: logOf("anthropic") };
@@ -57,8 +61,6 @@ export class AiPanel {
     showPending();
     on(attach, "pointerup", () => pickPictures((pics) => { attached = [...attached, ...pics].slice(0, 6); showPending(); }));
     const reset = h("button", { class: "btn" }, "New conversation") as HTMLButtonElement;
-    const closeBtn = h("button", { class: "iconbtn", title: "Hide the AI panel" }, "×");
-    on(closeBtn, "pointerup", close);
 
     const tabs = h("div", { class: "ai-tabs" }, ...TABS.map((t) => {
       const b = h("button", { class: `ai-tab${t.id === this.provider ? " active" : ""}` }, t.label) as HTMLButtonElement;
@@ -68,7 +70,7 @@ export class AiPanel {
     }));
 
     this.el = h("div", { class: "ai-panel" },
-      h("div", { class: "ai-panel-head" }, h("span", { class: "ai-panel-title" }, "Ask AI"), status.el, h("div", { class: "spacer" }), reset, closeBtn),
+      h("div", { class: "ai-panel-head" }, h("span", { class: "ai-panel-title" }, "Ask AI"), status.el, h("div", { class: "spacer" }), reset),
       tabs,
       h("div", { class: "ai-panel-body" },
         this.logs.glm,

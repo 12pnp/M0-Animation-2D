@@ -4,6 +4,7 @@ import { FreeTransformTool } from "./FreeTransformTool";
 import { BoneTool } from "./BoneTool";
 import { IkTool } from "./IkTool";
 import { PivotTool } from "./PivotTool";
+import { AxisTool } from "./AxisTool";
 import type { ToolId } from "@/app/Store";
 
 export class ToolManager {
@@ -16,6 +17,7 @@ export class ToolManager {
     this.register(new PivotTool());
     this.register(new BoneTool());
     this.register(new IkTool());
+    for (const kind of ["rotate", "translate", "scale", "shear"] as const) this.register(new AxisTool(kind));
   }
 
   register(tool: Tool): void { this.tools.set(tool.id, tool); }

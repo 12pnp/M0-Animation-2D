@@ -311,7 +311,7 @@
 }
 .exthelp-head { display: flex; align-items: center; gap: 6px; margin-bottom: 10px; }
 .exthelp-head svg { color: var(--accent); }
-.exthelp-id { font-family: ui-monospace, Menlo, Consolas, monospace; color: var(--fg-strong); }
+.exthelp-id { font-family: var(--font-mono-family); color: var(--fg-strong); }
 .exthelp-tag {
   padding: 1px 6px;
   border-radius: 8px;
@@ -327,7 +327,7 @@
   border: 1px solid var(--line);
   border-radius: 4px;
   overflow: auto;
-  font-family: ui-monospace, Menlo, Consolas, monospace;
+  font-family: var(--font-mono-family);
   font-size: var(--fs);
   line-height: 1.45;
   white-space: pre;
@@ -544,6 +544,8 @@
 .ai-copy { position: absolute; top: 6px; right: 6px; }
 
 .ai-panel { display: flex; flex-direction: column; flex: 1 1 auto; min-width: 0; min-height: 0; }
+/* In a dock group or a float window: fill the body, so the log scrolls and the compose box stays put. */
+.pbody > .ai-panel { height: 100%; }
 .ai-panel-head {
   display: flex; align-items: center; gap: 6px;
   height: var(--h-tabstrip); padding: 0 4px 0 10px; flex: none;

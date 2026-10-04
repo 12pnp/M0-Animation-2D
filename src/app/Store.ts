@@ -10,9 +10,12 @@ import { seamFrame } from "@/core/doc/cycle";
 import { clone, invert, mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { invalidateBounds } from "@/core/doc/pose";
 import { PrefsStore } from "./Prefs";
+import { availableTools, toolForMode } from "./toolModes";
 
 export type ToolId =
-  | "select" | "freeTransform" | "pivot" | "bone" | "ik" | "hand" | "zoom";
+  | "select" | "freeTransform" | "pivot" | "bone" | "ik" | "hand" | "zoom"
+  // The stage toolbar's transform tools (view/tools/AxisTool.ts), Spine's.
+  | "rotate" | "translate" | "scale" | "shear";
 
 export interface Selection {
   nodes: NodeId[];
@@ -237,6 +240,16 @@ export class Store {
     this.ui.mode = mode;
     this.emit("doc");
     this.emit("stage");
+    this.fitToolToMode();
+  }
+
+  /** A mode hides the tools it has no use for (`availableTools`); the one in
+   *  hand falls back to the mode's first tool. */
+  private fitToolToMode(): void {
+    const tool = toolForMode(this.ui.tool, this.ui.mode, this.ui.playMode);
+    if (tool === this.ui.tool) return;
+    this.ui.tool = tool;
+    this.emit("tool");
   }
 
   /** Jump to a point in the history list (see the History panel). */
@@ -528,6 +541,7 @@ export class Store {
       if (ui[k] !== v) { ui[k] = v; changed = true; }
     }
     if (changed) this.emit(topic);
+    if (changed && "playMode" in patch) this.fitToolToMode();
   }
 
   /**
@@ -546,6 +560,8 @@ export class Store {
 
   setTool(tool: ToolId): void {
     if (this.ui.tool === tool) return;
+    // A tool the mode hides: its shortcut does nothing, as its button is gone.
+    if (!availableTools(this.ui.mode, this.ui.playMode).includes(tool)) return;
     this.ui.tool = tool;
     // Picking a skeleton tool while bones are hidden would leave the user
     // clicking at things they cannot see.

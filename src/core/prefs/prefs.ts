@@ -13,6 +13,7 @@
 
 import { type Overrides, sanitizeOverrides } from "@/core/keys/keymap";
 import { UI_FONT_SIZES, type UiFontSize } from "@/core/prefs/fonts";
+import type { Axes } from "@/core/math/axes";
 import { DEFAULT_THEME_ID, THEME_IDS } from "@/core/prefs/themes";
 
 export interface GeneralPrefs {
@@ -103,6 +104,26 @@ export interface GizmoPrefs {
   showBonePaths: boolean;
   bonePathPoint: "tip" | "origin";
   bonePathBones: "selected" | "all";
+  /** The toolbar at the foot of the stage (Spine's), and what it holds. */
+  showToolbar: boolean;
+  /** Which frame Rotate / Translate values are read in (`core/math/axes.ts`). */
+  axes: Axes;
+  /** Transforming a node leaves its child bones / images where they are. */
+  compensateBones: boolean;
+  compensateImages: boolean;
+  /** Translate and its fields round to whole pixels. */
+  snapPixels: boolean;
+  /** The visibility table: bones are shown by `showBones`. Names off by
+   *  default, so the stage looks as it did before the table existed. */
+  selectBones: boolean;
+  nameBones: boolean;
+  showImages: boolean;
+  selectImages: boolean;
+  nameImages: boolean;
+  showIk: boolean;
+  selectIk: boolean;
+  /** Every IK constraint's name, not only the one the selection drives. */
+  nameIk: boolean;
   handleSize: number;
   select: string;
   marquee: string;
@@ -219,6 +240,19 @@ export const DEFAULT_PREFS: Prefs = {
     showBonePaths: true,
     bonePathPoint: "tip",
     bonePathBones: "selected",
+    showToolbar: true,
+    axes: "parent",
+    compensateBones: false,
+    compensateImages: false,
+    snapPixels: false,
+    selectBones: true,
+    nameBones: false,
+    showImages: true,
+    selectImages: true,
+    nameImages: false,
+    showIk: true,
+    selectIk: true,
+    nameIk: false,
     handleSize: 5.5,
     select: "#0090a7",
     marquee: "rgba(74,144,217,0.18)",
@@ -280,6 +314,7 @@ export const PREF_ENUMS: Record<string, readonly string[]> = {
   "stage.wheel": ["zoom", "pan"],
   "gizmos.bonePathPoint": ["tip", "origin"],
   "gizmos.bonePathBones": ["selected", "all"],
+  "gizmos.axes": ["local", "parent", "world"],
 };
 
 export function clampPref(path: string, value: number): number {

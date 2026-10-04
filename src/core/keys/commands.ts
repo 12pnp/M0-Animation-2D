@@ -95,6 +95,7 @@ export const COMMANDS: CommandDef[] = [
   c("View", "view.snapTo.toObjects", "Snap to Objects"),
   c("View", "view.snapTo.toStage", "Snap to Stage Edges & Centre"),
   c("View", "view.snapTo.toPixel", "Snap to Whole Pixels"),
+  c("View", "view.toolbar", "Show Toolbar"),
   c("View", "view.showBones", "Show Bones"),
   c("View", "view.showGizmos", "Show Gizmos"),
   c("View", "view.showBonePaths", "Show Bone Paths", ["Alt+B"]),
@@ -152,6 +153,10 @@ export const COMMANDS: CommandDef[] = [
   c("Tools", "tool.ik", "IK Target Tool", ["K"]),
   c("Tools", "tool.hand", "Hand Tool", ["H"]),
   c("Tools", "tool.zoom", "Zoom Tool", ["Z"]),
+  c("Tools", "tool.rotate", "Rotate Tool", ["R"]),
+  c("Tools", "tool.translate", "Translate Tool", ["T"]),
+  c("Tools", "tool.scale", "Scale Tool", ["S"]),
+  c("Tools", "tool.shear", "Shear Tool", ["E"]),
 
   ...PANEL_COMMANDS.map((p) => c("Window", `window.${p.id}`, p.label)),
   ...PANEL_COMMANDS.filter((p) => p.id !== "timeline")

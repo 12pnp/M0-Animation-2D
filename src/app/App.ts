@@ -1,6 +1,6 @@
 import { h, on } from "@/view/widgets/dom";
 import { SNAP_TARGETS, Store, type ToolId } from "./Store";
-import { type MenuDef, type MenuItemDef, Shell } from "./Shell";
+import { AI_PANEL, type MenuDef, type MenuItemDef, Shell } from "./Shell";
 import { Keymap } from "./Keymap";
 import { COMMANDS_BY_ID, PANEL_COMMANDS } from "@/core/keys/commands";
 import { openKeymapDialog } from "@/view/prefs/KeymapDialog";
@@ -15,6 +15,7 @@ import { contentMatrixOf } from "@/view/viewport/SceneRenderer";
 import { countUsages, LibraryPanel } from "@/view/panels/LibraryPanel";
 import { PropertiesPanel } from "@/view/panels/PropertiesPanel";
 import { OutlinePanel } from "@/view/panels/OutlinePanel";
+import { StageToolbar } from "@/view/viewport/StageToolbar";
 import { HistoryPanel } from "@/view/panels/HistoryPanel";
 import { ReferencePanel } from "@/view/panels/ReferencePanel";
 import { ReferenceService } from "./ReferenceService";
@@ -84,7 +85,7 @@ import { cloneTf, type Transform } from "@/core/math/Transform";
 import { applyVec, mat } from "@/core/math/Matrix2D";
 import { moveBy, snapshotOf, topmostSelected } from "@/view/tools/transformOps";
 import { alertDialog, confirmDialog, promptText } from "@/view/widgets/dialogs";
-import { workspaceNameError } from "@/view/widgets/workspaces";
+import { LAYOUT_PRESETS, presetWorkspace, workspaceNameError } from "@/view/widgets/workspaces";
 import { Workspaces } from "./Workspaces";
 import { AtlasTooSmall, oversizeAdvice } from "@/core/atlas/oversize";
 import { busy } from "@/view/widgets/Busy";
@@ -130,6 +131,8 @@ export class App {
     this.viewport.onNotify = (message) => this.toast.show(message);
     this.viewport.onContextMenu = (x, y) => this.stageMenu(x, y);
     this.viewport.assetsRef = this.assets;
+    // Spine's toolbar, floating at the foot of the stage.
+    this.shell.stageHost.appendChild(new StageToolbar(this.store, () => this.viewport.pose).el);
 
 
     this.library = new LibraryPanel(
@@ -154,8 +157,7 @@ export class App {
       if (state !== lastAgentState && detail) this.toast.show(detail, false);
       lastAgentState = state;
     });
-    this.aiPanel = new AiPanel(this.agentBridge, () => this.toggleAgent(), () => this.shell.setAiOpen(false));
-    this.shell.aiWrap.appendChild(this.aiPanel.el);
+    this.aiPanel = new AiPanel(this.agentBridge, () => this.toggleAgent());
     this.preview = new PreviewPanel(
       this.previewSession,
       () => this.shell.floatPanel("preview"),
@@ -171,6 +173,7 @@ export class App {
     this.shell.layoutDocks(
       [["properties"], ["library", "outline"], ["preview"]],
       [["timeline", "reference", "poses"]],
+      [[AI_PANEL]],
     );
 
     document.body.appendChild(this.toast.el);
@@ -260,12 +263,13 @@ export class App {
     this.shell.addRightPanel(new OutlinePanel(this.store));
     this.shell.addRightPanel(new HistoryPanel(this.store));
     this.shell.addRightPanel(this.preview);
+    this.shell.addLeftPanel(this.aiPanel);
 
     this.shell.addBottomPanel(this.timeline);
     this.shell.addBottomPanel(new ReferencePanel(this.store, this.assets, this.references, (m, e) => this.toast.show(m, e)));
     this.shell.addBottomPanel(new PosesPanel(
       this.store, this.agent, this.poses,
-      (text, pictures) => { this.shell.setAiOpen(true); this.aiPanel.ask(text, pictures); },
+      (text, pictures) => { this.shell.showPanel(AI_PANEL); this.aiPanel.ask(text, pictures); },
       (m, e) => this.toast.show(m, e),
     ));
   }
@@ -1175,6 +1179,7 @@ export class App {
             items: SNAP_TARGETS.map((t) => it(`view.snapTo.${t.key}`, { label: t.label })),
           },
           "-",
+          it("view.toolbar"),
           it("view.showBones"),
           it("view.showGizmos"),
           it("view.showBonePaths"),
@@ -1244,18 +1249,26 @@ export class App {
     ];
   }
 
-  /** Window ▸ Workspace: the saved arrangements, the current one ticked. */
-  private workspaceItems(): MenuItemDef[] {
+  /** Window ▸ Workspace: the built-in grids, then the saved arrangements with
+   *  the current one ticked. */
+  private workspaceItems(): Array<MenuItemDef | "-"> {
+    const presets = LAYOUT_PRESETS.map((p): MenuItemDef => ({
+      label: p.label,
+      run: () => {
+        this.shell.applyWorkspace(presetWorkspace(p));
+        this.workspaces.clearCurrent();
+      },
+    }));
     const list = this.workspaces.list();
-    if (list.length === 0) return [{ label: "No saved workspaces", enabled: () => false }];
+    if (list.length === 0) return presets;
     const current = this.workspaces.current;
-    return list.map((w) => ({
+    return [...presets, "-", ...list.map((w) => ({
       label: w.name,
       checked: () => w.name === current,
       run: () => {
         if (this.workspaces.load(w.name)) this.toast.show(`Workspace “${w.name}”`);
       },
-    }));
+    }))];
   }
 
   private async saveWorkspace(): Promise<void> {
@@ -1374,8 +1387,8 @@ export class App {
     reg("file.importPsdLayers", () => this.pickPsd(true));
     reg("file.openSpine", () => this.pickSpine());
     reg("ai.connect", () => this.toggleAgent(), undefined, () => this.agentBridge.state !== "off");
-    reg("ai.ask", () => { this.shell.setAiOpen(true); this.aiPanel.focus(); });
-    reg("ai.panel", () => this.shell.setAiOpen(!this.shell.aiOpen), undefined, () => this.shell.aiOpen);
+    reg("ai.ask", () => { this.shell.showPanel(AI_PANEL); this.aiPanel.focus(); });
+    reg("ai.panel", () => this.shell.togglePanel(AI_PANEL), undefined, () => this.shell.isPanelShown(AI_PANEL));
     reg("ai.help", () => openAiHelp(this.agentBridge, () => this.toggleAgent()));
     reg("file.export", () => void this.exportProject());
     reg("file.exportFolder", () => void this.exportToFolder());
@@ -1439,6 +1452,8 @@ export class App {
         undefined, () => s.prefs.value.snap[t.key]);
     }
     flag("view.showBones", "showBones");
+    reg("view.toolbar", () => s.prefs.set("gizmos", { showToolbar: !s.prefs.value.gizmos.showToolbar }),
+      undefined, () => s.prefs.value.gizmos.showToolbar);
     flag("view.showGizmos", "showGizmos");
     flag("view.showBonePaths", "showBonePaths");
     reg("view.onionSkin", () => s.setUi({ onionSkin: !s.ui.onionSkin }, "stage"), undefined, () => s.ui.onionSkin);
@@ -1470,7 +1485,7 @@ export class App {
       () => this.selectedLayer()?.isMask === true);
     reg("modify.masked", () => this.toggleMasked(), () => this.canToggleMasked(),
       () => !!this.selectedLayer()?.maskedBy);
-    reg("modify.documentSettings", () => { s.clearSelection(); this.shell.rightDock.focus("properties"); });
+    reg("modify.documentSettings", () => { s.clearSelection(); this.shell.showPanel("properties"); });
     reg("modify.playMode", () => this.play.toggle(), undefined, () => s.ui.playMode);
     // Editing the bind pose while the runtime is on screen would change a
     // stage nobody can see.
@@ -1533,7 +1548,10 @@ export class App {
   }
 }
 
-const TOOL_IDS: ToolId[] = ["select", "freeTransform", "pivot", "bone", "ik", "hand", "zoom"];
+const TOOL_IDS: ToolId[] = [
+  "select", "freeTransform", "pivot", "bone", "ik", "hand", "zoom",
+  "rotate", "translate", "scale", "shear",
+];
 
 function uniqueSymbolName(store: Store, base: string): string {
   const taken = new Set(Object.values(store.project.items).map((i) => i.name));

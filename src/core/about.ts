@@ -11,6 +11,13 @@
 export const APP_NAME = "Amino Spine2D";
 export const APP_TAGLINE = "A Flash-style animation editor for Spine 4.3";
 
+/** The browser tab's title: the file first, since that is what tells two
+ *  open tabs apart, and the same " *" as the menu bar while it is unsaved. */
+export function documentTitle(fileName: string, dirty: boolean): string {
+  const name = fileName.trim();
+  return name ? `${name}${dirty ? " *" : ""} — ${APP_NAME}` : APP_NAME;
+}
+
 /**
  * Replaced at build time by `define` in vite.config.ts. `typeof` rather than a
  * plain read: vitest runs its own config and never substitutes the token, and
@@ -102,6 +109,12 @@ export const CREDITS: readonly Credit[] = Object.freeze([
     license: "MIT AND Zlib",
     url: "https://github.com/nodeca/pako",
     what: "Decompresses PSD data for ag-psd.",
+  },
+  {
+    name: "JetBrains Mono",
+    license: "OFL-1.1",
+    url: "https://github.com/JetBrains/JetBrainsMono",
+    what: "The typeface of the whole interface.",
   },
   {
     name: "Vite, TypeScript, Vitest",

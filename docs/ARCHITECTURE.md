@@ -1007,9 +1007,40 @@ flowchart LR
   `GLM_API_KEY` on api.z.ai), picked by `AMINO_PROVIDER` — `glm` whenever `GLM_API_KEY` is
   set. `AMINO_MODEL` (claude-sonnet-5-5 / glm-4.6) and `AMINO_API_URL` (for open.bigmodel.cn)
   override; the conversation with the page stays Anthropic-shaped either way. The chat is a
-  panel left of the stage (`view/agent/AiPanel.ts`, in `Shell.aiWrap`), not a dialog, so the
-  stage stays live beside it: the stage bar's AI button, AI ▸ Show AI Panel (⌘⇧L) or Ask AI…
-  opens it, its right edge drags its width, and both are remembered (`animo.sizes`).
+  dock panel (`view/agent/AiPanel.ts`, id `ai`), not a dialog, so the stage stays live beside
+  it. It starts in the left panel, a dock column between the left rail and the stage
+  (`Shell.leftDock`, shown and hidden by the rail's top button), and drags anywhere like any
+  tab. The stage bar's AI button, AI ▸ Show AI Panel (⌘⇧L) or Ask AI… show it wherever it is
+  (`Shell.showPanel`, which also opens its column); hiding it closes the tab, and folds the
+  left panel away when that leaves it empty. The left rail and the right rail are the same
+  component (`Shell.railButton`): a side toggle on top, and one show/hide button per panel the
+  side holds — the left one's at the foot of its rail — rebuilt by `syncRails` on every dock
+  change, so a dragged panel's button moves with it.
+- **The tools are a toolbar on the stage**, Spine's (`view/viewport/StageToolbar.ts`, mounted
+  in `stage-host`; View ▸ Show Toolbar). It stops pointerdown / wheel / dblclick / contextmenu
+  itself, or a click on a button would also start a drag on the stage. Its cards:
+  - Tools. Only those the mode offers, Spine's way (`availableTools` in `app/toolModes.ts`):
+    Setup all; Animate no Bone / IK Target / Transform Point (they change the skeleton, not a
+    key; IK targets still drag with Pose); Play mode Hand and Zoom. A hidden tool keeps its
+    slot, so the bar does not shift. `Store.setMode` and a `playMode` change drop a tool the
+    mode hides (`toolForMode`), and `Store.setTool` refuses one, so its shortcut does nothing.
+  - Rotate / Translate / Scale / Shear: tools (`view/tools/AxisTool.ts`, R T S E) that act on
+    the selection from a drag anywhere, about each node's own origin, and fields with the
+    selection's values. Shear has one field: the Flash transform has one shear angle
+    (`skewX − skewY`), Spine's shear Y stays 0.
+  - Axes: Local / Parent / World, the frame Rotate and Translate are read and written in, and
+    Translate's Shift lock (`core/math/axes.ts`). World is the edited symbol's root space.
+  - Compensation: Bones / Images keep a transformed node's direct children where they are
+    (`core/doc/compensate.ts`, `reexpress`); in Animate that keys them too. Pixels rounds x/y.
+  - Visibility: Bones / Images / IK × pick, show, name (`SelectTool.hitAt` and `unpickable`,
+    the renderer's `hiddenLayers`, the overlay). A bone wins a click only within 5 px of its
+    line, so the art around it stays clickable.
+
+  Every edit from the bar, drag or field, goes `captureEditBase` → `finishEdit` (Pixels,
+  compensation) → `applyEdit`, so Setup writes the rest pose and Animate keys, one undo step
+  per drag or scrub. Its settings are `prefs.gizmos`, so they persist. A panel new to a stored
+  layout goes where `setDefault` puts it. The left panel's width and open state stay in
+  `animo.sizes` as `ai` / `aiOpen`, the names from when it held only the chat.
 - **Rigging takes positions in skeleton space** (y up, what `get_pose` and `render_frame`
   report): a bone as its joint and tip, a picture as the pixel that turns with the bone (its
   pivot), where that pixel goes, and its world rotation (0 = upright, as drawn). That is what a
@@ -1811,6 +1842,14 @@ layouts plus the shell's region sizes, stored per browser under `animo.workspace
 (`app/Workspaces.ts`; the list rules are pure in `view/widgets/workspaces.ts`). Loading one is
 live — `Shell.applyWorkspace` → `Dock.applyLayouts`, which also moves panels between docks — not
 a reload, which would put unsaved work through the restore banner. Reset Layout still reloads.
+
+The right dock is a row of `Dock` columns (`animo.dock.right`, `animo.dock.right.2`, …; the
+count is `rightColumns` in `animo.sizes`). A workspace stores the first as `right` and the rest
+as `columns`; one saved before columns existed has none, i.e. one column. The built-in grids
+(1 × 1 … 2 × 3) are `LAYOUT_PRESETS`, and each must place every panel, the AI panel in the
+left dock included (tested). A workspace's `left` is the left panel; one saved before that
+existed leaves the left panel alone. A column a
+workspace drops is disposed after its panels move to the first column, so none is lost.
 
 Floating is deliberately *not* `window.open`. In an embedded browser pane a same-origin
 `window.open` can navigate the current tab rather than opening a popup, losing the editor and

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   APP_NAME, APP_TAGLINE, APP_VERSION, CREDITS, LICENSE_ID, LICENSE_NOTE,
-  REPO_URL, TRADEMARK_NOTE,
+  REPO_URL, TRADEMARK_NOTE, documentTitle,
 } from "@/core/about";
 
 /**
@@ -40,4 +40,15 @@ describe("about", () => {
     expect(TRADEMARK_NOTE).toContain("Esoteric Software");
     expect(REPO_URL.startsWith("https://github.com/")).toBe(true);
   });
+});
+
+describe("documentTitle", () => {
+  const cases: Array<[string, boolean, string]> = [
+    ["Untitled.animo", false, `Untitled.animo — ${APP_NAME}`],
+    ["frog.animo", true, `frog.animo * — ${APP_NAME}`],
+    ["  ", false, APP_NAME],
+  ];
+  for (const [name, dirty, want] of cases) {
+    it(`${JSON.stringify(name)}${dirty ? ", unsaved" : ""}`, () => expect(documentTitle(name, dirty)).toBe(want));
+  }
 });

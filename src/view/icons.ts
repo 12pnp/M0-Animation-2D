@@ -16,6 +16,12 @@ export const ICON = {
                 <circle cx="13" cy="5" r="2.2" stroke-dasharray="1.6 1.4"/>`,
   hand:        `<path d="M5 8V4.2a1.1 1.1 0 0 1 2.2 0V8m0-.6V3.4a1.1 1.1 0 0 1 2.2 0V8m0-.4V4.4a1.1 1.1 0 0 1 2.2 0v5.1c0 2.6-1.6 4.5-4 4.5-2.1 0-3.2-1-4.1-2.6L2.8 9.6a1.1 1.1 0 0 1 1.8-1.2z"/>`,
   zoom:        `<circle cx="7" cy="7" r="4.4"/><path d="M10.4 10.4 L14 14"/>`,
+  // The stage toolbar's transform tools (Spine's).
+  rotate:      `<path d="M12.8 8.6A4.9 4.9 0 1 1 11 4.4"/><path d="M11.4 1.8v3h-3"/>`,
+  translate:   `<path d="M8 1.5v13M1.5 8h13"/><path d="M6 3.5 8 1.5l2 2M6 12.5l2 2 2-2M3.5 6 1.5 8l2 2M12.5 6l2 2-2 2"/>`,
+  scale:       `<rect x="2" y="7" width="7" height="7"/><path d="M7.5 8.5 14 2M10 2h4v4"/>`,
+  shear:       `<path d="M5 3h9l-3 10H2z"/>`,
+  tag:         `<path d="M2.5 8.2V2.5h5.7l6 6-5.7 5.7z"/><circle cx="5.3" cy="5.3" r="1"/>`,
 
   // ── Timeline ───────────────────────────────────────────────────────────
   newLayer:    `<path d="M2.5 5.5h7v8h-7z"/><path d="M5.5 2.5h8v8"/>`,
@@ -83,6 +89,9 @@ export const ICON = {
   scene:       `<rect x="2" y="3.5" width="12" height="9" rx="1"/><path d="M2 6.2h12"/>`,
   float:       `<rect x="2.5" y="5.5" width="8" height="8"/><path d="M8.5 2.5h5v5"/><path d="M13.5 2.5 8 8"/>`,
   close:       `<path d="M4 4l8 8M12 4l-8 8"/>`,
+  sidebarLeft: `<rect x="2" y="3" width="12" height="10" rx="1.2"/><path d="M6 3v10"/>`,
+  sidebarRight: `<rect x="2" y="3" width="12" height="10" rx="1.2"/><path d="M10 3v10"/>`,
+  ai:          `<path d="M8 2.5 9.3 6.7 13.5 8 9.3 9.3 8 13.5 6.7 9.3 2.5 8 6.7 6.7Z"/>`,
   settings:    `<path d="M14.22 6.48 14.22 9.52 12.59 9.73 12.46 10.02 13.47 11.32 11.32 13.47 10.02 12.46 9.73 12.59 9.52 14.22 6.48 14.22 6.27 12.59 5.98 12.46 4.68 13.47 2.53 11.32 3.54 10.02 3.41 9.73 1.78 9.52 1.78 6.48 3.41 6.27 3.54 5.98 2.53 4.68 4.68 2.53 5.98 3.54 6.27 3.41 6.48 1.78 9.52 1.78 9.73 3.41 10.02 3.54 11.32 2.53 13.47 4.68 12.46 5.98 12.59 6.27Z"/>
                 <circle cx="8" cy="8" r="2.1"/>`,
   link:        `<path d="M6.4 9.6 9.6 6.4"/>

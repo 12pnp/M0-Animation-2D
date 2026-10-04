@@ -28,8 +28,15 @@ export function uiPx(base: number, size: UiFontSize): number {
   return Math.max(6, Math.round(base * UI_FONT_SCALES[size]));
 }
 
+/**
+ * The one typeface of the whole UI, monospaced, bundled from
+ * `@fontsource-variable/jetbrains-mono` so it needs no network. The CSS tokens
+ * `--font-family` / `--font-mono-family` in theme.css carry the same stack.
+ */
+export const UI_FONT_FAMILY = "'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace";
+
 /** The `ctx.font` string for a canvas that cannot inherit anything. */
 export function uiFont(base: number, size: UiFontSize, weight?: number): string {
-  const px = `${uiPx(base, size)}px -apple-system, 'Helvetica Neue', sans-serif`;
+  const px = `${uiPx(base, size)}px ${UI_FONT_FAMILY}`;
   return weight ? `${weight} ${px}` : px;
 }

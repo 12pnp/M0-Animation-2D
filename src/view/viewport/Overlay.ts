@@ -55,6 +55,10 @@ export interface OverlayOptions {
   showOrigin: boolean;
   showGuides: boolean;
   showBones: boolean;
+  /** The stage toolbar's visibility table: IK targets and their links, and
+   *  which names are written on the stage. */
+  showIk: boolean;
+  names: { bones: boolean; images: boolean; ik: boolean };
   /** The reference marks on a selected node — never the selection box itself,
    *  which is what says something IS selected. */
   showGizmos: boolean;
@@ -123,6 +127,7 @@ export class Overlay {
     this.drawEmptySymbols(ctx, camera, project, pose);
     if (opts.bonePaths) this.drawBonePaths(ctx, camera, opts.bonePaths);
     if (opts.showBones) this.drawBones(ctx, camera, symbol, pose, opts);
+    if (opts.names.images) this.drawImageNames(ctx, camera, pose);
     this.drawSelection(
       ctx, camera, project, symbol, pose, opts.selection, !!opts.gizmo, opts.when,
       opts.showGizmos,
@@ -804,7 +809,7 @@ export class Overlay {
       const isTarget = targets.has(e.nodeId);
 
       if (isTarget) {
-        this.drawIkTarget(ctx, a, selected);
+        if (opts.showIk) this.drawIkTarget(ctx, a, selected);
         continue;
       }
 
@@ -834,6 +839,8 @@ export class Overlay {
       ctx.arc(a.x, a.y, 2.5, 0, Math.PI * 2);
       ctx.fillStyle = this.C.boneCore;
       ctx.fill();
+
+      if (opts.names.bones) this.drawName(ctx, e.node.name, (a.x + b.x) / 2, (a.y + b.y) / 2 - 6, this.C.bone);
     }
 
     // A line from each effector's tip to its target, so a constraint is
@@ -846,7 +853,7 @@ export class Overlay {
     ctx.lineWidth = 1;
     ctx.font = uiFont(9, this.F);
     ctx.textAlign = "center";
-    for (const k of symbol.ik) {
+    for (const k of opts.showIk ? symbol.ik : []) {
       const bone = pose.byNode.get(k.boneId);
       const target = pose.byNode.get(k.targetId);
       if (!bone || !target) continue;
@@ -865,8 +872,8 @@ export class Overlay {
       ctx.moveTo(tip.x, tip.y);
       ctx.lineTo(t.x, t.y);
       ctx.stroke();
-      if (active) {
-        ctx.fillStyle = this.C.ikLinkActive;
+      if (active || opts.names.ik) {
+        ctx.fillStyle = active ? this.C.ikLinkActive : this.C.ikLink;
         ctx.fillText(k.name, (tip.x + t.x) / 2, (tip.y + t.y) / 2 - 4);
       }
     }
@@ -889,6 +896,29 @@ export class Overlay {
       ctx.arc(a.x, a.y, 3, 0, Math.PI * 2);
       ctx.fillStyle = this.C.bone;
       ctx.fill();
+    }
+  }
+
+  /** A name written on the stage, on a dark halo so it reads over any art. */
+  private drawName(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, color: string): void {
+    ctx.save();
+    ctx.font = uiFont(9, this.F);
+    ctx.textAlign = "center";
+    ctx.lineJoin = "round";
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = "rgba(0,0,0,0.7)";
+    ctx.strokeText(text, x, y);
+    ctx.fillStyle = color;
+    ctx.fillText(text, x, y);
+    ctx.restore();
+  }
+
+  /** Every image's (and symbol's) name, at its origin. */
+  private drawImageNames(ctx: CanvasRenderingContext2D, cam: Camera, pose: Pose): void {
+    for (const e of pose.entries) {
+      if (e.node.kind === "bone" || !e.visible || !e.display) continue;
+      const o = cam.toScreen(e.world.tx, e.world.ty);
+      this.drawName(ctx, e.node.name, o.x, o.y - 4, this.C.select);
     }
   }
 

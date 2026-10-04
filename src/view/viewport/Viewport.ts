@@ -254,8 +254,14 @@ export class Viewport {
     this.ghostPoses = [];
     this.drawOtherFrames(sc, view);
 
+    // The visibility table can hide every image and symbol, leaving the rig.
+    const gizmoPrefs = store.prefs.value.gizmos;
+    const hiddenArt = gizmoPrefs.showImages ? undefined : new Set(
+      Object.values(store.currentSymbol.nodes).filter((n) => n.kind !== "bone").map((n) => n.id as string),
+    );
     this.lastPose = this.renderer.draw(
       sc, store.currentSymbol, store.currentAnimation, store.ui.frame, store.ui.mode, view,
+      { hiddenLayers: hiddenArt },
     );
     if (ref && stagePrefs.referenceAbove) drawReference(sc, view, ref, store.ui.frame, this.assets, stagePrefs.referenceOpacity);
     sc.restore();
@@ -276,6 +282,8 @@ export class Viewport {
       showGrid: store.ui.showGrid,
       showGuides: store.ui.showGuides,
       showBones: store.ui.showBones,
+      showIk: gizmoPrefs.showIk,
+      names: { bones: gizmoPrefs.nameBones, images: gizmoPrefs.nameImages, ik: gizmoPrefs.nameIk },
       showGizmos: store.ui.showGizmos,
       setupMode: store.ui.mode === "setup",
       showOrigin: store.prefs.value.stage.showOrigin,

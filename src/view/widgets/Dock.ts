@@ -66,6 +66,21 @@ export class Dock {
     this.panels.set(panel.id, panel);
   }
 
+  /** Every panel this dock holds, docked, floating or closed, in the order they
+   *  appear: docked tabs top to bottom, then floats, then closed ones. */
+  panelList(): Panel[] {
+    const ids = [
+      ...this.layout.groups.flatMap((g) => g.panelIds),
+      ...Object.keys(this.layout.floats),
+      ...this.layout.closed,
+    ];
+    for (const id of this.panels.keys()) if (!ids.includes(id)) ids.push(id);
+    return ids.flatMap((id) => this.panels.get(id) ?? []);
+  }
+
+  /** No docked groups: the column shows only its drop hint. */
+  isEmpty(): boolean { return this.layout.groups.length === 0; }
+
   /** A copy of the current arrangement, for a workspace. */
   snapshot(): DockLayout {
     return structuredClone(this.layout);
@@ -74,17 +89,23 @@ export class Dock {
   /**
    * Arrange every dock at once, as a workspace saved them. A panel goes to the
    * dock whose layout places it, so one dragged across docks follows; a panel
-   * no layout mentions (new since the save) stays where it is.
+   * no layout mentions (new since the save) stays where it is, unless its dock
+   * is in `retiring`: then it goes to the first dock. Retiring docks are
+   * disposed.
    */
-  static applyLayouts(entries: Array<[Dock, DockLayout]>): void {
-    const all = new Map<string, Panel>();
-    for (const [d] of entries) for (const [id, p] of d.panels) all.set(id, p);
-    for (const [id, panel] of all) {
-      const home = entries.find(([, l]) => placesPanel(l, id))?.[0];
-      if (!home || home.panels.has(id)) continue;
-      for (const [d] of entries) d.panels.delete(id);
+  static applyLayouts(entries: Array<[Dock, DockLayout]>, retiring: Dock[] = []): void {
+    const all = new Map<string, [Panel, Dock]>();
+    for (const d of [...entries.map(([x]) => x), ...retiring]) {
+      for (const [id, p] of d.panels) all.set(id, [p, d]);
+    }
+    for (const [id, [panel, owner]] of all) {
+      const home = entries.find(([, l]) => placesPanel(l, id))?.[0]
+        ?? (retiring.includes(owner) ? entries[0]![0] : owner);
+      if (home === owner) continue;
+      owner.panels.delete(id);
       home.panels.set(id, panel);
     }
+    for (const d of retiring) d.dispose();
     for (const [d, l] of entries) {
       d.layout = structuredClone(l);
       d.layout.floats ??= {};
@@ -94,6 +115,17 @@ export class Dock {
       d.save();
     }
     for (const [d] of entries) d.render();
+  }
+
+  /** Remove this dock for good: its element, its float windows, its stored layout. */
+  dispose(): void {
+    for (const win of this.floatWins.values()) win.dispose();
+    this.floatWins.clear();
+    this.panels.clear();
+    this.el.remove();
+    try { localStorage.removeItem(this.storageKey); } catch { /* ignore */ }
+    const i = docks.indexOf(this);
+    if (i >= 0) docks.splice(i, 1);
   }
 
   /** Did the stored layout place this panel here? A tab dragged across docks
@@ -146,8 +178,12 @@ export class Dock {
       // tab beside its group-mate rather than a group of its own.
       const mates = this.defaults.find((g) => g.includes(id))?.filter((m) => m !== id) ?? [];
       const home = this.layout.groups.find((g) => mates.some((m) => g.panelIds.includes(m)));
-      if (home) home.panelIds.push(id);
-      else this.layout.groups.push({ panelIds: [id], activeId: id, collapsed: false, weight: 1 });
+      if (home) { home.panelIds.push(id); continue; }
+      // A group of its own goes where the defaults put it: a panel added at
+      // the top of the column (Tools) arrives at the top, not the bottom.
+      const at = this.defaults.findIndex((g) => g.includes(id));
+      this.layout.groups.splice(at < 0 ? this.layout.groups.length : Math.min(at, this.layout.groups.length), 0,
+        { panelIds: [id], activeId: id, collapsed: false, weight: 1 });
     }
   }
 
@@ -291,6 +327,9 @@ export class Dock {
         this.el.appendChild(this.makeSplitter(gi, gi + 1 + nextExpanded));
       }
     });
+
+    // An empty column still takes a drop (`dropTargetAt`'s "empty"); say so.
+    if (this.layout.groups.length === 0) this.el.appendChild(h("div", { class: "dock-empty" }, "Drag a panel tab here"));
 
     this.renderFloats();
     this.onLayoutChange?.();

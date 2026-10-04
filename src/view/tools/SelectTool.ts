@@ -124,11 +124,7 @@ export class SelectTool implements Tool {
       const r = rectFromPoints(this.startContent.x, this.startContent.y, content.x, content.y);
       ctx.setMarquee(null);
       if (r.w > 3 || r.h > 3) {
-        const sym = ctx.store.currentSymbol;
-        const skip = new Set<string>(
-          sym.layers.filter((l) => l.locked || !l.visible).map((l) => l.nodeId),
-        );
-        ctx.store.selectNodes(ctx.nodesInRect(r, skip) as NodeId[], this.additive);
+        ctx.store.selectNodes(ctx.nodesInRect(r, unpickable(ctx)) as NodeId[], this.additive);
       }
     }
     ctx.endSnap();
@@ -168,29 +164,37 @@ export class SelectTool implements Tool {
 
   /** Returns false when nothing draggable is selected. */
   private captureSnapshots(ctx: ToolContext): boolean {
-    const pose = ctx.pose();
-    if (!pose) return false;
-    const sym = ctx.store.currentSymbol;
-    const lockedNodes = new Set(sym.layers.filter((l) => l.locked).map((l) => l.nodeId));
-
-    this.snaps = [];
-    const ids = topmostSelected(
-      ctx.store.selection.nodes.filter((id) => !lockedNodes.has(id)),
-      (id) => sym.nodes[id]?.parentId,
-    );
-    for (const id of ids) {
-      const entry = pose.byNode.get(id);
-      const node = sym.nodes[id];
-      if (!entry || !node) continue;
-      const parentEntry = node.parentId ? pose.byNode.get(node.parentId) : undefined;
-      const shown = shownDisplay(entry);
-      this.snaps.push(snapshotOf(
-        id, transformAtFrame(ctx.store, node), entry.world, parentEntry?.world ?? mat(),
-        shown.pivot, shown.index,
-      ));
-    }
+    this.snaps = selectionSnapshots(ctx);
     return this.snaps.length > 0;
   }
+}
+
+/**
+ * A snapshot of every node a drag on the selection moves: the topmost
+ * selected ones, minus locked layers. Every transform tool starts from these.
+ */
+export function selectionSnapshots(ctx: Pick<ToolContext, "store" | "pose">): NodeSnapshot[] {
+  const pose = ctx.pose();
+  if (!pose) return [];
+  const sym = ctx.store.currentSymbol;
+  const lockedNodes = new Set(sym.layers.filter((l) => l.locked).map((l) => l.nodeId));
+  const snaps: NodeSnapshot[] = [];
+  const ids = topmostSelected(
+    ctx.store.selection.nodes.filter((id) => !lockedNodes.has(id)),
+    (id) => sym.nodes[id]?.parentId,
+  );
+  for (const id of ids) {
+    const entry = pose.byNode.get(id);
+    const node = sym.nodes[id];
+    if (!entry || !node) continue;
+    const parentEntry = node.parentId ? pose.byNode.get(node.parentId) : undefined;
+    const shown = shownDisplay(entry);
+    snaps.push(snapshotOf(
+      id, transformAtFrame(ctx.store, node), entry.world, parentEntry?.world ?? mat(),
+      shown.pivot, shown.index,
+    ));
+  }
+  return snaps;
 }
 
 /**
@@ -204,15 +208,44 @@ export class SelectTool implements Tool {
  */
 export function hitAt(ctx: ToolContext, wx: number, wy: number): NodeId | null {
   const sym = ctx.store.currentSymbol;
+  const g = ctx.store.prefs.value.gizmos;
+  const skip = unpickable(ctx);
+  const pose = ctx.pose();
+  if (pose && ctx.store.ui.showBones) {
+    const targets = new Set<string>(sym.ik.map((k) => k.targetId));
+    const p = { x: wx, y: wy };
+    if (targets.size && g.showIk && g.selectIk) {
+      const target = pickBone(pose, p, 10 / ctx.camera.screenScale,
+        (id) => targets.has(id) && !skip.has(id));
+      if (target) return target;
+    }
+    // A bone wins over the artwork under it only close to its line, so the
+    // art around a bone stays clickable.
+    if (g.selectBones) {
+      const bone = pickBone(pose, p, BONE_PICK_PX / ctx.camera.screenScale,
+        (id) => !targets.has(id) && !skip.has(id));
+      if (bone) return bone;
+    }
+  }
+  return ctx.hitTest(wx, wy, skip) as NodeId | null;
+}
+
+/** Screen pixels from a bone's line within which a click picks the bone. */
+const BONE_PICK_PX = 5;
+
+/**
+ * What no pointer gesture may pick: hidden and locked layers, and every
+ * image or symbol while the visibility table makes images unselectable (or
+ * hides them).
+ */
+export function unpickable(ctx: ToolContext): Set<string> {
+  const sym = ctx.store.currentSymbol;
+  const g = ctx.store.prefs.value.gizmos;
   const skip = new Set<string>(
     sym.layers.filter((l) => l.locked || !l.visible).map((l) => l.nodeId),
   );
-  const pose = ctx.pose();
-  if (pose && ctx.store.ui.showBones && sym.ik.length) {
-    const targets = new Set<string>(sym.ik.map((k) => k.targetId));
-    const target = pickBone(pose, { x: wx, y: wy }, 10 / ctx.camera.screenScale,
-      (id) => targets.has(id) && !skip.has(id));
-    if (target) return target;
+  if (!g.selectImages || !g.showImages) {
+    for (const n of Object.values(sym.nodes)) if (n.kind !== "bone") skip.add(n.id);
   }
-  return ctx.hitTest(wx, wy, skip) as NodeId | null;
+  return skip;
 }
