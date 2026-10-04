@@ -17,6 +17,10 @@ import { onionFrames } from "@/core/doc/onion";
 import { keyIndexAt } from "@/core/doc/timeline";
 import { withDescendants } from "@/core/doc/layerTree";
 import { GhostPainter } from "./ghost";
+import { PathCache } from "./pathCache";
+import { bonePaths, keyedIn, pathFrames } from "@/core/doc/bonePath";
+import { seamFrame } from "@/core/doc/cycle";
+import type { BonePathsDraw } from "./Overlay";
 import { drawReference } from "./reference";
 import { type OverlayColors, resolveColors } from "./overlayColors";
 import { type SnapLine, snapMove, type SnapTargets, snapValue } from "@/core/math/snap";
@@ -43,6 +47,7 @@ export class Viewport {
   /** The other frames drawn under Edit Multiple Frames, with their poses. */
   private ghostPoses: Array<{ frame: number; pose: Pose }> = [];
   private ghosts = new GhostPainter();
+  private pathCache = new PathCache();
 
   guides: Guide[] = [];
   private draftGuide: Guide | null = null;
@@ -258,6 +263,7 @@ export class Viewport {
     oc.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     oc.clearRect(0, 0, this.overlayCanvas.width, this.overlayCanvas.height);
     this.overlay.draw(oc, camera, project, store.currentSymbol, this.lastPose, {
+      bonePaths: this.bonePathsToDraw(),
       showRulers: store.ui.showRulers,
       showGrid: store.ui.showGrid,
       showGuides: store.ui.showGuides,
@@ -282,6 +288,37 @@ export class Viewport {
       groupBox: this.ghostPoses.length && store.selection.nodes.length
         ? selectionBounds(project, this.editPoses(), store.selection.nodes) : null,
     });
+  }
+
+  /**
+   * The bone paths for this draw (docs/CYCLE-PATH-PLAN.md, B4): the selected
+   * bones, or every bone, by preference; never on a locked or hidden layer.
+   * Over the onion span when the onion skin is on, else the whole animation.
+   * Animate mode only, never in Play mode, and off with the gizmos.
+   */
+  private bonePathsToDraw(): BonePathsDraw | null {
+    const { store } = this;
+    const anim = store.currentAnimation;
+    const ui = store.ui;
+    if (!anim || !ui.showBonePaths || !ui.showGizmos || ui.mode !== "animate" || ui.playMode) return null;
+    const sym = store.currentSymbol;
+    const g = store.prefs.value.gizmos;
+    const shown = new Set(sym.layers.filter((l) => l.visible && !l.locked).map((l) => l.nodeId));
+    const selected = new Set(store.selection.nodes);
+    const ids = Object.values(sym.nodes)
+      .filter((n) => n.kind === "bone" && shown.has(n.id) && (g.bonePathBones === "all" || selected.has(n.id)))
+      .map((n) => n.id);
+    if (!ids.length) return null;
+    const { frames, closed } = pathFrames(anim, ui.onionSkin ? store.onionSpan : null);
+    const paths = bonePaths({
+      sample: this.pathCache.sampler(store.project, sym, anim, store.history.revision),
+      ids, frames, closed, which: g.bonePathPoint, isKey: keyedIn(anim),
+    });
+    if (this.pathCache.pending) this.invalidate();
+    const t = store.prefs.value.timeline;
+    // On a cycle's join the stage shows frame 0, and that is the dot to fill.
+    const frame = ui.frame === seamFrame(anim) ? 0 : ui.frame;
+    return { paths, frame, past: t.onionPastColor, future: t.onionFutureColor, current: t.playhead };
   }
 
   /**

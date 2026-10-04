@@ -99,6 +99,10 @@ export interface SnapPrefs {
 export interface GizmoPrefs {
   showBones: boolean;
   showGizmos: boolean;
+  /** The path each selected bone follows over the animation. */
+  showBonePaths: boolean;
+  bonePathPoint: "tip" | "origin";
+  bonePathBones: "selected" | "all";
   handleSize: number;
   select: string;
   marquee: string;
@@ -212,6 +216,9 @@ export const DEFAULT_PREFS: Prefs = {
   gizmos: {
     showBones: true,
     showGizmos: true,
+    showBonePaths: true,
+    bonePathPoint: "tip",
+    bonePathBones: "selected",
     handleSize: 5.5,
     select: "#0090a7",
     marquee: "rgba(74,144,217,0.18)",
@@ -271,6 +278,8 @@ export const PREF_ENUMS: Record<string, readonly string[]> = {
   "interface.fontSize": UI_FONT_SIZES,
   "interface.theme": THEME_IDS,
   "stage.wheel": ["zoom", "pan"],
+  "gizmos.bonePathPoint": ["tip", "origin"],
+  "gizmos.bonePathBones": ["selected", "all"],
 };
 
 export function clampPref(path: string, value: number): number {

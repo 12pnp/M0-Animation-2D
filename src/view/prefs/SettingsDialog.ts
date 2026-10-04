@@ -215,6 +215,15 @@ const CATEGORIES: Category[] = [
         title: "What is drawn", rows: [
           { kind: "check", cat: "gizmos", key: "showBones", label: "Show bones", view: "showBones" },
           { kind: "check", cat: "gizmos", key: "showGizmos", label: "Show gizmos", view: "showGizmos" },
+          { kind: "check", cat: "gizmos", key: "showBonePaths", label: "Show bone paths", view: "showBonePaths" },
+          {
+            kind: "select", cat: "gizmos", key: "bonePathPoint", label: "Bone path follows",
+            options: [{ value: "tip", text: "The tip" }, { value: "origin", text: "The origin" }],
+          },
+          {
+            kind: "select", cat: "gizmos", key: "bonePathBones", label: "Bone paths for",
+            options: [{ value: "selected", text: "Selected bones" }, { value: "all", text: "Every bone" }],
+          },
           { kind: "number", cat: "gizmos", key: "handleSize", label: "Handle size", unit: "px" },
         ],
       },

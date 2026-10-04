@@ -34,13 +34,16 @@ export interface BonePath {
   closed: boolean;
 }
 
+/** The length the stage draws a bone with when it has none of its own. */
+export const DRAWN_BONE_LENGTH = 40;
+
 /** The point followed on `id` in this pose, in the symbol's space; null when
- *  the pose does not have the node. Anything but a bone, or a bone without a
- *  length, has its tip at its origin. */
+ *  the pose does not have the node. The tip is where the stage draws it;
+ *  anything but a bone has its tip at its origin. */
 export function pathPoint(pose: Pose, id: NodeId, which: PathPointKind): { x: number; y: number } | null {
   const e = pose.byNode.get(id);
   if (!e) return null;
-  const length = which === "tip" && e.node.kind === "bone" ? e.node.boneLength ?? 0 : 0;
+  const length = which === "tip" && e.node.kind === "bone" ? e.node.boneLength ?? DRAWN_BONE_LENGTH : 0;
   return apply({ x: 0, y: 0 }, e.world, length, 0);
 }
 

@@ -19,6 +19,7 @@ import { type Gizmo, handlePoints } from "@/view/tools/gizmo";
 import { AXIS_LENGTH, axisTips, drivenBox, positionAxisTips, SCENE_FRAME, showsPositionAxes, } from "./nodeFrame";
 import { DEFAULT_COLORS, type OverlayColors } from "./overlayColors";
 import type { SnapLine } from "@/core/math/snap";
+import { type BonePath, DRAWN_BONE_LENGTH } from "@/core/doc/bonePath";
 
 export { localBox };
 
@@ -34,7 +35,18 @@ const GHOST_AXIS_RATIO = 0.7;
 
 export interface Guide { axis: "x" | "y"; at: number; }
 
+/** Bone paths to draw, and the frame the playhead is on. */
+export interface BonePathsDraw {
+  paths: BonePath[];
+  frame: number;
+  past: string;
+  future: string;
+  current: string;
+}
+
 export interface OverlayOptions {
+  /** Bone paths (`core/doc/bonePath.ts`), under the bones. */
+  bonePaths?: BonePathsDraw | null;
   showRulers: boolean;
   showGrid: boolean;
   showOrigin: boolean;
@@ -106,6 +118,7 @@ export class Overlay {
     this.drawStageOutline(ctx, camera, project, opts.setupMode);
     if (opts.showGuides) this.drawGuides(ctx, camera, opts.guides, opts.draftGuide);
     this.drawEmptySymbols(ctx, camera, project, pose);
+    if (opts.bonePaths) this.drawBonePaths(ctx, camera, opts.bonePaths);
     if (opts.showBones) this.drawBones(ctx, camera, symbol, pose, opts);
     this.drawSelection(
       ctx, camera, project, symbol, pose, opts.selection, !!opts.gizmo, opts.when,
@@ -697,6 +710,65 @@ export class Overlay {
 
   // ── Bones ──────────────────────────────────────────────────────────────
 
+  /**
+   * Each path as a line through one dot per frame, in screen space so the
+   * marks keep their size at any zoom. The part already played is in the
+   * onion skin's past colour, the part to come in its future colour; keys get
+   * a larger hollow ring, the playhead's frame a filled dot. Dots far apart
+   * mean fast, bunched mean slow.
+   */
+  private drawBonePaths(ctx: CanvasRenderingContext2D, cam: Camera, d: BonePathsDraw): void {
+    ctx.save();
+    ctx.lineJoin = "round";
+    for (const path of d.paths) {
+      const pts = path.points.map((p) => ({ ...cam.toScreen(p.x, p.y), p }));
+      if (pts.length < 2) continue;
+      const at = pts.findIndex((q) => q.p.frame === d.frame);
+      const segment = (from: number, to: number, color: string) => {
+        if (to <= from) return;
+        ctx.beginPath();
+        ctx.moveTo(pts[from]!.x, pts[from]!.y);
+        for (let i = from + 1; i <= to; i++) ctx.lineTo(pts[i % pts.length]!.x, pts[i % pts.length]!.y);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.globalAlpha = 0.85;
+        ctx.stroke();
+      };
+      const last = pts.length - 1 + (path.closed ? 1 : 0);
+      if (at < 0) segment(0, last, d.future);
+      else {
+        segment(0, at, d.past);
+        segment(at, last, d.future);
+      }
+
+      ctx.globalAlpha = 1;
+      for (const q of pts) {
+        const current = q.p.frame === d.frame;
+        ctx.beginPath();
+        if (current) {
+          ctx.arc(q.x, q.y, 4, 0, Math.PI * 2);
+          ctx.fillStyle = d.current;
+          ctx.fill();
+          ctx.strokeStyle = this.C.boneCore;
+          ctx.lineWidth = 1;
+          ctx.stroke();
+        } else if (q.p.key) {
+          ctx.arc(q.x, q.y, 3.5, 0, Math.PI * 2);
+          ctx.fillStyle = this.C.boneCore;
+          ctx.fill();
+          ctx.strokeStyle = at >= 0 && pts.indexOf(q) < at ? d.past : d.future;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+        } else {
+          ctx.arc(q.x, q.y, 1.8, 0, Math.PI * 2);
+          ctx.fillStyle = at >= 0 && pts.indexOf(q) < at ? d.past : d.future;
+          ctx.fill();
+        }
+      }
+    }
+    ctx.restore();
+  }
+
   private drawBones(
     ctx: CanvasRenderingContext2D, cam: Camera,
     symbol: SymbolItem, pose: Pose, opts: OverlayOptions,
@@ -707,7 +779,7 @@ export class Overlay {
 
     for (const e of pose.entries) {
       if (e.node.kind !== "bone") continue;
-      const len = e.node.boneLength ?? 40;
+      const len = e.node.boneLength ?? DRAWN_BONE_LENGTH;
       const a = cam.toScreen(e.world.tx, e.world.ty);
       const b = cam.toScreen(e.world.a * len + e.world.tx, e.world.b * len + e.world.ty);
       const selected = opts.selection.has(e.nodeId);
@@ -762,7 +834,7 @@ export class Overlay {
       if (!bone || !target) continue;
       const active = ikChain(symbol, k).some((id) => opts.selection.has(id))
         || opts.selection.has(k.targetId);
-      const len = bone.node.boneLength ?? 40;
+      const len = bone.node.boneLength ?? DRAWN_BONE_LENGTH;
       const tip = cam.toScreen(
         bone.world.a * len + bone.world.tx,
         bone.world.b * len + bone.world.ty,

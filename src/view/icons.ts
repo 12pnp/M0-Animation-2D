@@ -69,6 +69,8 @@ export const ICON = {
   grid:        `<path d="M2 6h12M2 10h12M6 2v12M10 2v12"/>`,
   ruler:       `<rect x="2" y="5.5" width="12" height="5"/><path d="M5 5.5v2M8 5.5v3M11 5.5v2"/>`,
   // Two axes from an origin: the reference marks drawn on a selection.
+  // A dotted arc ending in a bone: where a bone goes.
+  bonePath:    `<path d="M2.5 13c0-5 3-8.5 8-9.5" stroke-dasharray="1.4 1.6"/><circle cx="12.6" cy="3.4" r="1.8"/>`,
   axes:        `<path d="M3.5 12.5V3.2M3.5 12.5h9.3"/><path d="M1.9 4.8 3.5 2.6l1.6 2.2"/>
                 <path d="M11.2 10.9l2.2 1.6-2.2 1.6"/>`,
   snap:        `<path d="M4 2v6a4 4 0 0 0 8 0V2"/><path d="M2 13.5h12"/>`,

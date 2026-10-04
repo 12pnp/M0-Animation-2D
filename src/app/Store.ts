@@ -51,6 +51,8 @@ export interface UiState {
    *  pose every draw — so this is a view switch like `showBones`, and it does
    *  not touch the selection box or the Free Transform handles. */
   showGizmos: boolean;
+  /** Bone paths (`core/doc/bonePath.ts`) in Animate mode. */
+  showBonePaths: boolean;
   /** Create a keyframe at the playhead when something is transformed. */
   autoKey: boolean;
   /** Setup pose vs animation editing. Bones and IK need a bind pose, so this
@@ -70,7 +72,7 @@ export interface UiState {
 }
 
 export type ViewFlag =
-  | "showGrid" | "showRulers" | "showGuides" | "snap" | "showBones" | "showGizmos";
+  | "showGrid" | "showRulers" | "showGuides" | "snap" | "showBones" | "showGizmos" | "showBonePaths";
 
 /** Where each view switch is remembered between sessions. */
 const VIEW_FLAG_PREFS: Record<ViewFlag, { cat: "stage" | "snap" | "gizmos"; key: string }> = {
@@ -80,6 +82,7 @@ const VIEW_FLAG_PREFS: Record<ViewFlag, { cat: "stage" | "snap" | "gizmos"; key:
   snap:       { cat: "snap",   key: "enabled" },
   showBones:  { cat: "gizmos", key: "showBones" },
   showGizmos: { cat: "gizmos", key: "showGizmos" },
+  showBonePaths: { cat: "gizmos", key: "showBonePaths" },
 };
 
 /** The five things a drag can snap to, in the order the View submenu and the
@@ -126,6 +129,7 @@ export class Store {
     snap: true,
     showBones: true,
     showGizmos: true,
+    showBonePaths: true,
     autoKey: true,
     mode: "animate",
   };
@@ -178,6 +182,7 @@ export class Store {
     this.ui.snap = p.snap.enabled;
     this.ui.showBones = p.gizmos.showBones;
     this.ui.showGizmos = p.gizmos.showGizmos;
+    this.ui.showBonePaths = p.gizmos.showBonePaths;
     this.ui.editPath = [project.rootSymbolId];
     this.ui.animId = this.currentSymbol.animations[0]?.id ?? null;
 

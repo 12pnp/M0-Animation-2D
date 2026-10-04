@@ -203,6 +203,7 @@ export class App {
         snap: p.snap.enabled,
         showBones: p.gizmos.showBones,
         showGizmos: p.gizmos.showGizmos,
+        showBonePaths: p.gizmos.showBonePaths,
       }, "stage");
       this.store.emit("timeline");
     });
@@ -1170,6 +1171,7 @@ export class App {
           "-",
           it("view.showBones"),
           it("view.showGizmos"),
+          it("view.showBonePaths"),
           it("view.onionSkin"),
           it("view.editMultipleFrames"),
           { label: "Onion Skin Options", items: this.onionMenuDefs() },
@@ -1303,7 +1305,7 @@ export class App {
     const hasNodes = () => s.selection.nodes.length > 0;
     const reg = (id: string, run: () => unknown, enabled?: () => boolean, checked?: () => boolean) =>
       k.register(id, { run, enabled, checked });
-    const flag = (id: string, f: "showRulers" | "showGrid" | "showGuides" | "showBones" | "showGizmos") =>
+    const flag = (id: string, f: "showRulers" | "showGrid" | "showGuides" | "showBones" | "showGizmos" | "showBonePaths") =>
       reg(id, () => s.setViewFlag(f, !s.ui[f]), undefined, () => s.ui[f]);
 
     reg("file.new", () => void this.project.newProject());
@@ -1381,6 +1383,7 @@ export class App {
     }
     flag("view.showBones", "showBones");
     flag("view.showGizmos", "showGizmos");
+    flag("view.showBonePaths", "showBonePaths");
     reg("view.onionSkin", () => s.setUi({ onionSkin: !s.ui.onionSkin }, "stage"), undefined, () => s.ui.onionSkin);
     reg("view.editMultipleFrames",
       () => s.setUi({ editMultipleFrames: !s.ui.editMultipleFrames }, "stage"),

@@ -97,6 +97,7 @@ export const COMMANDS: CommandDef[] = [
   c("View", "view.snapTo.toPixel", "Snap to Whole Pixels"),
   c("View", "view.showBones", "Show Bones"),
   c("View", "view.showGizmos", "Show Gizmos"),
+  c("View", "view.showBonePaths", "Show Bone Paths", ["Alt+B"]),
   c("View", "view.onionSkin", "Onion Skin"),
   c("View", "view.editMultipleFrames", "Edit Multiple Frames"),
   c("View", "view.onionAnchor", "Anchor Onion Markers"),

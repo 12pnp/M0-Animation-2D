@@ -271,6 +271,10 @@ export class Shell {
         "Show gizmos: the axes of the selected object and the directions its X and Y move in",
         () => this.store.ui.showGizmos,
         (v) => this.store.setViewFlag("showGizmos", v)),
+      this.toggleBtn("bonePath",
+        "Show bone paths (⌥B): where each selected bone moves over the animation",
+        () => this.store.ui.showBonePaths,
+        (v) => this.store.setViewFlag("showBonePaths", v)),
     );
 
     // Two spacers, so the play cluster is CENTRED rather than pushed to one
