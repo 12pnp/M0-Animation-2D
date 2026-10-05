@@ -1,7 +1,7 @@
 import type { AssetId, IkId, NodeId, TcId } from "@/core/doc/ids";
 import { fromOffsets } from "@/core/doc/drawOrder";
 import { eventDefsFromSpine, eventValues } from "@/core/doc/events";
-import { newAnimId, newIkId, newTcId } from "@/core/doc/ids";
+import { newAnimId, newCnId, newIkId, newTcId } from "@/core/doc/ids";
 import type { TcChannel, TcFrom, TcTo } from "@/core/math/transformConstraint";
 import type {
   Animation, BlendMode, DrawOrderKey, ColorTransform, DisplayRef, EventDef, EventKey, IkConstraint, IkKey, ImageItem, TcKey, TransformConstraint, Keyframe, Layer, Node, Project,
@@ -13,6 +13,7 @@ import { sampleColorRaw, sampleTransformRaw } from "@/core/doc/timeline";
 import { IDENTITY, cloneTf, type Transform } from "@/core/math/Transform";
 import type { ExportDiagnostic } from "@/core/export/diagnostics";
 import { bonesToNames, lastTime, regionsOf, SKIN_CONSTRAINT_KINDS } from "./carry";
+import { PHYSICS_FIELDS, physicsFromSpine, SLIDER_FIELDS, sliderFromSpine } from "@/core/doc/constraints";
 import { type ChannelGroup, type Comp, type CompKey, type KeyTiming, mergeKeys, valueAt } from "./importKeys";
 import { fromSpineLocal, type SpineLocal } from "./transform";
 import { SPINE_VERSION, type SpineInherit, type SpineRaw } from "./types";
@@ -59,7 +60,7 @@ const str = (v: unknown): v is string => typeof v === "string";
 /** Only what the editor models is read off a bone; the rest rides along. */
 const BONE_FIELDS = new Set(["name", "parent", "length", "x", "y", "rotation", "scaleX", "scaleY", "shearX", "shearY", "inherit"]);
 const SLOT_FIELDS = new Set(["name", "bone", "color", "dark", "attachment", "blend"]);
-const IK_FIELDS = new Set(["type", "name", "bones", "target", "mix", "bendPositive", "softness"]);
+const IK_FIELDS = new Set(["type", "name", "bones", "target", "mix", "bendPositive", "softness", "stretch", "compress", "scaleY"]);
 const BLEND: Record<string, BlendMode> = { additive: "add", multiply: "multiply", screen: "screen" };
 const INHERIT = new Set<SpineInherit>(["normal", "onlyTranslation", "noRotationOrReflection", "noScale", "noScaleOrReflection"]);
 
@@ -442,6 +443,23 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     warn(`The skeleton has no animations; an empty one, "${anim.name}", was added for the timeline.`);
   }
   if (baked) warn(`${baked} tween(s) were written frame by frame: no single ease of the editor's plays them as Spine does.`);
+
+  /* ── physics and sliders the model holds; anything else stays carried ── */
+  const carry = sym.spine!;
+  carry.constraints = carry.constraints.filter((c) => {
+    const keys = Object.keys(c);
+    if (c.type === "physics" && keys.every((k) => PHYSICS_FIELDS.has(k)) && str(c.bone) && boneNode.has(c.bone)) {
+      (sym.physics ??= []).push(physicsFromSpine(c, newCnId(), boneNode.get(c.bone)!.id));
+      return false;
+    }
+    const anim = c.type === "slider" && str(c.animation) ? sym.animations.find((a) => a.name === c.animation) : undefined;
+    const bone = str(c.bone) ? boneNode.get(c.bone) : undefined;
+    if (anim && keys.every((k) => SLIDER_FIELDS.has(k)) && (c.bone === undefined || bone)) {
+      (sym.sliders ??= []).push(sliderFromSpine(c, newCnId(), anim.id, bone?.id));
+      return false;
+    }
+    return true;
+  });
   return { project, diagnostics, baked };
 }
 
@@ -857,6 +875,10 @@ function ikOf(c: SpineRaw, bones: Map<string, Node>, warn: (m: string) => void):
     weight: num(c.mix, 1),
   };
   if (num(c.softness, 0) > 0) ik.softness = num(c.softness, 0);
+  if (c.stretch === true) ik.stretch = true;
+  if (c.compress === true) ik.compress = true;
+  // The runtime reads any other scaleY as none.
+  if (c.scaleY === "uniform" || c.scaleY === "volume") ik.scaleY = c.scaleY;
   const rest = pick(c, (k) => !IK_FIELDS.has(k));
   if (rest) ik.spine = rest;
   return ik;

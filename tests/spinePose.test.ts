@@ -9,6 +9,7 @@ import { createProject } from "@/core/doc/defaults";
 import { migrate, validateProject } from "@/core/doc/schema";
 import { History } from "@/core/history/History";
 import { SetStageSkins } from "@/core/history/commands";
+import { SetIkOptions } from "@/core/history/ikCommands";
 import { importSpine } from "@/core/spine/importSpine";
 import { exportSpine, spineJson } from "@/core/spine/exportSpine";
 import { posedSymbol, spinePoseError, stageSkinOf } from "@/core/spine/spinePose";
@@ -158,5 +159,26 @@ describe.skipIf(!mix)("skins", () => {
     expect(stageSkinOf(sym)).toEqual(["skin-base"]);
     history.redo();
     expect(sym.stageSkins).toEqual(["hair/pink"]);
+  });
+});
+
+describe("the stage's rig follows edits", () => {
+  it("an edit to the rig's structure through the history (an IK's bend) reaches the next pose, and undo brings it back", () => {
+    const file = {
+      skeleton: { spine: "4.3.74", fps: 30 },
+      bones: [{ name: "root" }, { name: "a", parent: "root", length: 50 }, { name: "b", parent: "a", x: 50, length: 50 }, { name: "t", parent: "root", x: 60, y: 40 }],
+      constraints: [{ type: "ik", name: "k", bones: ["a", "b"], target: "t" }],
+    };
+    const { project } = importSpine(file as never, "x", new Map());
+    const sym = project.items[project.rootSymbolId] as SymbolItem;
+    const history = new History(project);
+    const b = Object.values(sym.nodes).find((n) => n.name === "b")!.id;
+    const at = () => { const w = posedSymbol(project, sym, null, 0, "setup").byNode.get(b)!.world; return [Math.round(w.tx), Math.round(w.ty)]; };
+    const before = at();
+    history.apply(new SetIkOptions(sym.id, sym.ik[0]!.id, { bendPositive: !sym.ik[0]!.bendPositive }));
+    const flipped = at();
+    expect(flipped).not.toEqual(before);
+    history.undo();
+    expect(at()).toEqual(before);
   });
 });

@@ -248,7 +248,10 @@
         "target": { "type": "string", "description": "An existing bone outside the chain; omit to make one." },
         "name": { "type": "string", "description": "Default <bone>_ik." },
         "bendPositive": { "type": "boolean" },
-        "mix": { "type": "number", "minimum": 0, "maximum": 1, "description": "Default 1." }
+        "mix": { "type": "number", "minimum": 0, "maximum": 1, "description": "Default 1." },
+        "stretch": { "type": "boolean", "description": "Scale the bones along their length to reach a target out of reach." },
+        "compress": { "type": "boolean", "description": "One bone: scale it down for a target nearer than its length." },
+        "scale_y": { "enum": ["none", "uniform", "volume"], "description": "What scale y does when a bone stretches or compresses: stays (default), follows, or keeps the area." }
       },
       "required": ["bone"],
       "additionalProperties": false
@@ -468,6 +471,93 @@
         "only_in_skins": { "type": "boolean" }
       },
       "required": ["skin", "layer"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "add_attachment",
+    "description": "Add a bounding box (kind box: a hit area, Spine's boundingbox attachment) or a point (kind point: a spawn point such as a muzzle or a hand grip, with a direction), in one undoable step. `on` a picture: in its place, a box tracing its outline; `on` a bone: at the bone's origin, under it (a box a 40-pixel square); omitted: at the origin. Neither draws; the stage outlines them. Move it like any layer.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "kind": { "enum": ["box", "point"] },
+        "on": { "type": "string" },
+        "name": { "type": "string" }
+      },
+      "required": ["kind"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "make_sequence",
+    "description": "Make a picture layer a frame-by-frame sequence (Spine's region sequence), in one undoable step: the library images named like its image with the numbers around it (fire_01, fire_02, …), all one size. Then key_sequence picks how they play.",
+    "input_schema": {
+      "type": "object",
+      "properties": { "layer": { "type": "string" } },
+      "required": ["layer"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "key_sequence",
+    "description": "Key a sequence layer at a frame, in one undoable step: from `frame` it shows image `index` (0 first) and, unless mode is hold, the next every `delay` frames: loop, once (stops at the last), pingpong, or their reversed kinds. `delete` true removes the key there.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "animation": { "type": "string" },
+        "layer": { "type": "string" },
+        "frame": { "type": "integer", "minimum": 0 },
+        "mode": { "enum": ["hold", "once", "loop", "pingpong", "onceReverse", "loopReverse", "pingpongReverse"] },
+        "index": { "type": "integer", "minimum": 0 },
+        "delay": { "type": "number", "exclusiveMinimum": 0 },
+        "delete": { "type": "boolean" }
+      },
+      "required": ["animation", "layer", "frame"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "add_physics",
+    "description": "Give a bone physics (Spine's physics constraint), in one undoable step: it lags behind, springs back and sways as its parent moves (hair, cloth, antennae, tails). By default its rotation sways. `settings` sets any of x, y, rotate, scaleX, shearX (how much of each the simulation moves, 0..1), inertia, strength, damping, mass, wind, gravity, mix, limit, fps. The stage simulates while it plays; render_frame shows it at rest.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "bone": { "type": "string" },
+        "settings": { "type": "object", "additionalProperties": { "type": "number" } }
+      },
+      "required": ["bone"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "add_slider",
+    "description": "Play an animation by a value (Spine 4.3's slider), in one undoable step: with `bone`, its `property` (rotate by default) sets the animation's time: time = to + (value − from) × scale seconds; without, the animation holds at `time`. A dial, a facial expression blend, a door opening by a handle. `loop` wraps the time; `additive` adds the animation over the pose.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "animation": { "type": "string" },
+        "bone": { "type": "string" },
+        "property": { "enum": ["rotate", "x", "y", "scaleX", "scaleY", "shearY"] },
+        "from": { "type": "number" },
+        "to": { "type": "number" },
+        "scale": { "type": "number" },
+        "time": { "type": "number" },
+        "mix": { "type": "number", "minimum": 0, "maximum": 1 },
+        "loop": { "type": "boolean" },
+        "additive": { "type": "boolean" },
+        "local": { "type": "boolean" }
+      },
+      "required": ["animation"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "make_path",
+    "description": "Make bones follow a path (Spine's path constraint), in one undoable step: a smooth path through the bones' joints and the last one's tip (a new path layer, edited with the Mesh tool), the bones laid along it by their lengths and turned with it. Key the path's points or its constraint's position to animate (a tail, a snake, a rope).",
+    "input_schema": {
+      "type": "object",
+      "properties": { "bones": { "type": "array", "minItems": 1, "items": { "type": "string" } } },
+      "required": ["bones"],
       "additionalProperties": false
     }
   },

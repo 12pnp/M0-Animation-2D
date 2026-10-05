@@ -1,4 +1,7 @@
-import type { DeformKey, DisplayRef, EventDef, EventKey, IkKey, LibraryFolder, MeshData, Node, Project, SkinDef, TcKey, TransformConstraint } from "./types";
+import type { DeformKey, DisplayRef, EventDef, EventKey, IkKey, LibraryFolder, MeshData, Node, PathConstraint, PhysicsConstraint, Project, SequenceKey, SkinDef, SliderConstraint, TcKey, TransformConstraint } from "./types";
+import { SEQUENCE_MODES } from "./sequence";
+import { PHYSICS_SETTINGS, SLIDER_PROPERTIES } from "./constraints";
+import type { AnimId, CnId, NodeId } from "./ids";
 import { eventDefsFromSpine, withEventDefValues } from "./events";
 import { DEFAULT_MOTION_BLUR, DOC_VERSION, type MotionBlurSettings, TIMELINE_PROPS } from "./types";
 import { observeId } from "./ids";
@@ -320,6 +323,17 @@ export function validateProject(raw: unknown): ValidationResult {
       const soft = finiteOr(k.softness, 0);
       if (soft > 0) k.softness = soft;
       else delete k.softness;
+      // Opened before the editor solved them: carried, now the model's.
+      if (k.spine && typeof k.spine === "object") {
+        const { stretch, compress, scaleY, ...rest } = k.spine as Record<string, unknown>;
+        if (stretch === true) k.stretch = true;
+        if (compress === true) k.compress = true;
+        if (scaleY === "uniform" || scaleY === "volume") k.scaleY = scaleY;
+        if (Object.keys(rest).length) k.spine = rest; else delete k.spine;
+      }
+      if (k.stretch !== true) delete k.stretch;
+      if (k.compress !== true) delete k.compress;
+      if (k.scaleY !== "uniform" && k.scaleY !== "volume") delete k.scaleY;
     }
     // IK keys of constraints the symbol has: one key per frame, in order, the
     // mix in 0..1, a tween the timeline writes (linear, stepped, one cubic).
@@ -384,6 +398,89 @@ export function validateProject(raw: unknown): ValidationResult {
       if (Object.keys(out).length) anim.deforms = out as never;
       else delete anim.deforms;
     }
+    // Physics, sliders and paths: bones, paths and animations the symbol has,
+    // names unique among every constraint, values finite (Spine's defaults absent).
+    {
+      const names = new Set<string>([...item.ik.map((k) => k.name), ...(item.transforms ?? []).map((k) => k.name)]);
+      const fresh = (r: Record<string, unknown>) => {
+        const name = typeof r.name === "string" ? r.name.trim() : "";
+        if (!name || names.has(name) || typeof r.id !== "string") return null;
+        names.add(name);
+        observeId(r.id);
+        return { name, id: r.id as CnId };
+      };
+      const list = <T,>(raw: unknown, make: (r: Record<string, unknown>) => T | null): T[] =>
+        (Array.isArray(raw) ? raw : []).map((r) => (r && typeof r === "object" ? make(r as Record<string, unknown>) : null)).filter((k): k is T => !!k);
+      const isNode = (id: unknown, kind?: string) => typeof id === "string" && !!item.nodes[id as never] && (!kind || item.nodes[id as never]!.kind === kind);
+      const nums = <K extends string>(r: Record<string, unknown>, fields: readonly K[]) => {
+        const out: Partial<Record<K, number>> = {};
+        for (const f of fields) if (typeof r[f] === "number" && Number.isFinite(r[f])) out[f] = r[f] as number;
+        return out;
+      };
+      if (item.physics !== undefined) {
+        const out = list<PhysicsConstraint>(item.physics, (r) => {
+          if (!isNode(r.boneId)) return null;
+          const head = fresh(r);
+          return head && { ...head, boneId: r.boneId as NodeId, ...nums(r, PHYSICS_SETTINGS), ...(r.scaleY === "uniform" || r.scaleY === "volume" ? { scaleY: r.scaleY } : {}) };
+        });
+        if (out.length) item.physics = out; else delete item.physics;
+      }
+      if (item.paths !== undefined) {
+        const out = list<PathConstraint>(item.paths, (r) => {
+          const bones = Array.isArray(r.boneIds) ? r.boneIds.filter((id) => isNode(id)) as NodeId[] : [];
+          if (!bones.length || !isNode(r.pathId, "path")) return null;
+          const head = fresh(r);
+          if (!head) return null;
+          const k: PathConstraint = { ...head, boneIds: bones, pathId: r.pathId as NodeId, ...nums(r, ["rotation", "position", "spacing", "mixRotate", "mixX", "mixY"] as const) };
+          if (r.positionMode === "fixed") k.positionMode = "fixed";
+          if (["fixed", "percent", "proportional"].includes(r.spacingMode as string)) k.spacingMode = r.spacingMode as PathConstraint["spacingMode"];
+          if (r.rotateMode === "chain" || r.rotateMode === "chainScale") k.rotateMode = r.rotateMode;
+          return k;
+        });
+        if (out.length) item.paths = out; else delete item.paths;
+      }
+      if (item.sliders !== undefined) {
+        const animIds = new Set<string>(item.animations.map((a) => a.id));
+        const out = list<SliderConstraint>(item.sliders, (r) => {
+          if (typeof r.animId !== "string" || !animIds.has(r.animId) || (r.boneId !== undefined && !isNode(r.boneId))) return null;
+          const head = fresh(r);
+          if (!head) return null;
+          const k: SliderConstraint = { ...head, animId: r.animId as AnimId, ...nums(r, ["mix", "from", "to", "scale", "max", "time"] as const) };
+          if (r.additive === true) k.additive = true;
+          if (r.loop === true) k.loop = true;
+          if (r.boneId !== undefined) {
+            k.boneId = r.boneId as NodeId;
+            k.property = SLIDER_PROPERTIES.includes(r.property as never) ? r.property as SliderConstraint["property"] : "rotate";
+            if (r.local === true) k.local = true;
+          }
+          return k;
+        });
+        if (out.length) item.sliders = out; else delete item.sliders;
+      }
+    }
+    // Sequence keys of nodes that show a sequence: known modes, an index, a delay.
+    for (const anim of item.animations) {
+      if (anim.sequences === undefined) continue;
+      const raw = anim.sequences && typeof anim.sequences === "object" ? (anim.sequences as Record<string, unknown>) : {};
+      const out: Record<string, SequenceKey[]> = {};
+      for (const [id, list] of Object.entries(raw)) {
+        const node = item.nodes[id as never];
+        if (!node || !displaysOf(node).some((d) => d.sequence) || !Array.isArray(list)) continue;
+        const byFrame = new Map<number, SequenceKey>();
+        for (const k of list as unknown[]) {
+          if (!k || typeof k !== "object") continue;
+          const r = k as Record<string, unknown>;
+          const mode = SEQUENCE_MODES.includes(r.mode as never) ? r.mode as SequenceKey["mode"] : "hold";
+          const delay = num(r.delay, 1);
+          const key: SequenceKey = { frame: clampInt(r.frame, 0, 100000, 0), mode, index: clampInt(r.index, 0, 100000, 0), delay: delay > 0 ? delay : 1 };
+          byFrame.set(key.frame, key);
+        }
+        const keys = [...byFrame.values()].sort((a, b) => a.frame - b.frame);
+        if (keys.length) out[id] = keys;
+      }
+      if (Object.keys(out).length) anim.sequences = out as never;
+      else delete anim.sequences;
+    }
     // Transform constraints: a source and bones the symbol has (bones not the
     // source), unique names, properties of known channels, finite numbers.
     if (item.transforms !== undefined) {
@@ -403,6 +500,30 @@ export function validateProject(raw: unknown): ValidationResult {
     // the symbol has, of images that exist; members it has.
     for (const node of Object.values(item.nodes)) {
       if (node.skinOnly !== undefined && (node.skinOnly !== true || !node.itemId)) delete node.skinOnly;
+      // Sequences: images that exist, a setup index among them.
+      const cleanSeq = (raw: unknown) => {
+        const r = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+        const items = Array.isArray(r.items) ? r.items.filter((id): id is string => typeof id === "string" && p.items[id as never]?.kind === "image") : [];
+        if (items.length < 2) return undefined;
+        const out: { items: typeof items; setup?: number } = { items };
+        const setup = clampInt(r.setup, 0, items.length - 1, 0);
+        if (setup) out.setup = setup;
+        return out as Node["sequence"];
+      };
+      if (node.sequence !== undefined) { const q = node.itemId ? cleanSeq(node.sequence) : undefined; if (q) node.sequence = q; else delete node.sequence; }
+      for (const d of node.extraDisplays ?? []) if (d.sequence !== undefined) { const q = cleanSeq(d.sequence); if (q) d.sequence = q; else delete d.sequence; }
+      if (node.path !== undefined) {
+        const r = node.kind === "path" && node.path && typeof node.path === "object" ? node.path as unknown as Record<string, unknown> : null;
+        const pts = r && Array.isArray(r.points) ? r.points.map((v) => num(v, NaN)) : [];
+        if (r && pts.length >= 12 && pts.length % 6 === 0 && pts.every(Number.isFinite)) {
+          node.path = { points: pts, ...(r.closed === true ? { closed: true } : {}), ...(r.constantSpeed === false ? { constantSpeed: false } : {}) };
+        } else delete node.path;
+      }
+      if (node.box !== undefined) {
+        const pts = node.kind === "box" && node.box && Array.isArray(node.box.points) ? node.box.points.map((v) => num(v, NaN)) : [];
+        if (pts.length >= 6 && pts.length % 2 === 0 && pts.every(Number.isFinite)) node.box = { points: pts };
+        else delete node.box;
+      }
       for (const d of node.extraDisplays ?? []) if (d.skinOnly !== undefined && d.skinOnly !== true) delete d.skinOnly;
     }
     if (item.skins !== undefined) {
@@ -591,6 +712,7 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // `Animation.deforms`. Additive; an older build would drop them.
   20: (p) => ({ ...p, version: 21 }),
   21: (p) => ({ ...p, version: 22 }),
+  22: (p) => ({ ...p, version: 23 }),
   // 19 -> 20: `SymbolItem.transforms` and `Animation.transforms`, transform
   // constraints and their keys. Additive; an older build would drop them.
   19: (p) => ({ ...p, version: 20 }),

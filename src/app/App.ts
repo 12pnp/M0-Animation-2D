@@ -23,6 +23,7 @@ import { SkinsPanel } from "@/view/panels/SkinsPanel";
 import { EventsPanel } from "@/view/panels/EventsPanel";
 import { GraphPanel } from "@/view/panels/GraphPanel";
 import { doBindMesh, doMakeMesh, doRemoveMesh, doUnbindMesh } from "./MeshOps";
+import { doAddAttachment, doMakePath } from "./AttachmentOps";
 import { meshableNodes, meshNodes } from "@/core/mesh/meshPlan";
 import { SoundStore } from "./SoundStore";
 import { HistoryPanel } from "@/view/panels/HistoryPanel";
@@ -1256,6 +1257,7 @@ export class App {
           it("modify.bindToBone"),
           "-",
           { label: "Mesh", items: [it("modify.makeMesh"), it("modify.removeMesh"), "-", it("modify.bindMesh"), it("modify.unbindMesh")] },
+          { label: "Attachments", items: [it("modify.addBox"), it("modify.addPoint"), "-", it("modify.makePath")] },
           "-",
           it("modify.mask"),
           it("modify.masked"),
@@ -1571,6 +1573,12 @@ export class App {
     }, () => meshNodes(s.currentSymbol, s.selection.nodes).length === 1);
     reg("modify.unbindMesh", () => { doUnbindMesh(s); },
       () => meshNodes(s.currentSymbol, s.selection.nodes).some((id) => !!s.currentSymbol.nodes[id]!.mesh!.weights));
+    reg("modify.addBox", () => doAddAttachment(s, this.assets, "box"), () => s.selection.nodes.length <= 1);
+    reg("modify.addPoint", () => doAddAttachment(s, this.assets, "point"), () => s.selection.nodes.length <= 1);
+    reg("modify.makePath", () => {
+      const refused = doMakePath(s, s.selectedNodes.filter((n) => n.kind === "bone").map((n) => n.id));
+      if (refused) this.toast.show(refused, true);
+    }, () => s.selectedNodes.some((n) => n.kind === "bone"));
     reg("modify.mask", () => this.toggleMask(), () => this.canToggleMask(),
       () => this.selectedLayer()?.isMask === true);
     reg("modify.masked", () => this.toggleMasked(), () => this.canToggleMasked(),

@@ -1,5 +1,5 @@
 import {
-  AtlasAttachmentLoader, type Bone, ClippingAttachment, IkConstraint, MeshAttachment, TransformConstraint, MixFrom, Physics, RegionAttachment, Skeleton,
+  AtlasAttachmentLoader, type Bone, BoundingBoxAttachment, ClippingAttachment, IkConstraint, MeshAttachment, PathAttachment, PointAttachment, TransformConstraint, MixFrom, Physics, RegionAttachment, Skeleton,
   SkeletonJson, Skin, type Slot, TextureAtlas, TextureAtlasRegion, type Animation as SpineRuntimeAnimation,
 } from "@esotericsoftware/spine-core";
 import { orderAt } from "@/core/doc/drawOrder";
@@ -10,6 +10,8 @@ import type { Animation, ColorTransform, Project, SymbolItem } from "@/core/doc/
 import { isImage } from "@/core/doc/types";
 import { displaysOf } from "@/core/doc/displays";
 import { stageSkinOf } from "@/core/doc/skins";
+import { docEpoch } from "@/core/doc/revision";
+import { runtimeSolved } from "@/core/doc/constraints";
 import { evaluateSymbol, type Pose, type PoseEntry } from "@/core/doc/pose";
 import { matOf } from "@/core/math/Matrix2D";
 import type { PackedPage } from "@/core/atlas/packed";
@@ -39,7 +41,8 @@ import { toSpineLocal } from "./transform";
  * moving a bone or keying a colour sets values on the same skeleton.
  *
  * Physics is posed at rest (`Physics.reset`): a simulation needs the
- * frames before it, and a seek has none. The Preview plays it.
+ * frames before it, and a seek has none; while the stage plays it steps
+ * on (`livePhysics`). The Preview plays it.
  */
 
 interface Rig {
@@ -55,9 +58,11 @@ interface Rig {
   keepsShear: Set<NodeId>;
   images: Map<string, ItemId>;
   animations: Map<string, SpineRuntimeAnimation>;
+  /** The frame physics last stepped to, while frames come in order. */
+  physicsAt: { animation: string; frame: number } | null;
 }
 
-const bySymbol = new WeakMap<SymbolItem, Map<string, { key: string; rig: Rig | null; error?: string }>>();
+const bySymbol = new WeakMap<SymbolItem, Map<string, { key: string; epoch: number; rig: Rig | null; error?: string }>>();
 const byKey = new Map<string, { rig: Rig | null; error?: string }>();
 const objectIds = new WeakMap<object, number>();
 let nextObjectId = 1;
@@ -77,14 +82,17 @@ function idOf(o: object | undefined): number {
 function structureKey(project: Project, sym: SymbolItem): string {
   const nodes = Object.values(sym.nodes).map((n) => [
     n.id, n.name, n.kind, n.parentId, n.slotBone, n.inherit, n.setupDisplay, n.blendMode, n.boneLength,
-    displaysOf(n).map((d) => [d.itemId, project.items[d.itemId]?.name, idOf(d.attachment?.data), d.attachment?.name]),
-    idOf(n.spine?.bone), idOf(n.spine?.slot),
+    displaysOf(n).map((d) => [d.itemId, project.items[d.itemId]?.name, idOf(d.attachment?.data), d.attachment?.name, idOf(d.mesh), idOf(d.sequence), !!d.skinOnly]),
+    idOf(n.spine?.bone), idOf(n.spine?.slot), idOf(n.box), idOf(n.path),
   ]);
   const layers = sym.layers.map((l) => [l.nodeId, l.excludeFromExport, l.isMask, l.maskedBy]);
-  const ik = sym.ik.map((k) => [k.name, k.boneId, k.targetId, k.chain, k.bendPositive, k.weight, k.softness, idOf(k.spine)]);
+  const ik = sym.ik.map((k) => [k.name, k.boneId, k.targetId, k.chain, k.bendPositive, k.weight, k.softness, k.stretch, k.compress, k.scaleY, idOf(k.spine)]);
   const tcs = (sym.transforms ?? []).map((k) => JSON.stringify(k));
-  const anims = sym.animations.map((a) => [a.name, idOf(a.spine)]);
-  return JSON.stringify([idOf(sym.spine), project.frameRate, nodes, layers, ik, tcs, anims]);
+  // A slider's animation is in the rig whole (`setupOnly`): its keys are structure.
+  // Deform and sequence keys are in the rig too.
+  const anims = sym.animations.map((a) => [a.name, idOf(a.spine), sym.sliders?.some((k) => k.animId === a.id) ? JSON.stringify(a) : 0, JSON.stringify([a.deforms, a.sequences])]);
+  const others = [idOf(sym.physics), idOf(sym.sliders), idOf(sym.paths)];
+  return JSON.stringify([idOf(sym.spine), idOf(sym.skins), project.frameRate, nodes, layers, ik, tcs, anims, others]);
 }
 
 function rigFor(project: Project, sym: SymbolItem, skins: readonly string[]): { rig: Rig | null; error?: string } {
@@ -92,8 +100,10 @@ function rigFor(project: Project, sym: SymbolItem, skins: readonly string[]): { 
   if (!perSkin) bySymbol.set(sym, (perSkin = new Map()));
   const skinKey = JSON.stringify(skins);
   const cached = perSkin.get(skinKey);
-  if (cached) return cached;
+  // Edits change the symbol in place: after one, the structure is read again.
+  if (cached?.epoch === docEpoch.n) return cached;
   const key = JSON.stringify([skins, structureKey(project, sym)]);
+  if (cached?.key === key) { cached.epoch = docEpoch.n; return cached; }
   let built = byKey.get(key);
   if (!built) {
     built = buildRig(project, sym, skins);
@@ -101,7 +111,7 @@ function rigFor(project: Project, sym: SymbolItem, skins: readonly string[]): { 
     // A handful of structures at most: undo and redo flip between a few.
     if (byKey.size > 8) byKey.delete(byKey.keys().next().value!);
   }
-  const out = { key, ...built };
+  const out = { key, epoch: docEpoch.n, ...built };
   perSkin.set(skinKey, out);
   return out;
 }
@@ -165,7 +175,7 @@ function buildRig(project: Project, sym: SymbolItem, skins: readonly string[]): 
   }
   const animations = new Map<string, SpineRuntimeAnimation>();
   for (const a of skeleton.data.animations) animations.set(a.name, a);
-  return { rig: { skeleton, bones, slots, slotNode, displayNames, keepsShear, images, animations } };
+  return { rig: { skeleton, bones, slots, slotNode, displayNames, keepsShear, images, animations, physicsAt: null } };
 }
 
 /**
@@ -179,7 +189,7 @@ export function posedSymbol(
   skins: readonly string[] = stageSkinOf(sym),
 ): Pose {
   const pose = evaluateSymbol(sym, animation, frame, mode, skins);
-  if (!sym.spine) return pose;
+  if (!sym.spine && !runtimeSolved(sym)) return pose;
   const { rig } = rigFor(project, sym, skins);
   if (rig) applyRig(rig, sym, pose, animation, frame, mode, project.frameRate);
   return pose;
@@ -187,7 +197,7 @@ export function posedSymbol(
 
 /** Why an opened symbol is drawn with the editor's own pose, or null. */
 export function spinePoseError(project: Project, sym: SymbolItem, skins: readonly string[] = stageSkinOf(sym)): string | null {
-  return sym.spine ? rigFor(project, sym, skins).error ?? null : null;
+  return sym.spine || runtimeSolved(sym) ? rigFor(project, sym, skins).error ?? null : null;
 }
 
 /**
@@ -222,11 +232,14 @@ function applyRig(
   for (const [nodeId, slot] of rig.slots) {
     const e = pose.byNode.get(nodeId);
     if (!e) continue;
-    const onStage = e.displayIndex >= 0 && e.display !== null;
+    // A box, point or path has no display: its one attachment is key 0.
+    const outline = e.node.kind === "box" || e.node.kind === "point" || e.node.kind === "path";
+    const onStage = e.displayIndex >= 0 && (e.display !== null || outline);
     const name = onStage ? rig.displayNames.get(nodeId)?.get(e.displayIndex) : undefined;
     const att = name ? sk.getAttachment(slot.data.index, name) : null;
     // A slot whose setup attachment is not a display keeps the runtime's.
     if (att || e.displayIndex !== -1 || sym.nodes[nodeId]?.setupDisplay !== -1) slot.pose.setAttachment(att);
+
     setColor(slot, e.color);
   }
   if (mode === "animate" && animation) {
@@ -266,7 +279,7 @@ function applyRig(
     const ranked = at.map((i) => order[i]!).sort((a, b) => rank.get(rig.slotNode.get(a)!)! - rank.get(rig.slotNode.get(b)!)!);
     at.forEach((i, n) => { order[i] = ranked[n]!; });
   }
-  sk.updateWorldTransform(Physics.reset);
+  sk.updateWorldTransform(physicsStep(rig, sk, animation, frame, mode, fps));
 
   // Worlds, y flipped into the editor's space.
   const worldOf = (bone: Bone) => {
@@ -303,7 +316,9 @@ function applyRig(
       e.clip = { polygon: v, until: null };
       clips.push({ entry: e, end: att.endSlot ? sk.slots[att.endSlot.index] ?? null : null });
     }
-    e.visible = layerVisible && (!!e.spine || !!e.clip);
+    // Boxes, points and paths draw nothing; the overlay outlines them.
+    const outlined = att instanceof BoundingBoxAttachment || att instanceof PointAttachment || att instanceof PathAttachment;
+    e.visible = layerVisible && (!!e.spine || !!e.clip || outlined);
     slotEntries.push(e);
   }
   for (const { entry, end } of clips) entry.clip!.until = end ? rig.slotNode.get(end) ?? null : null;
@@ -311,6 +326,30 @@ function applyRig(
   pose.entries.length = 0;
   pose.entries.push(...rest, ...slotEntries);
   pose.entries.forEach((e, i) => { e.drawIndex = i; });
+}
+
+/** Set by the stage around its own draw while playing: only then does
+ *  physics simulate; every other pose (paths, tools, tests) is at rest. */
+export const livePhysics = { on: false };
+
+/**
+ * How physics poses this call: at rest (`Physics.reset`), as a seek has no
+ * frames before it to simulate from; while the stage plays (`livePhysics`), a
+ * step on from the frame before when the frames come in order, held at a
+ * frame drawn again.
+ */
+function physicsStep(rig: Rig, sk: Skeleton, animation: Animation | null, frame: number, mode: "setup" | "animate", fps: number): Physics {
+  if (!livePhysics.on || !sk.physics.length || mode !== "animate" || !animation) { rig.physicsAt = null; return Physics.reset; }
+  const last = rig.physicsAt;
+  rig.physicsAt = { animation: animation.name, frame };
+  if (last?.animation !== animation.name) return Physics.reset;
+  if (frame === last.frame) return Physics.pose;
+  // On from the last frame, across the loop's wrap, up to half a second: a
+  // slow redraw still simulates, a seek does not.
+  const delta = frame > last.frame ? frame - last.frame : animation.duration - last.frame + frame;
+  if (delta > fps / 2) return Physics.reset;
+  sk.update(delta / fps);
+  return Physics.update;
 }
 
 /** The editor's colour as the slot's light and dark: light M + O, dark O

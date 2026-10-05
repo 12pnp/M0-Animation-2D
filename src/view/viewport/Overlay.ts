@@ -1,4 +1,5 @@
 import type { Camera } from "./Camera";
+import { pathPolyline } from "@/core/doc/constraints";
 import { boneRow } from "@/core/doc/boneRow";
 import { uiFont, type UiFontSize } from "@/core/prefs/fonts";
 import type { Pose } from "@/core/doc/pose";
@@ -14,7 +15,7 @@ import type { Layer, Project, SymbolItem } from "@/core/doc/types";
 import type { NodeId } from "@/core/doc/ids";
 import { ikChain, ikRoles } from "@/core/doc/ikGraph";
 import { boneSide } from "@/core/rig/motion";
-import { mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
+import { apply as applyMat, mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { type Point, type Rect, transformCorners } from "@/core/math/geom";
 import { type Gizmo, handlePoints } from "@/view/tools/gizmo";
 import { AXIS_LENGTH, axisTips, drivenBox, positionAxisTips, SCENE_FRAME, showsPositionAxes, } from "./nodeFrame";
@@ -108,9 +109,18 @@ export interface MeshDraw {
   hull: number;
   picked: ReadonlySet<number>;
   tint: number[] | null;
+  /** A path's points: each knot joined to its two handles. */
+  handles?: true;
 }
 
+/** Spine's own colours for bounding boxes and points. */
+const BOX_COLOR = "#60f000";
+const BOX_FILL = "rgba(96, 240, 0, 0.08)";
+const POINT_COLOR = "#f1f100";
+const PATH_COLOR = "#ff7f00";
+
 /** Everything drawn on top of the artwork: chrome, guides and handles. */
+
 export class Overlay {
   /** The Mesh tool's wireframe: triangles thin, the outline bold, points as
    *  dots (filled when picked, coloured by weight while painting). */
@@ -126,6 +136,14 @@ export class Overlay {
       ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.closePath();
     }
     ctx.stroke();
+    if (m.handles) {
+      ctx.beginPath();
+      for (let k = 0; k + 2 < v.length / 2; k += 3) {
+        const a = s(k), b = s(k + 1), c = s(k + 2);
+        ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y);
+      }
+      ctx.stroke();
+    }
     ctx.strokeStyle = this.C.select;
     ctx.lineWidth = 1.5;
     ctx.beginPath();
@@ -180,6 +198,7 @@ export class Overlay {
     this.drawStageOutline(ctx, camera, project, opts.setupMode);
     if (opts.showGuides) this.drawGuides(ctx, camera, opts.guides, opts.draftGuide);
     this.drawEmptySymbols(ctx, camera, project, pose);
+    this.drawBoxes(ctx, camera, pose);
     if (opts.bonePaths) this.drawBonePaths(ctx, camera, opts.bonePaths);
     if (opts.showBones || opts.primary?.show) this.drawBones(ctx, camera, symbol, pose, opts);
     if (opts.names.images) this.drawImageNames(ctx, camera, pose);
@@ -768,6 +787,58 @@ export class Overlay {
       ctx.textAlign = "center";
       ctx.fillText(`${label} (empty)`, cx, Math.max(tl.y, bl.y) + 12);
       ctx.textAlign = "start";
+      ctx.restore();
+    }
+  }
+
+  /** Bounding boxes and points draw nothing of their own: their outline
+   *  (ARCHITECTURE ▸ Boxes and points), as Spine's editor shows them. */
+  private drawBoxes(ctx: CanvasRenderingContext2D, cam: Camera, pose: Pose): void {
+    const p = { x: 0, y: 0 };
+    for (const e of pose.entries) {
+      if (!e.visible || (e.node.kind !== "box" && e.node.kind !== "point" && e.node.kind !== "path")) continue;
+      const screen = mul(mat(), cam.matrix, e.world);
+      ctx.save();
+      ctx.lineWidth = 1;
+      if (e.node.kind === "path") {
+        const line = e.node.path && e.node.path.points.length >= 12 ? pathPolyline(e.node.path) : [];
+        if (line.length < 4) { ctx.restore(); continue; }
+        ctx.strokeStyle = PATH_COLOR;
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        for (let i = 0; i < line.length; i += 2) {
+          applyMat(p, screen, line[i]!, line[i + 1]!);
+          if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+        }
+        if (e.node.path!.closed) ctx.closePath();
+        ctx.stroke();
+      } else if (e.node.kind === "box") {
+        const pts = e.node.box?.points ?? [];
+        if (pts.length < 6) { ctx.restore(); continue; }
+        ctx.strokeStyle = BOX_COLOR;
+        ctx.fillStyle = BOX_FILL;
+        ctx.beginPath();
+        for (let i = 0; i < pts.length; i += 2) {
+          applyMat(p, screen, pts[i]!, pts[i + 1]!);
+          if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
+        }
+        ctx.closePath();
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        // A ring on the point and a tick along its x axis: its rotation.
+        applyMat(p, screen, 0, 0);
+        const cx = p.x, cy = p.y;
+        applyMat(p, screen, 1, 0);
+        const len = Math.hypot(p.x - cx, p.y - cy) || 1;
+        const ux = (p.x - cx) / len, uy = (p.y - cy) / len;
+        ctx.strokeStyle = POINT_COLOR;
+        ctx.beginPath();
+        ctx.arc(cx, cy, 4, 0, Math.PI * 2);
+        ctx.moveTo(cx + ux * 4, cy + uy * 4);
+        ctx.lineTo(cx + ux * 14, cy + uy * 14);
+        ctx.stroke();
+      }
       ctx.restore();
     }
   }

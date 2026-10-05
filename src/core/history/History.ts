@@ -1,4 +1,5 @@
 import type { Project } from "@/core/doc/types";
+import { touchDoc } from "@/core/doc/revision";
 import { freezeValues, valueFreeze } from "@/core/doc/freeze";
 import { type Command, CompositeCommand, mergeTouches, type TouchSet } from "./Command";
 
@@ -362,6 +363,7 @@ export class History {
    *  cannot write into a value an undo step still holds. */
   private settle(): void {
     this.changes++;
+    touchDoc();
     if (valueFreeze.enabled) freezeValues(this.project);
   }
 }

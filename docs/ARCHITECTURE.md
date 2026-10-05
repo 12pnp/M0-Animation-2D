@@ -1150,9 +1150,12 @@ picking follow the mesh. Picking an attachment picks the bone it rides.
 
 The skeleton is `exportSpine(…, { setupOnly: true })`, the file the export writes, less its
 generated keys, over one untrimmed page of library images. It is rebuilt only when the
-structure changes (`structureKey`). Posing spineboy-pro or celestial-circus takes 0.3 ms.
+structure changes (`structureKey`). Edits change the symbol in place, so the per-symbol cache
+reads the structure again after any edit (`docEpoch`, bumped by `History`); before, an IK's
+bend flipped on an opened rig did not reach the stage until a reload. Posing spineboy-pro or celestial-circus takes 0.3 ms.
 Physics is posed at rest (`Physics.reset`), because a seek has no frames before it to
-simulate from. The skins shown over the default skin are `stageSkinOf` (`core/doc/skins.ts`): the symbol's
+simulate from, except while the stage plays (`livePhysics`, ARCHITECTURE ▸ Physics, sliders
+and paths). The skins shown over the default skin are `stageSkinOf` (`core/doc/skins.ts`): the symbol's
 choice (`SymbolItem.stageSkins`, from the stage bar's Skin picker, `SetStageSkins`),
 else none, or the first other skin when the default one draws nothing. Several are
 combined into one `Skin` (`addSkin`, a later one winning a shared slot key) by the stage
@@ -1714,8 +1717,12 @@ inherits and the port keeps: `mix` (the editor's weight) blends local rotations;
 non-uniform parent scale takes a numeric solve and ZEROES the child's local y; angles use
 the runtime's pi and wrap into (−180, 180] before mixing; a zero weight skips the solve.
 Softness is ported (`IkConstraint.softness`, pixels, two-bone chains only: near full reach
-the target is pulled in so the chain eases into straight). Stretch and compress are not (the
-editor cannot author them). The bend is
+the target is pulled in so the chain eases into straight). So are stretch, compress and
+scale y (`IkConstraint.stretch`, `compress`, `scaleY`: 4.3's `scaleY` mode replaced
+`uniform`): the solved bone scales along its length to reach a target out of reach (or, one
+bone, not to overshoot a near one), scale y following it (uniform), keeping the area
+(volume, below 0.7 by Spine's curve) or staying. Opened files' carried stretch and compress
+move to the fields on load. Checked by 60 random rigs and a hard compress per mode. The bend is
 written inverted (ARCHITECTURE ▸ The Spine 4.3 contract). `tests/spineParity.test.ts`
 checks the stage against spine-core on the stickman, seven targeted rigs (partial weight,
 negative bend, look-at, non-uniform scale, mirrored and sheared parents) and 60 random
@@ -1994,6 +2001,95 @@ editing.
 - The AI's `add_skin`, `set_skin_image` and `set_skin_members`; `show` takes skins for any rig.
 - Not built: skin colours, per-skin deform keys, a mesh made for a skin image (a skin display
   is a region, or the opened attachment it came with), linked meshes.
+
+## Boxes and points
+
+A bounding box (a hit area) and a point (a spawn point with a direction), as Spine's
+`boundingbox` and `point` attachments. Each is a node kind of its own (`"box"`, `"point"`):
+a slot on its own bone, like an image, that draws nothing; the overlay outlines it in Spine's
+colours (`drawBoxes`). `Node.box.points` is the polygon in the node's space, y down; a point
+is its node's origin and x axis, written `{ type: "point" }` at 0, 0, 0. Pure in
+`core/doc/boxes.ts`.
+
+- **Made** from Modify ▸ Attachments (`attachmentPlan`): on a picture, in its place, a box
+  taking the picture's alpha outline about its pivot; on a bone, under it at its origin; the
+  layer goes above the selected one. **Edited** with the Mesh tool: drag points, click inside
+  to add one on the nearest edge (`withBoxPoint`), Delete removes the picked (three stay).
+- **Picked** inside the polygon, or near the point (`entryBox` gives their bounds, so the
+  gizmo moves them like any layer).
+- **Export** writes the attachment under the node's name, the polygon y up; a box short of
+  three points is left out with a warning. Checked against spine-core's
+  `computeWorldVertices` and `computeWorldPosition` (`spineParity` ▸ "boxes and points").
+- An opened file's boxes and points stay carried. The AI's `add_attachment`.
+
+## Sequences
+
+Frame-by-frame images in one display, as Spine's region sequence (ARCHITECTURE ▸ Physics,
+sliders and paths covers the runtime pose they also need). `DisplayRef.sequence`
+(display 0: `Node.sequence`): `{ items, setup? }`, all the size of the first; keys in
+`Animation.sequences[nodeId]`: `{ frame, mode, index, delay }`, the delay in frames. Schema 23.
+Pure in `core/doc/sequence.ts`.
+
+- **The image at a frame** is `SequenceTimeline.apply`'s rule (`sequenceIndexAt`): the setup
+  image before the first key; else the key's index, advanced every `delay` frames by the mode
+  (hold, once, loop, pingpong and their reversed kinds). The export divides the time and the
+  delay by the frame rate alike, so the ratio, and the frame, is the same. The stage puts the
+  image in the display (`evaluateSymbol`).
+- **Made** from a picture named with a number (Properties ▸ Sequence ▸ Make Sequence,
+  `sequenceFor`): the library images with the same prefix and the numbers around it, run on
+  from the lowest, all one size, the picture the setup frame. Spine finds the regions by name
+  (`path` + the number, padded to `digits`, `Sequence.getPath`), so the names must run on
+  (`sequenceNaming`); the export refuses otherwise.
+- **Keys**: a Sequence row under the node (`LayerRow.sequence`, the Deform row's machinery
+  by kind): drag, Delete, right-click to key here or set the mode; Properties ▸ Sequence keys
+  the mode, the first image and the delay at the playhead.
+- **Export**: the region with `path` and `sequence: { count, start, digits, setup }` and every
+  frame's image packed; keys as the attachment's `sequence` timeline. Checked frame by frame in
+  every mode (`spineParity` ▸ "sequences"). An opened file's sequences stay carried.
+- The AI's `make_sequence` and `key_sequence`.
+
+## Physics, sliders and paths
+
+Spine's physics, slider (4.3) and path constraints, with the path attachment they follow.
+`SymbolItem.physics`, `sliders`, `paths` (`CnId` ids), every value as Spine writes it and
+absent at Spine's default (`core/doc/constraints.ts` has the defaults and the JSON both
+ways). A path is a node kind (`"path"`): `Node.path` `{ points, closed?, constantSpeed? }`,
+three points per knot (handle in, knot, handle out) in the node's space, written with
+Spine's `lengths` (`pathLengths`).
+
+- **The runtime solves them.** The editor does not port these solvers: a symbol that has any
+  (`runtimeSolved`) is posed by spine-core through `posedSymbol`, as an opened rig is
+  (ARCHITECTURE ▸ The stage poses an opened rig through the runtime), and drawn through its
+  slots (`drawSpineEntries`, a nested symbol falling back to its own drawing). The stage
+  plays what the export plays by construction; `tests/constraintsF.test.ts` checks the stage
+  against the full export in spine-core and that each constraint moves something.
+  - The stage's rig is the export with `setupOnly`, which leaves out the keys the stage sets
+    itself. It keeps the keys the stage does not set: a slider's animation whole (the runtime
+    plays it), and deform and sequence keys (the attachment timelines), merged with any
+    carried ones (`mergeAttachmentTimelines`). Those keys are in `structureKey`.
+  - **Physics simulates only while the stage plays** (`livePhysics`, set around the
+    viewport's draw): a step on from the frame before while frames come in order, across the
+    loop's wrap, up to half a second; held at a frame drawn again; else at rest
+    (`Physics.reset`), as a seek has no frames before it. Every other pose (paths, tools, the
+    AI, tests) is at rest. The Preview plays it.
+  - Boxes, points and paths posed so keep their attachment (`applyRig`: key 0 for a node
+    with no display) and stay visible for the overlay.
+- **Made**: Properties ▸ Physics ▸ Add Physics on a bone (`newPhysics`: its rotation sways);
+  Properties ▸ Slider ▸ Add Slider… on a bone, choosing the animation its rotation plays
+  (`newSlider`); Modify ▸ Attachments ▸ Make Path from Bones (`doMakePath`): a smooth path
+  (`pathThrough`) through the selected bones' origins and the last one's tip, under the first
+  bone's parent, the bones laid along it by length and turned as a chain. **Edited** in
+  Properties (`constraintRows`: a value at its default is written absent; a scrub is one undo
+  step) and, for a path's knots and handles, with the Mesh tool (`withKnotMoved`: a knot
+  brings its handles; Delete removes a knot, two stay). Every edit is one `SetConstraintList`
+  (the list as one value) or `EditNode`.
+- **Export** writes them after the IK and transform constraints, the exported symbol's only
+  (a nested one's warn); a constraint whose bone, path or animation is gone is skipped with a
+  warning. **Import**: a file's physics and sliders become the model's when every field is
+  one it holds (else carried, as a skin-listed one is); paths stay carried, since a path slot's
+  attachment key need not be its name.
+- Keys of these constraints (mix, position, inertia, …) are not edited: an opened file's are
+  carried. The AI's `add_physics`, `add_slider` and `make_path`.
 
 ## Bone paths
 

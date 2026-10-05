@@ -58,6 +58,12 @@ import { DEFAULT_SKIN, editedSkin, skinsOf, stageSkinOf } from "@/core/doc/skins
 import { displaysOf } from "@/core/doc/displays";
 import { isImage } from "@/core/doc/types";
 import { doSetSkinImage, doSetSkinMembers, doSetSkinOnly } from "@/app/SkinOps";
+import { doAddPhysics, doAddSlider, doMakeSequence, doRemoveSequence, doSetConstraints, doSetSequenceKeys, doSetSequenceSetup } from "@/app/AttachmentOps";
+import { PHYSICS_DEFAULTS, type PhysicsSetting, SLIDER_PROPERTIES } from "@/core/doc/constraints";
+import { type ConstraintField, EditNode } from "@/core/history/attachmentCommands";
+import type { CnId } from "@/core/doc/ids";
+import { SEQUENCE_MODE_LABELS, SEQUENCE_MODES, withSequenceKey } from "@/core/doc/sequence";
+import type { PathShape, SequenceKey, SymbolItem } from "@/core/doc/types";
 import { type IkPatch, RemoveIkConstraint, SetBoneLength, SetIkOptions, } from "@/core/history/ikCommands";
 
 /**
@@ -172,8 +178,10 @@ export class PropertiesPanel implements Panel {
       .map((k) => [k.id, k.name, k.sourceId, k.boneIds.join(","), !!k.localSource, !!k.localTarget, !!k.additive, !!k.clamp, usedMixes(k).join("")].join(":")).join(";");
     // Skins are replaced as values: their identity says when they changed.
     const sym = this.store.currentSymbol;
-    const skins = `${valueId(sym.skins)}:${stageSkinOf(sym).join(",")}:${editedSkin(sym, this.store.ui.editSkin) ?? ""}`;
-    return `${anim}|${tcs}|${skins}|` + nodes.map((n) => `${n.id}:${n.kind}:${displaysOf(n).map((d) => (d.skinOnly ? "s" : "d")).join("")}:${displayAtFrame(this.store, n).display?.itemId ?? ""}:${n.mesh ? `m${n.mesh.points.length}${n.mesh.weights ? "w" : ""}` : ""}`).join("|");
+    const skins = `${valueId(sym.skins)}:${stageSkinOf(sym).join(",")}:${editedSkin(sym, this.store.ui.editSkin) ?? ""}`
+      // Physics, sliders and paths: which there are, not their values (synced).
+      + [...(sym.physics ?? []), ...(sym.sliders ?? []), ...(sym.paths ?? [])].map((k) => `${k.id}:${k.name}:${"boneId" in k ? k.boneId : ""}:${"boneIds" in k ? k.boneIds.join(",") : ""}:${"animId" in k ? k.animId : ""}`).join(";");
+    return `${anim}|${tcs}|${skins}|` + nodes.map((n) => `${n.id}:${n.kind}:${displaysOf(n).map((d) => (d.skinOnly ? "s" : "d")).join("")}:${displayAtFrame(this.store, n).display?.itemId ?? ""}:${n.mesh ? `m${n.mesh.points.length}${n.mesh.weights ? "w" : ""}` : ""}${n.sequence ? `q${n.sequence.items.length}` : ""}`).join("|");
   }
 
   /**
@@ -240,12 +248,19 @@ export class PropertiesPanel implements Panel {
     // A bone produces no slot, so it has neither colour nor blend mode.
     if (!bone) this.body.appendChild(this.colorSection(nodes));
     if (!bone && nodes.length === 1 && nodes[0]!.kind === "image" && !nodes[0]!.attachment) this.body.appendChild(this.meshSection(nodes[0]!));
+    if (!bone && nodes.length === 1 && nodes[0]!.kind === "image" && !nodes[0]!.attachment && !nodes[0]!.mesh) this.body.appendChild(this.sequenceSection(nodes[0]!));
     if (nodes.length === 1 && (bone || nodes[0]!.kind === "image")) this.body.appendChild(this.skinSection(nodes[0]!));
     if (bone) {
       this.body.appendChild(this.boneSection(bone));
       const section = this.ikSection(bone);
       if (section) this.body.appendChild(section);
       this.body.appendChild(this.transformSection(bone));
+      this.body.appendChild(this.physicsSection(bone));
+      this.body.appendChild(this.sliderSection(bone));
+    }
+    if (nodes.length === 1 && (bone || nodes[0]!.kind === "path")) {
+      const section = this.pathSection(nodes[0]!);
+      if (section) this.body.appendChild(section);
     }
   }
 
@@ -502,6 +517,24 @@ export class PropertiesPanel implements Panel {
       });
       softness.set(constraint.softness ?? 0);
 
+      // Stretch and compress scale the bone along its length (Spine's IK
+      // options); scale y follows the stretch, keeps the area, or stays.
+      const check = (label: string, title: string, read: () => boolean, patch: (on: boolean) => IkPatch) => {
+        const box = h("input", { type: "checkbox", class: "switch" }) as HTMLInputElement;
+        box.checked = read();
+        on(box, "change", () => write(patch(box.checked)));
+        this.ikSync.push(() => { box.checked = read(); });
+        return { label: h("label", { class: "switch-label", title }, box, label) };
+      };
+      const live = () => this.store.currentSymbol.ik.find((k) => k.id === constraint.id) ?? constraint;
+      const stretchBox = check("Stretch", "Scale the bones along their length to reach a target out of reach", () => !!live().stretch, (v) => ({ stretch: v }));
+      const compressBox = check("Compress", "Scale the bone down for a target nearer than its length", () => !!live().compress, (v) => ({ compress: v }));
+      const scaleYSel = h("select", { class: "preview-anim", title: "What scale y does when a bone stretches or compresses" }) as HTMLSelectElement;
+      for (const [value, text] of [["", "Stays"], ["uniform", "Follows (uniform)"], ["volume", "Keeps the area (volume)"]]) scaleYSel.appendChild(h("option", { value }, text));
+      scaleYSel.value = live().scaleY ?? "";
+      on(scaleYSel, "change", () => write({ scaleY: (scaleYSel.value || null) as IkPatch["scaleY"] }));
+      this.ikSync.push(() => { scaleYSel.value = live().scaleY ?? ""; });
+
       const key = h("button", { class: "btn", title: "Key the mix and bend in force here" }, "Key");
       on(key, "click", () => keyAt(poseNow(), "Key IK"));
       if (animate) {
@@ -558,6 +591,8 @@ export class PropertiesPanel implements Panel {
         this.row("Bend", [bend]),
         this.row(animate ? "Mix" : "Weight", [weight.el]),
         ...(rel.chain.length > 1 ? [this.row("Softness", [softness.el])] : []),
+        this.row("Scale", [stretchBox.label, ...(rel.chain.length > 1 ? [] : [compressBox.label])]),
+        this.row("Scale Y", [scaleYSel]),
         ...(animate ? [this.row("", [key])] : []),
         this.row("", [remove]),
       );
@@ -788,6 +823,232 @@ export class PropertiesPanel implements Panel {
   }
 
   /**
+   * Rows editing one physics, slider or path constraint by `specs`, each
+   * synced with the document; a value at Spine's default is written absent.
+   */
+  private constraintRows<F extends ConstraintField>(field: F, id: CnId, specs: ConstraintSpec[]): HTMLElement[] {
+    type K = NonNullable<SymbolItem[F]>[number];
+    const current = (): K | undefined => (this.store.currentSymbol[field] as K[] | undefined)?.find((k) => k.id === id);
+    const write = (key: string, value: unknown, def: unknown, label: string, committing: boolean) => {
+      const list = (this.store.currentSymbol[field] ?? []) as K[];
+      const next = list.map((k) => {
+        if (k.id !== id) return k;
+        const out = { ...k } as Record<string, unknown>;
+        if (value === def || value === undefined || value === "") delete out[key]; else out[key] = value;
+        return out as unknown as K;
+      });
+      const kind = `constraint.edit.${id}.${key}`;
+      this.scrubStep(kind, committing);
+      doSetConstraints(this.store, field, next as NonNullable<SymbolItem[F]>, label, kind);
+      if (committing) this.store.history.endInteraction();
+    };
+    const read = (key: string, def: unknown) => (current() as Record<string, unknown> | undefined)?.[key] ?? def;
+    return specs.map((spec) => {
+      if (spec.type === "number") {
+        const nf = new NumberField({
+          glyph: spec.glyph, min: spec.min, max: spec.max, step: spec.step, decimals: spec.decimals ?? 2, unit: spec.unit,
+          onInput: (v, committing) => write(spec.key, v, spec.def, spec.label, committing),
+        });
+        nf.set(read(spec.key, spec.def) as number);
+        this.ikSync.push(() => nf.show(read(spec.key, spec.def) as number));
+        return this.row(spec.label, [nf.el]);
+      }
+      if (spec.type === "select") {
+        const sel = h("select", { class: "preview-anim" }) as HTMLSelectElement;
+        for (const [value, text] of spec.options) sel.appendChild(h("option", { value }, text));
+        sel.value = String(read(spec.key, spec.def));
+        on(sel, "change", () => write(spec.key, sel.value, spec.def, spec.label, true));
+        this.ikSync.push(() => { sel.value = String(read(spec.key, spec.def)); });
+        return this.row(spec.label, [sel]);
+      }
+      const box = h("input", { type: "checkbox", class: "switch" }) as HTMLInputElement;
+      box.checked = read(spec.key, false) === true;
+      on(box, "change", () => write(spec.key, box.checked || undefined, undefined, spec.label, true));
+      this.ikSync.push(() => { box.checked = read(spec.key, false) === true; });
+      return this.row("", [h("label", { class: "switch-label", title: spec.title ?? "" }, box, spec.label)]);
+    });
+  }
+
+  private removeButton<F extends ConstraintField>(field: F, id: CnId, label: string): HTMLElement {
+    const b = h("button", { class: "btn" }, "Remove");
+    on(b, "click", () => {
+      const list = ((this.store.currentSymbol[field] ?? []) as Array<{ id: CnId }>).filter((k) => k.id !== id);
+      doSetConstraints(this.store, field, list as NonNullable<SymbolItem[F]>, label);
+    });
+    return b;
+  }
+
+  /** Physics on a bone (Spine's physics constraint): it lags, springs and
+   *  sways, simulated by the runtime while the stage and the Preview play. */
+  private physicsSection(bone: Node): HTMLElement {
+    const sym = this.store.currentSymbol;
+    const mine = (sym.physics ?? []).filter((k) => k.boneId === bone.id);
+    const rows: HTMLElement[] = [];
+    const d = PHYSICS_DEFAULTS;
+    const num = (key: PhysicsSetting, label: string, glyph: string, min: number, max: number, step: number): ConstraintSpec =>
+      ({ type: "number", key, label, glyph, min, max, step, def: d[key] });
+    for (const k of mine) {
+      rows.push(this.staticRow("Constraint", k.name));
+      rows.push(...this.constraintRows("physics", k.id, [
+        num("x", "Move X", "X", 0, 1, 0.05), num("y", "Move Y", "Y", 0, 1, 0.05), num("rotate", "Rotate", "∠", 0, 1, 0.05),
+        num("scaleX", "Scale X", "S", 0, 1, 0.05), num("shearX", "Shear X", "⧄", 0, 1, 0.05),
+        num("inertia", "Inertia", "I", 0, 1, 0.05), num("strength", "Strength", "K", 0, 1000, 1), num("damping", "Damping", "D", 0, 1, 0.01),
+        num("mass", "Mass", "M", 0.01, 100, 0.1), num("wind", "Wind", "W", -1000, 1000, 1), num("gravity", "Gravity", "G", -1000, 1000, 1),
+        num("mix", "Mix", "%", 0, 1, 0.05), num("limit", "Limit", "L", 0, 100000, 10), num("fps", "Steps/s", "#", 1, 240, 1),
+      ]));
+      rows.push(this.row("", [this.removeButton("physics", k.id, "Remove Physics")]));
+    }
+    const add = h("button", { class: "btn", title: "This bone lags, springs and sways as its parent moves (Spine's physics)" }, mine.length ? "Add Another" : "Add Physics");
+    on(add, "click", () => doAddPhysics(this.store, bone.id));
+    rows.push(this.row("", [add]));
+    rows.push(this.noteRow("The stage simulates physics while it plays and shows it at rest when you scrub; the Preview plays it."));
+    return this.section("Physics", mine.length > 0, rows);
+  }
+
+  /** Sliders this bone drives (Spine 4.3): an animation played by one of its values. */
+  private sliderSection(bone: Node): HTMLElement {
+    const sym = this.store.currentSymbol;
+    const mine = (sym.sliders ?? []).filter((k) => k.boneId === bone.id);
+    const rows: HTMLElement[] = [];
+    for (const k of mine) {
+      rows.push(this.staticRow("Constraint", k.name));
+      rows.push(...this.constraintRows("sliders", k.id, [
+        { type: "select", key: "animId", label: "Plays", options: sym.animations.map((a) => [a.id, a.name]), def: "" },
+        { type: "select", key: "property", label: "By its", options: SLIDER_PROPERTIES.map((p) => [p, p]), def: "rotate" },
+        { type: "number", key: "from", label: "From", glyph: "↦", min: -100000, max: 100000, step: 1, def: 0 },
+        { type: "number", key: "to", label: "At (s)", glyph: "t", min: -1000, max: 1000, step: 0.05, def: 0 },
+        { type: "number", key: "scale", label: "s per unit", glyph: "×", min: -100, max: 100, step: 0.001, decimals: 4, def: 1 },
+        { type: "number", key: "mix", label: "Mix", glyph: "%", min: 0, max: 1, step: 0.05, def: 1 },
+        { type: "check", key: "loop", label: "Loop" },
+        { type: "check", key: "additive", label: "Additive" },
+        { type: "check", key: "local", label: "Local value" },
+      ]));
+      rows.push(this.row("", [this.removeButton("sliders", k.id, "Remove Slider")]));
+    }
+    const add = h("button", { class: "btn", title: "Play an animation by this bone's rotation (Spine's slider)" }, "Add Slider…");
+    on(add, "click", async () => {
+      const symbolId = this.store.currentSymbolId;
+      const name = await chooseDialog({ title: "Add Slider", message: `Which animation does ${bone.name} play as it turns?`, options: this.store.currentSymbol.animations.map((a) => a.name), ok: "Add" });
+      const anim = this.store.currentSymbol.animations.find((a) => a.name === name);
+      if (!anim || this.store.currentSymbolId !== symbolId || !this.store.currentSymbol.nodes[bone.id]) return;
+      doAddSlider(this.store, anim.id, bone.id);
+    });
+    rows.push(this.row("", [add]));
+    return this.section("Slider", mine.length > 0, rows);
+  }
+
+  /** The path constraints a bone follows or a path node carries, and a
+   *  path's own shape settings. */
+  private pathSection(node: Node): HTMLElement | null {
+    const sym = this.store.currentSymbol;
+    const mine = (sym.paths ?? []).filter((k) => k.pathId === node.id || k.boneIds.includes(node.id));
+    if (!mine.length && node.kind !== "path") return null;
+    const rows: HTMLElement[] = [];
+    if (node.kind === "path" && node.path) {
+      const shape = node.path;
+      const flag = (label: string, read: () => boolean, patch: (on: boolean) => Partial<PathShape>) => {
+        const box = h("input", { type: "checkbox", class: "switch" }) as HTMLInputElement;
+        box.checked = read();
+        on(box, "change", () => {
+          this.store.apply(new EditNode(label, this.store.currentSymbolId, node.id, (n) => {
+            const next = { ...n.path!, ...patch(box.checked) };
+            if (!next.closed) delete next.closed;
+            if (next.constantSpeed !== false) delete next.constantSpeed;
+            return { ...n, path: next };
+          }));
+          this.store.emit("stage");
+        });
+        return h("label", { class: "switch-label" }, box, label);
+      };
+      rows.push(this.staticRow("Knots", String(shape.points.length / 6)));
+      rows.push(this.row("", [flag("Closed", () => !!shape.closed, (v) => ({ closed: v })), flag("Constant speed", () => shape.constantSpeed !== false, (v) => ({ constantSpeed: v }))]));
+      const edit = h("button", { class: "btn", title: "The Mesh tool (N): drag knots (their handles follow) and handles; Delete removes a knot" }, "Edit Points");
+      on(edit, "click", () => this.run("tool.mesh"));
+      rows.push(this.row("", [edit]));
+    }
+    for (const k of mine) {
+      rows.push(this.staticRow("Constraint", `${k.name}: ${k.boneIds.map((id) => sym.nodes[id]?.name ?? "?").join(", ")}`));
+      rows.push(...this.constraintRows("paths", k.id, [
+        { type: "select", key: "positionMode", label: "Position", options: [["percent", "Percent"], ["fixed", "Fixed"]], def: "percent" },
+        { type: "number", key: "position", label: "At", glyph: "→", min: -100000, max: 100000, step: 0.01, def: 0 },
+        { type: "select", key: "spacingMode", label: "Spacing", options: [["length", "Bone length"], ["fixed", "Fixed"], ["percent", "Percent"], ["proportional", "Proportional"]], def: "length" },
+        { type: "number", key: "spacing", label: "Gap", glyph: "↔", min: -100000, max: 100000, step: 0.5, def: 0 },
+        { type: "select", key: "rotateMode", label: "Rotate", options: [["tangent", "Tangent"], ["chain", "Chain"], ["chainScale", "Chain, scaled"]], def: "tangent" },
+        { type: "number", key: "rotation", label: "Offset", glyph: "∠", min: -360, max: 360, step: 1, unit: "°", def: 0 },
+        { type: "number", key: "mixRotate", label: "Mix rotate", glyph: "%", min: 0, max: 1, step: 0.05, def: 1 },
+        { type: "number", key: "mixX", label: "Mix X", glyph: "%", min: 0, max: 1, step: 0.05, def: 1 },
+        { type: "number", key: "mixY", label: "Mix Y", glyph: "%", min: 0, max: 1, step: 0.05, def: 1 },
+      ]));
+      rows.push(this.row("", [this.removeButton("paths", k.id, "Remove Path Constraint")]));
+    }
+    return this.section("Path", true, rows);
+  }
+
+  /**
+   * A sequence (ARCHITECTURE ▸ Sequences): made from the library images
+   * numbered like this one; the setup frame; in Animate, the key in force at
+   * the playhead (mode, first image, frames per image), edited by keying here.
+   */
+  private sequenceSection(node: Node): HTMLElement {
+    const rows: HTMLElement[] = [];
+    const seq = node.sequence;
+    if (!seq) {
+      const make = h("button", { class: "btn", title: "Use the library images numbered like this one (fire_01, fire_02, …) as frames" }, "Make Sequence");
+      on(make, "click", () => {
+        const problem = doMakeSequence(this.store, node.id);
+        if (problem) void alertDialog({ title: "Make Sequence", message: problem });
+      });
+      rows.push(this.row("", [make]));
+      rows.push(this.noteRow("Frame-by-frame images in one layer, as Spine's sequence: keys pick which image shows and how they play."));
+      return this.section("Sequence", false, rows);
+    }
+    const names = seq.items.map((id) => this.store.project.items[id]?.name ?? "?");
+    rows.push(this.staticRow("Frames", `${seq.items.length}: ${names[0]} … ${names[names.length - 1]}`));
+    const setup = new NumberField({
+      glyph: "#", min: 0, max: seq.items.length - 1, step: 1, decimals: 0,
+      onInput: (v, committing) => { doSetSequenceSetup(this.store, node.id, v); if (committing) this.store.history.endInteraction(); },
+    });
+    setup.set(seq.setup ?? 0);
+    rows.push(this.row("Setup", [setup.el]));
+    const anim = this.store.ui.mode === "animate" ? this.store.currentAnimation : null;
+    if (anim) {
+      const keysOf = () => this.store.currentAnimation?.sequences?.[node.id] ?? [];
+      const inForce = (): SequenceKey => {
+        const keys = keysOf(), frame = this.store.ui.frame;
+        const k = [...keys].reverse().find((x) => x.frame <= frame);
+        return k ? { ...k, frame } : { frame, mode: "loop", index: seq.setup ?? 0, delay: 1 };
+      };
+      const keyWith = (patch: Partial<SequenceKey>, label: string) =>
+        doSetSequenceKeys(this.store, node.id, withSequenceKey(keysOf(), { ...inForce(), ...patch, frame: this.store.ui.frame }), label);
+      const mode = h("select", { class: "preview-anim", title: "How the images play from the key" }) as HTMLSelectElement;
+      for (const m of SEQUENCE_MODES) mode.appendChild(h("option", { value: m }, SEQUENCE_MODE_LABELS[m]));
+      on(mode, "change", () => keyWith({ mode: mode.value as SequenceKey["mode"] }, "Sequence Mode"));
+      const index = new NumberField({ glyph: "#", min: 0, max: seq.items.length - 1, step: 1, decimals: 0, onInput: (v, c) => { if (c) keyWith({ index: Math.round(v) }, "Sequence Image"); } });
+      const delay = new NumberField({ glyph: "⏱", min: 0.05, max: 1000, step: 0.25, decimals: 2, unit: "f", onInput: (v, c) => { if (c) keyWith({ delay: v }, "Sequence Delay"); } });
+      const key = h("button", { class: "btn", title: "Key the sequence here with these values" }, "Key");
+      on(key, "click", () => keyWith({}, "Key Sequence"));
+      const sync = () => {
+        const k = inForce();
+        mode.value = k.mode;
+        index.show(k.index);
+        delay.show(k.delay);
+        const keyed = keysOf().some((x) => x.frame === this.store.ui.frame);
+        key.textContent = keyed ? "Keyed" : "Key";
+        (key as HTMLButtonElement).disabled = keyed;
+      };
+      sync();
+      this.ikSync.push(sync);
+      rows.push(this.row("Mode", [mode]), this.row("From", [index.el]), this.row("Delay", [delay.el]), this.row("", [key]));
+    } else {
+      rows.push(this.noteRow("In Animate mode, key which image plays and how at the playhead; the Sequence row shows the keys."));
+    }
+    const remove = h("button", { class: "btn", title: "Back to one image; the sequence keys go too" }, "Remove Sequence");
+    on(remove, "click", () => doRemoveSequence(this.store, node.id));
+    rows.push(this.row("", [remove]));
+    return this.section("Sequence", true, rows);
+  }
+
+  /**
    * Skins (ARCHITECTURE ▸ Skins). On an image: what the skin being edited
    * shows in place of each of its displays, and which displays only skins
    * fill. On a bone: the skins it (with the bones below it) belongs to, and
@@ -1010,12 +1271,15 @@ export class PropertiesPanel implements Panel {
       node.kind === "empty" ? "Empty layer"
       : node.kind === "bone" ? "Bone"
       : node.kind === "group" ? "Group"
+      : node.kind === "box" ? "Bounding box"
+      : node.kind === "point" ? "Point"
+      : node.kind === "path" ? "Path"
       : isSymbol(item) ? "Symbol instance"
       : "Bitmap";
 
     return this.section("Instance", true, [
       this.row("Name", [name]),
-      ...(node.kind === "empty" || node.kind === "group" || node.kind === "bone"
+      ...(node.kind === "empty" || node.kind === "group" || node.kind === "bone" || node.kind === "box" || node.kind === "point" || node.kind === "path"
         ? []
         : [this.staticRow("Of", item ? item.name : "—")]),
       this.staticRow("Type", kindLabel),
@@ -1471,3 +1735,9 @@ function valueId(o: object | undefined): number {
   if (!id) valueIds.set(o, id = nextValueId++);
   return id;
 }
+
+/** One row of a constraint's section (`constraintRows`). */
+type ConstraintSpec =
+  | { type: "number"; key: string; label: string; glyph: string; min: number; max: number; step: number; decimals?: number; unit?: string; def: number }
+  | { type: "select"; key: string; label: string; options: Array<[string, string]>; def: string }
+  | { type: "check"; key: string; label: string; title?: string };

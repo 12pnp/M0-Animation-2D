@@ -10,7 +10,7 @@ import { exportSpine, spineJson } from "@/core/spine/exportSpine";
 import { atlasText } from "@/core/spine/atlas";
 import { isImage, type Node, type Project, type SymbolItem } from "@/core/doc/types";
 import type { NodeId } from "@/core/doc/ids";
-import { createAnimation, createLayer, createNode } from "@/core/doc/defaults";
+import { createAnimation, createImageItem, createLayer, createNode } from "@/core/doc/defaults";
 import { fromMatrix, tf } from "@/core/math/Transform";
 import { buildFlatPsdImport } from "@/core/doc/psdImport";
 import { AddLibraryItem, AddNode } from "@/core/history/commands";
@@ -58,7 +58,7 @@ describe("the AI's tools", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
       "get_reference", "render_frame", "add_bones", "attach", "add_ik", "auto_rig", "list_motions", "apply_motion", "draw_order",
-      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "make_mesh", "bind_mesh", "add_skin", "set_skin_image", "set_skin_members", "set_cycle", "get_bone_path", "set_bone_path",
+      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "make_mesh", "bind_mesh", "add_skin", "set_skin_image", "add_attachment", "make_sequence", "key_sequence", "add_physics", "add_slider", "make_path", "set_skin_members", "set_cycle", "get_bone_path", "set_bone_path",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -780,6 +780,40 @@ describe("cycles and bone paths through the AI's tools", () => {
     expect(node.mesh!.weights!.every((w) => w.length > 0)).toBe(true);
     await expect(api.call("make_mesh", { images: [torso] })).rejects.toThrow(/without a mesh/);
     await expect(api.call("bind_mesh", { image: "head", bones: ["chest"] })).rejects.toThrow(/one mesh/);
+  });
+
+  it("add physics, a slider and a path, each one undo step", async () => {
+    const { store, api } = await setup();
+    expect(await api.call("add_physics", { bone: "head", settings: { inertia: 0.7, gravity: 30 } })).toMatchObject({ constraint: "head_physics", bone: "head", settings: { rotate: 1, inertia: 0.7, gravity: 30, mass: 1 } });
+    expect(store.history.undoLabel).toBe("AI: Add Physics");
+    await expect(api.call("add_physics", { bone: "head", settings: { bounce: 1 } })).rejects.toThrow(/not a physics setting/);
+    expect(await api.call("add_slider", { animation: "run", bone: "head", property: "x", from: 5, loop: true })).toMatchObject({ name: "run_slider", animation: "run", bone: "head", property: "x", from: 5, loop: true });
+    const path = await api.call("make_path", { bones: ["head", "chest"] }) as { constraint: string; bones: string[]; knots: number };
+    expect(path).toMatchObject({ constraint: "chest_path", bones: ["chest", "head"], knots: 3 });
+    expect(store.history.undoLabel).toBe("Make Path");
+    expect(exportSpine(store.project).diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+  });
+
+  it("add a bounding box and a point, make a sequence and key it, each one undo step", async () => {
+    const { store, api } = await setup();
+    const torso = Object.values(store.currentSymbol.nodes).find((n) => n.itemId && n.name.includes("torso"))!;
+    expect(await api.call("add_attachment", { kind: "box", on: torso.name, name: "hurt" })).toMatchObject({ box: "hurt", parent: "chest" });
+    expect(store.history.undoLabel).toBe("AI: Add Bounding Box");
+    expect(await api.call("add_attachment", { kind: "point", on: "head" })).toEqual({ point: "head_point", parent: "head" });
+    await expect(api.call("add_attachment", { kind: "box", name: "hurt" })).rejects.toThrow(/taken/);
+    for (const n of ["fx_1", "fx_2", "fx_3"]) {
+      const item = createImageItem(n, `a_${n}` as AssetId, 10, 10);
+      store.project.items[item.id] = item;
+    }
+    const fxItem = Object.values(store.project.items).find((i) => i.name === "fx_2")!;
+    const fx = createNode("image", "fx", { itemId: fxItem.id });
+    store.apply(new AddNode("add", store.currentSymbolId, fx, createLayer(fx.id, "fx", 0)));
+    expect(await api.call("make_sequence", { layer: "fx" })).toEqual({ layer: "fx", frames: ["fx_1", "fx_2", "fx_3"] });
+    const keyed = await api.call("key_sequence", { animation: "run", layer: "fx", frame: 2, mode: "pingpong", index: 1, delay: 2 });
+    expect(keyed).toMatchObject({ keys: [{ frame: 2, mode: "pingpong", index: 1, delay: 2 }] });
+    expect(store.history.undoLabel).toBe('AI: Sequence "fx" at 3');
+    await expect(api.call("key_sequence", { animation: "run", layer: "fx", frame: 2, index: 3 })).rejects.toThrow(/index is 0 to 2/);
+    await expect(api.call("make_sequence", { layer: "head_art" })).rejects.toThrow(/does not end in a number/);
   });
 
   it("make a skin, give it an image, a placeholder and members, each one undo step", async () => {

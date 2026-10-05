@@ -24,7 +24,7 @@ import { cyclePlan, isCycle, SEAM_TOLERANCE, seamFrame, seamGap } from "@/core/d
 import { bonePaths, keyedIn, pathFrames } from "@/core/doc/bonePath";
 import { easesToSpline, type Spline, straightSpline, withSpline } from "@/core/doc/pathSpline";
 import { pathDragMode } from "@/core/doc/pathEdit";
-import { AddNode, createsCycle, SetLayerOrder, SetParent, SetPivot, SetStageSkins } from "@/core/history/commands";
+import { AddNode, createsCycle, RenameNode, SetLayerOrder, SetParent, SetPivot, SetStageSkins } from "@/core/history/commands";
 import { AddIkConstraint, SetIkOptions } from "@/core/history/ikCommands";
 import { autoRigPlan, jointNames, type RigLayer } from "@/core/rig/autoRig";
 import { evaluateSymbol } from "@/core/doc/pose";
@@ -33,6 +33,11 @@ import type { ChannelEases, TweenSpec } from "@/core/math/easing";
 import { CURVE_Y_LIMIT, easeOf, sameEase } from "@/core/math/easing";
 import { applySkins, doSetSkinImage, doSetSkinMembers, doSetSkinOnly } from "@/app/SkinOps";
 import { withNewSkin } from "@/core/doc/skins";
+import { doAddAttachment, doAddPhysics, doAddSlider, doMakePath, doMakeSequence, doSetConstraints } from "@/app/AttachmentOps";
+import { PHYSICS_DEFAULTS, PHYSICS_SETTINGS, SLIDER_PROPERTIES } from "@/core/doc/constraints";
+import { SEQUENCE_MODES, withSequenceKey } from "@/core/doc/sequence";
+import { SetSequenceKeys } from "@/core/history/attachmentCommands";
+import type { SequenceKey } from "@/core/doc/types";
 import { posedSymbol, skinsOf, stageSkinOf } from "@/core/spine/spinePose";
 import { exportSpine } from "@/core/spine/exportSpine";
 import { fromSpineLocal, type SpineLocal, toSpineLocal } from "@/core/spine/transform";
@@ -152,6 +157,12 @@ export class AgentApi {
       case "make_mesh": return this.makeMeshes(list<string>(args, "images"), args.spacing);
       case "bind_mesh": return this.bindMesh(str(args, "image"), list<string>(args, "bones"));
       case "add_skin": return this.addSkin(str(args, "name"));
+      case "add_attachment": return this.addAttachment(args);
+      case "make_sequence": return this.makeSequence(str(args, "layer"));
+      case "add_physics": return this.addPhysics(str(args, "bone"), args);
+      case "add_slider": return this.addSlider(str(args, "animation"), args);
+      case "make_path": return this.makePath(list<string>(args, "bones"));
+      case "key_sequence": return this.keySequence(str(args, "animation"), str(args, "layer"), int(args, "frame", 0), args);
       case "set_skin_image": return this.setSkinImage(args);
       case "set_skin_members": return this.setSkinMembers(args);
       case "key_transform": return this.keyTransform(str(args, "animation"), str(args, "constraint"), int(args, "frame", 0), args);
@@ -529,6 +540,8 @@ export class AgentApi {
     if (args.bendPositive !== undefined && typeof args.bendPositive !== "boolean") throw new AgentError("bendPositive is true or false.");
     const mix = args.mix === undefined ? 1 : args.mix;
     if (typeof mix !== "number" || mix < 0 || mix > 1) throw new AgentError("mix is a number from 0 to 1.");
+    for (const f of ["stretch", "compress"]) if (args[f] !== undefined && typeof args[f] !== "boolean") throw new AgentError(`${f} is true or false.`);
+    if (args.scale_y !== undefined && !["none", "uniform", "volume"].includes(args.scale_y as string)) throw new AgentError(`scale_y is "none", "uniform" or "volume".`);
 
     let target: Node;
     let make: (() => void) | null = null;
@@ -557,6 +570,8 @@ export class AgentApi {
       this.store.apply(new AddIkConstraint(this.store.currentSymbolId, {
         id: newIkId(), name, boneId: effector.id, targetId: target.id, chain,
         bendPositive: args.bendPositive !== false, weight: mix,
+        ...(args.stretch === true ? { stretch: true } : {}), ...(args.compress === true ? { compress: true } : {}),
+        ...(args.scale_y === "uniform" || args.scale_y === "volume" ? { scaleY: args.scale_y } : {}),
       }, label));
     });
     return { constraint: name, bones: chainIds.map((id) => s.nodes[id]!.name), target: target.name, ...(make ? { created: target.name } : {}) };
@@ -857,6 +872,99 @@ export class AgentApi {
     if (refused) throw new AgentError(refused);
     const m = this.sym.nodes[ids[0]!]!.mesh!;
     return { image, bones, points: m.points.length / 2 };
+  }
+
+  private addAttachment(args: Args) {
+    const kind = args.kind;
+    if (kind !== "box" && kind !== "point") throw new AgentError(`kind is "box" or "point".`);
+    const on = args.on === undefined ? null : this.node(str(args, "on"));
+    const name = typeof args.name === "string" ? args.name.trim() : "";
+    if (name && this.nameTaken(name)) throw new AgentError(`The name "${name}" is taken.`);
+    const before = new Set(Object.keys(this.sym.nodes));
+    this.store.selectNodes(on ? [on.id] : []);
+    this.store.transaction(kind === "box" ? "AI: Add Bounding Box" : "AI: Add Point", () => {
+      doAddAttachment(this.store, this.assets ?? null, kind);
+      const added = Object.values(this.sym.nodes).find((n) => !before.has(n.id))!;
+      if (name) this.store.apply(new RenameNode(this.store.currentSymbolId, added.id, name));
+    });
+    const made = Object.values(this.sym.nodes).find((n) => !before.has(n.id))!;
+    const node = this.sym.nodes[made.id]!;
+    return { [kind === "box" ? "box" : "point"]: node.name, parent: node.parentId ? this.sym.nodes[node.parentId]!.name : null, ...(node.box ? { points: node.box.points.length / 2 } : {}) };
+  }
+
+  private addPhysics(boneName: string, args: Args) {
+    const bone = this.bone(boneName);
+    const before = new Set((this.sym.physics ?? []).map((k) => k.id));
+    const settings = args.settings && typeof args.settings === "object" ? args.settings as Record<string, unknown> : {};
+    for (const [k, v] of Object.entries(settings)) {
+      if (!PHYSICS_SETTINGS.includes(k as never)) throw new AgentError(`"${k}" is not a physics setting; they are ${PHYSICS_SETTINGS.join(", ")}.`);
+      if (typeof v !== "number" || !Number.isFinite(v)) throw new AgentError(`${k} is a number.`);
+    }
+    this.store.transaction("AI: Add Physics", () => {
+      doAddPhysics(this.store, bone.id);
+      const list = (this.sym.physics ?? []).map((k) => (before.has(k.id) ? k : { ...k, ...settings }));
+      if (Object.keys(settings).length) doSetConstraints(this.store, "physics", list, "AI: Add Physics");
+    });
+    const made = this.sym.physics!.find((k) => !before.has(k.id))!;
+    return { constraint: made.name, bone: bone.name, settings: Object.fromEntries(PHYSICS_SETTINGS.map((s) => [s, made[s] ?? PHYSICS_DEFAULTS[s]])) };
+  }
+
+  private addSlider(animName: string, args: Args) {
+    const anim = this.animation(animName);
+    const bone = args.bone === undefined ? null : this.bone(str(args, "bone"));
+    if (args.property !== undefined && !SLIDER_PROPERTIES.includes(args.property as never)) throw new AgentError(`property is one of ${SLIDER_PROPERTIES.join(", ")}.`);
+    const before = new Set((this.sym.sliders ?? []).map((k) => k.id));
+    this.store.transaction("AI: Add Slider", () => {
+      doAddSlider(this.store, anim.id, bone?.id ?? null);
+      const patch: Record<string, unknown> = {};
+      for (const f of ["from", "to", "scale", "time", "mix"]) if (typeof args[f] === "number") patch[f] = args[f];
+      for (const f of ["loop", "additive", "local"]) if (args[f] === true) patch[f] = true;
+      if (bone && args.property) patch.property = args.property;
+      if (Object.keys(patch).length) doSetConstraints(this.store, "sliders", (this.sym.sliders ?? []).map((k) => (before.has(k.id) ? k : { ...k, ...patch })), "AI: Add Slider");
+    });
+    const made = this.sym.sliders!.find((k) => !before.has(k.id))!;
+    const { id: _id, animId: _a, boneId: _b, ...rest } = made;
+    return { ...rest, animation: anim.name, ...(bone ? { bone: bone.name } : {}) };
+  }
+
+  private makePath(bones: string[]) {
+    const ids = bones.map((n) => this.bone(n).id);
+    const refused = doMakePath(this.store, ids);
+    if (refused) throw new AgentError(refused);
+    const k = this.sym.paths![this.sym.paths!.length - 1]!;
+    return { constraint: k.name, path: this.sym.nodes[k.pathId]!.name, bones: k.boneIds.map((id) => this.sym.nodes[id]!.name), knots: this.sym.nodes[k.pathId]!.path!.points.length / 6 };
+  }
+
+  private makeSequence(layer: string) {
+    const node = this.node(layer);
+    const problem = doMakeSequence(this.store, node.id);
+    if (problem) throw new AgentError(problem);
+    const seq = this.sym.nodes[node.id]!.sequence!;
+    return { layer, frames: seq.items.map((id) => this.store.project.items[id]!.name) };
+  }
+
+  private keySequence(animName: string, layer: string, frame: number, args: Args) {
+    const anim = this.animation(animName);
+    const node = this.node(layer);
+    if (!node.sequence) throw new AgentError(`"${layer}" is not a sequence; make_sequence first.`);
+    const before = anim.sequences?.[node.id] ?? [];
+    let keys: SequenceKey[];
+    if (args.delete === true) {
+      if (!before.some((k) => k.frame === frame)) throw new AgentError(`"${layer}" has no sequence key at frame ${frame}.`);
+      keys = before.filter((k) => k.frame !== frame);
+    } else {
+      const mode = args.mode ?? "loop";
+      if (!SEQUENCE_MODES.includes(mode as never)) throw new AgentError(`mode is one of ${SEQUENCE_MODES.join(", ")}.`);
+      const index = args.index === undefined ? 0 : Number(args.index);
+      if (!Number.isInteger(index) || index < 0 || index >= node.sequence.items.length) throw new AgentError(`index is 0 to ${node.sequence.items.length - 1}.`);
+      const delay = args.delay === undefined ? 1 : Number(args.delay);
+      if (!(delay > 0)) throw new AgentError("delay is a number of frames per image, above 0.");
+      keys = withSequenceKey(before, { frame, mode: mode as SequenceKey["mode"], index, delay });
+    }
+    this.store.apply(new SetSequenceKeys(`AI: Sequence "${layer}" at ${frame + 1}`, this.store.currentSymbolId, anim.id, node.id, keys));
+    this.store.emit("timeline");
+    this.store.emit("stage");
+    return { animation: anim.name, layer, keys };
   }
 
   private skinNamed(name: string): string {

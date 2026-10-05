@@ -35,8 +35,10 @@ Legend:
   ▸ Meshes); an opened file's meshes are still carried, not editable
 - ✅ Weighted mesh: bind to bones, auto weights, weight brush
 - ◐ Linked mesh: carried
-- ◐ Sequence (frame-by-frame attachment): carried
-- ◐ Bounding box, point and path attachments: carried
+- ✅ Sequence (frame-by-frame region): made from numbered library images, keyed (a Sequence row);
+  an opened file's sequences carried
+- ✅ Bounding box, point and path attachments: made and edited (box and point nodes, path nodes);
+  an opened file's carried
 - ☐ Creating any attachment but a region or a clipping
 
 ### Skins
@@ -50,13 +52,15 @@ Legend:
 
 - ✅ IK: one- and two-bone, bend, mix, softness; target dragging; the path of a chain bone
   drags through its target
-- ☐ IK stretch, compress and uniform: carried in `IkConstraint.spine`, not solved or edited
+- ✅ IK stretch, compress and scale y (4.3's `scaleY`, was uniform): solved on the stage, set in
+  Properties ▸ IK
 - ✅ Transform constraint: created, edited, keyed, solved on the stage (ARCHITECTURE ▸ Transform
   constraints); a remapped property table is kept but not edited
-- ◐ Path constraint: carried
-- ◐ Physics constraint (4.2+): carried
-- ◐ Slider constraint (4.3): carried
-- ☐ Creating or editing path, physics and slider constraints
+- ✅ Path constraint: made from bones (Make Path), edited; posed by the runtime
+- ✅ Physics constraint: added and edited per bone; the stage simulates while it plays
+- ✅ Slider constraint: an animation played by a bone value or a time
+- ✅ Creating and editing path, physics and slider constraints (opened files' physics and
+  sliders become editable; paths stay carried)
 - ☐ Constraint order (Spine's order list); opened rigs keep the file's order
   (`constraintOrder`)
 
@@ -72,7 +76,7 @@ Legend:
 - ✅ Deform (mesh) keys: keyed with the Mesh tool, a Deform row (opened files' deforms carried)
 - ✅ Event keys and the event list (an Events row and panel; ARCHITECTURE ▸ Events)
 - ✅ Transform constraint keys (a row per constraint)
-- ◐ Path, physics and slider constraint keys: carried
+- ◐ Path, physics and slider constraint keys: carried; the editor sets their setup values only
 - ◐ Inherit keys: carried
 - ✅ Graph editor: values over time as curves, with handles (ARCHITECTURE ▸ Graph editor)
 - ✅ Audio: an event's sound kept in the project, exported to `audio/`, played in the
@@ -94,7 +98,7 @@ Legend:
 - ☐ Opening a binary `.skel`
 - ☐ Nonessential data choices (Spine writes bone colours, image paths and audio paths only
   when asked)
-- ☐ Image sequences import (numbered files to a sequence attachment)
+- ✅ Image sequences from numbered images (Properties ▸ Sequence ▸ Make Sequence)
 - ☐ Video and sprite-sheet export (planned for the desktop build, ARCHITECTURE ▸ Future
   export formats)
 
@@ -186,7 +190,7 @@ meshes.
 2. Skin bones and constraints (a bone only some skins have).
 3. Export and import skins fully (today the non-default skins are carried whole).
 
-### Phase F: other attachments and constraints
+### Phase F: other attachments and constraints (done, docs/PHASE-F-PLAN.md)
 
 1. Bounding box (hit areas), point (spawn points) and sequence (frame-by-frame) attachments:
    create and edit; sequence import from numbered images.

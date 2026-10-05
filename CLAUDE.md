@@ -29,6 +29,9 @@ Transform constraints, `core/math/transformConstraint.ts`). An image can be a me
 made from its alpha, bound to bones by weights and keyed by deform (ARCHITECTURE ▸
 Meshes, `core/mesh/`). Skins put their own images in slots and have bones and
 constraints of their own, by spine-core's rules (ARCHITECTURE ▸ Skins, `core/doc/skins.ts`).
+Bounding boxes, points, paths and sequences are made and edited (ARCHITECTURE ▸ Boxes and
+points, Sequences); physics, slider and path constraints are solved by spine-core itself, which
+poses any symbol that has one (ARCHITECTURE ▸ Physics, sliders and paths).
 An exporter change must keep
 `tests/spineParity.test.ts` passing: it plays every fixture through spine-core
 and compares it with the stage frame by frame. An importer or exporter change

@@ -14,6 +14,8 @@ import type { Store } from "@/app/Store";
 import type { IkId, NodeId, TcId } from "@/core/doc/ids";
 import { deleteTcKeys, tcMixAt, tcTweenOf, withTcKey, withTcTween } from "@/core/doc/transformKeys";
 import { deformAt, deformTweenOf, deleteDeformKeys, withDeformKey, withDeformTween } from "@/core/mesh/deform";
+import { SEQUENCE_MODE_LABELS, SEQUENCE_MODES, sequenceIndexAt, withSequenceKey } from "@/core/doc/sequence";
+import { doSetSequenceKeys } from "@/app/AttachmentOps";
 import { deleteEventKeys, uniqueEventName, withEventKey } from "@/core/doc/events";
 import { deleteIkKeys, ikPoseAt, type IkTween, ikTweenOf, withIkKey, withIkTween } from "@/core/doc/ikKeys";
 import type { Keyframe, Layer, RotateDir } from "@/core/doc/types";
@@ -122,6 +124,7 @@ export class TimelinePanel implements Panel {
       onEditIk: (ik, keys, label, kind) => doSetIkKeys(store, ik, keys, label, kind),
       onEditTc: (tc, keys, label, kind) => doSetTcKeys(store, tc, keys, label, kind),
       onEditDeform: (node, keys, label, kind) => doSetDeformKeys(store, node, keys, label, kind),
+      onEditSequence: (node, keys, label, kind) => doSetSequenceKeys(store, node, keys, label, kind),
       onEditEvents: (keys, label, kind) => doSetEventKeys(store, keys, label, kind),
       onEventsMenu: (frame, x, y) => this.eventsMenu(frame, x, y),
       onDragSpanEnd: (nodeId, endFrame) => doSetEndFrame(store, nodeId, endFrame),
@@ -856,11 +859,50 @@ export class TimelinePanel implements Panel {
   /** The picked deform keys gone; false with none picked. */
   deleteDeformKeys(): boolean {
     const sel = this.grid.deformSel;
+    if (sel?.sequence) {
+      const keys = this.store.currentAnimation?.sequences?.[sel.node];
+      if (!sel.frames.length || !keys) return false;
+      doSetSequenceKeys(this.store, sel.node, keys.filter((k) => !sel.frames.includes(k.frame)), sel.frames.length > 1 ? "Delete Sequence Keys" : "Delete Sequence Key");
+      this.grid.deformSel = null;
+      return true;
+    }
     const keys = sel && this.store.currentAnimation?.deforms?.[sel.node];
     if (!sel?.frames.length || !keys) return false;
     doSetDeformKeys(this.store, sel.node, deleteDeformKeys(keys, sel.frames), sel.frames.length > 1 ? "Delete Deform Keys" : "Delete Deform Key");
     this.grid.deformSel = null;
     return true;
+  }
+
+  /** A Sequence row's menu: key the sequence here (the image in force,
+   *  looping), the picked keys' mode, or delete them. */
+  private sequenceMenu(node: NodeId, frame: number, x: number, y: number): void {
+    const anim = this.store.currentAnimation;
+    const seq = this.store.currentSymbol.nodes[node]?.sequence;
+    if (!anim || !seq) return;
+    const keys = anim.sequences?.[node] ?? [];
+    const at = keys.find((k) => k.frame === frame);
+    const mine = this.grid.deformSel?.node === node && this.grid.deformSel.sequence ? this.grid.deformSel.frames : [];
+    if (at && !mine.includes(frame)) this.grid.deformSel = { node, frames: [frame], sequence: true };
+    if (!at && !(this.grid.deformSel?.node === node && this.grid.deformSel.sequence)) this.grid.deformSel = null;
+    this.store.setFrame(frame);
+    const sel = this.grid.deformSel?.sequence ? this.grid.deformSel.frames : [];
+    const picked = keys.filter((k) => sel.includes(k.frame));
+    showMenu(this.menuAnchor(x, y), [
+      {
+        label: "Key Sequence Here", enabled: !at,
+        run: () => doSetSequenceKeys(this.store, node, withSequenceKey(keys, {
+          frame, mode: "loop", index: sequenceIndexAt(keys, frame, seq.items.length, seq.setup), delay: 1,
+        }), "Key Sequence"),
+      },
+      "-",
+      ...SEQUENCE_MODES.map((mode): MenuEntry => ({
+        label: SEQUENCE_MODE_LABELS[mode], enabled: picked.length > 0,
+        checked: picked.length > 0 && picked.every((k) => k.mode === mode),
+        run: () => doSetSequenceKeys(this.store, node, keys.map((k) => (sel.includes(k.frame) ? { ...k, mode } : k)), "Sequence Mode"),
+      })),
+      "-",
+      { label: sel.length > 1 ? `Delete ${sel.length} Sequence Keys` : "Delete Sequence Key", enabled: sel.length > 0, run: () => { this.deleteDeformKeys(); } },
+    ]);
   }
 
   /** A Deform row's menu: key the deform in force here, the picked keys'
@@ -1054,6 +1096,7 @@ export class TimelinePanel implements Panel {
     const tc = this.grid.visibleRows()[row]?.tc;
     if (tc) { this.tcMenu(tc, frame, x, y); return; }
     if (this.grid.visibleRows()[row]?.deform) { this.deformMenu(nodeId, frame, x, y); return; }
+    if (this.grid.visibleRows()[row]?.sequence) { this.sequenceMenu(nodeId, frame, x, y); return; }
     // Right-clicking outside the selection moves it, as in Flash; inside it,
     // the selection is what the menu acts on.
     if (!this.store.selection.frames.includes(`${nodeId}:${frame}`)) {

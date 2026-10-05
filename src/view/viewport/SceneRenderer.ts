@@ -1,4 +1,5 @@
 import { invert, mat, matOf, type Matrix2D, mul } from "@/core/math/Matrix2D";
+import { runtimeSolved } from "@/core/doc/constraints";
 import type { Animation, SymbolItem } from "@/core/doc/types";
 import { type BlendMode, type ColorTransform, isImage, isSymbol, type Project } from "@/core/doc/types";
 import {
@@ -94,8 +95,8 @@ export class SceneRenderer {
     hiddenLayers?: Set<string>,
   ): void {
     const world = mat();
-    if (symbol.spine && entries.some((e) => e.spine || e.clip)) {
-      this.drawSpineEntries(ctx, entries, base, hiddenLayers);
+    if ((symbol.spine || runtimeSolved(symbol)) && entries.some((e) => e.spine || e.clip)) {
+      this.drawSpineEntries(ctx, entries, base, depth, when, hiddenLayers);
       return;
     }
     const groups = maskGroups(symbol);
@@ -192,9 +193,10 @@ export class SceneRenderer {
    * as `SkeletonClipping` does: a clip met while another is on is ignored.
    */
   private drawSpineEntries(
-    ctx: CanvasRenderingContext2D, entries: PoseEntry[], base: Matrix2D, hiddenLayers?: Set<string>,
+    ctx: CanvasRenderingContext2D, entries: PoseEntry[], base: Matrix2D, depth: number, when: FrameContext, hiddenLayers?: Set<string>,
   ): void {
     let clipUntil: string | null | undefined;   // undefined: not clipping
+    const world = mat();
     for (const e of entries) {
       if (e.clip && e.visible && clipUntil === undefined && !hiddenLayers?.has(e.nodeId)) {
         ctx.save();
@@ -210,6 +212,10 @@ export class SceneRenderer {
         clipUntil = e.clip.until;
       } else if (e.spine && e.visible && !hiddenLayers?.has(e.nodeId)) {
         this.drawSpine(ctx, e, base);
+      } else if (e.visible && e.display && isSymbol(this.project().items[e.display.itemId]) && !hiddenLayers?.has(e.nodeId)) {
+        // A nested symbol in a rig the runtime poses: its own drawing, on its node.
+        mul(world, base, e.world);
+        this.drawEntry(ctx, e, world, depth, when);
       }
       if (clipUntil !== undefined && clipUntil === e.nodeId) { ctx.restore(); clipUntil = undefined; }
     }

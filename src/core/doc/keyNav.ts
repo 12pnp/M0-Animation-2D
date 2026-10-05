@@ -18,6 +18,7 @@ export function keyFrames(anim: Animation, nodes: readonly NodeId[] | null): num
   if (!nodes) for (const k of anim.events ?? []) out.add(k.frame);
   if (!nodes) for (const keys of Object.values(anim.transforms ?? {})) for (const k of keys) out.add(k.frame);
   for (const [id, keys] of Object.entries(anim.deforms ?? {})) if (!nodes || nodes.includes(id as NodeId)) for (const k of keys) out.add(k.frame);
+  for (const [id, keys] of Object.entries(anim.sequences ?? {})) if (!nodes || nodes.includes(id as NodeId)) for (const k of keys) out.add(k.frame);
   return [...out].sort((a, b) => a - b);
 }
 

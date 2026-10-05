@@ -23,6 +23,7 @@ function displayZero(node: Node, itemId: ItemId): DisplayRef {
   if (node.attachment) d.attachment = node.attachment;
   if (node.mesh) d.mesh = node.mesh;
   if (node.skinOnly) d.skinOnly = true;
+  if (node.sequence) d.sequence = node.sequence;
   return d;
 }
 

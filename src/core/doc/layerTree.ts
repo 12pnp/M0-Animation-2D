@@ -21,6 +21,8 @@ export interface LayerRow {
   tc?: TcId;
   /** A mesh node's Deform row (`focusRows`): its deform keys. */
   deform?: true;
+  /** A sequence node's Sequence row (`focusRows`): its sequence keys. */
+  sequence?: true;
 }
 
 /**
@@ -323,16 +325,18 @@ export function groupPlan(
  */
 export function focusRows(sym: SymbolItem, focus: readonly NodeId[], on: boolean, anim?: Animation | null): LayerRow[] {
   const rows = layerRows(sym);
-  if (!on || !focus.some((id) => sym.nodes[id]?.kind === "bone" || sym.nodes[id]?.mesh)) {
+  if (!on || !focus.some((id) => sym.nodes[id]?.kind === "bone" || sym.nodes[id]?.mesh || sym.nodes[id]?.sequence)) {
     const keyed = sym.ik.filter((k) => anim?.ik?.[k.id]?.length);
     const keyedTc = (sym.transforms ?? []).filter((k) => anim?.transforms?.[k.id]?.length);
     const deformed = new Set(Object.keys(anim?.deforms ?? {}).filter((id) => anim!.deforms![id as NodeId]!.length));
-    if (!keyed.length && !keyedTc.length && !deformed.size) return rows;
+    const sequenced = new Set(Object.keys(anim?.sequences ?? {}).filter((id) => anim!.sequences![id as NodeId]!.length));
+    if (!keyed.length && !keyedTc.length && !deformed.size && !sequenced.size) return rows;
     return rows.flatMap((r) => [
       r,
       ...keyed.filter((k) => k.targetId === r.node.id).map((k) => ({ ...r, depth: r.depth + 1, hasChildren: false, ik: k.id })),
       ...keyedTc.filter((k) => k.sourceId === r.node.id).map((k) => ({ ...r, depth: r.depth + 1, hasChildren: false, tc: k.id })),
       ...(deformed.has(r.node.id) ? [{ ...r, depth: r.depth + 1, hasChildren: false, deform: true as const }] : []),
+      ...(sequenced.has(r.node.id) ? [{ ...r, depth: r.depth + 1, hasChildren: false, sequence: true as const }] : []),
     ]);
   }
   const keep = new Set<string>(focus);
@@ -356,7 +360,10 @@ export function focusRows(sym: SymbolItem, focus: readonly NodeId[], on: boolean
         ...sym.ik.filter((k) => ikHost.get(k.id) === r.node.id).map((k) => ({ ...row, depth: 1, ik: k.id })),
         ...(sym.transforms ?? []).filter((k) => tcHost.get(k.id) === r.node.id).map((k) => ({ ...row, depth: 1, tc: k.id })),
       ];
-      const deform = r.node.mesh ? [{ ...row, depth: 1, deform: true as const }] : [];
+      const deform = [
+        ...(r.node.mesh ? [{ ...row, depth: 1, deform: true as const }] : []),
+        ...(r.node.sequence ? [{ ...row, depth: 1, sequence: true as const }] : []),
+      ];
       return r.node.kind === "bone"
         ? [row, ...TIMELINE_PROPS.map((prop) => ({ ...row, depth: 1, prop })), ...iks]
         : [row, ...deform, ...iks];

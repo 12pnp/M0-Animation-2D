@@ -177,8 +177,9 @@ describe("IK keys in files", () => {
     const raw = JSON.parse(JSON.stringify({ ...project, version: 17 }));
     const out = validateProject(migrate(raw)).project;
     const [a, b] = (out.items[out.rootSymbolId] as SymbolItem).ik;
-    expect(a).toMatchObject({ softness: 9, spine: { stretch: true } });
-    expect(a!.spine).not.toHaveProperty("softness");
+    // Stretch, solved since, moves to its field too.
+    expect(a).toMatchObject({ softness: 9, stretch: true });
+    expect(a).not.toHaveProperty("spine");
     expect(b!.softness).toBe(4);
     expect(b).not.toHaveProperty("spine");
   });

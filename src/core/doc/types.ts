@@ -2,11 +2,11 @@ import type { Transform } from "@/core/math/Transform";
 import type { ExportSettings } from "@/core/export/settings";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
 import type { SpineInherit } from "@/core/spine/types";
-import type { AnimId, AssetId, FolderId, IkId, ItemId, LayerId, NodeId, TcId } from "./ids";
+import type { AnimId, AssetId, CnId, FolderId, IkId, ItemId, LayerId, NodeId, TcId } from "./ids";
 import type { TcChannel, TcFrom } from "@/core/math/transformConstraint";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 22;
+export const DOC_VERSION = 23;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -84,6 +84,12 @@ export interface SymbolItem {
   stageSkins?: string[];
   /** Skins made or opened here (ARCHITECTURE ▸ Skins), in order. */
   skins?: SkinDef[];
+  /** Physics, slider and path constraints (ARCHITECTURE ▸ Physics, sliders
+   *  and paths), applied after the IK and transform constraints. The runtime
+   *  poses a symbol that has any. */
+  physics?: PhysicsConstraint[];
+  sliders?: SliderConstraint[];
+  paths?: PathConstraint[];
   /** The events its animations fire (`core/doc/events.ts`), names unique,
    *  as Spine's skeleton `events`. */
   events?: EventDef[];
@@ -164,7 +170,10 @@ export interface LibraryFolder {
                 (`SetNodeItem`), which is why the layer keeps its id, its
                 name, its z-order and its mask links.                       */
 
-export type NodeKind = "image" | "symbol" | "bone" | "group" | "empty";
+/** "box" and "point": a slot showing Spine's bounding box or point
+ *  attachment, drawn only as an outline on the stage (ARCHITECTURE ▸ Boxes
+ *  and points). */
+export type NodeKind = "image" | "symbol" | "bone" | "group" | "empty" | "box" | "point" | "path";
 
 export interface Node {
   id: NodeId;
@@ -191,6 +200,12 @@ export interface Node {
   mesh?: MeshData;
   /** Display 0 only in skins (`DisplayRef.skinOnly`). */
   skinOnly?: true;
+  /** Display 0's sequence (`DisplayRef.sequence`). */
+  sequence?: SequenceData;
+  /** A box node's polygon (Spine's bounding box), in its own space, y down. */
+  box?: { points: number[] };
+  /** A path node's curve (Spine's path attachment), in its own space, y down. */
+  path?: PathShape;
   /** Bind-pose colour, exported as `slot.color`. Absent means neutral.
    *  Keyframe colour overrides it wholesale, as it does in the runtime. */
   color?: ColorTransform;
@@ -239,6 +254,27 @@ export interface DisplayRef {
   /** The default skin leaves it empty: only a skin shows something here
    *  (Spine's skin placeholder, ARCHITECTURE ▸ Skins). */
   skinOnly?: true;
+  /** Frame-by-frame images in place of `itemId` (ARCHITECTURE ▸ Sequences). */
+  sequence?: SequenceData;
+}
+
+/** A display's images in order, all the size of the first, which `itemId`
+ *  names; `setup` the one the setup pose shows. Spine's region sequence. */
+export interface SequenceData {
+  items: ItemId[];
+  setup?: number;
+}
+
+/** Spine's sequence modes: how the images advance from a key. */
+export type SequenceMode = "hold" | "once" | "loop" | "pingpong" | "onceReverse" | "loopReverse" | "pingpongReverse";
+
+/** From `frame` on, the image at `index` and then, unless `mode` is hold,
+ *  one more every `delay` frames (Spine's sequence timeline). */
+export interface SequenceKey {
+  frame: number;
+  mode: SequenceMode;
+  index: number;
+  delay: number;
 }
 
 /**
@@ -333,9 +369,15 @@ export interface IkConstraint {
   /** Spine's softness, in pixels: near full reach the two-bone solve eases
    *  into straight over this distance. Absent: 0. */
   softness?: number;
-  /** Fields of an opened Spine IK constraint the editor does not solve
-   *  (stretch, compress, uniform, skin), merged into the export.
-   *  The Spine pose applies them. */
+  /** Scale the bone along its length to reach a target out of reach. */
+  stretch?: boolean;
+  /** Scale it down for a target nearer than its length (one bone). */
+  compress?: boolean;
+  /** How scale y follows a stretch or compress: with it (uniform), keeping
+   *  the bone's area (volume); absent, it stays. */
+  scaleY?: "uniform" | "volume";
+  /** Fields of an opened Spine IK constraint the editor does not model,
+   *  merged into the export. The Spine pose applies them. */
   spine?: Record<string, unknown>;
 }
 
@@ -469,6 +511,8 @@ export interface Animation {
   /** Deform keys per mesh node (`core/mesh/deform.ts`), each list sorted by
    *  frame. Absent: the mesh as made. */
   deforms?: Record<NodeId, DeformKey[]>;
+  /** Sequence keys of nodes whose display 0 is a sequence (ARCHITECTURE ▸ Sequences). */
+  sequences?: Record<NodeId, SequenceKey[]>;
 }
 
 /** One IK key. `tween` eases the mix (and softness) to the next key: linear when absent,
@@ -566,5 +610,61 @@ export function isImage(i: LibraryItem | undefined): i is ImageItem {
 }
 /** Nodes that become DragonBones slots. Bones and groups do not. */
 export function producesSlot(n: Node): boolean {
-  return n.kind === "image" || n.kind === "symbol";
+  return n.kind === "image" || n.kind === "symbol" || n.kind === "box" || n.kind === "point" || n.kind === "path";
 }
+
+/* ── Physics, sliders and paths ───────────────────────────────────────────
+   Spine 4.3's, every value as Spine writes it and absent at Spine's
+   default (`core/doc/constraints.ts` has the defaults), solved by the
+   runtime, which poses any symbol that has one.                          */
+
+/** A bone that lags, springs and sways (Spine's physics constraint). `x`
+ *  … `shearX` say how much of each property the simulation moves, 0..1. */
+export interface PhysicsConstraint {
+  id: CnId;
+  name: string;
+  boneId: NodeId;
+  x?: number; y?: number; rotate?: number; scaleX?: number; shearX?: number;
+  scaleY?: "uniform" | "volume";
+  limit?: number; fps?: number;
+  inertia?: number; strength?: number; damping?: number; mass?: number; wind?: number; gravity?: number; mix?: number;
+}
+
+export type SliderProperty = "rotate" | "x" | "y" | "scaleX" | "scaleY" | "shearY";
+
+/** An animation played by a value (Spine 4.3's slider): `time` itself, or a
+ *  bone's `property` mapped `from` → `to` seconds at `scale`. */
+export interface SliderConstraint {
+  id: CnId;
+  name: string;
+  animId: AnimId;
+  additive?: boolean;
+  loop?: boolean;
+  mix?: number;
+  boneId?: NodeId;
+  property?: SliderProperty;
+  from?: number; to?: number; scale?: number; max?: number; local?: boolean;
+  time?: number;
+}
+
+/** Bones laid along a path node's curve (Spine's path constraint). */
+export interface PathConstraint {
+  id: CnId;
+  name: string;
+  boneIds: NodeId[];
+  pathId: NodeId;
+  positionMode?: "fixed" | "percent";
+  spacingMode?: "length" | "fixed" | "percent" | "proportional";
+  rotateMode?: "tangent" | "chain" | "chainScale";
+  rotation?: number; position?: number; spacing?: number;
+  mixRotate?: number; mixX?: number; mixY?: number;
+}
+
+/** A path's points, three per knot: the handle in, the knot, the handle out. */
+export interface PathShape {
+  points: number[];
+  closed?: boolean;
+  /** Absent: true (Spine's default). */
+  constantSpeed?: boolean;
+}
+

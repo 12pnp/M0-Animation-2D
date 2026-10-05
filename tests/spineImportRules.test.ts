@@ -248,9 +248,9 @@ describe("structure", () => {
     expect(place(JSON.parse(spineJson(out)))).toEqual(place(file));
   });
 
-  it("carries other constraints as they came, in the file's order", () => {
+  it("keeps other constraints as they came, in the file's order: physics the model's, a path carried", () => {
     const path = { type: "path", name: "p", slot: "s", bones: ["a"], spacing: 0.5 };
-    const physics = { type: "physics", name: "q", bone: "a", inertia: 0.5 };
+    const physics = { type: "physics", name: "q", bone: "a", inertia: 0.3 };
     const file = {
       skeleton: { spine: "4.3.74" },
       bones: [{ name: "root" }, { name: "a", parent: "root" }, { name: "t", parent: "root" }],
@@ -259,6 +259,7 @@ describe("structure", () => {
     };
     const { project } = importSpine(file, "x", images());
     expect(sym(project).ik.map((k) => k.name)).toEqual(["k"]);
+    expect(sym(project).physics!.map((k) => k.name)).toEqual(["q"]);
     const out = exportSpine(project).skeleton.constraints!;
     expect(out.map((c) => c.name)).toEqual(["q", "k", "p"]);
     expect(out[0]).toEqual(physics);
@@ -270,7 +271,8 @@ describe("structure", () => {
     const file = {
       skeleton: { spine: "4.3.74" },
       bones: [{ name: "root" }, { name: "a", parent: "root" }],
-      constraints: [{ type: "physics", name: "q", bone: "a" }],
+      slots: [{ name: "s", bone: "root" }],
+      constraints: [{ type: "path", name: "q", bones: ["a"], slot: "s" }],
     };
     const { project } = importSpine(file, "x", images());
     const a = Object.values(sym(project).nodes).find((n) => n.name === "a")!;

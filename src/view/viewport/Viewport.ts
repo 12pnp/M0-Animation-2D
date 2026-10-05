@@ -1,16 +1,19 @@
 import { cls, h, on, raf } from "@/view/widgets/dom";
+import { livePhysics } from "@/core/spine/spinePose";
 import { Camera } from "./Camera";
 import { contentMatrixOf, SceneRenderer } from "./SceneRenderer";
 import { type Guide, Overlay, RULER } from "./Overlay";
 import type { Store } from "@/app/Store";
 import type { AssetStore } from "@/app/AssetStore";
 import { entryBox, type FrameContext, type Pose, spinePixelAt } from "@/core/doc/pose";
+import { inPolygon, nearPolyline } from "@/core/doc/boxes";
+import { pathPolyline } from "@/core/doc/constraints";
 import { posedSymbol, spineBounds } from "@/core/spine/spinePose";
 import type { NodeId } from "@/core/doc/ids";
 import { applyInverse, invert, mat, matOf, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { polygonContains, type Rect, rectContains, transformCorners } from "@/core/math/geom";
 import { isImage, isSymbol } from "@/core/doc/types";
-import { meshView } from "@/view/tools/MeshTool";
+import { meshView, verticesOf } from "@/view/tools/MeshTool";
 import type { MeshDraw } from "./Overlay";
 import { ToolManager } from "@/view/tools/ToolManager";
 import type { ToolContext } from "@/view/tools/Tool";
@@ -70,6 +73,13 @@ export class Viewport {
   /** What the overlay draws of the mesh the Mesh tool edits. */
   private meshToDraw(): MeshDraw | null {
     if (this.store.ui.tool !== "mesh") return null;
+    const box = this.store.selectedNodes.find((n) => n.box || n.path);
+    const boxEntry = box ? this.lastPose?.byNode.get(box.id) : undefined;
+    if (box && boxEntry) {
+      const vertices = verticesOf(boxEntry);
+      const path = !!box.path;
+      return { vertices, triangles: [], hull: path ? 0 : vertices.length / 2, picked: meshView.node === box.id ? meshView.picked : new Set(), tint: null, ...(path ? { handles: true } : {}) };
+    }
     const node = this.store.selectedNodes.find((n) => n.mesh);
     const entry = node ? this.lastPose?.byNode.get(node.id) : undefined;
     if (!node?.mesh || !entry?.spine) return null;
@@ -279,10 +289,15 @@ export class Viewport {
     const hiddenArt = gizmoPrefs.showImages ? undefined : new Set(
       Object.values(store.currentSymbol.nodes).filter((n) => n.kind !== "bone").map((n) => n.id as string),
     );
-    this.lastPose = this.renderer.draw(
-      sc, store.currentSymbol, store.currentAnimation, store.stageFrame, store.ui.mode, view,
-      { hiddenLayers: hiddenArt },
-    );
+    livePhysics.on = store.ui.playing;
+    try {
+      this.lastPose = this.renderer.draw(
+        sc, store.currentSymbol, store.currentAnimation, store.stageFrame, store.ui.mode, view,
+        { hiddenLayers: hiddenArt },
+      );
+    } finally {
+      livePhysics.on = false;
+    }
     if (ref && stagePrefs.referenceAbove) drawReference(sc, view, ref, store.ui.frame, this.assets, stagePrefs.referenceOpacity);
     sc.restore();
 
@@ -489,16 +504,24 @@ export class Viewport {
           return e.node.slotBone ?? e.nodeId;
         }
         const box = entryBox(project, e, when);
-        if (!box || !e.display) continue;
+        const outline = e.node.kind === "box" || e.node.kind === "point" || e.node.kind === "path";
+        if (!box || (!e.display && !outline)) continue;
 
         const local = { x: 0, y: 0 };
         if (!applyInverse(local, e.world, wx, wy)) continue;
         if (!rectContains(box, local.x, local.y)) continue;
+        // A bounding box is picked inside its polygon, a point near it.
+        if (outline) {
+          if (e.node.kind === "box" && !inPolygon(e.node.box!.points, local.x, local.y)) continue;
+          if (e.node.kind === "path" && !nearPolyline(pathPolyline(e.node.path!), local.x, local.y, 8 / this.camera.screenScale)) continue;
+          return e.nodeId;
+        }
 
-        const item = project.items[e.display.itemId];
+        const display = e.display!;
+        const item = project.items[display.itemId];
         if (isImage(item)) {
-          const px = local.x + e.display.pivot.x;
-          const py = local.y + e.display.pivot.y;
+          const px = local.x + display.pivot.x;
+          const py = local.y + display.pivot.y;
           if (assets.alphaAt(item.assetId, px, py) < 8) continue;
         }
         return e.nodeId;

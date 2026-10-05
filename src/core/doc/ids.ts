@@ -8,6 +8,8 @@ export type LayerId = Brand<string, "LayerId">;
 export type AnimId = Brand<string, "AnimId">;
 export type IkId = Brand<string, "IkId">;
 export type TcId = Brand<string, "TcId">;
+/** A physics, slider or path constraint's id. */
+export type CnId = Brand<string, "CnId">;
 export type AssetId = Brand<string, "AssetId">;
 export type FolderId = Brand<string, "FolderId">;
 
@@ -30,6 +32,7 @@ export const newLayerId = () => next("l") as LayerId;
 export const newAnimId = () => next("a") as AnimId;
 export const newIkId = () => next("k") as IkId;
 export const newTcId = () => next("t") as TcId;
+export const newCnId = () => next("c") as CnId;
 export const newAssetId = () => next("s") as AssetId;
 export const newFolderId = () => next("f") as FolderId;
 

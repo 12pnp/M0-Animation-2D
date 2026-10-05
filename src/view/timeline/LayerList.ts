@@ -142,7 +142,7 @@ export class LayerList {
     const rows = timelineRows(this.store);
     const lines = treeLines(rows.map((r) => r.depth));
     rows.forEach((row, i) => this.list.appendChild(
-      row.prop ? this.propRow(row) : row.ik ? this.ikRow(row) : row.tc ? this.tcRow(row) : row.deform ? this.deformRow(row) : this.row(row, i, roles, lines[i]!)));
+      row.prop ? this.propRow(row) : row.ik ? this.ikRow(row) : row.tc ? this.tcRow(row) : row.deform ? this.deformRow(row) : row.sequence ? this.sequenceRow(row) : this.row(row, i, roles, lines[i]!)));
 
     // Selecting from somewhere else — the stage, or a name in the Properties
     // panel's IK section — has to be visible. Only on an actual CHANGE, and
@@ -180,6 +180,21 @@ export class LayerList {
       style: { height: `${this.cb.rowHeight}px` },
       title: `IK "${name}": its mix and bend keys, as Spine's. Drag up or down on a key, or on an empty frame, to key the mix; drag sideways to move a key; Bend in Properties ▸ IK keys the bend. Delete removes, right-click sets the ease.`,
     }, h("span", { class: "prop-glyph" }, "⟡"), h("div", { class: "name" }, `IK ${name}`));
+    on(el, "pointerdown", (ev) => {
+      if ((ev as unknown as PointerEvent).button !== 0) return;
+      this.store.clearFrameSelection();
+      this.store.selectNodes([row.layer.nodeId]);
+    });
+    return el;
+  }
+
+  /** A sequence's row: its sequence keys, under the node. */
+  private sequenceRow(row: LayerRow): HTMLElement {
+    const el = h("div", {
+      class: "tl-layer tl-prop prop-sequence",
+      style: { height: `${this.cb.rowHeight}px` },
+      title: "Sequence: which image plays from each key, and how (Spine's sequence keys). Key one in Properties ▸ Sequence or right-click here; drag a key to move it, Delete to remove.",
+    }, h("span", { class: "prop-glyph" }, "▤"), h("div", { class: "name" }, "Sequence"));
     on(el, "pointerdown", (ev) => {
       if ((ev as unknown as PointerEvent).button !== 0) return;
       this.store.clearFrameSelection();
@@ -255,6 +270,9 @@ export class LayerList {
         // while the bones it moves never are.
         : ikRole === "target" ? "ikTarget"
         : node.kind === "bone" ? "bone"
+        : node.kind === "box" ? "boxItem"
+        : node.kind === "point" ? "pointItem"
+        : node.kind === "path" ? "pathItem"
         : isSymbol(item) ? "symbolItem"
         : "imageItem",
       12,

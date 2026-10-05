@@ -12,6 +12,8 @@ import { nz } from "@/core/math/angle";
 import { mat, type Matrix2D } from "@/core/math/Matrix2D";
 import { displaysOf } from "@/core/doc/displays";
 import { skinBoneSet } from "@/core/doc/skins";
+import { sequenceNaming } from "@/core/doc/sequence";
+import { pathLengths, pathToSpine, physicsToSpine, runtimeSolved, sliderToSpine } from "@/core/doc/constraints";
 import { childFrame, displayContext, evaluateSymbol, localAt } from "@/core/doc/pose";
 import { rotationDelta, sampleColorRaw, sampleTransformRaw } from "@/core/doc/timeline";
 import type { Transform } from "@/core/math/Transform";
@@ -150,7 +152,7 @@ export interface ExportOptions {
   maskShape?: (item: ImageItem) => Contour;
   /** The skeleton without the editor's keys: what the stage's Spine pose
    *  needs (`spinePose.ts`), which sets the keyed pose itself. Carried
-   *  timelines are still written. */
+   *  timelines are still written, and a slider's animation whole. */
   setupOnly?: boolean;
 }
 
@@ -194,9 +196,12 @@ export function exportSpine(
   /** The exported symbol's skins' attachments: skin → slot → key. */
   const skinAttachments = new Map<string, Record<string, Record<string, SpineAttachment>>>();
   const skinsWarned = new Set<ItemId>();
+  const runtimeWarned = new Set<ItemId>();
   const tcKeysWarned = new Set<ItemId>();
   const ikKeysWarned = new Set<ItemId>();
   /** The exported symbol's mesh displays, for their deform keys. */
+  /** The exported symbol's sequence displays, for their sequence keys. */
+  const rootSequences: Array<{ nodeId: NodeId; slot: string; key: string }> = [];
   const rootMeshes: Array<{ nodeId: NodeId; slot: string; key: string; mesh: MeshData; pivot: { x: number; y: number }; bones: MeshBones | null }> = [];
   const setupPoses = new Map<ItemId, Map<NodeId, { world: Matrix2D }>>();
   const setupOf = (sym: SymbolItem) => setupPoses.get(sym.id) ?? setupPoses.set(sym.id, evaluateSymbol(sym, null, 0, "setup", null).byNode).get(sym.id)!;
@@ -278,6 +283,9 @@ export function exportSpine(
       // other way: the editor's positive bend (y down) is Spine's negative.
       if (k.bendPositive) ik.bendPositive = false;
       if (k.softness) ik.softness = k.softness;
+      if (k.compress) ik.compress = true;
+      if (k.stretch) ik.stretch = true;
+      if (k.scaleY) ik.scaleY = k.scaleY;
       if (k.spine) Object.assign(ik, k.spine);
       constraints.push(ik);
       if (scope.depth === 0) rootIk.set(k.id, ik);
@@ -296,6 +304,29 @@ export function exportSpine(
       const tc = transformConstraintOf(k, scope.prefix + k.name, bones, nameOf(source.id));
       constraints.push(tc);
       if (scope.depth === 0) rootTc.set(k.id, tc);
+    }
+    // Physics, sliders and paths (ARCHITECTURE ▸ Physics, sliders and paths):
+    // the exported symbol's own, a nested one's warned about.
+    if (scope.depth === 0) {
+      const named = (id: NodeId | undefined) => (id && s.nodes[id] && !dropped(id) ? nameOf(id) : null);
+      const skip = (kind: string, name: string) => diagnostics.push({ severity: "warning", message: `${kind} "${name}" references a missing bone, path or animation; skipped.` });
+      for (const k of s.physics ?? []) {
+        const bone = named(k.boneId);
+        if (bone) constraints.push(physicsToSpine(k, bone) as never); else skip("Physics constraint", k.name);
+      }
+      for (const k of s.paths ?? []) {
+        const bones = k.boneIds.map(named).filter((n): n is string => !!n);
+        const slot = s.nodes[k.pathId]?.kind === "path" ? named(k.pathId) : null;
+        if (bones.length && slot) constraints.push(pathToSpine(k, bones, slot) as never); else skip("Path constraint", k.name);
+      }
+      for (const k of s.sliders ?? []) {
+        const anim = s.animations.find((a) => a.id === k.animId);
+        const bone = k.boneId ? named(k.boneId) : null;
+        if (anim && (!k.boneId || bone)) constraints.push(sliderToSpine(k, anim.name, bone) as never); else skip("Slider", k.name);
+      }
+    } else if (runtimeSolved(s) && !runtimeWarned.has(s.id)) {
+      runtimeWarned.add(s.id);
+      diagnostics.push({ severity: "warning", message: `"${s.name}" has physics, slider or path constraints, but only the exported symbol's are written.` });
     }
     if (scope.depth > 0 && !tcKeysWarned.has(s.id) && s.animations.some((a) => a.transforms && Object.keys(a.transforms).length)) {
       tcKeysWarned.add(s.id);
@@ -345,10 +376,50 @@ export function exportSpine(
         const centre = regionCentre(item.width, item.height, ref.pivot);
         const region: SpineRegionAttachment = { width: item.width, height: item.height };
         if (key !== item.name) region.path = item.name;
+        if (ref.sequence) {
+          // A sequence (ARCHITECTURE ▸ Sequences): the regions are path + number.
+          const frames = ref.sequence.items.map((id) => project.items[id]).filter(isImage);
+          const naming = frames.length === ref.sequence.items.length ? sequenceNaming(frames.map((f) => f.name)) : null;
+          if (naming) {
+            for (const f of frames) usedImages.add(f.id);
+            region.path = naming.path;
+            const seq: Record<string, number> = { count: frames.length, start: naming.start, digits: naming.digits };
+            if (ref.sequence.setup) seq.setup = ref.sequence.setup;
+            (region as unknown as Record<string, unknown>).sequence = seq;
+            if (own && scope.depth === 0) rootSequences.push({ nodeId: node.id, slot: name, key });
+          } else {
+            diagnostics.push({ severity: "error", message: `"${node.name}"'s sequence images are not named one number after another (fire_01, fire_02, …); Spine finds them by name.` });
+          }
+        }
         if (centre.x !== 0) region.x = centre.x;
         if (centre.y !== 0) region.y = centre.y;
         return region;
       };
+      // A box or point node (ARCHITECTURE ▸ Boxes and points): one attachment,
+      // under the node's name, at the slot bone, which is the node itself.
+      if (node.kind === "box" || node.kind === "point" || node.kind === "path") {
+        const key = node.name;
+        if (node.kind === "path") {
+          const shape = node.path;
+          if (shape && shape.points.length >= 12) {
+            keys.set(0, key);
+            const att: Record<string, unknown> = { type: "path" };
+            if (shape.closed) att.closed = true;
+            if (shape.constantSpeed === false) att.constantSpeed = false;
+            att.vertexCount = shape.points.length / 2;
+            att.vertices = shape.points.map((v, i) => nz(i % 2 ? -v : v));
+            att.lengths = pathLengths(shape);
+            slotAttachments[key] = att as SpineAttachment;
+          } else diagnostics.push({ severity: "warning", message: `Path "${node.name}" has fewer than two knots; it is left out.` });
+        } else if (node.kind === "point") {
+          keys.set(0, key);
+          slotAttachments[key] = { type: "point" } as SpineAttachment;
+        } else if ((node.box?.points.length ?? 0) >= 6) {
+          const p = node.box!.points;
+          keys.set(0, key);
+          slotAttachments[key] = { type: "boundingbox", vertexCount: p.length / 2, vertices: p.map((v, i) => nz(i % 2 ? -v : v)) } as SpineAttachment;
+        } else diagnostics.push({ severity: "warning", message: `Bounding box "${node.name}" has fewer than three points; it is left out.` });
+      }
       // Skins (ARCHITECTURE ▸ Skins) only at the top: a nested symbol's are not written.
       const skinned = scope.depth === 0;
       for (const [index, ref] of exportedDisplays(s, node, skinned)) {
@@ -602,11 +673,40 @@ export function exportSpine(
 
   /* ── animations ── */
   const animations: Record<string, SpineAnimation> = {};
+  /** The sequence keys of `anim` into `out`'s attachment timelines; the last keyed frame. */
+  const sequenceTimelines = (anim: Animation, out: SpineAnimation): number => {
+    let last = 0;
+    for (const sq of rootSequences) {
+      const keys = anim.sequences?.[sq.nodeId];
+      if (!keys?.length) continue;
+      const bySlot = ((out.attachments ??= {}) as Record<string, Record<string, Record<string, Record<string, unknown>>>>);
+      ((bySlot.default ??= {})[sq.slot] ??= {})[sq.key] = {
+        ...bySlot.default[sq.slot]![sq.key],
+        sequence: keys.map((k) => {
+          const o: Record<string, unknown> = {};
+          const time = keyTime(k.frame, fps);
+          if (time) o.time = time;
+          if (k.mode !== "hold") o.mode = k.mode;
+          if (k.index) o.index = k.index;
+          o.delay = k.delay / fps;
+          return o;
+        }),
+      };
+      last = Math.max(last, keys[keys.length - 1]!.frame);
+    }
+    return last;
+  };
   for (const anim of sym.animations) {
     const out: SpineAnimation = {};
     let lastFrame = 0;
-    if (options.setupOnly) {
-      animations[anim.name] = { ...(anim.spine ?? {}) } as SpineAnimation;
+    // A slider plays an animation inside the runtime: the stage's rig needs its
+    // keys. Deform and sequence keys it needs always: the stage sets neither.
+    if (options.setupOnly && !sym.sliders?.some((k) => k.animId === anim.id)) {
+      const own: SpineAnimation = {};
+      const deforms = deformTimelines(anim, rootMeshes, fps);
+      if (deforms) own.attachments = { default: deforms };
+      sequenceTimelines(anim, own);
+      animations[anim.name] = mergeAttachmentTimelines(own, anim.spine ?? {});
       continue;
     }
     for (const { scope, node, name } of boneNodes) {
@@ -637,6 +737,7 @@ export function exportSpine(
       out.attachments = { default: deforms };
       for (const keys of Object.values(anim.deforms ?? {})) lastFrame = Math.max(lastFrame, keys[keys.length - 1]?.frame ?? 0);
     }
+    lastFrame = Math.max(lastFrame, sequenceTimelines(anim, out));
     const tcKeys = transformTimelines(sym, anim, rootTc, fps);
     if (tcKeys) {
       out.transform = tcKeys;
@@ -1691,3 +1792,22 @@ function rootBoneOf(sym: SymbolItem): Node | undefined {
   if (sym.spine && tops.length === 1) return tops[0];
   return tops.find((n) => n.name === ROOT_BONE);
 }
+
+/** `generated` with `carried`'s timelines, a carried attachment's timelines
+ *  kept where the document has none (the stage rig's `setupOnly` animation). */
+function mergeAttachmentTimelines(generated: SpineAnimation, carried: Record<string, unknown>): SpineAnimation {
+  const out = { ...carried, ...generated } as Record<string, unknown>;
+  const fromFile = carried.attachments as Record<string, Record<string, Record<string, unknown>>> | undefined;
+  if (generated.attachments && fromFile) {
+    const into = structuredClone(generated.attachments) as Record<string, Record<string, Record<string, unknown>>>;
+    for (const [skin, slots] of Object.entries(fromFile)) {
+      for (const [slot, atts] of Object.entries(slots)) {
+        const target = ((into[skin] ??= {})[slot] ??= {});
+        for (const [att, timelines] of Object.entries(atts)) if (!target[att]) target[att] = timelines;
+      }
+    }
+    out.attachments = into;
+  }
+  return out as SpineAnimation;
+}
+

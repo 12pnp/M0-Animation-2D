@@ -164,6 +164,7 @@ export class OutlinePanel implements Panel {
     const item = node.itemId ? this.store.project.items[node.itemId] : undefined;
     const kindIcon: IconName = node.kind === "bone"
       ? (isTarget ? "ikTarget" : "bone")
+      : node.kind === "box" ? "boxItem" : node.kind === "point" ? "pointItem" : node.kind === "path" ? "pathItem"
       : isSymbol(item) ? "symbolItem" : "imageItem";
 
     const guides = h("span", { class: "tguides" },

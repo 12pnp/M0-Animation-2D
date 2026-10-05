@@ -10,10 +10,11 @@
  * child's local y; angles go through the runtime's own pi (3.1415927) and
  * wrap into (−180, 180] before mixing.
  *
- * Left out, because the editor cannot author them: stretch, compress, and
- * every inheritance mode but normal (the export always writes normal).
- * Softness is in: near full reach it pulls the target in, so the chain
- * eases into straight instead of snapping. `core/doc/pose.ts` (`applyIk`) maps the stage's bones into this
+ * Left out: every inheritance mode but normal (the export always writes
+ * normal). Softness is in: near full reach it pulls the target in, so the
+ * chain eases into straight instead of snapping. So are stretch, compress
+ * and the scale-y mode (`IkScale`): a bone scaled along its length to reach
+ * (or not overshoot) the target, its y scale following or keeping its area. `core/doc/pose.ts` (`applyIk`) maps the stage's bones into this
  * space and back; `tests/spineParity.test.ts` checks the result against
  * spine-core itself.
  */
@@ -36,9 +37,24 @@ export interface IkBone extends IkWorld {
   shearX: number; shearY: number;
 }
 
+/** Stretch, compress and how scale y follows (4.3's `ScaleYMode`); `length`
+ *  is the solved bone's length. */
+export interface IkScale {
+  compress?: boolean;
+  stretch?: boolean;
+  scaleY?: "uniform" | "volume";
+  length?: number;
+}
+
+function scaleYBy(bone: IkBone, s: number, mode: IkScale["scaleY"]): void {
+  if (mode === "uniform") bone.scaleY *= s;
+  else if (mode === "volume") bone.scaleY /= s < 0.7 ? 0.25 + 0.642857 * s : s;
+}
+
 /** `IkConstraint.apply1`: point one bone at the target. `parent` is the
- *  bone's parent's world matrix. Mutates `bone.rotation`. */
-export function ikApply1(bone: IkBone, parent: IkWorld, targetX: number, targetY: number, mix: number): void {
+ *  bone's parent's world matrix. Mutates `bone.rotation`, and its scale
+ *  with stretch or compress. */
+export function ikApply1(bone: IkBone, parent: IkWorld, targetX: number, targetY: number, mix: number, scale: IkScale = {}): void {
   const pa = parent.a, pb = parent.b, pc = parent.c, pd = parent.d;
   let rotationIK = -bone.shearX - bone.rotation, tx = 0, ty = 0;
   const x = targetX - parent.worldX, y = targetY - parent.worldY;
@@ -52,18 +68,31 @@ export function ikApply1(bone: IkBone, parent: IkWorld, targetX: number, targetY
   if (rotationIK > 180) rotationIK -= 360;
   else if (rotationIK <= -180) rotationIK += 360;
   bone.rotation += rotationIK * mix;
+  if (scale.compress || scale.stretch) {
+    const b = (scale.length ?? 0) * bone.scaleX;
+    if (b > EPSILON) {
+      const dd = tx * tx + ty * ty;
+      if ((scale.compress && dd < b * b) || (scale.stretch && dd > b * b)) {
+        const s = (Math.sqrt(dd) / b - 1) * mix + 1;
+        bone.scaleX *= s;
+        scaleYBy(bone, s, scale.scaleY);
+      }
+    }
+  }
 }
 
 /**
  * `IkConstraint.apply2`: two bones, `child` a direct child of `parent`.
  * `grand` is `parent`'s parent's world matrix; `childLength` the child's
- * bone length; `softness` in pixels. Mutates both rotations, and `child.y`
- * for a non-uniform parent scale.
+ * bone length; `softness` in pixels. Mutates both rotations, `child.y` for
+ * a non-uniform parent scale or stretch, and the parent's scale with stretch
+ * (`scale.length` is the parent's length).
  */
 export function ikApply2(
   parent: IkBone, child: IkBone, grand: IkWorld, childLength: number,
-  targetX: number, targetY: number, bendDir: number, mix: number, softness = 0,
+  targetX: number, targetY: number, bendDir: number, mix: number, softness = 0, scale: IkScale = {},
 ): void {
+  const stretch = !!scale.stretch;
   const px = parent.x, py = parent.y;
   let psx = parent.scaleX, psy = parent.scaleY, csx = child.scaleX;
   let os1: number, os2: number, s2: number;
@@ -73,7 +102,7 @@ export function ikApply2(
 
   let cwx: number, cwy: number, a = parent.a, b = parent.b, c = parent.c, d = parent.d;
   const u = Math.abs(psx - psy) <= EPSILON;
-  if (!u) {
+  if (!u || stretch) {
     child.y = 0;
     cwx = a * child.x + parent.worldX;
     cwy = c * child.x + parent.worldY;
@@ -88,7 +117,7 @@ export function ikApply2(
   const l1 = Math.sqrt(dx * dx + dy * dy);
   let l2 = childLength * csx, a1: number, a2: number;
   if (l1 < EPSILON) {
-    ikApply1(parent, grand, targetX, targetY, mix);
+    ikApply1(parent, grand, targetX, targetY, mix, { stretch, length: scale.length });
     child.rotation = 0;
     return;
   }
@@ -112,7 +141,15 @@ export function ikApply2(
     l2 *= psx;
     let cos = (dd - l1 * l1 - l2 * l2) / (2 * l1 * l2);
     if (cos < -1) { cos = -1; a2 = PI * bendDir; }
-    else if (cos > 1) { cos = 1; a2 = 0; }
+    else if (cos > 1) {
+      cos = 1;
+      a2 = 0;
+      if (stretch) {
+        a = (Math.sqrt(dd) / (l1 + l2) - 1) * mix + 1;
+        parent.scaleX *= a;
+        scaleYBy(parent, a, scale.scaleY);
+      }
+    }
     else a2 = Math.acos(cos) * bendDir;
     a = l1 + l2 * cos;
     b = l2 * Math.sin(a2);

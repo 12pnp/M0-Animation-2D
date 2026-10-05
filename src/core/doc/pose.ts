@@ -13,6 +13,8 @@ import { DEFAULT_COLOR, isImage, isSymbol } from "./types";
 import type { ItemId, NodeId } from "./ids";
 import { sampleColorRaw, sampleTransformRaw, spanIndexAt } from "./timeline";
 import { anchorOf, displayAt } from "./displays";
+import { boxNodeBounds } from "./boxes";
+import { sequenceItemAt } from "./sequence";
 import { skinActivity, skinLookup, skinnedDisplay, stageSkinOf, type SkinActivity } from "./skins";
 
 /**
@@ -226,7 +228,11 @@ export function evaluateSymbol(
     const node = symbol.nodes[layer.nodeId];
     if (!node) continue;
     const { transform, displayIndex, color, onTrack, since } = localAt(node, animation, frame, mode);
-    const display = skinnedDisplay(node, displayIndex, lookup);
+    const shown = skinnedDisplay(node, displayIndex, lookup);
+    // A sequence shows the image its keys pick (ARCHITECTURE ▸ Sequences).
+    const display = shown?.sequence
+      ? { ...shown, itemId: sequenceItemAt(shown.sequence, mode === "animate" ? animation : null, node.id, frame) }
+      : shown;
     entries.push({
       nodeId: node.id,
       node,
@@ -409,12 +415,17 @@ function applyConstraints(
     if (twoBone) {
       const p = ikBone(root), c = ikBone(effector);
       const length = effector.node.kind === "bone" ? effector.node.boneLength ?? 0 : 0;
-      ikApply2(p, c, spineWorld(rootParentWorld), length, tx, ty, bendPositive ? -1 : 1, mix, softness);
+      const parentLength = root.node.kind === "bone" ? root.node.boneLength ?? 0 : 0;
+      ikApply2(p, c, spineWorld(rootParentWorld), length, tx, ty, bendPositive ? -1 : 1, mix, softness,
+        { stretch: constraint.stretch, scaleY: constraint.scaleY, length: parentLength });
       solved.set(root.nodeId, fromSpineLocal(p));
       solved.set(effector.nodeId, fromSpineLocal(c));
     } else {
       const b = ikBone(root);
-      ikApply1(b, spineWorld(rootParentWorld), tx, ty, mix);
+      ikApply1(b, spineWorld(rootParentWorld), tx, ty, mix, {
+        compress: constraint.compress, stretch: constraint.stretch, scaleY: constraint.scaleY,
+        length: root.node.kind === "bone" ? root.node.boneLength ?? 0 : 0,
+      });
       solved.set(root.nodeId, fromSpineLocal(b));
     }
     mul(root.world, rootParentWorld, toMatrix(mat(), localOf(root)));
@@ -496,6 +507,7 @@ export function entryBox(
   project: Project, e: PoseEntry, ctx: FrameContext = SETUP_CONTEXT,
 ): { x: number; y: number; w: number; h: number } | null {
   if (e.spine) return spineBox(e);
+  if (e.node.kind === "box" || e.node.kind === "point" || e.node.kind === "path") return boxNodeBounds(e.node);
   if (!e.display) return null;
   return localBox(project, e.display.itemId, e.display.pivot, displayContext(ctx, e.displaySince));
 }

@@ -73,6 +73,7 @@
 .tl-prop.prop-ik .prop-glyph { color: var(--ik-target); }
 .tl-prop.prop-tc .prop-glyph { color: #c792ea; }
 .tl-prop.prop-deform .prop-glyph { color: #4fd1c5; }
+.tl-prop.prop-sequence .prop-glyph { color: #f6ad55; }
 /* The Draw order row, under the head, above the scrolling layers. */
 .tl-layer.tl-order-row { flex: none; color: var(--fg); background: var(--bg-panel-alt); border-bottom: 1px solid var(--line); }
 .tl-layer.tl-order-row[hidden] { display: none; }

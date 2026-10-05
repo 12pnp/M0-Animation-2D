@@ -152,6 +152,8 @@ export interface SpineIkConstraint {
   bendPositive?: boolean;
   compress?: boolean;
   stretch?: boolean;
+  /** 4.3: how scale y follows a stretch or compress. Absent = "none". */
+  scaleY?: "none" | "uniform" | "volume";
   /** Only in the skins that list it. */
   skin?: boolean;
 }

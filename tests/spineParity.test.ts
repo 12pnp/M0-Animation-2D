@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { drawingLayers } from "@/core/doc/drawOrder";
 import {
   AtlasAttachmentLoader, ClippingAttachment, type Event as SpineEvent, MeshAttachment, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
-  Skin,
+  Skin, BoundingBoxAttachment, PointAttachment, Vector2,
 } from "@esotericsoftware/spine-core";
 import { eventValues } from "@/core/doc/events";
 import { stageSkinOf, withDescendantBones } from "@/core/doc/skins";
@@ -231,6 +231,29 @@ function checkParity(project: Project, symbolId: ItemId): Worst {
         worst.checks++;
 
         if (!slot) continue;
+        if (entry.node.kind === "box" || entry.node.kind === "point") {
+          // Boxes and points: Spine's bounding box vertices and point position.
+          if (entry.node.kind === "box") {
+            if (!(attachment instanceof BoundingBoxAttachment)) fail(where, `slot "${name}" shows ${attachment?.name ?? "nothing"}, the stage a bounding box`);
+            const pts = entry.node.box!.points;
+            const verts = new Array<number>(pts.length);
+            (attachment as BoundingBoxAttachment).computeWorldVertices(skeleton, slot, 0, pts.length, verts, 0, 2);
+            for (let i = 0; i < pts.length; i += 2) {
+              const pt = apply({ x: 0, y: 0 }, d.world, pts[i]!, pts[i + 1]!);
+              const diff = Math.max(Math.abs(verts[i]! - pt.x), Math.abs(verts[i + 1]! + pt.y));
+              worst.corner = Math.max(worst.corner, diff);
+              if (diff > 1e-3) fail(where, `box "${name}" vertex ${i / 2}: ${verts.slice(i, i + 2)} vs ${[pt.x, -pt.y]}`);
+            }
+          } else {
+            if (!(attachment instanceof PointAttachment)) fail(where, `slot "${name}" shows ${attachment?.name ?? "nothing"}, the stage a point`);
+            const at = (attachment as PointAttachment).computeWorldPosition(bone!.appliedPose, new Vector2());
+            const angle = (attachment as PointAttachment).computeWorldRotation(bone!.appliedPose);
+            const want = Math.atan2(-d.world.b, d.world.a) * 180 / Math.PI;
+            const turn = Math.abs(((angle - want) % 360 + 540) % 360 - 180);
+            if (Math.abs(at.x - d.world.tx) > 1e-3 || Math.abs(at.y + d.world.ty) > 1e-3 || turn > 1e-3) fail(where, `point "${name}" at ${at.x},${at.y} ${angle}° vs ${d.world.tx},${-d.world.ty} ${want}°`);
+          }
+          continue;
+        }
         const item = entry.display ? project.items[entry.display.itemId] : undefined;
         const expectShown = isImage(item);
         if (!!attachment !== expectShown) {
@@ -253,6 +276,12 @@ function checkParity(project: Project, symbolId: ItemId): Worst {
           if (diff > 0.5 / 255 + 1e-6) fail(where, `slot "${name}" colour ${wants.map((w) => w[0])} vs ${wants.map((w) => w[1])}`);
         }
 
+        if (attachment instanceof RegionAttachment && isImage(item) && attachment.sequence?.hasPathSuffix()) {
+          // A sequence: the frame spine-core picked is the image the stage shows.
+          const seq = attachment.sequence;
+          const region = seq.regions[seq.resolveIndex(slot.appliedPose)] as unknown as { name: string };
+          if (region.name !== item.name) fail(where, `slot "${name}" shows frame ${region.name}, the stage ${item.name}`);
+        }
         if (attachment instanceof RegionAttachment && isImage(item)) {
           const verts = new Array<number>(8);
           attachment.computeWorldVertices(slot, attachment.getOffsets(slot.appliedPose), verts, 0, 2);
@@ -401,7 +430,7 @@ function ikRig(opts: { weight?: number; bendPositive?: boolean; chain?: 0 | 1; s
 /** A random IK rig: every local of the chain random (non-uniform and
  *  negative scales, shear), random lengths, weight, bend and chain, and a
  *  target sweeping through reachable and unreachable positions. */
-function randomIkRig(seed: number): Project {
+function randomIkRig(seed: number, scaling = false): Project {
   let st = seed;
   const r = () => ((st = (st * 16807) % 2147483647) / 2147483647);
   const pick = <T,>(xs: T[]) => xs[Math.floor(r() * xs.length)]!;
@@ -433,6 +462,13 @@ function randomIkRig(seed: number): Project {
     id: newIkId(), name: "limb", boneId: lower.id, targetId: target.id,
     chain: pick([0, 1, 1] as const), bendPositive: r() < 0.5, weight: pick([1, 1, 0.5, 0.25, 0.8]),
   });
+  if (scaling) {
+    const k = sym.ik[0]!;
+    if (r() < 0.8) k.stretch = true;
+    if (r() < 0.6) k.compress = true;
+    const mode = pick(["none", "uniform", "volume"] as const);
+    if (mode !== "none") k.scaleY = mode;
+  }
   const anim = sym.animations[0]!;
   anim.duration = 12;
   anim.tracks[target.id] = {
@@ -655,6 +691,28 @@ describe("the Spine runtime plays the export the way the stage draws it", () => 
       } catch (err) {
         const k = (project.items[project.rootSymbolId] as SymbolItem).ik[0]!;
         throw new Error(`seed ${seed * 7919} (chain ${k.chain}, weight ${k.weight}): ${(err as Error).message}`);
+      }
+    }
+  });
+
+  it.each(["uniform", "volume"] as const)("IK compress, hard, scale y %s: one bone pulled to a target near its root", (mode) => {
+    const project = ikRig({ chain: 0 });
+    const sym = project.items[project.rootSymbolId] as SymbolItem;
+    Object.assign(sym.ik[0]!, { compress: true, stretch: true, scaleY: mode });
+    const target = Object.values(sym.nodes).find((n) => n.name === "target")!;
+    // From well beyond the forearm's reach to a tenth of it, past the volume curve's knee.
+    sym.animations[0]!.tracks[target.id]!.keys = [key(0, tf(400, 330)), key(8, tf(290, 255)), key(16, tf(296, 249)), key(23, tf(400, 330))];
+    expect(checkParity(project, project.rootSymbolId).checks).toBeGreaterThan(50);
+  });
+
+  it("IK stretch, compress and scale y: 60 random rigs", () => {
+    for (let seed = 1; seed <= 60; seed++) {
+      const project = randomIkRig(seed * 104729, true);
+      const k = (project.items[project.rootSymbolId] as SymbolItem).ik[0]!;
+      try {
+        checkParity(project, project.rootSymbolId);
+      } catch (err) {
+        throw new Error(`seed ${seed * 104729} (chain ${k.chain}, stretch ${!!k.stretch}, compress ${!!k.compress}, scaleY ${k.scaleY}): ${(err as Error).message}`);
       }
     }
   });
@@ -1018,5 +1076,45 @@ describe("skins", () => {
     expect(across(project, rig, [[], ["legs"], ["follow"], ["legs", "follow"]])).toBeGreaterThan(100);
     const out = exportSpine(project, rig.id).skeleton;
     expect(out.constraints!.filter((c) => (c as { skin?: boolean }).skin).map((c) => c.name).sort()).toEqual(["follow", "leg_far_shin_ik", "leg_near_shin_ik"]);
+  });
+});
+
+describe("boxes and points", () => {
+  it("a bounding box and a point on the rig: vertices and position where spine-core puts them, frame by frame", async () => {
+    const { project, rig, node } = await loadStickman();
+    const box = createNode("box", "hurt", { parentId: node("chest") });
+    box.bind = tf(10, -4, 25, 25, 1.3, 0.8);
+    box.box = { points: [-30, -20, 40, -25, 45, 30, -20, 35, -35, 5] };
+    const point = createNode("point", "muzzle", { parentId: node("arm_near_fore") });
+    point.bind = tf(60, 3, -40, -40);
+    for (const n of [box, point]) { rig.nodes[n.id] = n; rig.layers.unshift(createLayer(n.id, n.name, rig.layers.length)); }
+    // Hidden for a stretch of "dance" by a blank key, shown again after.
+    rig.animations[0]!.tracks[box.id] = { nodeId: box.id, endFrame: rig.animations[0]!.duration - 1, keys: [
+      key(0, box.bind), key(6, box.bind, { displayIndex: -1 }), key(12, tf(10, -4, 70, 70, 1, 1.4)),
+    ] };
+    expect(checkParity(project, rig.id).checks).toBeGreaterThan(100);
+  });
+});
+
+describe("sequences", () => {
+  it("a sequence keyed in every mode: the frame spine-core shows is the stage's, frame by frame", async () => {
+    const { project, rig, node } = await loadStickman();
+    const frames = ["fx_08", "fx_09", "fx_10", "fx_11", "fx_12"].map((n) => {
+      const item = createImageItem(n, `asset_${n}` as AssetId, 24, 16);
+      project.items[item.id] = item;
+      project.itemOrder.push(item.id);
+      return item.id;
+    });
+    const fx = createNode("image", "fx", { parentId: node("arm_near_fore"), itemId: frames[0], pivotX: 4, pivotY: 8 });
+    fx.bind = tf(70, 0, 10, 10);
+    fx.sequence = { items: frames, setup: 2 };
+    rig.nodes[fx.id] = fx;
+    rig.layers.unshift(createLayer(fx.id, fx.name, rig.layers.length));
+    const modes = ["loop", "pingpong", "once", "loopReverse", "pingpongReverse", "onceReverse", "hold"] as const;
+    rig.animations[0]!.sequences = { [fx.id]: modes.map((mode, i) => ({ frame: 2 + i * 4, mode, index: i % 3, delay: [1, 1.5, 0.75, 2][i % 4]! })) };
+    rig.animations[1]!.sequences = { [fx.id]: [{ frame: 0, mode: "pingpong", index: 4, delay: 0.5 }] };
+    const out = exportSpine(project);
+    expect(out.skeleton.skins![0]!.attachments!.fx).toEqual({ fx_08: { width: 24, height: 16, path: "fx_", x: 8, sequence: { count: 5, start: 8, digits: 2, setup: 2 } } });
+    expect(checkParity(project, rig.id).checks).toBeGreaterThan(100);
   });
 });
