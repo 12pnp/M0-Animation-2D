@@ -1,0 +1,46 @@
+ManifestFileVersion: 0
+UnityVersion: 6000.6.4f1
+CRC: 52690671
+Hashes:
+  AssetFileHash:
+    serializedVersion: 2
+    Hash: 8324e9813ce9a6b54a3ebed3bc18fb1f
+  TypeTreeHash:
+    serializedVersion: 2
+    Hash: 8c5031e5c2f9c3ba56abd44fbff8a412
+  IncrementalBuildHash:
+    serializedVersion: 2
+    Hash: 4854cae29ac7b001f4b2f873933f4338
+HashAppended: 0
+ClassTypes:
+- Class: 1
+  Script: {instanceID: 0}
+- Class: 4
+  Script: {instanceID: 0}
+- Class: 21
+  Script: {instanceID: 0}
+- Class: 28
+  Script: {instanceID: 0}
+- Class: 48
+  Script: {instanceID: 0}
+- Class: 114
+  Script: {fileID: 11500000, guid: 5bf7c34a0dc4e6348bea04faa70406ee, type: 3}
+- Class: 114
+  Script: {fileID: 11500000, guid: 57c008f954fe54a8bb972de1018a2cb8, type: 3}
+- Class: 115
+  Script: {instanceID: 0}
+- Class: 212
+  Script: {instanceID: 0}
+- Class: 213
+  Script: {instanceID: 0}
+SerializeReferenceClassIdentifiers:
+- AssemblyName: Unity.2D.Animation.Runtime
+  ClassName: UnityEngine.U2D.Animation.SpriteCategoryEntry
+- AssemblyName: Unity.2D.Animation.Runtime
+  ClassName: UnityEngine.U2D.Animation.SpriteLibCategory
+- AssemblyName: UnityEngine.CoreModule
+  ClassName: UnityEngine.Bounds
+Assets:
+- Assets/Samples/2D Animation/16.0.1/Samples/4 SpriteSwap/Sprite Library/Skeleton.spriteLib
+- Assets/Samples/2D Animation/16.0.1/Samples/4 SpriteSwap/Sprites/Skeleton.psb
+Dependencies: []

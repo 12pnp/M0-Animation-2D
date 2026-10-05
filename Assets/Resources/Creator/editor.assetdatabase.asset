@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9c830912771cb4b45b620fae4ed23425, type: 3}
+  m_Name: editor.assetdatabase
+  m_EditorClassIdentifier: Module.PB.AssetSystem::ModuleP1.TSettings.AssetDatabaseSettings
+  m_AssetKey:
+    m_integer: 0
+  tabSplitterPosition: 250
+  m_SubTabVisibility: []
+  m_LastSelectedControlPanelIndex: 0
+  m_LastSelectedItemIndex: 0
+  m_Repository:
+    rid: 4159898475565416798
+  references:
+    version: 2
+    RefIds:
+    - rid: 4159898475565416798
+      type: {class: AssetDatabaseRepository, ns: ModuleP1, asm: Module.PB.AssetSystem}
+      data:
+        m_AutoSave: 1
+        m_DetailedLogging: 0
+        m_BatchSize: 100
+        m_AutoRefreshOnFocus: 1

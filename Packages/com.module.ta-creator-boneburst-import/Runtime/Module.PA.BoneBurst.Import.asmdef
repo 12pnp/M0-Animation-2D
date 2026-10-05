@@ -1,0 +1,17 @@
+{
+  "name": "Module.PA.BoneBurst.Import",
+  "rootNamespace": "BoneBurst",
+  "references": [
+    "Module.PA.BoneBurst.Data",
+    "Unity.Mathematics"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

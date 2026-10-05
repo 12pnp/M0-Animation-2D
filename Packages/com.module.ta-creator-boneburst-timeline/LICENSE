@@ -1,0 +1,19 @@
+BoneBurst Timeline (com.module.ta-creator-boneburst-timeline)
+Copyright (c) 2026, Panupun Dev
+
+This package provides Unity Timeline integration for BoneBurst: play and mix
+animations, flip the skeleton. Its behaviour matches the spine-unity
+timeline extension, but it is an original work written from scratch: it
+contains no code from the Spine Runtimes or the spine-unity timeline
+extension and does not integrate them.
+
+Spine is a trademark of Esoteric Software LLC. BoneBurst Timeline is not
+affiliated with, endorsed by, or sponsored by Esoteric Software LLC.
+
+BONEBURST TIMELINE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR
+OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH BONEBURST TIMELINE
+OR THE USE OR OTHER DEALINGS IN IT.

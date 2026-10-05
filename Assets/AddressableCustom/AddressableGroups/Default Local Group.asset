@@ -1,0 +1,147 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6b0e1c9a2e5c2944e90a9c220c9276ba, type: 3}
+  m_Name: Default Local Group
+  m_EditorClassIdentifier: Module.PB.AssetSystem::ModuleP1.AddressableAssetGroupWrapper
+  m_GroupName: Default Local Group
+  m_Description: 'Addressable groupWrapper: Default Local Group'
+  m_IsActive: 1
+  m_GroupIndex: 0
+  m_AddressableGroupGUID: b91271be3d80f4c8696a18759edfc319
+  m_RootAddressableAssetGroup: {fileID: 11400000, guid: 181f28fdaf12b44129a46471ccd77f59, type: 2}
+  assetKeyMappingsList:
+  - IsActive: 1
+    invalidCount: 0
+    Notes: 
+    guidMappings: []
+    assetTypeMapping: 0
+    name: 
+    assetGroupIndex: 0
+  - IsActive: 1
+    invalidCount: 0
+    Notes: 
+    guidMappings: []
+    assetTypeMapping: 0
+    name: 
+    assetGroupIndex: 0
+  - IsActive: 1
+    invalidCount: 0
+    Notes: 
+    guidMappings: []
+    assetTypeMapping: 0
+    name: 
+    assetGroupIndex: 0
+  - IsActive: 1
+    invalidCount: 0
+    Notes: 
+    guidMappings: []
+    assetTypeMapping: 0
+    name: 
+    assetGroupIndex: 0
+  - IsActive: 1
+    invalidCount: 0
+    Notes: 
+    guidMappings: []
+    assetTypeMapping: 0
+    name: 
+    assetGroupIndex: 0
+  - IsActive: 1
+    invalidCount: 0
+    Notes: 
+    guidMappings: []
+    assetTypeMapping: 0
+    name: 
+    assetGroupIndex: 0
+  - IsActive: 1
+    invalidCount: 0
+    Notes: 
+    guidMappings: []
+    assetTypeMapping: 0
+    name: 
+    assetGroupIndex: 0
+  - IsActive: 1
+    invalidCount: 0
+    Notes: 
+    guidMappings: []
+    assetTypeMapping: 0
+    name: 
+    assetGroupIndex: 0
+  - IsActive: 1
+    invalidCount: 0
+    Notes: 
+    guidMappings: []
+    assetTypeMapping: 0
+    name: 
+    assetGroupIndex: 0
+  - IsActive: 1
+    invalidCount: 0
+    Notes: 
+    guidMappings:
+    - m_IndexAsset:
+        m_AssetGUID: 12e17de6653834554835a6bef562c5f8
+        m_AssetType: 0
+        m_AssetGroupIndex: 0
+        m_AssetIndex: 0
+        m_SubAssetIndex: -1
+    assetTypeMapping: 0
+    name: 
+    assetGroupIndex: 0
+  - IsActive: 1
+    invalidCount: 0
+    Notes: 
+    guidMappings: []
+    assetTypeMapping: 0
+    name: 
+    assetGroupIndex: 0
+  - IsActive: 1
+    invalidCount: 0
+    Notes: 
+    guidMappings: []
+    assetTypeMapping: 0
+    name: 
+    assetGroupIndex: 0
+  - IsActive: 1
+    invalidCount: 0
+    Notes: 
+    guidMappings: []
+    assetTypeMapping: 0
+    name: 
+    assetGroupIndex: 0
+  - IsActive: 1
+    invalidCount: 0
+    Notes: 
+    guidMappings: []
+    assetTypeMapping: 0
+    name: 
+    assetGroupIndex: 0
+  - IsActive: 1
+    invalidCount: 0
+    Notes: 
+    guidMappings: []
+    assetTypeMapping: 0
+    name: 
+    assetGroupIndex: 0
+  m_TotalAssets: 1
+  m_ActiveAssets: 1
+  m_parentGuid: 
+  mappingPriority: 0
+  dlcIdentifier: Base
+  mParentGroupWrapper: {fileID: 0}
+  useCustomStrategy: 0
+  customStrategyConfig:
+    StrategyType: 0
+    MaxRetries: 3
+    RetryDelay: 1
+  m_IntStringMapping: {fileID: 0}
+  invalidAssetPaths: []
+  m_totalGroupInvalid: 0
+  m_totalGroupValid: 0

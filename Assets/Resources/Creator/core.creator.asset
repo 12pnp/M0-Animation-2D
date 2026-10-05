@@ -1,0 +1,57 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: dfb195a794af26e4eae2d4f3acd7cab0, type: 3}
+  m_Name: core.creator
+  m_EditorClassIdentifier: Module.PB.Common::ModuleP1.GeneralSettings
+  m_AssetKey:
+    m_integer: 0
+  tabSplitterPosition: 250
+  m_SubTabVisibility: []
+  m_LastSelectedControlPanelIndex: 0
+  m_LastSelectedItemIndex: 0
+  m_Repository:
+    rid: 4159898475565416800
+  references:
+    version: 2
+    RefIds:
+    - rid: -2
+      type: {class: , ns: , asm: }
+    - rid: 4159898475565416800
+      type: {class: GeneralRepository, ns: ModuleP1, asm: Module.PB.Common}
+      data:
+        m_SaveConfig:
+          m_Encryption:
+            rid: -2
+          m_Storage:
+            rid: -2
+          m_Load: 0
+          m_Scene:
+            m_Property:
+              rid: 4159898475565416801
+        m_inputSystem: {fileID: 0}
+        m_icon:
+          Name: 
+          Name1: {fileID: 0}
+          m_texture: {fileID: 0}
+          m_mainIcon: {fileID: 0}
+        m_icon2:
+          Name: 
+          Name1: {fileID: 0}
+          m_texture: {fileID: 0}
+          m_mainIcon: {fileID: 0}
+    - rid: 4159898475565416801
+      type: {class: GetSceneAsset, ns: ModuleP1, asm: Module.PB.Common}
+      data:
+        m_Scene:
+          m_SceneName: 
+          m_SceneIndex: -1
+          m_Scene: {fileID: 0}

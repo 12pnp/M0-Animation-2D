@@ -1,0 +1,29 @@
+{
+  "name": "Module.TA.BoneBurst.Tests.SpineCsharp",
+  "rootNamespace": "BoneBurst.Tests",
+  "references": [
+    "Module.PA.BoneBurst.Data",
+    "Module.PA.BoneBurst.Import",
+    "Module.PA.BoneBurst.Core",
+    "Module.TA.BoneBurst.Tests.Editor",
+    "spine-csharp",
+    "Unity.Mathematics",
+    "UnityEngine.TestRunner",
+    "UnityEditor.TestRunner"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "nunit.framework.dll"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

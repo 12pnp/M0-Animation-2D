@@ -1,0 +1,18 @@
+{
+  "name": "com.module.ta-creator-boneburst",
+  "displayName": "TA Animation BoneBurst 2D",
+  "version": "0.1.0",
+  "unity": "6000.6",
+  "license": "SEE LICENSE IN LICENSE",
+  "description": "2D Animation provides all power runtime components for skeletal animation.",
+  "keywords": [
+    "2d",
+    "animation"
+  ],
+  "dependencies": {
+    "com.unity.burst": "2.0.0",
+    "com.unity.collections": "6.6.0",
+    "com.unity.mathematics": "1.4.0",
+    "com.module.pb-creator-base": "2026.9.120"
+  }
+}

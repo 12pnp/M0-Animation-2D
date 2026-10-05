@@ -1,0 +1,23 @@
+{
+  "name": "Module.PB.BoneBurst.Unity",
+  "rootNamespace": "BoneBurst",
+  "references": [
+    "Module.PA.BoneBurst.Data",
+    "Module.PA.BoneBurst.Core",
+    "Unity.Burst",
+    "Unity.Collections",
+    "Unity.Mathematics",
+    "Module.PA.Base",
+    "Module.PB.AssetRuntime",
+    "UniTask"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": true,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

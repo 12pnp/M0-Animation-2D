@@ -1,0 +1,15 @@
+{
+  "name": "com.dragonbones.unity",
+  "displayName": "DragonBones Unity Runtime",
+  "version": "5.6.300",
+  "unity": "6000.0",
+  "description": "DragonBones C# runtime for Unity, embedded from DragonBones/DragonBonesCSharp master @ 29a3613 (common library + Unity library + MiniJSON). Local changes are listed in CHANGELOG.md.",
+  "license": "MIT",
+  "author": {
+    "name": "The DragonBones team",
+    "url": "https://github.com/DragonBones/DragonBonesCSharp"
+  },
+  "dependencies": {
+    "com.unity.ugui": "2.0.0"
+  }
+}

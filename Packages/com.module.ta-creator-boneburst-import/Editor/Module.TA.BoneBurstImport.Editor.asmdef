@@ -1,0 +1,25 @@
+{
+  "name": "Module.TA.BoneBurstImport.Editor",
+  "rootNamespace": "BoneBurst.Editor",
+  "references": [
+    "Module.PA.BoneBurst.Data",
+    "Module.PA.BoneBurst.Import",
+    "Module.PA.BoneBurst.Core",
+    "Module.PB.BoneBurst.Unity",
+    "Module.TA.BoneBurst.Editor",
+    "Module.PA.Base",
+    "Module.PB.AssetSystem",
+    "Module.PB.AssetSystem.Editor"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

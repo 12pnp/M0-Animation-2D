@@ -1,0 +1,22 @@
+{
+  "name": "Module.TB.BoneBurstTimeline.Editor",
+  "rootNamespace": "BoneBurst.Timeline.Editor",
+  "references": [
+    "Module.TB.BoneBurstTimeline",
+    "Module.PB.BoneBurst.Unity",
+    "Module.TA.BoneBurst.Editor",
+    "Unity.Timeline",
+    "Unity.Timeline.Editor"
+  ],
+  "includePlatforms": [
+    "Editor"
+  ],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": true,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

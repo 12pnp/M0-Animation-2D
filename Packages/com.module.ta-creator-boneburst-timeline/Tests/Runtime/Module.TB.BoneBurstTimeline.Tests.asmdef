@@ -1,0 +1,27 @@
+{
+  "name": "Module.TB.BoneBurstTimeline.Tests",
+  "rootNamespace": "BoneBurst.Timeline.Tests",
+  "references": [
+    "Module.TB.BoneBurstTimeline",
+    "Module.PA.BoneBurst.Data",
+    "Module.PA.BoneBurst.Import",
+    "Module.PA.BoneBurst.Core",
+    "Module.PB.BoneBurst.Unity",
+    "Unity.Timeline",
+    "UnityEngine.TestRunner",
+    "UnityEditor.TestRunner"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "nunit.framework.dll"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

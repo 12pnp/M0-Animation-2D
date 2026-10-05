@@ -1,0 +1,535 @@
+fileFormatVersion: 2
+guid: 16b689b4d12824cee846792e127da3ad
+TextureImporter:
+  internalIDToNameTable:
+  - first:
+      213: -6871946016969091075
+    second: Frog_Animation_tex_0
+  - first:
+      213: -7373978407878714281
+    second: Frog_Animation_tex_1
+  - first:
+      213: -7910284461564930185
+    second: Frog_Animation_tex_2
+  - first:
+      213: -3291044250375572877
+    second: Frog_Animation_tex_3
+  - first:
+      213: -3155292697402967569
+    second: Frog_Animation_tex_4
+  - first:
+      213: 6909782698761611139
+    second: Frog_Animation_tex_5
+  - first:
+      213: 321712182903747804
+    second: Frog_Animation_tex_6
+  - first:
+      213: 5872217894539590463
+    second: Frog_Animation_tex_7
+  - first:
+      213: 4924062080014986321
+    second: Frog_Animation_tex_8
+  - first:
+      213: 18790107046208189
+    second: Frog_Animation_tex_9
+  - first:
+      213: 8050375898984173214
+    second: Frog_Animation_tex_10
+  - first:
+      213: -2872393042884223589
+    second: Frog_Animation_tex_11
+  - first:
+      213: -2388597839280569581
+    second: Frog_Animation_tex_12
+  - first:
+      213: -3533657503758297812
+    second: Frog_Animation_tex_13
+  - first:
+      213: -4205735778118311846
+    second: Frog_Animation_tex_14
+  - first:
+      213: -217456124867827355
+    second: Frog_Animation_tex_15
+  externalObjects: {}
+  serializedVersion: 13
+  mipmaps:
+    mipMapMode: 0
+    enableMipMap: 0
+    sRGBTexture: 1
+    linearTexture: 0
+    fadeOut: 0
+    borderMipMap: 0
+    mipMapsPreserveCoverage: 0
+    alphaTestReferenceValue: 0.5
+    mipMapFadeDistanceStart: 1
+    mipMapFadeDistanceEnd: 3
+  bumpmap:
+    convertToNormalMap: 0
+    externalNormalMap: 0
+    heightScale: 0.25
+    normalMapFilter: 0
+    flipGreenChannel: 0
+  isReadable: 0
+  streamingMipmaps: 0
+  streamingMipmapsPriority: 0
+  vTOnly: 0
+  ignoreMipmapLimit: 0
+  grayScaleToAlpha: 0
+  generateCubemap: 6
+  cubemapConvolution: 0
+  seamlessCubemap: 0
+  textureFormat: 1
+  maxTextureSize: 2048
+  textureSettings:
+    serializedVersion: 2
+    filterMode: 1
+    aniso: 1
+    mipBias: 0
+    wrapU: 1
+    wrapV: 1
+    wrapW: 1
+  nPOTScale: 0
+  lightmap: 0
+  compressionQuality: 50
+  spriteMode: 2
+  spriteExtrude: 1
+  spriteMeshType: 1
+  alignment: 0
+  spritePivot: {x: 0.5, y: 0.5}
+  spritePixelsToUnits: 100
+  spriteBorder: {x: 0, y: 0, z: 0, w: 0}
+  spriteGenerateFallbackPhysicsShape: 1
+  alphaUsage: 1
+  alphaIsTransparency: 1
+  spriteTessellationMethod: 0
+  spriteTessellationDetail: -1
+  spriteGeometrySubdivision: -1
+  textureType: 8
+  textureShape: 1
+  singleChannelComponent: 0
+  flipbookRows: 1
+  flipbookColumns: 1
+  maxTextureSizeSet: 0
+  compressionQualitySet: 0
+  textureFormatSet: 0
+  ignorePngGamma: 0
+  applyGammaDecoding: 0
+  swizzle: 50462976
+  cookieLightType: 0
+  platformSettings:
+  - serializedVersion: 4
+    buildTarget: DefaultTexturePlatform
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  - serializedVersion: 4
+    buildTarget: Standalone
+    maxTextureSize: 2048
+    resizeAlgorithm: 0
+    textureFormat: -1
+    textureCompression: 1
+    compressionQuality: 50
+    crunchedCompression: 0
+    allowsAlphaSplitting: 0
+    overridden: 0
+    ignorePlatformSupport: 0
+    androidETC2FallbackOverride: 0
+    forceMaximumCompressionQuality_BC6H_BC7: 0
+  spriteSheet:
+    serializedVersion: 2
+    sprites:
+    - serializedVersion: 2
+      name: Frog_Animation_tex_0
+      rect:
+        serializedVersion: 2
+        x: 1
+        y: 587
+        width: 706
+        height: 818
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: df795e6b181f1a0a0800000000000000
+      internalID: -6871946016969091075
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Frog_Animation_tex_1
+      rect:
+        serializedVersion: 2
+        x: 707
+        y: 1203
+        width: 665
+        height: 202
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 75c1df005bd5aa990800000000000000
+      internalID: -7373978407878714281
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Frog_Animation_tex_2
+      rect:
+        serializedVersion: 2
+        x: 1372
+        y: 1376
+        width: 28
+        height: 29
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 77751245136093290800000000000000
+      internalID: -7910284461564930185
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Frog_Animation_tex_3
+      rect:
+        serializedVersion: 2
+        x: 1372
+        y: 1347
+        width: 28
+        height: 29
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 372b544e0bcd352d0800000000000000
+      internalID: -3291044250375572877
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Frog_Animation_tex_4
+      rect:
+        serializedVersion: 2
+        x: 707
+        y: 1066
+        width: 665
+        height: 137
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: fe979e852062634d0800000000000000
+      internalID: -3155292697402967569
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Frog_Animation_tex_5
+      rect:
+        serializedVersion: 2
+        x: 707
+        y: 806
+        width: 417
+        height: 260
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 38763d241ca74ef50800000000000000
+      internalID: 6909782698761611139
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Frog_Animation_tex_6
+      rect:
+        serializedVersion: 2
+        x: 1124
+        y: 873
+        width: 193
+        height: 193
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: cd4b4ed9683f67400800000000000000
+      internalID: 321712182903747804
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Frog_Animation_tex_7
+      rect:
+        serializedVersion: 2
+        x: 707
+        y: 546
+        width: 416
+        height: 260
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: f3b79bf001f4e7150800000000000000
+      internalID: 5872217894539590463
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Frog_Animation_tex_8
+      rect:
+        serializedVersion: 2
+        x: 1123
+        y: 523
+        width: 144
+        height: 157
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 15ca34b7f58c55440800000000000000
+      internalID: 4924062080014986321
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Frog_Animation_tex_9
+      rect:
+        serializedVersion: 2
+        x: 1124
+        y: 680
+        width: 193
+        height: 193
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: db2e7c7b081c24000800000000000000
+      internalID: 18790107046208189
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Frog_Animation_tex_10
+      rect:
+        serializedVersion: 2
+        x: 1
+        y: 530
+        width: 57
+        height: 57
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: e9e41573a3ea8bf60800000000000000
+      internalID: 8050375898984173214
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Frog_Animation_tex_11
+      rect:
+        serializedVersion: 2
+        x: 58
+        y: 530
+        width: 57
+        height: 57
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: b9d159ffeb53328d0800000000000000
+      internalID: -2872393042884223589
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Frog_Animation_tex_12
+      rect:
+        serializedVersion: 2
+        x: 1
+        y: 377
+        width: 150
+        height: 146
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 3138a66abeef9ded0800000000000000
+      internalID: -2388597839280569581
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Frog_Animation_tex_13
+      rect:
+        serializedVersion: 2
+        x: 1
+        y: 231
+        width: 150
+        height: 146
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: c25d792f83de5fec0800000000000000
+      internalID: -3533657503758297812
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Frog_Animation_tex_14
+      rect:
+        serializedVersion: 2
+        x: 1
+        y: 87
+        width: 144
+        height: 144
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: a506b1eb79932a5c0800000000000000
+      internalID: -4205735778118311846
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    - serializedVersion: 2
+      name: Frog_Animation_tex_15
+      rect:
+        serializedVersion: 2
+        x: 1
+        y: 3
+        width: 144
+        height: 84
+      alignment: 0
+      pivot: {x: 0, y: 0}
+      border: {x: 0, y: 0, z: 0, w: 0}
+      customData: 
+      outline: []
+      physicsShape: []
+      tessellationDetail: -1
+      bones: []
+      spriteID: 569250b7ec07bfcf0800000000000000
+      internalID: -217456124867827355
+      vertices: []
+      indices: 
+      edges: []
+      weights: []
+    outline: []
+    customData: 
+    physicsShape: []
+    bones: []
+    spriteID: 
+    internalID: 0
+    vertices: []
+    indices: 
+    edges: []
+    weights: []
+    secondaryTextures: []
+    spriteCustomMetadata:
+      entries: []
+    nameFileIdTable:
+      Frog_Animation_tex_0: -6871946016969091075
+      Frog_Animation_tex_1: -7373978407878714281
+      Frog_Animation_tex_10: 8050375898984173214
+      Frog_Animation_tex_11: -2872393042884223589
+      Frog_Animation_tex_12: -2388597839280569581
+      Frog_Animation_tex_13: -3533657503758297812
+      Frog_Animation_tex_14: -4205735778118311846
+      Frog_Animation_tex_15: -217456124867827355
+      Frog_Animation_tex_2: -7910284461564930185
+      Frog_Animation_tex_3: -3291044250375572877
+      Frog_Animation_tex_4: -3155292697402967569
+      Frog_Animation_tex_5: 6909782698761611139
+      Frog_Animation_tex_6: 321712182903747804
+      Frog_Animation_tex_7: 5872217894539590463
+      Frog_Animation_tex_8: 4924062080014986321
+      Frog_Animation_tex_9: 18790107046208189
+  mipmapLimitGroupName: 
+  pSDRemoveMatte: 0
+  userData: 
+  assetBundleName: 
+  assetBundleVariant: 

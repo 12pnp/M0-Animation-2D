@@ -1,0 +1,59 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 321e87e247459c34dbf8f49dcc2e6e4a, type: 3}
+  m_Name: KeyIntMapping
+  m_EditorClassIdentifier: Module.PB.Common::ModuleP1.IntStringMapping
+  m_Description: KeyInt Database Export
+  m_Keys: 953e848a018903900963a691d4ad18929725ee9a332d159ce5ccdeac32bb2ab0430282b0e7e330b6c3c81cb8a48b2dc7d53285c7ecd619d54d23ebda73fcd9db429d1fe5659320e697b904e7a51d12eb0115e9ed49f22e08b332af082f6f8d1379991521f9538b295db2392f6142e5345f9dd735c0b7173bf772e2435687104cefa91256cb823e581eda245eb95f8a641f4c1b72bb44e074f8cc167c2de80d7edfc2297f2502a87fi
+  m_Values:
+  - GlobalVar_2
+  - LocalVar_0
+  - MatVariation_2
+  - Repo_0
+  - Mono_0
+  - AudioCollection_0
+  - GVar_1
+  - Parameters_0
+  - template_1
+  - GLOBAL_2
+  - Audio_2
+  - Parameters_1
+  - template_0
+  - GlobalShader_2
+  - Arg_2
+  - GVar_0
+  - Repo_1
+  - Asset_2
+  - LocalVar_1
+  - AudioCollection_1
+  - Mono_1
+  - Asset_0
+  - MatVariation_1
+  - GlobalVar_1
+  - Audio_1
+  - template_2
+  - GLOBAL_1
+  - Arg_0
+  - GVar_2
+  - GlobalShader_0
+  - Arg_1
+  - GlobalShader_1
+  - Audio_0
+  - GLOBAL_0
+  - Parameters_2
+  - GlobalVar_0
+  - AudioCollection_2
+  - Mono_2
+  - Repo_2
+  - LocalVar_2
+  - Asset_1
+  - MatVariation_0

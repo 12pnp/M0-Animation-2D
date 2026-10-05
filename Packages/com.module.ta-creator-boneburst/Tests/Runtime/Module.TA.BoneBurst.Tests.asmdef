@@ -1,0 +1,27 @@
+{
+  "name": "Module.TA.BoneBurst.Tests",
+  "rootNamespace": "BoneBurst.Tests",
+  "references": [
+    "Module.PA.BoneBurst.Data",
+    "Module.PA.BoneBurst.Import",
+    "Module.PA.BoneBurst.Core",
+    "Module.PB.BoneBurst.Unity",
+    "UniTask",
+    "Unity.Mathematics",
+    "UnityEngine.TestRunner",
+    "UnityEditor.TestRunner"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": true,
+  "precompiledReferences": [
+    "nunit.framework.dll"
+  ],
+  "autoReferenced": false,
+  "defineConstraints": [
+    "UNITY_INCLUDE_TESTS"
+  ],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

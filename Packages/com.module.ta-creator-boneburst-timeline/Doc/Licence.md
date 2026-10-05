@@ -1,0 +1,5 @@
+# BoneBurst Timeline licence position
+
+Follows BoneBurst's position ([BoneBurst Doc/Licence.md](../../com.module.ta-creator-boneburst/Doc/Licence.md)): **an original work, not a derivative work of the Spine Runtimes** (owner decision, 2026-10-05). The track and mixer design — clip-start detection, mixing, pause and end semantics — was re-implemented after reading the vendored `com.esotericsoftware.spine.timeline` source; no code was copied and no Spine Runtimes or extension code is integrated. Behaviour parity with the extension is this package's test goal, not copying.
+
+The `LICENSE` holds the owner's notice only; no Spine Runtimes licence text is bundled because none applies to this package's own code. What still applies, inherited from the parent page: anyone who uses the Spine Editor needs their own editor licence; the vendored `com.esotericsoftware.spine.*` packages in this repository remain under Esoteric's own licence while present (until M2 phase P9 per D1); naming stays "for Spine", never an official Spine Runtime.

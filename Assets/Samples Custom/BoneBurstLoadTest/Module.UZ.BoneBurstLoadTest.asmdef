@@ -1,0 +1,21 @@
+{
+  "name": "Module.UZ.BoneBurstLoadTest",
+  "rootNamespace": "BoneBurstLoadTest",
+  "references": [
+    "Module.PA.Base",
+    "Module.PB.AssetRuntime",
+    "Module.PA.BoneBurst.Data",
+    "Module.PA.BoneBurst.Core",
+    "Module.PB.BoneBurst.Unity",
+    "UniTask"
+  ],
+  "includePlatforms": [],
+  "excludePlatforms": [],
+  "allowUnsafeCode": false,
+  "overrideReferences": false,
+  "precompiledReferences": [],
+  "autoReferenced": false,
+  "defineConstraints": [],
+  "versionDefines": [],
+  "noEngineReferences": false
+}

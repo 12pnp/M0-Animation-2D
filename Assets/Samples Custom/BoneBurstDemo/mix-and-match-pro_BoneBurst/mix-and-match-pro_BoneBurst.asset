@@ -1,0 +1,40 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 338815d0b4a3b4515aa4e0d96b66077f, type: 3}
+  m_Name: mix-and-match-pro_BoneBurst
+  m_EditorClassIdentifier: Module.PB.BoneBurst.Unity::BoneBurst.BoneBurstAsset
+  m_Data:
+    m_AssetGUID: fb4ef5361b57e4798b5678861358e3ce
+    m_AssetType: 11
+    m_AssetGroupIndex: 1
+    m_AssetIndex: 5
+    m_SubAssetIndex: -1
+  m_Pages:
+  - m_AssetGUID: 39e464f9be78d44cf9b910c9fa953710
+    m_AssetType: 12
+    m_AssetGroupIndex: 1
+    m_AssetIndex: 7
+    m_SubAssetIndex: -1
+  m_Shader: {fileID: 4800000, guid: 3859812ad44a84d3aa125f7c0542aa3b, type: 3}
+  m_RimMasks:
+  - m_AssetGUID: 34886151c4ba44ad48cd6e74bb68de63
+    m_AssetType: 12
+    m_AssetGroupIndex: 1
+    m_AssetIndex: 8
+    m_SubAssetIndex: -1
+  m_RimColor: {r: 1, g: 1, b: 1, a: 1}
+  m_RimStrength: 0
+  m_RimWidth: 1.5
+  m_RimDirection: {x: -0.7, y: 0.7}
+  TintBlack: 0
+  DefaultMix: 0.2
+  Mixes: []

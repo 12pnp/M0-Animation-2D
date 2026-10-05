@@ -1,0 +1,117 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &1
+MonoBehaviour:
+  m_ObjectHideFlags: 53
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c113ff064b10c427fb3a071e46ace37d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: SmartAddresser.Core.Editor::SmartAddresser.Editor.SmartAddresserData
+  _layoutRule:
+    _settings:
+      _excludeUnversioned:
+        _value: 0
+      _versionExpression:
+        _value: 
+    _addressRules:
+      _internalList:
+      - _id: ec3ff3b7-3c48-4c64-b596-137cee65cfd9
+        _addressableGroup: {fileID: 11400000, guid: 9c64a12fcbd6f4fa6be00e43a370b066, type: 2}
+        _control:
+          _value: 1
+        _assetGroups:
+          _internalList:
+          - _id: 7e0be690-8277-413d-8d27-beafb57f9fbe
+            _name:
+              _value: Default Asset Group
+            _filters:
+              _internalList:
+              - rid: 6185457724393521502
+        _addressProviderInternal:
+          rid: 6185457724393521501
+      - _id: 9ae31197-46c5-4afd-9000-3fcd57068ebe
+        _addressableGroup: {fileID: 11400000, guid: 181f28fdaf12b44129a46471ccd77f59, type: 2}
+        _control:
+          _value: 1
+        _assetGroups:
+          _internalList:
+          - _id: dba25e47-c7b7-4ab9-b50c-861bad0de9ed
+            _name:
+              _value: Default Asset Group
+            _filters:
+              _internalList:
+              - rid: 6185457726350950697
+        _addressProviderInternal:
+          rid: 6185457724393521455
+    _labelRules:
+      _internalList: []
+    _versionRules:
+      _internalList: []
+  _view:
+    ActiveTab: 2
+    RulesSubTab: 4
+    SettingsSubTab: 0
+    UtilitiesSubTab: 0
+    Address:
+      InspectorTab: 1
+      Selected: 0
+      SelectedGroupGuid: 35023254c21b74080a62775c5255c79a
+    Label:
+      InspectorTab: 0
+      Selected: -1
+      SelectedGroupGuid: 
+    Version:
+      InspectorTab: 0
+      Selected: -1
+      SelectedGroupGuid: 
+    IndexGroupGuid: 
+  _pendingIndexChanges:
+  - Assets/Samples Custom/BoneBurstDemo/mix-and-match-pro_BoneBurst/mix-and-match-pro_rim.png
+  - Assets/Samples Custom/BoneBurstDemo/mix-and-match-pro_BoneBurst/mix-and-match-pro.png
+  - Assets/Samples Custom/BoneBurstDemo/mix-and-match-pro_BoneBurst/mix-and-match-pro_BoneBurst.asset
+  - Assets/Samples Custom/BoneBurstDemo/mix-and-match-pro_BoneBurst/mix-and-match-pro_BoneBurst_Lit2D.asset
+  - Assets/Samples Custom/BoneBurstDemo/mix-and-match-pro_BoneBurst/mix-and-match-pro.sbdata.bytes
+  - fb4ef5361b57e4798b5678861358e3ce
+  _rulesDirty: 0
+  references:
+    version: 2
+    RefIds:
+    - rid: 6185457724393521455
+      type: {class: AssetPathBasedAddressProvider, ns: SmartAddresser.Editor.Core.Models.LayoutRules.AddressRules, asm: SmartAddresser.Core.Editor}
+      data:
+        _source: 2
+        _replaceWithRegex: 0
+        _pattern: 
+        _replacement: 
+    - rid: 6185457724393521501
+      type: {class: AssetPathBasedAddressProvider, ns: SmartAddresser.Editor.Core.Models.LayoutRules.AddressRules, asm: SmartAddresser.Core.Editor}
+      data:
+        _source: 0
+        _replaceWithRegex: 0
+        _pattern: 
+        _replacement: 
+    - rid: 6185457724393521502
+      type: {class: ObjectBasedAssetFilter, ns: SmartAddresser.Editor.Core.Models.Shared.AssetGroups.AssetFilterImpl, asm: SmartAddresser.Core.Editor}
+      data:
+        _id: 477ce202-ce57-4d6f-8c32-fc5621cdbe44
+        _folderTargetingMode: 0
+        _object:
+          _isListMode: 0
+          _values:
+          - {fileID: 102900000, guid: 9bba8ab3cb17e4044be259a828853ce3, type: 3}
+        _invertMatch: 0
+    - rid: 6185457726350950697
+      type: {class: ObjectBasedAssetFilter, ns: SmartAddresser.Editor.Core.Models.Shared.AssetGroups.AssetFilterImpl, asm: SmartAddresser.Core.Editor}
+      data:
+        _id: f9bab943-afb4-4bff-a88c-b327916e638c
+        _folderTargetingMode: 0
+        _object:
+          _isListMode: 0
+          _values:
+          - {fileID: 102900000, guid: 40461cc84d55547ab86dfccb7dc16c7c, type: 3}
+        _invertMatch: 0

@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3aec342f6e4544c58780b3574791a82a, type: 3}
+  m_Name: core.properties
+  m_EditorClassIdentifier: Module.PA.Base::ModuleP1.PropertySettings
+  m_AssetKey:
+    m_integer: 0
+  tabSplitterPosition: 250
+  m_SubTabVisibility: []
+  m_LastSelectedControlPanelIndex: 0
+  m_LastSelectedItemIndex: 0
+  m_Repository:
+    rid: 4159898475565416804
+  references:
+    version: 2
+    RefIds:
+    - rid: 4159898475565416804
+      type: {class: PropertyRepository, ns: ModuleP1, asm: Module.PA.Base}
+      data:
+        m_ListVariablesGroupAsset:
+          m_ListVariablesGroupAsset: []
+        m_ListAudioGroup:
+          m_ListVariablesGroupAsset: []
+        m_ListLocVariablesGroup:
+          m_ListVariablesGroupAsset: []
+        m_ListVariablesCreatorAsset:
+          m_ListVariablesGroupAsset: []
+        m_debugLogScriptObject: 1
+        m_showCreatorOnStartup: 1
+        m_showCreatorButton: 1
+        m_showLauncherButton: 0
+        m_text1: 
+        m_text2: 
+        m_ListID: []
+        m_ListFavoriteSignal: []
+        m_ListString_33: []
+        m_icon:
+          Name:
+            m_integer: 0
+          Name1: {fileID: 0}
+          m_texture: {fileID: 0}
+          m_mainIcon: {fileID: 0}

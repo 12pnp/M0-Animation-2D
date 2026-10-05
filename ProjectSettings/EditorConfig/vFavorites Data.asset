@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &1
+MonoBehaviour:
+  m_ObjectHideFlags: 53
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 070dcf2ed2c2343a384ca27d6999acec, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: VEditor.VFavorites::VFavorites.VFavoritesData
+  pages:
+  - items: []
+    name: Page 1
+    _id: 1034874737
+  - items: []
+    name: Page 2
+    _id: 1050476385
+  rowScale: 1

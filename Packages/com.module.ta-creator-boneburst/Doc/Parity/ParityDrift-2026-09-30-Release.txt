@@ -1,0 +1,198 @@
+BoneBurst parity drift, 2026-09-30 16:25, 166 cases, 4.0.30319.42000 (Mono)
+237,828,820 values compared, 36,420,046 not bit-exact
+
+Rows "suite …": every float value that suite compared (discrete facts excluded).
+category | values | exact % | NaN/Inf mismatch | max abs | max rel | max ulps | abs buckets 0 / ≤1e-7 / ≤1e-6 / ≤1e-5 / ≤1e-4 / ≤1e-3 / ≤1e-2 / more | max abs by frame band
+applied.rotation | 406,362 | 66.29 | 0 | 0.126 | 7.53E+04 | 74879851 | 269361 / 1775 / 4584 / 66932 / 61668 / 1571 / 142 / 329 | f0:0.00029 f1-9:0.028 f10-99:0.126 f100+:8.77E-05
+applied.scale-shear | 1,625,448 | 92.59 | 0 | 0.0109 | 38.1 | 74879832 | 1505013 / 26085 / 49778 / 36761 / 7766 / 3 / 39 / 3 | f0:2.29E-05 f1-9:0.00679 f10-99:0.0109 f100+:3.81E-05
+applied.xy | 812,724 | 89.26 | 0 | 0.000204 | 5.2 | 43298808 | 725429 / 14224 / 13905 / 26434 / 32692 / 40 / 0 / 0 | f0:6.1E-05 f1-9:0.000204 f10-99:0.000204 f100+:0.000107
+constraint | 12,300,504 | 99.98 | 0 | 3.81E-05 | 7.85E-06 | 128 | 12298509 / 1218 / 627 / 25 / 125 / 0 / 0 / 0 | f0:2.38E-07 f1-9:3.05E-05 f10-99:3.81E-05 f100+:3.81E-06
+deform | 1,699,342 | 100.00 | 0 | 0 | 0 | 0 | 1699342 / 0 / 0 / 0 / 0 / 0 / 0 / 0 | 
+discrete.active | 340,824 | 100.00 | 0 | 0 | 0 | 0 | 340824 / 0 / 0 / 0 / 0 / 0 / 0 / 0 | 
+discrete.attachment | 3,577,628 | 100.00 | 0 | 0 | 0 | 0 | 3577628 / 0 / 0 / 0 / 0 / 0 / 0 / 0 | 
+discrete.bounds | 10,380 | 37.51 | 0 | 0 | 0 | 0 | 3894 / 0 / 0 / 0 / 0 / 0 / 0 / 6486 | 
+discrete.clipping | 11,390 | 100.00 | 0 | 0 | 0 | 0 | 11390 / 0 / 0 / 0 / 0 / 0 / 0 / 0 | 
+discrete.count | 2,055,096 | 100.00 | 0 | 0 | 0 | 0 | 2055022 / 0 / 0 / 0 / 0 / 0 / 0 / 74 | 
+discrete.draworder | 3,373,148 | 100.00 | 0 | 0 | 0 | 0 | 3373148 / 0 / 0 / 0 / 0 / 0 / 0 / 0 | 
+discrete.events | 14,124 | 100.00 | 0 | 0 | 0 | 0 | 14124 / 0 / 0 / 0 / 0 / 0 / 0 / 0 | 
+discrete.indices | 25,290 | 99.79 | 0 | 0 | 0 | 0 | 25236 / 0 / 0 / 0 / 0 / 0 / 0 / 54 | 
+discrete.inherit | 5,399,868 | 100.00 | 0 | 0 | 0 | 0 | 5399868 / 0 / 0 / 0 / 0 / 0 / 0 / 0 | 
+local.rotation | 4,993,506 | 100.00 | 0 | 0 | 0 | 0 | 4993506 / 0 / 0 / 0 / 0 / 0 / 0 / 0 | 
+local.scale-shear | 19,974,024 | 99.99 | 0 | 1.91E-06 | 1.91E-06 | 32 | 19971294 / 904 / 1751 / 75 / 0 / 0 / 0 / 0 | f1-9:1.91E-06 f10-99:1.91E-06 f100+:1.91E-06
+local.xy | 9,987,012 | 99.83 | 0 | 0.000244 | 0.0714 | 975166 | 9969973 / 4822 / 7049 / 4201 / 918 / 49 / 0 / 0 | f0:1.91E-06 f1-9:0.000122 f10-99:0.000122 f100+:0.000244
+mesh.bounds | 41,520 | 60.59 | 0 | 0.000275 | 0.00833 | 131072 | 25156 / 186 / 1992 / 1490 / 12038 / 658 / 0 / 0 | f0:0.000122 f1-9:0.000244 f10-99:0.000275 f100+:0.000183
+mesh.color | 56,343,872 | 99.75 | 0 | 1 | 0.167 | 2097152 | 56202916 / 0 / 0 / 0 / 0 / 0 / 0 / 140956 | f0:1 f1-9:1 f10-99:1 f100+:1
+mesh.position | 30,765,400 | 47.79 | 0 | 15.4 | 6E+06 | 312921842 | 14703669 / 232318 / 866572 / 3235181 / 9567161 / 2158058 / 277 / 2164 | f0:0.288 f1-9:0.00146 f10-99:15.4 f100+:0.00122
+mesh.tint | 5,163,516 | 100.00 | 0 | 5.96E-08 | 1.23E-07 | 2 | 5163476 / 40 / 0 / 0 / 0 / 0 / 0 / 0 | f1-9:7.45E-09 f10-99:5.96E-08
+mesh.uv | 28,171,936 | 99.96 | 0 | 0.313 | 1.56E+05 | 186701098 | 28161930 / 7994 / 98 / 4 / 12 / 50 / 402 / 1446 | f0:0.00264 f1-9:1.79E-07 f10-99:0.313 f100+:1.19E-07
+slot.color | 13,492,592 | 100.00 | 0 | 5.96E-08 | 5.75E-07 | 9 | 13491980 / 612 / 0 / 0 / 0 / 0 / 0 / 0 | f0:2.98E-08 f1-9:5.96E-08 f10-99:5.96E-08 f100+:5.96E-08
+slot.dark | 5,892 | 100.00 | 0 | 0 | 0 | 0 | 5892 / 0 / 0 / 0 / 0 / 0 / 0 / 0 | 
+suite AnimationParityTests | 34,165,272 | 85.97 | 0 | 1 | 2.35 | 47000264 | 29371303 / 742149 / 654034 / 608643 / 2384020 / 373875 / 0 / 31248 | f0:1 f1-9:1 f10-99:1 f100+:1
+suite ConstraintParityTests | 151,731,086 | 81.58 | 0 | 1 | 7.53E+04 | 74879851 | 123775457 / 7425376 / 8464909 / 3284835 / 7056671 / 1630708 / 444 / 92686 | f0:1 f1-9:1 f10-99:1 f100+:1
+suite MeshGeneratorParityTests | 28,440,858 | 89.59 | 0 | 15.4 | 6E+06 | 312921842 | 25481152 / 17138 / 47822 / 545328 / 1951954 / 375996 / 502 / 20966 | f0:1 f1-9:1 f10-99:15.4 f100+:1
+suite MixingParityTests | 7,110,228 | 99.94 | 0 | 0.000244 | 0.000196 | 2048 | 7105921 / 1088 / 2260 / 792 / 154 / 13 / 0 / 0 | f0:5.96E-08 f1-9:1.53E-05 f10-99:0.000122 f100+:0.000244
+suite SetupPoseParityTests | 120,714 | 82.86 | 0 | 1 | 2.35 | 38840017 | 100025 / 3368 / 3540 / 6667 / 6749 / 317 / 0 / 48 | f0:1
+suite SkinParityTests | 1,452,914 | 53.26 | 0 | 0.833 | 2.42 | 38016870 | 773782 / 300228 / 260047 / 52418 / 65667 / 595 / 102 / 75 | f0:6.1E-05 f1-9:0.000595 f10-99:0.833 f100+:0.436
+world.abcd | 24,824,948 | 42.06 | 0 | 0.365 | 2.42 | 53260598 | 10441231 / 7505457 / 6648491 / 217526 / 6412 / 5739 / 70 / 22 | f0:5.76E-06 f1-9:0.000327 f10-99:0.365 f100+:0.0246
+world.xy | 12,412,474 | 56.23 | 0 | 0.833 | 2.35 | 15308117 | 6978963 / 693712 / 1837765 / 910054 / 1776423 / 215336 / 118 / 103 | f0:0.000366 f1-9:0.000732 f10-99:0.833 f100+:0.436
+
+applied.rotation:
+  first inexact: ConstraintParityTests celestial-circus-pro.json @1 'eyeblink' skin - loop scale 1,1 frame 1
+  max abs:       ConstraintParityTests constraints.json @0.37 'move' skin - loop scale 1,-1.5 frame 21: stock 2.50000048 mine 2.62555885
+  max rel:       ConstraintParityTests raptor-pro.json @1 'roar' skin - loop scale 1,-1.5 frame 11
+  max f0     0.00029 at ConstraintParityTests raptor.json @1 'Jump' skin - loop scale 1,-1.5 frame 0
+  max f1-9   0.028 at ConstraintParityTests mix-and-match-pro.skel.bytes @0.01 'pickaxe-throw' skin - loop scale 1,-1.5 frame 6
+  max f10-99 0.126 at ConstraintParityTests constraints.json @0.37 'move' skin - loop scale 1,-1.5 frame 21
+  max f100+  8.77E-05 at ConstraintParityTests mix-and-match-pro.json @1 'dress-up' skin - loop scale 1,1 frame 105
+applied.scale-shear:
+  first inexact: ConstraintParityTests celestial-circus-pro.json @1 'eyeblink' skin - loop scale 1,1 frame 0
+  max abs:       ConstraintParityTests mix-and-match-pro.skel.bytes @0.01 'pickaxe-throw' skin - loop scale 1,-1.5 frame 11: stock 19.2180481 mine 19.2071915
+  max rel:       ConstraintParityTests mix-and-match-pro.json @1 'idle' skin - loop scale 1,1 frame 42
+  max f0     2.29E-05 at ConstraintParityTests mix-and-match-pro.json @1 'dance' skin - loop scale 1,-1.5 frame 0
+  max f1-9   0.00679 at ConstraintParityTests mix-and-match-pro.skel.bytes @0.01 'pickaxe-throw' skin - loop scale 1,-1.5 frame 6
+  max f10-99 0.0109 at ConstraintParityTests mix-and-match-pro.skel.bytes @0.01 'pickaxe-throw' skin - loop scale 1,-1.5 frame 11
+  max f100+  3.81E-05 at ConstraintParityTests mix-and-match-pro.json @1 'dress-up' skin - loop scale 1,-1.5 frame 107
+applied.xy:
+  first inexact: ConstraintParityTests celestial-circus-pro.json @1 'eyeblink' skin - loop scale 1,1 init
+  max abs:       ConstraintParityTests mix-and-match-pro.json @1 'idle' skin - loop scale 1,-1.5 frame 31: stock -18.3945 mine -18.3942966
+  max rel:       ConstraintParityTests snowglobe-pro.skel.bytes @1 'idle' skin - loop scale -1,1 frame 63
+  max f0     6.1E-05 at ConstraintParityTests mix-and-match-pro.json @1 'dress-up' skin - loop scale 1,-1.5 frame 0
+  max f1-9   0.000204 at ConstraintParityTests mix-and-match-pro.json @1 'walk' skin - loop scale 1,-1.5 frame 8
+  max f10-99 0.000204 at ConstraintParityTests mix-and-match-pro.json @1 'idle' skin - loop scale 1,-1.5 frame 31
+  max f100+  0.000107 at ConstraintParityTests celestial-circus-pro.json @1 'wind-idle' skin - loop scale -1,1 frame 293
+constraint:
+  first inexact: AnimationParityTests raptor-pro.json @1 'gun-holster' loop frame 9
+  max abs:       ConstraintParityTests constraints.json @0.37 'keyed' skin - loop scale 1,-1.5 frame 10: stock 90.0597458 mine 90.05971
+  max rel:       ConstraintParityTests constraints.json @1 'move' skin - loop scale -1,1 frame 35
+  max f0     2.38E-07 at AnimationParityTests constraints.json @1 'move' loop frame 0
+  max f1-9   3.05E-05 at ConstraintParityTests constraints.json @1 'move' skin - loop scale 1,1 frame 3
+  max f10-99 3.81E-05 at ConstraintParityTests constraints.json @0.37 'keyed' skin - loop scale 1,-1.5 frame 10
+  max f100+  3.81E-06 at MixingParityTests raptor-pro.json @1 seed 0 frame 163
+discrete.bounds:
+  first inexact: MeshGeneratorParityTests celestial-circus-pro.json @1 'eyeblink' tint True init
+discrete.count:
+  first inexact: MeshGeneratorParityTests clipping.json @1 'swing' tint True frame 9
+discrete.indices:
+  first inexact: MeshGeneratorParityTests clipping.json @1 'swing' tint True frame 59
+local.scale-shear:
+  first inexact: AnimationParityTests celestial-circus-pro.json @1 'swing' loop frame 21
+  max abs:       AnimationParityTests spineboy-pro.json @1 'death' loop frame 55: stock 27.43171 mine 27.4317074
+  max rel:       MixingParityTests Doi.json @1 seed 1 frame 137
+  max f1-9   1.91E-06 at AnimationParityTests spineboy-pro.json @1 'hoverboard' loop frame 6
+  max f10-99 1.91E-06 at AnimationParityTests spineboy-pro.json @1 'death' loop frame 55
+  max f100+  1.91E-06 at AnimationParityTests spineboy-pro.json @1 'death' loop frame 102
+local.xy:
+  first inexact: AnimationParityTests celestial-circus-pro.json @1 'swing' loop frame 4
+  max abs:       MixingParityTests sack-pro.skel.bytes @1 seed 1 frame 169: stock 2447.402 mine 2447.40234
+  max rel:       AnimationParityTests spineboy-unity.json @1 'run rm' loop frame 24
+  max f0     1.91E-06 at AnimationParityTests spineboy-unity.json @1 'run rm' loop frame 0
+  max f1-9   0.000122 at AnimationParityTests sack-pro.skel.bytes @1 'fall-in' loop frame 4
+  max f10-99 0.000122 at MixingParityTests sack-pro.skel.bytes @1 seed 0 frame 62
+  max f100+  0.000244 at MixingParityTests sack-pro.skel.bytes @1 seed 1 frame 169
+mesh.bounds:
+  first inexact: MeshGeneratorParityTests celestial-circus-pro.json @1 'eyeblink' tint True init
+  max abs:       MeshGeneratorParityTests celestial-circus-pro.json @1 'swing' tint True frame 26: stock 360.622955 mine 360.622681
+  max rel:       MeshGeneratorParityTests spineboy-unity.json @1 'walk' tint True frame 4
+  max f0     0.000122 at MeshGeneratorParityTests celestial-circus-pro.json @1 'swing' tint True frame 0
+  max f1-9   0.000244 at MeshGeneratorParityTests sack-pro.skel.bytes @1 'fall-in' tint True frame 2
+  max f10-99 0.000275 at MeshGeneratorParityTests celestial-circus-pro.json @1 'swing' tint True frame 26
+  max f100+  0.000183 at MeshGeneratorParityTests celestial-circus-pro.json @1 'wind-idle' tint True frame 158
+mesh.color:
+  first inexact: SetupPoseParityTests whirlyblendmodes.json @1 no skin
+  max abs:       SetupPoseParityTests whirlyblendmodes.json @1 no skin: stock 6 mine 5
+  max rel:       SetupPoseParityTests whirlyblendmodes.json @1 no skin
+  max f0     1 at SetupPoseParityTests whirlyblendmodes.json @1 no skin
+  max f1-9   1 at AnimationParityTests spineboy-pro.json @1 'hoverboard' loop no-constraints frame 1
+  max f10-99 1 at AnimationParityTests spineboy-pro.json @1 'death' loop no-constraints frame 23
+  max f100+  1 at AnimationParityTests spineboy-pro.json @1 'death' loop no-constraints frame 100
+mesh.position:
+  first inexact: SetupPoseParityTests celestial-circus-pro.json @1 no skin
+  max abs:       MeshGeneratorParityTests clipping.json @1 'swing' tint True frame 60: stock 12.0434275 mine -3.33449912
+  max rel:       MeshGeneratorParityTests clipping.json @1 'comb' tint True frame 32
+  max f0     0.288 at MeshGeneratorParityTests clipping.json @1 'comb' tint True frame 0
+  max f1-9   0.00146 at ConstraintParityTests raptor-pro.json @1 'jump' skin - loop scale 1,-1.5 frame 9
+  max f10-99 15.4 at MeshGeneratorParityTests clipping.json @1 'swing' tint True frame 60
+  max f100+  0.00122 at ConstraintParityTests sack-pro.skel.bytes @1 'cape-follow-example' skin - loop scale 1,-1.5 frame 113
+mesh.tint:
+  first inexact: MeshGeneratorParityTests spineboy-pro.json @1 'run' tint True frame 1
+  max abs:       MeshGeneratorParityTests spineboy-pro.json @1 'run' tint True frame 27: stock 0.628749251 mine 0.6287493
+  max rel:       MeshGeneratorParityTests spineboy-pro.json @1 'run' tint True frame 1
+  max f1-9   7.45E-09 at MeshGeneratorParityTests spineboy-pro.json @1 'run' tint True frame 1
+  max f10-99 5.96E-08 at MeshGeneratorParityTests spineboy-pro.json @1 'run' tint True frame 27
+mesh.uv:
+  first inexact: MeshGeneratorParityTests spineboy-pro.json @1 'portal' tint True frame 27
+  max abs:       MeshGeneratorParityTests clipping.json @1 'swing' tint True frame 59: stock 1 mine 0.6875
+  max rel:       MeshGeneratorParityTests clipping.json @1 'swing' tint True frame 60
+  max f0     0.00264 at MeshGeneratorParityTests clipping.json @1 'comb' tint True frame 0
+  max f1-9   1.79E-07 at MeshGeneratorParityTests clipping.json @1 'swing' tint True frame 5
+  max f10-99 0.313 at MeshGeneratorParityTests clipping.json @1 'swing' tint True frame 59
+  max f100+  1.19E-07 at MeshGeneratorParityTests spineboy-pro.json @1 'portal' tint True frame 119
+slot.color:
+  first inexact: AnimationParityTests raptor-pro.json @1 'roar' loop frame 43
+  max abs:       AnimationParityTests spineboy-pro.json @1 'portal' loop frame 23: stock 0.8125 mine 0.81250006
+  max rel:       MixingParityTests spineboy-pro.json @1 seed 1 frame 162
+  max f0     2.98E-08 at AnimationParityTests spineboy-pro.json @1 'shoot' loop frame 0
+  max f1-9   5.96E-08 at ConstraintParityTests spineboy-pro.json @1 'shoot' skin - loop scale 1,1 frame 7
+  max f10-99 5.96E-08 at AnimationParityTests spineboy-pro.json @1 'portal' loop frame 23
+  max f100+  5.96E-08 at AnimationParityTests spineboy-pro.json @1 'portal' loop frame 103
+suite AnimationParityTests:
+  first inexact: AnimationParityTests celestial-circus-pro.json @1 'eyeblink' loop no-constraints frame 0
+  max abs:       AnimationParityTests spineboy-pro.json @1 'death' loop no-constraints frame 23: stock 94 mine 93
+  max rel:       AnimationParityTests cloud-pot.skel.bytes @1 'playing-in-the-rain' loop no-constraints frame 0
+  max f0     1 at AnimationParityTests spineboy-pro.json @1 'hoverboard' loop no-constraints frame 0
+  max f1-9   1 at AnimationParityTests spineboy-pro.json @1 'hoverboard' loop no-constraints frame 1
+  max f10-99 1 at AnimationParityTests spineboy-pro.json @1 'death' loop no-constraints frame 23
+  max f100+  1 at AnimationParityTests spineboy-pro.json @1 'death' loop no-constraints frame 100
+suite ConstraintParityTests:
+  first inexact: ConstraintParityTests celestial-circus-pro.json @1 'eyeblink' skin - loop scale 1,1 init
+  max abs:       ConstraintParityTests spineboy-pro.json @1 'death' skin - loop scale 1,1 frame 23: stock 94 mine 93
+  max rel:       ConstraintParityTests raptor-pro.json @1 'roar' skin - loop scale 1,-1.5 frame 11
+  max f0     1 at ConstraintParityTests spineboy-pro.json @1 'hoverboard' skin - loop scale 1,1 frame 0
+  max f1-9   1 at ConstraintParityTests spineboy-pro.json @1 'hoverboard' skin - loop scale 1,1 frame 1
+  max f10-99 1 at ConstraintParityTests spineboy-pro.json @1 'death' skin - loop scale 1,1 frame 23
+  max f100+  1 at ConstraintParityTests spineboy-pro.json @1 'death' skin - loop scale 1,1 frame 100
+suite MeshGeneratorParityTests:
+  first inexact: MeshGeneratorParityTests celestial-circus-pro.json @1 'eyeblink' tint True init
+  max abs:       MeshGeneratorParityTests clipping.json @1 'swing' tint True frame 60: stock 12.0434275 mine -3.33449912
+  max rel:       MeshGeneratorParityTests clipping.json @1 'comb' tint True frame 32
+  max f0     1 at MeshGeneratorParityTests spineboy-pro.json @1 'hoverboard' tint True frame 0
+  max f1-9   1 at MeshGeneratorParityTests spineboy-pro.json @1 'hoverboard' tint True frame 1
+  max f10-99 15.4 at MeshGeneratorParityTests clipping.json @1 'swing' tint True frame 60
+  max f100+  1 at MeshGeneratorParityTests spineboy-pro.json @1 'portal' tint True frame 100
+suite MixingParityTests:
+  first inexact: MixingParityTests celestial-circus-pro.json @1 seed 0 frame 4
+  max abs:       MixingParityTests sack-pro.skel.bytes @1 seed 1 frame 169: stock 2447.402 mine 2447.40234
+  max rel:       MixingParityTests spineboy-pro.json @1 seed 1 frame 87
+  max f0     5.96E-08 at MixingParityTests snowglobe-pro.skel.bytes @1 seed 0 frame 0
+  max f1-9   1.53E-05 at MixingParityTests cloud-pot.skel.bytes @1 seed 1 frame 5
+  max f10-99 0.000122 at MixingParityTests sack-pro.skel.bytes @1 seed 0 frame 62
+  max f100+  0.000244 at MixingParityTests sack-pro.skel.bytes @1 seed 1 frame 169
+suite SetupPoseParityTests:
+  first inexact: SetupPoseParityTests celestial-circus-pro.json @1 no skin
+  max abs:       SetupPoseParityTests whirlyblendmodes.json @1 no skin: stock 6 mine 5
+  max rel:       SetupPoseParityTests cloud-pot.skel.bytes @1 no skin
+  max f0     1 at SetupPoseParityTests whirlyblendmodes.json @1 no skin
+suite SkinParityTests:
+  first inexact: SkinParityTests goblins.json @1 seed 0 frame 0
+  max abs:       SkinParityTests gaps.json @1 seed 4 frame 64: stock 8.26297951 mine 7.42987871
+  max rel:       SkinParityTests gaps.json @1 seed 1 frame 30
+  max f0     6.1E-05 at SkinParityTests mix-and-match-pro.json @1 seed 0 frame 0
+  max f1-9   0.000595 at SkinParityTests mix-and-match-pro.json @1 seed 2 frame 8
+  max f10-99 0.833 at SkinParityTests gaps.json @1 seed 4 frame 64
+  max f100+  0.436 at SkinParityTests gaps.json @1 seed 4 frame 100
+world.abcd:
+  first inexact: SetupPoseParityTests celestial-circus-pro.json @1 no skin
+  max abs:       SkinParityTests gaps.json @1 seed 1 frame 30: stock 0.150856033 mine 0.51595217
+  max rel:       SkinParityTests gaps.json @1 seed 1 frame 30
+  max f0     5.76E-06 at ConstraintParityTests hero-pro.json @1 'attack' skin weapon/morningstar loop scale 1,-1.5 init
+  max f1-9   0.000327 at ConstraintParityTests mix-and-match-pro.skel.bytes @0.01 'pickaxe-throw' skin - loop scale 1,-1.5 frame 6
+  max f10-99 0.365 at SkinParityTests gaps.json @1 seed 1 frame 30
+  max f100+  0.0246 at SkinParityTests gaps.json @1 seed 2 frame 113
+world.xy:
+  first inexact: SetupPoseParityTests celestial-circus-pro.json @1 no skin
+  max abs:       SkinParityTests gaps.json @1 seed 4 frame 64: stock 8.26297951 mine 7.42987871
+  max rel:       SetupPoseParityTests cloud-pot.skel.bytes @1 no skin
+  max f0     0.000366 at ConstraintParityTests celestial-circus-pro.json @1 'wing-flap' skin - loop scale 1,-1.5 frame 0
+  max f1-9   0.000732 at ConstraintParityTests snowglobe-pro.skel.bytes @1 'shake' skin - loop scale 1,-1.5 frame 4
+  max f10-99 0.833 at SkinParityTests gaps.json @1 seed 4 frame 64
+  max f100+  0.436 at SkinParityTests gaps.json @1 seed 4 frame 100

@@ -1,0 +1,12 @@
+{
+  "name": "com.module.ta-creator-boneburst-timeline",
+  "displayName": "TB Creator BoneBurst Timeline",
+  "version": "0.1.0",
+  "unity": "6000.6",
+  "license": "SEE LICENSE IN LICENSE",
+  "description": "Unity Timeline tracks for BoneBurst skeletons: play and mix animations, flip the skeleton. Behaviour-matched to the spine-unity timeline extension, implemented from scratch on the BoneBurst runtime. Plan: Doc/Review/BoneBurstTimeline-Plan.md.",
+  "dependencies": {
+    "com.module.ta-creator-boneburst": "0.1.0",
+    "com.unity.timeline": "6.6.0"
+  }
+}
