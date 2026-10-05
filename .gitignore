@@ -76,3 +76,9 @@ crashlytics-build.properties
 # The BoneBurst editor (Animation-BoneBurst-Src/, its own npm project)
 /Animation-BoneBurst-Src/node_modules/
 /Animation-BoneBurst-Src/dist/
+
+# BoneBurst's tests read spine-unity's sample skeletons (Samples~) and their own data (Data~), and its
+# strict-float parity harness lives in Tools~/ParityHarness. A global `*~` rule would hide all three.
+!Samples~/
+!Data~/
+!Tools~/

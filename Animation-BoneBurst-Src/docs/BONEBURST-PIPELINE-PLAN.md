@@ -145,6 +145,10 @@ Players load only `.sbdata`. Unity's readers accept only stock Spine 4.3 exports
   plain blobs, which LFS rules made show as modified.
 - Not in the plan: the old repository ignored `Assets/Samples/`, the new `.gitignore`
   does not, so the 2D package samples are committed (kept as the owner's `.gitignore`).
+- **Missed, fixed during R2**: the first commit left out every `~` folder (914 files:
+  spine-unity's `Samples~`, BoneBurst's `Tests/Editor/Data~`, `Tools~/ParityHarness`). A
+  global `*~` rule in `~/.gitignore_global` hides them, and the new `.gitignore` lacked the
+  old repository's `!Samples~/`, `!Data~/`, `!Tools~/`; now copied and committed.
 - Paths: `spineSamples.ts` is `../../../Packages/…` from `tests/fixtures/`, not
   `../../Packages/…` as first written. The samples still come from spine-unity's
   `Samples~`, which the root CLAUDE.md says nothing reads any more (the packages read

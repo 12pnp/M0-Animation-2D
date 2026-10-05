@@ -1,0 +1,1039 @@
+{
+ "skeleton": {
+  "hash": "synthetic-clipping",
+  "spine": "4.3.74-beta",
+  "x": -20,
+  "y": -20,
+  "width": 40,
+  "height": 40
+ },
+ "bones": [
+  {
+   "name": "root"
+  },
+  {
+   "name": "a",
+   "parent": "root",
+   "x": 2,
+   "y": 1,
+   "rotation": 10
+  },
+  {
+   "name": "b",
+   "parent": "a",
+   "x": 6,
+   "y": -2,
+   "rotation": -25,
+   "scaleX": 1.2
+  },
+  {
+   "name": "c",
+   "parent": "root",
+   "x": -4,
+   "y": 3,
+   "rotation": 40
+  },
+  {
+   "name": "sk",
+   "parent": "root",
+   "x": 1,
+   "y": -6,
+   "skin": true
+  }
+ ],
+ "slots": [
+  {
+   "name": "bg",
+   "bone": "root",
+   "attachment": "r1"
+  },
+  {
+   "name": "clipA",
+   "bone": "root",
+   "attachment": "cStar"
+  },
+  {
+   "name": "x1",
+   "bone": "a",
+   "attachment": "r1"
+  },
+  {
+   "name": "x2",
+   "bone": "a",
+   "attachment": "r3"
+  },
+  {
+   "name": "x3",
+   "bone": "b",
+   "attachment": "m"
+  },
+  {
+   "name": "nest",
+   "bone": "c",
+   "attachment": "cNest"
+  },
+  {
+   "name": "e1",
+   "bone": "b",
+   "attachment": "r3"
+  },
+  {
+   "name": "x5",
+   "bone": "root",
+   "attachment": "r3"
+  },
+  {
+   "name": "clipB",
+   "bone": "a",
+   "attachment": "cInv"
+  },
+  {
+   "name": "x7",
+   "bone": "b",
+   "attachment": "m"
+  },
+  {
+   "name": "x8",
+   "bone": "a",
+   "attachment": "r1"
+  },
+  {
+   "name": "clipC",
+   "bone": "root",
+   "attachment": "cW"
+  },
+  {
+   "name": "x9",
+   "bone": "c",
+   "attachment": "r3"
+  },
+  {
+   "name": "x10",
+   "bone": "b",
+   "attachment": "r1"
+  },
+  {
+   "name": "skslot",
+   "bone": "sk",
+   "attachment": "r1"
+  },
+  {
+   "name": "x11",
+   "bone": "root",
+   "attachment": "m"
+  },
+  {
+   "name": "early",
+   "bone": "root",
+   "attachment": "r1"
+  },
+  {
+   "name": "clipD",
+   "bone": "b",
+   "attachment": "cTri"
+  },
+  {
+   "name": "x12",
+   "bone": "c",
+   "attachment": "m"
+  },
+  {
+   "name": "clipE",
+   "bone": "root",
+   "attachment": "cBowl"
+  },
+  {
+   "name": "x13",
+   "bone": "a",
+   "attachment": "r3"
+  },
+  {
+   "name": "x14",
+   "bone": "b",
+   "attachment": "m"
+  },
+  {
+   "name": "clipF",
+   "bone": "c",
+   "attachment": "cSq"
+  },
+  {
+   "name": "x15",
+   "bone": "a",
+   "attachment": "m"
+  },
+  {
+   "name": "clipG",
+   "bone": "b",
+   "attachment": "cSelf"
+  },
+  {
+   "name": "x16",
+   "bone": "root",
+   "attachment": "r1"
+  },
+  {
+   "name": "x17",
+   "bone": "c",
+   "attachment": "r3"
+  }
+ ],
+ "skins": [
+  {
+   "name": "default",
+   "attachments": {
+    "bg": {
+     "r1": {
+      "path": "r1",
+      "width": 30,
+      "height": 24
+     }
+    },
+    "clipA": {
+     "cStar": {
+      "type": "clipping",
+      "vertexCount": 10,
+      "vertices": [
+       7.0,
+       0.0,
+       2.427,
+       1.763,
+       2.163,
+       6.657,
+       -0.927,
+       2.853,
+       -5.663,
+       4.114,
+       -3.0,
+       0.0,
+       -5.663,
+       -4.114,
+       -0.927,
+       -2.853,
+       2.163,
+       -6.657,
+       2.427,
+       -1.763
+      ],
+      "end": "e1"
+     },
+     "cL": {
+      "type": "clipping",
+      "vertexCount": 6,
+      "vertices": [
+       -6,
+       -6,
+       6,
+       -6,
+       6,
+       -1,
+       -1,
+       -1,
+       -1,
+       6,
+       -6,
+       6
+      ],
+      "end": "x5"
+     },
+     "cComb": {
+      "type": "clipping",
+      "vertexCount": 14,
+      "vertices": [
+       -9,
+       -6,
+       9,
+       -6,
+       9,
+       6,
+       6,
+       6,
+       6,
+       -1,
+       3,
+       -1,
+       3,
+       6,
+       0,
+       6,
+       0,
+       -1,
+       -3,
+       -1,
+       -3,
+       6,
+       -6,
+       6,
+       -6,
+       -1,
+       -9,
+       -1
+      ],
+      "end": "e1"
+     }
+    },
+    "x1": {
+     "r1": {
+      "path": "r1",
+      "width": 9,
+      "height": 7,
+      "rotation": 15
+     }
+    },
+    "x2": {
+     "r3": {
+      "path": "r3",
+      "width": 6,
+      "height": 8,
+      "x": 2
+     }
+    },
+    "x3": {
+     "m": {
+      "type": "mesh",
+      "path": "r2",
+      "uvs": [
+       0,
+       0,
+       1,
+       0,
+       1,
+       1,
+       0,
+       1,
+       0.5,
+       0.5
+      ],
+      "triangles": [
+       0,
+       1,
+       4,
+       1,
+       2,
+       4,
+       2,
+       3,
+       4,
+       3,
+       0,
+       4
+      ],
+      "vertices": [
+       -3,
+       -3,
+       4,
+       -3,
+       4,
+       5,
+       -3,
+       5,
+       0.5,
+       1
+      ],
+      "hull": 4
+     }
+    },
+    "nest": {
+     "cNest": {
+      "type": "clipping",
+      "vertexCount": 3,
+      "vertices": [
+       -8,
+       -8,
+       9,
+       -7,
+       0,
+       9
+      ],
+      "end": "x5"
+     }
+    },
+    "e1": {
+     "r3": {
+      "path": "r3",
+      "width": 7,
+      "height": 5,
+      "x": -2
+     }
+    },
+    "x5": {
+     "r3": {
+      "path": "r3",
+      "width": 10,
+      "height": 4,
+      "y": 2
+     }
+    },
+    "clipB": {
+     "cInv": {
+      "type": "clipping",
+      "vertexCount": 7,
+      "vertices": [
+       -5,
+       -4,
+       0,
+       -4,
+       5,
+       -4,
+       6,
+       3,
+       2,
+       0,
+       -2,
+       0,
+       -6,
+       3
+      ],
+      "end": "x8",
+      "inverse": true
+     }
+    },
+    "x7": {
+     "m": {
+      "type": "mesh",
+      "path": "r2",
+      "uvs": [
+       0,
+       0,
+       1,
+       0,
+       1,
+       1,
+       0,
+       1,
+       0.5,
+       0.5
+      ],
+      "triangles": [
+       0,
+       1,
+       4,
+       1,
+       2,
+       4,
+       2,
+       3,
+       4,
+       3,
+       0,
+       4
+      ],
+      "vertices": [
+       -3,
+       -3,
+       4,
+       -3,
+       4,
+       5,
+       -3,
+       5,
+       0.5,
+       1
+      ],
+      "hull": 4
+     }
+    },
+    "x8": {
+     "r1": {
+      "path": "r1",
+      "width": 12,
+      "height": 3
+     }
+    },
+    "clipC": {
+     "cW": {
+      "type": "clipping",
+      "vertexCount": 5,
+      "vertices": [
+       2,
+       1,
+       -5,
+       -5,
+       0.5,
+       2,
+       -4.0,
+       -4.0,
+       0.5,
+       2,
+       1,
+       5,
+       -5,
+       0.5,
+       2,
+       4.0,
+       -4.0,
+       0.5,
+       2,
+       1,
+       6,
+       4,
+       0.5,
+       2,
+       4.800000000000001,
+       3.2,
+       0.5,
+       2,
+       1,
+       -4,
+       5,
+       0.5,
+       2,
+       -3.2,
+       4.0,
+       0.5,
+       2,
+       1,
+       0,
+       8,
+       0.5,
+       2,
+       0.0,
+       6.4,
+       0.5
+      ],
+      "end": "skslot",
+      "convex": true
+     }
+    },
+    "x9": {
+     "r3": {
+      "path": "r3",
+      "width": 8,
+      "height": 8,
+      "rotation": -30
+     }
+    },
+    "x10": {
+     "r1": {
+      "path": "r1",
+      "width": 14,
+      "height": 6
+     }
+    },
+    "skslot": {
+     "r1": {
+      "path": "r1",
+      "width": 5,
+      "height": 5
+     }
+    },
+    "x11": {
+     "m": {
+      "type": "mesh",
+      "path": "r2",
+      "uvs": [
+       0,
+       0,
+       1,
+       0,
+       1,
+       1,
+       0,
+       1,
+       0.5,
+       0.5
+      ],
+      "triangles": [
+       0,
+       1,
+       4,
+       1,
+       2,
+       4,
+       2,
+       3,
+       4,
+       3,
+       0,
+       4
+      ],
+      "vertices": [
+       -3,
+       -3,
+       4,
+       -3,
+       4,
+       5,
+       -3,
+       5,
+       0.5,
+       1
+      ],
+      "hull": 4
+     }
+    },
+    "early": {
+     "r1": {
+      "path": "r1",
+      "width": 4,
+      "height": 4
+     }
+    },
+    "clipD": {
+     "cTri": {
+      "type": "clipping",
+      "vertexCount": 3,
+      "vertices": [
+       -8,
+       -8,
+       9,
+       -7,
+       0,
+       9
+      ],
+      "end": "early"
+     }
+    },
+    "x12": {
+     "m": {
+      "type": "mesh",
+      "path": "r2",
+      "uvs": [
+       0,
+       0,
+       1,
+       0,
+       1,
+       1,
+       0,
+       1,
+       0.5,
+       0.5
+      ],
+      "triangles": [
+       0,
+       1,
+       4,
+       1,
+       2,
+       4,
+       2,
+       3,
+       4,
+       3,
+       0,
+       4
+      ],
+      "vertices": [
+       -3,
+       -3,
+       4,
+       -3,
+       4,
+       5,
+       -3,
+       5,
+       0.5,
+       1
+      ],
+      "hull": 4
+     }
+    },
+    "clipE": {
+     "cBowl": {
+      "type": "clipping",
+      "vertexCount": 7,
+      "vertices": [
+       -5,
+       -4,
+       0,
+       -4,
+       5,
+       -4,
+       6,
+       3,
+       2,
+       0,
+       -2,
+       0,
+       -6,
+       3
+      ]
+     }
+    },
+    "x13": {
+     "r3": {
+      "path": "r3",
+      "width": 9,
+      "height": 9
+     }
+    },
+    "x14": {
+     "m": {
+      "type": "mesh",
+      "path": "r2",
+      "uvs": [
+       0,
+       0,
+       1,
+       0,
+       1,
+       1,
+       0,
+       1,
+       0.5,
+       0.5
+      ],
+      "triangles": [
+       0,
+       1,
+       4,
+       1,
+       2,
+       4,
+       2,
+       3,
+       4,
+       3,
+       0,
+       4
+      ],
+      "vertices": [
+       -3,
+       -3,
+       4,
+       -3,
+       4,
+       5,
+       -3,
+       5,
+       0.5,
+       1
+      ],
+      "hull": 4
+     }
+    },
+    "clipF": {
+     "cSq": {
+      "type": "clipping",
+      "vertexCount": 5,
+      "vertices": [
+       -7,
+       -7,
+       0,
+       -7,
+       7,
+       -7,
+       7,
+       7,
+       -7,
+       7
+      ],
+      "end": "x15"
+     }
+    },
+    "x15": {
+     "m": {
+      "type": "mesh",
+      "path": "r2",
+      "uvs": [
+       0,
+       0,
+       1,
+       0,
+       1,
+       1,
+       0,
+       1,
+       0.5,
+       0.5
+      ],
+      "triangles": [
+       0,
+       1,
+       4,
+       1,
+       2,
+       4,
+       2,
+       3,
+       4,
+       3,
+       0,
+       4
+      ],
+      "vertices": [
+       -3,
+       -3,
+       4,
+       -3,
+       4,
+       5,
+       -3,
+       5,
+       0.5,
+       1
+      ],
+      "hull": 4
+     }
+    },
+    "clipG": {
+     "cSelf": {
+      "type": "clipping",
+      "vertexCount": 4,
+      "vertices": [
+       -6,
+       -3,
+       6,
+       -4,
+       5,
+       5,
+       -5,
+       4
+      ],
+      "end": "clipG"
+     }
+    },
+    "x16": {
+     "r1": {
+      "path": "r1",
+      "width": 9,
+      "height": 9
+     }
+    },
+    "x17": {
+     "r3": {
+      "path": "r3",
+      "width": 6,
+      "height": 11
+     }
+    }
+   }
+  },
+  {
+   "name": "extra",
+   "bones": [
+    "sk"
+   ],
+   "attachments": {}
+  }
+ ],
+ "animations": {
+  "swing": {
+   "bones": {
+    "a": {
+     "rotate": [
+      {
+       "value": 0
+      },
+      {
+       "time": 1,
+       "value": 90
+      },
+      {
+       "time": 2,
+       "value": 0
+      }
+     ],
+     "translate": [
+      {
+       "x": 0,
+       "y": 0
+      },
+      {
+       "time": 1,
+       "x": 5,
+       "y": -3
+      },
+      {
+       "time": 2
+      }
+     ]
+    },
+    "b": {
+     "rotate": [
+      {
+       "value": 0
+      },
+      {
+       "time": 1,
+       "value": -120
+      },
+      {
+       "time": 2,
+       "value": 0
+      }
+     ]
+    },
+    "c": {
+     "translate": [
+      {
+       "x": 0,
+       "y": 0
+      },
+      {
+       "time": 1,
+       "x": -6,
+       "y": 4
+      },
+      {
+       "time": 2
+      }
+     ]
+    },
+    "root": {
+     "scale": [
+      {
+       "x": 1,
+       "y": 1
+      },
+      {
+       "time": 1,
+       "x": 1.3,
+       "y": 0.8
+      },
+      {
+       "time": 2
+      }
+     ]
+    }
+   },
+   "slots": {
+    "clipA": {
+     "attachment": [
+      {
+       "name": "cStar"
+      },
+      {
+       "time": 0.3,
+       "name": "cComb"
+      },
+      {
+       "time": 0.6,
+       "name": "cL"
+      },
+      {
+       "time": 1.2,
+       "name": null
+      },
+      {
+       "time": 1.5,
+       "name": "cStar"
+      }
+     ]
+    },
+    "e1": {
+     "alpha": [
+      {
+       "value": 1
+      },
+      {
+       "time": 0.35,
+       "value": 0,
+       "curve": "stepped"
+      },
+      {
+       "time": 0.55,
+       "value": 1,
+       "curve": "stepped"
+      },
+      {
+       "time": 1.55,
+       "value": 0,
+       "curve": "stepped"
+      },
+      {
+       "time": 1.8,
+       "value": 1
+      }
+     ]
+    },
+    "clipB": {
+     "attachment": [
+      {
+       "name": "cInv"
+      },
+      {
+       "time": 1.7,
+       "name": null
+      }
+     ]
+    }
+   },
+   "drawOrder": [
+    {
+     "time": 0.4,
+     "offsets": [
+      {
+       "slot": "e1",
+       "offset": -5
+      }
+     ]
+    },
+    {
+     "time": 0.9
+    },
+    {
+     "time": 1.3,
+     "offsets": [
+      {
+       "slot": "x2",
+       "offset": 3
+      },
+      {
+       "slot": "clipC",
+       "offset": -6
+      }
+     ]
+    },
+    {
+     "time": 1.8
+    }
+   ]
+  },
+  "still": {
+   "bones": {
+    "a": {
+     "rotate": [
+      {
+       "value": 5
+      }
+     ]
+    }
+   }
+  },
+  "comb": {
+   "slots": {
+    "clipA": {
+     "attachment": [
+      {
+       "name": "cComb"
+      }
+     ]
+    },
+    "e1": {
+     "alpha": [
+      {
+       "value": 0,
+       "curve": "stepped"
+      },
+      {
+       "time": 0.5,
+       "value": 1
+      }
+     ]
+    },
+    "nest": {
+     "attachment": [
+      {
+       "name": null
+      }
+     ]
+    }
+   },
+   "bones": {
+    "a": {
+     "rotate": [
+      {
+       "value": 0
+      },
+      {
+       "time": 1,
+       "value": 360
+      }
+     ]
+    }
+   }
+  }
+ }
+}

@@ -1,0 +1,4 @@
+bin/
+obj/
+# The project .gitignore drops *.csproj (Unity-generated IDE projects); this one is hand-written.
+!ParityHarness.csproj

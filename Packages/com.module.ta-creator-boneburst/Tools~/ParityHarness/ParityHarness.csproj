@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    Strict-float parity harness (Doc/Review/BoneBurst-ParityPlan.md, F1): stock spine-csharp, BoneBurst's managed
+    runtime and the Editor parity tests, compiled from their sources and run on .NET (RyuJIT: float32 arithmetic
+    rounded at every operation). Run it with run.sh from anywhere; it needs a Unity 6000.6 install for
+    UnityEngine.MathematicsModule.dll.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>9</LangVersion>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <!-- IS_UNITY: spine-csharp built as Unity builds it (Color32F = UnityEngine.Color, the real managed struct). -->
+    <DefineConstants>BONEBURST_PARITY_HARNESS;IS_UNITY</DefineConstants>
+    <NoWarn>CS0436;CS0162;CS0168;CS0219;CS0414;CS0649;CS0169;CS8632;CS0618;CS1591;CS0108</NoWarn>
+    <PackageRoot>$(MSBuildThisFileDirectory)../../</PackageRoot>
+    <SpineCsharp>$(PackageRoot)../com.esotericsoftware.spine.spine-csharp/</SpineCsharp>
+    <ProjectRoot>$(PackageRoot)../../</ProjectRoot>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="$(SpineCsharp)**/*.cs" />
+    <!-- BoneBurst's managed pose path is exactly two assemblies, Module.PA.BoneBurst.Data and .Core
+         (Doc/Review/BoneBurst-AssemblySplit-Plan.md D6); the Unity front, Module.PB.BoneBurst.Unity, stays out. -->
+    <Compile Include="$(PackageRoot)Runtime/Data/**/*.cs" />
+    <Compile Include="$(PackageRoot)Runtime/Core/**/*.cs" />
+    <!-- The export readers the parity tests load samples with (com.module.ta-creator-boneburst-import). -->
+    <Compile Include="$(PackageRoot)../com.module.ta-creator-boneburst-import/Runtime/**/*.cs" />
+    <!-- The shared sample corpus (in the neutral Editor test assembly) and the spine-csharp parity suites
+         (their own assembly, Module.TA.BoneBurst.Tests.SpineCsharp). -->
+    <Compile Include="$(PackageRoot)Tests/Editor/Core/SampleCorpus.cs" />
+    <Compile Include="$(PackageRoot)Tests/Editor/SpineCsharp/*.cs" />
+    <Compile Include="Shims/*.cs" />
+    <Compile Include="Program.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <!-- Unity's own managed code: Unity.Mathematics (an engine module in 6.6), NativeArray and attributes, and the
+         Collections / Burst packages as this project built them. Only managed members are executed. -->
+    <Reference Include="$(UnityManaged)UnityEngine/UnityEngine.dll" />
+    <Reference Include="$(UnityManaged)UnityEngine/UnityEngine.*Module.dll" />
+    <Reference Include="Unity.Collections">
+      <HintPath>$(ProjectRoot)Library/ScriptAssemblies/Unity.Collections.dll</HintPath>
+    </Reference>
+    <Reference Include="Unity.Burst">
+      <HintPath>$(ProjectRoot)Library/ScriptAssemblies/Unity.Burst.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+</Project>

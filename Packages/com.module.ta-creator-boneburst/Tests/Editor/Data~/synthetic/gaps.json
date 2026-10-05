@@ -1,0 +1,97 @@
+{
+"skeleton": { "hash": "synthetic-gaps", "spine": "4.3.74-beta", "x": -1, "y": -2, "width": 10, "height": 12, "referenceScale": 50 },
+"bones": [
+	{ "name": "root" },
+	{ "name": "a", "parent": "root", "x": 5, "y": -3, "rotation": 30, "scaleX": 1.5, "shearY": 4, "inherit": "noScale" },
+	{ "name": "b", "parent": "a", "length": 10, "x": 2, "inherit": "noRotationOrReflection", "skin": true },
+	{ "name": "c", "parent": "b", "length": 4, "inherit": "noScaleOrReflection" },
+	{ "name": "d", "parent": "a", "x": -2, "y": 1.5, "rotation": 13.37, "shearX": 3.1, "shearY": 7.123, "scaleY": -1.2 },
+	{ "name": "e", "parent": "d", "x": 3, "rotation": -41.3, "shearY": 5.71, "scaleX": 0.8, "inherit": "noRotationOrReflection" },
+	{ "name": "f", "parent": "d", "x": 1, "rotation": 77, "shearX": -6, "inherit": "onlyTranslation" },
+	{ "name": "g", "parent": "e", "y": 2, "rotation": 101, "scaleX": -1.4, "inherit": "noScale" }
+],
+"slots": [
+	{ "name": "s1", "bone": "a", "color": "ff00ff80", "dark": "102030", "attachment": "box" },
+	{ "name": "s2", "bone": "b", "blend": "additive", "attachment": "clip" },
+	{ "name": "s3", "bone": "c", "blend": "screen", "attachment": "p" },
+	{ "name": "s4", "bone": "c", "blend": "multiply", "attachment": "pt" },
+	{ "name": "s5", "bone": "d", "attachment": "r1" },
+	{ "name": "s6", "bone": "e", "blend": "multiply", "attachment": "m" },
+	{ "name": "s7", "bone": "g", "blend": "additive", "color": "ff8040c0", "attachment": "r3" },
+	{ "name": "s8", "bone": "f", "attachment": "r2", "color": "ffffff00" }
+],
+"constraints": [
+	{ "name": "ik", "type": "ik", "bones": [ "b", "c" ], "target": "root", "scaleY": "volume", "softness": 3, "bendPositive": false, "compress": true, "mix": 0.75 },
+	{ "name": "tc", "type": "transform", "bones": [ "c" ], "source": "a", "localSource": true, "clamp": true, "x": 2, "shearY": 3,
+		"properties": { "x": { "offset": 1, "to": { "y": { "max": 5, "scale": 2 }, "rotate": { "offset": 4 } } }, "rotate": {} },
+		"mixX": 0.3, "mixRotate": 0.6 },
+	{ "name": "sl", "type": "slider", "animation": "driven", "loop": true, "additive": true, "mix": 0.5, "time": 0.25 },
+	{ "name": "sl2", "type": "slider", "animation": "driven", "bone": "a", "property": "x", "from": 2, "to": 3, "scale": 0.5, "local": true },
+	{ "name": "ph", "type": "physics", "bone": "b", "x": 0.5, "scaleX": 0.3, "scaleY": "uniform", "fps": 30, "mass": 2, "gravity": 3, "limit": 900, "gravityGlobal": true, "mixGlobal": true },
+	{ "name": "pa", "type": "path", "bones": [ "b" ], "slot": "s3", "positionMode": "fixed", "spacingMode": "fixed", "rotateMode": "chainScale", "position": 4, "spacing": 2, "mixX": 0.4 }
+],
+"skins": [
+	{
+		"name": "default",
+		"attachments": {
+			"s1": { "box": { "type": "boundingbox", "vertexCount": 3, "vertices": [ 0, 0, 10, 0, 0, 10 ] } },
+			"s2": { "clip": { "type": "clipping", "end": "s3", "vertexCount": 3, "vertices": [ 0, 0, 5, 0, 0, 5 ], "convex": true, "inverse": true } },
+			"s3": { "p": { "type": "path", "closed": true, "constantSpeed": false, "vertexCount": 6, "vertices": [ 0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5 ], "lengths": [ 7, 9 ] } },
+			"s4": { "pt": { "type": "point", "x": 3, "y": 4, "rotation": 45 } },
+			"s5": { "r1": { "x": 1, "y": 2, "rotation": 20, "scaleX": 1.3, "width": 12, "height": 24 } },
+			"s6": { "m": { "type": "mesh", "path": "r2", "color": "c0ffc0ff", "uvs": [ 0, 0, 1, 0, 1, 1, 0, 1, 0.5, 0.5 ], "triangles": [ 0, 1, 4, 1, 2, 4, 2, 3, 4, 3, 0, 4 ], "vertices": [ 0, 0, 5, 0, 5, 6, 0, 6, 2.5, 3 ], "hull": 4 } },
+			"s7": { "r3": { "x": -1, "width": 3, "height": 4, "rotation": -30 } },
+			"s8": { "r2": { "width": 5, "height": 6 } }
+		}
+	},
+	{ "name": "extra", "bones": [ "b" ], "ik": [ "ik" ], "slider": [ "sl" ], "physics": [ "ph" ], "attachments": {} }
+],
+"events": {
+	"e": { "int": 3, "float": 1.5, "audio": "a.wav" },
+	"quiet": { "string": "hello" }
+},
+"animations": {
+	"driven": { "bones": { "b": { "rotate": [ { "value": 10 }, { "time": 1, "value": 20 } ] } } },
+	"gaps": {
+		"slots": {
+			"s1": {
+				"rgb": [ { "color": "102030", "curve": [ 0.2, 0.1, 0.8, 0.9, 0.2, 0.1, 0.8, 0.9, 0.2, 0.1, 0.8, 0.9 ] }, { "time": 1, "color": "ffffff" } ],
+				"alpha": [ { "value": 0.5, "curve": "stepped" }, { "time": 0.5 } ],
+				"rgba2": [ { "light": "ff000080", "dark": "00ff00", "curve": [ 0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4, 0.1, 0.2, 0.3, 0.4 ] }, { "time": 1, "light": "ffffffff", "dark": "000000" } ],
+				"rgb2": [ { "light": "ff0000", "dark": "00ff00" }, { "time": 1, "light": "ffffff", "dark": "000000" } ]
+			}
+		},
+		"bones": {
+			"a": {
+				"scalex": [ { "value": 2, "curve": [ 0.1, 1.5, 0.9, 2.5 ] }, { "time": 1 } ],
+				"scaley": [ { "value": 0.5 } ],
+				"shearx": [ { "value": 10 } ],
+				"sheary": [ { "value": -5 }, { "time": 0.5, "value": 5 } ],
+				"inherit": [ { "inherit": "onlyTranslation" }, { "time": 1, "inherit": "normal" } ],
+				"translatex": [ { "value": 3 } ],
+				"translatey": [ { "value": -3, "curve": [ 0.1, -1, 0.2, 4 ] }, { "time": 0.3, "value": 1 } ]
+			}
+		},
+		"ik": { "ik": [ { "mix": 0.5, "softness": 2, "bendPositive": false, "curve": [ 0.1, 0.2, 0.3, 0.4, 0.1, 1, 0.3, 3 ] }, { "time": 1, "stretch": true } ] },
+		"transform": { "tc": [ { "mixRotate": 0.2, "mixX": 0.4, "curve": "stepped" }, { "time": 1, "mixScaleX": 0.5 } ] },
+		"path": { "pa": {
+			"spacing": [ { "value": 1, "curve": [ 0.1, 2, 0.2, 3 ] }, { "time": 1, "value": 2 } ],
+			"position": [ { "value": 3 } ],
+			"mix": [ { "mixRotate": 0.5, "mixX": 0.2 }, { "time": 1 } ]
+		} },
+		"physics": {
+			"": { "gravity": [ { "value": 1 }, { "time": 1, "value": 2 } ], "reset": [ { "time": 0.5 } ] },
+			"ph": { "mass": [ { "value": 2 } ], "mix": [ { "value": 0.5 } ], "inertia": [ { "value": 0.1 } ], "strength": [ { "value": 50 } ], "damping": [ { "value": 0.3 } ], "wind": [ { "value": 1 } ] }
+		},
+		"slider": { "sl": {
+			"time": [ { "value": 0.1, "curve": [ 0.1, 0.2, 0.3, 0.4 ] }, { "time": 1 } ],
+			"mix": [ { "value": 0.3 } ]
+		} },
+		"drawOrderFolder": [
+			{ "slots": [ "s1", "s2", "s3" ], "keys": [ { "offsets": [ { "slot": "s1", "offset": 2 } ] }, { "time": 1 } ] }
+		],
+		"drawOrder": [ { "offsets": [ { "slot": "s3", "offset": -2 } ] }, { "time": 0.5 } ],
+		"events": [ { "name": "e", "volume": 0.5 }, { "time": 1, "name": "e", "int": 7, "string": "x" }, { "time": 1.5, "name": "quiet" } ]
+	}
+}
+}

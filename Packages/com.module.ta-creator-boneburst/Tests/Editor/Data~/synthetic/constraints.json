@@ -1,0 +1,1344 @@
+{
+ "skeleton": {
+  "hash": "synthetic-constraints",
+  "spine": "4.3.74-beta",
+  "x": -60,
+  "y": -40,
+  "width": 120,
+  "height": 90,
+  "referenceScale": 80
+ },
+ "bones": [
+  {
+   "name": "root"
+  },
+  {
+   "name": "hip",
+   "parent": "root",
+   "y": 10
+  },
+  {
+   "name": "thigh",
+   "parent": "hip",
+   "length": 20,
+   "rotation": -90,
+   "scaleX": 1.3,
+   "scaleY": 0.8
+  },
+  {
+   "name": "shin",
+   "parent": "thigh",
+   "x": 20,
+   "y": 1.5,
+   "length": 18,
+   "rotation": 25
+  },
+  {
+   "name": "tgtLeg",
+   "parent": "root",
+   "x": 6,
+   "y": -22
+  },
+  {
+   "name": "arm",
+   "parent": "root",
+   "x": 10,
+   "y": 20,
+   "length": 15,
+   "rotation": 10,
+   "inherit": "onlyTranslation"
+  },
+  {
+   "name": "arm2",
+   "parent": "hip",
+   "x": -4,
+   "y": 6,
+   "length": 12,
+   "rotation": 80,
+   "inherit": "noScale"
+  },
+  {
+   "name": "tgtArm",
+   "parent": "root",
+   "x": 40,
+   "y": 25
+  },
+  {
+   "name": "tgtNear",
+   "parent": "root",
+   "x": -2,
+   "y": 18
+  },
+  {
+   "name": "upper2",
+   "parent": "root",
+   "x": -20,
+   "y": 3,
+   "length": 10,
+   "rotation": 170
+  },
+  {
+   "name": "lower2",
+   "parent": "upper2",
+   "x": 10,
+   "length": 10,
+   "rotation": -20
+  },
+  {
+   "name": "tgtFar",
+   "parent": "root",
+   "x": -80,
+   "y": 4
+  },
+  {
+   "name": "tsrc",
+   "parent": "root",
+   "x": 3,
+   "y": 4,
+   "rotation": 30,
+   "scaleX": 1.2,
+   "shearY": 10,
+   "length": 6
+  },
+  {
+   "name": "arm3",
+   "parent": "tsrc",
+   "x": 4,
+   "y": 6,
+   "length": 9,
+   "rotation": -60,
+   "inherit": "noRotationOrReflection"
+  },
+  {
+   "name": "t1",
+   "parent": "root",
+   "x": 1,
+   "y": -5,
+   "rotation": -15,
+   "length": 4
+  },
+  {
+   "name": "t2",
+   "parent": "root",
+   "x": -1,
+   "y": -8,
+   "rotation": 40,
+   "scaleY": -1.4,
+   "length": 5
+  },
+  {
+   "name": "t3",
+   "parent": "t2",
+   "x": 5,
+   "rotation": 20,
+   "inherit": "noScale",
+   "length": 3
+  },
+  {
+   "name": "t4",
+   "parent": "t3",
+   "x": 3,
+   "rotation": -35,
+   "shearX": 5,
+   "inherit": "noRotationOrReflection",
+   "length": 3
+  },
+  {
+   "name": "t5",
+   "parent": "t4",
+   "x": 3,
+   "rotation": 12,
+   "inherit": "noScaleOrReflection"
+  },
+  {
+   "name": "t6",
+   "parent": "t2",
+   "x": -3,
+   "y": 2,
+   "rotation": 65,
+   "shearY": -8,
+   "scaleX": 0.9,
+   "inherit": "noScaleOrReflection",
+   "length": 4
+  },
+  {
+   "name": "t7",
+   "parent": "t2",
+   "x": 2,
+   "y": -3,
+   "rotation": -25,
+   "shearX": 4,
+   "scaleY": 0.7,
+   "inherit": "noRotationOrReflection",
+   "length": 3
+  },
+  {
+   "name": "t8",
+   "parent": "t2",
+   "x": -2,
+   "y": -2,
+   "rotation": 33,
+   "scaleX": 1.1,
+   "inherit": "onlyTranslation",
+   "length": 3
+  },
+  {
+   "name": "pbone",
+   "parent": "root",
+   "x": -30,
+   "y": -30,
+   "rotation": 10
+  },
+  {
+   "name": "c1",
+   "parent": "root",
+   "length": 5
+  },
+  {
+   "name": "c2",
+   "parent": "root",
+   "length": 5
+  },
+  {
+   "name": "c3",
+   "parent": "root",
+   "length": 0
+  },
+  {
+   "name": "d1",
+   "parent": "root",
+   "length": 6
+  },
+  {
+   "name": "d2",
+   "parent": "d1",
+   "x": 6,
+   "length": 6
+  },
+  {
+   "name": "d3",
+   "parent": "d2",
+   "x": 6,
+   "length": 4
+  },
+  {
+   "name": "tail",
+   "parent": "root",
+   "x": 25,
+   "y": -10,
+   "rotation": -45,
+   "length": 10
+  },
+  {
+   "name": "tail2",
+   "parent": "tail",
+   "x": 10,
+   "length": 8,
+   "rotation": 15
+  },
+  {
+   "name": "tail3",
+   "parent": "tail2",
+   "x": 8,
+   "length": 5
+  }
+ ],
+ "slots": [
+  {
+   "name": "sq",
+   "bone": "t1",
+   "attachment": "r1"
+  },
+  {
+   "name": "sb",
+   "bone": "t2",
+   "attachment": "r3",
+   "blend": "additive"
+  },
+  {
+   "name": "sc",
+   "bone": "t4",
+   "attachment": "r1"
+  },
+  {
+   "name": "st",
+   "bone": "tail2",
+   "attachment": "r1"
+  },
+  {
+   "name": "sl",
+   "bone": "shin",
+   "attachment": "r3"
+  },
+  {
+   "name": "ps1",
+   "bone": "pbone",
+   "attachment": "path1"
+  },
+  {
+   "name": "ps2",
+   "bone": "pbone",
+   "attachment": "path2"
+  }
+ ],
+ "constraints": [
+  {
+   "name": "tRoot",
+   "type": "transform",
+   "bones": [
+    "root"
+   ],
+   "source": "tgtArm",
+   "properties": {
+    "x": {
+     "to": {
+      "x": {
+       "scale": 0.1
+      }
+     }
+    },
+    "rotate": {
+     "to": {
+      "rotate": {}
+     }
+    }
+   },
+   "mixX": 0.2,
+   "mixRotate": 0.05
+  },
+  {
+   "name": "tRootSrc",
+   "type": "transform",
+   "bones": [
+    "t1"
+   ],
+   "source": "root",
+   "localSource": true,
+   "localTarget": true,
+   "properties": {
+    "x": {
+     "to": {
+      "x": {}
+     }
+    },
+    "rotate": {
+     "to": {
+      "shearY": {}
+     }
+    }
+   },
+   "mixX": 0.5,
+   "mixShearY": 0.5
+  },
+  {
+   "name": "leg",
+   "type": "ik",
+   "bones": [
+    "thigh",
+    "shin"
+   ],
+   "target": "tgtLeg",
+   "stretch": true,
+   "softness": 2,
+   "mix": 0.9
+  },
+  {
+   "name": "armIk",
+   "type": "ik",
+   "bones": [
+    "arm"
+   ],
+   "target": "tgtArm",
+   "stretch": true,
+   "scaleY": "uniform",
+   "mix": 0.8
+  },
+  {
+   "name": "arm2Ik",
+   "type": "ik",
+   "bones": [
+    "arm2"
+   ],
+   "target": "tgtNear",
+   "compress": true,
+   "scaleY": "volume"
+  },
+  {
+   "name": "arm3Ik",
+   "type": "ik",
+   "bones": [
+    "arm3"
+   ],
+   "target": "tgtArm",
+   "stretch": true,
+   "compress": true,
+   "mix": 0.6
+  },
+  {
+   "name": "reach",
+   "type": "ik",
+   "bones": [
+    "upper2",
+    "lower2"
+   ],
+   "target": "tgtFar",
+   "stretch": true,
+   "scaleY": "volume",
+   "bendPositive": false
+  },
+  {
+   "name": "sl3",
+   "type": "slider",
+   "animation": "keyed",
+   "bone": "tsrc",
+   "property": "rotate",
+   "from": 0,
+   "to": 0.05,
+   "scale": 0.01,
+   "loop": true
+  },
+  {
+   "name": "tLocal",
+   "type": "transform",
+   "bones": [
+    "t1"
+   ],
+   "source": "tsrc",
+   "localTarget": true,
+   "additive": true,
+   "rotation": 5,
+   "x": 1,
+   "y": -1,
+   "scaleX": 0.1,
+   "scaleY": -0.1,
+   "shearY": 3,
+   "properties": {
+    "rotate": {
+     "to": {
+      "rotate": {}
+     }
+    },
+    "x": {
+     "to": {
+      "x": {}
+     }
+    },
+    "y": {
+     "to": {
+      "y": {
+       "scale": 0.5
+      }
+     }
+    },
+    "scaleX": {
+     "to": {
+      "scaleX": {}
+     }
+    },
+    "scaleY": {
+     "to": {
+      "scaleY": {}
+     }
+    },
+    "shearY": {
+     "to": {
+      "shearY": {}
+     }
+    }
+   },
+   "mixRotate": 0.7,
+   "mixX": 0.5,
+   "mixY": 0.6,
+   "mixScaleX": 0.4,
+   "mixScaleY": 0.3,
+   "mixShearY": 0.9
+  },
+  {
+   "name": "tWorldAdd",
+   "type": "transform",
+   "bones": [
+    "t2",
+    "t3",
+    "t6",
+    "t7",
+    "t8"
+   ],
+   "source": "tsrc",
+   "additive": true,
+   "clamp": true,
+   "properties": {
+    "scaleX": {
+     "offset": 1,
+     "to": {
+      "scaleY": {
+       "offset": 0.5,
+       "max": 2,
+       "scale": 1.5
+      }
+     }
+    },
+    "rotate": {
+     "to": {
+      "shearY": {
+       "max": 30
+      },
+      "rotate": {
+       "offset": 20,
+       "max": -40,
+       "scale": -1
+      }
+     }
+    },
+    "y": {
+     "to": {
+      "x": {
+       "max": 8,
+       "scale": 0.3
+      }
+     }
+    }
+   },
+   "mixRotate": 0.5,
+   "mixX": 0.8,
+   "mixScaleY": 0.6,
+   "mixShearY": 0.7
+  },
+  {
+   "name": "tLocalSrc",
+   "type": "transform",
+   "bones": [
+    "t4"
+   ],
+   "source": "t3",
+   "localSource": true,
+   "localTarget": true,
+   "properties": {
+    "scaleX": {
+     "to": {
+      "scaleX": {}
+     }
+    },
+    "shearY": {
+     "to": {
+      "rotate": {
+       "scale": 2
+      }
+     }
+    },
+    "x": {
+     "to": {
+      "y": {}
+     }
+    }
+   },
+   "mixRotate": 1,
+   "mixY": 0.5,
+   "mixScaleX": 0.5
+  },
+  {
+   "name": "tLocalSrc2",
+   "type": "transform",
+   "bones": [
+    "t5"
+   ],
+   "source": "t6",
+   "localSource": true,
+   "localTarget": true,
+   "properties": {
+    "rotate": {
+     "to": {
+      "rotate": {}
+     }
+    },
+    "scaleY": {
+     "to": {
+      "scaleX": {}
+     }
+    },
+    "shearY": {
+     "to": {
+      "shearY": {}
+     }
+    }
+   },
+   "mixRotate": 0.8,
+   "mixScaleX": 0.6,
+   "mixShearY": 0.5
+  },
+  {
+   "name": "tLocalSrc3",
+   "type": "transform",
+   "bones": [
+    "t5"
+   ],
+   "source": "t7",
+   "localSource": true,
+   "localTarget": true,
+   "additive": true,
+   "properties": {
+    "rotate": {
+     "to": {
+      "rotate": {}
+     }
+    },
+    "scaleX": {
+     "to": {
+      "scaleY": {}
+     }
+    },
+    "x": {
+     "to": {
+      "x": {}
+     }
+    }
+   },
+   "mixRotate": 0.3,
+   "mixScaleY": 0.4,
+   "mixX": 0.5
+  },
+  {
+   "name": "tLocalSrc4",
+   "type": "transform",
+   "bones": [
+    "t5"
+   ],
+   "source": "t8",
+   "localSource": true,
+   "localTarget": true,
+   "properties": {
+    "rotate": {
+     "to": {
+      "rotate": {}
+     }
+    },
+    "scaleX": {
+     "to": {
+      "scaleX": {}
+     }
+    }
+   },
+   "mixRotate": 0.4,
+   "mixScaleX": 0.3
+  },
+  {
+   "name": "p1",
+   "type": "path",
+   "bones": [
+    "c1",
+    "c2",
+    "c3"
+   ],
+   "slot": "ps1",
+   "positionMode": "percent",
+   "spacingMode": "proportional",
+   "rotateMode": "tangent",
+   "rotation": 15,
+   "position": 0.1,
+   "spacing": 1,
+   "mixRotate": 0.8,
+   "mixX": 1,
+   "mixY": 0.7
+  },
+  {
+   "name": "p2",
+   "type": "path",
+   "bones": [
+    "d1",
+    "d2",
+    "d3"
+   ],
+   "slot": "ps2",
+   "positionMode": "fixed",
+   "spacingMode": "length",
+   "rotateMode": "chain",
+   "position": -3,
+   "spacing": 2
+  },
+  {
+   "name": "p3",
+   "type": "path",
+   "bones": [
+    "d1",
+    "d2"
+   ],
+   "slot": "ps1",
+   "positionMode": "percent",
+   "spacingMode": "percent",
+   "rotateMode": "chainScale",
+   "position": 0.2,
+   "spacing": 0.3,
+   "mixRotate": 0.5,
+   "mixX": 0.5
+  },
+  {
+   "name": "ph1",
+   "type": "physics",
+   "bone": "tail",
+   "y": 0.7,
+   "rotate": 0.5,
+   "shearX": 0.4,
+   "scaleX": 0.3,
+   "scaleY": "volume",
+   "wind": 2,
+   "gravity": -1,
+   "damping": 0.9,
+   "strength": 80,
+   "inertia": 0.6,
+   "mass": 1.5,
+   "fps": 60,
+   "limit": 300
+  },
+  {
+   "name": "ph2",
+   "type": "physics",
+   "bone": "tail2",
+   "x": 1,
+   "y": 0.2,
+   "scaleX": 0.5,
+   "fps": 24,
+   "gravity": 4,
+   "windGlobal": true
+  },
+  {
+   "name": "ph3",
+   "type": "physics",
+   "bone": "tail3",
+   "rotate": 1,
+   "shearX": 0.5,
+   "scaleX": 0.2,
+   "scaleY": "uniform",
+   "wind": -3
+  },
+  {
+   "name": "sl4",
+   "type": "slider",
+   "animation": "keyed2",
+   "bone": "tail",
+   "property": "scaleX",
+   "from": 1,
+   "to": 0.2,
+   "scale": 2,
+   "additive": true,
+   "mix": 0.7
+  },
+  {
+   "name": "sl5",
+   "type": "slider",
+   "animation": "keyed2",
+   "bone": "tsrc",
+   "property": "x",
+   "local": true,
+   "from": 1,
+   "to": 0.1,
+   "scale": 0.2,
+   "loop": true,
+   "mix": 0.4
+  },
+  {
+   "name": "late",
+   "type": "ik",
+   "bones": [
+    "tail3"
+   ],
+   "target": "tgtArm",
+   "mix": 0.3
+  }
+ ],
+ "skins": [
+  {
+   "name": "default",
+   "attachments": {
+    "sq": {
+     "r1": {
+      "x": 1,
+      "y": 2,
+      "width": 12,
+      "height": 24
+     },
+     "r2": {
+      "width": 5,
+      "height": 6,
+      "rotation": 45
+     }
+    },
+    "sb": {
+     "r3": {
+      "x": -1,
+      "width": 3,
+      "height": 4
+     }
+    },
+    "sc": {
+     "r1": {
+      "width": 4,
+      "height": 8,
+      "rotation": -20
+     }
+    },
+    "st": {
+     "r1": {
+      "width": 6,
+      "height": 3
+     }
+    },
+    "sl": {
+     "r3": {
+      "width": 3,
+      "height": 4,
+      "x": 9
+     }
+    },
+    "ps1": {
+     "path1": {
+      "type": "path",
+      "closed": false,
+      "constantSpeed": true,
+      "vertexCount": 9,
+      "vertices": [
+       -5,
+       -2,
+       0,
+       0,
+       8,
+       6,
+       14,
+       4,
+       20,
+       0,
+       26,
+       -6,
+       34,
+       -2,
+       40,
+       0,
+       44,
+       5
+      ],
+      "lengths": [
+       20,
+       45,
+       70
+      ]
+     }
+    },
+    "ps2": {
+     "path2": {
+      "type": "path",
+      "closed": false,
+      "constantSpeed": false,
+      "vertexCount": 9,
+      "vertices": [
+       -3,
+       3,
+       0,
+       0,
+       5,
+       10,
+       12,
+       12,
+       20,
+       8,
+       28,
+       4,
+       32,
+       -5,
+       38,
+       -8,
+       42,
+       -6
+      ],
+      "lengths": [
+       18,
+       40,
+       60
+      ]
+     }
+    }
+   }
+  }
+ ],
+ "animations": {
+  "keyed": {
+   "slots": {
+    "sq": {
+     "rgba": [
+      {
+       "color": "ffffffff"
+      },
+      {
+       "time": 1,
+       "color": "ff000080"
+      }
+     ],
+     "attachment": [
+      {
+       "name": "r1"
+      },
+      {
+       "time": 0.5,
+       "name": "r2"
+      }
+     ]
+    }
+   },
+   "bones": {
+    "t2": {
+     "translate": [
+      {
+       "x": 0,
+       "y": 0
+      },
+      {
+       "time": 1,
+       "x": 6,
+       "y": -3
+      }
+     ]
+    },
+    "lower2": {
+     "rotate": [
+      {
+       "value": 0
+      },
+      {
+       "time": 1,
+       "value": 40
+      }
+     ]
+    }
+   },
+   "transform": {
+    "tLocal": [
+     {
+      "mixRotate": 1,
+      "mixX": 0.2
+     },
+     {
+      "time": 1,
+      "mixRotate": 0,
+      "mixX": 1
+     }
+    ]
+   },
+   "drawOrder": [
+    {
+     "time": 0.3,
+     "offsets": [
+      {
+       "slot": "sq",
+       "offset": 3
+      }
+     ]
+    },
+    {
+     "time": 0.8
+    }
+   ]
+  },
+  "keyed2": {
+   "bones": {
+    "c3": {
+     "rotate": [
+      {
+       "value": -20
+      },
+      {
+       "time": 1,
+       "value": 30
+      }
+     ]
+    },
+    "tail3": {
+     "scale": [
+      {
+       "x": 1,
+       "y": 1
+      },
+      {
+       "time": 1,
+       "x": 1.5,
+       "y": 0.5
+      }
+     ]
+    }
+   },
+   "ik": {
+    "late": [
+     {
+      "mix": 0
+     },
+     {
+      "time": 1,
+      "mix": 1
+     }
+    ]
+   },
+   "physics": {
+    "ph3": {
+     "strength": [
+      {
+       "value": 20
+      },
+      {
+       "time": 1,
+       "value": 200
+      }
+     ]
+    }
+   },
+   "path": {
+    "p2": {
+     "spacing": [
+      {
+       "value": 1
+      },
+      {
+       "time": 1,
+       "value": 5
+      }
+     ]
+    }
+   }
+  },
+  "move": {
+   "bones": {
+    "tgtLeg": {
+     "translate": [
+      {
+       "x": 0,
+       "y": 0
+      },
+      {
+       "time": 0.7,
+       "x": 30,
+       "y": 25
+      },
+      {
+       "time": 1.4,
+       "x": -50,
+       "y": -10
+      },
+      {
+       "time": 2,
+       "x": 0,
+       "y": 0
+      }
+     ]
+    },
+    "tgtArm": {
+     "translate": [
+      {
+       "x": 0,
+       "y": 0
+      },
+      {
+       "time": 1,
+       "x": -45,
+       "y": -30
+      },
+      {
+       "time": 2,
+       "x": 0,
+       "y": 0
+      }
+     ]
+    },
+    "tgtNear": {
+     "translate": [
+      {
+       "x": 0,
+       "y": 0
+      },
+      {
+       "time": 1,
+       "x": 3,
+       "y": -8
+      }
+     ]
+    },
+    "tgtFar": {
+     "translate": [
+      {
+       "x": 0,
+       "y": 0
+      },
+      {
+       "time": 1,
+       "x": 70,
+       "y": -3
+      },
+      {
+       "time": 2
+      }
+     ]
+    },
+    "thigh": {
+     "scale": [
+      {
+       "x": 1,
+       "y": 1
+      },
+      {
+       "time": 1,
+       "x": 1.3,
+       "y": 1.3
+      },
+      {
+       "time": 2,
+       "x": -1,
+       "y": 1
+      }
+     ]
+    },
+    "tsrc": {
+     "rotate": [
+      {
+       "value": 0
+      },
+      {
+       "time": 1,
+       "value": -250
+      },
+      {
+       "time": 2,
+       "value": 90
+      }
+     ],
+     "scale": [
+      {
+       "x": 1,
+       "y": 1
+      },
+      {
+       "time": 1,
+       "x": 0.5,
+       "y": 2
+      }
+     ],
+     "translate": [
+      {
+       "x": 0
+      },
+      {
+       "time": 2,
+       "x": 20
+      }
+     ],
+     "shear": [
+      {
+       "x": 0,
+       "y": 0
+      },
+      {
+       "time": 1,
+       "x": 10,
+       "y": -20
+      }
+     ]
+    },
+    "hip": {
+     "translate": [
+      {
+       "x": 0,
+       "y": 0
+      },
+      {
+       "time": 0.3,
+       "x": 15,
+       "y": 5
+      },
+      {
+       "time": 0.9,
+       "x": -20,
+       "y": -5
+      },
+      {
+       "time": 2,
+       "x": 0,
+       "y": 0
+      }
+     ]
+    },
+    "tail": {
+     "rotate": [
+      {
+       "value": 0
+      },
+      {
+       "time": 0.5,
+       "value": 60
+      },
+      {
+       "time": 1.2,
+       "value": -80
+      },
+      {
+       "time": 2,
+       "value": 0
+      }
+     ],
+     "scale": [
+      {
+       "x": 1,
+       "y": 1
+      },
+      {
+       "time": 1,
+       "x": 1.6,
+       "y": 1
+      }
+     ]
+    },
+    "pbone": {
+     "rotate": [
+      {
+       "value": 0
+      },
+      {
+       "time": 1,
+       "value": 180
+      },
+      {
+       "time": 2,
+       "value": 360
+      }
+     ],
+     "scale": [
+      {
+       "x": 1,
+       "y": 1
+      },
+      {
+       "time": 1,
+       "x": -1.5,
+       "y": 1.2
+      }
+     ]
+    },
+    "t2": {
+     "rotate": [
+      {
+       "value": 0
+      },
+      {
+       "time": 1,
+       "value": -120
+      }
+     ]
+    }
+   },
+   "path": {
+    "p1": {
+     "position": [
+      {
+       "value": 0.1
+      },
+      {
+       "time": 1,
+       "value": 0.9
+      },
+      {
+       "time": 2,
+       "value": -0.2
+      }
+     ],
+     "spacing": [
+      {
+       "value": 1
+      },
+      {
+       "time": 1,
+       "value": 1e-05
+      },
+      {
+       "time": 2,
+       "value": 3
+      }
+     ]
+    },
+    "p2": {
+     "position": [
+      {
+       "value": -3
+      },
+      {
+       "time": 2,
+       "value": 80
+      }
+     ],
+     "mix": [
+      {
+       "mixRotate": 1,
+       "mixX": 1
+      },
+      {
+       "time": 1,
+       "mixRotate": 0.3,
+       "mixX": 0
+      }
+     ]
+    }
+   },
+   "physics": {
+    "": {
+     "wind": [
+      {
+       "value": 0
+      },
+      {
+       "time": 1,
+       "value": 5
+      }
+     ],
+     "reset": [
+      {
+       "time": 1.5
+      }
+     ]
+    },
+    "ph1": {
+     "mix": [
+      {
+       "value": 1
+      },
+      {
+       "time": 0.4,
+       "value": 0
+      },
+      {
+       "time": 0.8,
+       "value": 1
+      }
+     ]
+    }
+   },
+   "slider": {
+    "sl3": {
+     "mix": [
+      {
+       "value": 1
+      },
+      {
+       "time": 1,
+       "value": 0.3
+      }
+     ]
+    }
+   },
+   "ik": {
+    "reach": [
+     {
+      "mix": 1,
+      "bendPositive": false
+     },
+     {
+      "time": 1,
+      "mix": 0.5,
+      "bendPositive": true,
+      "stretch": false
+     }
+    ]
+   }
+  }
+ }
+}
