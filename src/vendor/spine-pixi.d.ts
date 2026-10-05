@@ -49,7 +49,7 @@ declare namespace PIXI {
   }
   class Graphics extends Container {
     clear(): this;
-    poly(points: number[]): this;
+    poly(points: number[], close?: boolean): this;
     moveTo(x: number, y: number): this;
     lineTo(x: number, y: number): this;
     circle(x: number, y: number, r: number): this;

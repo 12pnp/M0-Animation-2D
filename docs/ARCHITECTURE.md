@@ -1564,9 +1564,9 @@ Our own Spine 4.3 runtime, to replace spine-pixi-v8 and spine-core in the shippe
 from spine-core's source; its author is not clean-room (docs/PREVIEW-RUNTIME-PLAN.md ▸ Risks).
 In: bones in every inherit mode, slots, region attachments, skins (and the bones and constraints
 only a skin enables), meshes weighted or not, linked meshes, sequences, path and clipping
-attachments, two-colour tint, IK, transform, path and slider constraints in the file's order,
-events, crossfades, and every timeline of those. Not yet: physics constraints (P3), points and
-boxes.
+attachments, bounding boxes and points, two-colour tint, IK, transform, path, slider and physics
+constraints in the file's order, events, crossfades, and every timeline of those: everything a
+4.3 file holds. Not yet the stage's posing (`spinePose.ts`, P3b) nor the Preview's default (P4).
 
 - **The pose is in `core/spine/runtime/`, DOM-free**: `readAtlas` (`atlasRead.ts`), `readRig`
   (`rigData.ts`, the file into our model) and `Rig` (`rig.ts`: setup pose, `apply` at a time,
@@ -1593,6 +1593,22 @@ boxes.
   - **4.3, not 4.2** (measured): the modes are flags (first or subsequent, plus hold), and a
     subsequent timeline is held too; an entry cut off while mixing in holds as far as it has
     mixed in, growing, not frozen at the cut (4.3 has no interrupt alpha).
+- **Physics** (`physics.ts`) steps on the skeleton's clock (`Rig.time`, moved by `Rig.update`,
+  as `Skeleton.update`) when the pose is updated with `"update"`; the Preview does so every frame
+  and a seek is a 0 s update, as spine-pixi does. Each constraint's simulation (`physicsState`)
+  lasts across poses; reset keys start it over (`Rig.applyLast`, set by the track). The oracle
+  tests pose with `"none"`, as theirs do with `Physics.none`; `tests/runtimePhysics.test.ts`
+  steps both runtimes with uneven frame times through the sample with physics and built rigs
+  sweeping every option and key. 4.3 is not 4.2 here either (measured off spine-core's public
+  state: offsets, velocities, lags, remaining time):
+  - each offset keeps a lag, the change this update's steps made, and is drawn at
+    offset − lag × (1 − remaining / step); the rotation the bone's movement is measured
+    against is the offset as last drawn;
+  - inertia 0.5 and damping 0.85 by default; wind and gravity along the skeleton's `windX/Y`
+    and `gravityX/Y` (1, 0 and 0, 1), position taking them times the reference scale,
+    rotation and x scale bare (rotation times bone length over the reference scale);
+  - with no rotation, x scale's inertia divides by the bone's world length less its lag as
+    last drawn; mass keys mix as mass and are then inverted (a key without a value is mass 0).
 - **Sliders** (`slider.ts`) apply their animation inside the constraint pass, mixed from the
   current pose or added, at their time or `to + (property − from) × scale` (the property read as
   a transform constraint reads it); a time below 0 is 0, except that a bone-driven looping one
@@ -1637,6 +1653,8 @@ boxes.
 - **Curve points can differ by one 32-bit step**: spine-core finds them by forward differencing,
   `spinePolyline` evaluates the cubic. The test compares positions at the rig's size for that
   reason; matrices stay strict.
+- **Bounding boxes and points** draw as nothing, as in Spine; `Rig.vertexWorld` and
+  `Rig.pointWorld` give them, and the Preview's debug view outlines them with paths and clipping.
 - **Drawing**: two-colour tint through a small shader (`twoColor.ts`, Spine's premultiplied
   formula) for slots with a dark colour, Pixi's tint otherwise; a clipping attachment as a stencil
   mask (inverse when the clip is) over a container holding the slots it clips, which covers what

@@ -124,6 +124,11 @@ Some groundwork exists in this repo already, but not all of it is clean:
   Open-Spine path switches to our reader for everything we parse; features we
   cannot yet compute degrade **visibly** (a warning chip on the preview), never
   silently.
+  **Done.** Physics (`tests/runtimePhysics.test.ts`: the sample with physics
+  and built rigs, stepped beside spine-core), bounding boxes and points. Open
+  Spine already reads atlases with ours (P0); what is left of spine-core in
+  `src/` is the stage's posing, P3b. The oracle tests now run every sample
+  whole: nothing is taken out of the files.
 - **P3b — the stage.** `spinePose.ts` poses through our pipeline instead of
   spine-core, for opened files and for authored rigs with physics, slider or
   path constraints alike. Gate: `tests/spinePose.test.ts` (the stage equals the

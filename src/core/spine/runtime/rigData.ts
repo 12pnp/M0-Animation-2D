@@ -130,7 +130,34 @@ export interface ClippingData {
   inverse: boolean;
 }
 
-export type AttachmentData = RegionData | MeshData | PathData | ClippingData;
+/** A bounding box: a polygon for hit tests, weighted or not, drawn as nothing. */
+export interface BoxData {
+  kind: "box";
+  name: string;
+  color: Rgba;
+  frames: Frame[];
+  sequence: null;
+  timeline: AttachmentData;
+  vertexCount: number;
+  weighted: boolean;
+  vertices: Float64Array;
+  deformLength: number;
+}
+
+/** A point: a position and an angle in the bone's space, drawn as nothing. */
+export interface PointData {
+  kind: "point";
+  name: string;
+  color: Rgba;
+  frames: Frame[];
+  sequence: null;
+  timeline: AttachmentData;
+  x: number;
+  y: number;
+  rotation: number;
+}
+
+export type AttachmentData = RegionData | MeshData | PathData | ClippingData | BoxData | PointData;
 
 export interface SkinData {
   name: string;
@@ -170,11 +197,16 @@ export type TimelineBody =
   | { kind: "drawOrder"; times: number[]; orders: Array<number[] | null> }
   /** A mesh's vertices per key: absolute positions when unweighted, offsets
    *  added to each bone influence when weighted. `curves` run 0..1 between keys. */
-  | { kind: "deform"; slot: number; attachment: MeshData | PathData | ClippingData; times: number[]; curves: Interval[]; vertices: Float64Array[] }
+  | { kind: "deform"; slot: number; attachment: MeshData | PathData | ClippingData | BoxData; times: number[]; curves: Interval[]; vertices: Float64Array[] }
   /** An IK constraint's values from each key on: mix and softness curved, the rest held. */
   | { kind: "ik"; constraint: number; times: number[]; mix: Channel; softness: Channel; bendPositive: boolean[]; compress: boolean[]; stretch: boolean[] }
   /** Events, fired as the track passes their keys (`Track`). */
   | { kind: "event"; times: number[]; events: EventFire[] }
+  /** A physics value, curved, absolute (mass mixed as mass, then inverted);
+   *  `constraint` -1 sets every constraint whose value is global. */
+  | { kind: "physics"; constraint: number; prop: PhysicsProp; times: number[]; channel: Channel }
+  /** Physics resets as the track passes these keys. */
+  | { kind: "physicsReset"; constraint: number; times: number[] }
   /** A slider's time or mix, curved, absolute. */
   | { kind: "sliderTime" | "sliderMix"; constraint: number; times: number[]; channel: Channel }
   /** A path constraint's position, spacing, or mixes (rotate, x, y), curved. */
@@ -290,8 +322,43 @@ export interface SliderData {
   bones: number[];
 }
 
+/** The values a physics constraint's keys can set. */
+export type PhysicsProp = "inertia" | "strength" | "damping" | "mass" | "wind" | "gravity" | "mix";
+export const PHYSICS_PROPS: readonly PhysicsProp[] = ["inertia", "strength", "damping", "mass", "wind", "gravity", "mix"];
+
+/**
+ * Spine 4.3's physics constraint: a bone's position, rotation, x scale and x
+ * shear (weighted by `x` … `shearX`) lag behind and spring back, simulated in
+ * fixed steps of `step` seconds (`physics.ts`). Defaults are 4.3's (inertia
+ * 0.5, damping 0.85), read off spine-core.
+ */
+export interface PhysicsData {
+  kind: "physics";
+  name: string;
+  bone: number;
+  x: number;
+  y: number;
+  rotate: number;
+  scaleX: number;
+  shearX: number;
+  /** The most the bone's movement can add to an offset per second. */
+  limit: number;
+  step: number;
+  inertia: number;
+  strength: number;
+  damping: number;
+  /** 1 / mass, as spine-core keeps it. */
+  massInverse: number;
+  wind: number;
+  gravity: number;
+  mix: number;
+  /** Which values a key for every constraint at once (an unnamed timeline) sets. */
+  global: Record<PhysicsProp, boolean>;
+  skinRequired: boolean;
+}
+
 /** Every constraint, in the order they apply. */
-export type ConstraintData = IkData | TransformData | PathConstraintData | SliderData;
+export type ConstraintData = IkData | TransformData | PathConstraintData | SliderData | PhysicsData;
 
 /**
  * A transform constraint's mixes, as spine-core 4.3.13 reads them (measured):
@@ -338,6 +405,8 @@ export interface RigData {
   animations: AnimationData[];
   /** The editor's frame rate, or 0 when the file has none. */
   fps: number;
+  /** Pixels per unit physics forces are given in (`skeleton.referenceScale`). */
+  referenceScale: number;
   /** What the file uses that this runtime does not play yet, for the preview to show. */
   unsupported: string[];
 }
@@ -458,6 +527,19 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
         mixRotate: num(k.mixRotate, 1), mixX, mixY: num(k.mixY, mixX),
         skinRequired: k.skin === true,
       });
+    } else if (type === "physics") {
+      const bone = boneIndex.get(String(k.bone));
+      if (bone === undefined) { unsupported.add("physics with unknown bones"); continue; }
+      constraintIndex.set(name, constraints.length);
+      constraints.push({
+        kind: "physics", name, bone,
+        x: num(k.x, 0), y: num(k.y, 0), rotate: num(k.rotate, 0), scaleX: num(k.scaleX, 0), shearX: num(k.shearX, 0),
+        limit: num(k.limit, 5000), step: 1 / num(k.fps, 60),
+        inertia: num(k.inertia, 0.5), strength: num(k.strength, 100), damping: num(k.damping, 0.85),
+        massInverse: 1 / num(k.mass, 1), wind: num(k.wind, 0), gravity: num(k.gravity, 0), mix: num(k.mix, 1),
+        global: Object.fromEntries(PHYSICS_PROPS.map((p) => [p, k[`${p}Global`] === true])) as Record<PhysicsProp, boolean>,
+        skinRequired: k.skin === true,
+      });
     } else if (type === "slider") {
       const bone = typeof k.bone === "string" ? boneIndex.get(k.bone) : undefined;
       if (typeof k.bone === "string" && bone === undefined) { unsupported.add("sliders with unknown bones"); continue; }
@@ -500,6 +582,8 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
         else if (type === "mesh") byKey.set(key, readMesh(key, a, regions));
         else if (type === "path") byKey.set(key, readPath(key, a));
         else if (type === "clipping") byKey.set(key, readClipping(key, a, slotIndex));
+        else if (type === "boundingbox") byKey.set(key, readBox(key, a));
+        else if (type === "point") byKey.set(key, readPoint(key, a));
         else if (type === "linkedmesh") {
           const mesh = readMesh(key, { ...a, vertices: [], uvs: [], triangles: [] }, regions);
           linked.push({ mesh, a, skin: typeof a.skin === "string" ? a.skin : "default", slot });
@@ -541,6 +625,7 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
     bones, slots, constraints, skins, animations,
     // Absent stays 0, as the runtime leaves it; the preview falls back to 24.
     fps: num(obj(file.skeleton).fps, 0),
+    referenceScale: num(obj(file.skeleton).referenceScale, 100),
     unsupported: [...unsupported].sort(),
   };
 }
@@ -694,6 +779,26 @@ function vertexStream(raw: number[], vertexCount: number) {
     for (let i = 0; i < raw.length;) { const n = raw[i]!; deformLength += n * 2; i += 1 + n * 4; }
   }
   return { weighted, deformLength, vertices: weighted ? weightedStream(raw) : Float64Array.from(raw, Math.fround) };
+}
+
+function readBox(key: string, a: Json): BoxData {
+  const raw = (a.vertices as number[] | undefined) ?? [];
+  const vertexCount = num(a.vertexCount, raw.length / 2);
+  const box: BoxData = {
+    kind: "box", name: typeof a.name === "string" ? a.name : key, color: parseColor(a.color),
+    frames: [], sequence: null, timeline: null!, vertexCount, ...vertexStream(raw, vertexCount),
+  };
+  box.timeline = box;
+  return box;
+}
+
+function readPoint(key: string, a: Json): PointData {
+  const point: PointData = {
+    kind: "point", name: typeof a.name === "string" ? a.name : key, color: parseColor(a.color),
+    frames: [], sequence: null, timeline: null!, x: num(a.x, 0), y: num(a.y, 0), rotation: num(a.rotation, 0),
+  };
+  point.timeline = point;
+  return point;
 }
 
 function readClipping(key: string, a: Json, slotIndex: Map<string, number>): ClippingData {
@@ -948,7 +1053,7 @@ function readAnimation(
         for (const [kind, keysRaw] of Object.entries(obj(groups))) {
           const keys = list(keysRaw);
           if (!keys.length) continue;
-          if (kind === "deform" && attachment.kind !== "region") {
+          if (kind === "deform" && attachment.kind !== "region" && attachment.kind !== "point") {
             push(readDeform(slot, attachment, keys));
             seal([`deform ${slot} ${attachmentId(attachment)}`]);
           } else if (kind === "sequence") {
@@ -1006,7 +1111,24 @@ function readAnimation(
       seal([`slider ${kind} ${constraint}`]);
     }
   }
-  if (Object.keys(obj(raw.physics)).length) unsupported.add("physics keys");
+  for (const [constraintName, groups] of Object.entries(obj(raw.physics))) {
+    // An unnamed timeline sets every constraint whose value is global.
+    const constraint = constraintName === "" ? -1 : constraintIndex.get(constraintName);
+    if (constraint === undefined) continue;
+    for (const [kind, keysRaw] of Object.entries(obj(groups))) {
+      const keys = list(keysRaw);
+      if (!keys.length) continue;
+      if (kind === "reset") {
+        push({ kind: "physicsReset", constraint, times: keys.map((k) => Math.fround(num(k.time, 0))) });
+        seal([`physics reset ${constraint}`]);
+      } else if ((PHYSICS_PROPS as readonly string[]).includes(kind)) {
+        // Mass keys hold the mass; the pose keeps 1 / mass (`Rig.applyTimeline`).
+        const [channel] = channels(keys, 1, (k) => num(k.value, 0));
+        push({ kind: "physics", constraint, prop: kind as PhysicsProp, times: channel!.times, channel: channel! });
+        seal([`physics ${kind} ${constraint}`]);
+      } else unsupported.add(`physics ${kind} keys`);
+    }
+  }
 
   return { name, duration: lastTime(raw), timelines, units, ids: new Set(timelines.flatMap((t) => t.ids)) };
 }
@@ -1017,7 +1139,7 @@ function readAnimation(
  * the pose reads it as positions), a weighted one's as the values alone. As
  * the runtime does, both in 32-bit floats.
  */
-function readDeform(slot: number, mesh: MeshData | PathData | ClippingData, keys: Json[]): TimelineBody {
+function readDeform(slot: number, mesh: MeshData | PathData | ClippingData | BoxData, keys: Json[]): TimelineBody {
   const times = keys.map((k) => Math.fround(num(k.time, 0)));
   const vertices = keys.map((k) => {
     const out = new Float64Array(mesh.deformLength);

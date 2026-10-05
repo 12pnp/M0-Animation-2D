@@ -379,3 +379,31 @@ describe("sliders against spine-core", () => {
     });
   }
 });
+
+describe("bounding boxes against spine-core", () => {
+  it("unweighted and weighted, deformed", () => {
+    const rig: Json = {
+      skeleton: { spine: "4.3.0", fps: 30 },
+      bones: [{ name: "root" }, { name: "a", parent: "root", x: 20, rotation: 30 }, { name: "b", parent: "a", x: 40, scaleX: 1.3 }],
+      slots: [{ name: "plain", bone: "a", attachment: "box" }, { name: "bound", bone: "b", attachment: "box" }],
+      skins: [{
+        name: "default",
+        attachments: {
+          plain: { box: { type: "boundingbox", vertexCount: 3, vertices: [0, 0, 30, 0, 15, 25] } },
+          bound: { box: { type: "boundingbox", vertexCount: 3, vertices: [1, 1, 0, 0, 1, 2, 1, 30, 0, 0.6, 2, -10, 5, 0.4, 1, 2, 15, 25, 1] } },
+        },
+      }],
+      animations: {
+        bend: {
+          bones: { a: { rotate: [{ value: 0 }, { time: 1, value: 60 }] } },
+          attachments: { default: {
+            plain: { box: { deform: [{ vertices: [0, 0, 5, 5] }, { time: 1, offset: 2, vertices: [10, -4, 3, 3] }] } },
+            bound: { box: { deform: [{}, { time: 1, vertices: [2, 2, 4, -4, 1, 1, 6, 6] }] } },
+          } },
+        },
+      },
+    };
+    expect(compare("boxes", rig, EMPTY_ATLAS).boxes).toBeGreaterThan(50);
+    compare("boxes", rig, EMPTY_ATLAS, undefined, undefined, true);
+  });
+});

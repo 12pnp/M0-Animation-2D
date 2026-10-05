@@ -4,9 +4,10 @@ import { type IkPose, solveIk } from "./ik";
 import { solveTransform } from "./transform";
 import { type PathPose, solvePath } from "./path";
 import { type SliderPose, solveSlider } from "./slider";
+import { type PhysicsMode, type PhysicsPose, type PhysicsState, physicsState, resetPhysics, solvePhysics } from "./physics";
 import {
   type AnimationData, type AttachmentData, type Channel, DEG_RAD, type Frame, type Interval, type MeshData,
-  type ClippingData, type PathData, type RegionData, type RigData, type SequenceMode, type SkinData, type Timeline, TRANSFORM_PROPS, type TransformMix,
+  type BoxData, type ClippingData, type PathData, type PointData, type RegionData, type RigData, type SequenceMode, type SkinData, type Timeline, TRANSFORM_PROPS, type TransformMix,
 } from "./rigData";
 
 /**
@@ -25,6 +26,15 @@ export class Rig {
   y = 0;
   scaleX = 1;
   scaleY = 1;
+  /** The skeleton's clock, which physics steps by (`update`). */
+  time = 0;
+  /** Which way wind and gravity act (spine-core's skeleton defaults). */
+  windX = 1;
+  windY = 0;
+  gravityX = 0;
+  gravityY = 1;
+  /** The animation time the last pose was at, for reset keys (`Track`). */
+  applyLast = -1;
   /** Per bone: x y rotation scaleX scaleY shearX shearY, the local pose. */
   readonly local: Float64Array;
   /** Per bone: its inherit mode now (keys can change it). */
@@ -57,6 +67,9 @@ export class Rig {
   readonly path: Array<PathPose | null>;
   /** Per slider: its time and mix now. */
   readonly slider: Array<SliderPose | null>;
+  /** Per physics constraint: its values now, and its simulation. */
+  readonly physics: Array<PhysicsPose | null>;
+  readonly physicsState: Array<PhysicsState | null>;
   /** Per bone: its child bones. */
   private readonly children: number[][];
   /** Per bone: 1 while its world transform is out of date during `updateWorld`. */
@@ -74,6 +87,8 @@ export class Rig {
     this.transform = data.constraints.map((k) => (k.kind === "transform" ? { ...k.mix } : null));
     this.path = data.constraints.map((k) => (k.kind === "path" ? { position: 0, spacing: 0, mixRotate: 0, mixX: 0, mixY: 0 } : null));
     this.slider = data.constraints.map((k) => (k.kind === "slider" ? { time: k.time, mix: k.mix } : null));
+    this.physics = data.constraints.map((k) => (k.kind === "physics" ? physicsSetup(k) : null));
+    this.physicsState = data.constraints.map((k) => (k.kind === "physics" ? physicsState() : null));
     this.local = new Float64Array(data.bones.length * 7);
     this.inherit = data.bones.map((b) => b.inherit);
     this.world = new Float64Array(data.bones.length * 6);
@@ -89,6 +104,9 @@ export class Rig {
     this.setupPose();
   }
 
+  /** Move the skeleton's clock on, as spine-core's `Skeleton.update`. */
+  update(dt: number): void { this.time += dt; }
+
   /** Show these skins over the default one, combined in order. Their bones
    *  become active, with every bone above them. */
   setSkins(names: readonly string[]): void {
@@ -102,7 +120,7 @@ export class Rig {
     }
     const listed = new Set(this.skins.flatMap((s) => s.constraints));
     this.data.constraints.forEach((k, i) => {
-      const bones = k.kind === "slider" ? (k.bone >= 0 ? [k.bone] : [])
+      const bones = k.kind === "slider" ? (k.bone >= 0 ? [k.bone] : []) : k.kind === "physics" ? [k.bone]
         : [k.kind === "ik" ? k.target : k.kind === "transform" ? k.source : this.data.slots[k.slot]!.bone, ...k.bones];
       this.constraintActive[i] = bones.every((b) => this.active[b]) && (!k.skinRequired || listed.has(i)) ? 1 : 0;
     });
@@ -130,7 +148,8 @@ export class Rig {
       if (k.kind === "ik") Object.assign(this.ik[i]!, { mix: k.mix, softness: k.softness, bendPositive: k.bendPositive, compress: k.compress, stretch: k.stretch });
       else if (k.kind === "transform") Object.assign(this.transform[i]!, k.mix);
       else if (k.kind === "path") Object.assign(this.path[i]!, { position: k.position, spacing: k.spacing, mixRotate: k.mixRotate, mixX: k.mixX, mixY: k.mixY });
-      else Object.assign(this.slider[i]!, { time: k.time, mix: k.mix });
+      else if (k.kind === "slider") Object.assign(this.slider[i]!, { time: k.time, mix: k.mix });
+      else Object.assign(this.physics[i]!, physicsSetup(k));
     });
   }
 
@@ -237,6 +256,31 @@ export class Rig {
         pose[field] = absoluteValue(time < t.times[0]! ? null : sample(t.channel, time)!, alpha, blend, pose[field], k[field]);
         break;
       }
+      case "physics": {
+        const one = (i: number) => {
+          const k = this.data.constraints[i]!;
+          if (k.kind !== "physics" || !this.constraintActive[i]) return;
+          const pose = this.physics[i]!, value = time < t.times[0]! ? null : sample(t.channel, time)!;
+          // Mass mixes as mass, and the pose keeps its inverse (measured).
+          if (t.prop === "mass") pose.massInverse = 1 / absoluteValue(value, alpha, blend, 1 / pose.massInverse, 1 / k.massInverse);
+          else pose[t.prop] = absoluteValue(value, alpha, blend, pose[t.prop], k[t.prop]);
+        };
+        if (t.constraint >= 0) one(t.constraint);
+        else this.data.constraints.forEach((k, i) => { if (k.kind === "physics" && k.global[t.prop]) one(i); });
+        break;
+      }
+      case "physicsReset": {
+        // A key passed since the last pose starts the simulation over.
+        const last = this.applyLast;
+        const passed = last > time
+          ? t.times.some((at) => at > last || at <= time)
+          : t.times.some((at) => at > last && at <= time);
+        if (!passed || out) break;
+        this.data.constraints.forEach((k, i) => {
+          if (k.kind === "physics" && (t.constraint < 0 || t.constraint === i)) resetPhysics(this.physicsState[i]!, this.time);
+        });
+        break;
+      }
       case "sliderTime":
       case "sliderMix": {
         const k = this.data.constraints[t.constraint]!;
@@ -290,7 +334,7 @@ export class Rig {
    *  weighted one (none: zero). */
   private applyDeform(t: Extract<Timeline, { kind: "deform" }>, time: number, alpha: number, blend: Blend): void {
     const att = this.attachmentOf(t.slot);
-    if (!att || att.kind === "region" || att.timeline !== t.attachment) return;
+    if (!att || att.kind === "region" || att.kind === "point" || att.timeline !== t.attachment) return;
     let d = this.deform[t.slot];
     if (!d) blend = "setup";
     const n = t.vertices[0]!.length, setup = att.weighted ? null : att.vertices;
@@ -392,7 +436,7 @@ export class Rig {
    * descendants out of date until something reads them, or the end. Bones
    * are posed parents first; inactive bones keep their last transform.
    */
-  updateWorld(): void {
+  updateWorld(physics: PhysicsMode = "none"): void {
     for (const b of this.data.bones) this.dirty[b.index] = this.active[b.index]!;
     this.data.constraints.forEach((k, i) => {
       if (!this.constraintActive[i]) return;
@@ -404,6 +448,9 @@ export class Rig {
         this.ensure(k.source);
         for (const b of k.bones) this.ensure(b);
         solveTransform(this, k, this.transform[i]!);
+      } else if (k.kind === "physics") {
+        this.ensure(k.bone);
+        solvePhysics(this, k, this.physics[i]!, this.physicsState[i]!, physics);
       } else if (k.kind === "slider") {
         if (k.bone >= 0) this.ensure(k.bone);
         solveSlider(this, k, this.slider[i]!);
@@ -624,7 +671,7 @@ export class Rig {
    * bone, weighted as the weighted sum of each influence through its own
    * bone; the slot's deform keys added in either case.
    */
-  vertexWorld(slot: number, att: MeshData | PathData | ClippingData, start: number, count: number, out: Float32Array | Float64Array, offset: number): void {
+  vertexWorld(slot: number, att: MeshData | PathData | ClippingData | BoxData, start: number, count: number, out: Float32Array | Float64Array, offset: number): void {
     const W = this.world, deform = this.timelineDeform(slot, att);
     const v = att.vertices;
     if (!att.weighted) {
@@ -657,7 +704,7 @@ export class Rig {
   }
 
   /** The slot's deformed vertices: they belong to what it shows (`setAttachment`). */
-  private timelineDeform(slot: number, _att: MeshData | PathData | ClippingData): Float64Array | null {
+  private timelineDeform(slot: number, _att: MeshData | PathData | ClippingData | BoxData): Float64Array | null {
     return this.deform[slot] ?? null;
   }
 
@@ -671,6 +718,19 @@ export class Rig {
     if (before === after) return;
     if (!before || !after || before.kind === "region" || after.kind === "region" || before.timeline !== after.timeline) this.deform[slot] = null;
     this.sequenceIndex[slot] = -1;
+  }
+
+  /** A point attachment's world position and angle (degrees), through its slot's bone. */
+  pointWorld(slot: number, point: PointData): { x: number; y: number; rotation: number } {
+    const W = this.world, w = this.data.slots[slot]!.bone * 6;
+    const a = W[w]!, b = W[w + 1]!, c = W[w + 2]!, d = W[w + 3]!;
+    const r = point.rotation * DEG_RAD, cos = Math.cos(r), sin = Math.sin(r);
+    return {
+      x: a * point.x + b * point.y + W[w + 4]!,
+      y: c * point.x + d * point.y + W[w + 5]!,
+      // Its x axis through the bone's matrix.
+      rotation: Math.atan2(cos * c + sin * d, cos * a + sin * b) / DEG_RAD,
+    };
   }
 
   /** Bone `bone`'s world matrix: [a, b, c, d, worldX, worldY]. */
@@ -771,4 +831,8 @@ function scaleValue(value: number, alpha: number, blend: Blend, out: boolean, cu
   if (out) return base + (Math.abs(value) * Math.sign(base) - base) * alpha;
   const s = Math.abs(base) * Math.sign(value);
   return s + (value - s) * alpha;
+}
+
+function physicsSetup(k: Extract<RigData["constraints"][number], { kind: "physics" }>): PhysicsPose {
+  return { inertia: k.inertia, strength: k.strength, damping: k.damping, massInverse: k.massInverse, wind: k.wind, gravity: k.gravity, mix: k.mix };
 }

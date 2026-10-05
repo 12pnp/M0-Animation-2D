@@ -52,7 +52,7 @@ describe("BoneBurst runtime vs spine-core", () => {
 
   it("the samples exercise meshes, linked meshes, deform keys and sequences", () => {
     if (!samples.length) return;
-    const total: Counts = { frames: 0, bones: 0, regions: 0, meshes: 0, deformed: 0, sequences: 0, darks: 0, clips: 0 };
+    const total: Counts = { frames: 0, bones: 0, regions: 0, meshes: 0, deformed: 0, sequences: 0, darks: 0, clips: 0, boxes: 0, points: 0 };
     for (const rig of samples) {
       const r = compare(rig.name, JSON.parse(rig.json), rig.atlas);
       for (const k of Object.keys(total) as Array<keyof Counts>) total[k] += r[k];
@@ -61,6 +61,7 @@ describe("BoneBurst runtime vs spine-core", () => {
     expect(total.meshes).toBeGreaterThan(1000);
     expect(total.deformed).toBeGreaterThan(100);
     expect(total.clips).toBeGreaterThan(10);
+    expect(total.points).toBeGreaterThan(10);
     expect(total.sequences).toBeGreaterThan(10);
   });
 });

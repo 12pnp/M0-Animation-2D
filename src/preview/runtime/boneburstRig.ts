@@ -47,7 +47,9 @@ export function boneburstRig(src: RigSource): PreviewRig {
 
   const track = new Track();
 
-  function pose(): void {
+  /** Pose the track after `dt` seconds of the skeleton's clock: physics
+   *  steps on it, as spine-pixi's `update` does (a seek is a 0 s update). */
+  function pose(dt = 0): void {
     // Events as the runtime fires them, while playing only: a seek poses a
     // frame and must not fire (or sound) what it lands on.
     const fired = track.apply(rig);
@@ -55,7 +57,8 @@ export function boneburstRig(src: RigSource): PreviewRig {
       const name = track.state()?.name ?? "";
       for (const e of fired) src.onEvent({ animation: name, ...e });
     }
-    rig.updateWorld();
+    rig.update(dt);
+    rig.updateWorld("update");
     draw();
   }
 
@@ -161,12 +164,30 @@ export function boneburstRig(src: RigSource): PreviewRig {
     return true;
   }
 
-  /** Bones as lines from their origin along their x axis, roots as dots. */
+  /** Bones as lines from their origin along their x axis, roots as dots;
+   *  bounding boxes, clipping polygons, paths (their control polygon) and
+   *  points as outlines, as spine-pixi's debug view shows them. */
   function drawDebug(): void {
     debugLayer.clear();
     if (!debug) return;
+    for (const slot of rig.drawOrder) {
+      const att = rig.attachmentOf(slot);
+      if (!att) continue;
+      if (att.kind === "box" || att.kind === "clipping" || att.kind === "path") {
+        const pts = new Float64Array(att.vertexCount * 2);
+        rig.vertexWorld(slot, att, 0, pts.length, pts, 0);
+        const color = att.kind === "box" ? 0x00ff00 : att.kind === "clipping" ? 0xcc0000 : 0xff7f00;
+        debugLayer.poly(Array.from(pts), att.kind !== "path" || att.closed).stroke({ color, alpha: 0.9, width: 1 });
+      } else if (att.kind === "point") {
+        const p = rig.pointWorld(slot, att);
+        const r = (p.rotation * Math.PI) / 180;
+        debugLayer.circle(p.x, p.y, 3).stroke({ color: 0x00a0ff, width: 1 });
+        debugLayer.moveTo(p.x, p.y).lineTo(p.x + Math.cos(r) * 12, p.y + Math.sin(r) * 12).stroke({ color: 0x00a0ff, width: 1 });
+      }
+    }
     const W = rig.world;
     for (const b of rig.data.bones) {
+      if (!rig.active[b.index]) continue;
       const w = b.index * 6;
       const x = W[w + 4]!, y = W[w + 5]!;
       const len = b.length || 0;
@@ -203,7 +224,7 @@ export function boneburstRig(src: RigSource): PreviewRig {
     },
     advance(dt) {
       track.advance(dt);
-      pose();
+      pose(dt);
     },
     track: () => track.state(),
     setLoop: (on) => track.setLoop(on),

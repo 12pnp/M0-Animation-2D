@@ -1,8 +1,8 @@
 import {
-  AtlasAttachmentLoader, ClippingAttachment, MeshAttachment, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
+  AtlasAttachmentLoader, BoundingBoxAttachment, ClippingAttachment, MeshAttachment, MixFrom, PointAttachment, Vector2, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
 } from "@esotericsoftware/spine-core";
 import { readAtlas } from "@/core/spine/runtime/atlasRead";
-import { type ClippingData, type MeshData, type RegionData, readRig } from "@/core/spine/runtime/rigData";
+import { type BoxData, type ClippingData, type MeshData, type PointData, type RegionData, readRig } from "@/core/spine/runtime/rigData";
 import { Rig } from "@/core/spine/runtime/rig";
 import type { PackedPage } from "@/core/atlas/packed";
 import { isImage, type Project } from "@/core/doc/types";
@@ -20,7 +20,7 @@ import type { ItemId } from "@/core/doc/ids";
 export type Json = Record<string, unknown>;
 
 /** What the runtime does not solve yet, kept out of the file both read. */
-const NOT_YET = ["physics"];
+const NOT_YET: string[] = [];
 
 /** The file both runtimes read: what the runtime does not solve yet taken out. */
 export function solvable(file: Json): Json {
@@ -64,7 +64,7 @@ function extent(world: ArrayLike<number>): number {
   return r;
 }
 
-export interface Counts { frames: number; bones: number; regions: number; meshes: number; deformed: number; sequences: number; darks: number; clips: number }
+export interface Counts { frames: number; bones: number; regions: number; meshes: number; deformed: number; sequences: number; darks: number; clips: number; boxes: number; points: number }
 
 /**
  * Both runtimes through every frame of `animations` (all of them when
@@ -90,7 +90,7 @@ function compareIn(name: string, file: Json, atlas: string, skin: string | undef
   if (skin) { skeleton.setSkin(skin); ours.setSkins([skin]); }
   if (ours.data.fps !== (data.fps || 0)) throw new Error(`${name}: fps ${ours.data.fps} vs ${data.fps}`);
   const fps = data.fps || 30;
-  const n: Counts = { frames: 0, bones: 0, regions: 0, meshes: 0, deformed: 0, sequences: 0, darks: 0, clips: 0 };
+  const n: Counts = { frames: 0, bones: 0, regions: 0, meshes: 0, deformed: 0, sequences: 0, darks: 0, clips: 0, boxes: 0, points: 0 };
   const fail = (where: string, what: string) => { throw new Error(`${name}${skin ? ` [${skin}]` : ""}${yDown ? " (y down)" : ""} ${where}: ${what}`); };
 
   const anims = data.animations.length ? data.animations.slice(0, animations) : [null];
@@ -149,6 +149,28 @@ function compareIn(name: string, file: Json, atlas: string, skin: string | undef
           ours.vertexWorld(i, clip, 0, att.worldVerticesLength, mineVerts, 0);
           verts.forEach((v, k) => { if (!close(mineVerts[k]!, v, size)) fail(where, `slot "${slot.data.name}" clip vertex ${k >> 1} ${mineVerts[k]} vs ${v}`); });
           n.clips++;
+          return;
+        }
+        if (att instanceof BoundingBoxAttachment) {
+          const mine = ours.attachmentOf(i);
+          if (mine?.kind !== "box" || mine.name !== att.name) fail(where, `slot "${slot.data.name}" box ${mine?.kind} ${mine?.name} vs ${att.name}`);
+          const verts = new Array<number>(att.worldVerticesLength);
+          att.computeWorldVertices(skeleton, slot, 0, att.worldVerticesLength, verts, 0, 2);
+          const mineVerts = new Float64Array(att.worldVerticesLength);
+          ours.vertexWorld(i, mine as BoxData, 0, att.worldVerticesLength, mineVerts, 0);
+          verts.forEach((v, k) => { if (!close(mineVerts[k]!, v, size)) fail(where, `slot "${slot.data.name}" box vertex ${k >> 1} ${mineVerts[k]} vs ${v}`); });
+          n.boxes++;
+          return;
+        }
+        if (att instanceof PointAttachment) {
+          const mine = ours.attachmentOf(i);
+          if (mine?.kind !== "point" || mine.name !== att.name) fail(where, `slot "${slot.data.name}" point ${mine?.kind} ${mine?.name} vs ${att.name}`);
+          const at = att.computeWorldPosition(slot.bone.appliedPose, new Vector2());
+          const angle = att.computeWorldRotation(slot.bone.appliedPose);
+          const p = ours.pointWorld(i, mine as PointData);
+          const turn = ((p.rotation - angle) % 360 + 540) % 360 - 180;
+          if (!close(p.x, at.x, size) || !close(p.y, at.y, size) || Math.abs(turn) > 1e-4) fail(where, `slot "${slot.data.name}" point ${p.x},${p.y},${p.rotation} vs ${at.x},${at.y},${angle}`);
+          n.points++;
           return;
         }
         if (!(att instanceof RegionAttachment) && !(att instanceof MeshAttachment)) return;

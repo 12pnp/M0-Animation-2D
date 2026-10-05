@@ -184,6 +184,7 @@ export class Track {
     let mix = 1;
     if (c.mixingFrom) mix *= this.applyMixingFrom(c, rig, "first");
     const time = animationTime(c);
+    rig.applyLast = c.animationLast;
     if (mix === 1) {
       for (const t of c.anim.timelines) {
         if (t.kind === "attachment") rig.applyAttachment(t, time, "first", true);
