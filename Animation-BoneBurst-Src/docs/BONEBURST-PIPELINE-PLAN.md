@@ -1,5 +1,10 @@
 # BoneBurst pipeline — plan
 
+**Status:** R0 done 2026-10-05 (below), **not verified** in Unity: opening this copy in
+the Editor without it importing the editor folder was not checked. R1–R5 not started. Left
+of R0: repointing the M2 projects' `file:` references and retiring the old folders (R0
+step 7), both owner calls.
+
 Goal: one BoneBurst, from the artist's file to the game. The editor moves into
 `/Users/pnp/Project Unity/M0-Animation-2D/Animation-BoneBurst-Src`, inside the new
 `M0-Animation-2D` git repository, beside the Unity packages it feeds; the two sides share
@@ -10,6 +15,26 @@ a copy of `M0-Animation2D` (the same three BoneBurst packages, `Tools~/ParityHar
 `Doc/Format/`, the vendored spine-unity samples) with a new git repository that has no
 commit yet. Decisions marked **(owner)** are open; everything else is a recommendation the
 phases below assume.
+
+```mermaid
+flowchart LR
+    ART["Artist / AI<br/>Spine 4.3 JSON + atlas"] -->|"File ▸ Open Spine<br/>importBoneBurst.ts"| ED
+    subgraph REPO["M0-Animation-2D (one git repository)"]
+        subgraph ED["Animation-BoneBurst-Src (AGPL editor)"]
+            RT["core/boneburst/runtime<br/>(TS BoneBurst runtime)"]
+            AG["src/app/agent + mcp/boneburst-bridge.mjs"]
+        end
+        subgraph PK["Packages (proprietary)"]
+            IMP["ta-creator-boneburst-import<br/>SkeletonJsonReader · BoneBurstBake"]
+            CORE["ta-creator-boneburst<br/>Data · Core · Unity"]
+            PH["Tools~/ParityHarness (.NET 8)"]
+        end
+        ED -->|"Export: Spine 4.3 JSON<br/>(BoneBurst profile, R1)"| IMP
+        IMP -->|".sbdata (SBDF v1)"| CORE
+        PH -.->|"R2: same poses as RT"| RT
+    end
+    AD["AnimatedDrawings sidecar<br/>(../../AnimatedDrawings)"] --> AG
+```
 
 ## The workflow it serves
 
@@ -86,7 +111,7 @@ Players load only `.sbdata`. Unity's readers accept only stock Spine 4.3 exports
 
    | File | Today | After |
    |---|---|---|
-   | `tests/fixtures/spineSamples.ts` | `../../../M0-Animation2D/Packages/com.esotericsoftware.spine.spine-unity/Samples~/…` | `../../Packages/…` |
+   | `tests/fixtures/spineSamples.ts` | `../../../M0-Animation2D/Packages/com.esotericsoftware.spine.spine-unity/Samples~/…` | `../../../Packages/…` (from `tests/fixtures/`) |
    | `tests/unityParity.test.ts` | `../../M0-Animation2D` | `../..` (until R2 replaces it) |
    | `scripts/unity-check/` README, `dump.cs` | "the M0 project next to this one" | "the Unity project around this one" |
    | `docs/*` links to `../_Discuss/…`, `../AnimatedDrawings` | one level up | two levels up (`../../_Discuss/…`) |
@@ -102,6 +127,30 @@ Players load only `.sbdata`. Unity's readers accept only stock Spine 4.3 exports
    found (no suite skipped that ran before), Unity opens `M0-Animation-2D` without
    importing anything from the folder, and `git log -- Animation-BoneBurst-Src` shows
    the editor's history.
+7. **(owner) Retire the old folders.** M2-Creator-All and M2-Sample-25DL-Shader take
+   `com.module.ta-creator-boneburst` (and M2 the `-import` package) by `file:` path from
+   **`M0-Animation2D`** (root CLAUDE.md §1). Before the old project goes, their
+   `manifest.json` entries move to `M0-Animation-2D/Packages/…`, committed in their own
+   repositories; until then the two Unity copies must not drift. `Amino-Spine2D-Src` can
+   go once nothing more is committed there (another session still has uncommitted work in
+   it: `docs/AI-RIG-PLAN.md`, `src/styles/settings.css`, three new docs).
+
+**Result (2026-10-05).**
+- Editor commit `6f41eba` (the rename and this plan) first; then in `M0-Animation-2D`:
+  `bfd1aa6` the Unity project's first commit (2,196 files, 74 through LFS with the old
+  repository's `.gitattributes`; `.gitignore` adds `.DS_Store` and the editor's
+  `node_modules/`, `dist/`), `ad3f6dd` the `git subtree add` (108 editor commits
+  reachable), `2eccbcf` the editor folder taken out of LFS: its history stores PNGs as
+  plain blobs, which LFS rules made show as modified.
+- Not in the plan: the old repository ignored `Assets/Samples/`, the new `.gitignore`
+  does not, so the 2D package samples are committed (kept as the owner's `.gitignore`).
+- Paths: `spineSamples.ts` is `../../../Packages/…` from `tests/fixtures/`, not
+  `../../Packages/…` as first written. The samples still come from spine-unity's
+  `Samples~`, which the root CLAUDE.md says nothing reads any more (the packages read
+  their vendored `Tests/Editor/Data~/samples/`); switching to that copy is for R1.
+- `npm ci`, `tsc`, the suite (2,166 passed, `unityParity` skipped: no Unity dump, as
+  before the move) and the build pass in the new place; the sample suites run.
+- `.claude/launch.json` (ignored by git) and Claude's memory copied to the new path.
 
 ### R1 — One contract (2–3 days)
 

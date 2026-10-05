@@ -1,4 +1,4 @@
-// Evaluated in the M0-Animation2D Editor by `playtest.py eval @dump.cs`: every
+// Evaluated in the M0-Animation-2D Editor by `playtest.py eval @dump.cs`: every
 // SkeletonDataAsset under Assets/AnimoTest/Spine, posed by spine-csharp at every
 // frame of every animation, in each skin at the setup pose (and, for a rig
 // with up to four skins, at every frame), written to

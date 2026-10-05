@@ -73,7 +73,7 @@ As the plan started; each phase's status below says what it moved off it.
     mixing and crossfading — the Preview chains animations with
     `setMixDuration` (`src/preview/previewClient.ts`);
   - constraints: IK, transform, path, physics, slider — semantics from our own Unity
-    specs (M0-Animation2D `Doc/Format`) and the public format documentation.
+    specs (M0-Animation-2D `Packages/com.module.ta-creator-boneburst/Doc/Format`) and the public format documentation.
     **Never copy spine-core source**; behavioural parity only.
   - a PixiJS renderer adapter: sprites/meshes, clipping via masks, the
     two-colour tint shader the stage already uses;
@@ -170,7 +170,7 @@ As the plan started; each phase's status below says what it moved off it.
   Spine behaviour against spine-core in a test") stays as written. Update
   `THIRD-PARTY-NOTICES.md` (drop the Spine rows and the seat sentence), the
   About dialog, CLAUDE.md's Licensing section, and
-  `../_Discuss/2026-10-05-amino-editor-licence-audit.md` (outside this repo);
+  `../../_Discuss/2026-10-05-amino-editor-licence-audit.md` (outside this repository);
   verify `dist/` contains no Esoteric bytes.
   **Done, but for the legal review (Risks).** The stage's IK and transform
   constraints are the runtime's solvers (`oneBone`, `twoBones`,
@@ -216,7 +216,7 @@ remain the user's own content.
 ## Risks / open questions
 
 - The claim that the Unity-side runtime holds bit-level parity, and the specs
-  it rests on (M0-Animation2D `Doc/Format`), live outside this repo; link them
+  it rests on (`Packages/com.module.ta-creator-boneburst/Doc/Format` in M0-Animation-2D); link them
   before P2 depends on them.
 - Clean-room discipline for IK and transform: whoever writes the new solvers
   should not work from the transcribed files they replace. (P5 replaced them by

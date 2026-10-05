@@ -5,12 +5,12 @@ import type { AssetId } from "@/core/doc/ids";
 import type { AtlasImage } from "@/core/boneburst/importBoneBurst";
 
 /**
- * spine-unity's sample skeletons, from the M0-Animation2D project next to
+ * spine-unity's sample skeletons, from the M0-Animation-2D Unity project around
  * this one (`SPINE_SAMPLES` overrides the folder). Tests that use them are
  * skipped, not passed, when the folder is missing.
  */
 export const SAMPLES = process.env.SPINE_SAMPLES
-  ?? resolve(__dirname, "../../../M0-Animation2D/Packages/com.esotericsoftware.spine.spine-unity/Samples~/Spine Examples/Spine Skeletons");
+  ?? resolve(__dirname, "../../../Packages/com.esotericsoftware.spine.spine-unity/Samples~/Spine Examples/Spine Skeletons");
 
 export interface SampleRig { name: string; json: string; atlas: string }
 

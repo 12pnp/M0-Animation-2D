@@ -14,7 +14,7 @@ import { DEFAULT_EXPORT_SETTINGS } from "@/core/export/settings";
  * matrix, every slot's attachment, colour and dark colour, the draw order
  * and every region's and mesh's world vertices must agree at every whole
  * frame of every animation. The rigs are spine-unity's own samples, from
- * the M0-Animation2D project next to this one (`fixtures/spineSamples.ts`);
+ * the M0-Animation-2D Unity project around this one (`fixtures/spineSamples.ts`);
  * without them the test is skipped, not passed.
  */
 

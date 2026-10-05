@@ -1,6 +1,6 @@
 # Unity check (phase 8)
 
-Checks that spine-unity 4.3, in the M0-Animation2D project next to this one, plays what the
+Checks that spine-unity 4.3, in the M0-Animation-2D Unity project around this one, plays what the
 editor exports as the preview's runtime does. The C# files are snippets for M0's
 `playtest.py eval @file`, which runs them in the open Unity Editor. They are not compiled into
 either project.

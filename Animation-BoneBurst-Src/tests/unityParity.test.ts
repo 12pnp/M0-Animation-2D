@@ -7,7 +7,7 @@ import {
 
 /**
  * Phase 8: the editor's exports in Unity. `Assets/AnimoTest/Spine` in
- * M0-Animation2D holds exported rigs (Animo-authored and opened-then-exported),
+ * M0-Animation-2D (the Unity project this editor sits in) holds exported rigs (Animo-authored and opened-then-exported),
  * imported by spine-unity. `scripts/unity-check/dump.cs`, run in that Editor,
  * poses each with spine-csharp 4.3.40 at every frame of every animation and
  * writes `Library/AnimoSpineCheck/dump.json`, positions in Unity units (the
@@ -21,7 +21,7 @@ import {
  * not passed, without the folder or the dump.
  */
 
-const M0 = process.env.M0_PROJECT ?? resolve(__dirname, "../../M0-Animation2D");
+const M0 = process.env.M0_PROJECT ?? resolve(__dirname, "../..");
 const RIGS = `${M0}/Assets/AnimoTest/Spine`;
 const DUMP = `${M0}/Library/AnimoSpineCheck/dump.json`;
 
