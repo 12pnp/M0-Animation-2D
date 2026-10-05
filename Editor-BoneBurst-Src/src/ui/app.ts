@@ -6,6 +6,8 @@ import type { Tool } from "./stage/gizmo";
 import { isTyping, Stage } from "./stage/stage";
 import { Timeline } from "./timeline/timeline";
 import { animationDuration, timeFrame } from "@/model/timelines";
+import { isPanelId, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
+import { type PanelContent, Workspace } from "./workspace/workspace";
 
 /** The stickman the plan names for E2, served by the dev server from the test fixtures. */
 const STICKMAN = ["Stickman_IK.json", "Stickman_IK.atlas.txt", "Stickman_IK_tex.png"];
@@ -17,8 +19,9 @@ const TOOLS: ReadonlyArray<{ tool: Tool; label: string; key: string }> = [
 ];
 
 /**
- * One window (SPEC §7): toolbar, outline, stage, inspector, timeline, status line. With no
- * animation chosen the stage edits the setup pose; with one, it keys at the playhead.
+ * One window (SPEC §7): the toolbar and status line around a Dockview dock (D6) holding the stage,
+ * timeline, rig tree and properties panels. With no animation chosen the stage edits the setup
+ * pose; with one, it keys at the playhead.
  */
 export function mountApp(root: HTMLElement): void {
   const session = new Session();
@@ -47,17 +50,15 @@ export function mountApp(root: HTMLElement): void {
   skinSelect.addEventListener("change", () => { session.skin = skinSelect.value || null; session.changed(); });
   skinLabel.append("Skin ", skinSelect);
   const title = el("span", "title");
-  bar.append(openBtn, saveBtn, sep(), undoBtn, redoBtn, sep(), ...toolBtns, sep(), fitBtn, skinLabel, title, fileInput);
+  const panelsMenu = document.createElement("select");
+  panelsMenu.title = "Show a panel, or put the panels back where they started";
+  bar.append(openBtn, saveBtn, sep(), undoBtn, redoBtn, sep(), ...toolBtns, sep(), fitBtn, skinLabel, sep(), panelsMenu, title, fileInput);
 
-  const main = el("main", "workspace");
-  const left = el("aside", "side left");
-  left.append(outline.element);
-  const right = el("aside", "side right");
-  right.append(inspector.element);
-  const centre = el("section", "centre");
+  // The stage panel: the canvas, with the hint over it while nothing is open.
+  const stagePanel = el("section", "stage-panel");
   const hint = el("div", "hint");
-  centre.append(stage.element, hint);
-  main.append(left, centre, right);
+  stagePanel.append(stage.element, hint);
+  const main = el("main", "dock");
 
   const status = el("footer", "status");
   const message = el("span", "message");
@@ -69,7 +70,31 @@ export function mountApp(root: HTMLElement): void {
   issuesList.hidden = true;
   status.append(message, pointer, issuesBtn);
   const timeline = new Timeline(session);
-  root.replaceChildren(bar, main, timeline.element, status, issuesList);
+  root.replaceChildren(bar, main, status, issuesList);
+
+  // The docking shell (D6): every panel is a Dockview panel.
+  const workspace = new Workspace(main, new Map<PanelId, PanelContent>([
+    ["stage", { element: stagePanel, layout: (w, h) => stage.resize(w, h) }],
+    ["timeline", { element: timeline.element, layout: () => timeline.redraw() }],
+    ["rigTree", { element: outline.element }],
+    ["properties", { element: inspector.element }],
+  ]), (w) => w.addEventListener("keydown", onKey));
+  const refreshPanels = () => {
+    panelsMenu.replaceChildren(
+      new Option("Panels…", ""),
+      ...workspace.built.map((id) => new Option(`${workspace.isOpen(id) ? "✓ " : "  "}${PANEL_TITLES[id]}`, id)),
+      new Option("Reset layout", "reset"),
+    );
+  };
+  panelsMenu.addEventListener("focus", refreshPanels);
+  panelsMenu.addEventListener("pointerdown", refreshPanels);
+  panelsMenu.addEventListener("change", () => {
+    const v = panelsMenu.value;
+    if (v === "reset") workspace.reset();
+    else if (isPanelId(v)) workspace.show(v);
+    panelsMenu.value = "";
+  });
+  refreshPanels();
 
   const say = (m: string) => { message.textContent = m; };
   stage.onStatus = say;
@@ -148,7 +173,7 @@ export function mountApp(root: HTMLElement): void {
   );
   if (import.meta.env.DEV) {
     // For inspecting the live editor from the browser console; not in a build.
-    (window as unknown as { boneburst: unknown }).boneburst = { session, stage };
+    (window as unknown as { boneburst: unknown }).boneburst = { session, stage, get workspace() { return workspace; } };
     const dev = button("Open the stickman fixture", "Dev only: tests/fixtures/stickman", () => void openStickman());
     hint.append(dev);
   }
@@ -178,7 +203,8 @@ export function mountApp(root: HTMLElement): void {
   });
   window.addEventListener("beforeunload", (e) => { if (session.dirty) e.preventDefault(); });
 
-  window.addEventListener("keydown", (e) => {
+  window.addEventListener("keydown", onKey);
+  function onKey(e: KeyboardEvent): void {
     const mod = e.metaKey || e.ctrlKey, key = e.key.toLowerCase();
     if (mod && key === "o") { e.preventDefault(); fileInput.click(); return; }
     if (mod && key === "s") { e.preventDefault(); save(); return; }
@@ -205,7 +231,7 @@ export function mountApp(root: HTMLElement): void {
     if ((key === "delete" || key === "backspace") && timeline.hasSelection) { e.preventDefault(); timeline.deleteSelected(); return; }
     const t = TOOLS.find((x) => x.key.toLowerCase() === key);
     if (t) setTool(t.tool);
-  });
+  }
 }
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className: string): HTMLElementTagNameMap[K] {

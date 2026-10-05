@@ -46,7 +46,7 @@ export class Inspector {
     // A bone object changes exactly when its setup values do; `doc` is only for the empty message.
     if (this.shown && bone === this.shown.bone && name === this.shown.name && !doc === !this.shown.doc && at === this.shown.at) return;
     // Not under a field being typed in, nor while playing: it shows the document once that ends.
-    if (!force && (this.element.contains(document.activeElement) || this.session.playing)) return;
+    if (!force && (this.element.contains(this.element.ownerDocument.activeElement) || this.session.playing)) return;
     this.shown = { doc, bone, name, at };
     this.inputs.clear();
     this.element.replaceChildren(heading(anim ? `Bone · keys at frame ${this.session.frame}` : "Bone"));
@@ -104,7 +104,7 @@ export class Inspector {
         this.onStatus(err.message);
       }
       // Whatever happened, show what the document holds now, keeping the field focus moved to.
-      const focused = [...this.inputs].find(([, i]) => i === document.activeElement)?.[0];
+      const focused = [...this.inputs].find(([, i]) => i === this.element.ownerDocument.activeElement)?.[0];
       this.shown = undefined;
       this.update(true);
       if (focused) this.inputs.get(focused)?.focus();

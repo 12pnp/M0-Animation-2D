@@ -87,7 +87,6 @@ export class Timeline {
     this.canvas.addEventListener("pointerup", (e) => this.up(e));
     this.canvas.addEventListener("pointercancel", (e) => this.up(e));
     this.canvas.addEventListener("wheel", (e) => this.wheel(e), { passive: false });
-    new ResizeObserver(() => this.redraw()).observe(track);
     session.onChange(() => this.update());
     this.update();
   }
@@ -223,12 +222,13 @@ export class Timeline {
   redraw(): void {
     if (this.queued) return;
     this.queued = true;
-    requestAnimationFrame(() => { this.queued = false; this.paint(); });
+    (this.element.ownerDocument.defaultView ?? window).requestAnimationFrame(() => { this.queued = false; this.paint(); });
   }
 
   private paint(): void {
     const c = this.canvas, parent = c.parentElement!;
-    const dpr = window.devicePixelRatio || 1;
+    const view = this.element.ownerDocument.defaultView ?? window;
+    const dpr = view.devicePixelRatio || 1;
     const width = Math.max(1, parent.clientWidth), height = Math.max(parent.clientHeight, RULER + this.rows.length * ROW);
     if (c.width !== Math.round(width * dpr) || c.height !== Math.round(height * dpr)) {
       c.width = Math.round(width * dpr);
@@ -237,7 +237,7 @@ export class Timeline {
     }
     const g = c.getContext("2d")!;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const css = getComputedStyle(this.element);
+    const css = view.getComputedStyle(this.element);
     const col = (n: string) => css.getPropertyValue(n).trim();
     g.fillStyle = col("--panel");
     g.fillRect(0, 0, width, height);
@@ -255,7 +255,7 @@ export class Timeline {
     g.fillStyle = col("--bg");
     g.fillRect(0, 0, width, RULER);
     const step = labelStep(v.frameWidth);
-    g.font = "11px system-ui, sans-serif";
+    g.font = `11px ${col("--font-mono")}`;
     g.textBaseline = "middle";
     const firstFrame = Math.max(0, Math.floor(v.first)), lastFrame = Math.ceil(xFrame(v, width));
     for (let f = firstFrame; f <= lastFrame; f++) {

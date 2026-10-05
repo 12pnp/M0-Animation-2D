@@ -1,6 +1,6 @@
 # BoneBurst Editor — architecture spec
 
-**Status:** E3 done, 2026-10-06 (E1: model and IO; E2: engine and stage; E3: timeline and playback). Written before any implementation, from the v2 plan
+**Status:** E3 done, E4 started, 2026-10-06 (E1: model and IO; E2: engine and stage; E3: timeline and playback; E4 step 1: the Dockview shell). Written before any implementation, from the v2 plan
 (`../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md`, decisions D1–D5), the BoneBurst format
 specs (`../Packages/com.module.ta-creator-boneburst/Doc/Format/`, ours) and Spine 4.3's public
 JSON format. Not from the Animo-fork editor's code or its architecture document (CLAUDE.md ▸
@@ -152,7 +152,17 @@ timeline moves, deletes and eases keys, a bezier's handles following its interva
 One window: the **stage** (canvas, the setup pose or the pose at the playhead, gizmos), the
 **timeline** (one row per bone, slot and constraint with keys; frames at `skeleton.fps`), the
 **inspector** (the selection's fields), the **outline** (the skeleton's tree: bones, slots,
-attachments, constraints, skins). Docking and themes are not planned until E4's flows run.
+attachments, constraints, skins).
+
+**Docking (D6, E4):** the window is the toolbar and status line around a Dockview dock
+(`dockview-core`, the only npm runtime dependency). Every panel is a Dockview panel, under an id
+reserved in `ui/workspace/panelIds.ts` (stage, timeline, rigTree, properties; preview,
+reference, ai when built); default places live in `ui/workspace/layout.ts`. Dockview does the
+splitting, tabbing, floating and popout windows; panels size from its `layout(width, height)`
+and use their own window (a popout's), not the main one. The layout is kept in the browser's
+storage (view-only state of the app); a saved layout naming a panel the build lacks defers it.
+Themes are Dockview's dark and light, coloured through `--dv-*` variables; text is Inter and
+numbers JetBrains Mono, vendored woff2 files, so every machine renders the same text.
 
 ## 8. AI tools (E5)
 

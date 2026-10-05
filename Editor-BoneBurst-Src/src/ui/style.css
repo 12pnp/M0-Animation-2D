@@ -1,4 +1,23 @@
+/* Vendored, unmodified (SIL OFL 1.1; THIRD-PARTY-NOTICES): the same text on every machine, so
+   screenshots and pixel diffs do not depend on installed fonts (D6). */
+@font-face {
+  font-family: "Inter";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: block;
+  src: url("/vendor/fonts/inter-latin-wght-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: block;
+  src: url("/vendor/fonts/jetbrains-mono-latin-wght-normal.woff2") format("woff2");
+}
+
 :root {
+  --font-ui: "Inter", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
   --bg: #f4f4f2;
   --panel: #ffffff;
   --line: #d9d9d4;
@@ -49,12 +68,12 @@ html, body { height: 100%; margin: 0; }
 body {
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 13px/1.4 var(--font-ui);
 }
 #app {
   height: 100%;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto;
 }
 
 button, select, input { font: inherit; color: inherit; }
@@ -87,16 +106,37 @@ button:focus-visible, input:focus-visible, select:focus-visible, .overlay:focus-
 .toolbar select { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
 .toolbar .title { margin-left: auto; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-.workspace {
-  display: grid;
-  grid-template-columns: 220px 1fr 240px;
-  min-height: 0;
+/* The dock (D6): Dockview's own dark and light themes, coloured through their variables. */
+.dock { position: relative; min-width: 0; min-height: 0; }
+.dock.dropping { outline: 2px dashed var(--accent); outline-offset: -4px; }
+html .dockview-theme-dark,
+html .dockview-theme-light {
+  --dv-group-view-background-color: var(--panel);
+  --dv-tabs-and-actions-container-background-color: var(--bg);
+  --dv-tabs-and-actions-container-font-size: 12px;
+  --dv-tabs-and-actions-container-height: 30px;
+  --dv-activegroup-visiblepanel-tab-background-color: var(--panel);
+  --dv-activegroup-hiddenpanel-tab-background-color: var(--bg);
+  --dv-inactivegroup-visiblepanel-tab-background-color: var(--panel);
+  --dv-inactivegroup-hiddenpanel-tab-background-color: var(--bg);
+  --dv-activegroup-visiblepanel-tab-color: var(--text);
+  --dv-activegroup-hiddenpanel-tab-color: var(--muted);
+  --dv-inactivegroup-visiblepanel-tab-color: var(--muted);
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--muted);
+  --dv-separator-border: var(--line);
+  --dv-paneview-header-border-color: var(--line);
+  --dv-tab-divider-color: var(--line);
+  --dv-active-sash-color: var(--accent);
+  --dv-paneview-active-outline-color: var(--accent);
+  --dv-icon-hover-background-color: var(--hover);
+  --dv-drag-over-background-color: color-mix(in srgb, var(--accent) 22%, transparent);
+  --dv-edge-dock-indicator-color: var(--accent);
+  font-family: var(--font-ui);
 }
-.workspace.dropping .centre { outline: 2px dashed var(--accent); outline-offset: -6px; }
-.side { background: var(--panel); min-height: 0; overflow: auto; }
-.side.left { border-right: 1px solid var(--line); }
-.side.right { border-left: 1px solid var(--line); }
-.centre { position: relative; min-width: 0; min-height: 0; }
+
+/* Every panel fills what the dock gives it. */
+.stage-panel, .panel, .timeline { height: 100%; overflow: auto; background: var(--panel); }
+.stage-panel { position: relative; overflow: hidden; }
 
 .stage, .stage canvas { position: absolute; inset: 0; width: 100%; height: 100%; }
 .stage { background: var(--stage-bg); }
@@ -150,7 +190,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, .overlay:focus-
   border: 1px solid var(--line);
   border-radius: 5px;
   padding: 3px 6px;
-  font-variant-numeric: tabular-nums;
+  font-family: var(--font-mono);
+  font-size: 12px;
 }
 .inspector .readonly output { padding: 3px 0; }
 
@@ -165,7 +206,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .overlay:focus-
   min-height: 26px;
 }
 .status .message { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.status .pointer { font-variant-numeric: tabular-nums; }
+.status .pointer { font-family: var(--font-mono); font-size: 12px; }
 .status .issues { padding: 1px 8px; }
 .issue-list {
   position: fixed;
@@ -183,12 +224,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, .overlay:focus-
 }
 
 .timeline {
-  height: 220px;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
-  background: var(--panel);
-  border-top: 1px solid var(--line);
   min-width: 0;
+  overflow: hidden;
 }
 .timeline-bar {
   display: flex;
@@ -200,7 +239,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .overlay:focus-
 }
 .timeline-bar select { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; max-width: 180px; }
 .timeline-bar .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
-.timeline-bar .frame { color: var(--muted); font-variant-numeric: tabular-nums; min-width: 9em; }
+.timeline-bar .frame { color: var(--muted); font-family: var(--font-mono); font-size: 12px; min-width: 13em; }
 .timeline-body {
   display: grid;
   grid-template-columns: 220px minmax(0, 1fr);
@@ -228,9 +267,5 @@ button:focus-visible, input:focus-visible, select:focus-visible, .overlay:focus-
 .timeline-track canvas { display: block; width: 100%; touch-action: none; }
 
 @media (max-width: 760px) {
-  .timeline { height: 260px; }
   .timeline-body { grid-template-columns: 120px minmax(0, 1fr); }
-  .workspace { grid-template-columns: 1fr; grid-template-rows: 1fr auto auto; }
-  .side { max-height: 30vh; border: 0; border-top: 1px solid var(--line); }
-  .centre { order: -1; min-height: 50vh; }
 }

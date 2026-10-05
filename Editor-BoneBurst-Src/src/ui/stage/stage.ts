@@ -57,7 +57,7 @@ export class Stage {
   onPointer: (text: string) => void = () => {};
   private readonly gl: HTMLCanvasElement;
   private readonly overlay: HTMLCanvasElement;
-  private readonly renderer: Renderer;
+  private renderer: Renderer;
   private size = { width: 1, height: 1 };
   private dpr = 1;
   private drag: Drag | null = null;
@@ -74,7 +74,9 @@ export class Stage {
     this.overlay.tabIndex = 0;
     this.element.append(this.gl, this.overlay);
     this.renderer = new Renderer(this.gl);
-    new ResizeObserver(() => this.resize()).observe(this.element);
+    // A browser may drop the WebGL context (a popout window, a GPU reset): draw again on a new one.
+    this.gl.addEventListener("webglcontextlost", (e) => e.preventDefault());
+    this.gl.addEventListener("webglcontextrestored", () => { this.renderer = new Renderer(this.gl); this.redraw(); });
     this.overlay.addEventListener("pointerdown", (e) => this.down(e));
     this.overlay.addEventListener("pointermove", (e) => this.move(e));
     this.overlay.addEventListener("pointerup", (e) => this.up(e));
@@ -111,13 +113,18 @@ export class Stage {
   redraw(): void {
     if (this.queued) return;
     this.queued = true;
-    requestAnimationFrame(() => { this.queued = false; this.paint(); });
+    this.view().requestAnimationFrame(() => { this.queued = false; this.paint(); });
   }
 
-  private resize(): void {
-    const r = this.element.getBoundingClientRect();
-    this.size = { width: Math.max(1, r.width), height: Math.max(1, r.height) };
-    this.dpr = window.devicePixelRatio || 1;
+  /** The window the stage is in: the main one, or a popout window it was moved to. */
+  private view(): Window {
+    return this.element.ownerDocument.defaultView ?? window;
+  }
+
+  /** The panel's size, from the dock (Dockview calls this whenever it lays the panel out). */
+  resize(width: number, height: number): void {
+    this.size = { width: Math.max(1, width), height: Math.max(1, height) };
+    this.dpr = this.view().devicePixelRatio || 1;
     for (const c of [this.gl, this.overlay]) {
       c.width = Math.round(this.size.width * this.dpr);
       c.height = Math.round(this.size.height * this.dpr);
@@ -131,7 +138,7 @@ export class Stage {
       this.fitted = true;
       this.camera = fit(this.size, bounds(p));
     }
-    const css = getComputedStyle(this.element);
+    const css = this.view().getComputedStyle(this.element);
     this.renderer.draw(p, this.session.pages, this.camera, this.size, this.dpr, rgb(css.getPropertyValue("--stage-bg")));
     const g = this.overlay.getContext("2d")!;
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);

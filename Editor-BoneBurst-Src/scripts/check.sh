@@ -45,4 +45,11 @@ if [ -d dist ] && grep -rlE '@esotericsoftware/|node_modules/@esotericsoftware' 
   echo "error: dist/ carries a Spine runtime" >&2; exit 1
 fi
 
+# D6: dockview-core is the only runtime dependency, pinned exactly; anything else that ships is
+# a vendored asset listed in THIRD-PARTY-NOTICES.md.
+deps=$(node -e 'const d=require("./package.json").dependencies||{}; console.log(Object.entries(d).map(([k,v])=>k+"@"+v).join(" "))')
+if ! echo "$deps" | grep -qE '^dockview-core@[0-9]+\.[0-9]+\.[0-9]+$'; then
+  echo "error: runtime dependencies must be exactly one pinned dockview-core, found: $deps" >&2; exit 1
+fi
+
 echo "check: all passed"

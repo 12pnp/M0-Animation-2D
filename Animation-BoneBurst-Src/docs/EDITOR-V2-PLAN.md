@@ -119,7 +119,7 @@ undo, onion skins — these are ideas every editor shares. The rules:
 | E1 | **Model + IO, headless**: document model over the Spine schema + `.bb.json` sidecar (per D4); command/undo stack; open/save round-trips every fixture identically after normalisation (key-time float32, nonessential fields, number formatting) | v2's check script (as `scripts/check.sh` is for v1; there is no CI in this repository) round-trips the parity fixtures with zero diffs |
 | E2 | **Stage**: canvas viewport rendering the model through our own runtime — setup pose, bone overlay, selection, transform gizmos, zoom/pan | the stickman fixture is inspectable and editable on screen |
 | E3 | **Timeline + playback**: keys, eases, scrub, playback through our runtime; the pure key edits the agent tools will call | a walk is keyed on a fixture rig, played, saved and read back by both runtimes. *(Owner, 2026-10-06: the agent criterion moved to E5, since D5 versions the contract.)* |
-| E4 | **Authoring surfaces**: bones/slots/attachments, draw order, skins, constraints (IK, transform, path, physics), mesh edit, PSD import (ag-psd bindings), panels/docking/prefs | the `auto_rig` → `apply_motion` → `check_preview` flow runs end to end |
+| E4 | **Authoring surfaces**: panels and docking on Dockview (D6), bones/slots/attachments, draw order, skins, constraints (IK, transform, path, physics), mesh edit, PSD import (ag-psd bindings), prefs | the `auto_rig` → `apply_motion` → `check_preview` flow runs end to end |
 | E5 | **AI layer re-bind**: `tools.json` onto the new model per D5 (layer → slot names, sidecar-backed tools, or a versioned contract), Ask AI, bridge, AnimatedDrawings sidecar tools | every tool `tests/agentApi.test.ts` exercises passes against v2, or is listed as dropped in the contract's version note; an AI keys a walk on a fixture rig via MCP (`set_keys`, `show`, `get_pose`, moved from E3); the AD-0..AD-4 plans execute against v2 |
 | E6 | **Parity + cutover**: side-by-side with the old editor as oracle; same rigs edited → same exports; docs migrated; the AGPL folder demoted to oracle-only, then archived | v2 is the daily driver; the fork takes no new features |
 
@@ -171,3 +171,16 @@ undo, onion skins — these are ideas every editor shares. The rules:
       for (recommended if D4 is a). **Decided 2026-10-06, following D4: a versioned contract.** Tools
       keep their names where the meaning holds (`layer` arguments become slot names); `set_cycle`,
       `offset_keys` and the bone-path tools are dropped or renamed, listed in the version note (E5).
+- [x] D6 Panels and docking: **Decided 2026-10-06 (owner): Dockview, starting with E4.** v2's whole
+      docking shell — splits, tabs, groups, drag and drop, floating panels, popout windows — is
+      `dockview-core` (the vanilla TypeScript package, not `dockview-react`; v2 has no framework),
+      pinned to an exact 8.x version, MIT, no dependencies of its own: v2's first and only npm
+      runtime dependency. Every panel (stage, timeline, rig tree, properties; preview, reference
+      and AI when their phases build them) is a Dockview panel; no hand-rolled docking code. Themed
+      from Dockview's dark theme through its entry points (theme object, `--dv-*` variables),
+      aligned to Inter and JetBrains Mono, which ship as vendored woff2 files (SIL OFL 1.1):
+      deterministic typography means deterministic screenshots for `render_frame`, the pixel-diff
+      tests and E6's side-by-side. The layout persists and restores on reload; a saved layout
+      naming a panel this build lacks is ignored quietly and applied when the panel arrives. The
+      old editor's docking and styling are not a template: Dockview's own patterns are the
+      reference. Executed in `Editor-BoneBurst-Src/docs/E4-PLAN.md` step 1.
