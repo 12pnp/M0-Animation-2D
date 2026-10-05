@@ -1,10 +1,11 @@
 # Editor v2 — from scratch, MIT, no Animo code — plan
 
-**Status:** E0 done 2026-10-06: `../Editor-BoneBurst-Src/` holds the MIT
-`LICENSE`, fresh `THIRD-PARTY-NOTICES.md`, the architecture spec (`docs/SPEC.md`), the clean-room
-rules (`CLAUDE.md`) and an empty Vite + TypeScript app whose `scripts/check.sh` passes (build,
-3 tests, licence guards). Written from this plan, the Doc/Format specs and Spine's public format;
-the fork's sources were not opened. Next: E1 (model and IO, headless).
+**Status:** E0 and E1 done 2026-10-06. `../Editor-BoneBurst-Src/`: MIT licence, notices, spec,
+clean-room rules; the document model over Spine 4.3's schema, an order-preserving JSON reader,
+Spine JSON, atlas and sidecar in and out, the BoneBurst profile check, and undo over whole
+documents. Every sample skeleton (16) and atlas (19) round-trips with zero differences
+(`Editor-BoneBurst-Src/docs/E1-PLAN.md`). The fork's sources were not opened. Next: E2 (stage),
+starting with the runtime's provenance pass.
 
 **Owner decision 2026-10-05:** replace the Animo-fork editor with a new editor
 that contains **no Animo code**, licensed **MIT** from its first commit. The

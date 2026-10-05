@@ -75,15 +75,19 @@ unknown is ignored with a warning, never guessed at.
 - The **history** keeps the documents themselves: undo returns the previous document object,
   so an undo can never disagree with the edit it undoes. Structural sharing keeps this cheap.
 - A **gesture** (one drag, one scrub of a field) opens a group; every step inside it replaces
-  the group's last document, so the gesture is one undo step whatever the pointer did.
+  the group's last document, so the gesture is one undo step whatever the pointer did. It records
+  nothing only when it ends on the identical document it started from.
 - Selection, the playhead and view state are not in the document and are not undone.
 
 ## 5. Reading and writing
 
 - `readSkeleton(text)` returns the skeleton and the profile's issues; `writeSkeleton(skeleton)`
   returns text with the key order and defaults omitted as `Format-Json-Atlas.md` describes.
-- The atlas is read and written as text (`Format-Json-Atlas.md` atlas sections); pages are
-  images next to it.
+- The atlas is read and written as text (`Format-Json-Atlas.md` §15): pages, regions and fields
+  as written, every value kept; meanings through queries (`regionBounds`, `regionDegrees`). Pages
+  are images next to it.
+- JSON is read by our own parser: objects keep every key's place, integer-like keys included
+  (`JSON.parse` moves those first, and Spine reads names in document order).
 - **Round-trip test:** every sample skeleton the format specs' tests use, read then written,
   equals the original after normalisation: numbers compared as float32, `nonessential` fields as
   the file has them, key order per the spec.

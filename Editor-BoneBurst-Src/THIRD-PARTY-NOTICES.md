@@ -20,3 +20,4 @@ None yet. Each library that reaches `dist/` gets a row here, with its licence, b
 | [TypeScript](https://www.typescriptlang.org) | Apache-2.0 | type checking |
 | [Vite](https://vite.dev) | MIT | dev server and build |
 | [Vitest](https://vitest.dev) | MIT | tests |
+| [@types/node](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT | Node types for the tests and the Vite config |

@@ -13,6 +13,8 @@ flowchart LR
 
 ## 2026-10-06
 
+- **BoneBurst Editor v2, E1: the document, headless** (`Editor-BoneBurst-Src/`). An order-preserving JSON reader (`JSON.parse` moves integer-like keys first; Spine reads names in document order), the Spine 4.3 skeleton as typed immutable data with unknown keys kept, Spine JSON, atlas and sidecar in and out, the BoneBurst profile check, and undo over whole documents with gestures (`updateBone`, `renameBone`). Plan: [E1-PLAN.md](../../Editor-BoneBurst-Src/docs/E1-PLAN.md). Guard: `npm run check` (129 tests): all 16 sample skeletons and 19 atlases round-trip with zero differences (breaking the writer fails 14), 14 broken-file profile cases caught, layer and DOM guards fail on planted violations. Written from the Doc/Format specs; the fork's sources were not opened.
+
 - **BoneBurst Editor v2 started (E0): `Editor-BoneBurst-Src/`, MIT, no Animo code.** MIT `LICENSE`, fresh `THIRD-PARTY-NOTICES.md`, the architecture spec (`docs/SPEC.md`: Spine JSON as the document, immutable model, a versioned sidecar, undo over whole documents), the clean-room rules in its `CLAUDE.md`, and an empty Vite + TypeScript app on port 5185. Written from the v2 plan, the Doc/Format specs and Spine's public format; the fork's sources were not opened. Root `.gitignore`, `.gitattributes` and `CLAUDE.md` list the folder. Plan: [EDITOR-V2-PLAN.md](../../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md). Guard: its `scripts/check.sh` (build, 3 tests, no Spine runtime import, fork-name tripwire). Next: E1.
 
 - **The BoneBurst editor is version 0.2.0** (`Animation-BoneBurst-Src/package.json`, shown in About): the refactor removed motion blur and moved saved documents to version 28, which an older editor refuses, so the minor version moves.
