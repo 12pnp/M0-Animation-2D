@@ -1543,7 +1543,7 @@ guessed wrong. `core/export/dbTypes.ts` is the authority.
 `public/vendor/pixi.js` (PixiJS 8.21.0) and `public/vendor/spine-pixi-v8.js` (4.3.13, the
 package's IIFE build, which bundles spine-core) are **classic scripts, not npm packages**, served
 to `preview.html` so neither is in the editor bundle. `src/vendor/spine-pixi.d.ts` declares only
-the surface `previewClient` calls. Not obvious:
+the surface `src/preview/` calls. Not obvious:
 
 - **Order matters.** The IIFE calls `require("pixi.js")`; its embedded shim maps that to the
   global `PIXI`, and only when `PIXI` already exists. So `pixi.js` loads first.
@@ -1556,6 +1556,35 @@ the surface `previewClient` calls. Not obvious:
   an EMPTY texture without raising. Pages are built from `createImageBitmap` +
   `PIXI.Texture.from`, and handed to each atlas page as `spine.SpineTexture.from(texture.source)`.
 - The Spine Runtimes License applies to `spine-pixi-v8.js` (see THIRD-PARTY-NOTICES.md).
+
+## The BoneBurst runtime
+
+Our own Spine 4.3 runtime, to replace spine-pixi-v8 and spine-core in the shipped app
+(docs/PREVIEW-RUNTIME-PLAN.md). Written from the format and held to spine-core by tests, never
+from spine-core's source. P0 is in: bones with the normal inherit mode, slots, region
+attachments, skins, and the bone, attachment, colour and draw order timelines.
+
+- **The pose is in `core/spine/runtime/`, DOM-free**: `readAtlas` (`atlasRead.ts`), `readRig`
+  (`rigData.ts`, the file into our model) and `Rig` (`rig.ts`: setup pose, `apply` at a time,
+  `updateWorld`, region corners). The stage will pose through it too (P3b).
+- **The Preview drives a `PreviewRig`** (`src/preview/runtime/`): `spineRig` wraps
+  spine-pixi-v8 and is the default; `boneburstRig` draws ours as one Pixi mesh per slot when
+  `localStorage["animo.previewRuntime"] = "boneburst"`. Whatever the file holds beyond what ours
+  plays is listed in `RigData.unsupported` and shown on a chip over the preview, never dropped
+  silently.
+- **Held to spine-core frame by frame**: `tests/spineRuntime.test.ts` plays our exports and
+  spine-unity's samples through both and compares every bone's world matrix, each slot's
+  attachment and colour, the draw order, and each region's corners and UVs;
+  `tests/atlasRead.test.ts` compares the atlas reader. Both runtimes are given the file without
+  what P0 does not solve (constraints, inherit modes), so everything else in it is compared.
+- **Two things the runtime does that the exact maths does not**, measured, not read: degrees go
+  to radians with π as `3.1415927` (`DEG_RAD`: cos 90° is -2.3e-8), and key times, values and
+  curve polylines are 32-bit floats. Without either, every matrix is off by about 1e-7.
+- **Curve points can differ by one 32-bit step**: spine-core finds them by forward differencing,
+  `spinePolyline` evaluates the cubic. The test compares positions at the rig's size for that
+  reason; matrices stay strict.
+- File ▸ Open Spine reads atlases with `readAtlas`; `spinePose.ts` is the last `src/` import of
+  spine-core.
 
 ## Keyboard shortcuts
 

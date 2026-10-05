@@ -45,7 +45,9 @@ An exporter change must keep
 `tests/spineParity.test.ts` passing: it plays every fixture through spine-core
 and compares it with the stage frame by frame. An importer or exporter change
 must keep `tests/spineImport.test.ts` (every M0 sample round-trips) and
-`tests/spinePose.test.ts` (the stage equals the export) passing. Phase 8 checked the
+`tests/spinePose.test.ts` (the stage equals the export) passing. A change to our own runtime
+(`core/spine/runtime/`, ARCHITECTURE ▸ The BoneBurst runtime) must keep
+`tests/spineRuntime.test.ts` and `tests/atlasRead.test.ts` passing. Phase 8 checked the
 exports in Unity (ARCHITECTURE ▸ Checked in Unity, `scripts/unity-check/`): spine-csharp
 is stricter than spine-core (it requires `skeleton.hash`), so a header or format change
 should be rerun there. An AI edits the document through `src/app/agent/`

@@ -1,4 +1,4 @@
-import { TextureAtlas } from "@esotericsoftware/spine-core";
+import { readAtlas } from "@/core/spine/runtime/atlasRead";
 import { unzipFiles } from "@/io/zip";
 
 /**
@@ -100,7 +100,7 @@ export async function readSpineFiles(
   }
   const atlas = await files.get(atlasName)!.text();
   const pages = new Map<string, Blob>();
-  for (const page of new TextureAtlas(atlas).pages) {
+  for (const page of readAtlas(atlas).pages) {
     const blob = files.get(base(page.name));
     if (!blob) throw new Error(`The atlas needs the page image "${page.name}", which was not picked.`);
     pages.set(page.name, blob);
@@ -119,7 +119,7 @@ export interface CutRegion { name: string; width: number; height: number; png: B
  * export trims and packs them again.
  */
 export async function cutRegions(files: SpineFiles, warn: (message: string) => void): Promise<CutRegion[]> {
-  const atlas = new TextureAtlas(files.atlas);
+  const atlas = readAtlas(files.atlas);
   const bitmaps = new Map<string, ImageBitmap>();
   for (const page of atlas.pages) bitmaps.set(page.name, await createImageBitmap(files.pages.get(page.name)!));
   const drawn: Array<{ name: string; width: number; height: number; canvas: HTMLCanvasElement }> = [];

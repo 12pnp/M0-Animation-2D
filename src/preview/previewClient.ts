@@ -1,17 +1,29 @@
 /// <reference path="../vendor/spine-pixi.d.ts" />
 import { queueSteps } from "./queue";
 import { type FrameToHost, type HostToFrame, tickFrame } from "./protocol";
+import type { PreviewRig } from "./runtime/previewRig";
+import { spineRig } from "./runtime/spineRig";
+import { boneburstRig } from "./runtime/boneburstRig";
 
 /**
- * Runs inside the preview iframe. Drives the OFFICIAL Spine runtime
- * (spine-pixi-v8 4.3.13 on PixiJS 8), fed the exact bytes the editor would
- * write to disk: the skeleton JSON, the `.atlas` text and the page images.
+ * Runs inside the preview iframe. Drives a Spine runtime on PixiJS 8, fed
+ * the exact bytes the editor would write to disk: the skeleton JSON, the
+ * `.atlas` text and the page images.
  *
  * That is the whole point of this file: it is not a second renderer, it IS
  * the runtime. If what plays here matches the stage, the export is right.
+ * The runtime is the official spine-pixi-v8 4.3.13, or, with
+ * `localStorage["animo.previewRuntime"] = "boneburst"`, our own
+ * (docs/PREVIEW-RUNTIME-PLAN.md), both behind `PreviewRig`.
  */
 
+const RUNTIME = (() => {
+  try { return localStorage.getItem("animo.previewRuntime") === "boneburst" ? "boneburst" : "spine"; } catch { return "spine"; }
+})();
+
 const errEl = document.getElementById("err")!;
+/** What the BoneBurst runtime does not play in the loaded file, said on screen. */
+const warnEl = document.getElementById("warn");
 
 /** The editor, which embeds this page; `opener` when opened by hand. */
 function host(): Window | null {
@@ -33,7 +45,7 @@ window.addEventListener("error", (e) => fail(e.error ?? e.message));
 window.addEventListener("unhandledrejection", (e) => fail(e.reason));
 
 let app: PIXI.Application | null = null;
-let view: spine.Spine | null = null;
+let view: PreviewRig | null = null;
 let textures: PIXI.Texture[] = [];
 let currentAnimation = "";
 /** The last `setLoop`: every later play honours it. */
@@ -73,7 +85,7 @@ async function ensureApp(): Promise<PIXI.Application> {
     // An exception in a Pixi ticker listener ends the loop, and the preview
     // would sit frozen with nothing said: report it and carry on.
     try {
-      if (view && playing) view.update((ticker.deltaMS / 1000) * speed);
+      if (view && playing) view.advance((ticker.deltaMS / 1000) * speed);
       reportTick();
     } catch (err) {
       fail(err);
@@ -85,20 +97,19 @@ async function ensureApp(): Promise<PIXI.Application> {
 }
 
 function frameCountOf(name: string): number {
-  const anim = view?.skeleton.data.findAnimation(name);
-  return anim ? Math.round(anim.duration * frameRate) : 0;
+  return view ? Math.round(view.durationOf(name) * frameRate) : 0;
 }
 
 function reportTick(): void {
   if (!view || !currentAnimation) return;
-  const entry = view.state.getTrack(0);
+  const entry = view.track();
   // Mixing: the "from" animation is still playing; the editor's playhead
   // follows "to" only.
-  if (entry && entry.animation.name !== currentAnimation) return;
+  if (entry && entry.name !== currentAnimation) return;
   // A non-looping animation stops advancing at its end: stop the clock and
   // say so, so the transport's play button comes back.
-  if (playing && entry && !loop && entry.trackTime >= entry.animation.duration) playing = false;
-  const frame = tickFrame(entry ? entry.getAnimationTime() : 0, frameRate, frameCountOf(currentAnimation));
+  if (playing && entry && !loop && entry.trackTime >= entry.duration) playing = false;
+  const frame = tickFrame(entry ? entry.time : 0, frameRate, frameCountOf(currentAnimation));
   if (frame !== lastReportedFrame || playing !== lastReportedPlaying) {
     lastReportedFrame = frame;
     lastReportedPlaying = playing;
@@ -108,9 +119,10 @@ function reportTick(): void {
 
 function disposeCurrent(): void {
   if (view) {
-    view.destroy({ children: true });
+    view.destroy();
     view = null;
   }
+  showUnsupported([]);
   for (const t of textures) t.destroy(true);
   textures = [];
   app?.stage.removeChildren();
@@ -130,47 +142,33 @@ async function load(msg: Extract<HostToFrame, { type: "load" }>): Promise<void> 
   // Nothing below awaits: the old skeleton goes and the new one arrives,
   // posed and fitted, between two frames.
   errEl.style.display = "none";
-  const atlas = new spine.TextureAtlas(msg.atlas);
-  const pageTextures: PIXI.Texture[] = [];
-  for (const page of atlas.pages) {
-    const i = msg.pages.findIndex((p) => p.name === page.name);
-    if (i < 0) throw new Error(`The atlas names a page "${page.name}" that was not sent.`);
-    // Straight from the decoded bitmap: PIXI.Assets cannot resolve a blob
-    // URL (no extension to pick a parser from) and hands back an empty
-    // texture without raising.
-    const texture = PIXI.Texture.from(bitmaps[i]!);
-    pageTextures.push(texture);
-    page.setTexture(spine.SpineTexture.from(texture.source));
+  // Straight from the decoded bitmap: PIXI.Assets cannot resolve a blob
+  // URL (no extension to pick a parser from) and hands back an empty
+  // texture without raising.
+  const pageTextures = new Map(msg.pages.map((p, i) => [p.name, PIXI.Texture.from(bitmaps[i]!)] as const));
+  let next: PreviewRig;
+  try {
+    next = (RUNTIME === "boneburst" ? boneburstRig : spineRig)({
+      skeleton: msg.skeleton, atlas: msg.atlas, textures: pageTextures, skins: msg.skins ?? [], debug: !!msg.debugDraw,
+      // Events as the runtime fires them, while playing: a seek poses a
+      // frame and must not fire (or sound) what it lands on.
+      onEvent: (e) => post({ type: "event", ...e }),
+      playing: () => playing,
+    });
+  } catch (err) {
+    for (const t of pageTextures.values()) t.destroy(true);
+    throw err;
   }
-  const skeletonData = new spine.SkeletonJson(new spine.AtlasAttachmentLoader(atlas)).readSkeletonData(msg.skeleton);
 
   disposeCurrent();
-  textures = pageTextures;
-  view = new spine.Spine({ skeletonData, autoUpdate: false });
-  // Events as the runtime fires them, while playing: a seek poses a frame
-  // and must not fire (or sound) what it lands on.
-  view.state.addListener({
-    event: (entry, e) => {
-      if (!playing) return;
-      post({
-        type: "event", animation: entry.animation.name, name: e.data.name, int: e.intValue, float: e.floatValue,
-        string: e.stringValue, audio: e.data.audioPath, volume: e.volume, balance: e.balance,
-      });
-    },
-  });
-  // The stage's skins, combined as `spinePose.combineSkins` does.
-  const skins = (msg.skins ?? []).map((n) => skeletonData.findSkin(n)).filter((s): s is spine.Skin => !!s);
-  if (skins.length) {
-    const combined = new spine.Skin(msg.skins!.join(" + "));
-    for (const s of skins) combined.addSkin(s);
-    view.skeleton.setSkin(combined);
-  }
-  view.debug = msg.debugDraw ? new spine.SpineDebugRenderer() : undefined;
+  textures = [...pageTextures.values()];
+  view = next;
+  showUnsupported(view.unsupported);
 
   fitBox = msg.fit ?? null;
   stageBox = msg.stage ?? null;
-  frameRate = skeletonData.fps || 24;
-  const names = skeletonData.animations.map((x) => x.name);
+  frameRate = view.fps || 24;
+  const names = view.animations;
   currentAnimation = msg.animation && names.includes(msg.animation) ? msg.animation : names[0] ?? "";
   lastReportedFrame = -1;
 
@@ -178,13 +176,13 @@ async function load(msg: Extract<HostToFrame, { type: "load" }>): Promise<void> 
   // to measure it drew it at its origin and full size first.
   fitToFrame();
   drawStage(a);
-  a.stage.addChild(view);
+  a.stage.addChild(view.display);
   if (currentAnimation) {
     if (msg.play) start(currentAnimation);
     else seekTo(msg.frame ?? 0);
   } else {
     playing = false;
-    view.update(0);
+    view.advance(0);
   }
 
   post({ type: "loaded", animations: names, animation: currentAnimation, duration: frameCountOf(currentAnimation) });
@@ -193,9 +191,7 @@ async function load(msg: Extract<HostToFrame, { type: "load" }>): Promise<void> 
 /** Play the current animation from its start, on the runtime's clock. */
 function start(name: string): void {
   if (!view) return;
-  view.skeleton.setupPose();
-  view.state.setAnimation(0, name, loop);
-  view.update(0);
+  view.start(name, loop);
   playing = true;
 }
 
@@ -209,10 +205,13 @@ function start(name: string): void {
 function seekTo(frame: number): void {
   if (!view || !currentAnimation) return;
   playing = false;
-  view.skeleton.setupPose();
-  const entry = view.state.setAnimation(0, currentAnimation, loop);
-  entry.trackTime = frame / frameRate;
-  view.update(0);
+  view.seek(currentAnimation, frame / frameRate, loop);
+}
+
+function showUnsupported(list: readonly string[]): void {
+  if (!warnEl) return;
+  warnEl.hidden = !list.length;
+  warnEl.textContent = list.length ? `BoneBurst runtime: not played yet — ${list.join(", ")}` : "";
 }
 
 /** Outline the scene bounds, so a detached preview shows how the rig sits
@@ -233,9 +232,9 @@ function drawStage(a: PIXI.Application): void {
 
 function positionStage(): void {
   if (!stageGfx || !view) return;
-  stageGfx.x = view.x;
-  stageGfx.y = view.y;
-  stageGfx.scale.set(view.scale.x, view.scale.y);
+  stageGfx.x = view.display.x;
+  stageGfx.y = view.display.y;
+  stageGfx.scale.set(view.display.scale.x, view.display.scale.y);
 }
 
 function colorOf(css: string): number {
@@ -257,18 +256,19 @@ function fitToFrame(): void {
     ? { x: 0, y: 0, w: stageBox.width, h: stageBox.height }
     : fitBox && fitBox.w > 0 && fitBox.h > 0 ? fitBox : null;
 
+  const d = view.display;
   if (!box) {
-    view.scale.set(1, 1);
-    view.x = w / 2;
-    view.y = h / 2;
+    d.scale.set(1, 1);
+    d.x = w / 2;
+    d.y = h / 2;
     positionStage();
     return;
   }
   const margin = 0.92;
   const scale = Math.min((w * margin) / box.w, (h * margin) / box.h);
-  view.scale.set(scale, scale);
-  view.x = w / 2 - (box.x + box.w / 2) * scale;
-  view.y = h / 2 - (box.y + box.h / 2) * scale;
+  d.scale.set(scale, scale);
+  d.x = w / 2 - (box.x + box.w / 2) * scale;
+  d.y = h / 2 - (box.y + box.h / 2) * scale;
   positionStage();
 }
 
@@ -307,8 +307,8 @@ window.addEventListener("message", (event: MessageEvent) => {
         // Carry on from where the pause left the track; restart only when
         // there is nothing to carry on from, or a one-shot has finished.
         if (view && currentAnimation) {
-          const entry = view.state.getTrack(0);
-          if (entry && (loop || entry.trackTime < entry.animation.duration)) playing = true;
+          const entry = view.track();
+          if (entry && (loop || entry.trackTime < entry.duration)) playing = true;
           else start(currentAnimation);
         }
         break;
@@ -319,8 +319,7 @@ window.addEventListener("message", (event: MessageEvent) => {
 
       case "setLoop": {
         loop = msg.on;
-        const entry = view?.state.getTrack(0);
-        if (entry) entry.loop = loop;
+        view?.setLoop(loop);
         break;
       }
 
@@ -338,26 +337,24 @@ window.addEventListener("message", (event: MessageEvent) => {
         break;
 
       case "playQueue": {
-        const steps = view ? queueSteps(msg.entries, view.skeleton.data.animations.map((a) => a.name), loop) : [];
+        const steps = view ? queueSteps(msg.entries, view.animations, loop) : [];
         if (!view || !steps.length) break;
-        view.skeleton.setupPose();
-        view.state.setAnimation(0, steps[0]!.name, steps[0]!.loop);
-        for (const step of steps.slice(1)) view.state.addAnimation(0, step.name, step.loop, 0).setMixDuration(step.mix, 0);
-        view.update(0);
+        view.queue(steps);
+        showUnsupported(view.unsupported);
         currentAnimation = steps[steps.length - 1]!.name;
         playing = true;
         break;
       }
 
       case "setAnimation":
-        if (view && view.skeleton.data.findAnimation(msg.name)) {
+        if (view && view.animations.includes(msg.name)) {
           currentAnimation = msg.name;
           start(currentAnimation);
         }
         break;
 
       case "setDebug":
-        if (view) view.debug = msg.on ? new spine.SpineDebugRenderer() : undefined;
+        view?.setDebug(msg.on);
         break;
 
       case "setBackground":
@@ -369,19 +366,9 @@ window.addEventListener("message", (event: MessageEvent) => {
         if (app) { drawStage(app); fitToFrame(); }
         break;
 
-      case "getMatrices": {
-        const bones: Record<string, number[]> = {};
-        const attachments: Record<string, string | null> = {};
-        if (view) {
-          for (const b of view.skeleton.bones) {
-            const p = b.appliedPose;
-            bones[b.data.name] = [p.a, p.b, p.c, p.d, p.worldX, p.worldY];
-          }
-          for (const s of view.skeleton.slots) attachments[s.data.name] = s.appliedPose.getAttachment()?.name ?? null;
-        }
-        post({ type: "matrices", bones, attachments });
+      case "getMatrices":
+        post({ type: "matrices", ...(view ? view.matrices() : { bones: {}, attachments: {} }) });
         break;
-      }
     }
   })().catch(fail);
 });
@@ -394,4 +381,7 @@ window.addEventListener("message", (event: MessageEvent) => {
   fitToFrame,
 };
 
-post({ type: "ready", version: `spine-pixi-v8 4.3.13, PixiJS ${PIXI.VERSION}` });
+post({
+  type: "ready",
+  version: RUNTIME === "boneburst" ? `BoneBurst runtime (P0), PixiJS ${PIXI.VERSION}` : `spine-pixi-v8 4.3.13, PixiJS ${PIXI.VERSION}`,
+});

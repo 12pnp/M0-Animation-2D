@@ -1,11 +1,15 @@
 /**
  * The globals of the preview page's classic scripts, `public/vendor/pixi.js`
  * (PixiJS 8.21.0) and `public/vendor/spine-pixi-v8.js` (4.3.13), declared
- * only as far as `src/preview/previewClient.ts` calls them.
+ * only as far as `src/preview/` calls them.
  */
 
 declare namespace PIXI {
-  interface TextureSource { readonly width: number; readonly height: number }
+  interface TextureSource {
+    readonly width: number;
+    readonly height: number;
+    alphaMode: "no-premultiply-alpha" | "premultiply-alpha-on-upload" | "premultiplied-alpha";
+  }
   class Texture {
     static from(source: ImageBitmap): Texture;
     readonly source: TextureSource;
@@ -19,7 +23,24 @@ declare namespace PIXI {
     removeChildren(): Container[];
     destroy(options?: boolean | { children?: boolean }): void;
   }
+  /** The BoneBurst runtime's slots (`src/preview/runtime/boneburstRig.ts`). */
+  class MeshGeometry {
+    constructor(options: { positions: Float32Array; uvs: Float32Array; indices: Uint32Array });
+    getBuffer(id: "aPosition" | "aUV"): { update(): void };
+  }
+  class Mesh extends Container {
+    constructor(options: { geometry: MeshGeometry; texture: Texture });
+    texture: Texture;
+    tint: number;
+    alpha: number;
+    visible: boolean;
+    blendMode: "normal" | "add" | "multiply" | "screen";
+  }
   class Graphics extends Container {
+    clear(): this;
+    moveTo(x: number, y: number): this;
+    lineTo(x: number, y: number): this;
+    circle(x: number, y: number, r: number): this;
     rect(x: number, y: number, w: number, h: number): this;
     fill(style: { color: number; alpha?: number }): this;
     stroke(style: { color: number; alpha?: number; width?: number }): this;
