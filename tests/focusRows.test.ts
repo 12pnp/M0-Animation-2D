@@ -29,12 +29,14 @@ describe("focusRows", () => {
     { name: "a bone and a picture", focus: ["art", "thigh"], on: true, want: ["thigh", "thigh.rotate", "thigh.x", "thigh.y", "thigh.scale", "thigh.shear", "art"], flat: true },
     { name: "pictures only: every row", focus: ["art"], on: true, want: ["hips"], flat: false },
     { name: "switched off", focus: ["shin"], on: false, want: ["hips"], flat: false },
-  ])("$name", ({ focus, on, want, flat }) => {
+    { name: "a mesh: its row and its Deform row", focus: ["art"], on: true, want: ["art", "art.deform"], flat: true, mesh: true },
+  ])("$name", ({ focus, on, want, flat, mesh }) => {
     const { sym, nodes } = rig();
+    if (mesh) nodes.art.mesh = { width: 2, height: 2, points: [0, 0, 2, 0, 0, 2], triangles: [0, 1, 2], hull: 3 };
     const ids = focus.map((k) => nodes[k as keyof typeof nodes].id);
     const rows = focusRows(sym, ids, on);
-    expect(rows.map((r) => (r.prop ? `${r.node.name}.${r.prop}` : r.node.name))).toEqual(want);
+    expect(rows.map((r) => (r.prop ? `${r.node.name}.${r.prop}` : r.deform ? `${r.node.name}.deform` : r.node.name))).toEqual(want);
     // Flat: the focused rows at the top level, each bone's properties one in.
-    if (flat) expect(rows.every((r) => r.depth === (r.prop ? 1 : 0) && !r.hasChildren)).toBe(true);
+    if (flat) expect(rows.every((r) => r.depth === (r.prop || r.deform ? 1 : 0) && !r.hasChildren)).toBe(true);
   });
 });

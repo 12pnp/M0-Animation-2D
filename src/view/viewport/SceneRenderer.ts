@@ -1,4 +1,4 @@
-import { mat, matOf, type Matrix2D, mul } from "@/core/math/Matrix2D";
+import { invert, mat, matOf, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import type { Animation, SymbolItem } from "@/core/doc/types";
 import { type BlendMode, type ColorTransform, isImage, isSymbol, type Project } from "@/core/doc/types";
 import {
@@ -326,6 +326,13 @@ export class SceneRenderer {
     const display = e.display;
     if (!display) return;
     const item = this.project().items[display.itemId];
+
+    // A mesh: its world vertices are the pose's; `screen` is base · world.
+    if (e.spine && isImage(item)) {
+      const inv = mat();
+      if (invert(inv, e.world)) this.drawSpine(ctx, e, mul(mat(), screen, inv));
+      return;
+    }
 
     if (isImage(item)) {
       const asset = this.assets.get(item.assetId);

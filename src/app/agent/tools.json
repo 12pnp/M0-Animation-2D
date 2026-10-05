@@ -420,6 +420,32 @@
     }
   },
   {
+    "name": "make_mesh",
+    "description": "Turn images into meshes, in one undoable step (Spine's mesh attachments): points along each image's outline (traced from its opaque pixels) and a grid inside it, triangulated. A mesh can then bend with bind_mesh. `spacing` is the distance between points in image pixels (default: the image's shorter side in sixths, at least 8). Returns each mesh's point and triangle counts.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "images": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+        "spacing": { "type": "number", "minimum": 2 }
+      },
+      "required": ["images"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "bind_mesh",
+    "description": "Bind a mesh (make_mesh first) to bones, in one undoable step: each point follows the two bones nearest to it at the setup pose, weighted by distance, so the image bends where the bones meet (Spine's weighted mesh). Key the bones as usual to animate it.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "image": { "type": "string" },
+        "bones": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+      },
+      "required": ["image", "bones"],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "set_cycle",
     "description": "Make an animation a cycle, or let it play once. A cycle loops with its last frame showing frame 0 again: an animation that did not end that way grows by one frame for it, and every bone that reaches the end without a key there gets frame 0's pose keyed at that frame. Turning it off only stops the looping; keys stay. One undoable step. get_animation's `seam` then lists any bone that still does not close.",
     "input_schema": {

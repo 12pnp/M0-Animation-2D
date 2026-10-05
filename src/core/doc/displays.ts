@@ -19,7 +19,10 @@ export function displayAt(node: Node, index: number): DisplayRef | null {
 }
 
 function displayZero(node: Node, itemId: ItemId): DisplayRef {
-  return node.attachment ? { itemId, pivot: node.pivot, attachment: node.attachment } : { itemId, pivot: node.pivot };
+  const d: DisplayRef = { itemId, pivot: node.pivot };
+  if (node.attachment) d.attachment = node.attachment;
+  if (node.mesh) d.mesh = node.mesh;
+  return d;
 }
 
 /** The node a node's transform hangs from: the bone a slot rides, else its

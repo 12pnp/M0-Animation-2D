@@ -414,8 +414,9 @@ frame 0, so the two must be the same pose or the loop hitches.
 ### A selected bone narrows the timeline
 
 As Spine's dopesheet does: select a bone on the stage or in the Tree and the timeline shows
-only the selected nodes' rows, flat (`focusRows` in `core/doc/layerTree.ts`); select nothing,
-or only pictures, and every row is back. The layer column and the frame grid both take their
+only the selected nodes' rows, flat (`focusRows` in `core/doc/layerTree.ts`); a selected mesh
+does the same, followed by its Deform row (Meshes); select nothing, or only pictures that are
+not meshes, and every row is back. The layer column and the frame grid both take their
 rows from `timelineRows` (`view/timeline/rows.ts`), so they cannot drift apart by a row. The
 rows follow `ui.timelineFocus`, not the selection: `TimelinePanel` copies the selection into it
 only when the selection changes from outside the timeline, because a click on a row or a frame
@@ -1888,6 +1889,58 @@ constraint round-trips unchanged.
 - The AI's `add_transform_constraint` and `key_transform`; `get_rig` lists the constraints
   and `get_animation` the keys.
 
+## Meshes
+
+An image whose points bend, as Spine's mesh attachment, weights and `deform` timeline
+(docs/MESH-PLAN.md). `Node.mesh` for display 0, `DisplayRef.mesh` for the others (schema 21):
+`{ width, height, points, triangles, hull, weights? }`, points in the image's pixels (y down,
+origin top-left), so a point is also its texture coordinate (`meshUvs`). The first `hull`
+points, in order, are the outline. `Animation.deforms[nodeId]` holds `{ frame, offsets, tween? }`
+per mesh node, one offset pair per point in the node's space.
+
+- **One rule for where a point is** (`core/mesh/meshPose.ts`), used by the stage
+  (`applyMeshes` in `core/doc/pose.ts`, after the constraints) and written by the exporter, so
+  the two agree by construction. With `p` = point − pivot, `d` its deform offset, `N` the node's
+  world at the setup pose and `B_i` / `S_i` bone i's world now / at the setup pose:
+  no weights, `node world now · (p + d)`; weights, `Σ w_i · B_i · S_i⁻¹ · N · (p + d)`.
+  Spine stores `S_i⁻¹ · N · p` per bone (y flipped) and a weighted deform per bone entry
+  through the linear part of the same map (`spineVertices`, `spineDeform`).
+  - **Weights are not renormalized**, on the stage or in the file: the runtime sums them as
+    written.
+  - **A weighted mesh has no unweighted point** in Spine: a point with no weights is written
+    as `[1, its own bone, x, y, 1]` (the node's slot bone), where the stage leaves it. Written
+    as a plain pair, the runtime put it at the origin.
+- **The renderer** draws a mesh entry (`e.spine`) through the same triangle path as an opened
+  rig's meshes, with `base = screen · inverse(e.world)`.
+- **Making one** (Modify ▸ Mesh ▸ Make Mesh, `doMakeMesh`): the outline from the image's alpha
+  (`traceContour`, stride 4, tolerance 2; a box for an image with no alpha), points along it
+  and a grid inside kept half a spacing from the edge (`makeMesh`), triangulated within the
+  outline (`core/mesh/triangulate.ts`: ear clipping, the inner points inserted, Lawson flips
+  that never flip an outline edge and only flip a convex quad).
+- **Weights**: Bind Mesh to Bones (`bindPlan`, `autoWeights`: the two nearest bones by distance
+  to each bone's segment, inverse fourth power); Unbind; a brush (`paintWeights`) in Properties
+  ▸ Mesh: Paint, the bone, radius in screen pixels, strength. Painting an unweighted mesh starts
+  it at its own node, weight 1. While the brush is on, the points are tinted by the bone's
+  weight.
+- **The Mesh tool (N)**: a press picks a point (⇧ adds), a drag moves the picked points. In
+  Setup it reshapes the mesh (re-triangulated on release), a click inside adds a point (its
+  weights blended from the triangle it falls in) and Delete removes the picked ones (an
+  outline keeps three); every animation's deform keys follow (`deformsWithPoint`,
+  `deformsWithoutPoint`). In Animate the drag keys a deform at the playhead. A world drag
+  becomes a node-space offset through the exact inverse of the point's own linear map
+  (`localDelta`), so a weighted point follows the pointer.
+- **Deform keys** (`core/mesh/deform.ts`): before the first key no deform; linear, stepped or
+  smooth to the next. A Deform row (`LayerRow.deform`) under a keyed mesh, and in the focused
+  view, which a selected mesh now opens as a bone does: drag, Delete, right-click for Key
+  Deform Here and the ease. Q / W stop on them.
+- **Export** writes `type: "mesh"` (uvs, triangles, vertices, hull, width, height) and each
+  animation's `attachments.<skin>.<slot>.<attachment>.deform` timeline. **Opened files' meshes
+  stay carried**: drawn by spine-core and written back, deform timelines included; the importer
+  does not turn them into editable meshes yet, nor linked meshes.
+- **Checked**: `spineParity` ▸ "meshes": unweighted, weighted, partly unweighted and deform keys
+  (linear, smooth, stepped) against spine-core's world vertices frame by frame.
+- The AI's `make_mesh` and `bind_mesh`.
+
 ## Bone paths
 
 Each selected bone draws the path its tip (or origin, Preferences ▸ Selection & Gizmos)
@@ -2637,8 +2690,8 @@ by default; `stage.wheel` makes it pan instead, and Shift or ⌘ with the wheel 
 The stage itself is an outline on the pasteboard unless `stage.fillStage`, with the grid on and
 origin lines through (0,0) of what is being edited: an opened Spine rig has no stage.)
 
-Vector drawing tools, mesh editing. Meshes opened from a Spine file are drawn and
-written back, not edited (Opening Spine files).
+Vector drawing tools, linked meshes. Meshes opened from a Spine file are drawn and
+written back, not edited (Opening Spine files, Meshes).
 
 Vector shapes have no home in the format: `_getDisplayType` is `image`, `armature`, `mesh`,
 `boundingBox`, `path` — and `path` is `PathDisplayData` for `PathConstraint`, which nothing

@@ -10,6 +10,8 @@ import type { NodeId } from "@/core/doc/ids";
 import { applyInverse, invert, mat, matOf, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { polygonContains, type Rect, rectContains, transformCorners } from "@/core/math/geom";
 import { isImage, isSymbol } from "@/core/doc/types";
+import { meshView } from "@/view/tools/MeshTool";
+import type { MeshDraw } from "./Overlay";
 import { ToolManager } from "@/view/tools/ToolManager";
 import type { ToolContext } from "@/view/tools/Tool";
 import { buildGizmo, type Gizmo, type PoseAt, selectionBounds } from "@/view/tools/gizmo";
@@ -59,6 +61,24 @@ export class Viewport {
   private marquee: Rect | null = null;
   private spaceDown = false;
   private tools = new ToolManager();
+
+  /** Delete the Mesh tool's picked points; false when it is not editing any. */
+  deleteMeshPoints(): boolean {
+    return this.store.ui.tool === "mesh" && this.tools.mesh.deletePicked(this.toolCtx);
+  }
+
+  /** What the overlay draws of the mesh the Mesh tool edits. */
+  private meshToDraw(): MeshDraw | null {
+    if (this.store.ui.tool !== "mesh") return null;
+    const node = this.store.selectedNodes.find((n) => n.mesh);
+    const entry = node ? this.lastPose?.byNode.get(node.id) : undefined;
+    if (!node?.mesh || !entry?.spine) return null;
+    const paint = this.store.ui.meshPaint;
+    const tint = paint.on && paint.bone
+      ? node.mesh.points.filter((_, i) => i % 2 === 0).map((_, i) => node.mesh!.weights?.[i]?.find(([b]) => b === paint.bone)?.[1] ?? (paint.bone === node.id && !node.mesh!.weights ? 1 : 0))
+      : null;
+    return { vertices: entry.spine.vertices, triangles: node.mesh.triangles, hull: node.mesh.hull, picked: meshView.node === node.id ? meshView.picked : new Set(), tint };
+  }
   private toolCtx: ToolContext;
   private lastGizmo: Gizmo | null = null;
   private draftBone: { ax: number; ay: number; bx: number; by: number } | null = null;
@@ -301,6 +321,7 @@ export class Viewport {
       draftGuide: this.draftGuide,
       marquee: this.marquee,
       draftBone: this.draftBone,
+      mesh: this.meshToDraw(),
       gizmo: this.lastGizmo,
       groupBox: this.ghostPoses.length && store.selection.nodes.length
         ? selectionBounds(project, this.editPoses(), store.selection.nodes) : null,

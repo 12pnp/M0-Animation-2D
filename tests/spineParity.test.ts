@@ -1,9 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { drawingLayers } from "@/core/doc/drawOrder";
 import {
-  AtlasAttachmentLoader, ClippingAttachment, type Event as SpineEvent, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
+  AtlasAttachmentLoader, ClippingAttachment, type Event as SpineEvent, MeshAttachment, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
 } from "@esotericsoftware/spine-core";
 import { eventValues } from "@/core/doc/events";
+import { boxOutline, makeMesh } from "@/core/mesh/makeMesh";
 import { newIkId, newTcId, reseed, type AssetId, type ItemId } from "@/core/doc/ids";
 import { identityProperties } from "@/core/doc/transformKeys";
 import { maskGroups } from "@/core/doc/layerTree";
@@ -856,5 +857,78 @@ describe("events", () => {
       expect(got.map((g) => ({ ...g, float: Math.fround(g.float) })), `frame ${f}`).toEqual(want.map((w) => ({ ...w, float: Math.fround(w.float) })));
     }
     expect(skeleton.data.findEvent("hit")!.audioPath).toBe("sfx/hit.ogg");
+  });
+});
+
+describe("meshes", () => {
+  /** Every frame: the stage's world vertices of each mesh against spine-core's. */
+  function meshParity(project: Project): number {
+    const sym = project.items[project.rootSymbolId] as SymbolItem;
+    const { exported, skeleton } = runtimeFor(project, project.rootSymbolId);
+    let checks = 0;
+    for (const anim of sym.animations) {
+      const animation = skeleton.data.findAnimation(anim.name)!;
+      for (let f = 0; f < anim.duration; f++) {
+        skeleton.setupPose();
+        animation.apply(skeleton, 0, f / project.frameRate, false, null, 1, MixFrom.setup, false, false, false);
+        skeleton.updateWorldTransform(Physics.none);
+        const pose = evaluateSymbol(sym, anim, f, "animate");
+        for (const e of pose.entries) {
+          if (!e.spine || !e.display?.mesh) continue;
+          const slot = skeleton.findSlot(exported.paths.get(e.nodeId as never)!)!;
+          const att = slot.appliedPose.getAttachment();
+          expect(att, `${anim.name} ${f}`).toBeInstanceOf(MeshAttachment);
+          const v = new Array<number>(e.spine.vertices.length);
+          (att as MeshAttachment).computeWorldVertices(skeleton, slot, 0, v.length, v, 0, 2);
+          for (let i = 0; i < v.length; i++) {
+            const want = i % 2 ? -v[i]! : v[i]!;
+            if (Math.abs(e.spine.vertices[i]! - want) > 2e-3) throw new Error(`"${anim.name}" frame ${f} vertex ${i >> 1}: ${e.spine.vertices[i]} vs ${want}`);
+          }
+          checks++;
+        }
+      }
+    }
+    return checks;
+  }
+
+  async function meshedStickman(weighted: boolean, deform: boolean, someUnweighted = false) {
+    const { project, rig, node } = await loadStickman();
+    const torsoId = Object.values(rig.nodes).find((n) => n.itemId && n.name.includes("torso"))!.id;
+    const torso = rig.nodes[torsoId]!;
+    const item = project.items[torso.itemId!] as { width: number; height: number };
+    const mesh = makeMesh(boxOutline(item.width, item.height), Math.max(4, item.width / 3), item.width, item.height);
+    if (weighted) {
+      // Top points follow the chest, bottom ones the hips, a blend between.
+      mesh.weights = Array.from({ length: mesh.points.length / 2 }, (_, i) => {
+        const t = mesh.points[i * 2 + 1]! / item.height;
+        if (someUnweighted && i % 3 === 0) return [];
+        return t < 0.05 ? [[node("chest"), 1]] : t > 0.95 ? [[node("hips"), 1]] : [[node("chest"), 1 - t], [node("hips"), t]];
+      }) as never;
+    }
+    rig.nodes[torsoId] = { ...torso, mesh };
+    if (deform) {
+      const n = mesh.points.length;
+      const wave = (k: number) => Array.from({ length: n }, (_, i) => (i % 2 ? Math.sin(i + k) * 6 : Math.cos(i * 0.7 + k) * 4));
+      rig.animations[0]!.deforms = { [torsoId]: [
+        { frame: 2, offsets: wave(0), tween: { kind: "curve", curve: [0.42, 0, 0.58, 1] } },
+        { frame: 8, offsets: wave(2), tween: { kind: "none" } },
+        { frame: 12, offsets: wave(4) },
+      ] };
+    }
+    return project;
+  }
+
+  it("an image as a mesh, unweighted: every vertex where spine-core puts it", async () => {
+    expect(meshParity(await meshedStickman(false, false))).toBeGreaterThan(20);
+  });
+  it("weighted to two bones", async () => {
+    expect(meshParity(await meshedStickman(true, false))).toBeGreaterThan(20);
+  });
+  it("weighted with some points weighted to nothing: they follow their own node", async () => {
+    expect(meshParity(await meshedStickman(true, true, true))).toBeGreaterThan(20);
+  });
+  it("deform keys, unweighted and weighted: linear, smooth, stepped", async () => {
+    expect(meshParity(await meshedStickman(false, true))).toBeGreaterThan(20);
+    expect(meshParity(await meshedStickman(true, true))).toBeGreaterThan(20);
   });
 });

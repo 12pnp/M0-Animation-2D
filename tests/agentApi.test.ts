@@ -57,7 +57,7 @@ describe("the AI's tools", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
       "get_reference", "render_frame", "add_bones", "attach", "add_ik", "auto_rig", "list_motions", "apply_motion", "draw_order",
-      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "set_cycle", "get_bone_path", "set_bone_path",
+      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "make_mesh", "bind_mesh", "set_cycle", "get_bone_path", "set_bone_path",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -765,6 +765,20 @@ describe("cycles and bone paths through the AI's tools", () => {
     expect(anim.transforms[out.name]![0]!.mix).toMatchObject({ rotate: 0, x: 0.5 });
     await expect(api.call("add_transform_constraint", { bones: ["chest"], source: "chest" })).rejects.toThrow(/cannot follow itself/);
     await expect(api.call("key_transform", { animation: "run", constraint: "nope", frame: 0 })).rejects.toThrow(/no transform constraint "nope"/);
+  });
+
+  it("make an image a mesh and bind it to bones, each one undo step", async () => {
+    const { store, api } = await setup();
+    const torso = Object.values(store.currentSymbol.nodes).find((n) => n.itemId && n.name.includes("torso"))!.name;
+    const made = await api.call("make_mesh", { images: [torso], spacing: 10 }) as { meshes: Array<{ image: string; points: number; triangles: number }> };
+    expect(store.history.undoLabel).toBe("AI: Make Mesh");
+    expect(made.meshes[0]!.points).toBeGreaterThan(4);
+    await api.call("bind_mesh", { image: torso, bones: ["chest", "hips"] });
+    expect(store.history.undoLabel).toBe("AI: Bind Mesh");
+    const node = Object.values(store.currentSymbol.nodes).find((n) => n.name === torso)!;
+    expect(node.mesh!.weights!.every((w) => w.length > 0)).toBe(true);
+    await expect(api.call("make_mesh", { images: [torso] })).rejects.toThrow(/without a mesh/);
+    await expect(api.call("bind_mesh", { image: "head", bones: ["chest"] })).rejects.toThrow(/one mesh/);
   });
 
   it("make a cycle in one undo step, and say where the loop does not close", async () => {

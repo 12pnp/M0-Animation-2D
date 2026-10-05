@@ -25,7 +25,9 @@ paths; the decisions are pure in `core/doc/cycle.ts`, `bonePath.ts`, `pathEdit.t
 `core/doc/events.ts`), and a Graph panel edits property curves and their eases
 (ARCHITECTURE ▸ Graph editor, `core/doc/graphEdit.ts`). Transform constraints are
 Spine 4.3's, solved on the stage by a transcription of spine-core (ARCHITECTURE ▸
-Transform constraints, `core/math/transformConstraint.ts`). An exporter change must keep
+Transform constraints, `core/math/transformConstraint.ts`). An image can be a mesh,
+made from its alpha, bound to bones by weights and keyed by deform (ARCHITECTURE ▸
+Meshes, `core/mesh/`). An exporter change must keep
 `tests/spineParity.test.ts` passing: it plays every fixture through spine-core
 and compares it with the stage frame by frame. An importer or exporter change
 must keep `tests/spineImport.test.ts` (every M0 sample round-trips) and

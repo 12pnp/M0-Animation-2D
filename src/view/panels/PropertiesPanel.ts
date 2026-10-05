@@ -142,6 +142,8 @@ export class PropertiesPanel implements Panel {
     /** Every pose on stage the selection can be edited in: the playhead's,
      *  plus each frame Edit Multiple Frames shows. */
     private readonly posesOf: () => PoseAt[] = () => [],
+    /** Runs an app command by id (the mesh commands need the image store). */
+    private readonly run: (command: string) => void = () => {},
   ) {
     this.body = h("div", { class: "props" });
     this.el = this.body;
@@ -164,7 +166,7 @@ export class PropertiesPanel implements Panel {
     // structure. Their values are synced, not rebuilt.
     const tcs = (this.store.currentSymbol.transforms ?? [])
       .map((k) => [k.id, k.name, k.sourceId, k.boneIds.join(","), !!k.localSource, !!k.localTarget, !!k.additive, !!k.clamp, usedMixes(k).join("")].join(":")).join(";");
-    return `${anim}|${tcs}|` + nodes.map((n) => `${n.id}:${n.kind}:${displayAtFrame(this.store, n).display?.itemId ?? ""}`).join("|");
+    return `${anim}|${tcs}|` + nodes.map((n) => `${n.id}:${n.kind}:${displayAtFrame(this.store, n).display?.itemId ?? ""}:${n.mesh ? `m${n.mesh.points.length}${n.mesh.weights ? "w" : ""}` : ""}`).join("|");
   }
 
   /**
@@ -230,6 +232,7 @@ export class PropertiesPanel implements Panel {
     ]));
     // A bone produces no slot, so it has neither colour nor blend mode.
     if (!bone) this.body.appendChild(this.colorSection(nodes));
+    if (!bone && nodes.length === 1 && nodes[0]!.kind === "image" && !nodes[0]!.attachment) this.body.appendChild(this.meshSection(nodes[0]!));
     if (bone) {
       this.body.appendChild(this.boneSection(bone));
       const section = this.ikSection(bone);
@@ -723,6 +726,57 @@ export class PropertiesPanel implements Panel {
     rows.push(this.row("", [add]));
     rows.push(this.noteRow("Offsets are as Spine writes them: y up, angles counter-clockwise. In Animate mode the mixes are keyed at the playhead."));
     return this.section("Transform", (symbol.transforms ?? []).some((k) => k.sourceId === node.id || k.boneIds.includes(node.id)), rows);
+  }
+
+  /**
+   * The image as a mesh (ARCHITECTURE ▸ Meshes): make or remove it, bind it to
+   * bones, and the Mesh tool's weight brush.
+   */
+  private meshSection(node: Node): HTMLElement {
+    const mesh = node.mesh;
+    const btn = (label: string, command: string, title: string) => {
+      const b = h("button", { class: "btn", title }, label);
+      on(b, "click", () => this.run(command));
+      return b;
+    };
+    const rows: HTMLElement[] = [];
+    if (!mesh) {
+      rows.push(this.row("", [btn("Make Mesh", "modify.makeMesh", "Turn the image into a mesh from its outline")]));
+      rows.push(this.noteRow("A mesh can bend: bind it to bones, or key its points with the Mesh tool (N) in Animate mode."));
+      return this.section("Mesh", false, rows);
+    }
+    rows.push(this.staticRow("Points", `${mesh.points.length / 2} (${mesh.hull} on the outline), ${mesh.triangles.length / 3} triangles`));
+    rows.push(this.staticRow("Follows", mesh.weights ? `${new Set(mesh.weights.flat().map(([b]) => b)).size} bone(s), weighted` : "its own node"));
+    rows.push(this.row("", [
+      btn("Bind to Bones", "modify.bindMesh", "Weight the mesh to the bones selected with it (⇧-click them), each point to the nearest two"),
+      ...(mesh.weights ? [btn("Unbind", "modify.unbindMesh", "Follow its own node again")] : []),
+    ]));
+    rows.push(this.row("", [
+      btn("Edit Points", "tool.mesh", "The Mesh tool: drag points, click inside to add, Delete to remove; in Animate, keys a deform"),
+      btn("Remove Mesh", "modify.removeMesh", "Back to a plain image; its deform keys go too"),
+    ]));
+
+    // The weight brush: the Mesh tool paints the chosen bone's weight.
+    const paint = this.store.ui.meshPaint;
+    const sym = this.store.currentSymbol;
+    const set = (patch: Partial<typeof paint>) => this.store.setUi({ meshPaint: { ...this.store.ui.meshPaint, ...patch } }, "stage");
+    const box = h("input", { type: "checkbox", class: "switch" }) as HTMLInputElement;
+    box.checked = paint.on;
+    on(box, "change", () => { set({ on: box.checked }); if (box.checked) this.run("tool.mesh"); });
+    const boneSel = h("select", { class: "preview-anim" }) as HTMLSelectElement;
+    boneSel.appendChild(h("option", { value: node.id }, `${node.name} (its own)`));
+    for (const b of Object.values(sym.nodes).filter((n) => n.kind === "bone")) boneSel.appendChild(h("option", { value: b.id }, b.name));
+    boneSel.value = paint.bone && (paint.bone === node.id || sym.nodes[paint.bone]?.kind === "bone") ? paint.bone : node.id;
+    if (paint.bone !== boneSel.value) queueMicrotask(() => set({ bone: boneSel.value as NodeId }));
+    on(boneSel, "change", () => set({ bone: boneSel.value as NodeId }));
+    const radius = new NumberField({ glyph: "R", min: 4, max: 400, step: 1, decimals: 0, unit: "px", onInput: (v) => set({ radius: v }) });
+    radius.set(paint.radius);
+    const strength = new NumberField({ glyph: "%", min: 0.01, max: 1, step: 0.01, decimals: 2, sensitivity: 200, onInput: (v) => set({ strength: v }) });
+    strength.set(paint.strength);
+    rows.push(this.row("Weights", [h("label", { class: "switch-label", title: "Drag over points with the Mesh tool to add this bone's weight" }, box, "Paint")]));
+    rows.push(this.row("Bone", [boneSel]));
+    rows.push(this.row("Brush", [radius.el, strength.el]));
+    return this.section("Mesh", true, rows);
   }
 
   /** A paragraph inside a section, for the rule a row of fields cannot say. */

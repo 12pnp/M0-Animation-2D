@@ -142,7 +142,7 @@ export class LayerList {
     const rows = timelineRows(this.store);
     const lines = treeLines(rows.map((r) => r.depth));
     rows.forEach((row, i) => this.list.appendChild(
-      row.prop ? this.propRow(row) : row.ik ? this.ikRow(row) : row.tc ? this.tcRow(row) : this.row(row, i, roles, lines[i]!)));
+      row.prop ? this.propRow(row) : row.ik ? this.ikRow(row) : row.tc ? this.tcRow(row) : row.deform ? this.deformRow(row) : this.row(row, i, roles, lines[i]!)));
 
     // Selecting from somewhere else — the stage, or a name in the Properties
     // panel's IK section — has to be visible. Only on an actual CHANGE, and
@@ -180,6 +180,21 @@ export class LayerList {
       style: { height: `${this.cb.rowHeight}px` },
       title: `IK "${name}": its mix and bend keys, as Spine's. Drag up or down on a key, or on an empty frame, to key the mix; drag sideways to move a key; Bend in Properties ▸ IK keys the bend. Delete removes, right-click sets the ease.`,
     }, h("span", { class: "prop-glyph" }, "⟡"), h("div", { class: "name" }, `IK ${name}`));
+    on(el, "pointerdown", (ev) => {
+      if ((ev as unknown as PointerEvent).button !== 0) return;
+      this.store.clearFrameSelection();
+      this.store.selectNodes([row.layer.nodeId]);
+    });
+    return el;
+  }
+
+  /** A mesh's Deform row: its deform keys, under the node. */
+  private deformRow(row: LayerRow): HTMLElement {
+    const el = h("div", {
+      class: "tl-layer tl-prop prop-deform",
+      style: { height: `${this.cb.rowHeight}px` },
+      title: "Deform: the mesh's keyed point offsets, as Spine's. Drag points with the Mesh tool (N) in Animate mode to key them; drag a key to move it, Delete to remove, right-click for the ease.",
+    }, h("span", { class: "prop-glyph" }, "◇"), h("div", { class: "name" }, "Deform"));
     on(el, "pointerdown", (ev) => {
       if ((ev as unknown as PointerEvent).button !== 0) return;
       this.store.clearFrameSelection();

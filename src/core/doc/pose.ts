@@ -3,6 +3,8 @@ import { orderAt } from "./drawOrder";
 import { ikPoseAt } from "./ikKeys";
 import { tcIdle, tcLocalOf, type TcLocal, tcSolveLocal, tcSolveWorld, type TcWorld } from "@/core/math/transformConstraint";
 import { tcMixAt, tcSolveOf } from "./transformKeys";
+import { meshUvs, meshWorld } from "@/core/mesh/meshPose";
+import { deformAt } from "@/core/mesh/deform";
 import { type IkBone, type IkWorld, ikApply1, ikApply2 } from "@/core/math/ik";
 import { fromSpineLocal, toSpineLocal } from "@/core/spine/transform";
 import { cloneTf, toMatrix, type Transform } from "@/core/math/Transform";
@@ -277,6 +279,7 @@ export function evaluateSymbol(
   for (const e of entries) resolve(e);
 
   applyConstraints(symbol, byNode, mode === "animate" ? animation : null, frame);
+  applyMeshes(symbol, entries, byNode, mode === "animate" ? animation : null, frame, mode);
 
   return { entries, byNode };
 }
@@ -298,6 +301,36 @@ export function evaluateSymbol(
  * weight skipping the solve, as the runtime does. The weight and bend are the
  * animation's IK keys at the frame (`ikPoseAt`), the constraint's own without.
  */
+/**
+ * Meshes (ARCHITECTURE ▸ Meshes): each mesh display's world vertices by
+ * `meshWorld`, after the constraints, so the renderer draws its triangles.
+ * A weighted mesh needs the setup pose, which is this pose in Setup mode.
+ */
+function applyMeshes(
+  symbol: SymbolItem, entries: PoseEntry[], byNode: Map<NodeId, PoseEntry>,
+  animation: Animation | null, frame: number, mode: "setup" | "animate",
+): void {
+  let setup: Map<NodeId, PoseEntry> | null = null;
+  const setupOf = () => (setup ??= mode === "setup" ? byNode : evaluateSymbol(symbol, null, 0, "setup").byNode);
+  for (const e of entries) {
+    const mesh = e.display?.mesh;
+    if (!mesh) continue;
+    const weighted = !!mesh.weights?.some((w) => w.length);
+    const bones = weighted ? {
+      now: (id: NodeId) => byNode.get(id)?.world,
+      setup: (id: NodeId) => setupOf().get(id)?.world,
+      node: setupOf().get(e.nodeId)?.world ?? e.world,
+    } : undefined;
+    e.spine = {
+      itemId: e.display!.itemId,
+      vertices: meshWorld(mesh, e.display!.pivot, e.world, deformAt(animation, e.nodeId, frame), bones),
+      uvs: meshUvs(mesh, mesh.width, mesh.height),
+      triangles: mesh.triangles,
+      quad: false,
+    };
+  }
+}
+
 function applyConstraints(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>, animation: Animation | null, frame: number): void {
   if (symbol.ik.length === 0 && !symbol.transforms?.length) return;
 

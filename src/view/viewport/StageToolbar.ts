@@ -28,6 +28,9 @@ const MODE_TOOLS: ToolDef[] = [
   { id: "ik", label: "IK", icon: "ik",
     hint: "Click the last bone of a chain to give it a target. Drag the target and the chain follows. "
       + "In Animate mode, drag targets with Pose: the drag sets a keyframe." },
+  { id: "mesh", label: "Mesh", icon: "outlineSq",
+    hint: "On a mesh (Modify ▸ Mesh ▸ Make Mesh): drag points; in Setup, click inside to add one and Delete removes the picked ones; "
+      + "in Animate, dragging points keys a deform. Properties ▸ Mesh paints weights." },
 ];
 const VIEW_TOOLS: ToolDef[] = [
   { id: "hand", label: "Hand", icon: "hand" },

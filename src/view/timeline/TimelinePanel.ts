@@ -13,6 +13,7 @@ import { attachOptionsMenu } from "./onionButton";
 import type { Store } from "@/app/Store";
 import type { IkId, NodeId, TcId } from "@/core/doc/ids";
 import { deleteTcKeys, tcMixAt, tcTweenOf, withTcKey, withTcTween } from "@/core/doc/transformKeys";
+import { deformAt, deformTweenOf, deleteDeformKeys, withDeformKey, withDeformTween } from "@/core/mesh/deform";
 import { deleteEventKeys, uniqueEventName, withEventKey } from "@/core/doc/events";
 import { deleteIkKeys, ikPoseAt, type IkTween, ikTweenOf, withIkKey, withIkTween } from "@/core/doc/ikKeys";
 import type { Keyframe, Layer, RotateDir } from "@/core/doc/types";
@@ -33,6 +34,7 @@ import {
     doSetIkKeys,
     doSetEventKeys,
     doSetTcKeys,
+    doSetDeformKeys,
     doSetEvents,
     doReorder,
     ensureTrack,
@@ -119,6 +121,7 @@ export class TimelinePanel implements Panel {
       onDrawOrderMenu: (frame, x, y) => this.drawOrderMenu(frame, x, y),
       onEditIk: (ik, keys, label, kind) => doSetIkKeys(store, ik, keys, label, kind),
       onEditTc: (tc, keys, label, kind) => doSetTcKeys(store, tc, keys, label, kind),
+      onEditDeform: (node, keys, label, kind) => doSetDeformKeys(store, node, keys, label, kind),
       onEditEvents: (keys, label, kind) => doSetEventKeys(store, keys, label, kind),
       onEventsMenu: (frame, x, y) => this.eventsMenu(frame, x, y),
       onDragSpanEnd: (nodeId, endFrame) => doSetEndFrame(store, nodeId, endFrame),
@@ -850,6 +853,47 @@ export class TimelinePanel implements Panel {
     ]);
   }
 
+  /** The picked deform keys gone; false with none picked. */
+  deleteDeformKeys(): boolean {
+    const sel = this.grid.deformSel;
+    const keys = sel && this.store.currentAnimation?.deforms?.[sel.node];
+    if (!sel?.frames.length || !keys) return false;
+    doSetDeformKeys(this.store, sel.node, deleteDeformKeys(keys, sel.frames), sel.frames.length > 1 ? "Delete Deform Keys" : "Delete Deform Key");
+    this.grid.deformSel = null;
+    return true;
+  }
+
+  /** A Deform row's menu: key the deform in force here, the picked keys'
+   *  ease, or delete them. */
+  private deformMenu(node: NodeId, frame: number, x: number, y: number): void {
+    const anim = this.store.currentAnimation;
+    const mesh = this.store.currentSymbol.nodes[node]?.mesh;
+    if (!anim || !mesh) return;
+    const keys = anim.deforms?.[node] ?? [];
+    const at = keys.find((k) => k.frame === frame);
+    if (at && !(this.grid.deformSel?.node === node && this.grid.deformSel.frames.includes(frame))) this.grid.deformSel = { node, frames: [frame] };
+    if (!at && this.grid.deformSel?.node !== node) this.grid.deformSel = null;
+    this.store.setFrame(frame);
+    const sel = this.grid.deformSel?.frames ?? [];
+    const picked = keys.filter((k) => sel.includes(k.frame));
+    const tween = (t: IkTween): MenuEntry => ({
+      label: t === "linear" ? "Linear" : t === "stepped" ? "Stepped" : "Smooth",
+      enabled: picked.length > 0,
+      checked: picked.length > 0 && picked.every((k) => deformTweenOf(k) === t),
+      run: () => doSetDeformKeys(this.store, node, withDeformTween(keys, sel, t), "Deform Key Ease"),
+    });
+    showMenu(this.menuAnchor(x, y), [
+      {
+        label: "Key Deform Here", enabled: !at,
+        run: () => doSetDeformKeys(this.store, node, withDeformKey(keys, frame, deformAt(anim, node, frame) ?? new Array<number>(mesh.points.length).fill(0)), "Key Deform"),
+      },
+      "-",
+      tween("linear"), tween("stepped"), tween("smooth"),
+      "-",
+      { label: sel.length > 1 ? `Delete ${sel.length} Deform Keys` : "Delete Deform Key", enabled: sel.length > 0, run: () => { this.deleteDeformKeys(); } },
+    ]);
+  }
+
   /** The picked transform keys gone; false with none picked. */
   deleteTcKeys(): boolean {
     const sel = this.grid.tcSel;
@@ -1009,6 +1053,7 @@ export class TimelinePanel implements Panel {
     if (ik) { this.ikMenu(ik, frame, x, y); return; }
     const tc = this.grid.visibleRows()[row]?.tc;
     if (tc) { this.tcMenu(tc, frame, x, y); return; }
+    if (this.grid.visibleRows()[row]?.deform) { this.deformMenu(nodeId, frame, x, y); return; }
     // Right-clicking outside the selection moves it, as in Flash; inside it,
     // the selection is what the menu acts on.
     if (!this.store.selection.frames.includes(`${nodeId}:${frame}`)) {

@@ -5,8 +5,8 @@ import { createProject } from "@/core/doc/defaults";
 
 describe("availableTools", () => {
   const cases: Array<["setup" | "animate", ToolId[]]> = [
-    ["setup", ["select", "freeTransform", "pivot", "bone", "ik", "rotate", "translate", "scale", "shear", "hand", "zoom"]],
-    ["animate", ["select", "freeTransform", "rotate", "translate", "scale", "shear", "hand", "zoom"]],
+    ["setup", ["select", "freeTransform", "pivot", "bone", "ik", "mesh", "rotate", "translate", "scale", "shear", "hand", "zoom"]],
+    ["animate", ["select", "freeTransform", "mesh", "rotate", "translate", "scale", "shear", "hand", "zoom"]],
   ];
   for (const [mode, want] of cases) {
     it(mode, () => expect(availableTools(mode)).toEqual(want));

@@ -1,4 +1,4 @@
-import type { DisplayRef, EventDef, EventKey, IkKey, LibraryFolder, Node, Project, TcKey, TransformConstraint } from "./types";
+import type { DeformKey, DisplayRef, EventDef, EventKey, IkKey, LibraryFolder, MeshData, Node, Project, TcKey, TransformConstraint } from "./types";
 import { eventDefsFromSpine, withEventDefValues } from "./events";
 import { DEFAULT_MOTION_BLUR, DOC_VERSION, type MotionBlurSettings, TIMELINE_PROPS } from "./types";
 import { observeId } from "./ids";
@@ -347,6 +347,43 @@ export function validateProject(raw: unknown): ValidationResult {
       if (Object.keys(out).length) anim.ik = out as never;
       else delete anim.ik;
     }
+    // Meshes: points, triangles and the outline consistent; weights of bones
+    // the symbol has. Deform keys of mesh nodes, one offset pair per point.
+    for (const node of Object.values(item.nodes)) {
+      if (node.mesh !== undefined) {
+        const m = sanitizeMesh(node.mesh, item.nodes as Record<string, unknown>);
+        if (m) node.mesh = m; else delete node.mesh;
+      }
+      for (const d of node.extraDisplays ?? []) {
+        if (d.mesh === undefined) continue;
+        const m = sanitizeMesh(d.mesh, item.nodes as Record<string, unknown>);
+        if (m) d.mesh = m; else delete d.mesh;
+      }
+    }
+    for (const anim of item.animations) {
+      if (anim.deforms === undefined) continue;
+      const raw = anim.deforms && typeof anim.deforms === "object" ? (anim.deforms as Record<string, unknown>) : {};
+      const out: Record<string, DeformKey[]> = {};
+      for (const [id, list] of Object.entries(raw)) {
+        const node = item.nodes[id as never];
+        const count = node?.mesh?.points.length ?? node?.extraDisplays?.find((d) => d.mesh)?.mesh?.points.length;
+        if (!count || !Array.isArray(list)) continue;
+        const byFrame = new Map<number, DeformKey>();
+        for (const k of list as unknown[]) {
+          if (!k || typeof k !== "object") continue;
+          const r = k as Record<string, unknown>;
+          const offsets = Array.isArray(r.offsets) ? r.offsets.map((v) => num(v, 0)) : [];
+          const key: DeformKey = { frame: clampInt(r.frame, 0, 100000, 0), offsets: Array.from({ length: count }, (_, i) => offsets[i] ?? 0) };
+          const tween = sanitizeTween(r.tween);
+          if (tween?.kind === "none" || (tween?.kind === "curve" && tween.curve.length === 4)) key.tween = tween;
+          byFrame.set(key.frame, key);
+        }
+        const keys = [...byFrame.values()].sort((a, b) => a.frame - b.frame);
+        if (keys.length) out[id] = keys;
+      }
+      if (Object.keys(out).length) anim.deforms = out as never;
+      else delete anim.deforms;
+    }
     // Transform constraints: a source and bones the symbol has (bones not the
     // source), unique names, properties of known channels, finite numbers.
     if (item.transforms !== undefined) {
@@ -533,6 +570,9 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // 17 -> 18: `IkConstraint.softness` and `IkKey.softness`. An opened
   // constraint carried its softness in `spine`; it moves to the field the
   // solver reads.
+  // 20 -> 21: `MeshData` on displays (`Node.mesh`, `DisplayRef.mesh`) and
+  // `Animation.deforms`. Additive; an older build would drop them.
+  20: (p) => ({ ...p, version: 21 }),
   // 19 -> 20: `SymbolItem.transforms` and `Animation.transforms`, transform
   // constraints and their keys. Additive; an older build would drop them.
   19: (p) => ({ ...p, version: 20 }),
@@ -568,6 +608,28 @@ const TC_NAMES = ["rotate", "x", "y", "scaleX", "scaleY", "shearY"] as const;
 type TcName = (typeof TC_NAMES)[number];
 const isTc = (v: unknown): v is TcName => typeof v === "string" && (TC_NAMES as readonly string[]).includes(v);
 const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+
+/** A mesh read from disk, or null when it cannot be one: an even list of
+ *  finite points, triangles of existing points, an outline of 3 or more,
+ *  weights (when present) per point, of bones the symbol has. */
+function sanitizeMesh(raw: unknown, nodes: Record<string, unknown>): MeshData | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const points = Array.isArray(r.points) ? r.points.map((v) => num(v, NaN)) : [];
+  if (points.length < 6 || points.length % 2 || points.some((v) => !Number.isFinite(v))) return null;
+  const count = points.length / 2;
+  const hull = clampInt(r.hull, 3, count, 3);
+  const tris = Array.isArray(r.triangles) ? r.triangles.map((v) => (Number.isInteger(v) && (v as number) >= 0 && (v as number) < count ? (v as number) : -1)) : [];
+  if (!tris.length || tris.length % 3 || tris.some((i) => i < 0)) return null;
+  const out: MeshData = { width: Math.max(1, num(r.width, 1)), height: Math.max(1, num(r.height, 1)), points, triangles: tris, hull };
+  if (Array.isArray(r.weights) && r.weights.length === count) {
+    const weights = r.weights.map((w) => (Array.isArray(w) ? w : [])
+      .filter((e): e is [string, number] => Array.isArray(e) && typeof e[0] === "string" && !!nodes[e[0]] && Number.isFinite(e[1]))
+      .map(([b, v]) => [b, Math.max(0, v)] as [string, number]));
+    if (weights.some((w) => w.length)) out.weights = weights as never;
+  }
+  return out;
+}
 
 /** Six mixes read from disk, 0..1; a missing one is 1. */
 function mixOf(raw: unknown): Record<TcName, number> {

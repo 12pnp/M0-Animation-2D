@@ -1,8 +1,9 @@
 import { h, on, raf } from "@/view/widgets/dom";
 import { FRAME_WIDTH_MAX, FRAME_WIDTH_MIN, anchoredScroll, fitFrameWidth, steppedFrameWidth } from "./zoom";
 import type { Store } from "@/app/Store";
-import type { DrawOrderKey, EventKey, IkKey, Layer, Node, TcKey, Track } from "@/core/doc/types";
+import type { DeformKey, DrawOrderKey, EventKey, IkKey, Layer, Node, TcKey, Track } from "@/core/doc/types";
 import { moveTcKeys } from "@/core/doc/transformKeys";
+import { moveDeformKeys } from "@/core/mesh/deform";
 import { ikDragAxis, ikPoseAt, moveIkKeys, withIkKey, withIkMixDragged } from "@/core/doc/ikKeys";
 import { moveDrawOrderKeys } from "@/core/doc/drawOrder";
 import { eventFrames, moveEventKeys } from "@/core/doc/events";
@@ -16,6 +17,8 @@ import { moveChannelKeys, propertyKeys, type TimelineProp } from "@/core/doc/pro
 
 /** The Draw order row's keys. */
 const DRAW_ORDER_COLOR = "#7fa8ff";
+/** Deform rows' keys. */
+const DEFORM_COLOR = "#4fd1c5";
 /** Transform constraint rows' keys. */
 const TC_COLOR = "#c792ea";
 /** The Events row's flags. */
@@ -58,6 +61,8 @@ export interface FrameGridCallbacks {
   onEditEvents(keys: EventKey[], label: string, kind?: string): void;
   /** Right-click on the Events row. */
   onEventsMenu(frame: number, x: number, y: number): void;
+  /** A Deform row's edit: the mesh's deform keys as they are to be. */
+  onEditDeform(nodeId: NodeId, keys: DeformKey[], label: string, kind?: string): void;
   /** A transform constraint row's edit: its keys as they are to be. */
   onEditTc(tc: TcId, keys: TcKey[], label: string, kind?: string): void;
   /** An IK row's edit: the constraint's keys as they are to be. */
@@ -592,6 +597,10 @@ export class FrameGrid {
         this.drawTcRow(ctx, rows[i]!.tc!, y);
         continue;
       }
+      if (rows[i]!.deform) {
+        this.drawKeyRow(ctx, this.store.currentAnimation?.deforms?.[layer.nodeId] ?? [], this.deformSel?.node === layer.nodeId ? this.deformSel.frames : [], DEFORM_COLOR, y);
+        continue;
+      }
       // A group has no artwork of its own, so it gets a thinner band: it is
       // a container, and drawing it like content would suggest otherwise. An
       // empty layer gets an outlined band with a hollow keyframe — Flash's
@@ -859,6 +868,66 @@ export class FrameGrid {
       if (!started) { started = true; this.cb.onBeginInteraction("timeline.drawOrderMove"); }
       this.cb.onEditDrawOrder(moveDrawOrderKeys(base, frames, delta), "Move Draw Order Keys", "timeline.drawOrderMove");
       this.orderSel = frames.map((f) => f + delta);
+      lastDelta = delta;
+      this.invalidate();
+    };
+    const up = () => {
+      offMove(); offUp(); offCancel();
+      this.el.releasePointerCapture?.(e.pointerId);
+      if (started) this.cb.onEndInteraction();
+    };
+    const offMove = on(this.el, "pointermove", move as (x: Event) => void);
+    const offUp = on(this.el, "pointerup", up);
+    const offCancel = on(this.el, "pointercancel", up);
+  }
+
+  /** The keys picked on a Deform row. */
+  deformSel: { node: NodeId; frames: number[] } | null = null;
+
+  /** A row of keys: a diamond per key, joined where they tween (none after
+   *  a stepped key), the picked ones ringed. */
+  private drawKeyRow(ctx: CanvasRenderingContext2D, keys: ReadonlyArray<{ frame: number; tween?: { kind: string } }>, sel: readonly number[], color: string, y: number): void {
+    ctx.fillStyle = "rgba(0,0,0,0.12)";
+    ctx.fillRect(0, y, this.el.clientWidth, this.rowHeight);
+    if (!keys.length) return;
+    const mid = Math.round(y + this.rowHeight / 2 - 0.5) + 0.5;
+    const half = this.frameWidth / 2;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 1; i < keys.length; i++) {
+      if (keys[i - 1]!.tween?.kind === "none") continue;
+      ctx.moveTo(this.xOfFrame(keys[i - 1]!.frame) + half, mid);
+      ctx.lineTo(this.xOfFrame(keys[i]!.frame) + half, mid);
+    }
+    ctx.stroke();
+    const r = Math.max(3, Math.min(5.5, half, this.rowHeight / 2 - 2.5));
+    for (const k of keys) {
+      const cx = Math.round(this.xOfFrame(k.frame) + half - 0.5) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(cx, mid - r); ctx.lineTo(cx + r, mid); ctx.lineTo(cx, mid + r); ctx.lineTo(cx - r, mid); ctx.closePath();
+      ctx.fillStyle = color;
+      ctx.fill();
+      const picked = sel.includes(k.frame);
+      ctx.lineWidth = picked ? 2 : 1;
+      ctx.strokeStyle = picked ? "#ffffff" : this.C.keyDot;
+      ctx.stroke();
+    }
+  }
+
+  /** Move the picked deform keys by whole frames, from the keys at pointerdown. */
+  private beginDeformDrag(e: PointerEvent, node: NodeId, frames: number[], base: DeformKey[]): void {
+    this.el.setPointerCapture(e.pointerId);
+    const startX = e.clientX;
+    const first = Math.min(...frames);
+    let lastDelta = 0;
+    let started = false;
+    const move = (m: PointerEvent) => {
+      const delta = Math.max(-first, Math.round((m.clientX - startX) / this.frameWidth));
+      if (delta === lastDelta) return;
+      if (!started) { started = true; this.cb.onBeginInteraction("timeline.deformMove"); }
+      this.cb.onEditDeform(node, moveDeformKeys(base, frames, delta), "Move Deform Keys", "timeline.deformMove");
+      this.deformSel = { node, frames: frames.map((f) => f + delta) };
       lastDelta = delta;
       this.invalidate();
     };
@@ -1420,6 +1489,30 @@ export class FrameGrid {
       // Below the last layer there are no frames: a press there deselects
       // them, as a press on the empty stage does.
       if (!layer) { this.store.clearFrameSelection(); return; }
+      // A Deform row: a press on a key picks it (shift adds or drops one), a
+      // drag moves the picked keys; elsewhere it scrubs.
+      if (this.visibleRows()[row]?.deform) {
+        this.propSel = null;
+        this.ikSel = null;
+        this.tcSel = null;
+        const node = layer.nodeId;
+        const keys = this.store.currentAnimation?.deforms?.[node] ?? [];
+        if (keys.some((k) => k.frame === frame)) {
+          const mine = this.deformSel?.node === node ? this.deformSel.frames : [];
+          const frames = e.shiftKey
+            ? (mine.includes(frame) ? mine.filter((f) => f !== frame) : [...mine, frame])
+            : (mine.includes(frame) ? mine : [frame]);
+          this.deformSel = { node, frames };
+          this.cb.onScrub(frame);
+          this.invalidate();
+          if (!e.shiftKey) this.beginDeformDrag(e, node, frames, keys);
+          return;
+        }
+        this.deformSel = null;
+        this.beginScrub(e, frame);
+        return;
+      }
+      this.deformSel = null;
       // A transform constraint row: a press on a key picks it (shift adds or
       // drops one), a drag moves the picked keys; elsewhere it scrubs.
       const tc = this.visibleRows()[row]?.tc;

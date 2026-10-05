@@ -22,6 +22,8 @@ import { AnimationsPanel } from "@/view/panels/AnimationsPanel";
 import { SkinsPanel } from "@/view/panels/SkinsPanel";
 import { EventsPanel } from "@/view/panels/EventsPanel";
 import { GraphPanel } from "@/view/panels/GraphPanel";
+import { doBindMesh, doMakeMesh, doRemoveMesh, doUnbindMesh } from "./MeshOps";
+import { meshableNodes, meshNodes } from "@/core/mesh/meshPlan";
 import { SoundStore } from "./SoundStore";
 import { HistoryPanel } from "@/view/panels/HistoryPanel";
 import { ReferencePanel } from "@/view/panels/ReferencePanel";
@@ -160,7 +162,7 @@ export class App {
     this.previewSession = new PreviewSession(this.store, this.assets, (err) => this.previewBuilt(err));
     this.references = new ReferenceService(this.store, this.assets);
     this.poses = new PosesService(this.store);
-    this.agent = new AgentApi(this.store, new HiddenPreviewProbe(this.store, this.assets), new PageVision(this.store, this.assets));
+    this.agent = new AgentApi(this.store, new HiddenPreviewProbe(this.store, this.assets), new PageVision(this.store, this.assets), this.assets);
     // `?agent=5191` talks to a bridge on another port (AMINO_BRIDGE_PORT),
     // e.g. beside one another tool already runs.
     const port = Number(new URLSearchParams(location.search).get("agent"));
@@ -270,7 +272,7 @@ export class App {
   }
 
   private registerPanels(): void {
-    this.shell.addRightPanel(new PropertiesPanel(this.store, () => this.viewport.pose, () => this.viewport.editPoses(true)));
+    this.shell.addRightPanel(new PropertiesPanel(this.store, () => this.viewport.pose, () => this.viewport.editPoses(true), (id) => { this.keymap.run(id); }));
     this.shell.addRightPanel(this.library);
     this.shell.addRightPanel(new OutlinePanel(this.store));
     this.shell.addRightPanel(new OutlinePanel(this.store, "subtree"));
@@ -1253,6 +1255,8 @@ export class App {
           it("modify.swapInstance"),
           it("modify.bindToBone"),
           "-",
+          { label: "Mesh", items: [it("modify.makeMesh"), it("modify.removeMesh"), "-", it("modify.bindMesh"), it("modify.unbindMesh")] },
+          "-",
           it("modify.mask"),
           it("modify.masked"),
           "-",
@@ -1503,8 +1507,9 @@ export class App {
     // Keys picked on a timeline property row go first: they are what the
     // last click was on, and the bone stays selected under them.
     reg("edit.delete", () => {
+      if (this.viewport.deleteMeshPoints()) return;
       if (this.timeline.deletePropKeys() || this.timeline.deleteDrawOrderKeys() || this.timeline.deleteIkKeys()
-        || this.timeline.deleteEventKeys() || this.timeline.deleteTcKeys() || this.graph.deletePicked()) return;
+        || this.timeline.deleteEventKeys() || this.timeline.deleteTcKeys() || this.timeline.deleteDeformKeys() || this.graph.deletePicked()) return;
       s.apply(new RemoveNodes(s.currentSymbolId, [...s.selection.nodes]));
       s.clearSelection();
       s.emit("doc");
@@ -1558,6 +1563,14 @@ export class App {
     reg("modify.group", () => tl.addGroup(), hasNodes);
     reg("modify.swapInstance", () => this.swapInstance(), () => this.canSwapInstance());
     reg("modify.bindToBone", () => this.bindToBone(), () => this.bindableToBone() !== null);
+    reg("modify.makeMesh", () => { doMakeMesh(s, this.assets); }, () => meshableNodes(s.currentSymbol, s.selection.nodes).length > 0);
+    reg("modify.removeMesh", () => { doRemoveMesh(s); }, () => meshNodes(s.currentSymbol, s.selection.nodes).length > 0);
+    reg("modify.bindMesh", () => {
+      const refused = doBindMesh(s);
+      if (refused) this.toast.show(refused, true);
+    }, () => meshNodes(s.currentSymbol, s.selection.nodes).length === 1);
+    reg("modify.unbindMesh", () => { doUnbindMesh(s); },
+      () => meshNodes(s.currentSymbol, s.selection.nodes).some((id) => !!s.currentSymbol.nodes[id]!.mesh!.weights));
     reg("modify.mask", () => this.toggleMask(), () => this.canToggleMask(),
       () => this.selectedLayer()?.isMask === true);
     reg("modify.masked", () => this.toggleMasked(), () => this.canToggleMasked(),
@@ -1643,7 +1656,7 @@ export class App {
 const SPINE_FILE = /\.(json|atlas|txt|png|jpe?g|webp|zip|skel|bytes)$/i;
 
 const TOOL_IDS: ToolId[] = [
-  "select", "freeTransform", "pivot", "bone", "ik", "hand", "zoom",
+  "select", "freeTransform", "pivot", "bone", "ik", "mesh", "hand", "zoom",
   "rotate", "translate", "scale", "shear",
 ];
 

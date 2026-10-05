@@ -87,6 +87,8 @@ export interface OverlayOptions {
   marquee: Rect | null;
   /** Bone being dragged out with the Bone tool, in world space. */
   draftBone: { ax: number; ay: number; bx: number; by: number } | null;
+  /** The mesh the Mesh tool edits, in world space. */
+  mesh?: MeshDraw | null;
   gizmo: Gizmo | null;
   /** Edit Multiple Frames: the box around every instance of the selection
    *  between the markers, in world space — the virtual group being edited. */
@@ -97,8 +99,57 @@ export interface OverlayOptions {
 }
 
 
+/** A mesh as the Mesh tool shows it: world vertices, its triangles and
+ *  outline, the picked points, and (painting) each point's weight for the
+ *  brush's bone, 0..1. */
+export interface MeshDraw {
+  vertices: readonly number[];
+  triangles: readonly number[];
+  hull: number;
+  picked: ReadonlySet<number>;
+  tint: number[] | null;
+}
+
 /** Everything drawn on top of the artwork: chrome, guides and handles. */
 export class Overlay {
+  /** The Mesh tool's wireframe: triangles thin, the outline bold, points as
+   *  dots (filled when picked, coloured by weight while painting). */
+  private drawMesh(ctx: CanvasRenderingContext2D, cam: Camera, m: MeshDraw): void {
+    const v = m.vertices;
+    const s = (i: number) => cam.toScreen(v[i * 2]!, v[i * 2 + 1]!);
+    ctx.save();
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.beginPath();
+    for (let t = 0; t < m.triangles.length; t += 3) {
+      const a = s(m.triangles[t]!), b = s(m.triangles[t + 1]!), c = s(m.triangles[t + 2]!);
+      ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.lineTo(c.x, c.y); ctx.closePath();
+    }
+    ctx.stroke();
+    ctx.strokeStyle = this.C.select;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    for (let i = 0; i < m.hull; i++) {
+      const p = s(i);
+      if (i) ctx.lineTo(p.x, p.y); else ctx.moveTo(p.x, p.y);
+    }
+    ctx.closePath();
+    ctx.stroke();
+    for (let i = 0; i < v.length / 2; i++) {
+      const p = s(i);
+      const w = m.tint?.[i];
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, m.picked.has(i) ? 4 : 3, 0, Math.PI * 2);
+      ctx.fillStyle = w !== undefined ? `rgb(${Math.round(255 * w)}, ${Math.round(80 * (1 - Math.abs(w - 0.5) * 2))}, ${Math.round(255 * (1 - w))})`
+        : m.picked.has(i) ? "#ffffff" : this.C.select;
+      ctx.fill();
+      ctx.strokeStyle = "rgba(0,0,0,0.7)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
   /** The palette in force for the draw in progress. Set from the options at
    *  the top of `draw`, so every helper below paints the same one. */
   private C: OverlayColors = DEFAULT_COLORS;
@@ -132,6 +183,7 @@ export class Overlay {
     if (opts.bonePaths) this.drawBonePaths(ctx, camera, opts.bonePaths);
     if (opts.showBones || opts.primary?.show) this.drawBones(ctx, camera, symbol, pose, opts);
     if (opts.names.images) this.drawImageNames(ctx, camera, pose);
+    if (opts.mesh) this.drawMesh(ctx, camera, opts.mesh);
     this.drawSelection(
       ctx, camera, project, symbol, pose, opts.selection, !!opts.gizmo, opts.when,
       opts.showGizmos,

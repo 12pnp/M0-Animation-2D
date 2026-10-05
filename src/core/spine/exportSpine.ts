@@ -1,15 +1,17 @@
-import type { Animation, ColorTransform, DisplayRef, IkKey, TransformConstraint, ImageItem, Layer, Node, Project, SymbolItem, Track } from "@/core/doc/types";
+import type { Animation, ColorTransform, DisplayRef, IkKey, MeshData, TransformConstraint, ImageItem, Layer, Node, Project, SymbolItem, Track } from "@/core/doc/types";
 import { DEFAULT_COLOR, isImage, isSymbol, producesSlot } from "@/core/doc/types";
 import type { IkId, ItemId, NodeId, TcId } from "@/core/doc/ids";
 import { descendantsOf, maskGroups } from "@/core/doc/layerTree";
 import { orderAt, toOffsets } from "@/core/doc/drawOrder";
 import { eventValues } from "@/core/doc/events";
 import { usedMixes } from "@/core/doc/transformKeys";
+import { type MeshBones, meshUvs, spineDeform, spineVertices } from "@/core/mesh/meshPose";
 import { TC_CHANNELS, type TcChannel } from "@/core/math/transformConstraint";
 import type { Contour } from "@/core/atlas/contour";
 import { nz } from "@/core/math/angle";
+import { mat, type Matrix2D } from "@/core/math/Matrix2D";
 import { displaysOf } from "@/core/doc/displays";
-import { childFrame, displayContext, localAt } from "@/core/doc/pose";
+import { childFrame, displayContext, evaluateSymbol, localAt } from "@/core/doc/pose";
 import { rotationDelta, sampleColorRaw, sampleTransformRaw } from "@/core/doc/timeline";
 import type { Transform } from "@/core/math/Transform";
 import { type EaseSegment, easeOf, easeSegments, sameEase, type TweenChannel, type TweenSpec } from "@/core/math/easing";
@@ -190,6 +192,10 @@ export function exportSpine(
   const rootTc = new Map<TcId, SpineTransformConstraint>();
   const tcKeysWarned = new Set<ItemId>();
   const ikKeysWarned = new Set<ItemId>();
+  /** The exported symbol's mesh displays, for their deform keys. */
+  const rootMeshes: Array<{ nodeId: NodeId; slot: string; key: string; mesh: MeshData; pivot: { x: number; y: number }; bones: MeshBones | null }> = [];
+  const setupPoses = new Map<ItemId, Map<NodeId, { world: Matrix2D }>>();
+  const setupOf = (sym: SymbolItem) => setupPoses.get(sym.id) ?? setupPoses.set(sym.id, evaluateSymbol(sym, null, 0, "setup").byNode).get(sym.id)!;
   const eventKeysWarned = new Set<ItemId>();
   const setups = new Map<string, SpineLocal>();
   const paths = new Map<string, string>();
@@ -328,6 +334,25 @@ export function exportSpine(
         for (let n = 2; taken.has(key); n++) key = `${item.name} (${n})`;
         taken.add(key);
         keys.set(index, key);
+        if (ref.mesh) {
+          // A mesh (ARCHITECTURE ▸ Meshes): `spineVertices` in the slot bone's
+          // space, or per bone at the setup pose for a weighted one.
+          const setupPose = setupOf(s);
+          const bones: MeshBones | null = ref.mesh.weights?.some((w) => w.length) ? {
+            now: (id) => (dropped(id) ? undefined : setupPose.get(id)?.world),
+            setup: (id) => (dropped(id) ? undefined : setupPose.get(id)?.world),
+            node: setupPose.get(node.id)?.world ?? mat(),
+          } : null;
+          const mesh: Record<string, unknown> = {
+            type: "mesh", uvs: meshUvs(ref.mesh, ref.mesh.width, ref.mesh.height), triangles: [...ref.mesh.triangles],
+            vertices: spineVertices(ref.mesh, ref.pivot, bones, (id) => nameOf(id), node.slotBone ?? node.id), hull: ref.mesh.hull,
+            width: ref.mesh.width, height: ref.mesh.height,
+          };
+          if (key !== item.name) mesh.path = item.name;
+          slotAttachments[key] = mesh as unknown as SpineAttachment;
+          if (scope.depth === 0) rootMeshes.push({ nodeId: node.id, slot: name, key, mesh: ref.mesh, pivot: ref.pivot, bones });
+          continue;
+        }
         const centre = regionCentre(item.width, item.height, ref.pivot);
         const region: SpineRegionAttachment = { width: item.width, height: item.height };
         if (key !== item.name) region.path = item.name;
@@ -583,6 +608,11 @@ export function exportSpine(
       out.ik = ikKeys;
       for (const keys of Object.values(anim.ik ?? {})) lastFrame = Math.max(lastFrame, keys[keys.length - 1]?.frame ?? 0);
     }
+    const deforms = deformTimelines(anim, rootMeshes, fps);
+    if (deforms) {
+      out.attachments = { default: deforms };
+      for (const keys of Object.values(anim.deforms ?? {})) lastFrame = Math.max(lastFrame, keys[keys.length - 1]?.frame ?? 0);
+    }
     const tcKeys = transformTimelines(sym, anim, rootTc, fps);
     if (tcKeys) {
       out.transform = tcKeys;
@@ -604,6 +634,15 @@ export function exportSpine(
           // A constraint keyed in the document replaces the file's timeline.
           if (group === "ik" || group === "transform") { if (!into[owner]) into[owner] = timelines; continue; }
           into[owner] = { ...into[owner], ...timelines };
+        }
+      } else if (group === "attachments" && out.attachments && value && typeof value === "object") {
+        // Skin -> slot -> attachment: the document's deform keys win.
+        const into = out.attachments as Record<string, Record<string, Record<string, unknown>>>;
+        for (const [skin, slots] of Object.entries(value as Record<string, Record<string, Record<string, unknown>>>)) {
+          for (const [slot, atts] of Object.entries(slots)) {
+            const target = ((into[skin] ??= {})[slot] ??= {});
+            for (const [att, timelines] of Object.entries(atts)) if (!target[att]) target[att] = timelines;
+          }
         }
       } else out[group] = value;
     }
@@ -998,6 +1037,43 @@ function ikTimelines(
       }
       return o;
     });
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/* ── deform keys ─────────────────────────────────────────────────────────── */
+
+/**
+ * The animation's deform keys as Spine's `deform` timelines, per mesh display
+ * of the exported symbol whose point count the keys fit: offsets in the
+ * slot bone's space, or per weighted entry in that bone's setup space
+ * (`spineDeform`). A tween is one cubic over 0..1, as Spine reads it.
+ */
+function deformTimelines(
+  anim: Animation,
+  meshes: ReadonlyArray<{ nodeId: NodeId; slot: string; key: string; mesh: MeshData; bones: MeshBones | null }>,
+  fps: number,
+): Record<string, Record<string, { deform: Array<{ time?: number; vertices?: number[]; curve?: SpineCurve }> }>> | null {
+  const out: Record<string, Record<string, { deform: Array<{ time?: number; vertices?: number[]; curve?: SpineCurve }> }>> = {};
+  for (const m of meshes) {
+    const keys = anim.deforms?.[m.nodeId];
+    if (!keys?.length || keys.some((k) => k.offsets.length !== m.mesh.points.length)) continue;
+    (out[m.slot] ??= {})[m.key] = {
+      deform: keys.map((key, i) => {
+        const o: { time?: number; vertices?: number[]; curve?: SpineCurve } = {};
+        const time = keyTime(key.frame, fps);
+        if (time) o.time = time;
+        if (key.offsets.some((v) => v !== 0)) o.vertices = spineDeform(m.mesh, key.offsets, m.bones);
+        const next = keys[i + 1];
+        if (next && key.tween?.kind === "none") o.curve = "stepped";
+        else if (next && key.tween?.kind === "curve") {
+          const [x1, y1, x2, y2] = key.tween.curve as [number, number, number, number];
+          const t0 = key.frame / fps, span = (next.frame - key.frame) / fps;
+          o.curve = [t0 + x1 * span, y1, t0 + x2 * span, y2];
+        }
+        return o;
+      }),
+    };
   }
   return Object.keys(out).length ? out : null;
 }

@@ -15,6 +15,8 @@ import { AddAnimation, EditTracks, SetCycle, SetDrawOrder, SetEventKeys, SetEven
 import { renamedEvent, withEventDefValues, withEventKey, withEventKeyValues, withoutEvent } from "@/core/doc/events";
 import { deleteTcKeys, tcMixAt, tcTweenOf, transformPlan, usedMixes, withTcKey, withTcTween } from "@/core/doc/transformKeys";
 import { SetTcKeys, SetTransforms } from "@/core/history/transformCommands";
+import { doBindMesh, doMakeMesh } from "@/app/MeshOps";
+import type { AssetStore } from "@/app/AssetStore";
 import { TC_CHANNELS, type TcChannel } from "@/core/math/transformConstraint";
 import { deleteIkKeys, ikPoseAt, type IkTween, ikTweenOf, withIkKey, withIkTween } from "@/core/doc/ikKeys";
 import { cyclePlan, isCycle, SEAM_TOLERANCE, seamFrame, seamGap } from "@/core/doc/cycle";
@@ -110,7 +112,11 @@ type SpineKeyIn = {
 const round = (v: number, digits = 4) => Math.round(v * 10 ** digits) / 10 ** digits + 0;
 
 export class AgentApi {
-  constructor(private readonly store: Store, private readonly preview?: PreviewProbe, private readonly vision?: AgentVision) {}
+  constructor(
+    private readonly store: Store, private readonly preview?: PreviewProbe, private readonly vision?: AgentVision,
+    /** The images' pixels, for a mesh's outline; without, a mesh is the image's rectangle. */
+    private readonly assets?: AssetStore,
+  ) {}
 
   get tools(): AgentTool[] { return AGENT_TOOLS; }
 
@@ -140,6 +146,8 @@ export class AgentApi {
       case "key_ik": return this.keyIk(str(args, "animation"), str(args, "ik"), int(args, "frame", 0), args);
       case "define_event": return this.defineEvent(str(args, "name"), args);
       case "add_transform_constraint": return this.addTransform(args);
+      case "make_mesh": return this.makeMeshes(list<string>(args, "images"), args.spacing);
+      case "bind_mesh": return this.bindMesh(str(args, "image"), list<string>(args, "bones"));
       case "key_transform": return this.keyTransform(str(args, "animation"), str(args, "constraint"), int(args, "frame", 0), args);
       case "key_event": return this.keyEvent(str(args, "animation"), int(args, "frame", 0), str(args, "event"), args);
       case "get_bone_path": return this.getBonePath(str(args, "animation"), str(args, "bone"), args.point);
@@ -822,6 +830,27 @@ export class AgentApi {
       animation: anim.name, ik: k.name,
       keys: keys.map((key) => ({ frame: key.frame, ...ikKeyOut(k, key) })),
     };
+  }
+
+  private makeMeshes(names: string[], spacing: unknown) {
+    if (spacing !== undefined && (typeof spacing !== "number" || !(spacing >= 2))) throw new AgentError("spacing is a number of pixels, 2 or more.");
+    const ids = names.map((n) => this.node(n).id);
+    const made = doMakeMesh(this.store, this.assets ?? null, ids, "AI: Make Mesh", spacing as number | undefined);
+    if (!made) throw new AgentError("None of those is an image of its own without a mesh.");
+    return {
+      meshes: ids.filter((id) => this.sym.nodes[id]?.mesh).map((id) => {
+        const m = this.sym.nodes[id]!.mesh!;
+        return { image: this.sym.nodes[id]!.name, points: m.points.length / 2, outline: m.hull, triangles: m.triangles.length / 3 };
+      }),
+    };
+  }
+
+  private bindMesh(image: string, bones: string[]) {
+    const ids = [this.node(image).id, ...bones.map((n) => this.bone(n).id)];
+    const refused = doBindMesh(this.store, ids, "AI: Bind Mesh");
+    if (refused) throw new AgentError(refused);
+    const m = this.sym.nodes[ids[0]!]!.mesh!;
+    return { image, bones, points: m.points.length / 2 };
   }
 
   private addTransform(args: Args) {

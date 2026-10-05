@@ -1,6 +1,7 @@
 import type { Store } from "./Store";
 import { type Reorder, reorderAt } from "@/core/doc/drawOrder";
-import type { DrawOrderKey, EventDef, EventKey, IkKey, TcKey, TransformConstraint } from "@/core/doc/types";
+import type { DeformKey, DrawOrderKey, EventDef, EventKey, IkKey, TcKey, TransformConstraint } from "@/core/doc/types";
+import { SetDeformKeys } from "@/core/history/meshCommands";
 import { SetTcKeys, SetTransforms } from "@/core/history/transformCommands";
 import type {
     BlendMode,
@@ -120,6 +121,15 @@ export function doSetTransforms(store: Store, list: TransformConstraint[], label
   store.apply(new SetTransforms(label, store.currentSymbolId, list, kind));
   store.emit("stage");
   store.emit("doc");
+}
+
+/** One mesh node's deform keys in the current animation replaced. */
+export function doSetDeformKeys(store: Store, nodeId: NodeId, keys: DeformKey[], label: string, kind?: string): void {
+  const anim = store.currentAnimation;
+  if (!anim) return;
+  store.apply(new SetDeformKeys(label, store.currentSymbolId, anim.id, nodeId, keys, kind));
+  store.emit("timeline");
+  store.emit("stage");
 }
 
 /** One transform constraint's keys in the current animation replaced. */

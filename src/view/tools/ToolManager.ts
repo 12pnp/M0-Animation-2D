@@ -5,11 +5,13 @@ import { BoneTool } from "./BoneTool";
 import { IkTool } from "./IkTool";
 import { PivotTool } from "./PivotTool";
 import { AxisTool } from "./AxisTool";
+import { MeshTool } from "./MeshTool";
 import type { ToolId } from "@/app/Store";
 
 export class ToolManager {
   private tools = new Map<string, Tool>();
   private activeId: ToolId = "select";
+  readonly mesh = new MeshTool();
 
   constructor() {
     this.register(new SelectTool());
@@ -17,6 +19,7 @@ export class ToolManager {
     this.register(new PivotTool());
     this.register(new BoneTool());
     this.register(new IkTool());
+    this.register(this.mesh);
     for (const kind of ["rotate", "translate", "scale", "shear"] as const) this.register(new AxisTool(kind));
   }
 

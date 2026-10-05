@@ -19,6 +19,8 @@ export interface LayerRow {
   /** A transform constraint's row (`focusRows`): its mix keys, under the
    *  constraint's source. */
   tc?: TcId;
+  /** A mesh node's Deform row (`focusRows`): its deform keys. */
+  deform?: true;
 }
 
 /**
@@ -313,21 +315,24 @@ export function groupPlan(
  * them: only the `focus` nodes' rows (the selection made outside the
  * timeline), flat, in layer order, each bone followed by its property rows
  * (Rotate, Translate X, Translate Y, Scale, Shear) and the IK rows of the
- * constraints it takes part in. No focus, or no bone in it, and every row
+ * constraints it takes part in, each mesh followed by its Deform row. No
+ * focus, or no bone or mesh in it, and every row
  * stays (`timeline.focusSelected` off does the same), with an IK row under
  * each target whose constraint `anim` keys. A focused row hidden in a
  * collapsed group is shown.
  */
 export function focusRows(sym: SymbolItem, focus: readonly NodeId[], on: boolean, anim?: Animation | null): LayerRow[] {
   const rows = layerRows(sym);
-  if (!on || !focus.some((id) => sym.nodes[id]?.kind === "bone")) {
+  if (!on || !focus.some((id) => sym.nodes[id]?.kind === "bone" || sym.nodes[id]?.mesh)) {
     const keyed = sym.ik.filter((k) => anim?.ik?.[k.id]?.length);
     const keyedTc = (sym.transforms ?? []).filter((k) => anim?.transforms?.[k.id]?.length);
-    if (!keyed.length && !keyedTc.length) return rows;
+    const deformed = new Set(Object.keys(anim?.deforms ?? {}).filter((id) => anim!.deforms![id as NodeId]!.length));
+    if (!keyed.length && !keyedTc.length && !deformed.size) return rows;
     return rows.flatMap((r) => [
       r,
       ...keyed.filter((k) => k.targetId === r.node.id).map((k) => ({ ...r, depth: r.depth + 1, hasChildren: false, ik: k.id })),
       ...keyedTc.filter((k) => k.sourceId === r.node.id).map((k) => ({ ...r, depth: r.depth + 1, hasChildren: false, tc: k.id })),
+      ...(deformed.has(r.node.id) ? [{ ...r, depth: r.depth + 1, hasChildren: false, deform: true as const }] : []),
     ]);
   }
   const keep = new Set<string>(focus);
@@ -351,8 +356,9 @@ export function focusRows(sym: SymbolItem, focus: readonly NodeId[], on: boolean
         ...sym.ik.filter((k) => ikHost.get(k.id) === r.node.id).map((k) => ({ ...row, depth: 1, ik: k.id })),
         ...(sym.transforms ?? []).filter((k) => tcHost.get(k.id) === r.node.id).map((k) => ({ ...row, depth: 1, tc: k.id })),
       ];
+      const deform = r.node.mesh ? [{ ...row, depth: 1, deform: true as const }] : [];
       return r.node.kind === "bone"
         ? [row, ...TIMELINE_PROPS.map((prop) => ({ ...row, depth: 1, prop })), ...iks]
-        : [row, ...iks];
+        : [row, ...deform, ...iks];
     });
 }

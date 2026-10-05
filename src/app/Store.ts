@@ -13,7 +13,7 @@ import { PrefsStore } from "./Prefs";
 import { availableTools, toolForMode } from "./toolModes";
 
 export type ToolId =
-  | "select" | "freeTransform" | "pivot" | "bone" | "ik" | "hand" | "zoom"
+  | "select" | "freeTransform" | "pivot" | "bone" | "ik" | "mesh" | "hand" | "zoom"
   // The stage toolbar's transform tools (view/tools/AxisTool.ts), Spine's.
   | "rotate" | "translate" | "scale" | "shear";
 
@@ -37,6 +37,9 @@ export interface UiState {
   /** The frames whose event keys are picked on the timeline's Events row:
    *  the Events panel edits their values. */
   eventFrames: number[];
+  /** The Mesh tool's weight brush (ARCHITECTURE ▸ Meshes): on, for which
+   *  bone, its radius in screen pixels and how much a stroke adds. */
+  meshPaint: { on: boolean; bone: NodeId | null; radius: number; strength: number };
   /** While playing, how far past `frame` the stage poses (0..1): smooth
    *  playback draws between frames (`playStep`). 0 otherwise. */
   subFrame: number;
@@ -117,6 +120,7 @@ export class Store {
     frame: 0,
     timelineFocus: [],
     eventFrames: [],
+    meshPaint: { on: false, bone: null, radius: 40, strength: 0.1 },
     subFrame: 0,
     playing: false,
     loop: true,

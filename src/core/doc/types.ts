@@ -6,7 +6,7 @@ import type { AnimId, AssetId, FolderId, IkId, ItemId, LayerId, NodeId, TcId } f
 import type { TcChannel, TcFrom } from "@/core/math/transformConstraint";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 20;
+export const DOC_VERSION = 21;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -183,6 +183,9 @@ export interface Node {
    *  `itemId` and `pivot` above are display 0 — the one the bind pose shows.
    *  Absent on a layer that only ever shows one thing. */
   extraDisplays?: DisplayRef[];
+  /** Display 0 as a mesh (ARCHITECTURE ▸ Meshes); extra displays carry their
+   *  own. */
+  mesh?: MeshData;
   /** Bind-pose colour, exported as `slot.color`. Absent means neutral.
    *  Keyframe colour overrides it wholesale, as it does in the runtime. */
   color?: ColorTransform;
@@ -225,6 +228,33 @@ export interface DisplayRef {
   pivot: { x: number; y: number };
   /** The Spine attachment it came from, opened from a Spine file. */
   attachment?: SpineAttachmentRef;
+  /** The image as a mesh (ARCHITECTURE ▸ Meshes), exported as a Spine mesh
+   *  attachment. */
+  mesh?: MeshData;
+}
+
+/**
+ * An image's mesh (`core/mesh/`). Points are in the image's pixels (y down,
+ * origin top-left): where each point is and the texture it shows. The first
+ * `hull` points, in order, are the outline. `weights`: per point, the bones
+ * it follows and how much, summing to 1; absent, the mesh follows its node.
+ */
+export interface MeshData {
+  /** The image's size when the mesh was made: the texture's extent. */
+  width: number;
+  height: number;
+  points: number[];
+  triangles: number[];
+  hull: number;
+  weights?: Array<Array<[NodeId, number]>>;
+}
+
+/** One deform key: each point's offset from its place (x, y per point, in
+ *  the node's space, y down) from `frame` on, tweened to the next key. */
+export interface DeformKey {
+  frame: number;
+  offsets: number[];
+  tween?: TweenSpec;
 }
 
 /**
@@ -413,6 +443,9 @@ export interface Animation {
   /** Transform constraint keys per constraint (`core/doc/transformKeys.ts`),
    *  each list sorted by frame. Absent for a constraint: its own mixes. */
   transforms?: Record<TcId, TcKey[]>;
+  /** Deform keys per mesh node (`core/mesh/deform.ts`), each list sorted by
+   *  frame. Absent: the mesh as made. */
+  deforms?: Record<NodeId, DeformKey[]>;
 }
 
 /** One IK key. `tween` eases the mix (and softness) to the next key: linear when absent,

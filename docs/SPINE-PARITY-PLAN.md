@@ -31,8 +31,9 @@ Legend:
 
 - ✅ Region
 - ✅ Clipping (from masks)
-- ◐ Mesh: drawn and written back, no mesh editing (vertices, hull, edges, triangulation)
-- ◐ Weighted mesh: weights carried, no binding or weight painting
+- ✅ Mesh: made from the image's alpha, points added, moved, deleted, triangulated (ARCHITECTURE
+  ▸ Meshes); an opened file's meshes are still carried, not editable
+- ✅ Weighted mesh: bind to bones, auto weights, weight brush
 - ◐ Linked mesh: carried
 - ◐ Sequence (frame-by-frame attachment): carried
 - ◐ Bounding box, point and path attachments: carried
@@ -68,7 +69,7 @@ Legend:
 - ✅ Eases: presets, custom cubic (Ease dialog), stepped; played as Spine samples them
 - ✅ Onion skin (Spine's ghosting), cycles, bone paths (drag, bend with handles, bake)
 - ✅ Auto key (`ui.autoKey`)
-- ◐ Deform (mesh) keys: carried
+- ✅ Deform (mesh) keys: keyed with the Mesh tool, a Deform row (opened files' deforms carried)
 - ✅ Event keys and the event list (an Events row and panel; ARCHITECTURE ▸ Events)
 - ✅ Transform constraint keys (a row per constraint)
 - ◐ Path, physics and slider constraint keys: carried
@@ -159,7 +160,7 @@ position, or following it with an offset). It is a pure solve, like IK.
 4. Parity: random rigs, as `IK: 60 random rigs` does.
 5. AI: `add_transform_constraint`.
 
-### Phase D: meshes
+### Phase D: meshes (done but linked meshes and opened meshes, docs/MESH-PLAN.md)
 
 Why: deformation (squash and stretch, faces, cloth) is what moves a Spine rig past cut-out
 animation. It is the largest phase, so it comes after the cheaper wins.
