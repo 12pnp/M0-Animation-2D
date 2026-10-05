@@ -2,7 +2,8 @@
 
 **Status:** R0 done 2026-10-05 (below), **not verified** in Unity: opening this copy in
 the Editor without it importing the editor folder was not checked. R1 done 2026-10-05 on
-the editor's side (below); its C# side is not started. R2–R5 not started. Left
+the editor's side (below); its C# side is not started. R2 done 2026-10-05 except the bake
+round trip (below). R3–R5 not started. Left
 of R0: repointing the M2 projects' `file:` references and retiring the old folders (R0
 step 7), both owner calls.
 
@@ -218,6 +219,33 @@ runtime the game ships.
   back, and the pose must not change.
 - **Done when** stickman, frog and every authored fixture play identically in the
   editor's runtime and BoneBurst's C# runtime, baked and unbaked.
+
+**Result (2026-10-05).**
+- `Tools~/ParityHarness/Dump.cs` (`run.sh --dump <in> <out>`): reads each export with
+  `SkeletonJsonReader`/`AtlasReader`, plays every animation through `BoneAnimationState` +
+  `ManagedPose` as the Preview steps (0 s, then a fixed step, physics updating), writes every
+  bone's world matrix, slot colour, drawn attachment and the draw order per frame.
+- `tests/boneburstUnity.test.ts` exports 34 files, runs the dump once, and compares frame by
+  frame: the stickman and frog exports, every spine-unity sample as it is, and every sample
+  opened in the editor and exported again (the pipeline's step 1 → 3). **All 34 match**:
+  worst 8.4e-4 in a matrix entry (raptor-pro-and-mask, a near-straight IK chain) and 3.5e-5 of
+  the rig's size in position, float32 against float64; the bounds are 1e-3 and 1e-4. Breaking
+  the editor's IK by 0.1 % fails it. Skipped, not passed, without the Unity version's .NET SDK
+  or the project's `Library/`. The harness's own gate stays 215 of 215 bit-exact.
+- Changed from the plan:
+  - **The step is 0.0337 s, not 1/30 s.** At 1/30 s, frames land on attachment keys and on
+    physics substep boundaries, where float32 (C#) and float64 (editor) time fall on opposite
+    sides: four of the first ten failures were that, not the runtimes.
+  - **Drawn attachments are compared**: the C# pose names a slot's attachment on an inactive
+    (skin-only) bone, the editor reports what is drawn; neither draws it (Hero's chain).
+  - **No bake round trip in the harness**: the bake's name keys hash through
+    `UnityEngine.PropertyName`, an engine call .NET cannot make. **Left**: the editor's exports
+    through `BakedDataTests` in the Editor (or a managed key hash for the harness).
+  - `unityParity.test.ts` (stock spine-unity on a hand-run dump, whose folder is gone) is
+    superseded for the pipeline, not deleted: stock spine-unity is no longer what plays the files.
+- Linked meshes agree with the C# runtime on the samples that have them (Goblins 2,
+  mix-and-match 6), none with its source in another slot: R1's cross-slot fix is held to
+  spine-core only; a C#-side check needs a file that has one (a synthetic one in `Data~`).
 
 ### R3 — AI step (the existing plans, sequenced)
 

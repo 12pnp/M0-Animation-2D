@@ -52,7 +52,9 @@ must keep `tests/spineImport.test.ts` (every M0 sample round-trips) and
 `../Packages/com.module.ta-creator-boneburst/Doc/Format/BoneBurst-Profile.md`, and the runtime
 behaviour is that folder's specs (`Timelines.md`, `Constraints.md`, …): read them before
 changing the runtime, and keep `tests/boneburstProfile.test.ts` passing (every export the
-parity and import suites make is held to the profile). Phase 8 checked the
+parity and import suites make is held to the profile) and `tests/boneburstUnity.test.ts`
+(the exports, every sample and every re-exported sample posed by the Unity package's C#
+runtime through its parity harness, frame by frame; it skips without the harness's .NET). Phase 8 checked the
 exports in Unity (ARCHITECTURE ▸ Checked in Unity, `scripts/unity-check/`): spine-csharp
 is stricter than spine-core (it requires `skeleton.hash`), so a header or format change
 should be rerun there. An AI edits the document through `src/app/agent/`

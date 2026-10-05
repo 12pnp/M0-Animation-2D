@@ -34,6 +34,7 @@
     <Compile Include="$(PackageRoot)Tests/Editor/SpineCsharp/*.cs" />
     <Compile Include="Shims/*.cs" />
     <Compile Include="Program.cs" />
+    <Compile Include="Dump.cs" />
   </ItemGroup>
   <ItemGroup>
     <!-- Unity's own managed code: Unity.Mathematics (an engine module in 6.6), NativeArray and attributes, and the

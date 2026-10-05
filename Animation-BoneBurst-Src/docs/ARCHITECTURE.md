@@ -1699,6 +1699,13 @@ through it (`boneburstPose.ts`, P3b), and it is the Preview's runtime (P4).
   source's deform and sequence keys play in the linked mesh's slot too (`timelineSlots`);
   and 4.3's `drawOrderFolder` is not played, so any animation section the reader does not
   play is now listed in `unsupported` instead of dropped silently.
+- **Held to the C# runtime the game ships** (`tests/boneburstUnity.test.ts`): the Unity
+  package's parity harness poses files through BoneBurst's C# runtime (`run.sh --dump`,
+  `Dump.cs`) and the test compares each frame with this runtime. 34 files: the stickman and
+  frog exports, every spine-unity sample, every sample re-exported by the editor. Frames step
+  at 0.0337 s, off the key grid: at 1/30 s a frame lands on attachment keys and physics substep
+  boundaries, where float32 and float64 time fall on opposite sides. Attachments are compared
+  as drawn (a slot on an inactive bone draws nothing; the C# pose still names it).
 - **Unity's specs are the behaviour.** The Unity package's `Doc/Format/` (Timelines,
   AnimationState, Constraints, Constraints-Path-Physics, Pose-and-Mesh, Clipping,
   Skins-TintBlack-Culling) specify what BoneBurst's C# runtime does, written clean-room against

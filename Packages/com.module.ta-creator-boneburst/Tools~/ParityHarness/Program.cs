@@ -17,7 +17,8 @@ namespace BoneBurst.ParityHarness
     /// </summary>
     /// <remarks>
     ///     Arguments: optional test class names to run (default: every class with tests). Exit code 0 only when every
-    ///     test passed and at least one ran; a run of nothing is a failure.
+    ///     test passed and at least one ran; a run of nothing is a failure. <c>--dump in out</c> instead poses the
+    ///     exports in <c>in</c> (<see cref="Dump" />).
     /// </remarks>
     static class Program
     {
@@ -31,6 +32,9 @@ namespace BoneBurst.ParityHarness
 
         static int Main(string[] args)
         {
+            // `--dump <in> <out>`: pose the editor's exports for its own comparison (Dump.cs), not a test run.
+            if (args.Length == 3 && args[0] == "--dump") return Dump.Run(args[1], args[2]);
+
             Console.WriteLine($".NET {Environment.Version} ({System.Runtime.InteropServices.RuntimeInformation.ProcessArchitecture}), " +
                               $"working directory {Directory.GetCurrentDirectory()}");
             float big = 16777216f, one = float.Parse("1");

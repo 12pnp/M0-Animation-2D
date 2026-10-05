@@ -17,7 +17,7 @@ flowchart LR
     CORE -. "R2: same poses" .- RT
 ```
 
-Status 2026-10-05: written for R1 of the editor's pipeline plan (`Animation-BoneBurst-Src/docs/BONEBURST-PIPELINE-PLAN.md`). R2 will hold both runtimes to the same poses on the same files; until then the editor checks its exports against this page in its own tests.
+Status 2026-10-05: written for R1 of the editor's pipeline plan (`Animation-BoneBurst-Src/docs/BONEBURST-PIPELINE-PLAN.md`); since R2 both runtimes are held to the same poses on the same files (§6).
 
 ## 1. Rules for every file
 
@@ -89,4 +89,4 @@ From R1 on, a behaviour either runtime measures is written into these specs, and
 
 - **Editor**: `tests/boneburstProfile.test.ts` (each rule caught on a broken file; every spine-unity sample passes as a file to read), and `spineParity` / `spineImport`, which hold every export they make to §2. `tests/spineRuntime.test.ts` holds the linked-mesh rule and the unsupported-section rule against spine-core.
 - **C#**: the reader's own tests (`com.module.ta-creator-boneburst-import/Tests`), and the parity harness against spine-csharp.
-- **Both, on the same files**: R2 of the pipeline plan (the parity harness reading the editor's exports).
+- **Both, on the same files**: the editor's `tests/boneburstUnity.test.ts` runs the parity harness's dump mode (`Tools~/ParityHarness/run.sh --dump`, `Dump.cs`) on 34 files (the editor's exports, every spine-unity sample, and every sample re-exported by the editor) and compares BoneBurst's C# pose with the editor's frame by frame. All match (pipeline plan R2). Not yet baked: the bake's keys need the Editor.
