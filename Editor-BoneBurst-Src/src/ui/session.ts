@@ -1,4 +1,5 @@
 import { readAtlas } from "@/io/atlas";
+import type { Page } from "@/io/pack";
 import { readSkeleton } from "@/io/skeletonRead";
 import { writeSkeleton } from "@/io/skeletonWrite";
 import { History } from "@/edit/history";
@@ -12,6 +13,7 @@ import { animationDuration, DEFAULT_FPS, frameTime, timeFrame } from "@/model/ti
 import type { PhysicsMode } from "@/engine/physics";
 import { atlasImages, NO_IMAGES, type AtlasImages } from "@/engine/regions";
 import { baseName, pickFiles } from "./files";
+import { importPsd } from "./psdImport";
 import { boneMatrix, Poser, type Posed } from "./stage/posed";
 
 /** A selection in the rig: what the rig tree, the stage and the properties panel show. */
@@ -51,6 +53,8 @@ export class Session {
   /** Mesh mode: the selected vertex of the selected mesh, and the bone whose weights the stage colours. */
   vertex: number | null = null;
   weightBone: string | null = null;
+  /** An atlas and its pages the editor made (a PSD import), to be written with the next save. */
+  generated: { atlasText: string; pages: readonly Page[] } | null = null;
   /** What reading found, and pages the atlas names that were not given. */
   issues: Issue[] = [];
   /** The document as last opened or saved: undo returns the very object, so undoing back to it is clean. */
@@ -193,6 +197,7 @@ export class Session {
   /** Open a skeleton, its atlas and its pages from the given files. Throws when there is no skeleton. */
   async open(files: readonly Source[]): Promise<void> {
     const picked = pickFiles(files);
+    if (picked.psd && !picked.skeleton) { await this.openPsd(picked.psd); return; }
     if (!picked.skeleton && !picked.atlas) throw new Error("Choose a Spine skeleton (.json) with its .atlas and page images, or an atlas with its images to start a new skeleton.");
     // An atlas alone starts a new skeleton (a root bone) to build a rig from its regions.
     const { skeleton, issues } = picked.skeleton ? readSkeleton(await picked.skeleton.text()) : { skeleton: newSkeleton(randomHash()), issues: [] };
@@ -212,11 +217,31 @@ export class Session {
     } else {
       all.push({ where: fileName, message: "no atlas was given; the bones are shown without images" });
     }
+    this.replace(skeleton, picked.skeleton !== null, baseName(fileName), atlas, pages, all);
+  }
+
+  /**
+   * Import a Photoshop file as a new, unsaved skeleton with the atlas and pages made from its
+   * layers (E4-PLAN step 7). Refusals (`PsdRefused`, `PackRefused`) pass through with their reason.
+   */
+  private async openPsd(f: Source): Promise<void> {
+    const im = importPsd(await (await f.blob()).arrayBuffer(), f.name, randomHash());
+    const pages = new Map<string, ImageBitmap>();
+    for (const p of im.pages) {
+      pages.set(p.name, await createImageBitmap(new ImageData(new Uint8ClampedArray(p.pixels), p.width, p.height), { premultiplyAlpha: "premultiply" }));
+    }
+    this.replace(im.skeleton, false, im.name, im.atlas, pages, [...im.issues, ...profileIssues(im.skeleton)]);
+    this.generated = { atlasText: im.atlasText, pages: im.pages };
+  }
+
+  /** Start over on a new document. */
+  private replace(skeleton: Skeleton, fromFile: boolean, name: string, atlas: Atlas | null, pages: Map<string, ImageBitmap>, all: Issue[]): void {
     for (const b of this.pages.values()) b.close();
+    this.generated = null;
     this.history = new History(skeleton);
-    // A skeleton started from an atlas is new: unsaved until saved.
-    this.saved = picked.skeleton ? this.history.doc : null;
-    this.name = baseName(fileName);
+    // A skeleton started from an atlas or a PSD is new: unsaved until saved.
+    this.saved = fromFile ? this.history.doc : null;
+    this.name = name;
     this.atlas = atlas;
     this.images = atlas ? atlasImages(atlas) : NO_IMAGES;
     this.pages = pages;

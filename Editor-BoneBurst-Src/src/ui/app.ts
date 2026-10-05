@@ -1,5 +1,6 @@
 import { EDITOR_NAME, SPINE_VERSION, titleFor } from "@/about";
 import { Inspector } from "./panels/inspector";
+import type { Page } from "@/io/pack";
 import { Outline } from "./panels/outline";
 import { fileSource, Session, type Source } from "./session";
 import type { Tool } from "./stage/gizmo";
@@ -33,10 +34,10 @@ export function mountApp(root: HTMLElement): void {
   const fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.multiple = true;
-  fileInput.accept = ".json,.atlas,.txt,.png,.jpg,.jpeg,.webp";
+  fileInput.accept = ".json,.atlas,.txt,.png,.jpg,.jpeg,.webp,.psd";
   fileInput.hidden = true;
-  const openBtn = button("Open…", "Open a skeleton with its atlas and images (⌘O)", () => fileInput.click());
-  const saveBtn = button("Save", "Save the skeleton JSON (⌘S)", () => save());
+  const openBtn = button("Open…", "Open a skeleton with its atlas and images, or a Photoshop file to start a rig from (⌘O)", () => fileInput.click());
+  const saveBtn = button("Save", "Save the skeleton JSON, with the atlas and pages of an imported PSD (⌘S)", () => void save());
   const undoBtn = button("Undo", "", () => { session.history?.undo(); session.changed(); });
   const redoBtn = button("Redo", "", () => { session.history?.redo(); session.changed(); });
   const toolBtns = TOOLS.map((t) => {
@@ -130,15 +131,33 @@ export function mountApp(root: HTMLElement): void {
     }
   }
 
-  function save(): void {
-    if (!session.history) return;
-    const text = session.save();
+  function download(name: string, blob: Blob): void {
     const a = document.createElement("a");
-    a.href = URL.createObjectURL(new Blob([text], { type: "application/json" }));
-    a.download = `${session.name}.json`;
+    a.href = URL.createObjectURL(blob);
+    a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 1000);
-    say(`Saved ${session.name}.json.`);
+  }
+
+  /** The skeleton; with it, once, an atlas and pages the editor made (a PSD import). */
+  async function save(): Promise<void> {
+    if (!session.history) return;
+    const made = session.generated;
+    download(`${session.name}.json`, new Blob([session.save()], { type: "application/json" }));
+    if (!made) { say(`Saved ${session.name}.json.`); return; }
+    download(`${session.name}.atlas.txt`, new Blob([made.atlasText], { type: "text/plain" }));
+    for (const p of made.pages) download(p.name, await png(p));
+    session.generated = null;
+    say(`Saved ${session.name}.json, ${session.name}.atlas.txt and ${made.pages.map((p) => p.name).join(", ")}.`);
+  }
+
+  /** An atlas page as a PNG file. */
+  async function png(p: Page): Promise<Blob> {
+    const c = document.createElement("canvas");
+    c.width = p.width;
+    c.height = p.height;
+    c.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(p.pixels), p.width, p.height), 0, 0);
+    return new Promise((done, fail) => c.toBlob((b) => (b ? done(b) : fail(new Error("The page could not be encoded."))), "image/png"));
   }
 
   function refresh(): void {
@@ -214,7 +233,7 @@ export function mountApp(root: HTMLElement): void {
   function onKey(e: KeyboardEvent): void {
     const mod = e.metaKey || e.ctrlKey, key = e.key.toLowerCase();
     if (mod && key === "o") { e.preventDefault(); fileInput.click(); return; }
-    if (mod && key === "s") { e.preventDefault(); save(); return; }
+    if (mod && key === "s") { e.preventDefault(); void save(); return; }
     if (isTyping(e)) return;
     if (mod && key === "z") { e.preventDefault(); (e.shiftKey ? redoBtn : undoBtn).click(); return; }
     if (mod && key === "y") { e.preventDefault(); redoBtn.click(); return; }

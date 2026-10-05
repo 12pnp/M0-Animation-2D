@@ -6,6 +6,8 @@
 export interface Picked<F> {
   skeleton: F | null;
   atlas: F | null;
+  /** A Photoshop file to import (E4 step 7); it takes the place of a skeleton and atlas. */
+  psd: F | null;
   /** Images by file name, for the atlas's pages to find. */
   images: Map<string, F>;
   /** Files that were none of these, or a second skeleton or atlas. */
@@ -15,13 +17,14 @@ export interface Picked<F> {
 const IMAGE = /\.(png|jpe?g|webp)$/i;
 
 export function pickFiles<F extends { name: string }>(files: readonly F[]): Picked<F> {
-  const out: Picked<F> = { skeleton: null, atlas: null, images: new Map(), ignored: [] };
+  const out: Picked<F> = { skeleton: null, atlas: null, psd: null, images: new Map(), ignored: [] };
   const lower = (f: F) => f.name.toLowerCase();
   for (const f of files) {
     const n = lower(f);
     if (n.endsWith(".bb.json")) out.ignored.push(f); // the sidecar (E4)
     else if (n.endsWith(".json") && !out.skeleton) out.skeleton = f;
     else if ((n.endsWith(".atlas") || n.endsWith(".atlas.txt")) && !out.atlas) out.atlas = f;
+    else if (n.endsWith(".psd") && !out.psd) out.psd = f;
     else if (IMAGE.test(n)) out.images.set(f.name, f);
     else out.ignored.push(f);
   }

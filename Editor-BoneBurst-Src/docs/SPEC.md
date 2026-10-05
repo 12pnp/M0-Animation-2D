@@ -167,10 +167,13 @@ when written, and a new constraint leaves the pose as it was (`edit/constraints`
 with a mesh selected on the setup pose the stage edits its vertices (`ui/stage/meshMode`,
 `edit/mesh`, triangulated by `edit/triangulate`), and deform keys keep meaning what they meant.
 Weights (step 6): meshes bind to bones by distance and are reweighted on the setup pose
-(`edit/weights`, `edit/meshLayout`), whose bone matrices the session gives the edits as data.
+(`edit/weights`, `edit/meshLayout`), whose bone matrices the session gives the edits as data. A
+Photoshop file (step 7) opens as a new rig: `io/psd` reads its layers with `ag-psd` (D7),
+`io/pack` packs them into atlas pages, `edit/layerRig` makes a slot and region per layer, and
+the first save writes the atlas and pages beside the skeleton (`ui/psdImport`).
 
 **Docking (D6, E4):** the window is the toolbar and status line around a Dockview dock
-(`dockview-core`, the only npm runtime dependency). Every panel is a Dockview panel, under an id
+(`dockview-core`; with `ag-psd`, D7, the npm runtime dependencies). Every panel is a Dockview panel, under an id
 reserved in `ui/workspace/panelIds.ts` (stage, timeline, rigTree, properties; preview,
 reference, ai when built); default places live in `ui/workspace/layout.ts`. Dockview does the
 splitting, tabbing, floating and popout windows; panels size from its `layout(width, height)`

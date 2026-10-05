@@ -184,3 +184,9 @@ undo, onion skins — these are ideas every editor shares. The rules:
       naming a panel this build lacks is ignored quietly and applied when the panel arrives. The
       old editor's docking and styling are not a template: Dockview's own patterns are the
       reference. Executed in `Editor-BoneBurst-Src/docs/E4-PLAN.md` step 1.
+- [x] D7 PSD reader: **Decided 2026-10-06 (owner): `ag-psd`**, pinned exactly (31.0.2), MIT, with
+      its two dependencies `base64-js` (MIT) and `pako` (MIT and Zlib); all three ship and are in
+      THIRD-PARTY-NOTICES. This amends D6's "only runtime dependency": v2's npm runtime
+      dependencies are exactly `dockview-core` and `ag-psd`, each pinned, and the check script
+      holds that. Chosen over a reader of our own for the files artists actually make (groups,
+      RLE, 16-bit, blend modes). Executed in `Editor-BoneBurst-Src/docs/E4-PLAN.md` step 7.

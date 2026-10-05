@@ -10,8 +10,9 @@ mix-and-match outfit duplicated and changed on screen, posed alike by both runti
 screen, the file saved and posed alike by both runtimes. Step 5 (mesh geometry) done: the
 stickman's torso turned into a mesh and shaped on the stage, saved, posed alike by both
 runtimes. Step 6 (weights) done: the torso mesh bound to three bones on screen, reshaped and
-reweighted, saved, posed alike by both runtimes through its animations. Later steps not started.
-`npm run check`: 283 tests.
+reweighted, saved, posed alike by both runtimes through its animations. Step 7 (PSD import)
+done: a layered PSD dropped on the editor, shown, saved with its atlas and page, read back.
+Later steps not started. `npm run check`: 292 tests.
 
 E4 makes the editor author a rig, not only animate one: panels and docking (D6), slots,
 attachments, draw order, skins, constraints, mesh editing, PSD import and preferences. It is
@@ -470,11 +471,97 @@ flowchart LR
    (SHA-256 equal), no profile issue as written, 26 poses through `dance` and `run` alike in both
    runtimes.
 
-## Later steps (planned when step 7 starts)
+## Step 7 — PSD import
 
-PSD import, the sidecar's read and write (view state, guides, references), the reference panel,
-preferences; keying constraint values, deform keys, drawing constraints on the stage, a weight
-brush.
+An artist's Photoshop file becomes a rig to build on: open or drop a `.psd` and get a new
+skeleton with one slot and region per layer, placed where the layer is, stacked as in Photoshop,
+with its images packed into an atlas the editor writes. The reader is `ag-psd` (owner decision
+D7, recorded in the v2 plan).
+
+```mermaid
+flowchart LR
+    PSD[".psd"] -->|"ag-psd readPsd<br/>(layer pixels, no composite)"| LAYERS["layers: name, bounds,<br/>pixels, opacity, blend, hidden"]
+    LAYERS -->|"io/psdRig (pure)"| TRIM["trimmed images"]
+    TRIM -->|"io/pack: shelves ≤ 2048"| PAGES["pages (RGBA)"]
+    TRIM --> SK["skeleton: root at the canvas's<br/>bottom centre, slot + region per layer"]
+    PAGES --> AT["atlas text (writeAtlas)"]
+    SK & AT & PAGES -->|"session: new, unsaved"| SAVE["Save: .json + .atlas.txt + .png pages"]
+```
+
+### Decisions
+
+- **D7: `ag-psd` 31.0.2**, exact, with `base64-js` and `pako`; THIRD-PARTY-NOTICES lists all three
+  as shipped; the check script now allows exactly `dockview-core` and `ag-psd` as runtime
+  dependencies, each pinned. It is read with layer pixels as plain image data (no canvas, no
+  composite image, no thumbnail).
+- **One layer, one slot and one region**, on the root bone, named after the layer (made unique
+  with a number). Layers inside groups are taken too; the group's name is not part of the slot's
+  name, and its opacity and visibility apply to the layers in it. Draw order is Photoshop's:
+  the bottom layer is drawn first.
+- **Placement**: the skeleton's origin is the canvas's bottom centre, y up; each region sits at
+  its trimmed image's centre. Pixel-for-pixel: one Photoshop pixel is one unit.
+- **Layer properties**: opacity (layer × groups) becomes the slot's colour alpha; blend Normal,
+  Multiply, Screen and Linear Dodge become normal, multiply, screen and additive; any other blend
+  is drawn normal and reported. Hidden layers, empty layers and layers without pixels (adjustment
+  layers) are left out and reported.
+- **Images**: each layer is trimmed to its non-transparent pixels, then packed tallest first on
+  shelves into pages of at most 2048 × 2048 with 2 pixels between images (more pages when one is
+  full; a layer larger than a page is refused with its name). The atlas is written in Spine's
+  format (`bounds` per region); pages are `<name>.png`, `<name>_2.png`, …
+- **The result is a new, unsaved document**; Save then writes the skeleton, the atlas and its
+  pages, each a download. Only RGB at 8 bits per channel is read (`ag-psd` does not read 16);
+  other colour modes and depths are refused with what to save the file as.
+- **Not in this step:** importing into an open skeleton (re-import), groups becoming bones,
+  layer tags.
+
+### Steps
+
+1. D7 recorded (v2 plan), `ag-psd` installed exact, notices rows, the dependency guard.
+2. `io/pack.ts` (shelf packing), `io/psdRig.ts` (layers → skeleton, atlas, pages, issues), with
+   tests on PSD files `ag-psd` writes in the test: placement, order, opacity, blend, groups,
+   hidden and empty layers, trimming, more than one page, a too-large layer; the page pixels
+   under each region equal the layer's; the profile holding; both runtimes posing it alike.
+3. Opening or dropping a `.psd`: read, imported, the pages drawn; Save writes the atlas and pages
+   with the skeleton when they came from an import.
+4. On screen: a PSD made for the test opened, shown, saved; the saved files read back.
+
+### Step 7 results
+
+1. D7 recorded in the v2 plan's decision log (amending D6's "only runtime dependency").
+   `ag-psd` 31.0.2 installed exact; `base64-js` 1.5.1 and `pako` 2.1.0 come with it. All three
+   in THIRD-PARTY-NOTICES as shipped, their licences in `public/vendor/`; `scripts/check.sh`
+   requires exactly pinned `ag-psd` and `dockview-core`.
+2. `io/psd.ts` (`readPsdLayers`, `trim`, `PSD_LIMITS`), `io/pack.ts` (`place`, `pack`),
+   `edit/layerRig.ts` (`rigFromLayers`), `ui/psdImport.ts` (`importPsd`, `safeName`).
+   `tests/psd.test.ts`, 9 tests on PSDs `ag-psd` writes in the test: packing (no overlaps,
+   padding, more than one page, deterministic, too large refused); trimming; visible layers
+   bottom first with group opacity, hidden layers and groups and empty layers reported; slots,
+   regions, placement, opacity and blends; an unsupported blend reported; region pixels equal to
+   the layer's; names the atlas reader cannot misread; the profile holding; spine-core posing it
+   alike. Three planted bugs fail them (y not flipped; no padding; group opacity ignored).
+   **Changed from the plan:** `ag-psd` reads 8 bits per channel only, so 16-bit files are
+   refused rather than converted. The file is read as `ag-psd`'s guide for untrusted files says:
+   structure first (raw channel data), sizes and counts checked against `PSD_LIMITS`, then each
+   layer's pixels decoded on its own and the raw data dropped. Layer pixels come as plain arrays
+   (`ag-psd` is given an image-data maker and no canvas), so reading is the same in the browser
+   and under Node. **Added:** `tests/fixtures/psd.ts` writes `tests/fixtures/psd/figure.psd`
+   (a small character in groups, with a translucent multiply shadow and a hidden sketch); a test
+   holds the committed file to that code.
+3. Opening or dropping a `.psd` imports it (the Open dialog lists `.psd`); the pages are made
+   into images directly; the first Save writes `<name>.json`, `<name>.atlas.txt` and the pages,
+   and says so.
+4. On screen: `figure.psd` dropped on the editor: seven slots in Photoshop's order, the head
+   over the body, the arms over it, the shadow translucent under the feet at the origin; "1 note"
+   for the hidden sketch. Save handed the browser three files (captured, not downloaded): the
+   JSON, the atlas, a 468 × 156 PNG; the document clean after. Dropped back in: no issue, written
+   again byte for byte the same. The same import in Node gives the identical JSON and atlas
+   (SHA-256 equal), no profile issue as written, spine-core posing it alike.
+
+## Later steps (planned when step 8 starts)
+
+The sidecar's read and write (view state, guides, references), the reference panel, preferences;
+re-importing a PSD; keying constraint values, deform keys, drawing constraints on the stage, a
+weight brush.
 
 ## Results
 

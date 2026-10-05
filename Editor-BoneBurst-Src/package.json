@@ -20,6 +20,7 @@
     "vitest": "^3.1.4"
   },
   "dependencies": {
+    "ag-psd": "31.0.2",
     "dockview-core": "8.4.0"
   }
 }
