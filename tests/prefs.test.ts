@@ -130,4 +130,25 @@ describe("the playhead colour", () => {
     expect(mergePrefs({ timeline: { playhead: "#ff00aa" } }).timeline.playhead).toBe("#ff00aa");
   });
   it("defaults to cyan", () => expect(DEFAULT_PREFS.timeline.playhead).toBe(PLAYHEAD_DEFAULT));
+  it("red picked again after the change stays red", () => {
+    const stored = { general: { defaultsVersion: 2 }, timeline: { playhead: "#e8483f" } };
+    expect(mergePrefs(stored).timeline.playhead).toBe("#e8483f");
+  });
+});
+
+describe("the UI font", () => {
+  it("defaults to Inter", () => expect(DEFAULT_PREFS.interface.fontFamily).toBe("inter"));
+  it("a JetBrains Mono stored before the change was the old default, and takes Inter", () => {
+    expect(mergePrefs({ interface: { fontFamily: "jetbrains" } }).interface.fontFamily).toBe("inter");
+  });
+  it("JetBrains Mono picked after the change stays", () => {
+    const stored = { general: { defaultsVersion: 2 }, interface: { fontFamily: "jetbrains" } };
+    expect(mergePrefs(stored).interface.fontFamily).toBe("jetbrains");
+  });
+  it("another stored choice stays either way", () => {
+    expect(mergePrefs({ interface: { fontFamily: "system" } }).interface.fontFamily).toBe("system");
+  });
+  it("what is saved after loading is at the current version", () => {
+    expect(mergePrefs({}).general.defaultsVersion).toBe(DEFAULT_PREFS.general.defaultsVersion);
+  });
 });

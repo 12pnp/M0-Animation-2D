@@ -33,9 +33,9 @@ describe("the UI text scale", () => {
 });
 
 describe("Interface ▸ Text ▸ Font", () => {
-  it("defaults to the bundled JetBrains Mono", () => {
-    expect(DEFAULT_PREFS.interface.fontFamily).toBe("jetbrains");
-    expect(fontStack("jetbrains")).toMatch(/^'JetBrains Mono Variable'/);
+  it("defaults to the bundled Inter", () => {
+    expect(DEFAULT_PREFS.interface.fontFamily).toBe("inter");
+    expect(fontStack("inter")).toMatch(/^'Inter Variable'/);
   });
 
   it("every choice is a stack that ends in a generic family", () => {
@@ -59,9 +59,9 @@ describe("Interface ▸ Text ▸ Font", () => {
   });
 
   it("a stored family is kept, an unknown one falls back to the default", () => {
-    expect(mergePrefs({ interface: { fontFamily: "inter" } }).interface.fontFamily).toBe("inter");
+    expect(mergePrefs({ interface: { fontFamily: "system" } }).interface.fontFamily).toBe("system");
     // Choices that were dropped, or never existed.
-    expect(mergePrefs({ interface: { fontFamily: "classic" } }).interface.fontFamily).toBe("jetbrains");
-    expect(mergePrefs({ interface: { fontFamily: "Comic Sans" } }).interface.fontFamily).toBe("jetbrains");
+    expect(mergePrefs({ interface: { fontFamily: "classic" } }).interface.fontFamily).toBe("inter");
+    expect(mergePrefs({ interface: { fontFamily: "Comic Sans" } }).interface.fontFamily).toBe("inter");
   });
 });

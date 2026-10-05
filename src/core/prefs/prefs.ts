@@ -29,6 +29,9 @@ export interface GeneralPrefs {
   newDocHeight: number;
   newDocFps: number;
   newDocBackground: string;
+  /** Which changes of default the stored preferences have been through
+   *  (`mergePrefs`). Never shown. */
+  defaultsVersion: number;
 }
 
 export interface InterfacePrefs {
@@ -236,6 +239,13 @@ export type PrefsCategory = keyof Prefs;
 export const PLAYHEAD_DEFAULT = "#00e5ff";
 const OLD_PLAYHEAD_DEFAULT = "#e8483f";
 
+/**
+ * Bumped when a default changes that stored preferences should follow: a
+ * stored value equal to the OLD default was never chosen, so it takes the new
+ * one, once. Version 2: the cyan playhead, Inter as the UI font.
+ */
+const DEFAULTS_VERSION = 2;
+
 export const DEFAULT_PREFS: Prefs = {
   general: {
     autosave: true,
@@ -247,6 +257,7 @@ export const DEFAULT_PREFS: Prefs = {
     newDocHeight: 600,
     newDocFps: 24,
     newDocBackground: "#ffffff",
+    defaultsVersion: DEFAULTS_VERSION,
   },
   interface: {
     theme: DEFAULT_THEME_ID,
@@ -257,7 +268,7 @@ export const DEFAULT_PREFS: Prefs = {
     setup: "#4fd1c5",
     warn: "#d89a2e",
     fontSize: "small",
-    fontFamily: "jetbrains",
+    fontFamily: "inter",
     fontCustom: "",
     treeLineColors: true,
     treeLine0: "rgba(224,108,117,0.75)",
@@ -467,9 +478,16 @@ export function mergePrefs(stored: unknown): Prefs {
   }
 
   const tl = src.timeline as Record<string, unknown> | undefined;
-  // The playhead was red by default. A stored copy of that default is not
-  // a choice the user made, so it takes the new one; any other colour stays.
-  if (tl?.playhead === OLD_PLAYHEAD_DEFAULT) out.timeline.playhead = PLAYHEAD_DEFAULT;
+  const gen = src.general as Record<string, unknown> | undefined;
+  const version = typeof gen?.defaultsVersion === "number" ? gen.defaultsVersion : 1;
+  if (version < 2) {
+    // The playhead was red and the font JetBrains Mono by default. Stored
+    // before version 2, either is the old default rather than a choice;
+    // after it, picking them again sticks.
+    if (tl?.playhead === OLD_PLAYHEAD_DEFAULT) out.timeline.playhead = PLAYHEAD_DEFAULT;
+    if ((src.interface as Record<string, unknown> | undefined)?.fontFamily === "jetbrains") out.interface.fontFamily = "inter";
+  }
+  out.general.defaultsVersion = DEFAULTS_VERSION;
 
   // Before the markers, the onion skin was one symmetric `onionRange`.
   const legacy = tl?.onionRange;

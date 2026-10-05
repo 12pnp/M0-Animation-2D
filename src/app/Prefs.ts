@@ -60,7 +60,11 @@ export class PrefsStore {
 function load(): Prefs {
   try {
     const raw = localStorage.getItem(KEY);
-    return mergePrefs(raw ? JSON.parse(raw) : null);
+    const prefs = mergePrefs(raw ? JSON.parse(raw) : null);
+    // Written back at once, so a changed default is taken once and its
+    // version recorded (`defaultsVersion`).
+    if (raw) save(prefs);
+    return prefs;
   } catch { /* private mode, or a blob we cannot parse */ }
   return structuredClone(DEFAULT_PREFS);
 }

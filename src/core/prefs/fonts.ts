@@ -67,7 +67,7 @@ export function fontStack(id: UiFontFamily, custom = ""): string {
  * `applyTheme` sets this beside `--font-family`; every canvas repaints on a
  * preferences change and picks it up.
  */
-let currentStack = fontStack("jetbrains");
+let currentStack = fontStack("inter");
 export function setUiFontFamily(id: UiFontFamily, custom = ""): void { currentStack = fontStack(id, custom); }
 export function uiFontStack(): string { return currentStack; }
 
