@@ -232,7 +232,7 @@ frames.
 
 ## Not in scope
 
-- Spine's own file format (`.spine` projects). This editor's document is `.animo`; Spine
+- Spine's own file format (`.spine` projects). This editor's document is `.boneburst`; Spine
   exchanges skeletons through the JSON or binary export, which is what this plan targets.
 - Matching Spine's UI. The checklist is about what can be authored, not how Spine lays it
   out.

@@ -19,7 +19,7 @@ beforeEach(() => reseed());
 
 /**
  * The new timeline / library / export features, exercised against the real
- * `frog.animo` instead of a two-layer scene.
+ * `frog.boneburst` instead of a two-layer scene.
  *
  * Why the real file: every one of these features only misbehaves once a
  * symbol has SEVERAL rows and a long timeline — a mask that has to be

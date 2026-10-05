@@ -109,7 +109,7 @@ store and no DOM.
 4. **Stage and panels.**
    - The Local/World Path panels use the same `PathDrag`, so they follow with no change.
      Check the Local panel's "anywhere else drags the bone" press too.
-   - Real mouse drags on `stickman.animo`: stage dot, Local panel, World panel, at a
+   - Real mouse drags on `stickman.boneburst`: stage dot, Local panel, World panel, at a
      cycle's frame 0, with ⇧.
    - Check that `spinePose`/`spineParity` stay green. Nothing changes in the export,
      since only the target's keys change.

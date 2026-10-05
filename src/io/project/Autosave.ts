@@ -3,7 +3,7 @@ import { withStore } from "./idb";
 /**
  * Crash recovery, in IndexedDB.
  *
- * The whole `.animo` blob is stored rather than a diff or a JSON snapshot:
+ * The whole `.boneburst` blob is stored rather than a diff or a JSON snapshot:
  * recovery then has exactly the same code path as opening a file, so there is
  * no second, less-tested deserialiser to get wrong at the worst moment.
  */

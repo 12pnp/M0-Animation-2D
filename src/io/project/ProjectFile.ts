@@ -8,7 +8,22 @@ import type { SoundStore } from "@/app/SoundStore";
 import type { AssetStore } from "@/app/AssetStore";
 import { type Diagnostic, migrate, validateProject } from "@/core/doc/schema";
 
-export const PROJECT_EXTENSION = "animo";
+export const PROJECT_EXTENSION = "boneburst";
+/** What the document was saved as before: still opened, saved as the new one. */
+export const OLD_PROJECT_EXTENSIONS: readonly string[] = ["animo"];
+
+const OLD_SUFFIX = new RegExp(`\\.(${OLD_PROJECT_EXTENSIONS.join("|")})$`, "i");
+
+/** Was the file saved under an old extension? Saving it again has to make a
+ *  new file: a browser file handle cannot rename the one it points to. */
+export function isOldProjectName(name: string): boolean {
+  return OLD_SUFFIX.test(name);
+}
+
+/** The name a document is saved under: an old extension becomes the new one. */
+export function projectFileName(name: string): string {
+  return name.replace(OLD_SUFFIX, `.${PROJECT_EXTENSION}`);
+}
 
 interface Manifest {
   /** assetId -> file name inside the archive. */
@@ -32,7 +47,7 @@ export interface LoadedProject {
 }
 
 /**
- * A `.animo` is a zip:
+ * A `.boneburst` (before, `.animo`) is a zip:
  *
  *   project.json      the document
  *   manifest.json     assetId -> archive path

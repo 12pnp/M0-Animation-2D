@@ -40,7 +40,7 @@ section 7 of that licence.
    copyright in them, and running Animo does not make your project a derivative
    work of Animo.
 
-3. **Project files** (`.animo`) and any artwork you import or produce are yours,
+3. **Project files** (`.boneburst`, and `.animo` from before) and any artwork you import or produce are yours,
    unconditionally.
 
 ## What is not excepted

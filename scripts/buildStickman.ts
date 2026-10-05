@@ -1,5 +1,5 @@
 /**
- * Builds `tests/fixtures/projects/stickman.animo` — a bone + IK rig with two
+ * Builds `tests/fixtures/projects/stickman.boneburst` — a bone + IK rig with two
  * animations, front-view "dance" and side-view "run".
  *
  * Run it with:  npx vite-node scripts/buildStickman.ts
@@ -430,7 +430,7 @@ const assets = {
   },
 } as unknown as AssetStore;
 
-const out = fileURLToPath(new URL("../tests/fixtures/projects/stickman.animo", import.meta.url));
+const out = fileURLToPath(new URL("../tests/fixtures/projects/stickman.boneburst", import.meta.url));
 const blob = await serializeProject(project as Project, assets);
 writeFileSync(out, new Uint8Array(await blob.arrayBuffer()));
 

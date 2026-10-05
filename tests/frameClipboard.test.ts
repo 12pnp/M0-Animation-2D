@@ -155,7 +155,7 @@ describe("frame clipboard, copying from inside a tween", () => {
 });
 
 /**
- * `test_Anim.animo` in miniature: two hearts in a group, keyed alike, and
+ * `test_Anim.boneburst` in miniature: two hearts in a group, keyed alike, and
  * a star beside them. A frame carries what the layer shows there, as in
  * Flash, and several rows paste into the target and the layers below it.
  */

@@ -2,7 +2,7 @@
  * The project's sound files, by the path an event names them with
  * (`EventDef.audio`, ARCHITECTURE ▸ Events). Like images (`AssetStore`) they
  * live outside the undoable document: the document holds the path, a save
- * writes the file under `sounds/` in the `.animo`, and the export writes it
+ * writes the file under `sounds/` in the `.boneburst`, and the export writes it
  * into the skeleton's `audio/` folder at that path. A game finds it there by
  * the same path.
  */

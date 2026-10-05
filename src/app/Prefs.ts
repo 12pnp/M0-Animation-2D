@@ -7,7 +7,7 @@ const KEY = "animo.prefs";
  *
  * localStorage rather than the document: these are the editor's own settings,
  * they follow the user across projects, and a colour tweak must not dirty a
- * `.animo`. The read/write pattern — one `animo.*` key, every access wrapped —
+ * `.boneburst`. The read/write pattern — one `animo.*` key, every access wrapped —
  * is the one the dock layout and the library sort order already use.
  */
 export class PrefsStore {

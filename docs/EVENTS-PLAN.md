@@ -53,7 +53,7 @@ A key's absent value is the event's own. Pure functions in `core/doc/events.ts`,
    balance) and, when event keys are picked on the timeline, their values at that frame
    (each blank field falls back to the event's).
 5. **Sounds.** `SoundStore`, outside the document like images (`AssetStore`): sound files
-   by the event's audio path, saved in the `.animo` under `sounds/` and written by the
+   by the event's audio path, saved in the `.boneburst` under `sounds/` and written by the
    export into an `audio/` folder next to the skeleton.
 6. **Preview.** The runtime's events (`AnimationState` listener) listed as they fire, and
    their sounds played at their volume and balance. Mixing: "from", "to" and a mix duration

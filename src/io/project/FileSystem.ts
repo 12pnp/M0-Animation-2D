@@ -7,6 +7,8 @@
  * later a small job rather than a rewrite.
  */
 
+import { OLD_PROJECT_EXTENSIONS, PROJECT_EXTENSION } from "./ProjectFile";
+
 export interface FileRef {
   name: string;
   /** Present only where the File System Access API is available. */
@@ -41,8 +43,9 @@ export function hasNativeFiles(): boolean {
 }
 
 const PROJECT_TYPE: PickerType = {
-  description: "Animo project",
-  accept: { "application/zip": [".animo"] },
+  description: "BoneBurst project",
+  // `.animo`, the old extension, still opens.
+  accept: { "application/zip": [`.${PROJECT_EXTENSION}`, ...OLD_PROJECT_EXTENSIONS.map((e) => `.${e}`)] },
 };
 
 export const ZIP_TYPE: PickerType = {

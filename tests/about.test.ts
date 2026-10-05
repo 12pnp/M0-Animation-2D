@@ -44,8 +44,8 @@ describe("about", () => {
 
 describe("documentTitle", () => {
   const cases: Array<[string, boolean, string]> = [
-    ["Untitled.animo", false, `Untitled.animo — ${APP_NAME}`],
-    ["frog.animo", true, `frog.animo * — ${APP_NAME}`],
+    ["Untitled.boneburst", false, `Untitled.boneburst — ${APP_NAME}`],
+    ["frog.boneburst", true, `frog.boneburst * — ${APP_NAME}`],
     ["  ", false, APP_NAME],
   ];
   for (const [name, dirty, want] of cases) {

@@ -9,14 +9,14 @@ import { Store } from "@/app/Store";
 /**
  * The real rig, not a hand-built scene.
  *
- * `frog.animo` is a v2 file with eleven symbols, mask links,
+ * `frog.boneburst` is a v2 file with eleven symbols, mask links,
  * nested symbol instances and animations hundreds of frames long — the shapes
  * a synthetic two-layer scene never produces. Loading it here means the layer
  * clipboard, the frame clipboard and the export filter are exercised against
  * a document somebody actually authored, migration included.
  */
 export const FIXTURE_PATH = fileURLToPath(
-  new URL("./projects/frog.animo", import.meta.url),
+  new URL("./projects/frog.boneburst", import.meta.url),
 );
 
 /** Symbol names inside the fixture that the tests lean on. */

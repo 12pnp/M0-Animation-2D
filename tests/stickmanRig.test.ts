@@ -5,7 +5,7 @@ import { exportSpine } from "@/core/spine/exportSpine";
 import { loadStickman } from "./fixtures/stickman";
 
 /**
- * `stickman.animo` — the bone + IK rig, dance (front) and run (side).
+ * `stickman.boneburst` — the bone + IK rig, dance (front) and run (side).
  *
  * The two things this file has to keep true, both of them silent when they
  * break: every IK target stays INSIDE the chain's reach (an unreachable

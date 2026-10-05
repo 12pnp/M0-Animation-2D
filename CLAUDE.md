@@ -99,7 +99,7 @@ npx tsc --noEmit   # typecheck alone; faster than a build while iterating
   `pointInParent`, `uniformFactor`, `atlasKey`, `validEditDepth`.
 - **Check it in the app too**, not only in vitest: `npm run dev` (port 5181),
   `window.animo.project.autosaver.stop()` first, load a fixture with
-  `fetch('/tests/fixtures/projects/frog.animo')` +
+  `fetch('/tests/fixtures/projects/frog.boneburst')` +
   `animo.project.loadFrom(buf, { name }, false)`, then real clicks and drags
   (rule 3 above). The pane's console keeps errors across reloads: an error
   logged while Vite hot-reloads a half-edited pair of files stays listed.

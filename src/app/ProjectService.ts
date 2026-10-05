@@ -3,7 +3,7 @@ import type { AssetStore } from "./AssetStore";
 import { createProject } from "@/core/doc/defaults";
 import { invalidateBounds } from "@/core/doc/pose";
 import type { Diagnostic } from "@/core/doc/schema";
-import { deserializeProject, PROJECT_EXTENSION, serializeProject, } from "@/io/project/ProjectFile";
+import { deserializeProject, isOldProjectName, PROJECT_EXTENSION, projectFileName, serializeProject, } from "@/io/project/ProjectFile";
 import type { SoundStore } from "./SoundStore";
 import {
     type FileRef,
@@ -151,11 +151,13 @@ export class ProjectService {
     // Without a file handle there is nowhere to write back to, so Save has to
     // behave like Save As rather than silently downloading a second copy.
     if (!this.ref || (!this.ref.handle && hasNativeFiles())) return this.saveAs();
+    // An `.animo` is saved as a `.boneburst` beside it, not over it.
+    if (isOldProjectName(this.ref.name)) return this.saveAs();
     return this.writeTo(this.ref);
   }
 
   async saveAs(): Promise<boolean> {
-    const ref = await pickSaveLocation(this.fileName);
+    const ref = await pickSaveLocation(projectFileName(this.fileName));
     if (!ref) return false;
     this.ref = ref;
     return this.writeTo(ref);

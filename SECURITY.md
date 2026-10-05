@@ -21,7 +21,7 @@ Amino Spine2D runs entirely in the browser: there is no server, no account and n
 telemetry. Your projects live in your own file system and in this origin's
 IndexedDB. The interesting surface is therefore:
 
-- **Opening a file.** A `.animo` is a zip that the app parses and validates
+- **Opening a file.** A `.boneburst` (or an older `.animo`) is a zip that the app parses and validates
   (`validateProject`). A crafted file that escapes that validation, reads
   outside the project, or executes anything is in scope.
 - **Importing a PSD.** Parsed by `ag-psd` in the page.

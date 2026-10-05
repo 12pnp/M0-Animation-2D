@@ -13,7 +13,7 @@ import { fakeAssets } from "./realProject";
  * than editing the file.
  */
 export const STICKMAN_PATH = fileURLToPath(
-  new URL("./projects/stickman.animo", import.meta.url),
+  new URL("./projects/stickman.boneburst", import.meta.url),
 );
 
 export interface Stickman {
