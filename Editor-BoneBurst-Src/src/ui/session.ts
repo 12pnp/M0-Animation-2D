@@ -17,7 +17,8 @@ import { Poser, type Posed } from "./stage/posed";
 export type Selection =
   | { readonly kind: "bone"; readonly name: string }
   | { readonly kind: "slot"; readonly name: string }
-  | { readonly kind: "attachment"; readonly skin: string; readonly slot: string; readonly key: string };
+  | { readonly kind: "attachment"; readonly skin: string; readonly slot: string; readonly key: string }
+  | { readonly kind: "skin"; readonly name: string };
 
 export function sameSelection(a: Selection | null, b: Selection | null): boolean {
   return JSON.stringify(a) === JSON.stringify(b);

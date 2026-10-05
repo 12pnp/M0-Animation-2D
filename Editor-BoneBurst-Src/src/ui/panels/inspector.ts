@@ -2,6 +2,7 @@ import { type AttachmentPatch, type AttachmentRef, findAttachment, renameAttachm
 import { type BoneProperty, keyBone } from "@/edit/boneKeys";
 import { type BonePatch, renameBone, reparentBone, subtree, updateBone } from "@/edit/bones";
 import { type Edit, EditRefused } from "@/edit/history";
+import { moveAttachment, renameSkin, setSkinMember } from "@/edit/skins";
 import { BLEND_MODES, renameSlot, updateSlot } from "@/edit/slots";
 import { BONE_DEFAULTS, boneInherit, boneNumber, type BoneNumber } from "@/model/defaults";
 import { attachmentType, type Skeleton } from "@/model/skeleton";
@@ -64,8 +65,9 @@ export class Inspector {
     form.className = "fields";
     if (sel.kind === "bone") this.boneForm(form, doc, sel.name);
     else if (sel.kind === "slot") this.slotForm(form, doc, sel.name);
+    else if (sel.kind === "skin") this.skinForm(form, doc, sel.name);
     else this.attachmentForm(form, doc, sel);
-    const title = sel.kind === "bone" ? (anim ? `Bone · keys at frame ${s.frame}` : "Bone") : sel.kind === "slot" ? "Slot" : "Attachment";
+    const title = sel.kind === "bone" ? (anim ? `Bone · keys at frame ${s.frame}` : "Bone") : sel.kind === "slot" ? "Slot" : sel.kind === "skin" ? "Skin" : "Attachment";
     this.element.replaceChildren(heading(title), form);
   }
 
@@ -104,6 +106,34 @@ export class Inspector {
       }, (v) => `Move bone ${name} under ${v}`));
     }
     form.append(readOnly("Inherit", boneInherit(bone)));
+    form.append(this.checkField("skin", "Skin required", bone.skin === true, (on) => updateBone(name, { skin: on ? true : undefined }),
+      (on) => `${on ? "Make" : "Stop making"} bone ${name} skin-required`));
+  }
+
+  private skinForm(form: HTMLElement, doc: Skeleton, name: string): void {
+    const s = this.session, skin = doc.skins!.find((k) => k.name === name)!;
+    if (name === "default") form.append(readOnly("Name", "default"));
+    else form.append(this.textField("name", "Name", name, (v) => (v === name ? null : renameSkin(name, v)), (v) => `Rename skin ${name} to ${v}`,
+      (v) => { if (s.skin === name) s.skin = v; s.select({ kind: "skin", name: v }); }));
+    const count = (skin.attachments ?? []).reduce((n, ss) => n + ss.entries.length, 0);
+    form.append(readOnly("Attachments", String(count)));
+    // The bones and constraints marked skin-required: each is on only while a shown skin lists it.
+    const bones = (doc.bones ?? []).filter((b) => b.skin === true).map((b) => b.name);
+    const constraints = (doc.constraints ?? []).filter((c) => c.skin === true);
+    if (!bones.length && !constraints.length) {
+      form.append(empty("No bone or constraint is skin-required. Mark a bone \"Skin required\" in its properties to let skins turn it on."));
+      return;
+    }
+    if (bones.length) form.append(subheading("Bones it turns on"));
+    for (const b of bones) {
+      form.append(this.checkField(`bones/${b}`, b, skin.bones?.includes(b) ?? false, (on) => setSkinMember(name, "bones", b, on),
+        (on) => `${on ? "Add" : "Remove"} ${b} ${on ? "to" : "from"} skin ${name}`));
+    }
+    if (constraints.length) form.append(subheading("Constraints it turns on"));
+    for (const c of constraints) {
+      form.append(this.checkField(`${c.type}/${c.name}`, `${c.name} (${c.type})`, skin[c.type]?.includes(c.name) ?? false, (on) => setSkinMember(name, c.type, c.name, on),
+        (on) => `${on ? "Add" : "Remove"} ${c.name} ${on ? "to" : "from"} skin ${name}`));
+    }
   }
 
   private slotForm(form: HTMLElement, doc: Skeleton, name: string): void {
@@ -124,7 +154,10 @@ export class Inspector {
     const s = this.session, a = findAttachment(doc, r)!, type = attachmentType(a);
     form.append(this.textField("name", "Name", r.key, (v) => (v === r.key ? null : renameAttachment(r, v)), (v) => `Rename attachment ${r.key} to ${v}`,
       (v) => s.select({ kind: "attachment", skin: r.skin, slot: r.slot, key: v })));
-    form.append(readOnly("Type", type), readOnly("Skin", r.skin), readOnly("Slot", r.slot));
+    form.append(readOnly("Type", type));
+    form.append(this.selectField("skin", "Skin", (doc.skins ?? []).map((k) => [k.name, k.name]), r.skin, (v) => moveAttachment(r, v), (v) => `Move ${r.key} to skin ${v}`,
+      (v) => s.select({ kind: "attachment", skin: v, slot: r.slot, key: r.key })));
+    form.append(readOnly("Slot", r.slot));
     if (type !== "region") {
       form.append(empty("Editing this kind arrives in a later step; it is kept as it is."));
       return;
@@ -180,19 +213,31 @@ export class Inspector {
   }
 
   private selectField(key: string, label: string, options: ReadonlyArray<readonly [string, string]>, value: string,
-    edit: (v: string) => Edit<Skeleton> | null, labelFor: (v: string) => string): HTMLLabelElement {
+    edit: (v: string) => Edit<Skeleton> | null, labelFor: (v: string) => string, after?: (v: string) => void): HTMLLabelElement {
     const select = document.createElement("select");
     select.append(...options.map(([v, text]) => new Option(text, v)));
     select.value = value;
-    select.addEventListener("change", () => this.commit(labelFor(select.value), () => edit(select.value)));
+    select.addEventListener("change", () => this.commit(labelFor(select.value), () => edit(select.value), after && (() => after(select.value))));
     this.inputs.set(key, select);
     return field(label, select);
+  }
+
+  private checkField(key: string, label: string, value: boolean, edit: (on: boolean) => Edit<Skeleton> | null, labelFor: (on: boolean) => string): HTMLLabelElement {
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = value;
+    box.addEventListener("change", () => this.commit(labelFor(box.checked), () => edit(box.checked)));
+    this.inputs.set(key, box);
+    const row = field(label, box);
+    row.classList.add("check");
+    return row;
   }
 }
 
 /** The bone, slot or attachment a selection names, if the document has it. */
 export function selectedObject(doc: Skeleton, sel: Selection): object | undefined {
   if (sel.kind === "bone") return doc.bones?.find((b) => b.name === sel.name);
+  if (sel.kind === "skin") return doc.skins?.find((k) => k.name === sel.name);
   if (sel.kind === "slot") return doc.slots?.find((x) => x.name === sel.name);
   return findAttachment(doc, sel);
 }
@@ -220,6 +265,12 @@ function field(label: string, control: HTMLElement): HTMLLabelElement {
   control.setAttribute("aria-label", label);
   row.append(span, control);
   return row;
+}
+
+function subheading(text: string): HTMLHeadingElement {
+  const h = document.createElement("h3");
+  h.textContent = text;
+  return h;
 }
 
 function readOnly(label: string, value: string): HTMLDivElement {

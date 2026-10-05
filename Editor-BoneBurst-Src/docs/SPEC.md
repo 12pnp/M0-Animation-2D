@@ -158,7 +158,8 @@ attachments, constraints, skins).
 skin, slot and key; `ui/session.Selection`). The rig panel builds the structure through
 `edit/bones`, `edit/slots` and `edit/attachments`; every structural edit keeps references whole
 (renames rewrite them, deletes cascade or are refused with the reason) and keeps draw order keys
-meaning what they meant (`edit/drawOrder`). An atlas opened alone starts a new skeleton.
+meaning what they meant (`edit/drawOrder`). An atlas opened alone starts a new skeleton. Skins (step 3) are authored in the rig panel's Skins view; per-skin deform
+timelines and linked-mesh skin references follow every skin edit (`edit/skins`).
 
 **Docking (D6, E4):** the window is the toolbar and status line around a Dockview dock
 (`dockview-core`, the only npm runtime dependency). Every panel is a Dockview panel, under an id

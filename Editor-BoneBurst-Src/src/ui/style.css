@@ -103,7 +103,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .overlay:focus-
 }
 .toolbar .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
 .toolbar .skin { display: flex; align-items: center; gap: 6px; color: var(--muted); }
-.toolbar select { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+.toolbar select { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; max-width: 180px; }
 .toolbar .title { margin-left: auto; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* The dock (D6): Dockview's own dark and light themes, coloured through their variables. */
@@ -215,6 +215,8 @@ html .dockview-theme-light {
 }
 .inspector input.number { font-family: var(--font-mono); font-size: 12px; }
 .inspector .readonly output { padding: 3px 0; }
+.inspector .field.check input { justify-self: start; width: auto; }
+.inspector h3 { font-size: 11px; font-weight: 600; color: var(--muted); margin: 8px 0 2px; }
 
 .status {
   display: flex;

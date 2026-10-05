@@ -4,7 +4,9 @@
 **popout windows are not verified on screen** (the built-in browser pane loads a popout's page in
 place of the app; Claude in Chrome was not connected). Every other acceptance point holds, and
 `npm run check` passes (249 tests). Step 2 (the rig's structure) done: a rig built from an empty
-skeleton on screen, saved and read back alike by both runtimes. Later steps not started.
+skeleton on screen, saved and read back alike by both runtimes. Step 3 (skins) done: a
+mix-and-match outfit duplicated and changed on screen, posed alike by both runtimes. Later steps
+not started. `npm run check`: 256 tests.
 
 E4 makes the editor author a rig, not only animate one: panels and docking (D6), slots,
 attachments, draw order, skins, constraints, mesh editing, PSD import and preferences. It is
@@ -146,10 +148,61 @@ reason, never written broken.
    moved under `root` without moving on screen; saved; the saved file has no profile issue and
    both runtimes pose it identically.
 
-## Later steps (planned when step 2 lands)
+## Step 3 — skins
 
-Skins, constraints, mesh editing, PSD import, the sidecar's read and write (view state, guides,
-references), the reference panel, preferences.
+Skins become something to author: add, duplicate, rename and delete them; choose which
+skin-required bones each one turns on; mark a bone skin-required; put new regions in the shown
+skin and move an attachment between skins (Format-Json-Atlas.md §8.1).
+
+### Decisions
+
+- **The default skin is fixed**: it cannot be deleted or renamed, and no skin may be renamed to
+  `default` (§8.1: that name makes the default skin).
+- **Skins follow their attachments' timelines**: deform and sequence keys are stored per skin,
+  so renaming a skin renames them, duplicating copies them, deleting drops them, and moving an
+  attachment moves them. Linked meshes name their source's skin; those references follow a
+  rename and a move, a copy points at itself, and deleting a skin that another skin's linked
+  mesh takes its source from is refused.
+- **New regions go in the shown skin** (the toolbar's Skin; the default skin when none is
+  chosen).
+- **Skin-required constraints** are listed and toggled per skin like bones, but marking a
+  constraint skin-required waits for step 4 (constraints).
+- Selection gains a fourth kind: a skin.
+
+### Steps
+
+1. `edit/skins.ts` (`addSkin`, `deleteSkin`, `renameSkin`, `duplicateSkin`, `setSkinMember`,
+   `moveAttachment`), with table tests on goblins, hero-pro and mix-and-match: refusals,
+   references and timelines followed, the profile holding, both runtimes posing alike.
+2. Rig panel: a Skins view (add, duplicate, delete; choosing one shows it).
+3. Properties for a skin (name, its skin-required bones and constraints), a bone's "Skin
+   required", an attachment's skin.
+4. On screen: duplicate a mix-and-match skin, change it, show it; save; read back.
+
+### Step 3 results
+
+1. `edit/skins.ts`: `addSkin`, `deleteSkin`, `renameSkin`, `duplicateSkin`, `setSkinMember`,
+   `moveAttachment`. `tests/skins.test.ts`, 7 tests on goblins, hero-pro and mix-and-match:
+   each edited file keeps the profile, round-trips and is posed alike by both runtimes; renaming
+   follows the deform timelines and the linked meshes (a rename that forgets the timelines fails
+   the test); `goblin` cannot be deleted while `goblingirl`'s linked meshes take their sources
+   from it.
+2. Rig panel: a Skins view (+ Skin, Duplicate, Delete); choosing a skin shows it. New regions go
+   in the shown skin. The toolbar falls back to the default skin when the shown one is deleted or
+   undone away.
+3. Properties: a skin's name (fixed for the default), its attachment count, a checkbox per
+   skin-required bone and constraint it turns on; a bone's "Skin required"; an attachment's skin
+   (a menu that moves it, its timelines and its linked meshes along).
+4. On screen (mix-and-match, opened from the samples through the dev server, now allowed to
+   serve that folder): `full-skins/girl` duplicated as `girl-bald`, its 15 hair attachments
+   deleted, shown: drawn without hair (36 images against the original's 51); a skin's bone
+   toggled off and a bone made skin-required, both undone. The same edits in Node: no profile
+   issue, 455 poses alike within 2.1e-6.
+
+## Later steps (planned when step 3 lands)
+
+Constraints (and marking them skin-required), mesh editing, PSD import, the sidecar's read and
+write (view state, guides, references), the reference panel, preferences.
 
 ## Results
 

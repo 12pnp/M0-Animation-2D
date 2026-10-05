@@ -151,6 +151,8 @@ export function mountApp(root: HTMLElement): void {
     undoBtn.title = h?.undoLabel ? `Undo ${h.undoLabel} (⌘Z)` : "Undo (⌘Z)";
     redoBtn.title = h?.redoLabel ? `Redo ${h.redoLabel} (⇧⌘Z)` : "Redo (⇧⌘Z)";
     const skins = (doc?.skins ?? []).map((s) => s.name).filter((n) => n !== "default");
+    // A shown skin an edit or an undo took away: back to the default skin.
+    if (session.skin !== null && !skins.includes(session.skin)) session.skin = null;
     if (skinSelect.options.length !== skins.length + 1 || [...skinSelect.options].some((o, i) => i > 0 && o.value !== skins[i - 1])) {
       skinSelect.replaceChildren(new Option("default", ""), ...skins.map((n) => new Option(n, n)));
     }

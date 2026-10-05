@@ -1,14 +1,15 @@
 import { addRegion, deleteAttachment } from "@/edit/attachments";
 import { addBone, deleteBone } from "@/edit/bones";
 import { type Edit, EditRefused } from "@/edit/history";
+import { addSkin, deleteSkin, duplicateSkin } from "@/edit/skins";
 import { addSlot, deleteSlot, moveSlot, updateSlot } from "@/edit/slots";
 import type { Skeleton } from "@/model/skeleton";
 import { type Selection, sameSelection, type Session } from "../session";
 
-type View = "tree" | "order";
+type View = "tree" | "order" | "skins";
 
 /** One row of the rig tree. */
-interface Item { readonly sel: Selection; readonly label: string; readonly depth: number; readonly kind: "bone" | "slot" | "attachment"; readonly toggle?: string; readonly open?: boolean; readonly note?: string }
+interface Item { readonly sel: Selection; readonly label: string; readonly depth: number; readonly kind: "bone" | "slot" | "attachment" | "skin"; readonly toggle?: string; readonly open?: boolean; readonly note?: string }
 
 /**
  * The rig: bones as a tree, each with its slots, each slot with its attachments (the shown skin's
@@ -26,7 +27,7 @@ export class Outline {
   private readonly rows = new Map<string, HTMLElement>();
   private readonly list: HTMLDivElement;
   private readonly regionPick: HTMLSelectElement;
-  private readonly buttons: Record<"bone" | "slot" | "region" | "del" | "up" | "down" | "tree" | "order", HTMLButtonElement>;
+  private readonly buttons: Record<"bone" | "slot" | "region" | "del" | "up" | "down" | "tree" | "order" | "skins" | "skin" | "dup", HTMLButtonElement>;
 
   constructor(private readonly session: Session) {
     this.element = document.createElement("div");
@@ -38,6 +39,9 @@ export class Outline {
     this.buttons = {
       tree: button("Tree", "Bones, slots and attachments", () => this.setView("tree")),
       order: button("Draw order", "Slots front to back", () => this.setView("order")),
+      skins: button("Skins", "The skins; choosing one shows it", () => this.setView("skins")),
+      skin: button("+ Skin", "Add an empty skin", () => this.addSkin()),
+      dup: button("Duplicate", "Copy the selected skin", () => this.duplicateSkin()),
       bone: button("+ Bone", "Add a bone under the selected one", () => this.addBone()),
       slot: button("+ Slot", "Add a slot on the selected bone", () => this.addSlot()),
       region: button("+ Region", "Add the chosen atlas region to the selected slot (or a new slot on the selected bone)", () => { if (this.regionPick.value) this.addRegion(this.regionPick.value); }),
@@ -45,7 +49,8 @@ export class Outline {
       up: button("↑", "Bring the selected slot forward", () => this.moveSelected(1)),
       down: button("↓", "Send the selected slot back", () => this.moveSelected(-1)),
     };
-    bar.append(this.buttons.tree, this.buttons.order, sep(), this.buttons.bone, this.buttons.slot, this.buttons.region, this.regionPick, this.buttons.del, this.buttons.up, this.buttons.down);
+    bar.append(this.buttons.tree, this.buttons.order, this.buttons.skins, sep(), this.buttons.bone, this.buttons.slot, this.buttons.region, this.regionPick,
+      this.buttons.skin, this.buttons.dup, this.buttons.del, this.buttons.up, this.buttons.down);
     this.list = document.createElement("div");
     this.list.className = "rows";
     this.list.setAttribute("role", "tree");
@@ -58,9 +63,12 @@ export class Outline {
   deleteSelected(): void {
     const sel = this.session.selected;
     if (!sel) return;
-    const edit = sel.kind === "bone" ? deleteBone(sel.name) : sel.kind === "slot" ? deleteSlot(sel.name) : deleteAttachment(sel);
+    const edit = sel.kind === "bone" ? deleteBone(sel.name) : sel.kind === "slot" ? deleteSlot(sel.name) : sel.kind === "skin" ? deleteSkin(sel.name) : deleteAttachment(sel);
     const label = sel.kind === "attachment" ? `Delete attachment ${sel.key}` : `Delete ${sel.kind} ${sel.name}`;
-    if (this.apply(label, edit)) this.session.select(null);
+    if (this.apply(label, edit)) {
+      if (sel.kind === "skin" && this.session.skin === sel.name) this.session.skin = null;
+      this.session.select(null);
+    }
   }
 
   private setView(v: View): void { this.view = v; this.rendered = ""; this.update(); }
@@ -82,7 +90,7 @@ export class Outline {
   /** The bone the selection is on: the bone, a slot's bone, an attachment's slot's bone. */
   private selectedBoneOrOwner(): string | null {
     const sel = this.session.selected, doc = this.session.doc;
-    if (!sel || !doc) return null;
+    if (!sel || !doc || sel.kind === "skin") return null;
     if (sel.kind === "bone") return sel.name;
     const slot = sel.kind === "slot" ? sel.name : sel.slot;
     return doc.slots?.find((x) => x.name === slot)?.bone ?? null;
@@ -95,6 +103,28 @@ export class Outline {
     const name = prompt(parent ? `Name of the new bone under "${parent}":` : "Name of the root bone:", unique("bone", (doc.bones ?? []).map((b) => b.name)))?.trim();
     if (!name) return;
     if (this.apply(`Add bone ${name}`, addBone(name, parent))) this.session.select({ kind: "bone", name });
+  }
+
+  private addSkin(): void {
+    const doc = this.session.doc;
+    if (!doc) return;
+    const name = prompt("Name of the new skin:", unique("skin", (doc.skins ?? []).map((k) => k.name)))?.trim();
+    if (!name) return;
+    if (this.apply(`Add skin ${name}`, addSkin(name))) this.showSkin(name);
+  }
+
+  private duplicateSkin(): void {
+    const doc = this.session.doc, sel = this.session.selected;
+    if (!doc || sel?.kind !== "skin") { this.onStatus("Select the skin to copy."); return; }
+    const name = prompt(`Name of the copy of "${sel.name}":`, unique(`${sel.name} copy`, (doc.skins ?? []).map((k) => k.name)))?.trim();
+    if (!name) return;
+    if (this.apply(`Duplicate skin ${sel.name} as ${name}`, duplicateSkin(sel.name, name))) this.showSkin(name);
+  }
+
+  /** Select a skin and show it on the stage (the default skin: no other skin shown). */
+  private showSkin(name: string): void {
+    this.session.skin = name === "default" ? null : name;
+    this.session.select({ kind: "skin", name });
   }
 
   private addSlot(): void {
@@ -119,7 +149,8 @@ export class Outline {
       slot = unique(region, (doc.slots ?? []).map((x) => x.name));
       edits.push(addSlot(slot, bone!));
     }
-    const skin = "default", taken = (doc.skins ?? []).flatMap((k) => k.attachments ?? []).filter((ss) => ss.slot === slot).flatMap((ss) => ss.entries.map((e) => e.key));
+    // New regions go in the shown skin (the default one when none is shown).
+    const skin = s.skin ?? "default", taken = (doc.skins ?? []).flatMap((k) => k.attachments ?? []).filter((ss) => ss.slot === slot).flatMap((ss) => ss.entries.map((e) => e.key));
     const key = unique(region, taken);
     // The region's original size; its key names the image unless it had to be made unique.
     edits.push(addRegion({ skin, slot, key }, { width: img.originalWidth, height: img.originalHeight, ...(key !== region ? { path: region } : {}) }));
@@ -141,6 +172,12 @@ export class Outline {
   private items(doc: Skeleton): Item[] {
     const s = this.session, out: Item[] = [];
     const slots = doc.slots ?? [];
+    if (this.view === "skins") {
+      return (doc.skins ?? []).map((k): Item => ({
+        sel: { kind: "skin", name: k.name }, label: k.name, depth: 0, kind: "skin",
+        note: [(s.skin ?? "default") === k.name ? "shown" : "", k.bones?.length ? `${k.bones.length} bones` : ""].filter(Boolean).join(" · "),
+      }));
+    }
     if (this.view === "order") {
       return [...slots].reverse().map((x): Item => ({ sel: { kind: "slot", name: x.name }, label: x.name, depth: 0, kind: "slot", note: x.bone }));
     }
@@ -198,6 +235,13 @@ export class Outline {
       }
     }
     const sel = s.selected, slotSel = sel?.kind === "slot" || sel?.kind === "attachment";
+    const v = this.view;
+    for (const k of ["bone", "slot", "region"] as const) this.buttons[k].hidden = v === "skins";
+    this.regionPick.hidden = v === "skins";
+    this.buttons.skin.hidden = this.buttons.dup.hidden = v !== "skins";
+    this.buttons.skin.disabled = !doc;
+    this.buttons.dup.disabled = sel?.kind !== "skin";
+    this.buttons.skins.setAttribute("aria-pressed", String(v === "skins"));
     this.buttons.bone.disabled = !doc;
     this.buttons.slot.disabled = !doc || !this.selectedBoneOrOwner();
     this.regionPick.disabled = !doc || !s.images.regions.length;
@@ -241,6 +285,7 @@ export class Outline {
     }
     row.addEventListener("click", (e) => {
       if ((e.target as HTMLElement).classList.contains("twisty")) return;
+      if (it.sel.kind === "skin") { this.showSkin(it.sel.name); return; }
       if (!sameSelection(this.session.selected, it.sel)) this.session.select(it.sel);
     });
     this.rows.set(JSON.stringify(it.sel), row);
