@@ -6,7 +6,7 @@ import { newSkeleton } from "@/edit/newSkeleton";
 import type { Atlas } from "@/model/atlas";
 import type { Issue } from "@/model/issue";
 import { profileIssues } from "@/model/profile";
-import type { Animation, Skeleton } from "@/model/skeleton";
+import type { Animation, ConstraintType, Skeleton } from "@/model/skeleton";
 import { animationDuration, DEFAULT_FPS, frameTime, timeFrame } from "@/model/timelines";
 import type { PhysicsMode } from "@/engine/physics";
 import { atlasImages, NO_IMAGES, type AtlasImages } from "@/engine/regions";
@@ -18,7 +18,8 @@ export type Selection =
   | { readonly kind: "bone"; readonly name: string }
   | { readonly kind: "slot"; readonly name: string }
   | { readonly kind: "attachment"; readonly skin: string; readonly slot: string; readonly key: string }
-  | { readonly kind: "skin"; readonly name: string };
+  | { readonly kind: "skin"; readonly name: string }
+  | { readonly kind: "constraint"; readonly type: ConstraintType; readonly name: string };
 
 export function sameSelection(a: Selection | null, b: Selection | null): boolean {
   return JSON.stringify(a) === JSON.stringify(b);
@@ -44,7 +45,7 @@ export class Session {
   /** Page image by page name; a page with none draws nothing. */
   pages = new Map<string, ImageBitmap>();
   skin: string | null = null;
-  /** What is selected: a bone, a slot, or an attachment (skin, slot, key). Not in the document, not undone. */
+  /** What is selected: a bone, slot, attachment (skin, slot, key), skin or constraint. Not in the document, not undone. */
   selected: Selection | null = null;
   /** What reading found, and pages the atlas names that were not given. */
   issues: Issue[] = [];

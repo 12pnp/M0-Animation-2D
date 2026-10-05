@@ -120,3 +120,10 @@ export function localUnder(p: Posed, bone: number, parent: number) {
   const r = (n: number, k: number) => tidy(n, k);
   return { x: r(out[0]!, 2), y: r(out[1]!, 2), rotation: r(out[2]!, 2), scaleX: r(out[3]!, 4), scaleY: r(out[4]!, 4), shearX: r(out[5]!, 2), shearY: r(out[6]!, 2) };
 }
+
+/** A world point in `bone`'s local space (its world matrix inverted), rounded to `places` decimals. */
+export function localPoint(p: Posed, bone: number, x: number, y: number, places = 2): { x: number; y: number } {
+  const [a, b, c, d, wx, wy] = boneMatrix(p, bone), det = a * d - b * c;
+  const dx = x - wx, dy = y - wy;
+  return { x: tidy((d * dx - b * dy) / det, places), y: tidy((a * dy - c * dx) / det, places) };
+}

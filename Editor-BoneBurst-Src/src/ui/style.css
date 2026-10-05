@@ -198,6 +198,7 @@ html .dockview-theme-light {
 .outline .row .note { margin-left: auto; color: var(--muted); font-size: 11px; }
 .outline .row.slot .name::before { content: "▣ "; color: var(--muted); }
 .outline .row.attachment .name::before { content: "▫ "; color: var(--muted); }
+.outline .row.constraint .name::before { content: "⌁ "; color: var(--muted); }
 .outline .row.selected { background: var(--accent); color: var(--accent-text); }
 .outline .row.selected .note, .outline .row.selected .name::before { color: inherit; }
 .outline .twisty { border: 0; background: transparent; padding: 0; width: 16px; font-size: 10px; color: inherit; }

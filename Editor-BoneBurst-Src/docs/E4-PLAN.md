@@ -5,8 +5,10 @@
 place of the app; Claude in Chrome was not connected). Every other acceptance point holds, and
 `npm run check` passes (249 tests). Step 2 (the rig's structure) done: a rig built from an empty
 skeleton on screen, saved and read back alike by both runtimes. Step 3 (skins) done: a
-mix-and-match outfit duplicated and changed on screen, posed alike by both runtimes. Later steps
-not started. `npm run check`: 256 tests.
+mix-and-match outfit duplicated and changed on screen, posed alike by both runtimes. Step 4
+(constraints) done: a transform constraint added, raised, reordered and made skin-required on
+screen, the file saved and posed alike by both runtimes. Later steps not started.
+`npm run check`: 268 tests.
 
 E4 makes the editor author a rig, not only animate one: panels and docking (D6), slots,
 attachments, draw order, skins, constraints, mesh editing, PSD import and preferences. It is
@@ -199,10 +201,98 @@ skin and move an attachment between skins (Format-Json-Atlas.md §8.1).
    toggled off and a bone made skin-required, both undone. The same edits in Node: no profile
    issue, 455 poses alike within 2.1e-6.
 
-## Later steps (planned when step 3 lands)
+## Step 4 — constraints
 
-Constraints (and marking them skin-required), mesh editing, PSD import, the sidecar's read and
-write (view state, guides, references), the reference panel, preferences.
+Constraints become something to author: add each of the five kinds (IK, transform, path,
+physics, slider), edit their references and values, rename, delete and reorder them, and mark
+them skin-required (Format-Json-Atlas.md §7). The rig panel gets a Constraints view; the
+properties panel a form per kind.
+
+```mermaid
+flowchart LR
+    SEL["selection<br/>bone · slot"] -->|"+ IK · + Transform · + Path<br/>+ Physics · + Slider"| ADD["edit/constraints<br/>addConstraint"]
+    ADD --> DOC["Skeleton.constraints<br/>(one list = update order)"]
+    PROPS["properties<br/>per-kind form"] -->|"updateConstraint · renameConstraint"| DOC
+    VIEW["rig panel<br/>Constraints view"] -->|"moveConstraint · deleteConstraint"| DOC
+    DOC -->|"names followed"| SK["skins' ik/transform/path/physics/slider lists"]
+    DOC -->|"names followed"| AN["animations' constraint timelines"]
+```
+
+### Decisions
+
+- **One list, in update order** (§7.1): the Constraints view shows it in file order and moves a
+  constraint up or down; that is the order the runtimes apply them in. A new one goes last.
+- **Names are unique within a kind** (§7.1: lookup matches name and kind); the selection names
+  both. Selection gains a fifth kind: a constraint (type, name).
+- **A new constraint leaves the pose as it was.** IK: the selected bone, aimed at a new bone
+  `<bone> target` under the root at the bone's tip (so it already points there). Transform: the
+  selected bone, its parent as the source, each property mapped to itself, every mix 0. Path:
+  the selected slot, which must hold a path attachment, no bones yet. Physics: the selected bone,
+  rotation fed in (it moves only in playback). Slider: the shown animation (else the first), mix
+  0. Raising a mix, adding bones or playing is what moves anything.
+- **References are checked when written, refused with the reason**: IK takes one or two bones,
+  the second a child of the first, and a target that is neither constrained nor under the first
+  bone; a transform's source is not one of its bones; a path's slot exists; physics and slider
+  bones exist; a slider's animation exists, and a bone-driven slider names its property.
+- **Renaming and deleting follow the name** into every skin's list of that kind and every
+  animation's timelines of that kind; deleting drops both. Deleting a bone or slot a constraint
+  uses stays refused (step 2).
+- **Values at their default are left out**, as Spine writes them, except mixes whose default
+  depends on another key (a transform's `mixY` and `mixScaleY`, a path's `mixY`): written as
+  shown.
+- **Not in this step:** keying constraint values in Animate mode, drawing constraints on the
+  stage, editing a transform's property map beyond what the form shows (offset, scale and max of
+  each from→to pair; adding and removing pairs).
+
+### Steps
+
+1. `edit/constraints.ts` (`addConstraint`, `updateConstraint`, `renameConstraint`,
+   `deleteConstraint`, `moveConstraint`), `model/defaults.ts` constraint defaults; table tests
+   on spineboy-pro, stretchyman, hero-pro, celestial-circus and a synthetic slider: refusals,
+   names followed, the profile holding, both runtimes posing alike (and a new constraint not
+   moving the setup pose).
+2. Selection kind `constraint`; rig panel Constraints view (add per kind, delete, up, down).
+3. Properties per kind, with "Skin required"; the skin form lists it once marked.
+4. On screen: add an IK to the stickman's arm, raise a transform's mix, reorder, mark one
+   skin-required and turn it on in a skin; save; read back.
+
+### Step 4 results
+
+1. `edit/constraints.ts`: `addConstraint`, `updateConstraint`, `renameConstraint`,
+   `deleteConstraint`, `moveConstraint`, `findConstraint`; `model/defaults.ts`:
+   `CONSTRAINT_DEFAULTS`, `constraintValue`, `constraintMix` (a transform's mixes as the runtimes
+   read them, §7.3). `ui/panels/newConstraint.ts` builds the new constraint of each kind.
+   `tests/constraints.test.ts`, 12 tests on spineboy-pro, Stretchyman, hero-pro and
+   celestial-circus, plus a slider on spineboy-pro's `aim`: renames and deletes follow skins'
+   lists and timelines (and keep the global physics group), reordering is applied alike by both
+   runtimes, every refusal, all five new kinds leaving hero-pro's setup pose as it was. Three
+   planted bugs fail them (timelines not followed; `bones` dropped; `mixY` not following `mixX`).
+   **Added to the plan:** spine-core's reader needs `bones` on IK, transform and path
+   constraints even when empty (Format §7.4 lets it go), so the edits keep the key, `[]` when
+   empty. **Changed from the plan:** an IK's new target is placed to four decimals, not two; two
+   shifted hero-pro's head 0.006 under the re-aimed bone.
+2. Selection kind `constraint` (type, name). Rig panel: a Constraints view in update order, a
+   kind menu and + Constraint (from the selected bone, or slot for a path), Delete, ↑ (earlier),
+   ↓ (later).
+3. Properties per kind: name, place in the order, Skin required; IK bone (one or two), target,
+   mix, softness, bend, compress, stretch, scale Y; transform source, flags, the mixes its
+   mapping uses, offsets, the mapping (offset, scale, max per pair; add and remove pairs) and its
+   bones; path slot, modes, values, bones; physics bone, inputs, simulation values and their
+   global flags; slider animation, mix, driver (its time, or a bone's property with from, to,
+   scale, local). **Fixed on screen:** the properties panel kept showing the last selection while
+   a checkbox or menu in it held focus (it waits for a field being typed in, which those are
+   not); it now waits for text fields only.
+4. On screen (the stickman): `arm_far_fore_ik` bent the other way; a transform constraint added
+   to `head` (the head did not move), its rotation mix raised to 1 and a 30° offset set, moved
+   from last to third, made skin-required (the head went back), a skin `tilt` added that turns it
+   on (the head turned 30° with `tilt` shown, not with the default). Saved; the same edits in
+   Node give the identical file (SHA-256 equal), no profile issue as written, 39 poses alike in
+   both runtimes within 2.1e-9.
+
+## Later steps (planned when step 5 starts)
+
+Mesh editing, PSD import, the sidecar's read and write (view state, guides, references), the
+reference panel, preferences; keying constraint values and drawing constraints on the stage.
 
 ## Results
 

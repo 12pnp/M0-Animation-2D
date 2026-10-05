@@ -1,11 +1,13 @@
 import { type AttachmentPatch, type AttachmentRef, findAttachment, renameAttachment, updateAttachment } from "@/edit/attachments";
 import { type BoneProperty, keyBone } from "@/edit/boneKeys";
 import { type BonePatch, renameBone, reparentBone, subtree, updateBone } from "@/edit/bones";
+import { type ConstraintPatch, type ConstraintRef, findConstraint, IK_SCALE_Y, PHYSICS_SCALE_Y, POSITION_MODES, renameConstraint,
+  ROTATE_MODES, SPACING_MODES, TRANSFORM_PROPERTIES, updateConstraint } from "@/edit/constraints";
 import { type Edit, EditRefused } from "@/edit/history";
 import { moveAttachment, renameSkin, setSkinMember } from "@/edit/skins";
 import { BLEND_MODES, renameSlot, updateSlot } from "@/edit/slots";
-import { BONE_DEFAULTS, boneInherit, boneNumber, type BoneNumber } from "@/model/defaults";
-import { attachmentType, type Skeleton } from "@/model/skeleton";
+import { BONE_DEFAULTS, boneInherit, boneNumber, type BoneNumber, CONSTRAINT_DEFAULTS, constraintValue, DEPENDENT_DEFAULTS, TRANSFORM_MIXES, transformTargets } from "@/model/defaults";
+import { attachmentType, type Constraint, type Skeleton, type TransformFrom } from "@/model/skeleton";
 import type { Selection, Session } from "../session";
 import { animatedLocal, localUnder, Poser } from "../stage/posed";
 import { empty, heading } from "./outline";
@@ -54,11 +56,14 @@ export class Inspector {
     const key = JSON.stringify([!!doc, sel, anim ? [anim.name, s.frame, s.history?.revision] : null]) + (target ? identity(target) : "");
     if (this.shown === key) return;
     // Not under a field being typed in, nor while playing: it shows the document once that ends.
-    if (!force && (this.element.contains(this.element.ownerDocument.activeElement) || s.playing)) return;
+    // A checkbox or menu commits as it changes, so keeping focus on one does not hold the panel.
+    const active = this.element.ownerDocument.activeElement;
+    const typing = active instanceof HTMLInputElement && active.type !== "checkbox" && this.element.contains(active);
+    if (!force && (typing || s.playing)) return;
     this.shown = key;
     this.inputs.clear();
     if (!doc || !sel || !target) {
-      this.element.replaceChildren(heading("Properties"), empty(doc ? "Select a bone, slot or attachment." : "Nothing open."));
+      this.element.replaceChildren(heading("Properties"), empty(doc ? "Select a bone, slot, attachment, skin or constraint." : "Nothing open."));
       return;
     }
     const form = document.createElement("div");
@@ -66,8 +71,10 @@ export class Inspector {
     if (sel.kind === "bone") this.boneForm(form, doc, sel.name);
     else if (sel.kind === "slot") this.slotForm(form, doc, sel.name);
     else if (sel.kind === "skin") this.skinForm(form, doc, sel.name);
+    else if (sel.kind === "constraint") this.constraintForm(form, doc, sel);
     else this.attachmentForm(form, doc, sel);
-    const title = sel.kind === "bone" ? (anim ? `Bone · keys at frame ${s.frame}` : "Bone") : sel.kind === "slot" ? "Slot" : sel.kind === "skin" ? "Skin" : "Attachment";
+    const title = sel.kind === "bone" ? (anim ? `Bone · keys at frame ${s.frame}` : "Bone") : sel.kind === "slot" ? "Slot" : sel.kind === "skin" ? "Skin"
+      : sel.kind === "constraint" ? `Constraint · ${KIND_TITLES[sel.type]}` : "Attachment";
     this.element.replaceChildren(heading(title), form);
   }
 
@@ -121,7 +128,7 @@ export class Inspector {
     const bones = (doc.bones ?? []).filter((b) => b.skin === true).map((b) => b.name);
     const constraints = (doc.constraints ?? []).filter((c) => c.skin === true);
     if (!bones.length && !constraints.length) {
-      form.append(empty("No bone or constraint is skin-required. Mark a bone \"Skin required\" in its properties to let skins turn it on."));
+      form.append(empty("No bone or constraint is skin-required. Mark one \"Skin required\" in its properties to let skins turn it on."));
       return;
     }
     if (bones.length) form.append(subheading("Bones it turns on"));
@@ -134,6 +141,140 @@ export class Inspector {
       form.append(this.checkField(`${c.type}/${c.name}`, `${c.name} (${c.type})`, skin[c.type]?.includes(c.name) ?? false, (on) => setSkinMember(name, c.type, c.name, on),
         (on) => `${on ? "Add" : "Remove"} ${c.name} ${on ? "to" : "from"} skin ${name}`));
     }
+  }
+
+  /**
+   * A constraint's references and values, kind by kind (Format-Json-Atlas.md §7). A value set to
+   * its default leaves the key out, except a mix whose default follows another key.
+   */
+  private constraintForm(form: HTMLElement, doc: Skeleton, r: ConstraintRef): void {
+    const s = this.session, c = findConstraint(doc, r)!, type = c.type, name = c.name;
+    const set = (patch: Record<string, unknown>) => updateConstraint(r, patch as ConstraintPatch);
+    const fixed = CONSTRAINT_DEFAULTS[type], dependent = DEPENDENT_DEFAULTS[type] ?? [];
+    const num = (key: string, label: string) => this.textField(key, label, format(constraintValue(c, key) as number), (v) => {
+      const n = number(v, label);
+      return set({ [key]: !dependent.includes(key) && n === fixed[key] ? undefined : n });
+    }, () => `Set ${label.toLowerCase()} of ${name}`, undefined, "decimal");
+    const flag = (key: string, label: string) => this.checkField(key, label, constraintValue(c, key) === true,
+      (on) => set({ [key]: on === fixed[key] ? undefined : on }), (on) => `${on ? "Turn on" : "Turn off"} ${label.toLowerCase()} of ${name}`);
+    // Modes are case-insensitive in the file; the menu shows the canonical spelling.
+    const mode = (key: string, label: string, options: readonly string[]) => {
+      const v = String(constraintValue(c, key));
+      return this.selectField(key, label, options.map((o) => [o, o]), options.find((o) => o.toLowerCase() === v.toLowerCase()) ?? v,
+        (o) => set({ [key]: o === fixed[key] ? undefined : o }), (o) => `Set ${label.toLowerCase()} of ${name} to ${o}`);
+    };
+    const boneNames = (doc.bones ?? []).map((b) => b.name);
+    const boneMenu = (key: string, label: string, value: string, options = boneNames) =>
+      this.selectField(key, label, options.map((n) => [n, n]), value, (v) => set({ [key]: v }), (v) => `Set ${label.toLowerCase()} of ${name} to ${v}`);
+    /** The bones a transform or path constraint moves: one checkbox each, and a menu to add one. */
+    const boneList = (bones: readonly string[]) => {
+      form.append(subheading("Bones it moves"));
+      for (const b of bones) form.append(this.checkField(`bones/${b}`, b, true, () => set({ bones: bones.filter((x) => x !== b) }), () => `Remove ${b} from ${name}`));
+      const rest = boneNames.filter((n) => !bones.includes(n));
+      form.append(this.selectField("addBone", "Add", [["", "— a bone…"], ...rest.map((n): [string, string] => [n, n])], "",
+        (v) => (v ? set({ bones: [...bones, v] }) : null), (v) => `Add ${v} to ${name}`));
+    };
+
+    form.append(this.textField("name", "Name", name, (v) => (v === name ? null : renameConstraint(r, v)), (v) => `Rename ${name} to ${v}`,
+      (v) => s.select({ kind: "constraint", type, name: v })));
+    const order = (doc.constraints ?? []).indexOf(c);
+    form.append(readOnly("Applies", `${order + 1} of ${doc.constraints!.length}`));
+    form.append(this.checkField("skin", "Skin required", c.skin === true, (on) => set({ skin: on ? true : undefined }),
+      (on) => `${on ? "Make" : "Stop making"} ${name} skin-required`));
+    switch (c.type) {
+      case "ik": {
+        const l = c.bones ?? [], bone = l.at(-1)!, parent = doc.bones!.find((b) => b.name === bone)?.parent;
+        // Another bone keeps one bone or two as before (two: it and its parent).
+        form.append(this.selectField("bone", "Bone", boneNames.filter((n) => n !== c.target).map((n) => [n, n]), bone, (v) => {
+          const p = doc.bones!.find((b) => b.name === v)?.parent;
+          if (l.length === 2 && p === undefined) throw new EditRefused(`"${v}" has no parent to bend.`);
+          return set({ bones: l.length === 2 ? [p!, v] : [v] });
+        }, (v) => `Make ${name} bend ${v}`));
+        form.append(this.checkField("two", "Bend its parent too", l.length === 2, (on) => {
+          if (on && parent === undefined) throw new EditRefused(`"${bone}" has no parent to bend.`);
+          return set({ bones: on ? [parent!, bone] : [bone] });
+        }, (on) => `${on ? "Bend two bones" : "Bend one bone"} in ${name}`));
+        const under = new Set(subtree(doc, l[0]!));
+        form.append(boneMenu("target", "Target", c.target!, boneNames.filter((n) => !under.has(n))));
+        form.append(num("mix", "Mix"), num("softness", "Softness"), flag("bendPositive", "Bend positive"),
+          flag("compress", "Compress"), flag("stretch", "Stretch"), mode("scaleY", "Scale Y", IK_SCALE_Y));
+        break;
+      }
+      case "transform": {
+        form.append(boneMenu("source", "Source", c.source!, boneNames.filter((n) => !(c.bones ?? []).includes(n))));
+        form.append(flag("localSource", "Local source"), flag("localTarget", "Local target"), flag("additive", "Additive"), flag("clamp", "Clamp"));
+        const targets = transformTargets(c);
+        for (const [key, kind] of TRANSFORM_MIXES) if (targets.has(kind)) form.append(num(key, `Mix ${kind}`));
+        form.append(subheading("Offsets"));
+        for (const [key, label] of [["rotation", "Rotation"], ["x", "X"], ["y", "Y"], ["scaleX", "Scale X"], ["scaleY", "Scale Y"], ["shearY", "Shear Y"]] as const) form.append(num(key, label));
+        this.propertyMap(form, c.properties ?? [], (properties) => set({ properties }), name);
+        boneList(c.bones ?? []);
+        break;
+      }
+      case "path": {
+        form.append(this.selectField("slot", "Slot", (doc.slots ?? []).map((x) => [x.name, x.name]), c.slot!, (v) => set({ slot: v }), (v) => `Make ${name} follow ${v}`));
+        form.append(mode("positionMode", "Position mode", POSITION_MODES), mode("spacingMode", "Spacing mode", SPACING_MODES), mode("rotateMode", "Rotate mode", ROTATE_MODES));
+        form.append(num("position", "Position"), num("spacing", "Spacing"), num("rotation", "Rotation"), num("mixRotate", "Mix rotate"), num("mixX", "Mix X"), num("mixY", "Mix Y"));
+        boneList(c.bones ?? []);
+        break;
+      }
+      case "physics": {
+        form.append(boneMenu("bone", "Bone", c.bone!));
+        form.append(subheading("What it feeds in"));
+        form.append(num("x", "X"), num("y", "Y"), num("rotate", "Rotate"), num("scaleX", "Scale X"), num("shearX", "Shear X"), mode("scaleY", "Scale Y", PHYSICS_SCALE_Y));
+        form.append(subheading("Simulation"));
+        for (const [key, label] of [["inertia", "Inertia"], ["strength", "Strength"], ["damping", "Damping"], ["mass", "Mass"], ["wind", "Wind"], ["gravity", "Gravity"], ["mix", "Mix"]] as const) {
+          form.append(num(key, label), flag(`${key}Global`, `${label}: global`));
+        }
+        form.append(num("limit", "Limit"), num("fps", "Steps per second"));
+        break;
+      }
+      case "slider": {
+        form.append(this.selectField("animation", "Animation", (doc.animations ?? []).map((a) => [a.name, a.name]), c.animation!, (v) => set({ animation: v }), (v) => `Make ${name} play ${v}`));
+        form.append(num("mix", "Mix"), flag("additive", "Additive"), flag("loop", "Loop"));
+        // Driven by a bone (its property mapped to time), or by its own time.
+        form.append(this.selectField("driver", "Driven by", [["", "— its time"], ...boneNames.map((n): [string, string] => [n, n])], c.bone ?? "",
+          (v) => set(v ? { bone: v, property: c.property ?? "rotate" } : { bone: undefined, property: undefined, from: undefined, to: undefined, scale: undefined, local: undefined }),
+          (v) => (v ? `Drive ${name} by ${v}` : `Drive ${name} by its time`)));
+        if (c.bone === undefined) form.append(num("time", "Time"));
+        else {
+          form.append(this.selectField("property", "Property", TRANSFORM_PROPERTIES.map((p) => [p, p]), c.property ?? "rotate", (v) => set({ property: v }), (v) => `Make ${name} read ${v}`));
+          form.append(num("from", "From"), num("to", "To"), num("scale", "Scale"), flag("local", "Local"));
+        }
+        break;
+      }
+    }
+  }
+
+  /** A transform constraint's from → to pairs: offset, scale and max of each; add and remove pairs. */
+  private propertyMap(form: HTMLElement, props: readonly TransformFrom[], write: (p: readonly TransformFrom[]) => Edit<Skeleton>, name: string): void {
+    form.append(subheading("Mapping (from → to)"));
+    const pairs = props.flatMap((p) => (p.to ?? []).map((t) => `${p.from}>${t.to}`));
+    const change = (from: string, to: string, f: (t: Record<string, unknown> | null) => Record<string, unknown> | null) => write(props.flatMap((p) => {
+      if (p.from !== from) return [p];
+      const tos = (p.to ?? []).flatMap((t) => { if (t.to !== to) return [t]; const n = f(t as unknown as Record<string, unknown>); return n ? [n as unknown as typeof t] : []; });
+      // A from with no to left is dropped, as the runtimes drop it (§7.3).
+      return tos.length ? [{ ...p, to: tos }] : [];
+    }));
+    for (const p of props) for (const t of p.to ?? []) {
+      const label = `${p.from} → ${t.to}`;
+      form.append(subheading(label));
+      for (const [key, text, d] of [["offset", "Offset", 0], ["scale", "Scale", 1], ["max", "Max", 1]] as const) {
+        form.append(this.textField(`${p.from}>${t.to}/${key}`, text, format(t[key] ?? d), (v) => {
+          const n = number(v, text);
+          return change(p.from, t.to, (x) => { const o = { ...x! }; if (n === d) delete o[key]; else o[key] = n; return o; });
+        }, () => `Set ${label} ${text.toLowerCase()} of ${name}`, undefined, "decimal"));
+      }
+      form.append(this.checkField(`${p.from}>${t.to}/on`, "Mapped", true, () => change(p.from, t.to, () => null), () => `Unmap ${label} in ${name}`));
+    }
+    const free = TRANSFORM_PROPERTIES.flatMap((f) => TRANSFORM_PROPERTIES.map((to) => `${f}>${to}`)).filter((k) => !pairs.includes(k));
+    form.append(this.selectField("addPair", "Add", [["", "— a mapping…"], ...free.map((k): [string, string] => [k, k.replace(">", " → ")])], "", (v) => {
+      if (!v) return null;
+      const [from, to] = v.split(">") as [string, string];
+      const entry = { to, extra: new Map() };
+      const has = props.some((p) => p.from === from);
+      return write(has ? props.map((p) => (p.from === from ? { ...p, to: [...(p.to ?? []), entry] } : p)) : [...props, { from, to: [entry], extra: new Map() }]);
+    }, (v) => `Map ${v.replace(">", " → ")} in ${name}`));
   }
 
   private slotForm(form: HTMLElement, doc: Skeleton, name: string): void {
@@ -239,6 +380,7 @@ export function selectedObject(doc: Skeleton, sel: Selection): object | undefine
   if (sel.kind === "bone") return doc.bones?.find((b) => b.name === sel.name);
   if (sel.kind === "skin") return doc.skins?.find((k) => k.name === sel.name);
   if (sel.kind === "slot") return doc.slots?.find((x) => x.name === sel.name);
+  if (sel.kind === "constraint") return findConstraint(doc, sel);
   return findAttachment(doc, sel);
 }
 
@@ -282,6 +424,8 @@ function readOnly(label: string, value: string): HTMLDivElement {
   row.append(a, b);
   return row;
 }
+
+const KIND_TITLES: Record<Constraint["type"], string> = { ik: "IK", transform: "transform", path: "path", physics: "physics", slider: "slider" };
 
 /** A value as the field shows it: up to four decimals, no trailing zeros. */
 export function format(n: number): string {
