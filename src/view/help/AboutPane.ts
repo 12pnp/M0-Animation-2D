@@ -1,5 +1,5 @@
 import { h, on } from "@/view/widgets/dom";
-import appSvg from "@/assets/amino-logo.svg?raw";
+import appSvg from "@/assets/boneburst-logo.svg?raw";
 // The mark alone, not the full lockup: at this size the "morenoise" lettering
 // in the lockup is a grey smudge. The name is right beside it as real text.
 import logoSvg from "@/assets/morenoise-mark.svg?raw";
