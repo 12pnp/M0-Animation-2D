@@ -1,10 +1,5 @@
 import type { CnId } from "@/core/doc/ids";
 import { keyedConstraint, setupValue, valueAt } from "@/core/doc/constraintKeys";
-import type { SpineInherit } from "./types";
-import {
-  AtlasAttachmentLoader, type Bone, BoundingBoxAttachment, ClippingAttachment, IkConstraint, Inherit, MeshAttachment, PathAttachment, PointAttachment, TransformConstraint, MixFrom, Physics, RegionAttachment, Skeleton,
-  SkeletonJson, Skin, type Slot, TextureAtlas, TextureAtlasRegion, type Animation as SpineRuntimeAnimation,
-} from "@esotericsoftware/spine-core";
 import { orderAt } from "@/core/doc/drawOrder";
 import { ikPoseAt } from "@/core/doc/ikKeys";
 import { tcMixAt } from "@/core/doc/transformKeys";
@@ -21,15 +16,20 @@ import type { PackedPage } from "@/core/atlas/packed";
 import { atlasText } from "./atlas";
 import { exportSpine } from "./exportSpine";
 import { toSpineLocal } from "./transform";
+import { readAtlas } from "./runtime/atlasRead";
+import { type AttachmentData, readRig } from "./runtime/rigData";
+import { Rig as Runtime } from "./runtime/rig";
+import type { PhysicsMode } from "./runtime/physics";
 
 /**
- * A symbol opened from a Spine file, posed by the Spine runtime itself.
+ * A symbol opened from a Spine file, posed by the BoneBurst runtime
+ * (`./runtime/`, docs/PREVIEW-RUNTIME-PLAN.md P3b), which plays Spine 4.3 as
+ * spine-core does.
  *
  * Such a rig relies on what the editor's own pose does not do: meshes and
  * their weights and deform keys, inherit modes, transform, path, physics
  * and slider constraints, clipping, draw order keys. So the stage hands the
- * runtime (spine-core 4.3.13, the core of the preview's spine-pixi) the
- * document's pose and draws what comes back:
+ * runtime the document's pose and draws what comes back:
  *
  *   in   each bone's local transform and each slot's attachment and colour,
  *        exactly as the editor evaluates them (`evaluateSymbol`), then the
@@ -42,25 +42,27 @@ import { toSpineLocal } from "./transform";
  * the editor's, sampled as the parity tests prove the runtime plays them.
  * It is rebuilt only when the rig's STRUCTURE changes (`structureKey`):
  * moving a bone or keying a colour sets values on the same skeleton.
+ * `tests/spinePose.test.ts` holds the stage to spine-core playing the export.
  *
- * Physics is posed at rest (`Physics.reset`): a simulation needs the
- * frames before it, and a seek has none; while the stage plays it steps
- * on (`livePhysics`). The Preview plays it.
+ * Physics is posed at rest ("reset"): a simulation needs the frames before
+ * it, and a seek has none; while the stage plays it steps on (`livePhysics`).
+ * The Preview plays it.
  */
 
 interface Rig {
-  skeleton: Skeleton;
-  /** Bones by the node that makes them. */
-  bones: Map<NodeId, Bone>;
+  rt: Runtime;
+  /** Bones by the node that makes them (index in the runtime's bones). */
+  bones: Map<NodeId, number>;
   /** Slots by the node that makes them, and back. */
-  slots: Map<NodeId, Slot>;
-  slotNode: Map<Slot, NodeId>;
+  slots: Map<NodeId, number>;
+  slotNode: Map<number, NodeId>;
   /** The skin key each display index shows, per slot node. */
   displayNames: Map<NodeId, Map<number, string>>;
   /** Carried shear, per bone node: Spine's own (see `importSpine`). */
   keepsShear: Set<NodeId>;
   images: Map<string, ItemId>;
-  animations: Map<string, SpineRuntimeAnimation>;
+  /** Constraints by name (index in the runtime's constraints). */
+  constraints: Map<string, number>;
   /** The frame physics last stepped to, while frames come in order. */
   physicsAt: { animation: string; frame: number } | null;
 }
@@ -145,40 +147,43 @@ function buildRig(project: Project, sym: SymbolItem, skins: readonly string[]): 
   });
   const page: PackedPage = { name: "stage", imagePath: "stage.png", width, height: Math.max(1, y), scale: 1, regions };
 
-  let skeleton: Skeleton;
+  let rt: Runtime;
   try {
-    const atlas = new TextureAtlas(atlasText([page]));
-    skeleton = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(atlas)).readSkeletonData(exported.skeleton));
-    const combined = combineSkins(skeleton, skins);
-    if (typeof combined === "string") return { rig: null, error: combined };
-    if (combined) skeleton.setSkin(combined);
+    rt = new Runtime(readRig(exported.skeleton, readAtlas(atlasText([page]))));
+    // The skins as one, as a game combines them: a later skin's attachment
+    // wins where two fill the same slot key. The preview page does the same.
+    const named = skins.filter((n) => n !== "default");
+    const missing = named.find((n) => !rt.data.skins.some((s) => s.name === n));
+    if (missing) return { rig: null, error: `There is no skin "${missing}".` };
+    rt.setSkins(named);
   } catch (err) {
     return { rig: null, error: err instanceof Error ? err.message : String(err) };
   }
 
-  const bones = new Map<NodeId, Bone>();
-  const slots = new Map<NodeId, Slot>();
-  const slotNode = new Map<Slot, NodeId>();
+  const boneIndex = new Map(rt.data.bones.map((b) => [b.name, b.index]));
+  const slotIndex = new Map(rt.data.slots.map((s) => [s.name, s.index]));
+  const bones = new Map<NodeId, number>();
+  const slots = new Map<NodeId, number>();
+  const slotNode = new Map<number, NodeId>();
   const displayNames = new Map<NodeId, Map<number, string>>();
   const keepsShear = new Set<NodeId>();
   for (const [path, name] of exported.paths) {
     if (path.includes(">")) continue;
-    const bone = skeleton.findBone(name);
-    if (bone) bones.set(path as NodeId, bone);
+    const bone = boneIndex.get(name);
+    if (bone !== undefined) bones.set(path as NodeId, bone);
     const node = sym.nodes[path as NodeId];
     if (node?.spine?.bone && ("shearX" in node.spine.bone || "shearY" in node.spine.bone)) keepsShear.add(node.id);
   }
   for (const [path, name] of exported.slots) {
     if (path.includes(">")) continue;
-    const slot = skeleton.findSlot(name);
-    if (!slot) continue;
+    const slot = slotIndex.get(name);
+    if (slot === undefined) continue;
     slots.set(path as NodeId, slot);
     slotNode.set(slot, path as NodeId);
     displayNames.set(path as NodeId, exported.displayKeys.get(path) ?? new Map());
   }
-  const animations = new Map<string, SpineRuntimeAnimation>();
-  for (const a of skeleton.data.animations) animations.set(a.name, a);
-  return { rig: { skeleton, bones, slots, slotNode, displayNames, keepsShear, images, animations, physicsAt: null } };
+  const constraints = new Map(rt.data.constraints.map((k, i) => [k.name, i]));
+  return { rig: { rt, bones, slots, slotNode, displayNames, keepsShear, images, constraints, physicsAt: null } };
 }
 
 /**
@@ -203,39 +208,17 @@ export function spinePoseError(project: Project, sym: SymbolItem, skins: readonl
   return sym.spine || runtimePosed(sym) ? rigFor(project, sym, skins).error ?? null : null;
 }
 
-/**
- * The skins as one, the way a game combines them (`Skin.addSkin`), or null
- * for none (the default skin alone), or why not. A later skin's attachment
- * wins where two fill the same slot key. The preview page does the same.
- */
-function combineSkins(skeleton: Skeleton, skins: readonly string[]): Skin | null | string {
-  const named = skins.filter((n) => n !== "default");
-  if (named.length === 0) return null;
-  const combined = new Skin(named.join(" + "));
-  for (const name of named) {
-    const skin = skeleton.data.findSkin(name);
-    if (!skin) return `There is no skin "${name}".`;
-    combined.addSkin(skin);
-  }
-  return combined;
-}
-
-const INHERIT_ENUM: Record<SpineInherit, Inherit> = {
-  normal: Inherit.Normal, onlyTranslation: Inherit.OnlyTranslation, noRotationOrReflection: Inherit.NoRotationOrReflection,
-  noScale: Inherit.NoScale, noScaleOrReflection: Inherit.NoScaleOrReflection,
-};
-
 function applyRig(
   rig: Rig, sym: SymbolItem, pose: Pose, animation: Animation | null, frame: number, mode: "setup" | "animate", fps: number,
 ): void {
-  const sk = rig.skeleton;
-  sk.setupPose();
+  const rt = rig.rt, L = rt.local;
+  rt.setupPose();
   for (const [nodeId, bone] of rig.bones) {
     const e = pose.byNode.get(nodeId);
     if (!e) continue;
-    const l = toSpineLocal(e.local), p = bone.pose;
-    p.x = l.x; p.y = l.y; p.rotation = l.rotation; p.scaleX = l.scaleX; p.scaleY = l.scaleY;
-    if (!rig.keepsShear.has(nodeId)) { p.shearX = l.shearX; p.shearY = l.shearY; }
+    const l = toSpineLocal(e.local), at = bone * 7;
+    L[at] = l.x; L[at + 1] = l.y; L[at + 2] = l.rotation; L[at + 3] = l.scaleX; L[at + 4] = l.scaleY;
+    if (!rig.keepsShear.has(nodeId)) { L[at + 5] = l.shearX; L[at + 6] = l.shearY; }
   }
   for (const [nodeId, slot] of rig.slots) {
     const e = pose.byNode.get(nodeId);
@@ -244,60 +227,57 @@ function applyRig(
     const outline = e.node.kind === "box" || e.node.kind === "point" || e.node.kind === "path";
     const onStage = e.displayIndex >= 0 && (e.display !== null || outline);
     const name = onStage ? rig.displayNames.get(nodeId)?.get(e.displayIndex) : undefined;
-    const att = name ? sk.getAttachment(slot.data.index, name) : null;
+    const att = name ? rt.lookup(slot, name) : null;
     // A slot whose setup attachment is not a display keeps the runtime's.
-    if (att || e.displayIndex !== -1 || sym.nodes[nodeId]?.setupDisplay !== -1) slot.pose.setAttachment(att);
-
-    setColor(slot, e.color);
+    if (att || e.displayIndex !== -1 || sym.nodes[nodeId]?.setupDisplay !== -1) rt.setAttachment(slot, att ? name! : null);
+    setColor(rt, slot, e.color);
   }
   // The document's inherit keys (`Animation.inherits`), stepped.
   if (mode === "animate" && animation?.inherits) {
     for (const [nodeId, bone] of rig.bones) {
       const node = sym.nodes[nodeId];
-      if (node && animation.inherits[nodeId]?.length) bone.pose.inherit = INHERIT_ENUM[inheritAt(node, animation, frame)];
+      if (node && animation.inherits[nodeId]?.length) rt.inherit[bone] = inheritAt(node, animation, frame);
     }
   }
   if (mode === "animate" && animation) {
-    rig.animations.get(animation.name)?.apply(sk, 0, frame / fps, false, null, 1, MixFrom.setup, false, false, false);
+    const anim = rt.animation(animation.name);
+    if (anim) rt.apply(anim, frame / fps, false);
   }
   // The document's IK keys (`Animation.ik`), applied over the setup pose like
   // the draw order below. The bend is written inverted, as the exporter does.
   if (mode === "animate" && animation?.ik) {
     for (const k of sym.ik) {
       if (!animation.ik[k.id]?.length) continue;
-      const c = sk.constraints.find((x) => x instanceof IkConstraint && x.data.name === k.name) as IkConstraint | undefined;
-      if (!c) continue;
+      const i = rig.constraints.get(k.name), p = i === undefined ? null : rt.ik[i];
+      if (!p) continue;
       const { mix, bendPositive, softness } = ikPoseAt(k, animation, frame);
-      c.pose.mix = mix;
-      c.pose.bendDirection = bendPositive ? -1 : 1;
-      c.pose.softness = softness;
+      p.mix = mix;
+      p.bendPositive = !bendPositive;
+      p.softness = softness;
     }
   }
   // The document's transform constraint keys, likewise.
   if (mode === "animate" && animation?.transforms) {
     for (const k of sym.transforms ?? []) {
       if (!animation.transforms[k.id]?.length) continue;
-      const c = sk.constraints.find((x) => x instanceof TransformConstraint && x.data.name === k.name) as TransformConstraint | undefined;
-      if (!c) continue;
-      const m = tcMixAt(k, animation, frame);
-      c.pose.mixRotate = m.rotate; c.pose.mixX = m.x; c.pose.mixY = m.y;
-      c.pose.mixScaleX = m.scaleX; c.pose.mixScaleY = m.scaleY; c.pose.mixShearY = m.shearY;
+      const i = rig.constraints.get(k.name), p = i === undefined ? null : rt.transform[i];
+      if (p) Object.assign(p, tcMixAt(k, animation, frame));
     }
   }
   // The document's physics, slider and path keys, likewise (`constraintKeys`).
   if (mode === "animate" && animation?.constraintKeys) {
     for (const [id, channels] of Object.entries(animation.constraintKeys)) {
       const c = keyedConstraint(sym, id as CnId);
-      if (!c) continue;
-      const rc = sk.constraints.find((x) => x.data.name === c.k.name);
-      if (!rc) continue;
-      const pose = rc.pose as unknown as Record<string, number>;
+      const i = c ? rig.constraints.get(c.k.name) : undefined;
+      if (!c || i === undefined) continue;
+      const p = (rt.physics[i] ?? rt.slider[i] ?? rt.path[i]) as unknown as Record<string, number> | null;
+      if (!p) continue;
       for (const [channel, keys] of Object.entries(channels)) {
         if (!keys.length) continue;
         const v = valueAt(keys, frame, setupValue(c, channel));
-        if (c.kind === "physics" && channel === "mass") pose.massInverse = 1 / v;
-        else if (c.kind === "path" && channel === "mix") { pose.mixRotate = v; pose.mixX = v; pose.mixY = v; }
-        else pose[channel] = v;
+        if (c.kind === "physics" && channel === "mass") p.massInverse = 1 / v;
+        else if (c.kind === "path" && channel === "mix") { p.mixRotate = v; p.mixX = v; p.mixY = v; }
+        else p[channel] = v;
       }
     }
   }
@@ -306,63 +286,63 @@ function applyRig(
   // the slots that have a place in the order taking those places.
   if (mode === "animate" && animation?.drawOrder?.length) {
     const rank = new Map(orderAt(sym, animation, frame).map((id, i) => [id, i]));
-    const order = sk.drawOrder.appliedPose as Slot[];
+    const order = [...rt.drawOrder];
     const at = order.map((sl, i) => (rank.has(rig.slotNode.get(sl)!) ? i : -1)).filter((i) => i >= 0);
     const ranked = at.map((i) => order[i]!).sort((a, b) => rank.get(rig.slotNode.get(a)!)! - rank.get(rig.slotNode.get(b)!)!);
     at.forEach((i, n) => { order[i] = ranked[n]!; });
+    rt.drawOrder = order;
   }
-  sk.updateWorldTransform(physicsStep(rig, sk, animation, frame, mode, fps));
+  rt.updateWorld(physicsStep(rig, animation, frame, mode, fps));
 
   // Worlds, y flipped into the editor's space.
-  const worldOf = (bone: Bone) => {
-    const w = bone.appliedPose;
-    return matOf(w.a, -w.c, -w.b, w.d, w.worldX, -w.worldY);
+  const W = rt.world;
+  const worldOf = (bone: number) => {
+    const w = bone * 6;
+    return matOf(W[w]!, -W[w + 2]!, -W[w + 1]!, W[w + 3]!, W[w + 4]!, -W[w + 5]!);
   };
   for (const [nodeId, bone] of rig.bones) {
     const e = pose.byNode.get(nodeId);
     if (e) e.world = worldOf(bone);
   }
+  const flipped = (slot: number, att: AttachmentData & { vertexCount: number }) => {
+    const v = new Array<number>(att.vertexCount * 2);
+    rt.vertexWorld(slot, att as never, 0, v.length, v, 0);
+    for (let i = 1; i < v.length; i += 2) v[i] = -v[i]!;
+    return v;
+  };
 
   // Slots in the runtime's draw order, bones first (they draw nothing).
   const slotEntries: PoseEntry[] = [];
-  const clips: Array<{ entry: PoseEntry; end: Slot | null }> = [];
-  for (const slot of sk.drawOrder.appliedPose) {
+  const clips: Array<{ entry: PoseEntry; end: number }> = [];
+  for (const slot of rt.drawOrder) {
     const nodeId = rig.slotNode.get(slot);
     const e = nodeId ? pose.byNode.get(nodeId) : undefined;
     if (!e) continue;
-    e.world = worldOf(slot.bone);
+    e.world = worldOf(rt.data.slots[slot]!.bone);
     const layerVisible = sym.layers.find((l) => l.nodeId === e.nodeId)?.visible !== false;
-    const att = slot.appliedPose.getAttachment();
+    const att = rt.attachmentOf(slot);
     delete e.spine;
     delete e.clip;
-    e.color = colorOf(slot, att);
+    e.color = colorOf(rt, slot, att);
     let shown = -1;
     // By the attachment the key finds, as an attachment's own name need not be its key.
-    for (const [index, key] of rig.displayNames.get(e.nodeId) ?? []) if (att && sk.getAttachment(slot.data.index, key) === att) shown = index;
+    for (const [index, key] of rig.displayNames.get(e.nodeId) ?? []) if (att && rt.lookup(slot, key) === att) shown = index;
     e.displayIndex = shown;
     e.display = shown >= 0 ? displaysOf(e.node)[shown] ?? null : null;
-    e.spine = drawOf(rig, sk, slot, att) ?? undefined;
-    if (att instanceof ClippingAttachment) {
-      const v = new Array<number>(att.worldVerticesLength);
-      att.computeWorldVertices(sk, slot, 0, att.worldVerticesLength, v, 0, 2);
-      for (let i = 1; i < v.length; i += 2) v[i] = -v[i]!;
-      e.clip = { polygon: v, until: null };
-      clips.push({ entry: e, end: att.endSlot ? sk.slots[att.endSlot.index] ?? null : null });
+    e.spine = drawOf(rig, slot, att) ?? undefined;
+    if (att?.kind === "clipping") {
+      e.clip = { polygon: flipped(slot, att), until: null };
+      clips.push({ entry: e, end: att.end });
     }
     // Boxes, points and paths draw nothing; the overlay outlines them, a
     // box's or path's points where the runtime puts them (weights, deform).
-    const outlined = att instanceof BoundingBoxAttachment || att instanceof PointAttachment || att instanceof PathAttachment;
+    const outlined = att?.kind === "box" || att?.kind === "point" || att?.kind === "path";
     delete e.outline;
-    if (att instanceof BoundingBoxAttachment || att instanceof PathAttachment) {
-      const v = new Array<number>(att.worldVerticesLength);
-      att.computeWorldVertices(sk, slot, 0, att.worldVerticesLength, v, 0, 2);
-      for (let i = 1; i < v.length; i += 2) v[i] = -v[i]!;
-      e.outline = v;
-    }
+    if (att?.kind === "box" || att?.kind === "path") e.outline = flipped(slot, att);
     e.visible = layerVisible && (!!e.spine || !!e.clip || outlined);
     slotEntries.push(e);
   }
-  for (const { entry, end } of clips) entry.clip!.until = end ? rig.slotNode.get(end) ?? null : null;
+  for (const { entry, end } of clips) entry.clip!.until = end >= 0 ? rig.slotNode.get(end) ?? null : null;
   const rest = pose.entries.filter((e) => !slotEntries.includes(e));
   pose.entries.length = 0;
   pose.entries.push(...rest, ...slotEntries);
@@ -379,53 +359,61 @@ export const livePhysics = { on: false };
  * step on from the frame before when the frames come in order, held at a
  * frame drawn again.
  */
-function physicsStep(rig: Rig, sk: Skeleton, animation: Animation | null, frame: number, mode: "setup" | "animate", fps: number): Physics {
-  if (!livePhysics.on || !sk.physics.length || mode !== "animate" || !animation) { rig.physicsAt = null; return Physics.reset; }
+function physicsStep(rig: Rig, animation: Animation | null, frame: number, mode: "setup" | "animate", fps: number): PhysicsMode {
+  const rt = rig.rt;
+  if (!livePhysics.on || !rt.data.constraints.some((k) => k.kind === "physics") || mode !== "animate" || !animation) {
+    rig.physicsAt = null;
+    return "reset";
+  }
   const last = rig.physicsAt;
   rig.physicsAt = { animation: animation.name, frame };
-  if (last?.animation !== animation.name) return Physics.reset;
-  if (frame === last.frame) return Physics.pose;
+  if (last?.animation !== animation.name) return "reset";
+  if (frame === last.frame) return "pose";
   // On from the last frame, across the loop's wrap, up to half a second: a
   // slow redraw still simulates, a seek does not.
   const delta = frame > last.frame ? frame - last.frame : animation.duration - last.frame + frame;
-  if (delta > fps / 2) return Physics.reset;
-  sk.update(delta / fps);
-  return Physics.update;
+  if (delta > fps / 2) return "reset";
+  rt.update(delta / fps);
+  return "update";
 }
 
 /** The editor's colour as the slot's light and dark: light M + O, dark O
- *  (`lightHex` / `darkHex`, unrounded). */
-function setColor(slot: Slot, c: ColorTransform): void {
-  const light = slot.pose.color, dark = slot.pose.darkColor;
-  light.set(c.rM / 100 + c.rO / 255, c.gM / 100 + c.gO / 255, c.bM / 100 + c.bO / 255, c.aM / 100).clamp();
-  dark?.set(c.rO / 255, c.gO / 255, c.bO / 255, 1).clamp();
+ *  (`lightHex` / `darkHex`, unrounded), each channel clamped to 0..1. */
+function setColor(rt: Runtime, slot: number, c: ColorTransform): void {
+  const k = slot * 7, C = rt.color, cl = (v: number) => Math.min(1, Math.max(0, v));
+  C[k] = cl(c.rM / 100 + c.rO / 255); C[k + 1] = cl(c.gM / 100 + c.gO / 255);
+  C[k + 2] = cl(c.bM / 100 + c.bO / 255); C[k + 3] = cl(c.aM / 100);
+  if (rt.data.slots[slot]!.dark) { C[k + 4] = cl(c.rO / 255); C[k + 5] = cl(c.gO / 255); C[k + 6] = cl(c.bO / 255); }
 }
 
 /** What the runtime draws with, back as the editor's colour: light times the
  *  attachment's own colour, dark as the offset (`toColor` in the importer). */
-function colorOf(slot: Slot, att: unknown): ColorTransform {
-  const l = slot.appliedPose.color, d = slot.appliedPose.darkColor;
-  const tint = att instanceof RegionAttachment || att instanceof MeshAttachment ? att.color : null;
-  const r = l.r * (tint?.r ?? 1), g = l.g * (tint?.g ?? 1), b = l.b * (tint?.b ?? 1), a = l.a * (tint?.a ?? 1);
-  const dr = d?.r ?? 0, dg = d?.g ?? 0, db = d?.b ?? 0;
+function colorOf(rt: Runtime, slot: number, att: AttachmentData | null): ColorTransform {
+  const k = slot * 7, C = rt.color;
+  const tint = att?.kind === "region" || att?.kind === "mesh" ? att.color : null;
+  const r = C[k]! * (tint?.[0] ?? 1), g = C[k + 1]! * (tint?.[1] ?? 1), b = C[k + 2]! * (tint?.[2] ?? 1), a = C[k + 3]! * (tint?.[3] ?? 1);
+  const dark = !!rt.data.slots[slot]!.dark;
+  const dr = dark ? C[k + 4]! : 0, dg = dark ? C[k + 5]! : 0, db = dark ? C[k + 6]! : 0;
   return { rM: (r - dr) * 100, gM: (g - dg) * 100, bM: (b - db) * 100, aM: a * 100, rO: dr * 255, gO: dg * 255, bO: db * 255, aO: 0 };
 }
 
-function drawOf(rig: Rig, sk: Skeleton, slot: Slot, att: unknown): PoseEntry["spine"] | null {
-  if (!(att instanceof RegionAttachment) && !(att instanceof MeshAttachment)) return null;
+function drawOf(rig: Rig, slot: number, att: AttachmentData | null): PoseEntry["spine"] | null {
+  if (att?.kind !== "region" && att?.kind !== "mesh") return null;
   // The region showing now: a sequence's current frame, or the one.
-  const region = att.sequence.regions[att.sequence.resolveIndex(slot.appliedPose)];
-  const itemId = region instanceof TextureAtlasRegion ? rig.images.get(region.name) : undefined;
-  if (!itemId || !(region instanceof TextureAtlasRegion)) return null;
+  const region = rig.rt.frameOf(slot, att).region;
+  const itemId = region ? rig.images.get(region.name) : undefined;
+  if (!itemId || !region) return null;
   const w = region.originalWidth, h = region.originalHeight;
-  if (att instanceof RegionAttachment) {
-    const v = new Array<number>(8);
-    att.computeWorldVertices(slot, att.getOffsets(slot.appliedPose), v, 0, 2);
-    for (let i = 1; i < 8; i += 2) v[i] = -v[i]!;
+  if (att.kind === "region") {
+    const c = new Array<number>(8);
+    rig.rt.regionWorld(slot, att, c);
+    // Ours run bottom-left, bottom-right, top-right, top-left; the stage takes
+    // left-bottom, left-top, right-top, right-bottom, y flipped.
+    const v = [0, 3, 2, 1].flatMap((i) => [c[i * 2]!, -c[i * 2 + 1]!]);
     return { itemId, vertices: v, uvs: [0, h, 0, 0, w, 0, w, h], triangles: [0, 1, 2, 2, 3, 0], quad: true };
   }
-  const v = new Array<number>(att.worldVerticesLength);
-  att.computeWorldVertices(sk, slot, 0, att.worldVerticesLength, v, 0, 2);
+  const v = new Array<number>(att.vertexCount * 2);
+  rig.rt.meshWorld(slot, att, v);
   for (let i = 1; i < v.length; i += 2) v[i] = -v[i]!;
   const uvs = Array.from(att.regionUVs, (u, i) => u * (i % 2 ? h : w));
   return { itemId, vertices: v, uvs, triangles: Array.from(att.triangles), quad: false };

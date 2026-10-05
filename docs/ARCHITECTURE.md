@@ -1187,12 +1187,13 @@ flowchart LR
 
 An opened rig relies on what the editor's pose does not do: meshes, weights, deform keys,
 inherit modes, transform, path, physics and slider constraints, clipping, draw order keys.
-`posedSymbol` (`core/spine/spinePose.ts`) runs `evaluateSymbol`, gives spine-core each
-bone's local transform and each slot's attachment and colour, applies the carried
+`posedSymbol` (`core/spine/spinePose.ts`) runs `evaluateSymbol`, gives our runtime
+(`core/spine/runtime/`, ARCHITECTURE ▸ The BoneBurst runtime; spine-core until the plan's
+P3b) each bone's local transform and each slot's attachment and colour, applies the carried
 timelines at the frame, and reads back world matrices, attachments, colours, the draw
 order, clipping and every region's and mesh's world vertices (`PoseEntry.spine`,
 `PoseEntry.clip`), and every box's and path's (`PoseEntry.outline`). Which display a slot shows
-is found by the attachment its key finds (`Skeleton.getAttachment`), not by the attachment's
+is found by the attachment its key finds (`Rig.lookup`), not by the attachment's
 name, which a file may set apart from its key (Spine's `name`; mix-and-match's skins do).
 `SceneRenderer.drawSpineEntries` draws a region as one affine image and
 a mesh triangle by triangle, and clips the way `SkeletonClipping` does: one clip at a time,
@@ -1204,7 +1205,7 @@ generated keys, over one untrimmed page of library images. It is rebuilt only wh
 structure changes (`structureKey`). Edits change the symbol in place, so the per-symbol cache
 reads the structure again after any edit (`docEpoch`, bumped by `History`); before, an IK's
 bend flipped on an opened rig did not reach the stage until a reload. Posing spineboy-pro or celestial-circus takes 0.3 ms.
-Physics is posed at rest (`Physics.reset`), because a seek has no frames before it to
+Physics is posed at rest (`"reset"`), because a seek has no frames before it to
 simulate from, except while the stage plays (`livePhysics`, ARCHITECTURE ▸ Physics, sliders
 and paths). The skins shown over the default skin are `stageSkinOf` (`core/doc/skins.ts`): the symbol's
 choice (`SymbolItem.stageSkins`, from the stage bar's Skin picker, `SetStageSkins`),
@@ -1219,7 +1220,9 @@ for all 16 JSON samples in M0-Animation2D. At every whole frame it compares each
 world matrix, the draw order, each slot's attachment, colour and dark colour, and every
 region's and mesh's world vertices. The worst difference is 0.02 px. It also pins each
 rig's frame-by-frame count. `tests/spinePose.test.ts` checks that the stage equals the
-export as the preview seeks it (worst 0.0011 px). `tests/spineImportRules.test.ts` covers
+export as spine-core plays it (worst 0.0011 px); a slot on a bone no shown skin enables is not
+drawn, as Spine's renderers skip it (spine-core still holds its attachment; the old stage drew
+it). `tests/spineImportRules.test.ts` covers
 the rules one at a time. Fourteen deliberate bugs each fail at least one of them. In the
 browser, the original files and the re-exported ones rendered by spine-pixi agree on
 99.6% of spineboy-pro's pixels; the rest are one-pixel region edges, where the original

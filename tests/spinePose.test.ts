@@ -56,7 +56,10 @@ function compare(rig: SampleRig, project: Project, sym: SymbolItem): number {
 
       for (const [nodeId, name] of exported.names) {
         const e = pose.byNode.get(nodeId)!;
-        const w = sk.findBone(name)!.appliedPose;
+        const bone = sk.findBone(name)!;
+        // spine-core leaves an inactive bone where it was: nothing to compare.
+        if (!bone.active) continue;
+        const w = bone.appliedPose;
         const d = Math.max(Math.abs(e.world.a - w.a), Math.abs(e.world.b + w.c), Math.abs(e.world.c + w.b), Math.abs(e.world.d - w.d));
         const p = Math.max(Math.abs(e.world.tx - w.worldX), Math.abs(e.world.ty + w.worldY));
         worst = Math.max(worst, p);
@@ -69,6 +72,12 @@ function compare(rig: SampleRig, project: Project, sym: SymbolItem): number {
       for (const [nodeId, name] of exported.slots) {
         const e = pose.byNode.get(nodeId as never)!;
         const slot = sk.findSlot(name)!;
+        // A slot on a bone no shown skin enables is not drawn: Spine's
+        // renderers skip it, though spine-core still holds its attachment.
+        if (!slot.bone.active) {
+          if (e.spine || e.clip) fail(where, `slot "${name}" is drawn on an inactive bone`);
+          continue;
+        }
         const att = slot.appliedPose.getAttachment();
         const drawsImage = att instanceof RegionAttachment || att instanceof MeshAttachment;
         if (!!e.spine !== drawsImage) fail(where, `slot "${name}": the stage ${e.spine ? "draws" : "draws nothing"}, the runtime shows ${att?.name ?? "nothing"}`);

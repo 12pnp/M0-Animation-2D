@@ -45,7 +45,7 @@ export class Rig {
    *  is active only while a shown skin lists it or a bone under it. */
   readonly active: Uint8Array;
   /** Per slot: r g b a, then the dark colour's r g b (two-colour tint). */
-  readonly color: Float32Array;
+  readonly color: Float64Array;
   /** Per slot: the attachment key shown, or null. */
   readonly attachment: Array<string | null>;
   /** Per slot: a mesh's deformed vertices (`Timeline` "deform"), or null for its setup ones. */
@@ -93,7 +93,7 @@ export class Rig {
     this.inherit = data.bones.map((b) => b.inherit);
     this.world = new Float64Array(data.bones.length * 6);
     this.active = new Uint8Array(data.bones.length);
-    this.color = new Float32Array(data.slots.length * 7);
+    this.color = new Float64Array(data.slots.length * 7);
     this.attachment = data.slots.map(() => null);
     this.deform = data.slots.map(() => null);
     this.sequenceIndex = new Int32Array(data.slots.length).fill(-1);
@@ -619,7 +619,9 @@ export class Rig {
       if (len > 1e-5) { za /= len; zc /= len; }
       len = Math.sqrt(za * za + zc * zc);
       if (mode === "noScale" && pa * pd - pb * pc < 0) len = -len;
-      const ry = 90 * DEG_RAD + Math.atan2(zc, za);
+      // The exact half turn here, not the eight-digit π (measured: the bone's
+      // matrix is off by sin(shear x) × 2.3e-8 otherwise).
+      const ry = Math.PI / 2 + Math.atan2(zc, za);
       const zb = Math.cos(ry) * len, zd = Math.sin(ry) * len;
       const la = Math.cos(shearX * DEG_RAD) * scaleX, lb = Math.cos((90 + shearY) * DEG_RAD) * scaleY;
       const lc = Math.sin(shearX * DEG_RAD) * scaleX, ld = Math.sin((90 + shearY) * DEG_RAD) * scaleY;
@@ -634,6 +636,11 @@ export class Rig {
   attachmentOf(slot: number): AttachmentData | null {
     const key = this.attachment[slot];
     if (key === null || key === undefined || !this.active[this.data.slots[slot]!.bone]) return null;
+    return this.lookup(slot, key);
+  }
+
+  /** The attachment `key` names in the slot: the shown skins over the default one. */
+  lookup(slot: number, key: string): AttachmentData | null {
     for (let i = this.skins.length - 1; i >= 0; i--) {
       const a = this.skins[i]!.attachments.get(slot)?.get(key);
       if (a) return a;
@@ -650,7 +657,7 @@ export class Rig {
   }
 
   /** A region's four corners in world space (y up), into `out`. */
-  regionWorld(slot: number, region: RegionData, out: Float32Array | Float64Array): void {
+  regionWorld(slot: number, region: RegionData, out: Writable): void {
     const w = this.data.slots[slot]!.bone * 6, W = this.world;
     const a = W[w]!, b = W[w + 1]!, c = W[w + 2]!, d = W[w + 3]!, x = W[w + 4]!, y = W[w + 5]!;
     const k = this.frameOf(slot, region).corners;
@@ -661,7 +668,7 @@ export class Rig {
   }
 
   /** A mesh's vertices in world space (y up), into `out` (2 per vertex). */
-  meshWorld(slot: number, mesh: MeshData, out: Float32Array | Float64Array): void {
+  meshWorld(slot: number, mesh: MeshData, out: Writable): void {
     this.vertexWorld(slot, mesh, 0, mesh.vertexCount * 2, out, 0);
   }
 
@@ -671,7 +678,7 @@ export class Rig {
    * bone, weighted as the weighted sum of each influence through its own
    * bone; the slot's deform keys added in either case.
    */
-  vertexWorld(slot: number, att: MeshData | PathData | ClippingData | BoxData, start: number, count: number, out: Float32Array | Float64Array, offset: number): void {
+  vertexWorld(slot: number, att: MeshData | PathData | ClippingData | BoxData, start: number, count: number, out: Writable, offset: number): void {
     const W = this.world, deform = this.timelineDeform(slot, att);
     const v = att.vertices;
     if (!att.weighted) {
@@ -710,7 +717,7 @@ export class Rig {
 
   /** Show `key` in the slot. A change restarts its sequence, and drops its
    *  deform unless the new attachment plays the same deform keys. */
-  private setAttachment(slot: number, key: string | null): void {
+  setAttachment(slot: number, key: string | null): void {
     if (this.attachment[slot] === key) return;
     const before = this.attachmentOf(slot);
     this.attachment[slot] = key;
@@ -804,6 +811,9 @@ function weightedBones(att: MeshData | PathData): Set<number> {
   }
   return out;
 }
+
+/** Where vertices are written: a typed array or a plain one. */
+export type Writable = { [index: number]: number };
 
 /** How a timeline mixes: from the setup pose, from the current value
  *  ("first" fading back to the setup pose before its first key), or added. */

@@ -134,6 +134,16 @@ Some groundwork exists in this repo already, but not all of it is clean:
   path constraints alike. Gate: `tests/spinePose.test.ts` (the stage equals the
   export) and `tests/spineParity.test.ts` stay green with spine-core as the
   oracle only. Audit `types.ts`.
+  **Done.** `spinePose.ts` builds our `Rig` from the same exported skeleton;
+  both gates pass, and nothing in `src/` imports spine-core (the production
+  editor bundle holds none of it). In the app, Stretchyman opened through
+  File ▸ Open Spine matches spine-pixi in the Preview on every bone. The stage
+  no longer draws a slot on a bone no shown skin enables (Spine's renderers
+  skip it). `types.ts` is a description of the format, its fields named after
+  what spine-core reads: no code of spine-core's. Left of spine-core's: the
+  transcribed `core/math/ik.ts` and `transformConstraint.ts` the editor's own
+  pose uses for authored rigs — to be replaced by `runtime/ik.ts` and
+  `runtime/transform.ts` (P2's note), before P5.
 - **P4 — parity gates.** Golden-file suites vs the dev oracle in CI; the
   default Preview flips to our runtime; the official runtime is reachable only
   through `--dev-oracle`.

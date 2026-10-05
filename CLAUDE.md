@@ -14,8 +14,8 @@ ground truth, Vendored runtime), and the stage's eases and IK are Spine's own
 skeleton (ARCHITECTURE ▸ The Spine exporter ▸ Nested symbols are flattened), masks
 are clipping attachments and colour offsets two-colour tint (ARCHITECTURE ▸ Mask
 layers, Colour, alpha and blend mode). File ▸ Open Spine opens existing Spine
-JSON for editing, and the stage poses such a rig through spine-core
-(ARCHITECTURE ▸ Opening Spine files). Any animation can be a cycle whose
+JSON for editing, and the stage poses such a rig through our own Spine runtime
+(ARCHITECTURE ▸ Opening Spine files, The BoneBurst runtime). Any animation can be a cycle whose
 last frame is frame 0 again, and each selected bone draws its path, which can be
 dragged, bent with handles or baked to edit the animation (ARCHITECTURE ▸ Cycles, Bone
 paths; the decisions are pure in `core/doc/cycle.ts`, `bonePath.ts`, `pathEdit.ts`,
@@ -30,7 +30,7 @@ made from its alpha, bound to bones by weights and keyed by deform (ARCHITECTURE
 Meshes, `core/mesh/`). Skins put their own images in slots and have bones and
 constraints of their own, by spine-core's rules (ARCHITECTURE ▸ Skins, `core/doc/skins.ts`).
 Bounding boxes, points, paths and sequences are made and edited (ARCHITECTURE ▸ Boxes and
-points, Sequences); physics, slider and path constraints are solved by spine-core itself, which
+points, Sequences); physics, slider and path constraints are solved by our runtime, which
 poses any symbol that has one (ARCHITECTURE ▸ Physics, sliders and paths).
 Constraints apply in the symbol's order (ARCHITECTURE ▸ Constraint order), keys can be offset
 and keyed by group from the timeline (ARCHITECTURE ▸ Offset keys, Key buttons). Inherit modes
@@ -157,8 +157,9 @@ npx tsc --noEmit   # typecheck alone; faster than a build while iterating
 
 AGPL-3.0-or-later, inherited from Animo; keep `LICENSE`, `LICENSE-EXCEPTION.md`
 and `THIRD-PARTY-NOTICES.md`. What the exporter writes is the user's (the
-exception's second clause). `@esotericsoftware/spine-core` (bundled: it poses
-opened Spine files on the stage) and
-`public/vendor/spine-pixi-v8.js` (the Preview) are under the Spine Runtimes
-License, not MIT: every user needs their own Spine Editor licence
-(THIRD-PARTY-NOTICES.md).
+exception's second clause). `public/vendor/spine-pixi-v8.js` (the Preview's
+default) is under the Spine Runtimes License, not MIT: every user needs their own
+Spine Editor licence (THIRD-PARTY-NOTICES.md). `@esotericsoftware/spine-core` is a
+test oracle only: since docs/PREVIEW-RUNTIME-PLAN.md P3b nothing in `src/` imports
+it and the editor bundle holds none of it. `core/math/ik.ts` and
+`transformConstraint.ts` are still transcriptions of it (the plan's P2 note).
