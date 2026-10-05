@@ -1,0 +1,796 @@
+import { clear, cls, drag, h, on } from "./dom";
+import { icon, type IconName } from "@/view/icons";
+import { clampRect, type FloatRect, FloatWindow } from "./FloatWindow";
+import { accelOf } from "./accel";
+import {
+  type DockLayout, type DockRects, type DropTarget, type GroupState, type Rect,
+  dropTargetAt, moveGroup, moveTab, placesPanel, weightForHeight,
+} from "./dockDrop";
+
+/**
+ * A dock column of tabbed panel groups.
+ *
+ * Animate lets you tear panels anywhere; that is more modularity than this
+ * tool needs and a lot of surface to get wrong. What we take from it is the
+ * part that actually earns its keep day to day: panels live in tabbed
+ * groups, you can drag a tab into another group (of this dock or another),
+ * between groups to make a new one, or off every dock to float it; you can
+ * collapse a group to its tab strip, and you can drag the boundary between
+ * groups to reweight them. Layout persists.
+ */
+
+export interface Panel {
+  readonly id: string;
+  readonly title: string;
+  readonly icon: IconName;
+  /** The panel body. Built once, kept alive across re-layouts. */
+  readonly el: HTMLElement;
+  /** Optional footer strip pinned below the body. */
+  readonly footer?: HTMLElement;
+  /** Called when the panel becomes the visible tab of its group. */
+  onShow?(): void;
+  /** Extra entries for the panel's hamburger menu. */
+  menu?(): Array<{ label: string; run: () => void } | "-">;
+}
+
+export class Dock {
+  readonly el: HTMLElement;
+  private panels = new Map<string, Panel>();
+  private layout: DockLayout = { groups: [], floats: {}, closed: [] };
+  /** The groups `setDefault` was last given, for placing newcomers. */
+  private defaults: string[][] = [];
+  private groupEls: HTMLElement[] = [];
+  private floatWins = new Map<string, FloatWindow>();
+  private stripEls: HTMLElement[] = [];
+  /** Notified whenever a panel opens, closes, floats or docks. */
+  onLayoutChange: (() => void) | null = null;
+  /** The column beside this one, left (-1) or right (+1), for the group
+   *  menu's Move Group; null where there is none. Set by `Shell`. */
+  neighbour: ((side: -1 | 1) => Dock | null) | null = null;
+  /** Show `dock`'s column if it is hidden, before a group moves into it. */
+  onReveal: ((dock: Dock) => void) | null = null;
+
+  constructor(
+    private readonly storageKey: string,
+    private readonly orientation: "vertical" | "horizontal" = "vertical",
+  ) {
+    this.el = h("div", { class: "dock-col" });
+    this.el.style.display = "flex";
+    this.el.style.flexDirection = orientation === "vertical" ? "column" : "row";
+    this.el.style.flex = "1 1 auto";
+    this.el.style.minHeight = "0";
+
+    docks.push(this);
+    window.addEventListener("resize", () => {
+      for (const [id, win] of this.floatWins) {
+        win.reclamp();
+        const r = win.rect;
+        if (r) this.layout.floats[id] = r;
+      }
+    });
+  }
+
+  register(panel: Panel): void {
+    this.panels.set(panel.id, panel);
+  }
+
+  /** Every panel this dock holds, docked, floating or closed, in the order they
+   *  appear: docked tabs top to bottom, then floats, then closed ones. */
+  panelList(): Panel[] {
+    const ids = [
+      ...this.layout.groups.flatMap((g) => g.panelIds),
+      ...Object.keys(this.layout.floats),
+      ...this.layout.closed,
+    ];
+    for (const id of this.panels.keys()) if (!ids.includes(id)) ids.push(id);
+    return ids.flatMap((id) => this.panels.get(id) ?? []);
+  }
+
+  /** No docked groups: the column shows only its drop hint. */
+  isEmpty(): boolean { return this.layout.groups.length === 0; }
+
+  /** A copy of the current arrangement, for a workspace. */
+  snapshot(): DockLayout {
+    return structuredClone(this.layout);
+  }
+
+  /**
+   * Arrange every dock at once, as a workspace saved them. A panel goes to the
+   * dock whose layout places it, so one dragged across docks follows; a panel
+   * no layout mentions (new since the save) stays where it is, unless its dock
+   * is a key of `fallback`: a column the workspace knows nothing of, whose
+   * panels go to the column given, so none is left in a hidden one.
+   */
+  static applyLayouts(entries: Array<[Dock, DockLayout]>, fallback: ReadonlyMap<Dock, Dock> = new Map()): void {
+    const all = new Map<string, [Panel, Dock]>();
+    for (const [d] of entries) for (const [id, p] of d.panels) all.set(id, [p, d]);
+    for (const [id, [panel, owner]] of all) {
+      const home = entries.find(([, l]) => placesPanel(l, id))?.[0] ?? fallback.get(owner) ?? owner;
+      if (home === owner) continue;
+      owner.panels.delete(id);
+      home.panels.set(id, panel);
+    }
+    for (const [d, l] of entries) {
+      d.layout = structuredClone(l);
+      d.layout.floats ??= {};
+      d.layout.closed ??= [];
+      d.layout.closedNear ??= {};
+      d.prune();
+      d.save();
+    }
+    for (const [d] of entries) d.render();
+  }
+
+  /** Did the stored layout place this panel here? A tab dragged across docks
+   *  is stored in its new dock, and has to be registered there on reload. */
+  stores(panelId: string): boolean {
+    return placesPanel(this.load(), panelId);
+  }
+
+  /** Default arrangement, used when nothing is stored. */
+  setDefault(groups: string[][]): void {
+    this.defaults = groups;
+    const stored = this.load();
+    this.layout = stored ?? {
+      groups: groups
+        .map((ids) => ids.filter((id) => this.panels.has(id)))
+        .filter((ids) => ids.length > 0)
+        .map((ids) => ({ panelIds: ids, activeId: ids[0]!, collapsed: false, weight: 1 })),
+      floats: {},
+      closed: [],
+      closedNear: {},
+    };
+    this.layout.floats ??= {};
+    this.layout.closed ??= [];
+    this.layout.closedNear ??= {};
+    this.prune();
+    this.render();
+  }
+
+  /** Drop panels that no longer exist and re-add ones never placed. */
+  private prune(): void {
+    const seen = new Set<string>();
+    for (const id of Object.keys(this.layout.floats)) {
+      if (this.panels.has(id)) seen.add(id);
+      else delete this.layout.floats[id];
+    }
+    this.layout.closed = this.layout.closed.filter((id) => this.panels.has(id) && !seen.has(id));
+    for (const id of this.layout.closed) seen.add(id);
+
+    for (const g of this.layout.groups) {
+      g.panelIds = g.panelIds.filter((id) => this.panels.has(id) && !seen.has(id));
+      for (const id of g.panelIds) seen.add(id);
+      if (!g.panelIds.includes(g.activeId)) g.activeId = g.panelIds[0] ?? "";
+    }
+    this.layout.groups = this.layout.groups.filter((g) => g.panelIds.length > 0);
+    for (const id of this.panels.keys()) {
+      if (seen.has(id)) continue;
+      // A panel no stored layout places — new, or moved to this dock while
+      // the user's old layout lived elsewhere — rejoins the group its
+      // default grouping shares with a placed panel, so it arrives as a
+      // tab beside its group-mate rather than a group of its own.
+      const mates = this.defaults.find((g) => g.includes(id))?.filter((m) => m !== id) ?? [];
+      const home = this.layout.groups.find((g) => mates.some((m) => g.panelIds.includes(m)));
+      if (home) { home.panelIds.push(id); continue; }
+      // A group of its own goes where the defaults put it: a panel added at
+      // the top of the column (Tools) arrives at the top, not the bottom.
+      const at = this.defaults.findIndex((g) => g.includes(id));
+      this.layout.groups.splice(at < 0 ? this.layout.groups.length : Math.min(at, this.layout.groups.length), 0,
+        { panelIds: [id], activeId: id, collapsed: false, weight: 1 });
+    }
+  }
+
+  /** Does this dock know about the panel at all? */
+  has(panelId: string): boolean { return this.panels.has(panelId); }
+
+  focus(panelId: string): void {
+    if (this.layout.closed.includes(panelId)) { this.open(panelId); return; }
+    const win = this.floatWins.get(panelId);
+    if (win) { win.raise(); return; }
+    const g = this.layout.groups.find((x) => x.panelIds.includes(panelId));
+    if (!g) return;
+    g.activeId = panelId;
+    g.collapsed = false;
+    this.save();
+    this.render();
+  }
+
+  isVisible(panelId: string): boolean {
+    if (this.floatWins.has(panelId)) return true;
+    const g = this.layout.groups.find((x) => x.panelIds.includes(panelId));
+    return !!g && !g.collapsed && g.activeId === panelId;
+  }
+
+  /** Open means "somewhere on screen": docked or floating, not closed. */
+  isOpen(panelId: string): boolean {
+    return this.panels.has(panelId) && !this.layout.closed.includes(panelId);
+  }
+
+  isFloating(panelId: string): boolean { return panelId in this.layout.floats; }
+
+  open(panelId: string): void {
+    if (!this.panels.has(panelId) || this.isOpen(panelId)) return;
+    this.layout.closed = this.layout.closed.filter((id) => id !== panelId);
+    const near = this.layout.closedNear?.[panelId];
+    const home = near ? this.layout.groups.find((g) => g.panelIds.includes(near)) : undefined;
+    if (home) {
+      home.panelIds.push(panelId);
+      home.activeId = panelId;
+      home.collapsed = false;
+    } else {
+      this.layout.groups.push({ panelIds: [panelId], activeId: panelId, collapsed: false, weight: 1 });
+    }
+    delete this.layout.closedNear?.[panelId];
+    this.save();
+    this.render();
+  }
+
+  close(panelId: string): void {
+    if (!this.isOpen(panelId)) return;
+    const group = this.layout.groups.find((g) => g.panelIds.includes(panelId));
+    const sibling = group?.panelIds.find((id) => id !== panelId);
+    this.layout.closedNear ??= {};
+    if (sibling) this.layout.closedNear[panelId] = sibling;
+    else delete this.layout.closedNear[panelId];
+    this.detachFromGroups(panelId);
+    delete this.layout.floats[panelId];
+    this.layout.closed.push(panelId);
+    this.save();
+    this.render();
+  }
+
+  /** Tear a panel out of the column into a window of its own. */
+  float(panelId: string, rect?: FloatRect): void {
+    if (!this.panels.has(panelId) || this.isFloating(panelId)) { this.focus(panelId); return; }
+    this.detachFromGroups(panelId);
+    this.layout.closed = this.layout.closed.filter((id) => id !== panelId);
+    this.layout.floats[panelId] = clampRect(rect ?? defaultFloatRect(this.floatWins.size));
+    this.save();
+    this.render();
+  }
+
+  /** Put a floating panel back in the column. */
+  dockPanel(panelId: string): void {
+    if (!this.isFloating(panelId)) return;
+    delete this.layout.floats[panelId];
+    this.layout.groups.push({ panelIds: [panelId], activeId: panelId, collapsed: false, weight: 1 });
+    this.save();
+    this.render();
+  }
+
+  private detachFromGroups(panelId: string): void {
+    for (const g of this.layout.groups) {
+      g.panelIds = g.panelIds.filter((id) => id !== panelId);
+      if (g.activeId === panelId) g.activeId = g.panelIds[0] ?? "";
+    }
+    this.layout.groups = this.layout.groups.filter((g) => g.panelIds.length > 0);
+  }
+
+  // ── Rendering ──────────────────────────────────────────────────────────
+
+  render(): void {
+    clear(this.el);
+    this.groupEls = [];
+    this.stripEls = [];
+
+    this.layout.groups.forEach((group, gi) => {
+      const groupEl = h("div", { class: "pgroup" });
+      cls(groupEl, "collapsed", group.collapsed);
+      cls(groupEl, "flex", !group.collapsed);
+      groupEl.style.flex = group.collapsed ? "0 0 auto" : `${group.weight} 1 0`;
+
+      // Tab strip
+      const tabs = h("div", { class: "ptabs" });
+      for (const pid of group.panelIds) {
+        const panel = this.panels.get(pid);
+        if (!panel) continue;
+        const active = pid === group.activeId && !group.collapsed;
+        const tab = h("div", { class: `ptab${active ? " active" : ""}`, title: panel.title }, panel.title);
+        this.wireTab(tab, group, pid);
+        tabs.appendChild(tab);
+      }
+      const menuBtn = h("button", { class: "pmenu iconbtn", title: "Panel menu" });
+      menuBtn.appendChild(icon("hamburger", 12));
+      on(menuBtn, "click", (e) => {
+        e.stopPropagation();
+        this.showGroupMenu(menuBtn, group);
+      });
+      tabs.appendChild(menuBtn);
+      groupEl.appendChild(tabs);
+      this.stripEls.push(tabs);
+
+      // Body + footer of the active panel
+      if (!group.collapsed) {
+        const panel = this.panels.get(group.activeId);
+        if (panel) {
+          const body = h("div", { class: "pbody" });
+          body.appendChild(panel.el);
+          groupEl.appendChild(body);
+          if (panel.footer) groupEl.appendChild(panel.footer);
+          panel.onShow?.();
+        }
+      }
+
+      this.el.appendChild(groupEl);
+      this.groupEls.push(groupEl);
+
+      // Splitter between this group and the next expanded one
+      const nextExpanded = this.layout.groups.slice(gi + 1).findIndex((g) => !g.collapsed);
+      if (!group.collapsed && nextExpanded >= 0) {
+        this.el.appendChild(this.makeSplitter(gi, gi + 1 + nextExpanded));
+      }
+    });
+
+    // An empty column still takes a drop (`dropTargetAt`'s "empty"); say so.
+    if (this.layout.groups.length === 0) this.el.appendChild(h("div", { class: "dock-empty" }, "Drag a panel tab here"));
+
+    this.renderFloats();
+    this.onLayoutChange?.();
+  }
+
+  /**
+   * Float windows are created and destroyed, never re-created in place: a
+   * panel's element is moved into the window and back, and moving an iframe
+   * reloads it, so the fewer moves the better.
+   */
+  private renderFloats(): void {
+    for (const [id, win] of this.floatWins) {
+      if (!(id in this.layout.floats)) { win.dispose(); this.floatWins.delete(id); }
+    }
+    for (const [id, rect] of Object.entries(this.layout.floats)) {
+      const panel = this.panels.get(id);
+      if (!panel || this.floatWins.has(id)) continue;
+      const win = new FloatWindow({
+        title: panel.title,
+        rect,
+        onChange: (r) => { this.layout.floats[id] = r; this.save(); },
+        onDock: () => this.dockPanel(id),
+        onClose: () => this.close(id),
+      });
+      const body = h("div", { class: "pbody" });
+      body.appendChild(panel.el);
+      win.body.appendChild(body);
+      if (panel.footer) win.body.appendChild(panel.footer);
+      this.floatWins.set(id, win);
+      panel.onShow?.();
+    }
+  }
+
+  private makeSplitter(aIdx: number, bIdx: number): HTMLElement {
+    const sp = h("div", { class: `splitter ${this.orientation === "vertical" ? "h" : "v"}` });
+    let startA = 1, startB = 1, totalPx = 1;
+    drag(sp, {
+      cursor: this.orientation === "vertical" ? "ns-resize" : "ew-resize",
+      onStart: () => {
+        const a = this.layout.groups[aIdx]!, b = this.layout.groups[bIdx]!;
+        startA = a.weight; startB = b.weight;
+        const ea = this.groupEls[aIdx]!, eb = this.groupEls[bIdx]!;
+        totalPx = this.orientation === "vertical"
+          ? ea.offsetHeight + eb.offsetHeight
+          : ea.offsetWidth + eb.offsetWidth;
+        sp.classList.add("dragging");
+      },
+      onMove: (dx, dy) => {
+        const d = this.orientation === "vertical" ? dy : dx;
+        if (totalPx <= 0) return;
+        const total = startA + startB;
+        const ratio = Math.max(0.08, Math.min(0.92, (startA / total) + d / totalPx));
+        this.layout.groups[aIdx]!.weight = total * ratio;
+        this.layout.groups[bIdx]!.weight = total * (1 - ratio);
+        this.groupEls[aIdx]!.style.flex = `${this.layout.groups[aIdx]!.weight} 1 0`;
+        this.groupEls[bIdx]!.style.flex = `${this.layout.groups[bIdx]!.weight} 1 0`;
+      },
+      onEnd: () => { sp.classList.remove("dragging"); this.save(); },
+    });
+    return sp;
+  }
+
+  // ── Tab interaction: activate, collapse, drag between groups ───────────
+
+  private wireTab(tab: HTMLElement, group: GroupState, panelId: string): void {
+    on(tab, "click", () => {
+      if (group.activeId === panelId && !group.collapsed) return;
+      group.activeId = panelId;
+      group.collapsed = false;
+      this.save();
+      this.render();
+    });
+
+    on(tab, "dblclick", () => {
+      group.collapsed = !group.collapsed;
+      this.save();
+      this.render();
+    });
+
+    let dragging = false;
+    let ghost: HTMLElement | null = null;
+    let marker: HTMLElement | null = null;
+    const target = () => dropTargetAt(docks.map((d) => d.measure()), lastPointer.x, lastPointer.y);
+    const cleanup = () => {
+      tab.classList.remove("dragging");
+      ghost?.remove(); marker?.remove();
+      ghost = marker = null;
+      dragging = false;
+    };
+
+    drag(tab, {
+      cursor: "grabbing",
+      onMove: (dx, dy) => {
+        if (!dragging && Math.hypot(dx, dy) < 5) return;
+        if (!dragging) {
+          dragging = true;
+          tab.classList.add("dragging");
+          ghost = h("div", { class: "ptab-ghost" }, this.panels.get(panelId)?.title ?? panelId);
+          marker = h("div", { class: "dock-drop" });
+          document.body.append(ghost, marker);
+        }
+        ghost!.style.transform = `translate(${lastPointer.x + 10}px, ${lastPointer.y + 8}px)`;
+        Dock.placeMarker(marker!, target());
+      },
+      onEnd: (_ev, cancelled) => {
+        const was = dragging;
+        cleanup();
+        if (!was || cancelled) return;
+        const t = target();
+        if (!t) {
+          this.float(panelId, { x: lastPointer.x - 60, y: lastPointer.y - 12, w: 420, h: 340 });
+          return;
+        }
+        const dest = docks[t.dock]!;
+        const next = moveTab(docks.map((d) => d.layout), docks.indexOf(this), panelId, t);
+        if (!next) return;
+        if (dest !== this) {
+          dest.panels.set(panelId, this.panels.get(panelId)!);
+          this.panels.delete(panelId);
+        }
+        next.forEach((l, i) => { docks[i]!.layout = l; });
+        for (const d of dest === this ? [this] : [this, dest]) { d.save(); d.render(); }
+      },
+    });
+  }
+
+  /** Screen rectangles of the column, its groups and their tabs, for `dropTargetAt`. */
+  private measure(): DockRects {
+    const rect = (el: Element): Rect => el.getBoundingClientRect();
+    return {
+      rect: rect(this.el),
+      groups: this.groupEls.map((el, i) => ({
+        rect: rect(el),
+        strip: rect(this.stripEls[i]!),
+        tabs: Array.from(this.stripEls[i]!.querySelectorAll(".ptab"), rect),
+      })),
+    };
+  }
+
+  /** Show where a drop would land: a bar between tabs or groups, or a whole area. */
+  private static placeMarker(marker: HTMLElement, t: DropTarget | null): void {
+    marker.hidden = !t;
+    if (!t) return;
+    const d = docks[t.dock]!;
+    let r: Rect;
+    let area = false;
+    if (t.edge === "empty") {
+      r = d.el.getBoundingClientRect();
+      area = true;
+    } else {
+      const g = d.groupEls[t.group]!.getBoundingClientRect();
+      const strip = d.stripEls[t.group]!.getBoundingClientRect();
+      if (t.edge !== "into") {
+        // The half of the group the new one takes.
+        const mid = (strip.bottom + g.bottom) / 2;
+        r = t.edge === "before"
+          ? { left: g.left, right: g.right, top: g.top, bottom: mid }
+          : { left: g.left, right: g.right, top: mid, bottom: g.bottom };
+        area = true;
+      } else {
+        const tabs = d.stripEls[t.group]!.querySelectorAll(".ptab");
+        const x = t.tab < tabs.length
+          ? tabs[t.tab]!.getBoundingClientRect().left
+          : (tabs[tabs.length - 1]?.getBoundingClientRect().right ?? strip.left);
+        r = { left: x - 1, right: x + 1, top: strip.top, bottom: strip.bottom };
+      }
+    }
+    cls(marker, "area", area);
+    Object.assign(marker.style, {
+      left: `${r.left}px`, top: `${r.top}px`,
+      width: `${r.right - r.left}px`, height: `${r.bottom - r.top}px`,
+    });
+  }
+
+  private showGroupMenu(anchor: HTMLElement, group: GroupState): void {
+    const panel = this.panels.get(group.activeId);
+    const items: Array<MenuEntry | "-"> = [];
+    if (panel?.menu) items.push(...panel.menu(), "-");
+    items.push({
+      label: group.collapsed ? "Expand Group" : "Collapse Group",
+      run: () => { group.collapsed = !group.collapsed; this.save(); this.render(); },
+    });
+    if (panel) {
+      items.push(
+        // The tab out of its group into one of its own just below: both
+        // panels show at once, one over the other.
+        {
+          label: `Split ${panel.title} Below`,
+          enabled: group.panelIds.length > 1,
+          run: () => this.splitBelow(group, panel.id),
+        },
+        { label: `Float ${panel.title}`, run: () => this.float(panel.id) },
+        { label: `Close ${panel.title}`, run: () => this.close(panel.id) },
+      );
+    }
+    // The whole group into the next column, as tall as it is now.
+    const left = this.neighbour?.(-1) ?? null;
+    const right = this.neighbour?.(1) ?? null;
+    if (left || right) {
+      items.push("-",
+        { label: "Move Group Left", enabled: !!left, run: () => left && this.moveGroupTo(group, left) },
+        { label: "Move Group Right", enabled: !!right, run: () => right && this.moveGroupTo(group, right) });
+    }
+    showMenu(anchor, items);
+  }
+
+  /**
+   * `group` with all its tabs into `target`, at the same place in the column,
+   * keeping the height it has here (`weightForHeight`); alone there, it fills
+   * the column.
+   */
+  private moveGroupTo(group: GroupState, target: Dock): void {
+    const at = this.layout.groups.indexOf(group);
+    const me = docks.indexOf(this), to = docks.indexOf(target);
+    if (at < 0 || me < 0 || to < 0) return;
+    const height = this.groupEls[at]?.offsetHeight ?? 0;
+    this.onReveal?.(target);
+    const others = target.layout.groups.filter((g) => !g.collapsed).reduce((sum, g) => sum + g.weight, 0);
+    const weight = weightForHeight(height, target.el.clientHeight, others);
+    const next = moveGroup(docks.map((d) => d.layout), me, at, to, weight);
+    if (!next) return;
+    for (const id of group.panelIds) {
+      const panel = this.panels.get(id);
+      if (!panel) continue;
+      this.panels.delete(id);
+      target.panels.set(id, panel);
+    }
+    this.layout = next[me]!;
+    target.layout = next[to]!;
+    for (const d of [this, target]) { d.save(); d.render(); }
+  }
+
+  /** The tab `panelId` into a new group right below `group`. */
+  private splitBelow(group: GroupState, panelId: string): void {
+    const at = this.layout.groups.indexOf(group);
+    const me = docks.indexOf(this);
+    if (at < 0 || me < 0) return;
+    const next = moveTab(docks.map((d) => d.layout), me, panelId, { dock: me, group: at, edge: "after" });
+    if (!next) return;
+    this.layout = next[me]!;
+    this.save();
+    this.render();
+  }
+
+  // ── Persistence ────────────────────────────────────────────────────────
+
+  private save(): void {
+    try { localStorage.setItem(this.storageKey, JSON.stringify(this.layout)); } catch { /* private mode */ }
+  }
+
+  private load(): DockLayout | null {
+    try {
+      const raw = localStorage.getItem(this.storageKey);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as DockLayout;
+      return Array.isArray(parsed?.groups) ? parsed : null;
+    } catch { return null; }
+  }
+
+  resetLayout(): void {
+    for (const win of this.floatWins.values()) win.dispose();
+    this.floatWins.clear();
+    try { localStorage.removeItem(this.storageKey); } catch { /* ignore */ }
+  }
+}
+
+/** Cascade successive float windows so they do not land on top of each other. */
+function defaultFloatRect(index: number): FloatRect {
+  const step = 26 * (index % 6);
+  return { x: Math.max(24, innerWidth - 520 + step), y: 90 + step, w: 420, h: 340 };
+}
+
+/** Every dock, in creation order: a tab can be dropped into any of them. */
+const docks: Dock[] = [];
+
+/* Track the pointer globally: `drag` gives deltas, and hit-testing wants
+   absolute coordinates. */
+const lastPointer = { x: 0, y: 0 };
+window.addEventListener("pointermove", (e) => { lastPointer.x = e.clientX; lastPointer.y = e.clientY; }, true);
+
+/* ── A minimal popup menu, shared by panel menus and the menu bar ───────── */
+
+let openMenu: HTMLElement | null = null;
+let detachOutside: (() => void) | null = null;
+/** Submenus stack on top of the menu that opened them. */
+let openSub: HTMLElement | null = null;
+
+export interface MenuEntry {
+  label: string;
+  run?: () => void;
+  enabled?: boolean;
+  checked?: boolean;
+  accel?: string;
+  /** Command id whose current key is shown when `accel` is not given. */
+  command?: string;
+  /** A submenu: the row opens it instead of doing anything itself. */
+  items?: Array<MenuEntry | "-">;
+}
+
+function accelText(it: MenuEntry): string | undefined {
+  return it.accel ?? accelOf(it.command);
+}
+
+export function showMenu(
+  anchor: HTMLElement,
+  items: Array<MenuEntry | "-">,
+  align: "below" | "right" = "below",
+): void {
+  closeMenu();
+  const rect = anchor.getBoundingClientRect();
+  const menu = h("div", { class: "popmenu" });
+
+  // A context menu opens on `contextmenu`, which fires BETWEEN the right
+  // button's pointerdown and its pointerup. That stray release then lands on
+  // whatever row happens to be under the cursor and runs it — the menu
+  // appears to close instantly having picked something by itself. So a row
+  // only fires for a release that belongs to a press made inside the menu.
+  let pressed = false;
+
+  for (const it of items) {
+    if (it === "-") { menu.appendChild(h("div", { class: "popsep" })); continue; }
+    const row = h("div", { class: `popitem${it.enabled === false ? " disabled" : ""}${it.items ? " hassub" : ""}` },
+      h("span", { class: "chk" }, it.checked ? "✓" : ""),
+      h("span", { class: "lbl" }, it.label),
+      accelText(it) ? h("span", { class: "accel" }, accelText(it)!) : null,
+      it.items ? h("span", { class: "accel" }, "▸") : null,
+    );
+
+    // A submenu opens on hover and stays until the pointer leaves both it and
+    // its row — the parent menu is NOT dismissed, since the press that picks
+    // a child lands outside the parent and would otherwise close everything
+    // before the row could act.
+    if (it.items && it.enabled !== false) {
+      const sub = it.items;
+      on(row, "pointerenter", () => openSubmenu(row, sub));
+      on(row, "pointerup", (e) => { e.stopPropagation(); openSubmenu(row, sub); });
+      on(row, "pointerdown", (e) => { pressed = true; e.stopPropagation(); });
+      menu.appendChild(row);
+      continue;
+    }
+    if (!it.items) on(row, "pointerenter", () => closeSubmenu());
+
+    if (it.enabled !== false && it.run) {
+      // Fire on pointerUP, not click.
+      //
+      // The dismiss-on-outside-click listener runs at pointerDOWN. Removing
+      // the menu there means the row is gone before `click` would be
+      // dispatched, and the browser then retargets the click to a common
+      // ancestor — so the handler never ran and every menu item silently did
+      // nothing. Acting on pointerup, and refusing to dismiss on presses
+      // inside the menu, keeps the two from racing.
+      on(row, "pointerup", (e) => {
+        e.stopPropagation();
+        if (!pressed) return;                 // the press that opened the menu
+        const run = it.run!;
+        closeMenu();
+        run();
+      });
+      on(row, "pointerdown", (e) => { pressed = true; e.stopPropagation(); });
+    }
+    menu.appendChild(row);
+  }
+
+  menu.style.left = `${align === "below" ? rect.left : rect.right}px`;
+  menu.style.top = `${align === "below" ? rect.bottom : rect.top}px`;
+  document.body.appendChild(menu);
+
+  // Keep it on screen.
+  const mr = menu.getBoundingClientRect();
+  if (mr.right > innerWidth - 4) menu.style.left = `${Math.max(4, innerWidth - mr.width - 4)}px`;
+  if (mr.bottom > innerHeight - 4) menu.style.top = `${Math.max(4, innerHeight - mr.height - 4)}px`;
+
+  openMenu = menu;
+
+  const onDown = (e: Event) => {
+    const t = e.target as Node;
+    if (openMenu?.contains(t) || openSub?.contains(t)) return;
+    closeMenu();
+  };
+  const onKey = (e: Event) => {
+    if ((e as KeyboardEvent).key === "Escape") closeMenu();
+  };
+  // Deferred by a frame so the press that opened the menu does not close it.
+  const arm = setTimeout(() => {
+    window.addEventListener("pointerdown", onDown, true);
+    window.addEventListener("keydown", onKey, true);
+  }, 0);
+
+  detachOutside = () => {
+    clearTimeout(arm);
+    window.removeEventListener("pointerdown", onDown, true);
+    window.removeEventListener("keydown", onKey, true);
+  };
+}
+
+/** A zero-size element at a screen point, so `showMenu` can open where the
+ *  pointer is rather than under a button. */
+export function menuAnchor(x: number, y: number): HTMLElement {
+  const anchor = h("div");
+  anchor.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:0;height:0`;
+  document.body.appendChild(anchor);
+  setTimeout(() => anchor.remove(), 0);
+  return anchor;
+}
+
+export function closeMenu(): void {
+  detachOutside?.();
+  detachOutside = null;
+  closeSubmenu();
+  openMenu?.remove();
+  openMenu = null;
+}
+
+function closeSubmenu(): void {
+  openSub?.remove();
+  openSub = null;
+}
+
+/**
+ * The second level. Built by the same code as the top level minus the
+ * dismissal wiring, which stays with the parent: one outside-press listener
+ * closes both, and a row in here fires on `pointerup` for the same reason
+ * every other row does.
+ */
+function openSubmenu(row: HTMLElement, items: Array<MenuEntry | "-">): void {
+  if (openSub && openSub.dataset.owner === rowKey(row)) return;
+  closeSubmenu();
+
+  const menu = h("div", { class: "popmenu" });
+  menu.dataset.owner = rowKey(row);
+  let pressed = false;
+
+  for (const it of items) {
+    if (it === "-") { menu.appendChild(h("div", { class: "popsep" })); continue; }
+    const r = h("div", { class: `popitem${it.enabled === false ? " disabled" : ""}` },
+      h("span", { class: "chk" }, it.checked ? "✓" : ""),
+      h("span", { class: "lbl" }, it.label),
+      accelText(it) ? h("span", { class: "accel" }, accelText(it)!) : null,
+    );
+    if (it.enabled !== false && it.run) {
+      const run = it.run;
+      on(r, "pointerdown", (e) => { pressed = true; e.stopPropagation(); });
+      on(r, "pointerup", (e) => {
+        e.stopPropagation();
+        if (!pressed) return;
+        closeMenu();
+        run();
+      });
+    }
+    menu.appendChild(r);
+  }
+
+  const rect = row.getBoundingClientRect();
+  menu.style.left = `${rect.right - 2}px`;
+  menu.style.top = `${rect.top - 4}px`;
+  document.body.appendChild(menu);
+
+  const mr = menu.getBoundingClientRect();
+  if (mr.right > innerWidth - 4) menu.style.left = `${Math.max(4, rect.left - mr.width + 2)}px`;
+  if (mr.bottom > innerHeight - 4) menu.style.top = `${Math.max(4, innerHeight - mr.height - 4)}px`;
+
+  openSub = menu;
+}
+
+let rowSeq = 0;
+const rowKeys = new WeakMap<HTMLElement, string>();
+function rowKey(row: HTMLElement): string {
+  let k = rowKeys.get(row);
+  if (!k) { k = `sub${++rowSeq}`; rowKeys.set(row, k); }
+  return k;
+}

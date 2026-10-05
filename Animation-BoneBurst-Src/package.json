@@ -1,0 +1,50 @@
+{
+  "name": "boneburst",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "A Flash-style animation editor for Spine 4.3, built from Animo",
+  "license": "AGPL-3.0-or-later",
+  "author": "Panupun Dev",
+  "contributors": [
+    "Moreno Tomasella (https://morenoise.it), author of Animo"
+  ],
+  "homepage": "https://github.com/12pnp/Amino-Spine2D-Src",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/12pnp/Amino-Spine2D-Src.git"
+  },
+  "bugs": {
+    "url": "https://github.com/12pnp/Amino-Spine2D-Src/issues"
+  },
+  "keywords": [
+    "animation",
+    "spine",
+    "spine2d",
+    "pixijs",
+    "skeletal-animation",
+    "2d-animation",
+    "editor"
+  ],
+  "scripts": {
+    "dev": "vite",
+    "dev:oracle": "vite --mode oracle",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "dependencies": {
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/jetbrains-mono": "^5.3.0",
+    "ag-psd": "^31.0.2",
+    "fflate": "^0.8.2"
+  },
+  "devDependencies": {
+    "@esotericsoftware/spine-core": "4.3.13",
+    "@esotericsoftware/spine-pixi-v8": "4.3.13",
+    "@types/node": "^26.4.1",
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vitest": "^3.1.4"
+  }
+}

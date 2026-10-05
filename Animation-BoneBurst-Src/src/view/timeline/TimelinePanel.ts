@@ -1,0 +1,1425 @@
+import { constraintKeyFrames, deleteConstraintKeys, withConstraintTween } from "@/core/doc/constraintKeys";
+import { INHERIT_LABELS, INHERIT_MODES, inheritAt, withInheritKey } from "@/core/doc/inherit";
+import type { SoundStore } from "@/app/SoundStore";
+import { Waveforms } from "./waveforms";
+import { offsetPlan } from "@/core/doc/offset";
+import { KEY_GROUPS, type KeyGroup } from "@/core/doc/keyButtons";
+import { clear, cls, drag, h, on } from "@/view/widgets/dom";
+import { deleteChannelKeys, keyChannelAt, propertyKeys, TIMELINE_PROPS, type TimelineProp } from "@/core/doc/propertyKeys";
+import { deleteDrawOrderKeys, drawingLayers, orderAt, type Reorder, withDrawOrderKey } from "@/core/doc/drawOrder";
+import { SPEED_SLIDER_MAX, sliderFromSpeed, speedFromSlider, speedLabel } from "./playSpeed";
+import { PLAY_RATES } from "./playStep";
+import { uniqueAnimationName } from "@/core/doc/animationList";
+import { promptText } from "@/view/widgets/dialogs";
+import { onAccelChange, withAccel } from "@/view/widgets/accel";
+import { icon } from "@/view/icons";
+import type { Panel } from "@/view/widgets/Dock";
+import { type MenuEntry, showMenu } from "@/view/widgets/Dock";
+import { attachOptionsMenu } from "./onionButton";
+import type { Store } from "@/app/Store";
+import type { CnId, IkId, NodeId, TcId } from "@/core/doc/ids";
+import { deleteTcKeys, tcMixAt, tcTweenOf, withTcKey, withTcTween } from "@/core/doc/transformKeys";
+import { deformAt, deformKeysOf, deformTweenOf, deleteDeformKeys, withDeformKey, withDeformTween } from "@/core/mesh/deform";
+import { deformRow } from "@/core/mesh/meshPlan";
+import { SEQUENCE_MODE_LABELS, SEQUENCE_MODES, sequenceIndexAt, withSequenceKey } from "@/core/doc/sequence";
+import { doSetSequenceKeys } from "@/app/AttachmentOps";
+import { deleteEventKeys, uniqueEventName, withEventKey } from "@/core/doc/events";
+import { deleteIkKeys, ikPoseAt, type IkTween, ikTweenOf, withIkKey, withIkTween } from "@/core/doc/ikKeys";
+import type { DeformKey, Keyframe, Layer, RotateDir } from "@/core/doc/types";
+import { FrameGrid, ROW_HEIGHT } from "./FrameGrid";
+import { transportButtons } from "./transport";
+import { LayerList } from "./LayerList";
+import { Playback } from "./Playback";
+import {
+    doClearKeyframe,
+    doClearKeyframes,
+    doConvertToKeyframes,
+    doInsertBlankKeyframe,
+    doInsertFrame,
+    doInsertFrames,
+    doInsertKeyframe,
+    doMoveKeyframes,
+    doSetTrack,
+    doSetDrawOrder,
+    doSetIkKeys,
+    doSetEventKeys,
+    doSetTcKeys,
+    doSetDeformKeys,
+    doSetEvents,
+    doReorder,
+    ensureTrack,
+    doRemoveFrame,
+    doRemoveFrames,
+    doSetEndFrame,
+    doSetRotation,
+    doSetTween,
+    doCloseLoop, doKeyProps, doOffsetKeys, doSetConstraintKeys, doSetInheritKeys,
+    doToggleCycle,
+    easeTargets,
+} from "@/app/TimelineOps";
+import { isCycle, seamFrame } from "@/core/doc/cycle";
+import { EASE_PRESETS, easeLabel, sameEase, type TweenSpec } from "@/core/math/easing";
+import { openEaseDialog } from "./EaseDialog";
+import { FrameClipboard, type PasteMode } from "@/app/FrameClipboard";
+import type { Clipboard } from "@/app/Clipboard";
+import { keyIndexAt, MAX_FRAMES, spanKeyAt } from "@/core/doc/timeline";
+import { promptNumber } from "@/view/widgets/promptNumber";
+import { AddAnimation, RemoveAnimation, RenameAnimation, SetAnimationDuration } from "@/core/history/timelineCommands";
+import { AddNode, RemoveNodes, SetLayerExcluded, SetParent } from "@/core/history/commands";
+import { createLayer, createNode } from "@/core/doc/defaults";
+import { groupPlan, layerRows } from "@/core/doc/layerTree";
+import { evaluateSymbol } from "@/core/doc/pose";
+import { mayReparent } from "@/view/widgets/ikReparentGuard";
+import { uiPx } from "@/core/prefs/fonts";
+
+/** Modify ▸ Draw Order's items: the selected layers moved in the draw order
+ *  at the playhead, keyed there. */
+export function drawOrderItems(enabled: boolean, run: (how: Reorder) => void): MenuEntry[] {
+  return [
+    { label: "Bring Forward", command: "modify.orderForward", enabled, run: () => run("forward") },
+    { label: "Send Backward", command: "modify.orderBackward", enabled, run: () => run("backward") },
+    { label: "Bring to Front", command: "modify.orderFront", enabled, run: () => run("front") },
+    { label: "Send to Back", command: "modify.orderBack", enabled, run: () => run("back") },
+  ];
+}
+
+/** The property rows' names, as Spine writes them. */
+const PROP_NAMES: Record<TimelineProp, string> = {
+  rotate: "Rotate", x: "Translate X", y: "Translate Y", scale: "Scale", shear: "Shear",
+};
+
+/** The timeline: layer column, frame grid, transport. */
+export class TimelinePanel implements Panel {
+  readonly id = "timeline";
+  readonly title = "Timeline";
+  readonly icon = "outlinePanel" as const;
+  readonly el: HTMLElement;
+
+  readonly grid: FrameGrid;
+  readonly layers: LayerList;
+  readonly playback: Playback;
+  readonly frames = new FrameClipboard();
+
+  private animSelect: HTMLSelectElement;
+  private offsetStep = 2;
+  private offsetStagger = true;
+  private frameLabel: HTMLElement;
+  private elapsedLabel: HTMLElement;
+  private tweenLabel: HTMLElement;
+  private hScroll: HTMLElement;
+  private hScrollInner: HTMLElement;
+  /** The last `scrollX` the two ends agreed on; see `syncHScroll`. */
+  private pushedScrollX = 0;
+  private fpsLabel: HTMLElement;
+
+  constructor(
+    private readonly store: Store,
+    /** Shared with the stage: copying layers and copying objects are the same
+     *  clipboard object, in two separate slots. */
+    private readonly clipboard: Clipboard,
+    /** The onion skin's options, for press-and-hold on its buttons. */
+    private readonly onionMenu: () => Array<MenuEntry | "-"> = () => [],
+    /** Event sounds, for their waveforms on the Events row. */
+    sounds?: SoundStore,
+  ) {
+    const waveforms = sounds ? new Waveforms(sounds, () => this.grid.invalidate()) : null;
+    this.grid = new FrameGrid(store, {
+      waveform: waveforms ? (path) => waveforms.get(path) : undefined,
+      onScrub: (frame) => { this.playback.pause(); store.setFrame(frame); },
+      onSelectCell: (row, frame, additive) => this.selectCell(row, frame, additive),
+      onSelectRange: (rowFrom, rowTo, from, to) => this.selectRange(rowFrom, rowTo, from, to),
+      onMoveKeyframes: (nodeId, from, to, delta, base) => doMoveKeyframes(store, nodeId, from, to, delta, base),
+      onEditTrack: (nodeId, track, label, kind) => doSetTrack(store, nodeId, track, label, kind),
+      onEditDrawOrder: (keys, label, kind) => doSetDrawOrder(store, keys, label, kind),
+      onDrawOrderMenu: (frame, x, y) => this.drawOrderMenu(frame, x, y),
+      onEditIk: (ik, keys, label, kind) => doSetIkKeys(store, ik, keys, label, kind),
+      onEditTc: (tc, keys, label, kind) => doSetTcKeys(store, tc, keys, label, kind),
+      onEditDeform: (node, keys, label, kind) => doSetDeformKeys(store, node, keys, label, kind),
+      onEditSequence: (node, keys, label, kind) => doSetSequenceKeys(store, node, keys, label, kind),
+      onEditInherit: (node, keys, label, kind) => doSetInheritKeys(store, node, keys, label, kind),
+      onEditConstraintKeys: (keys, label, kind) => doSetConstraintKeys(store, keys, label, kind),
+      onEditEvents: (keys, label, kind) => doSetEventKeys(store, keys, label, kind),
+      onEventsMenu: (frame, x, y) => this.eventsMenu(frame, x, y),
+      onDragSpanEnd: (nodeId, endFrame) => doSetEndFrame(store, nodeId, endFrame),
+      onDragFrames: (row, frame, copy) => this.dragFrames(row, frame, copy),
+      onBeginInteraction: (kind) => store.history.beginInteraction(kind),
+      onEndInteraction: () => store.history.endInteraction(),
+      onContextMenu: (row, frame, x, y) => this.frameMenu(row, frame, x, y),
+      onRulerContextMenu: (frame, x, y) => this.rulerMenu(frame, x, y),
+      onWheelY: (dy) => this.layers.scrollByY(dy),
+      onGeometry: () => this.syncHScroll(),
+    });
+
+    this.layers = new LayerList(store, {
+      // A getter, not a number: the rows follow Interface ▸ Text, and
+      // `LayerList.render` reads it again on every pass. It has to give the
+      // same answer as `FrameGrid.rowHeight` or the names stop lining up
+      // with their frames.
+      get rowHeight() { return uiPx(ROW_HEIGHT, store.prefs.value.interface.fontSize); },
+      onScrollY: (y) => this.grid.setScrollY(y),
+      onContextMenu: (_nodeId, x, y) => this.layerMenu(x, y),
+      onOnionOptions: (anchor) => showMenu(anchor, this.onionMenu()),
+    });
+
+    this.playback = new Playback(store, (frame) => this.grid.revealFrame(frame));
+
+    this.fpsLabel = h("span", { class: "fps" });
+    this.animSelect = h("select", { class: "tl-anim", title: "Animation" });
+    this.frameLabel = h("span", { class: "cur", title: "Current frame. Click to jump to a frame." }, "1");
+    on(this.frameLabel, "click", () => this.goToFrame());
+    this.elapsedLabel = h("span", { class: "elapsed" }, "0.0 s");
+    this.tweenLabel = h("button", { class: "tween", title: "Easing of the tween at the current frame. Click to edit it." }, "");
+    on(this.tweenLabel, "pointerup", () => this.openEase());
+
+    this.hScrollInner = h("div");
+    this.hScroll = h("div", { class: "hscroll" }, this.hScrollInner);
+    this.grid.el.appendChild(this.hScroll);
+    on(this.hScroll, "scroll", () => {
+      this.grid.scrollX = this.hScroll.scrollLeft;
+      this.pushedScrollX = this.grid.scrollX;
+      this.grid.invalidate();
+    });
+
+    const splitter = h("div", { class: "splitter v" });
+    let startW = 186;
+    drag(splitter, {
+      cursor: "ew-resize",
+      onStart: () => { startW = this.layers.el.offsetWidth; splitter.classList.add("dragging"); },
+      onMove: (dx) => {
+        const w = Math.max(110, Math.min(400, startW + dx));
+        main.style.setProperty("--tl-layers", `${w}px`);
+        this.grid.invalidate();
+      },
+      onEnd: () => splitter.classList.remove("dragging"),
+    });
+
+    const main = h("div", { class: "tl-main" }, this.layers.el, splitter, this.grid.el);
+    // The toolbar sits on top, over the layers and the ruler, as in Spine.
+    this.el = h("div", { class: "tl" }, this.buildFooter(), main);
+
+    // A selection made in here (a row, a frame) leaves the focus as it was.
+    let pressedHere = false;
+    on(this.el, "pointerdown", () => { pressedHere = true; }, { capture: true });
+    on(window, "pointerup", () => { setTimeout(() => { pressedHere = false; }); });
+    store.subscribe((topic) => {
+      if (topic === "selection" && !pressedHere && !this.el.contains(document.activeElement)) {
+        store.ui.timelineFocus = [...store.selection.nodes];
+        this.grid.propSel = null;
+      }
+      if (topic === "doc" || topic === "timeline" || topic === "selection") {
+        this.layers.render();
+        this.grid.invalidate();
+        this.syncAnimations();
+      }
+      if (topic === "frame" || topic === "playback" || topic === "stage" || topic === "doc") {
+        this.grid.invalidate();
+        this.syncReadout();
+      }
+    });
+
+    // The text scale moves the row height on both sides of the splitter.
+    store.prefs.subscribe(() => { this.layers.render(); this.grid.invalidate(); });
+
+    this.syncAnimations();
+    this.syncReadout();
+  }
+
+  onShow(): void { this.grid.invalidate(); this.layers.render(); }
+
+  // ── Footer transport ───────────────────────────────────────────────────
+
+  private buildFooter(): HTMLElement {
+    const iconBtn = (name: Parameters<typeof icon>[0], title: string, run: () => void) => {
+      const b = h("button", { class: "iconbtn", title });
+      b.appendChild(icon(name, 13));
+      on(b, "click", run);
+      return b;
+    };
+
+    const newLayer = iconBtn("newLayer", "New layer, above the selected one", () => this.addEmptyLayer());
+    const newGroup = iconBtn("newFolder", "", () => this.addGroup());
+    const groupTitle = () => { newGroup.title = `${withAccel("New group", "modify.group")}, containing the selected layers`; };
+    groupTitle();
+    onAccelChange(groupTitle);
+    const del = iconBtn("trash", "Delete layer", () => this.deleteSelectedLayers());
+
+    const transport = transportButtons(this.store, this.playback);
+
+    const onionBtn = iconBtn("onion", "Onion skin (hold or right-click for options)", () => {
+      this.store.setUi({ onionSkin: !this.store.ui.onionSkin }, "stage");
+    });
+    attachOptionsMenu(onionBtn, () => showMenu(onionBtn, this.onionMenu()));
+    // Spine's dopesheet: a bone selected on the stage or in the Tree shows
+    // only its own rows here.
+    const focusBtn = iconBtn("subtree", "Show only the selected bones' rows (select a bone on the stage or in the Tree)", () => {
+      this.store.prefs.set("timeline", { focusSelected: !this.store.prefs.value.timeline.focusSelected });
+    });
+    const syncFocus = () => cls(focusBtn, "on", this.store.prefs.value.timeline.focusSelected);
+    this.store.prefs.subscribe(syncFocus);
+    syncFocus();
+    // Spine's key buttons: what changed, or (its menu) everything or one group.
+    const keyBtn = iconBtn("key", "", () => this.keySelected("changed"));
+    attachOptionsMenu(keyBtn, () => showMenu(keyBtn, this.keyMenu()));
+    const keyTitle = () => {
+      keyBtn.title = `${withAccel("Key what changed", "timeline.keyChanged")} on the selected layers: each property that is not at the setup pose (hold or right-click: key everything, or one group)`;
+    };
+    keyTitle();
+    onAccelChange(keyTitle);
+    const syncKey = () => { (keyBtn as HTMLButtonElement).disabled = this.store.ui.mode !== "animate" || !this.store.currentAnimation; };
+    this.store.subscribe((t) => { if (t === "ui" || t === "doc" || t === "stage") syncKey(); });
+    syncKey();
+    const multiBtn = iconBtn("multiFrames", "Edit multiple frames: a change applies to every frame between the onion markers", () => {
+      this.store.setUi({ editMultipleFrames: !this.store.ui.editMultipleFrames }, "stage");
+    });
+    // Both follow the STATE: the View menu and the layer-list button change
+    // it too.
+    const syncOnion = () => {
+      cls(onionBtn, "on", this.store.ui.onionSkin);
+      cls(multiBtn, "on", this.store.ui.editMultipleFrames);
+    };
+    this.store.subscribe((t) => { if (t === "stage" || t === "ui") syncOnion(); });
+    syncOnion();
+
+    on(this.animSelect, "change", () => {
+      const anim = this.store.currentSymbol.animations.find((a) => a.id === this.animSelect.value);
+      if (anim) {
+        this.store.setUi({ animId: anim.id, frame: 0 }, "doc");
+        this.store.emit("timeline");
+      }
+    });
+
+    const animMenu = iconBtn("hamburger", "Animation options", () => {
+      const sym = this.store.currentSymbol;
+      const anim = this.store.currentAnimation;
+      showMenu(animMenu, [
+        { label: "New Animation", run: () => this.addAnimation() },
+        { label: "Rename Animation…", enabled: !!anim, run: () => this.renameAnimation() },
+        {
+          label: "Delete Animation", enabled: !!anim && sym.animations.length > 1,
+          run: () => {
+            if (!anim) return;
+            this.store.apply(new RemoveAnimation(this.store.currentSymbolId, anim.id));
+            this.store.setUi({ animId: this.store.currentSymbol.animations[0]?.id ?? null }, "doc");
+            this.store.emit("timeline");
+          },
+        },
+        "-",
+        { label: "Set Duration…", enabled: !!anim, run: () => this.setDuration() },
+        "-",
+        this.cycleItem(),
+        this.closeLoopItem(),
+        "-",
+        this.offsetItem(),
+      ]);
+    });
+
+    const fit = iconBtn("fit", "Fit the animation to the timeline's width", () => {
+      this.grid.fitToView(this.store.currentAnimation?.duration ?? 1);
+    });
+
+    this.fpsLabel = h("span", { class: "fps" }, `${this.store.project.frameRate} fps`);
+
+    const speedOf = () => this.store.prefs.value.timeline.playSpeed;
+    const speed = h("input", {
+      type: "range", min: "0", max: String(SPEED_SLIDER_MAX), value: String(sliderFromSpeed(speedOf())),
+    }) as HTMLInputElement;
+    const speedText = h("span", { class: "mark speed-value" }, speedLabel(speedOf()));
+    const setSpeed = (v: number) => this.store.prefs.set("timeline", { playSpeed: v });
+    on(speed, "input", () => setSpeed(speedFromSlider(Number(speed.value))));
+    // The slider has the focus after a double-click, so the sync below skips it.
+    const reset = () => { setSpeed(1); speed.value = String(sliderFromSpeed(1)); };
+    on(speed, "dblclick", reset);
+    on(speedText, "dblclick", reset);
+    const one = h("button", { class: "tl-chip", title: "Playback speed back to 1×" }, "1×");
+    on(one, "click", reset);
+    // Redraws a second while playing: the stage poses between frames.
+    const rateOf = () => this.store.prefs.value.timeline.playRate;
+    const rateBtn = h("button", {
+      class: "tl-chip tl-rate", title: "Smooth playback: how many times a second the timeline and the Preview redraw",
+    }) as HTMLButtonElement;
+    on(rateBtn, "click", () => showMenu(rateBtn, PLAY_RATES.map((rate) => ({
+      label: `${rate} fps`, checked: rateOf() === rate,
+      run: () => this.store.prefs.set("timeline", { playRate: rate }),
+    }))));
+    const syncSpeed = () => {
+      speedText.textContent = speedLabel(speedOf());
+      if (document.activeElement !== speed) speed.value = String(sliderFromSpeed(speedOf()));
+      cls(one, "on", speedOf() === 1);
+      rateBtn.textContent = `${rateOf()} fps ▾`;
+    };
+    this.store.prefs.subscribe(syncSpeed);
+    syncSpeed();
+    const speedBox = h("div", { class: "tl-zoom tl-speed" },
+      rateBtn,
+      h("span", { title: "Playback speed (double-click: 1×). The timeline and the Preview play at it.", style: "display:flex;align-items:center;gap:5px" },
+        icon("play", 11), speed, speedText),
+      one);
+
+    return h("div", { class: "tl-foot" },
+      newLayer, newGroup, del,
+      h("div", { class: "sep-v" }),
+      ...transport.buttons, onionBtn, multiBtn, focusBtn, keyBtn,
+      h("div", { class: "sep-v" }),
+      this.animSelect, animMenu,
+      h("div", { class: "readout" },
+        this.frameLabel, this.fpsLabel, this.elapsedLabel, this.tweenLabel),
+      h("div", { class: "spacer" }),
+      speedBox,
+      fit,
+    );
+  }
+
+  private syncReadout(): void {
+    const frame = this.store.ui.frame;
+    this.frameLabel.textContent = String(frame + 1);
+    this.elapsedLabel.textContent = `${(frame / this.store.project.frameRate).toFixed(1)} s`;
+    // The frame rate is a document setting and can change under us.
+    const fps = `${this.store.project.frameRate} fps`;
+    if (this.fpsLabel.textContent !== fps) this.fpsLabel.textContent = fps;
+
+    this.tweenLabel.textContent = this.tweenAtPlayhead();
+
+    this.syncHScroll();
+  }
+
+  /**
+   * The horizontal scrollbar is a sibling of the canvas, not the canvas's own
+   * overflow, so nothing updates it implicitly. Its inner width has to follow
+   * `contentWidth` — which a zoom changes without emitting any store
+   * event, so the bar simply never appeared when the frames were widened —
+   * and its thumb has to follow a `scrollX` the grid moved itself, as
+   * `revealFrame` does while playing.
+   */
+  private syncHScroll(): void {
+    const width = `${this.grid.contentWidth}px`;
+    if (this.hScrollInner.style.width !== width) this.hScrollInner.style.width = width;
+
+    // Push the thumb only when the GRID moved, never merely because the two
+    // disagree. A `scroll` event is delivered asynchronously, so a draw
+    // queued by something else — playback runs one every frame — can land
+    // between the bar being dragged and the event arriving, and a plain
+    // comparison there would shove the thumb back under the pointer.
+    if (this.grid.scrollX !== this.pushedScrollX) {
+      this.pushedScrollX = this.grid.scrollX;
+      this.hScroll.scrollLeft = this.grid.scrollX;
+    }
+  }
+
+  /**
+   * The easing governing the span under the playhead on the selected layer —
+   * the same thing the "in"/"out" tag on the frame grid says, spelled out.
+   * Blank when the selection does not settle on one span.
+   */
+  private tweenAtPlayhead(): string {
+    const ids = this.store.selection.nodes;
+    if (ids.length !== 1) return "";
+    const track = this.store.currentAnimation?.tracks[ids[0]!];
+    if (!track) return "";
+    const key = spanKeyAt(track, this.store.ui.frame);
+    if (!key) return "";
+    const overrides = key.tween.kind !== "none" && key.eases ? " *" : "";
+    return easeLabel(key.tween) + overrides + rotationName(key);
+  }
+
+  private syncAnimations(): void {
+    const sym = this.store.currentSymbol;
+    const current = this.store.currentAnimation;
+    clear(this.animSelect);
+    for (const a of sym.animations) {
+      this.animSelect.appendChild(h("option", { value: a.id }, isCycle(a) ? `${a.name} ↻` : a.name));
+    }
+    if (current) this.animSelect.value = current.id;
+    this.syncReadout();
+  }
+
+  // ── Actions ────────────────────────────────────────────────────────────
+
+  private selectCell(row: number, frame: number, additive: boolean): void {
+    const layer = this.grid.visibleRows()[row]?.layer;
+    if (!layer) return;
+    this.playback.pause();
+    this.store.selectNodes([layer.nodeId], additive);
+    this.store.selection = {
+      ...this.store.selection,
+      frames: [`${layer.nodeId}:${frame}`],
+    };
+    this.store.setFrame(frame);
+    this.store.emit("selection");
+  }
+
+  /**
+   * A frame selection dropped somewhere else — Flash's "drag timeline frames
+   * to a new location on the same layer or to a different layer". It is a move
+   * unless ⌥ was held, and one undo step either way.
+   */
+  private dragFrames(row: number, frame: number, copy: boolean): void {
+    const sel = FrameClipboard.selectionOf(this.store);
+    const target = this.grid.visibleRows()[row]?.layer.nodeId;
+    if (!sel || !target) return;
+    this.playback.pause();
+    this.frames.dragTo(this.store, sel, target, frame, copy);
+  }
+
+  /** A rectangle of cells: every frame in `from..to` on every row in range. */
+  private selectRange(rowFrom: number, rowTo: number, from: number, to: number): void {
+    const rows = this.grid.visibleRows();
+    const frames: string[] = [];
+    const nodes: NodeId[] = [];
+    for (let r = rowFrom; r <= rowTo; r++) {
+      const layer = rows[r]?.layer;
+      if (!layer) continue;
+      nodes.push(layer.nodeId);
+      for (let f = from; f <= to; f++) frames.push(`${layer.nodeId}:${f}`);
+    }
+    if (!frames.length) return;
+    this.store.selection = { ...this.store.selection, nodes, frames };
+    this.store.emit("selection");
+  }
+
+  /**
+   * The current frame selection as a rectangle. Cells are stored one by one,
+   * but every producer writes a rectangle, so reading it back as bounds is
+   * enough for the range operations.
+   */
+  private frameSelection(): { ids: NodeId[]; from: number; to: number } | null {
+    const cells = this.store.selection.frames;
+    if (cells.length < 2) return null;
+    const ids: NodeId[] = [];
+    let from = Infinity, to = -Infinity;
+    for (const cell of cells) {
+      const cut = cell.lastIndexOf(":");
+      const id = cell.slice(0, cut) as NodeId;
+      const f = Number(cell.slice(cut + 1));
+      if (!Number.isFinite(f)) continue;
+      if (!ids.includes(id)) ids.push(id);
+      from = Math.min(from, f);
+      to = Math.max(to, f);
+    }
+    if (!ids.length || to < from) return null;
+    return { ids, from, to };
+  }
+
+  /**
+   * Every layer of the current symbol, for the "all layers" operations —
+   * including the ones folded away inside a collapsed group. Taking only the
+   * visible rows shifted every other layer's keys and left those behind.
+   */
+  private allLayerIds(): NodeId[] {
+    return layerRows(this.store.currentSymbol, true).map((r) => r.layer.nodeId);
+  }
+
+  /**
+   * The layers an INSERTING F-key acts on: the selection, or every layer when
+   * there is none. Flash always has exactly one current layer, so the case
+   * does not arise there and the keys simply did nothing here — pressing F5
+   * on a fresh scene to make room was a dead key. Only inserting takes this
+   * fallback; ⇧F5 and ⇧F6 destroy content and keep needing a selection.
+   */
+  insertTargets(): NodeId[] {
+    const sel = this.store.selection.nodes;
+    return sel.length ? [...sel] : this.allLayerIds();
+  }
+
+  /**
+   * Create an empty layer.
+   *
+   * A layer IS an object here, so an empty one needs something to hold it
+   * open: an "empty" node, which carries no library item and exports as
+   * nothing at all — not even a bone. Dropping a library item on it converts
+   * that same node in place (`SetNodeItem`), so the layer keeps its id, its
+   * name, its z-order and its mask links instead of being replaced by a
+   * freshly created one somewhere else in the stack.
+   */
+  addEmptyLayer(): void {
+    const sym = this.store.currentSymbol;
+    const selected = [...this.store.selection.nodes].filter((id) => sym.nodes[id]);
+
+    // Above the topmost selected layer, or at the very top with no selection —
+    // Flash's rule, and the reason a new layer never lands out of sight.
+    const at = selected.length
+      ? Math.max(0, Math.min(...selected
+          .map((id) => sym.layers.findIndex((l) => l.nodeId === id))
+          .filter((i) => i >= 0)))
+      : 0;
+
+    const node = createNode("empty", uniqueLayerName(this.store));
+    const layer = createLayer(node.id, node.name, sym.layers.length);
+    this.store.apply(new AddNode("New Layer", this.store.currentSymbolId, node, layer, at));
+    this.store.selectNodes([node.id]);
+    this.store.emit("doc");
+  }
+
+  /**
+   * Create a group.
+   *
+   * A group is a transform-only parent that moves its children together — as
+   * distinct from an empty layer, which holds a slot in the stack open and
+   * has no children. It adopts the current selection when there is one.
+   */
+  addGroup(): void {
+    const sym = this.store.currentSymbol;
+    const setup = evaluateSymbol(sym, null, 0, "setup");
+    const plan = groupPlan(sym, this.store.selection.nodes, (id) => {
+      const w = setup.byNode.get(id)?.world;
+      return { x: w?.tx ?? 0, y: w?.ty ?? 0 };
+    });
+    if (!mayReparent(this.store, plan.members)) return;
+
+    // Put the group where the selection is, so its origin is a sensible pivot,
+    // above the topmost selected layer so it reads as their parent.
+    const node = createNode("group", uniqueGroupName(this.store), {
+      x: plan.origin.x, y: plan.origin.y, parentId: plan.parent,
+    });
+    const layer = createLayer(node.id, node.name, sym.layers.length);
+
+    this.store.transaction("Group", () => {
+      this.store.apply(new AddNode("Group", this.store.currentSymbolId, node, layer, plan.index));
+      if (plan.members.length) {
+        this.store.apply(new SetParent(this.store.currentSymbolId, plan.members, node.id));
+      }
+    });
+    this.store.selectNodes([node.id]);
+    this.store.emit("doc");
+  }
+
+  private deleteSelectedLayers(): void {
+    const ids = [...this.store.selection.nodes];
+    if (!ids.length) return;
+    this.store.apply(new RemoveNodes(this.store.currentSymbolId, ids));
+    this.store.clearSelection();
+    this.store.emit("doc");
+  }
+
+  private addAnimation(): void {
+    const sym = this.store.currentSymbol;
+    const name = uniqueAnimationName(sym.animations.map((a) => a.name));
+    const cmd = new AddAnimation(this.store.currentSymbolId, name);
+    this.store.apply(cmd);
+    this.store.setUi({ animId: cmd.animation.id, frame: 0 }, "doc");
+    this.store.emit("timeline");
+  }
+
+  private async renameAnimation(): Promise<void> {
+    const anim = this.store.currentAnimation;
+    if (!anim) return;
+    const symbolId = this.store.currentSymbolId;
+    const name = await promptText({ title: "Rename Animation", label: "Name", value: anim.name, ok: "Rename" });
+    if (!name || name === anim.name) return;
+    if (!this.store.project.items[symbolId] || this.store.currentAnimation?.id !== anim.id) return;
+    this.store.apply(new RenameAnimation(symbolId, anim.id, name));
+    this.store.emit("timeline");
+  }
+
+  private setDuration(): void {
+    const anim = this.store.currentAnimation;
+    if (!anim) return;
+    const symbolId = this.store.currentSymbolId;
+    promptNumber({
+      title: "Animation Duration", label: "Frames", value: anim.duration, min: 1, max: 100000,
+      onOk: (n) => {
+        if (this.store.currentAnimation?.id !== anim.id || !Number.isFinite(n) || n < 1) return;
+        this.store.apply(new SetAnimationDuration(symbolId, anim.id, Math.round(n)));
+        this.store.emit("timeline");
+      },
+    });
+  }
+
+  private cycleItem() {
+    const anim = this.store.currentAnimation;
+    return { label: "Cycle", command: "timeline.cycle", enabled: !!anim, checked: !!anim && isCycle(anim),
+      run: () => doToggleCycle(this.store) };
+  }
+
+  /** On the selected layers, or every layer when none is selected. */
+  private closeLoopItem() {
+    const anim = this.store.currentAnimation;
+    return { label: "Close Loop", command: "timeline.closeLoop", enabled: !!anim && seamFrame(anim) !== null,
+      run: () => doCloseLoop(this.store, this.insertTargets()) };
+  }
+
+  /** Key the selected layers at the playhead: what changed from the setup
+   *  pose, or `props` (`doKeyProps`). */
+  keySelected(props: readonly TimelineProp[] | "changed", label = "Key Changed"): void {
+    if (this.store.ui.mode !== "animate") return;
+    doKeyProps(this.store, this.store.selection.nodes, props, label);
+  }
+
+  private keyMenu() {
+    const can = this.store.ui.mode === "animate" && !!this.store.currentAnimation && this.store.selection.nodes.length > 0;
+    const group = (g: KeyGroup, label: string) => ({ label: `Key ${label}`, enabled: can, run: () => this.keySelected(KEY_GROUPS[g], `Key ${label}`) });
+    return [
+      { label: "Key Changed", command: "timeline.keyChanged", enabled: can, run: () => this.keySelected("changed") },
+      { label: "Key All", command: "timeline.keyAll", enabled: can, run: () => this.keySelected(TIMELINE_PROPS, "Key All") },
+      "-" as const,
+      group("rotate", "Rotate"), group("translate", "Translate"), group("scale", "Scale"), group("shear", "Shear"),
+    ];
+  }
+
+  private offsetItem() {
+    return { label: "Offset Keys…", command: "timeline.offsetKeys", enabled: this.store.ui.mode === "animate" && !!this.store.currentAnimation,
+      run: () => this.offsetKeys() };
+  }
+
+  /**
+   * Offset Keys (Spine's Offset): the selected layers' keys, or every
+   * layer's, moved in time; with Stagger each row by one more step than the
+   * row above it (`offsetPlan`, `offsetTrack`).
+   */
+  offsetKeys(): void {
+    const anim = this.store.currentAnimation;
+    if (!anim) return;
+    const targets = new Set(this.insertTargets());
+    // Top to bottom as the rows show, so a chain staggers from its root.
+    const rows = [...new Set(this.grid.visibleRows().filter((r) => !r.prop && r.layer && targets.has(r.layer.nodeId)).map((r) => r.layer!.nodeId))];
+    for (const id of targets) if (!rows.includes(id)) rows.push(id);
+    promptNumber({
+      title: "Offset Keys", label: "Frames", value: this.offsetStep, min: -10000, max: 10000,
+      toggle: { label: "Stagger: each row one step more", checked: this.offsetStagger, title: "The first row moves by 0, the next by the step, the next by twice the step…" },
+      onOk: (n, stagger) => {
+        if (this.store.currentAnimation?.id !== anim.id || !Number.isFinite(n)) return;
+        this.offsetStep = Math.round(n);
+        this.offsetStagger = stagger;
+        doOffsetKeys(this.store, offsetPlan(rows, this.offsetStep, stagger));
+      },
+    });
+  }
+
+  /** A 0×0 fixed anchor at a screen point, for `showMenu`. */
+  private menuAnchor(x: number, y: number): HTMLElement {
+    const anchor = h("div");
+    anchor.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:0;height:0`;
+    document.body.appendChild(anchor);
+    setTimeout(() => anchor.remove(), 0);
+    return anchor;
+  }
+
+  /**
+   * The menu on a layer row.
+   *
+   * The layer column had no context menu at all, which left New Layer buried
+   * in the footer, Select All Frames unreachable, and every layer-level
+   * operation split between the menubar and a drag. This is their home.
+   */
+  private layerMenu(x: number, y: number): void {
+    const sym = this.store.currentSymbol;
+    const selected = this.store.selection.nodes.filter((id) => sym.nodes[id]);
+    const layers = selected
+      .map((id) => sym.layers.find((l) => l.nodeId === id))
+      .filter((l): l is Layer => !!l);
+    const n = layers.length;
+    const plural = n > 1 ? `${n} Layers` : "Layer";
+    // A mixed selection reads as "not excluded", so the toggle turns it on.
+    const excluded = n > 0 && layers.every((l) => l.excludeFromExport);
+
+    showMenu(this.menuAnchor(x, y), [
+      { label: "New Layer", run: () => this.addEmptyLayer() },
+      { label: "New Group", command: "modify.group", run: () => this.addGroup() },
+      "-",
+      { label: `Copy ${plural}`, enabled: n > 0, run: () => this.copyLayers() },
+      { label: "Paste Layers", enabled: this.clipboard.hasLayers, run: () => this.pasteLayers() },
+      { label: `Duplicate ${plural}`, enabled: n > 0, run: () => this.duplicateLayers() },
+      { label: `Delete ${plural}`, enabled: n > 0, run: () => this.deleteSelectedLayers() },
+      "-",
+      { label: "Select All Frames", command: "edit.selectAllFrames", enabled: n > 0, run: () => this.selectAllFrames() },
+      this.offsetItem(),
+      "-",
+      {
+        // Keyed at the playhead, in Animate (Spine's draw order keys).
+        label: "Draw Order", items: drawOrderItems(this.store.ui.mode === "animate" && n > 0, (how) => doReorder(this.store, how)),
+      },
+      "-",
+      {
+        label: excluded ? "Include in Export" : "Exclude from Export",
+        enabled: n > 0,
+        checked: excluded,
+        run: () => this.store.apply(new SetLayerExcluded(
+          this.store.currentSymbolId, layers.map((l) => l.id), !excluded)),
+      },
+    ]);
+  }
+
+  /**
+   * Every frame of every selected layer.
+   *
+   * A long animation makes the last frame a scroll away, and a range select
+   * that has to reach it is a drag into the edge of the panel. The selection
+   * itself needs no new state: it is the same rectangle a drag produces.
+   */
+  selectAllFrames(): void {
+    const rows = this.grid.visibleRows();
+    const selected = new Set(this.store.selection.nodes);
+    const indices = rows
+      .map((r, i) => (selected.has(r.layer.nodeId) ? i : -1))
+      .filter((i) => i >= 0);
+    if (!indices.length) return;
+    const duration = this.store.currentAnimation?.duration ?? 1;
+    this.selectRange(Math.min(...indices), Math.max(...indices), 0, duration - 1);
+  }
+
+  copyLayers(): number {
+    const n = this.clipboard.copyLayers(this.store);
+    this.store.emit("selection");
+    return n;
+  }
+
+  pasteLayers(): number { return this.clipboard.pasteLayers(this.store); }
+  duplicateLayers(): number { return this.clipboard.duplicateLayers(this.store); }
+
+  /**
+   * The menu on the frame ruler. There is no layer under the pointer up
+   * there, so everything in it works on EVERY layer, starting at the playhead
+   * — which the right-click moves, exactly as a left-click would.
+   */
+  private rulerMenu(frame: number, x: number, y: number): void {
+    this.playback.pause();
+    this.store.setFrame(frame);
+
+    // A selection the click lands inside says how many frames and from
+    // where; anywhere else the gesture itself is the answer, so the stale
+    // selection goes rather than silently governing the operation.
+    let range = this.frameSelection();
+    if (range && (frame < range.from || frame > range.to)) {
+      this.store.selection = { ...this.store.selection, frames: [] };
+      this.store.emit("selection");
+      range = null;
+    }
+    const from = range?.from ?? frame;
+    const count = range ? range.to - range.from + 1 : 1;
+    const ids = this.allLayerIds();
+    const label = count > 1 ? `${count} Frames` : "Frame";
+
+    showMenu(this.menuAnchor(x, y), [
+      { label: `Insert ${label} (All Layers)`, command: "timeline.insertFrameAll",
+        enabled: ids.length > 0,
+        run: () => doInsertFrames(this.store, ids, from, count) },
+      { label: `Remove ${label} (All Layers)`, command: "timeline.removeFrameAll",
+        enabled: ids.length > 0,
+        run: () => doRemoveFrames(this.store, ids, from, count) },
+      "-",
+      { label: "Convert to Keyframes (All Layers)",
+        enabled: ids.length > 0,
+        run: () => doConvertToKeyframes(this.store, ids, from, from + count - 1) },
+      "-",
+      { label: "Set Duration…", enabled: !!this.store.currentAnimation,
+        run: () => this.setDuration() },
+      { label: "Go to Frame…", command: "timeline.goToFrame", run: () => this.goToFrame() },
+      "-",
+      this.cycleItem(),
+      this.closeLoopItem(),
+      "-",
+      // The markers live on the ruler, so their options are here too.
+      { label: "Onion Skin", items: this.onionMenu() },
+    ]);
+  }
+
+  /**
+   * Park the playhead on a frame by number, past the end of the animation
+   * included — the empty frames out there are where F5 and F6 lengthen a
+   * timeline, and reaching frame 400 by dragging the scrollbar is not a
+   * gesture anyone should have to perform.
+   */
+  goToFrame(): void {
+    this.playback.pause();
+    promptNumber({
+      title: "Go to Frame",
+      label: "Frame",
+      value: this.store.ui.frame + 1,
+      min: 1,
+      max: MAX_FRAMES,
+      onOk: (v) => {
+        this.store.setFrame(Math.round(v) - 1);
+        this.grid.revealFrame(this.store.ui.frame);
+      },
+    });
+  }
+
+  /** The picked property keys gone (`deleteChannelKeys`); false with none
+   *  picked, so Delete goes on to what else is selected. */
+  deletePropKeys(): boolean {
+    const sel = this.grid.propSel;
+    const track = sel && this.store.currentAnimation?.tracks[sel.nodeId];
+    const node = sel && this.store.currentSymbol.nodes[sel.nodeId];
+    if (!sel || !track || !node || !sel.frames.length) return false;
+    doSetTrack(this.store, sel.nodeId, deleteChannelKeys(track, node, sel.prop, sel.frames), "Delete Keys");
+    this.grid.propSel = null;
+    return true;
+  }
+
+  /** The picked frames' event keys gone; false with none picked. */
+  deleteEventKeys(): boolean {
+    const frames = this.store.ui.eventFrames;
+    const keys = this.store.currentAnimation?.events;
+    if (!frames.length || !keys?.some((k) => frames.includes(k.frame))) return false;
+    const n = keys.filter((k) => frames.includes(k.frame)).length;
+    doSetEventKeys(this.store, deleteEventKeys(keys, frames), n > 1 ? "Delete Event Keys" : "Delete Event Key");
+    this.store.ui.eventFrames = [];
+    return true;
+  }
+
+  /**
+   * The Events row's menu: fire an event here (each of the symbol's, or a new
+   * one, named first), or delete the picked frames' keys.
+   */
+  private eventsMenu(frame: number, x: number, y: number): void {
+    const anim = this.store.currentAnimation;
+    if (!anim) return;
+    this.store.setFrame(frame);
+    const sym = this.store.currentSymbol;
+    const defs = sym.events ?? [];
+    const keys = anim.events ?? [];
+    const picked = keys.filter((k) => this.store.ui.eventFrames.includes(k.frame)).length;
+    const add = (name: string) => {
+      doSetEventKeys(this.store, withEventKey(keys, frame, name), `Add Event "${name}"`);
+      this.store.ui.eventFrames = [frame];
+    };
+    showMenu(this.menuAnchor(x, y), [
+      {
+        label: "Add Event Here",
+        items: [
+          ...defs.map((d) => ({ label: d.name, run: () => add(d.name) })),
+          ...(defs.length ? ["-" as const] : []),
+          {
+            label: "New Event…",
+            run: async () => {
+              const name = await promptText({ title: "New Event", label: "Name", value: uniqueEventName(defs, "event") });
+              const now = this.store.currentSymbol;
+              const a = this.store.currentAnimation;
+              if (!name?.trim() || !a || now.id !== sym.id) return;
+              const fresh = uniqueEventName(now.events ?? [], name);
+              doSetEvents(this.store, [...(now.events ?? []), { name: fresh }],
+                new Map([[a.id, withEventKey(a.events ?? [], frame, fresh)]]), `New Event "${fresh}"`);
+              this.store.ui.eventFrames = [frame];
+            },
+          },
+        ],
+      },
+      "-",
+      {
+        label: picked > 1 ? `Delete ${picked} Event Keys` : "Delete Event Key",
+        enabled: picked > 0, run: () => { this.deleteEventKeys(); },
+      },
+    ]);
+  }
+
+  /** The deform keys of the mesh `node`'s Deform row shows (`deformRow`). */
+  private deformKeysOf(node: NodeId): DeformKey[] | undefined {
+    const sym = this.store.currentSymbol, n = sym.nodes[node];
+    const row = n ? deformRow(sym, n) : null;
+    return row ? deformKeysOf(this.store.currentAnimation, row.target) : undefined;
+  }
+
+  /** The picked deform keys gone; false with none picked. */
+  deleteDeformKeys(): boolean {
+    const sel = this.grid.deformSel;
+    if (sel?.cn) {
+      const anim = this.store.currentAnimation;
+      if (!sel.frames.length || !anim) return false;
+      doSetConstraintKeys(this.store, deleteConstraintKeys(anim.constraintKeys, sel.cn, sel.frames), sel.frames.length > 1 ? "Delete Constraint Keys" : "Delete Constraint Key");
+      this.grid.deformSel = null;
+      return true;
+    }
+    if (sel?.inherit) {
+      const keys = this.store.currentAnimation?.inherits?.[sel.node];
+      if (!sel.frames.length || !keys) return false;
+      doSetInheritKeys(this.store, sel.node, keys.filter((k) => !sel.frames.includes(k.frame)), sel.frames.length > 1 ? "Delete Inherit Keys" : "Delete Inherit Key");
+      this.grid.deformSel = null;
+      return true;
+    }
+    if (sel?.sequence) {
+      const keys = this.store.currentAnimation?.sequences?.[sel.node];
+      if (!sel.frames.length || !keys) return false;
+      doSetSequenceKeys(this.store, sel.node, keys.filter((k) => !sel.frames.includes(k.frame)), sel.frames.length > 1 ? "Delete Sequence Keys" : "Delete Sequence Key");
+      this.grid.deformSel = null;
+      return true;
+    }
+    const keys = sel && this.deformKeysOf(sel.node);
+    if (!sel?.frames.length || !keys) return false;
+    doSetDeformKeys(this.store, sel.node, deleteDeformKeys(keys, sel.frames), sel.frames.length > 1 ? "Delete Deform Keys" : "Delete Deform Key");
+    this.grid.deformSel = null;
+    return true;
+  }
+
+  /** A physics, slider or path row's menu: the picked keys' ease, or delete
+   *  them. Keys are made in Properties, a value at a time. */
+  private constraintKeyMenu(node: NodeId, cn: CnId, frame: number, x: number, y: number): void {
+    const anim = this.store.currentAnimation;
+    if (!anim) return;
+    const frames = constraintKeyFrames(anim, cn);
+    const at = frames.includes(frame);
+    const mine = this.grid.deformSel?.cn === cn ? this.grid.deformSel!.frames : [];
+    if (at && !mine.includes(frame)) this.grid.deformSel = { node, frames: [frame], cn };
+    if (!at && this.grid.deformSel?.cn !== cn) this.grid.deformSel = null;
+    this.store.setFrame(frame);
+    const sel = this.grid.deformSel?.cn === cn ? this.grid.deformSel!.frames : [];
+    const tween = (t: IkTween): MenuEntry => ({
+      label: t === "linear" ? "Linear" : t === "stepped" ? "Stepped" : "Smooth", enabled: sel.length > 0,
+      run: () => doSetConstraintKeys(this.store, withConstraintTween(anim.constraintKeys, cn, sel,
+        t === "stepped" ? { kind: "none" } : t === "smooth" ? { kind: "curve", curve: [0.42, 0, 0.58, 1] } : undefined), "Constraint Key Ease"),
+    });
+    showMenu(this.menuAnchor(x, y), [
+      tween("linear"), tween("stepped"), tween("smooth"),
+      "-",
+      { label: sel.length > 1 ? `Delete ${sel.length} Constraint Keys` : "Delete Constraint Key", enabled: sel.length > 0, run: () => { this.deleteDeformKeys(); } },
+    ]);
+  }
+
+  /** An Inherit row's menu: key a mode here, the picked keys' mode, or delete them. */
+  private inheritMenu(node: NodeId, frame: number, x: number, y: number): void {
+    const anim = this.store.currentAnimation;
+    const bone = this.store.currentSymbol.nodes[node];
+    if (!anim || !bone) return;
+    const keys = anim.inherits?.[node] ?? [];
+    const at = keys.find((k) => k.frame === frame);
+    const mine = this.grid.deformSel?.node === node && this.grid.deformSel.inherit ? this.grid.deformSel.frames : [];
+    if (at && !mine.includes(frame)) this.grid.deformSel = { node, frames: [frame], inherit: true };
+    if (!at && !(this.grid.deformSel?.node === node && this.grid.deformSel.inherit)) this.grid.deformSel = null;
+    this.store.setFrame(frame);
+    const sel = this.grid.deformSel?.inherit ? this.grid.deformSel.frames : [];
+    const now = inheritAt(bone, anim, frame);
+    showMenu(this.menuAnchor(x, y), [
+      ...INHERIT_MODES.map((mode): MenuEntry => ({
+        label: `Inherit ${INHERIT_LABELS[mode]}`, checked: now === mode,
+        run: () => {
+          // Picked keys take the mode; with none picked, a key goes in here.
+          const next = sel.length ? keys.map((k) => (sel.includes(k.frame) ? { ...k, inherit: mode } : k)) : withInheritKey(keys, frame, mode);
+          doSetInheritKeys(this.store, node, next, "Inherit Key");
+        },
+      })),
+      "-",
+      { label: sel.length > 1 ? `Delete ${sel.length} Inherit Keys` : "Delete Inherit Key", enabled: sel.length > 0, run: () => { this.deleteDeformKeys(); } },
+    ]);
+  }
+
+  /** A Sequence row's menu: key the sequence here (the image in force,
+   *  looping), the picked keys' mode, or delete them. */
+  private sequenceMenu(node: NodeId, frame: number, x: number, y: number): void {
+    const anim = this.store.currentAnimation;
+    const seq = this.store.currentSymbol.nodes[node]?.sequence;
+    if (!anim || !seq) return;
+    const keys = anim.sequences?.[node] ?? [];
+    const at = keys.find((k) => k.frame === frame);
+    const mine = this.grid.deformSel?.node === node && this.grid.deformSel.sequence ? this.grid.deformSel.frames : [];
+    if (at && !mine.includes(frame)) this.grid.deformSel = { node, frames: [frame], sequence: true };
+    if (!at && !(this.grid.deformSel?.node === node && this.grid.deformSel.sequence)) this.grid.deformSel = null;
+    this.store.setFrame(frame);
+    const sel = this.grid.deformSel?.sequence ? this.grid.deformSel.frames : [];
+    const picked = keys.filter((k) => sel.includes(k.frame));
+    showMenu(this.menuAnchor(x, y), [
+      {
+        label: "Key Sequence Here", enabled: !at,
+        run: () => doSetSequenceKeys(this.store, node, withSequenceKey(keys, {
+          frame, mode: "loop", index: sequenceIndexAt(keys, frame, seq.items.length, seq.setup), delay: 1,
+        }), "Key Sequence"),
+      },
+      "-",
+      ...SEQUENCE_MODES.map((mode): MenuEntry => ({
+        label: SEQUENCE_MODE_LABELS[mode], enabled: picked.length > 0,
+        checked: picked.length > 0 && picked.every((k) => k.mode === mode),
+        run: () => doSetSequenceKeys(this.store, node, keys.map((k) => (sel.includes(k.frame) ? { ...k, mode } : k)), "Sequence Mode"),
+      })),
+      "-",
+      { label: sel.length > 1 ? `Delete ${sel.length} Sequence Keys` : "Delete Sequence Key", enabled: sel.length > 0, run: () => { this.deleteDeformKeys(); } },
+    ]);
+  }
+
+  /** A Deform row's menu: key the deform in force here, the picked keys'
+   *  ease, or delete them. */
+  private deformMenu(node: NodeId, frame: number, x: number, y: number): void {
+    const anim = this.store.currentAnimation;
+    const n = this.store.currentSymbol.nodes[node];
+    const row = n ? deformRow(this.store.currentSymbol, n) : null;
+    if (!anim || !row) return;
+    const mesh = row.mesh;
+    const keys = deformKeysOf(anim, row.target) ?? [];
+    const at = keys.find((k) => k.frame === frame);
+    if (at && !(this.grid.deformSel?.node === node && this.grid.deformSel.frames.includes(frame))) this.grid.deformSel = { node, frames: [frame] };
+    if (!at && this.grid.deformSel?.node !== node) this.grid.deformSel = null;
+    this.store.setFrame(frame);
+    const sel = this.grid.deformSel?.frames ?? [];
+    const picked = keys.filter((k) => sel.includes(k.frame));
+    const tween = (t: IkTween): MenuEntry => ({
+      label: t === "linear" ? "Linear" : t === "stepped" ? "Stepped" : "Smooth",
+      enabled: picked.length > 0,
+      checked: picked.length > 0 && picked.every((k) => deformTweenOf(k) === t),
+      run: () => doSetDeformKeys(this.store, node, withDeformTween(keys, sel, t), "Deform Key Ease"),
+    });
+    showMenu(this.menuAnchor(x, y), [
+      {
+        label: "Key Deform Here", enabled: !at,
+        run: () => doSetDeformKeys(this.store, node, withDeformKey(keys, frame, deformAt(anim, row.target, frame) ?? new Array<number>(mesh.points.length).fill(0)), "Key Deform"),
+      },
+      "-",
+      tween("linear"), tween("stepped"), tween("smooth"),
+      "-",
+      { label: sel.length > 1 ? `Delete ${sel.length} Deform Keys` : "Delete Deform Key", enabled: sel.length > 0, run: () => { this.deleteDeformKeys(); } },
+    ]);
+  }
+
+  /** The picked transform keys gone; false with none picked. */
+  deleteTcKeys(): boolean {
+    const sel = this.grid.tcSel;
+    const keys = sel && this.store.currentAnimation?.transforms?.[sel.tc];
+    if (!sel?.frames.length || !keys) return false;
+    doSetTcKeys(this.store, sel.tc, deleteTcKeys(keys, sel.frames), sel.frames.length > 1 ? "Delete Transform Keys" : "Delete Transform Key");
+    this.grid.tcSel = null;
+    return true;
+  }
+
+  /** A transform constraint row's menu: key the mixes in force here, the
+   *  picked keys' ease, or delete them. */
+  private tcMenu(tc: TcId, frame: number, x: number, y: number): void {
+    const anim = this.store.currentAnimation;
+    const k = this.store.currentSymbol.transforms?.find((c) => c.id === tc);
+    if (!anim || !k) return;
+    const keys = anim.transforms?.[tc] ?? [];
+    const at = keys.find((key) => key.frame === frame);
+    if (at && !(this.grid.tcSel?.tc === tc && this.grid.tcSel.frames.includes(frame))) this.grid.tcSel = { tc, frames: [frame] };
+    if (!at && this.grid.tcSel?.tc !== tc) this.grid.tcSel = null;
+    this.store.setFrame(frame);
+    const sel = this.grid.tcSel?.frames ?? [];
+    const picked = keys.filter((key) => sel.includes(key.frame));
+    const tween = (t: IkTween): MenuEntry => ({
+      label: t === "linear" ? "Linear" : t === "stepped" ? "Stepped" : "Smooth",
+      enabled: picked.length > 0,
+      checked: picked.length > 0 && picked.every((key) => tcTweenOf(key) === t),
+      run: () => doSetTcKeys(this.store, tc, withTcTween(keys, sel, t), "Transform Key Ease"),
+    });
+    showMenu(this.menuAnchor(x, y), [
+      { label: "Key Transform Here", enabled: !at, run: () => doSetTcKeys(this.store, tc, withTcKey(keys, frame, tcMixAt(k, anim, frame)), "Key Transform") },
+      "-",
+      tween("linear"), tween("stepped"), tween("smooth"),
+      "-",
+      { label: sel.length > 1 ? `Delete ${sel.length} Transform Keys` : "Delete Transform Key", enabled: sel.length > 0, run: () => { this.deleteTcKeys(); } },
+    ]);
+  }
+
+  /** The picked IK keys gone; false with none picked. */
+  deleteIkKeys(): boolean {
+    const sel = this.grid.ikSel;
+    const keys = sel && this.store.currentAnimation?.ik?.[sel.ik];
+    if (!sel?.frames.length || !keys) return false;
+    doSetIkKeys(this.store, sel.ik, deleteIkKeys(keys, sel.frames), sel.frames.length > 1 ? "Delete IK Keys" : "Delete IK Key");
+    this.grid.ikSel = null;
+    return true;
+  }
+
+  /**
+   * An IK row's menu: key the mix and bend in force here, the picked keys'
+   * ease (linear, stepped, smooth), or delete them.
+   */
+  private ikMenu(ik: IkId, frame: number, x: number, y: number): void {
+    const anim = this.store.currentAnimation;
+    const k = this.store.currentSymbol.ik.find((c) => c.id === ik);
+    if (!anim || !k) return;
+    const keys = anim.ik?.[ik] ?? [];
+    const at = keys.find((key) => key.frame === frame);
+    if (at && !(this.grid.ikSel?.ik === ik && this.grid.ikSel.frames.includes(frame))) this.grid.ikSel = { ik, frames: [frame] };
+    if (!at && this.grid.ikSel?.ik !== ik) this.grid.ikSel = null;
+    this.store.setFrame(frame);
+    const sel = this.grid.ikSel?.frames ?? [];
+    const picked = keys.filter((key) => sel.includes(key.frame));
+    const tween = (t: IkTween): MenuEntry => ({
+      label: t === "linear" ? "Linear" : t === "stepped" ? "Stepped" : "Smooth",
+      enabled: picked.length > 0,
+      checked: picked.length > 0 && picked.every((key) => ikTweenOf(key) === t),
+      run: () => doSetIkKeys(this.store, ik, withIkTween(keys, sel, t), "IK Key Ease"),
+    });
+    showMenu(this.menuAnchor(x, y), [
+      { label: "Key IK Here", enabled: !at, run: () => doSetIkKeys(this.store, ik, withIkKey(keys, frame, ikPoseAt(k, anim, frame), k.softness), "Key IK") },
+      "-",
+      tween("linear"), tween("stepped"), tween("smooth"),
+      "-",
+      {
+        label: sel.length > 1 ? `Delete ${sel.length} IK Keys` : "Delete IK Key",
+        enabled: sel.length > 0, run: () => { this.deleteIkKeys(); },
+      },
+    ]);
+  }
+
+  /** The picked draw order keys gone; false with none picked. */
+  deleteDrawOrderKeys(): boolean {
+    const sel = this.grid.orderSel;
+    const keys = this.store.currentAnimation?.drawOrder;
+    if (!sel?.length || !keys) return false;
+    doSetDrawOrder(this.store, deleteDrawOrderKeys(keys, sel), sel.length > 1 ? "Delete Draw Order Keys" : "Delete Draw Order Key");
+    this.grid.orderSel = null;
+    return true;
+  }
+
+  /**
+   * The Draw order row's menu: key the order in force here (to edit it with
+   * Modify ▸ Draw Order), back to the setup order from here, or delete the
+   * picked keys.
+   */
+  private drawOrderMenu(frame: number, x: number, y: number): void {
+    const anim = this.store.currentAnimation;
+    if (!anim) return;
+    this.store.setFrame(frame);
+    const keys = anim.drawOrder ?? [];
+    const sym = this.store.currentSymbol;
+    const keyed = keys.some((k) => k.frame === frame);
+    const sel = this.grid.orderSel ?? [];
+    showMenu(this.menuAnchor(x, y), [
+      {
+        label: "Key Draw Order Here", enabled: !keyed,
+        run: () => doSetDrawOrder(this.store, withDrawOrderKey(keys, frame, orderAt(sym, anim, frame), drawingLayers(sym)), "Key Draw Order"),
+      },
+      {
+        label: "Setup Draw Order From Here",
+        run: () => doSetDrawOrder(this.store, withDrawOrderKey(keys, frame, null, drawingLayers(sym)), "Setup Draw Order"),
+      },
+      "-",
+      {
+        label: sel.length > 1 ? `Delete ${sel.length} Draw Order Keys` : "Delete Draw Order Key",
+        enabled: sel.length > 0, run: () => { this.deleteDrawOrderKeys(); },
+      },
+    ]);
+  }
+
+  /** A property row's menu: key the property at the frame, or delete its
+   *  picked keys (or the one under the pointer). */
+  private propMenu(nodeId: NodeId, prop: TimelineProp, frame: number, x: number, y: number): void {
+    const track = this.store.currentAnimation?.tracks[nodeId];
+    const node = this.store.currentSymbol.nodes[nodeId];
+    if (!node) return;
+    const label = PROP_NAMES[prop];
+    const onKey = !!track && propertyKeys(track, prop).includes(frame);
+    const sel = this.grid.propSel;
+    if (onKey && !(sel?.nodeId === nodeId && sel.prop === prop && sel.frames.includes(frame))) {
+      this.grid.propSel = { nodeId, prop, frames: [frame] };
+    }
+    this.store.setFrame(frame);
+    showMenu(this.menuAnchor(x, y), [
+      {
+        label: `Key ${label} Here`, enabled: !onKey,
+        run: () => {
+          const base = track ?? ensureTrack(this.store, node);
+          doSetTrack(this.store, nodeId, keyChannelAt(base, node, prop, frame), `Key ${label}`);
+        },
+      },
+      {
+        label: this.grid.propSel && this.grid.propSel.frames.length > 1 ? `Delete ${this.grid.propSel.frames.length} ${label} Keys` : `Delete ${label} Key`,
+        enabled: onKey, run: () => { this.deletePropKeys(); },
+      },
+    ]);
+  }
+
+  private frameMenu(row: number, frame: number, x: number, y: number): void {
+    const layer = this.grid.visibleRows()[row]?.layer;
+    if (!layer) return;
+    const nodeId = layer.nodeId;
+    const prop = this.grid.visibleRows()[row]?.prop;
+    if (prop) { this.propMenu(nodeId, prop, frame, x, y); return; }
+    const ik = this.grid.visibleRows()[row]?.ik;
+    if (ik) { this.ikMenu(ik, frame, x, y); return; }
+    const tc = this.grid.visibleRows()[row]?.tc;
+    if (tc) { this.tcMenu(tc, frame, x, y); return; }
+    if (this.grid.visibleRows()[row]?.deform) { this.deformMenu(nodeId, frame, x, y); return; }
+    if (this.grid.visibleRows()[row]?.sequence) { this.sequenceMenu(nodeId, frame, x, y); return; }
+    if (this.grid.visibleRows()[row]?.inherit) { this.inheritMenu(nodeId, frame, x, y); return; }
+    const cnRow = this.grid.visibleRows()[row]?.cn;
+    if (cnRow) { this.constraintKeyMenu(nodeId, cnRow, frame, x, y); return; }
+    // Right-clicking outside the selection moves it, as in Flash; inside it,
+    // the selection is what the menu acts on.
+    if (!this.store.selection.frames.includes(`${nodeId}:${frame}`)) {
+      this.store.selectNodes([nodeId]);
+      this.store.selection = { ...this.store.selection, frames: [`${nodeId}:${frame}`] };
+      this.store.emit("selection");
+    }
+    this.store.setFrame(frame);
+
+    const track = this.store.currentAnimation?.tracks[nodeId];
+    const onKey = !!track && keyIndexAt(track, frame) >= 0;
+    const range = this.frameSelection();
+    const count = range ? range.to - range.from + 1 : 1;
+
+    const anchor = this.menuAnchor(x, y);
+
+    // A radio group, like the Rotate submenu below: the preset the key
+    // already carries is ticked.
+    const keyHere = onKey ? track!.keys[keyIndexAt(track!, frame)]! : null;
+    const tweenItems = [
+      ...EASE_PRESETS.map((p) => ({
+        label: p.label,
+        enabled: onKey,
+        checked: !!keyHere && sameEase(keyHere.tween, p.spec),
+        run: () => this.applyTween(nodeId, frame, p.spec),
+      })),
+      { label: "Ease…", enabled: easeTargets(this.store).length > 0, run: () => this.openEase() },
+    ];
+
+    const sel = FrameClipboard.selectionOf(this.store);
+    const runLabel = sel && sel.to > sel.from ? `${sel.to - sel.from + 1} Frames` : "Frame";
+
+    // With a range selected the frame operations work on it; otherwise they
+    // keep their single-cell meaning.
+    const frameItems = range
+      ? [
+        { label: `Insert ${count} Frames`, command: "timeline.insertFrame",
+          run: () => doInsertFrames(this.store, range.ids, range.from, count) },
+        { label: `Remove ${count} Frames`, command: "timeline.removeFrame",
+          run: () => doRemoveFrames(this.store, range.ids, range.from, count) },
+        "-" as const,
+        { label: "Convert to Keyframes", command: "timeline.insertKeyframe",
+          run: () => doConvertToKeyframes(this.store, range.ids, range.from, range.to) },
+        { label: "Insert Blank Keyframe", command: "timeline.insertBlankKeyframe",
+          run: () => doInsertBlankKeyframe(this.store, frame) },
+        { label: "Clear Keyframes", command: "timeline.clearKeyframe",
+          run: () => doClearKeyframes(this.store, range.ids, range.from, range.to) },
+      ]
+      : [
+        { label: "Insert Frame", command: "timeline.insertFrame", run: () => doInsertFrame(this.store, frame) },
+        { label: "Remove Frame", command: "timeline.removeFrame", run: () => doRemoveFrame(this.store, frame) },
+        "-" as const,
+        { label: "Insert Keyframe", command: "timeline.insertKeyframe", run: () => doInsertKeyframe(this.store, frame) },
+        { label: "Insert Blank Keyframe", command: "timeline.insertBlankKeyframe", run: () => doInsertBlankKeyframe(this.store, frame) },
+        { label: "Clear Keyframe", command: "timeline.clearKeyframe", enabled: onKey, run: () => doClearKeyframe(this.store, frame) },
+      ];
+
+    // The "all layers" pair only earns its place when it would reach layers
+    // the items above do not: with every layer already in the selection the
+    // two would do exactly the same thing, which just reads as a puzzle.
+    const allIds = this.allLayerIds();
+    const targetCount = range ? range.ids.length : this.store.selection.nodes.length || 1;
+    const allLayerItems = allIds.length > targetCount
+      ? [
+        { label: count > 1 ? `Insert ${count} Frames (All Layers)` : "Insert Frame (All Layers)",
+          run: () => doInsertFrames(this.store, allIds, range?.from ?? frame, count) },
+        { label: count > 1 ? `Remove ${count} Frames (All Layers)` : "Remove Frame (All Layers)",
+          run: () => doRemoveFrames(this.store, allIds, range?.from ?? frame, count) },
+        "-" as const,
+      ]
+      : [];
+
+    showMenu(anchor, [
+      ...frameItems,
+      "-",
+      ...allLayerItems,
+      { label: `Copy ${runLabel}`, command: "edit.copy", run: () => this.copyFrames() },
+      { label: `Cut ${runLabel}`, command: "edit.cut", run: () => this.frames.cut(this.store) },
+      {
+        label: this.frames.hasContent ? `Paste ${this.frames.span} Frame(s)` : "Paste Frames",
+        command: "edit.paste",
+        enabled: this.frames.hasContent,
+        run: () => this.frames.paste(this.store, nodeId, frame),
+      },
+      {
+        label: "Paste and Overwrite Frames",
+        command: "edit.pasteOverwriteFrames",
+        enabled: this.frames.hasContent,
+        run: () => this.frames.paste(this.store, nodeId, frame, "overwrite"),
+      },
+      "-",
+      ...tweenItems,
+      "-",
+      this.rotationMenu(nodeId, frame, keyHere),
+    ]);
+  }
+
+  /**
+   * Which way the tween leaving this keyframe turns — Flash's Rotate: Auto /
+   * CW / CCW ×N. Without it the only way to reverse a spin was to retype the
+   * angle 360° away, and the Properties panel shows the angle, not the path.
+   */
+  private rotationMenu(nodeId: NodeId, frame: number, key: Keyframe | null) {
+    const dir = key?.rotateDir ?? null;
+    const turns = Math.abs(key?.rotateTurns ?? 0);
+    const set = (d: RotateDir | null, t: number) => doSetRotation(this.store, nodeId, frame, d, t);
+    return {
+      label: "Rotate",
+      enabled: !!key,
+      items: [
+        { label: "As Keyed", checked: !dir && !turns, run: () => set(null, 0) },
+        { label: "Clockwise", checked: dir === "cw", run: () => set("cw", turns) },
+        { label: "Counter-clockwise", checked: dir === "ccw", run: () => set("ccw", turns) },
+        "-" as const,
+        {
+          label: turns ? `Extra Turns: ${turns}…` : "Extra Turns…",
+          run: () => promptNumber({
+            title: "Extra Turns",
+            label: "Turns",
+            value: turns,
+            min: 0,
+            max: 100,
+            onOk: (v) => set(dir, v),
+          }),
+        },
+      ],
+    };
+  }
+
+  /**
+   * F5 / ⇧F5 / F6 / ⇧F6 with a frame selection: the keys act on the whole
+   * rectangle. Returns false when there is nothing selected, so the caller
+   * falls back to the single-frame behaviour.
+   */
+  applyRangeOp(op: "insert" | "remove" | "keyframes" | "clear"): boolean {
+    const range = this.frameSelection();
+    if (!range) return false;
+    const count = range.to - range.from + 1;
+    if (op === "insert") doInsertFrames(this.store, range.ids, range.from, count);
+    else if (op === "remove") doRemoveFrames(this.store, range.ids, range.from, count);
+    else if (op === "keyframes") doConvertToKeyframes(this.store, range.ids, range.from, range.to);
+    else doClearKeyframes(this.store, range.ids, range.from, range.to);
+    return true;
+  }
+
+  /** Insert or remove one frame on every layer, at the playhead. */
+  allLayersFrameOp(op: "insert" | "remove"): void {
+    const range = this.frameSelection();
+    const from = range?.from ?? this.store.ui.frame;
+    const count = range ? range.to - range.from + 1 : 1;
+    const ids = this.allLayerIds();
+    if (op === "insert") doInsertFrames(this.store, ids, from, count);
+    else doRemoveFrames(this.store, ids, from, count);
+  }
+
+  private applyTween(nodeId: NodeId, frame: number, spec: TweenSpec): void {
+    doSetTween(this.store, nodeId, frame, spec);
+  }
+
+  /** The Ease panel, on the spans under the frame selection or the playhead. */
+  openEase(): void {
+    const targets = easeTargets(this.store);
+    if (!targets.length) return;
+    this.playback.pause();
+    openEaseDialog(this.store, targets);
+  }
+
+  /** True when the timeline owns the current selection, so ⌘C should copy
+   *  frames rather than stage objects. */
+  get hasFrameSelection(): boolean {
+    return FrameClipboard.selectionOf(this.store) !== null;
+  }
+
+  copyFrames(): number { return this.frames.copy(this.store); }
+  cutFrames(): number { return this.frames.cut(this.store); }
+  pasteFrames(mode: PasteMode = "insert"): number {
+    return this.frames.paste(this.store, undefined, undefined, mode);
+  }
+
+  dispose(): void { this.playback.dispose(); }
+}
+
+function uniqueLayerName(store: Store): string {
+  const taken = new Set(store.currentSymbol.layers.map((l) => l.name));
+  for (let i = 1; ; i++) {
+    const name = `Layer ${i}`;
+    if (!taken.has(name)) return name;
+  }
+}
+
+function uniqueGroupName(store: Store): string {
+  const taken = new Set(store.currentSymbol.layers.map((l) => l.name));
+  for (let i = 1; ; i++) {
+    const name = `Group ${i}`;
+    if (!taken.has(name)) return name;
+  }
+}
+
+function rotationName(key: Keyframe): string {
+  const turns = Math.abs(key.rotateTurns ?? 0);
+  if (!key.rotateDir) return turns ? ` · ${key.rotateTurns! > 0 ? "CW" : "CCW"} +${turns}` : "";
+  return ` · ${key.rotateDir === "cw" ? "CW" : "CCW"}${turns ? ` +${turns}` : ""}`;
+}
+

@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - name: Typecheck and build
+        run: npm run build
+      - name: Test
+        run: npm test
+      - name: The build ships no spine-pixi (the Preview's oracle, docs/PREVIEW-RUNTIME-PLAN.md P4)
+        run: |
+          if [ -e dist/vendor/spine-pixi-v8.js ] || grep -l 'vendor/spine-pixi-v8\|SpineTexture' dist/assets/*.js; then
+            echo "::error::spine-pixi-v8 is in dist/; it belongs to npm run dev:oracle only"
+            exit 1
+          fi
+      - name: core/ must not import view, app or io
+        run: |
+          if grep -rn 'from "@/\(view\|app\|io\)' src/core/; then
+            echo "::error::core/ imports from a layer above it"
+            exit 1
+          fi
