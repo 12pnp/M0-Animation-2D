@@ -1,14 +1,16 @@
-import { attachmentType, type Animation, type Attachment, type Key, type Skeleton } from "@/model/skeleton";
+import { attachmentType, type Attachment, type Skeleton } from "@/model/skeleton";
 import { type AttachmentRef, findAttachment, replaceAttachment } from "./attachments";
 import { EditRefused, type Edit } from "./history";
+import { type Bind, bindAt, type BoneWorlds, decodeBinds, encodeBinds, type Frame, frameFor, isWeighted, positions, rewriteDeform, round, type Source } from "./meshLayout";
 import { triangulate } from "./triangulate";
 
 /**
- * Mesh geometry edits (E4-PLAN step 5; Format-Json-Atlas.md §8.4, §8.9, §11.10) on unweighted
- * meshes: vertices are x,y pairs in the slot's bone space, `uvs` are u,v over the untrimmed
- * image, the first `hull` vertices are the outline in order. Deform keys store offsets from the
- * setup vertices, so a move leaves them as they are; adding or deleting a vertex rewrites them
- * (the mesh's own and its linked meshes').
+ * Mesh geometry edits (E4-PLAN steps 5–6; Format-Json-Atlas.md §8.4, §8.9, §11.10). Positions
+ * are in the slot's bone space on the setup pose; `uvs` are u,v over the untrimmed image; the
+ * first `hull` vertices are the outline in order. A weighted mesh needs the setup bones' world
+ * matrices (`bones`) to place its vertices. Deform keys keep their setup-pose meaning: a move
+ * leaves them as they are, adding or deleting a vertex rewrites them (the mesh's own and its
+ * linked meshes').
  */
 
 /** The corners of a region's image in its bone's space, with their UVs: the region as a mesh. */
@@ -47,8 +49,13 @@ export function editableMesh(s: Skeleton, r: AttachmentRef): Attachment {
   if (type !== "mesh" && type !== "linkedmesh") throw new EditRefused(`"${r.key}" is a ${type}; only meshes have vertices to edit here.`);
   if (a.source !== undefined) throw new EditRefused(`"${r.key}" is linked to "${a.source}": edit that mesh's vertices.`);
   if (!a.uvs || !a.vertices || !a.triangles) throw new EditRefused(`"${r.key}" is missing its vertices.`);
-  if (a.vertices.length !== a.uvs.length) throw new EditRefused(`"${r.key}" is bound to bones; editing weighted meshes comes with weights.`);
   return a;
+}
+
+/** The mesh, where its vertices are, and its frame (null for an unweighted mesh without bones). */
+function meshAt(s: Skeleton, r: AttachmentRef, bones: BoneWorlds | undefined): { a: Attachment; f: Frame | null; pos: number[] } {
+  const a = editableMesh(s, r), f = frameFor(s, r, a, bones);
+  return { a, f, pos: positions(a, f) };
 }
 
 /** A triangle `i` belongs to, as its three vertex indices; null when it is in none. */
@@ -67,150 +74,151 @@ function weights(xy: readonly number[], [a, b, c]: readonly [number, number, num
   return [u, v, 1 - u - v];
 }
 
-/** The triangle holding (x, y), with the point's weights in it. */
-export function triangleAt(a: Attachment, x: number, y: number): { tri: [number, number, number]; w: [number, number, number] } | null {
-  const t = a.triangles!, xy = a.vertices!;
+/** The triangle holding (x, y) among `pos` (the mesh's positions; its unweighted vertices by default), with the point's weights in it. */
+export function triangleAt(a: Attachment, x: number, y: number, pos: readonly number[] = a.vertices!): { tri: [number, number, number]; w: [number, number, number] } | null {
+  const t = a.triangles!;
   for (let k = 0; k + 2 < t.length; k += 3) {
     const tri: [number, number, number] = [t[k]!, t[k + 1]!, t[k + 2]!];
-    const w = weights(xy, tri, x, y);
+    const w = weights(pos, tri, x, y);
     if (w && w.every((n) => n >= -1e-9)) return { tri, w };
   }
   return null;
 }
 
+/** Vertices 0..n-1 kept as they are. */
+const keep = (n: number): Source[] => Array.from({ length: n }, (_, v) => v);
+
 const mix = (values: readonly number[], tri: readonly number[], w: readonly number[], c: 0 | 1) =>
   tri.reduce((sum, v, k) => sum + values[v * 2 + c]! * w[k]!, 0);
 
 /**
- * Move vertex `i` to (x, y) in bone space. With `keepImage` the vertex's UV follows it through
- * its triangle's map from position to UV, so the image stays where it was; without, the image
- * stretches with it.
+ * Bone weights blended from several vertices' binds (`parts`: binds and how much each counts):
+ * the four heaviest bones kept, any under 0.01 dropped, normalised, to four decimals.
  */
-export function moveVertex(r: AttachmentRef, i: number, x: number, y: number, keepImage = true): Edit<Skeleton> {
+export function blendWeights(parts: readonly { binds: readonly Bind[]; t: number }[]): { bone: number; w: number }[] {
+  const sum = new Map<number, number>();
+  for (const { binds, t } of parts) for (const b of binds) sum.set(b.bone, (sum.get(b.bone) ?? 0) + b.w * t);
+  return normaliseWeights([...sum].map(([bone, w]) => ({ bone, w })));
+}
+
+/** The four heaviest, those under 0.01 dropped (the heaviest always kept), summing to 1, to four decimals. */
+export function normaliseWeights(ws: readonly { bone: number; w: number }[]): { bone: number; w: number }[] {
+  const sorted = [...ws].filter((x) => x.w > 0).sort((p, q) => q.w - p.w || p.bone - q.bone).slice(0, 4);
+  // The 0.01 cut is on each bone's share, not its raw weight.
+  const all = sorted.reduce((n, x) => n + x.w, 0);
+  const kept = sorted.filter((x, i) => i === 0 || x.w / all >= 0.01);
+  const total = kept.reduce((n, x) => n + x.w, 0);
+  if (!kept.length || !(total > 0)) throw new EditRefused("A vertex needs a bone with weight.");
+  const out = kept.map((x) => ({ bone: x.bone, w: round(x.w / total, 4) }));
+  // Rounding leaves the sum a hair off 1: the heaviest takes the difference.
+  out[0] = { bone: out[0]!.bone, w: round(1 - out.slice(1).reduce((n, x) => n + x.w, 0), 4) };
+  return out;
+}
+
+/**
+ * Move vertex `i` to (x, y). With `keepImage` the vertex's UV follows it through its triangle's
+ * map from position to UV, so the image stays where it was; without, the image stretches with
+ * it. A weighted vertex keeps its weights and is bound again where it lands.
+ */
+export function moveVertex(r: AttachmentRef, i: number, x: number, y: number, keepImage = true, bones?: BoneWorlds): Edit<Skeleton> {
   return (s) => {
-    const a = editableMesh(s, r), n = a.uvs!.length / 2;
+    const { a, f, pos } = meshAt(s, r, bones), n = a.uvs!.length / 2;
     if (!(i >= 0 && i < n)) throw new EditRefused(`The mesh has no vertex ${i}.`);
-    if (a.vertices![i * 2] === x && a.vertices![i * 2 + 1] === y) return s;
-    const vertices = [...a.vertices!];
-    vertices[i * 2] = x; vertices[i * 2 + 1] = y;
+    if (round(pos[i * 2]!, 4) === round(x, 4) && round(pos[i * 2 + 1]!, 4) === round(y, 4)) return s;
     const uvs = [...a.uvs!];
     const tri = keepImage ? triangleOf(a, i) : null;
-    const w = tri && weights(a.vertices!, tri, x, y);
+    const w = tri && weights(pos, tri, x, y);
     if (tri && w) {
       uvs[i * 2] = mix(a.uvs!, tri, w, 0);
       uvs[i * 2 + 1] = mix(a.uvs!, tri, w, 1);
+    }
+    let vertices: number[];
+    if (isWeighted(a)) {
+      const binds = decodeBinds(a.vertices!);
+      binds[i] = bindAt(f!, binds[i]!, x, y);
+      vertices = encodeBinds(binds);
+    } else {
+      vertices = [...a.vertices!];
+      vertices[i * 2] = x; vertices[i * 2 + 1] = y;
     }
     return replaceAttachment(s, r, { ...a, vertices, uvs });
   };
 }
 
 /**
- * The mesh with its vertices changed by `change` and triangulated again; every deform key of it
- * and of its linked meshes rewritten by `deform` (old full offsets → new). `edges` dropped.
+ * The mesh with new vertices (positions `pos`, written `vertices`, `uvs`, `hull`), triangulated
+ * again; its deform keys carried vertex by vertex from `sources`. `edges` dropped.
  */
-function reshape(s: Skeleton, r: AttachmentRef, a: Attachment, vertices: number[], uvs: number[], hull: number, deform: (old: number[]) => number[]): Skeleton {
+function reshape(s: Skeleton, r: AttachmentRef, a: Attachment, f: Frame | null, pos: number[], vertices: number[], uvs: number[], hull: number, sources: Source[]): Skeleton {
   const { edges: _, ...rest } = a;
-  const tri = triangulate(vertices, hull);
-  const out = replaceAttachment(s, r, { ...rest, vertices, uvs, hull, triangles: tri.triangles });
-  return remapDeform(out, r, a.vertices!.length, deform);
+  const next: Attachment = { ...rest, vertices, uvs, hull, triangles: triangulate(pos, hull).triangles };
+  return rewriteDeform(replaceAttachment(s, r, next), r, a, next, f, sources);
 }
 
-/** Add a vertex at (x, y) inside the mesh; its UV and its deform offsets come from the triangle it lands in. */
-export function addVertex(r: AttachmentRef, x: number, y: number): Edit<Skeleton> {
+/** Add a vertex at (x, y) inside the mesh; its UV, weights and deform offsets come from the triangle it lands in. */
+export function addVertex(r: AttachmentRef, x: number, y: number, bones?: BoneWorlds): Edit<Skeleton> {
   return (s) => {
-    const a = editableMesh(s, r);
-    const at = triangleAt(a, x, y);
+    const { a, f, pos } = meshAt(s, r, bones);
+    const at = triangleAt(a, x, y, pos);
     if (!at) throw new EditRefused("A new vertex goes inside the mesh; click on its outline to extend it.");
     const { tri, w } = at;
-    const vertices = [...a.vertices!, x, y], uvs = [...a.uvs!, mix(a.uvs!, tri, w, 0), mix(a.uvs!, tri, w, 1)];
-    return reshape(s, r, a, vertices, uvs, a.hull ?? 0, (d) => [...d, mix(d, tri, w, 0), mix(d, tri, w, 1)]);
+    const uvs = [...a.uvs!, mix(a.uvs!, tri, w, 0), mix(a.uvs!, tri, w, 1)];
+    let vertices: number[];
+    if (isWeighted(a)) {
+      const binds = decodeBinds(a.vertices!);
+      binds.push(bindAt(f!, blendWeights(tri.map((v, k) => ({ binds: binds[v]!, t: w[k]! }))), x, y));
+      vertices = encodeBinds(binds);
+    } else vertices = [...a.vertices!, x, y];
+    return reshape(s, r, a, f, [...pos, x, y], vertices, uvs, a.hull ?? 0, [...keep(pos.length / 2), tri.map((v, k) => [v, w[k]!] as const)]);
   };
 }
 
 /** Split the outline edge from outline vertex `k` to the next at `t` (0..1): a new outline vertex. */
-export function addHullVertex(r: AttachmentRef, k: number, t: number): Edit<Skeleton> {
+export function addHullVertex(r: AttachmentRef, k: number, t: number, bones?: BoneWorlds): Edit<Skeleton> {
   return (s) => {
-    const a = editableMesh(s, r), hull = a.hull ?? 0;
+    const { a, f, pos } = meshAt(s, r, bones), hull = a.hull ?? 0;
     if (!(k >= 0 && k < hull)) throw new EditRefused(`The outline has no vertex ${k}.`);
     const j = (k + 1) % hull, at = k + 1;
     const lerp = (v: readonly number[], c: 0 | 1) => v[k * 2 + c]! + (v[j * 2 + c]! - v[k * 2 + c]!) * t;
     const insert = (v: readonly number[], x: number, y: number) => [...v.slice(0, at * 2), x, y, ...v.slice(at * 2)];
-    const vertices = insert(a.vertices!, tidy(lerp(a.vertices!, 0)), tidy(lerp(a.vertices!, 1)));
+    const x = round(lerp(pos, 0), 2), y = round(lerp(pos, 1), 2);
     const uvs = insert(a.uvs!, lerp(a.uvs!, 0), lerp(a.uvs!, 1));
-    return reshape(s, r, a, vertices, uvs, hull + 1, (d) => insert(d, lerp(d, 0), lerp(d, 1)));
+    let vertices: number[];
+    if (isWeighted(a)) {
+      const binds = decodeBinds(a.vertices!);
+      binds.splice(at, 0, bindAt(f!, blendWeights([{ binds: binds[k]!, t: 1 - t }, { binds: binds[j]!, t }]), x, y));
+      vertices = encodeBinds(binds);
+    } else vertices = insert(a.vertices!, x, y);
+    const sources: Source[] = keep(pos.length / 2);
+    sources.splice(at, 0, [[k, 1 - t], [j, t]]);
+    return reshape(s, r, a, f, insert(pos, x, y), vertices, uvs, hull + 1, sources);
   };
 }
 
 /** Delete vertex `i`. Refused when the outline would keep fewer than three vertices. */
-export function deleteVertex(r: AttachmentRef, i: number): Edit<Skeleton> {
+export function deleteVertex(r: AttachmentRef, i: number, bones?: BoneWorlds): Edit<Skeleton> {
   return (s) => {
-    const a = editableMesh(s, r), hull = a.hull ?? 0, n = a.uvs!.length / 2;
+    const { a, f, pos } = meshAt(s, r, bones), hull = a.hull ?? 0, n = a.uvs!.length / 2;
     if (!(i >= 0 && i < n)) throw new EditRefused(`The mesh has no vertex ${i}.`);
     if (i < hull && hull <= 3) throw new EditRefused("A mesh's outline needs at least three vertices.");
     const drop = (v: readonly number[]) => [...v.slice(0, i * 2), ...v.slice(i * 2 + 2)];
-    return reshape(s, r, a, drop(a.vertices!), drop(a.uvs!), i < hull ? hull - 1 : hull, drop);
+    const vertices = isWeighted(a) ? encodeBinds(decodeBinds(a.vertices!).filter((_, v) => v !== i)) : drop(a.vertices!);
+    return reshape(s, r, a, f, drop(pos), vertices, drop(a.uvs!), i < hull ? hull - 1 : hull, keep(n).filter((v) => v !== i));
   };
 }
 
 /** Triangulate the mesh again from its outline and inner vertices. */
-export function retriangulate(r: AttachmentRef): Edit<Skeleton> {
+export function retriangulate(r: AttachmentRef, bones?: BoneWorlds): Edit<Skeleton> {
   return (s) => {
-    const a = editableMesh(s, r);
-    const { triangles } = triangulate(a.vertices!, a.hull ?? 0);
+    const { a, pos } = meshAt(s, r, bones);
+    const { triangles } = triangulate(pos, a.hull ?? 0);
     if (triangles.length === a.triangles!.length && triangles.every((v, k) => v === a.triangles![k])) return s;
     const { edges: _, ...rest } = a;
     return replaceAttachment(s, r, { ...rest, triangles });
   };
 }
 
-/** Inner vertices outside the outline: in no triangle once triangulated. */
-export function verticesOutside(a: Attachment): number[] {
-  return triangulate(a.vertices ?? [], a.hull ?? 0).outside;
-}
-
-/**
- * Every deform key of the mesh at `r` and of the linked meshes that take it as their source,
- * with its offsets (expanded to `length` values, zeros where unwritten) rewritten by `f`, then
- * written back from the first value that is not 0 to the last.
- */
-function remapDeform(s: Skeleton, r: AttachmentRef, length: number, f: (offsets: number[]) => number[]): Skeleton {
-  const targets = new Set([`${r.skin}/${r.slot}/${r.key}`]);
-  for (const k of s.skins ?? []) for (const ss of k.attachments ?? []) for (const e of ss.entries) {
-    const a = e.attachment;
-    if (a.source === r.key && (a.slot ?? ss.slot) === r.slot && (a.skin ?? "default") === r.skin) targets.add(`${k.name}/${ss.slot}/${e.key}`);
-  }
-  if (!s.animations) return s;
-  const key = (k: Key): Key => {
-    if (k.vertices === undefined) return k;
-    const full = new Array<number>(length).fill(0);
-    k.vertices.forEach((v, n) => { const at = (k.offset ?? 0) + n; if (at < length) full[at] = v; });
-    const next = f(full);
-    const first = next.findIndex((v) => v !== 0);
-    const { vertices: _v, offset: _o, ...rest } = k;
-    if (first < 0) return rest as Key;
-    let last = next.length - 1;
-    while (next[last] === 0) last--;
-    return { ...rest, ...(first ? { offset: first } : {}), vertices: next.slice(first, last + 1) } as Key;
-  };
-  return {
-    ...s,
-    animations: s.animations.map((an): Animation => (!an.attachments ? an : {
-      ...an,
-      attachments: an.attachments.map((st) => ({
-        ...st,
-        slots: st.slots.map((sl) => ({
-          ...sl,
-          attachments: sl.attachments.map((g) => (!targets.has(`${st.skin}/${sl.slot}/${g.name}`) ? g : {
-            ...g, timelines: g.timelines.map((tl) => (tl.name !== "deform" ? tl : { ...tl, keys: tl.keys.map(key) })),
-          })),
-        })),
-      })),
-    })),
-  };
-}
-
-/** A position as the stage writes it: two decimals, never -0. */
-function tidy(n: number): number {
-  const v = Math.round(n * 100) / 100;
-  return v === 0 ? 0 : v;
+/** Inner vertices outside the outline (in no triangle once triangulated), given its positions. */
+export function verticesOutside(a: Attachment, pos: readonly number[] = a.vertices ?? []): number[] {
+  return triangulate(pos, a.hull ?? 0).outside;
 }

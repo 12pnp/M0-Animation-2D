@@ -9,7 +9,9 @@ mix-and-match outfit duplicated and changed on screen, posed alike by both runti
 (constraints) done: a transform constraint added, raised, reordered and made skin-required on
 screen, the file saved and posed alike by both runtimes. Step 5 (mesh geometry) done: the
 stickman's torso turned into a mesh and shaped on the stage, saved, posed alike by both
-runtimes. Later steps not started. `npm run check`: 276 tests.
+runtimes. Step 6 (weights) done: the torso mesh bound to three bones on screen, reshaped and
+reweighted, saved, posed alike by both runtimes through its animations. Later steps not started.
+`npm run check`: 283 tests.
 
 E4 makes the editor author a rig, not only animate one: panels and docking (D6), slots,
 attachments, draw order, skins, constraints, mesh editing, PSD import and preferences. It is
@@ -378,11 +380,101 @@ flowchart LR
    what the UVs say, and the outline is the artist's to keep on the image. The browser tool's
    Alt-drag did not hold Alt during the moves; Alt was checked with pointer events carrying it.
 
-## Later steps (planned when step 6 starts)
+## Step 6 — weights
 
-Weights (step 6), PSD import, the sidecar's read and write (view state, guides, references),
-the reference panel, preferences; keying constraint values, deform keys, drawing constraints on
-the stage.
+Meshes get bound to bones: bind a mesh to the bones it should follow with weights worked out
+from distance, see and change each vertex's weights, weight again automatically, unbind; and the
+step 5 geometry edits work on weighted meshes too (Format-Json-Atlas.md §8.9, §11.10).
+
+```mermaid
+flowchart LR
+    SETUP["setup pose<br/>bone world matrices"] --> BIND["edit/weights<br/>bindMesh · unbindMesh<br/>setWeight · autoWeights"]
+    BIND --> V["vertices: n, bone, x, y, w … per vertex"]
+    STAGE["stage, mesh mode"] -->|"move · add · delete<br/>(weighted too)"| GEO["edit/mesh"]
+    GEO --> V
+    BIND & GEO -->|"layout changes"| DEF["deform keys re-expressed<br/>(same world offsets at setup)"]
+    PROPS["properties: bones it follows,<br/>selected vertex's weights"] --> BIND
+    PROPS -->|"show weights of a bone"| STAGE
+```
+
+### Decisions
+
+- **Binding is on the setup pose**: each vertex keeps its place; a bind position is the vertex in
+  that bone's space as the setup pose has it (constraints applied, as the stage shows it). The
+  edits take the setup bones' world matrices as data, so they stay pure.
+- **Automatic weights by distance**: for each vertex, every chosen bone weighs 1 / (d + 1)⁴,
+  d the distance to the bone's segment (origin to tip); the four heaviest are kept, any under
+  0.01 dropped, the rest normalised to sum 1. Deterministic. A mesh bound to one bone is fully
+  on it.
+- **Changing a weight** sets that bone's share for the vertex; the vertex's other bones share
+  the rest in their old proportion. 0 removes the bone from the vertex (not its last one); a
+  bone not yet on the vertex joins it. Weights are written to four decimals, bind positions to
+  four.
+- **Unbinding** writes each vertex in the slot's bone space where the setup pose has it.
+- **Weighted geometry**: moving a vertex keeps its weights and rebinds it where it lands; an
+  added vertex takes the weights of the triangle or edge it lands in (blended, then the four
+  heaviest); deleting drops it and its bindings.
+- **Deform keys keep their setup-pose meaning**: whenever the vertex layout changes (bind,
+  unbind, a weight added or removed, a vertex added or deleted), every key's offsets are turned
+  into world offsets on the setup pose, carried to the new vertices (kept, blended, dropped),
+  and written in the new layout. Exact on the setup pose; under animated bones an offset follows
+  the bones its vertex now follows.
+- **Seeing weights**: with a weighted mesh selected, the properties panel chooses a bone and the
+  stage colours each vertex by that bone's weight (none → full).
+
+### Steps
+
+1. `edit/weights.ts` (`bindMesh`, `unbindMesh`, `setWeight`, `autoWeights`, decode and encode
+   of the weighted layout, the deform re-expression) and the weighted paths of `edit/mesh.ts`.
+   Tests on a converted region and on weighted meshes of spineboy-pro and hero-pro: the setup
+   pose drawn the same after bind, unbind, reweighting and geometry edits; deform keys giving the
+   same setup-pose world offsets; weights summing to 1, at most four; refusals; both runtimes
+   posing alike.
+2. Session: the selected vertex and the weight bone shown; the stage edits weighted meshes and
+   colours vertices by weight.
+3. Properties: bind (bones chosen from a menu, the slot's bone first), the bones a mesh
+   follows (add, remove), Auto weights, Unbind; the selected vertex's weights.
+4. On screen: the stickman's torso mesh bound to its bones, a vertex's weight changed, an
+   animation played with the mesh following; saved, read back.
+
+### Step 6 results
+
+1. `edit/meshLayout.ts` (the two vertex layouts, bind and place on the setup pose, deform keys
+   rewritten vertex by vertex), `edit/weights.ts` (`bindMesh`, `unbindMesh`, `setWeight`,
+   `setMeshBone`, `autoWeights`, `distanceWeights`, `meshBones`); `edit/mesh.ts`'s geometry edits
+   take the setup bones and work on weighted meshes. `tests/weights.test.ts`, 7 tests: the
+   weight rules as a table; binding a spineboy-pro torso and back leaving every vertex in place;
+   unbinding weighted meshes of spineboy-pro and hero-pro keeping the setup pose and every
+   deform key's setup offsets; a weight change keeping the vertex, its deform offsets, and every
+   other vertex's binds and deform offsets exactly as written; auto weights and adding and
+   removing a followed bone; weighted move, add, outline split and delete keeping the other
+   vertices' deform offsets; both runtimes posing each result alike. Planted bugs fail them
+   (deform keys never re-expressed; re-expressing untouched vertices; no normalising).
+   **Fixed while testing:** the 0.01 cut was first applied to raw distance weights, not to each
+   bone's share, so a 7% share was dropped; the distance table test fails on that code.
+   **Changed from the plan:** a vertex whose binds did not change keeps its deform offsets
+   verbatim (going through the setup pose would keep their sum but move them between bones,
+   which changes them under animated bones).
+2. Session: the selected vertex (cleared with the selection), the bone whose weights are shown,
+   and the setup pose's bone matrices (`setupBones`, its own rig, cached per revision and skin).
+   The stage edits weighted meshes and colours each vertex by the shown bone's weight (dark blue
+   none, red full).
+3. Properties: for an unweighted mesh, Bind with a list of bones (the slot's bone first, more
+   from a menu); for a weighted one, the bones it follows (remove, add: weighted again by
+   distance), Show weights, Auto weights, Unbind, and the selected vertex's weights (edit, add a
+   bone at 0.25, Auto weight this vertex).
+4. On screen (the stickman): `torso` converted and bound to hips, chest and torso; two inner
+   vertices added and the left edge split on the weighted mesh; weights shown for hips; the new
+   outline vertex given hips 0.9 (chest and torso shared the rest 5:1, as before); `dance`
+   played with the mesh following. Saved; the same geometry in Node gives the identical file
+   (SHA-256 equal), no profile issue as written, 26 poses through `dance` and `run` alike in both
+   runtimes.
+
+## Later steps (planned when step 7 starts)
+
+PSD import, the sidecar's read and write (view state, guides, references), the reference panel,
+preferences; keying constraint values, deform keys, drawing constraints on the stage, a weight
+brush.
 
 ## Results
 

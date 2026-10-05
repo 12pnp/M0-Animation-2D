@@ -2,6 +2,7 @@ import { readAtlas } from "@/io/atlas";
 import { readSkeleton } from "@/io/skeletonRead";
 import { writeSkeleton } from "@/io/skeletonWrite";
 import { History } from "@/edit/history";
+import type { BoneWorlds } from "@/edit/meshLayout";
 import { newSkeleton } from "@/edit/newSkeleton";
 import type { Atlas } from "@/model/atlas";
 import type { Issue } from "@/model/issue";
@@ -11,7 +12,7 @@ import { animationDuration, DEFAULT_FPS, frameTime, timeFrame } from "@/model/ti
 import type { PhysicsMode } from "@/engine/physics";
 import { atlasImages, NO_IMAGES, type AtlasImages } from "@/engine/regions";
 import { baseName, pickFiles } from "./files";
-import { Poser, type Posed } from "./stage/posed";
+import { boneMatrix, Poser, type Posed } from "./stage/posed";
 
 /** A selection in the rig: what the rig tree, the stage and the properties panel show. */
 export type Selection =
@@ -47,6 +48,9 @@ export class Session {
   skin: string | null = null;
   /** What is selected: a bone, slot, attachment (skin, slot, key), skin or constraint. Not in the document, not undone. */
   selected: Selection | null = null;
+  /** Mesh mode: the selected vertex of the selected mesh, and the bone whose weights the stage colours. */
+  vertex: number | null = null;
+  weightBone: string | null = null;
   /** What reading found, and pages the atlas names that were not given. */
   issues: Issue[] = [];
   /** The document as last opened or saved: undo returns the very object, so undoing back to it is clean. */
@@ -64,6 +68,7 @@ export class Session {
   private step: PhysicsMode = "none";
   private poser: { doc: Skeleton; value: Poser } | null = null;
   private posed: { key: string; value: Posed } | null = null;
+  private setup: { key: string; value: BoneWorlds } | null = null;
   private readonly listeners = new Set<() => void>();
 
   get doc(): Skeleton | null { return this.history?.doc ?? null; }
@@ -75,6 +80,7 @@ export class Session {
   select(sel: Selection | null): void {
     if (sameSelection(sel, this.selected)) return;
     this.selected = sel;
+    this.vertex = null;
     this.changed();
   }
 
@@ -168,6 +174,22 @@ export class Session {
     return this.posed.value;
   }
 
+  /**
+   * Each bone's world matrix on the setup pose (with the shown skin), by bone index: what binding
+   * and weighted mesh edits measure from, whatever the stage is showing. Its own rig, so the
+   * shown pose is not disturbed.
+   */
+  setupBones(): BoneWorlds | null {
+    const doc = this.doc;
+    if (!doc) return null;
+    const key = `${this.history!.revision}|${this.skin}`;
+    if (this.setup?.key !== key) {
+      const p = new Poser(doc, this.images).pose(this.skin, null, 0);
+      this.setup = { key, value: (doc.bones ?? []).map((b) => [...boneMatrix(p, p.bones.get(b.name)!)]) };
+    }
+    return this.setup.value;
+  }
+
   /** Open a skeleton, its atlas and its pages from the given files. Throws when there is no skeleton. */
   async open(files: readonly Source[]): Promise<void> {
     const picked = pickFiles(files);
@@ -200,6 +222,9 @@ export class Session {
     this.pages = pages;
     this.skin = null;
     this.selected = null;
+    this.vertex = null;
+    this.weightBone = null;
+    this.setup = null;
     this.shown = null;
     this.time = 0;
     this.playing = false;

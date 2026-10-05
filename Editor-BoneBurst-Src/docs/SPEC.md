@@ -166,6 +166,8 @@ when written, and a new constraint leaves the pose as it was (`edit/constraints`
 `ui/panels/newConstraint`). Meshes (step 5): a region converts to a mesh that draws the same;
 with a mesh selected on the setup pose the stage edits its vertices (`ui/stage/meshMode`,
 `edit/mesh`, triangulated by `edit/triangulate`), and deform keys keep meaning what they meant.
+Weights (step 6): meshes bind to bones by distance and are reweighted on the setup pose
+(`edit/weights`, `edit/meshLayout`), whose bone matrices the session gives the edits as data.
 
 **Docking (D6, E4):** the window is the toolbar and status line around a Dockview dock
 (`dockview-core`, the only npm runtime dependency). Every panel is a Dockview panel, under an id

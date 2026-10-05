@@ -7,7 +7,7 @@ import type { Session } from "../session";
 import { type Camera, fit, pan, toScreen, toWorld, zoomAt } from "./camera";
 import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, scaleFactors, type ScreenBone, tidy, type Tool, turn, turnSign } from "./gizmo";
 import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix } from "./posed";
-import { hitMesh, meshView, type MeshView, toBone } from "./meshMode";
+import { hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
 import { Renderer } from "./renderer";
 
 /** How far from the selected bone's origin a press still grabs it, in pixels (the gizmo's ring). */
@@ -63,8 +63,7 @@ export class Stage {
   private size = { width: 1, height: 1 };
   private dpr = 1;
   private drag: Drag | null = null;
-  /** Mesh mode: the vertex selected (by the mesh it is in), and the vertex being dragged. */
-  private vertex: { mesh: string; index: number } | null = null;
+  /** Mesh mode: the vertex being dragged. The selected one is the session's. */
   private vertexDrag: { view: MeshView; index: number } | null = null;
   private panning: { x: number; y: number } | null = null;
   private queued = false;
@@ -174,8 +173,8 @@ export class Stage {
 
   /** The selected vertex of `view`, or -1. */
   private selectedVertex(view: MeshView): number {
-    const v = this.vertex;
-    return v && v.mesh === JSON.stringify(view.ref) && v.index < view.world.length / 2 ? v.index : -1;
+    const v = this.session.vertex;
+    return v !== null && v < view.world.length / 2 ? v : -1;
   }
 
   private screenOf(view: MeshView): number[] {
@@ -206,9 +205,12 @@ export class Stage {
       g.stroke();
     }
     const chosen = this.selectedVertex(view);
+    // Weights of the bone the properties panel shows: none (dark blue) to full (red).
+    const doc = this.session.doc!, wb = this.session.weightBone;
+    const weightBone = view.binds && wb !== null ? (doc.bones ?? []).findIndex((b) => b.name === wb) : -1;
     for (let i = 0; i < sp.length / 2; i++) {
       const [x, y] = at(i), r = i === chosen ? 4.5 : 3;
-      g.fillStyle = i === chosen ? accent : view.locked ? muted : "#ffffff";
+      g.fillStyle = weightBone >= 0 ? heat(weightOf(view, i, weightBone)) : i === chosen ? accent : view.locked ? muted : "#ffffff";
       g.strokeStyle = accent;
       g.beginPath(); g.rect(x - r, y - r, r * 2, r * 2); g.fill(); g.stroke();
     }
@@ -221,7 +223,7 @@ export class Stage {
     const i = view ? this.selectedVertex(view) : -1;
     if (!view || i < 0 || !h) return false;
     try {
-      if (h.apply(`Delete vertex ${i} of ${view.ref.key}`, deleteVertex(view.ref, i))) this.vertex = null;
+      if (h.apply(`Delete vertex ${i} of ${view.ref.key}`, deleteVertex(view.ref, i, this.session.setupBones() ?? undefined))) this.session.vertex = null;
     } catch (err) {
       if (!(err instanceof EditRefused)) throw err;
       this.onStatus(err.message);
@@ -237,19 +239,19 @@ export class Stage {
   private meshDown(view: MeshView, sx: number, sy: number): boolean {
     const hit = hitMesh(this.screenOf(view), view.triangles, view.hull, sx, sy);
     if (!hit) return false;
-    const mesh = JSON.stringify(view.ref), h = this.session.history!;
-    if (hit.kind === "vertex") { this.vertex = { mesh, index: hit.index }; this.redraw(); }
+    const h = this.session.history!, bones = this.session.setupBones() ?? undefined;
+    if (hit.kind === "vertex") { this.session.vertex = hit.index; this.session.changed(); }
     if (view.locked) { this.onStatus(view.locked); return true; }
     const n = view.world.length / 2;
     h.begin(hit.kind === "vertex" ? `Move vertex ${hit.index} of ${view.ref.key}` : `Add a vertex to ${view.ref.key}`);
     try {
       if (hit.kind === "edge") {
-        h.apply("step", addHullVertex(view.ref, hit.after, hit.t));
-        this.vertex = { mesh, index: hit.after + 1 };
+        h.apply("step", addHullVertex(view.ref, hit.after, hit.t, bones));
+        this.session.vertex = hit.after + 1;
       } else if (hit.kind === "inside") {
         const [x, y] = toBone(view, toWorld(this.camera, this.size, sx, sy));
-        h.apply("step", addVertex(view.ref, x, y));
-        this.vertex = { mesh, index: n };
+        h.apply("step", addVertex(view.ref, x, y, bones));
+        this.session.vertex = n;
       }
     } catch (err) {
       h.cancel();
@@ -257,7 +259,7 @@ export class Stage {
       this.onStatus(err.message);
       return true;
     }
-    this.vertexDrag = { view, index: this.vertex!.index };
+    this.vertexDrag = { view, index: this.session.vertex! };
     this.session.changed();
     return true;
   }
@@ -266,7 +268,7 @@ export class Stage {
   private vertexTo(at: Point, stretch: boolean): void {
     const d = this.vertexDrag!, [x, y] = toBone(d.view, at);
     try {
-      this.session.history!.apply("step", moveVertex(d.view.ref, d.index, x, y, !stretch));
+      this.session.history!.apply("step", moveVertex(d.view.ref, d.index, x, y, !stretch, this.session.setupBones() ?? undefined));
     } catch (err) {
       if (!(err instanceof EditRefused)) throw err;
       this.onStatus(err.message);
@@ -468,6 +470,13 @@ function drawBone(g: CanvasRenderingContext2D, b: ScreenBone, color: string, sel
   g.globalAlpha = 1;
   g.beginPath(); g.arc(b.x0, b.y0, 2.5, 0, Math.PI * 2); g.fill();
   g.restore();
+}
+
+/** A weight as a colour: 0 dark blue, through green and yellow, to 1 red. */
+function heat(w: number): string {
+  const t = Math.max(0, Math.min(1, w));
+  const hue = 240 * (1 - t);
+  return `hsl(${hue}, 90%, ${t === 0 ? 30 : 50}%)`;
 }
 
 function arrowHead(g: CanvasRenderingContext2D, x: number, y: number, angle: number): void {

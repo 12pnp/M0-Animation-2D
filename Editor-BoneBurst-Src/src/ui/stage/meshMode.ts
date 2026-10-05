@@ -1,6 +1,7 @@
 import { type AttachmentRef, findAttachment } from "@/edit/attachments";
 import { editableMesh } from "@/edit/mesh";
 import { EditRefused } from "@/edit/history";
+import { type Bind, decodeBinds, isWeighted } from "@/edit/meshLayout";
 import { attachmentType, type Skeleton } from "@/model/skeleton";
 import { boneMatrix, type Posed } from "./posed";
 import type { Point } from "./gizmo";
@@ -20,6 +21,13 @@ export interface MeshView {
   readonly bone: readonly number[];
   /** Why the vertices cannot be edited, or null when they can. */
   readonly locked: string | null;
+  /** Each vertex's bones and weights, for a weighted mesh. */
+  readonly binds: readonly (readonly Bind[])[] | null;
+}
+
+/** Vertex `i`'s weight for bone index `bone` (0 when the bone does not hold it). */
+export function weightOf(view: MeshView, i: number, bone: number): number {
+  return view.binds?.[i]?.find((b) => b.bone === bone)?.w ?? 0;
 }
 
 /** The selected attachment as the stage shows it in mesh mode, or null when it is not a mesh. */
@@ -50,7 +58,7 @@ export function meshView(doc: Skeleton, p: Posed, ref: AttachmentRef): MeshView 
   }
   let locked: string | null = null;
   try { editableMesh(doc, ref); } catch (err) { if (!(err instanceof EditRefused)) throw err; locked = err.message; }
-  return { ref, world, triangles: a.triangles ?? [], hull: a.hull ?? 0, bone: m, locked };
+  return { ref, world, triangles: a.triangles ?? [], hull: a.hull ?? 0, bone: m, locked, binds: isWeighted(a) ? decodeBinds(a.vertices) : null };
 }
 
 /** A world point in the slot's bone space, to two decimals as a drag writes it. */

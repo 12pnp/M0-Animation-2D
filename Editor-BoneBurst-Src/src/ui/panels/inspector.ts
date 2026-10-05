@@ -5,10 +5,12 @@ import { type ConstraintPatch, type ConstraintRef, findConstraint, IK_SCALE_Y, P
   ROTATE_MODES, SPACING_MODES, TRANSFORM_PROPERTIES, updateConstraint } from "@/edit/constraints";
 import { type Edit, EditRefused } from "@/edit/history";
 import { regionToMesh, retriangulate, verticesOutside } from "@/edit/mesh";
+import { type BoneWorlds, decodeBinds, frameFor, isWeighted, positions } from "@/edit/meshLayout";
+import { autoWeights, bindMesh, meshBones, setMeshBone, setWeight, unbindMesh } from "@/edit/weights";
 import { moveAttachment, renameSkin, setSkinMember } from "@/edit/skins";
 import { BLEND_MODES, renameSlot, updateSlot } from "@/edit/slots";
 import { BONE_DEFAULTS, boneInherit, boneNumber, type BoneNumber, CONSTRAINT_DEFAULTS, constraintValue, DEPENDENT_DEFAULTS, TRANSFORM_MIXES, transformTargets } from "@/model/defaults";
-import { attachmentType, type Constraint, type Skeleton, type TransformFrom } from "@/model/skeleton";
+import { type Attachment, attachmentType, type Constraint, type Skeleton, type TransformFrom } from "@/model/skeleton";
 import type { Selection, Session } from "../session";
 import { animatedLocal, localUnder, Poser } from "../stage/posed";
 import { empty, heading } from "./outline";
@@ -42,6 +44,9 @@ export class Inspector {
   /** What the panel shows, as a key; undefined until it first draws. */
   private shown: string | undefined;
   private inputs = new Map<string, HTMLInputElement | HTMLSelectElement>();
+  /** The bones chosen to bind the selected unweighted mesh to (the slot's bone first), until Bind. */
+  private binding: string[] = [];
+  private bindingFor = "";
 
   constructor(private readonly session: Session) {
     this.element = document.createElement("div");
@@ -54,7 +59,7 @@ export class Inspector {
     const s = this.session, doc = s.doc, sel = s.selected, anim = s.animation;
     // The selected object changes exactly when its values do; the frame matters in Animate mode.
     const target = doc && sel ? selectedObject(doc, sel) : undefined;
-    const key = JSON.stringify([!!doc, sel, anim ? [anim.name, s.frame, s.history?.revision] : null]) + (target ? identity(target) : "");
+    const key = JSON.stringify([!!doc, sel, anim ? [anim.name, s.frame, s.history?.revision] : null, s.vertex, s.weightBone, this.binding]) + (target ? identity(target) : "");
     if (this.shown === key) return;
     // Not under a field being typed in, nor while playing: it shows the document once that ends.
     // A checkbox or menu commits as it changes, so keeping focus on one does not hold the panel.
@@ -327,19 +332,87 @@ export class Inspector {
       form.append(empty("A linked mesh takes its vertices from its source; select that mesh to shape them."));
       return;
     }
-    const n = (a.uvs?.length ?? 0) / 2, weighted = a.vertices?.length !== a.uvs?.length;
+    const s = this.session, doc = s.doc!, n = (a.uvs?.length ?? 0) / 2, weighted = isWeighted(a);
     form.append(this.textField("path", "Image", a.path ?? a.name ?? r.key, (v) => updateAttachment(r, { path: v === (a.name ?? r.key) ? undefined : v }), () => `Set image of ${r.key}`));
     form.append(this.textField("color", "Colour", a.color ?? "ffffffff", (v) => updateAttachment(r, { color: v.toLowerCase() === "ffffffff" ? undefined : v }), () => `Set colour of ${r.key}`));
     form.append(readOnly("Vertices", `${n} (${a.hull ?? 0} on the outline)`));
     form.append(readOnly("Triangles", String((a.triangles?.length ?? 0) / 3)));
-    form.append(readOnly("Bound to bones", weighted ? "yes" : "no"));
-    if (weighted) { form.append(empty("Weighted meshes are shaped once weights arrive; shown as they are.")); return; }
-    const outside = verticesOutside(a);
+    const bones = s.setupBones()!;
+    const outside = verticesOutside(a, positions(a, frameFor(doc, r, a, bones)));
     if (outside.length) form.append(empty(`${outside.length} inner vertex${outside.length > 1 ? "es lie" : " lies"} outside the outline and in no triangle.`));
-    form.append(this.action("Triangulate", "Triangulate again from the outline and the inner vertices", () => retriangulate(r), `Triangulate ${r.key}`));
+    form.append(this.action("Triangulate", "Triangulate again from the outline and the inner vertices", () => retriangulate(r, bones), `Triangulate ${r.key}`));
+    const names = (doc.bones ?? []).map((b) => b.name);
+    if (!weighted) this.bindFields(form, r, names, bones);
+    else this.weightFields(form, r, a, names, bones);
     form.append(empty(this.session.animation
       ? "Switch to the setup pose to shape the mesh on the stage."
       : "On the stage: drag a vertex (Alt stretches the image), click inside or on the outline to add one, Delete removes the selected one."));
+  }
+
+  /** An unweighted mesh: the bones to bind it to (the slot's bone first), and Bind. */
+  private bindFields(form: HTMLElement, r: AttachmentRef, names: readonly string[], bones: BoneWorlds): void {
+    const id = JSON.stringify(r);
+    if (this.bindingFor !== id) {
+      this.bindingFor = id;
+      this.binding = [this.session.doc!.slots!.find((x) => x.name === r.slot)!.bone];
+    }
+    form.append(subheading("Bind to bones"));
+    for (const b of this.binding) {
+      form.append(this.choice(`bind/${b}`, b, true, () => { this.binding = this.binding.filter((x) => x !== b); }));
+    }
+    const rest = names.filter((n) => !this.binding.includes(n));
+    form.append(this.choiceMenu("bindAdd", "Add", rest, (v) => { this.binding = [...this.binding, v]; }));
+    form.append(this.action("Bind", "Bind the mesh to these bones, weighted by distance; every vertex stays where it is", () => bindMesh(r, this.binding, bones),
+      `Bind ${r.key} to ${this.binding.join(", ")}`));
+  }
+
+  /** A weighted mesh: the bones it follows, the weights shown on the stage, the selected vertex's weights. */
+  private weightFields(form: HTMLElement, r: AttachmentRef, a: Attachment, names: readonly string[], bones: BoneWorlds): void {
+    const s = this.session, follows = meshBones(a).map((i) => names[i]!);
+    form.append(subheading("Bones it follows"));
+    for (const b of follows) {
+      form.append(this.checkField(`follows/${b}`, b, true, () => setMeshBone(r, b, false, bones), () => `Stop ${r.key} following ${b}`));
+    }
+    form.append(this.selectField("followsAdd", "Add", [["", "— a bone…"], ...names.filter((n) => !follows.includes(n)).map((n): [string, string] => [n, n])], "",
+      (v) => (v ? setMeshBone(r, v, true, bones) : null), (v) => `Make ${r.key} follow ${v}`));
+    const show = document.createElement("select");
+    show.append(new Option("— none", ""), ...follows.map((b) => new Option(b, b)));
+    show.value = s.weightBone && follows.includes(s.weightBone) ? s.weightBone : "";
+    show.addEventListener("change", () => { s.weightBone = show.value || null; s.changed(); });
+    form.append(field("Show weights", show));
+    form.append(this.action("Auto weights", "Weight every vertex again by its distance to the bones the mesh follows", () => autoWeights(r, bones), `Weight ${r.key} by distance`));
+    form.append(this.action("Unbind", "Free the mesh from its bones; every vertex stays where it is", () => unbindMesh(r, bones), `Unbind ${r.key}`));
+    const v = s.vertex, binds = decodeBinds(a.vertices!);
+    if (v === null || !binds[v]) { form.append(empty("Select a vertex on the stage to see and change its weights.")); return; }
+    form.append(subheading(`Vertex ${v}`));
+    for (const b of binds[v]!) {
+      const name = names[b.bone]!;
+      form.append(this.textField(`w/${name}`, name, format(b.w), (x) => setWeight(r, v, name, number(x, name), bones), () => `Set ${name}'s weight on vertex ${v}`, undefined, "decimal"));
+    }
+    form.append(this.selectField("wAdd", "Add", [["", "— a bone at 0.25…"], ...names.filter((n) => !binds[v]!.some((b) => names[b.bone] === n)).map((n): [string, string] => [n, n])], "",
+      (x) => (x ? setWeight(r, v, x, 0.25, bones) : null), (x) => `Give ${x} weight on vertex ${v}`));
+    form.append(this.action("Auto weight this vertex", "Weight the selected vertex again by distance", () => autoWeights(r, bones, [v]), `Weight vertex ${v} by distance`));
+  }
+
+  /** A checkbox that changes panel state, not the document. */
+  private choice(key: string, label: string, value: boolean, onChange: (on: boolean) => void): HTMLLabelElement {
+    const box = document.createElement("input");
+    box.type = "checkbox";
+    box.checked = value;
+    box.addEventListener("change", () => { onChange(box.checked); this.shown = undefined; this.update(true); });
+    this.inputs.set(key, box);
+    const row = field(label, box);
+    row.classList.add("check");
+    return row;
+  }
+
+  /** A menu that changes panel state, not the document. */
+  private choiceMenu(key: string, label: string, options: readonly string[], onPick: (v: string) => void): HTMLLabelElement {
+    const select = document.createElement("select");
+    select.append(new Option("— a bone…", ""), ...options.map((o) => new Option(o, o)));
+    select.addEventListener("change", () => { if (select.value) onPick(select.value); this.shown = undefined; this.update(true); });
+    this.inputs.set(key, select);
+    return field(label, select);
   }
 
   /** A button that applies one edit. */
