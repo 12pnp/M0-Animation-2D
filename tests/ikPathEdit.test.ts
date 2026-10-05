@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { ikPathDrag, ikTargetFor, targetLocalAt, withBendFlippedAt, withTargetAt, type IkPathDrag, type Point } from "@/core/doc/ikPathEdit";
 import { pathDragMode } from "@/core/doc/pathEdit";
 import { apply } from "@/core/math/Matrix2D";
-import { posedSymbol } from "@/core/spine/spinePose";
+import { posedSymbol } from "@/core/boneburst/boneburstPose";
 import type { Animation, IkConstraint, Project, SymbolItem } from "@/core/doc/types";
 import type { NodeId } from "@/core/doc/ids";
 import { loadStickman, type Stickman } from "./fixtures/stickman";

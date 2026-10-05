@@ -1,6 +1,6 @@
 import { fileLengthsOf } from "./importAttachments";
 import type { Animation, ColorTransform, DisplayRef, IkKey, MeshData, OutlineWeights, TransformConstraint, ImageItem, Layer, Node, Project, SymbolItem, Track } from "@/core/doc/types";
-import { outlineAsMesh, pointToSpine, skinnedOutline } from "@/core/doc/boxes";
+import { outlineAsMesh, pointToBoneBurst, skinnedOutline } from "@/core/doc/boxes";
 import { deformKeysOf, type DeformTarget } from "@/core/mesh/deform";
 import { byOrder } from "@/core/doc/constraintOrder";
 import { inheritTimeline } from "@/core/doc/inherit";
@@ -11,7 +11,7 @@ import { descendantsOf, maskGroups } from "@/core/doc/layerTree";
 import { orderAt, toOffsets } from "@/core/doc/drawOrder";
 import { eventValues } from "@/core/doc/events";
 import { usedMixes } from "@/core/doc/transformKeys";
-import { type MeshBones, meshUvs, spineDeform, spineVertices } from "@/core/mesh/meshPose";
+import { type MeshBones, meshUvs, boneburstDeform, boneburstVertices } from "@/core/mesh/meshPose";
 import { TC_CHANNELS, type TcChannel } from "@/core/doc/types";
 import type { Contour } from "@/core/atlas/contour";
 import { nz } from "@/core/math/angle";
@@ -21,7 +21,7 @@ import { skinBoneSet, skinDisplayOf } from "@/core/doc/skins";
 import { sequenceNaming } from "@/core/doc/sequence";
 import { withoutNonessential } from "./nonessential";
 import { sanitizeExportSettings } from "@/core/export/settings";
-import { pathLengths, pathToSpine, physicsToSpine, runtimeSolved, sliderToSpine } from "@/core/doc/constraints";
+import { pathLengths, pathToBoneBurst, physicsToBoneBurst, runtimeSolved, sliderToBoneBurst } from "@/core/doc/constraints";
 import { childFrame, displayContext, evaluateSymbol, localAt } from "@/core/doc/pose";
 import { rotationDelta, sampleColorRaw, sampleTransformRaw } from "@/core/doc/timeline";
 import type { Transform } from "@/core/math/Transform";
@@ -29,37 +29,37 @@ import { type EaseSegment, easeOf, easeSegments, sameEase, type TweenChannel, ty
 import type { ExportDiagnostic } from "@/core/export/diagnostics";
 import { isAtlasName } from "./atlas";
 import { animationRefs, bonesToIndices, type CarriedRef, constraintRefs, lastTime, regionsOf, SKIN_CONSTRAINT_KINDS, skinRefs } from "./carry";
-import { keyTime, keyValues, regionCentre, type SpineKeyValues, type SpineLocal, toSpineLocal } from "./transform";
+import { keyTime, keyValues, regionCentre, type BoneBurstKeyValues, type BoneBurstLocal, toBoneBurstLocal } from "./transform";
 import {
-  SPINE_VERSION,
-  type SpineAnimation,
-  type SpineAttachmentKey,
-  type SpineBlendMode,
-  type SpineBone,
-  type SpineAttachment,
-  type SpineBoneTimelines,
-  type SpineClippingAttachment,
-  type SpineConstraint,
-  type SpineCurve,
-  type SpineDrawOrderKey,
-  type SpineEventData,
-  type SpineEventKey,
-  type SpineIkConstraint,
-  type SpineTransformConstraint,
-  type SpineTransformKey,
-  type SpineIkKey,
-  type SpineRaw,
-  type SpineSkin,
-  type SpineRegionAttachment,
-  type SpineRgba2Key,
-  type SpineRgbaKey,
-  type SpineSkeletonFile,
-  type SpineSlot,
-  type SpineSlotTimelines,
+  BONEBURST_VERSION,
+  type BoneBurstAnimation,
+  type BoneBurstAttachmentKey,
+  type BoneBurstBlendMode,
+  type BoneBurstBone,
+  type BoneBurstAttachment,
+  type BoneBurstBoneTimelines,
+  type BoneBurstClippingAttachment,
+  type BoneBurstConstraint,
+  type BoneBurstCurve,
+  type BoneBurstDrawOrderKey,
+  type BoneBurstEventData,
+  type BoneBurstEventKey,
+  type BoneBurstIkConstraint,
+  type BoneBurstTransformConstraint,
+  type BoneBurstTransformKey,
+  type BoneBurstIkKey,
+  type BoneBurstRaw,
+  type BoneBurstSkin,
+  type BoneBurstRegionAttachment,
+  type BoneBurstRgba2Key,
+  type BoneBurstRgbaKey,
+  type BoneBurstSkeletonFile,
+  type BoneBurstSlot,
+  type BoneBurstSlotTimelines,
 } from "./types";
 
-export interface SpineExport {
-  skeleton: SpineSkeletonFile;
+export interface BoneBurstExport {
+  skeleton: BoneBurstSkeletonFile;
   diagnostics: ExportDiagnostic[];
   /** Library images the skeleton draws, so the atlas packs only those. */
   usedImages: ItemId[];
@@ -103,7 +103,7 @@ export interface Run { start: number; end: number; anim: Animation | null; local
 interface Scope {
   sym: SymbolItem;
   depth: number;
-  /** The path of this scope's nodes (see `SpineExport.paths`), "" at the root. */
+  /** The path of this scope's nodes (see `BoneBurstExport.paths`), "" at the root. */
   key: string;
   /** Prefix of every bone name here, "" at the root. */
   prefix: string;
@@ -159,7 +159,7 @@ export interface ExportOptions {
    */
   maskShape?: (item: ImageItem) => Contour;
   /** The skeleton without the editor's keys: what the stage's Spine pose
-   *  needs (`spinePose.ts`), which sets the keyed pose itself. Carried
+   *  needs (`boneburstPose.ts`), which sets the keyed pose itself. Carried
    *  timelines are still written, and a slider's animation whole. */
   setupOnly?: boolean;
 }
@@ -169,15 +169,15 @@ function rectangleShape(item: ImageItem): Contour {
   return { points: [0, 0, w, 0, w, h, 0, h], islands: 0, holes: 0, soft: false };
 }
 
-export function exportSpine(
+export function exportBoneBurst(
   project: Project, symbolId: ItemId = project.rootSymbolId, options: ExportOptions = {},
-): SpineExport {
+): BoneBurstExport {
   const diagnostics: ExportDiagnostic[] = [];
   const usedImages = new Set<ItemId>();
   const sym = project.items[symbolId];
   if (!isSymbol(sym)) {
     diagnostics.push({ severity: "error", message: "There is no symbol to export." });
-    return { skeleton: { skeleton: { spine: SPINE_VERSION }, bones: [] }, diagnostics, usedImages: [], names: new Map(), paths: new Map(), slots: new Map(), displayKeys: new Map() };
+    return { skeleton: { skeleton: { spine: BONEBURST_VERSION }, bones: [] }, diagnostics, usedImages: [], names: new Map(), paths: new Map(), slots: new Map(), displayKeys: new Map() };
   }
   const fps = project.frameRate;
 
@@ -192,19 +192,19 @@ export function exportSpine(
   // An opened Spine file brings its own root bone, whatever it is called;
   // a bone named "root" at the top is one too. Otherwise one is added.
   const ownRoot = rootBoneOf(sym);
-  const bones: SpineBone[] = ownRoot ? [] : [{ name: ROOT_BONE }];
-  const slots: SpineSlot[] = [];
+  const bones: BoneBurstBone[] = ownRoot ? [] : [{ name: ROOT_BONE }];
+  const slots: BoneBurstSlot[] = [];
   const slotPaths = new Map<string, string>();
   const displayKeys = new Map<string, Map<number, string>>();
-  const attachments: Record<string, Record<string, SpineAttachment>> = {};
-  const constraints: Array<SpineIkConstraint | SpineTransformConstraint> = [];
+  const attachments: Record<string, Record<string, BoneBurstAttachment>> = {};
+  const constraints: Array<BoneBurstIkConstraint | BoneBurstTransformConstraint> = [];
   /** The exported symbol's constraints as written, for its IK keys. */
-  const rootIk = new Map<IkId, SpineIkConstraint>();
-  const rootTc = new Map<TcId, SpineTransformConstraint>();
+  const rootIk = new Map<IkId, BoneBurstIkConstraint>();
+  const rootTc = new Map<TcId, BoneBurstTransformConstraint>();
   /** The exported symbol's physics, slider and path constraints as written, for its skins. */
   const rootCn = new Map<CnId, Record<string, unknown>>();
   /** The exported symbol's skins' attachments: skin → slot → key. */
-  const skinAttachments = new Map<string, Record<string, Record<string, SpineAttachment>>>();
+  const skinAttachments = new Map<string, Record<string, Record<string, BoneBurstAttachment>>>();
   const skinsWarned = new Set<ItemId>();
   const runtimeWarned = new Set<ItemId>();
   const tcKeysWarned = new Set<ItemId>();
@@ -216,7 +216,7 @@ export function exportSpine(
   const setupPoses = new Map<ItemId, Map<NodeId, { world: Matrix2D }>>();
   const setupOf = (sym: SymbolItem) => setupPoses.get(sym.id) ?? setupPoses.set(sym.id, evaluateSymbol(sym, null, 0, "setup", null).byNode).get(sym.id)!;
   const eventKeysWarned = new Set<ItemId>();
-  const setups = new Map<string, SpineLocal>();
+  const setups = new Map<string, BoneBurstLocal>();
   const paths = new Map<string, string>();
   const plans: SlotPlan[] = [];
   let clipCount = 0;
@@ -262,13 +262,13 @@ export function exportSpine(
 
     for (const node of nodesInHierarchyOrder(s)) {
       if (dropped(node.id) || rides(s, node)) continue;
-      const setup = toSpineLocal(node.bind);
+      const setup = toBoneBurstLocal(node.bind);
       const name = nameOf(node.id);
       setups.set(name, setup);
       paths.set(pathOf(node.id), name);
       const parent = node === ownRoot ? undefined
         : node.parentId && !dropped(node.parentId) ? nameOf(node.parentId) : scope.parentBone;
-      const bone: SpineBone = parent === undefined ? { name, ...withoutDefaults(setup) } : { name, parent, ...withoutDefaults(setup) };
+      const bone: BoneBurstBone = parent === undefined ? { name, ...withoutDefaults(setup) } : { name, parent, ...withoutDefaults(setup) };
       if (node.kind === "bone" && node.boneLength) bone.length = node.boneLength;
       if (node.inherit && node.inherit !== "normal") bone.inherit = node.inherit;
       if (node.kind === "bone" && node.boneColor) bone.color = node.boneColor;
@@ -290,7 +290,7 @@ export function exportSpine(
       // that parent (the stage's rule, `applyIk`).
       const parent = effector.parentId && !dropped(effector.parentId) ? effector.parentId : null;
       const chain = k.chain > 0 && parent ? [nameOf(parent), nameOf(effector.id)] : [nameOf(effector.id)];
-      const ik: SpineIkConstraint = { type: "ik", name: scope.prefix + k.name, bones: chain, target: nameOf(target.id) };
+      const ik: BoneBurstIkConstraint = { type: "ik", name: scope.prefix + k.name, bones: chain, target: nameOf(target.id) };
       if (k.weight !== 1) ik.mix = k.weight;
       // The y flip mirrors the rig, and a mirrored two-bone chain bends the
       // other way: the editor's positive bend (y down) is Spine's negative.
@@ -326,17 +326,17 @@ export function exportSpine(
       const add = (id: CnId, c: Record<string, unknown>) => { constraints.push(c as never); rootCn.set(id, c); };
       for (const k of s.physics ?? []) {
         const bone = named(k.boneId);
-        if (bone) add(k.id, physicsToSpine(k, bone)); else skip("Physics constraint", k.name);
+        if (bone) add(k.id, physicsToBoneBurst(k, bone)); else skip("Physics constraint", k.name);
       }
       for (const k of s.paths ?? []) {
         const bones = k.boneIds.map(named).filter((n): n is string => !!n);
         const slot = s.nodes[k.pathId]?.kind === "path" ? named(k.pathId) : null;
-        if (bones.length && slot) add(k.id, pathToSpine(k, bones, slot)); else skip("Path constraint", k.name);
+        if (bones.length && slot) add(k.id, pathToBoneBurst(k, bones, slot)); else skip("Path constraint", k.name);
       }
       for (const k of s.sliders ?? []) {
         const anim = s.animations.find((a) => a.id === k.animId);
         const bone = k.boneId ? named(k.boneId) : null;
-        if (anim && (!k.boneId || bone)) add(k.id, sliderToSpine(k, anim.name, bone)); else skip("Slider", k.name);
+        if (anim && (!k.boneId || bone)) add(k.id, sliderToBoneBurst(k, anim.name, bone)); else skip("Slider", k.name);
       }
     } else if (runtimeSolved(s) && !runtimeWarned.has(s.id)) {
       runtimeWarned.add(s.id);
@@ -362,19 +362,19 @@ export function exportSpine(
       const name = nameOf(node.id);
       const riding = rides(s, node);
       const keys = new Map<number, string>();
-      const slotAttachments: Record<string, SpineAttachment> = {};
+      const slotAttachments: Record<string, BoneBurstAttachment> = {};
       const taken = new Set<string>();
       const symbolDisplays: Array<[number, DisplayRef]> = [];
       /** The attachment a display writes under `key`: as an opened file had
        *  it, a mesh, or a region. Only the default skin's meshes take deform keys. */
       /** `skin` null: the node's own display `index`. */
-      const attachmentOf = (ref: DisplayRef, item: ImageItem, key: string, index: number, skin: string | null): SpineAttachment => {
+      const attachmentOf = (ref: DisplayRef, item: ImageItem, key: string, index: number, skin: string | null): BoneBurstAttachment => {
         const att = attachmentBody(ref, item, key, index, skin);
         // The attachment's own colour (`DisplayRef.tint`).
         if (ref.tint) (att as unknown as Record<string, unknown>).color = ref.tint;
         return att;
       };
-      const attachmentBody = (ref: DisplayRef, item: ImageItem, key: string, index: number, skin: string | null): SpineAttachment => {
+      const attachmentBody = (ref: DisplayRef, item: ImageItem, key: string, index: number, skin: string | null): BoneBurstAttachment => {
         const own = skin === null;
         if (ref.attachment) {
           // As the file had it, drawing the image the display names now.
@@ -394,10 +394,10 @@ export function exportSpine(
           if (ref.name) linked.name = ref.name;
           if ((ref.name ?? key) !== item.name) linked.path = item.name;
           if (ref.linked.deform === false) linked.timelines = false;
-          return linked as unknown as SpineAttachment;
+          return linked as unknown as BoneBurstAttachment;
         }
         if (ref.mesh) {
-          // A mesh (ARCHITECTURE ▸ Meshes): `spineVertices` in the slot bone's
+          // A mesh (ARCHITECTURE ▸ Meshes): `boneburstVertices` in the slot bone's
           // space, or per bone at the setup pose for a weighted one.
           const setupPose = setupOf(s);
           const bones: MeshBones | null = ref.mesh.weights?.some((w) => w.length) ? {
@@ -407,7 +407,7 @@ export function exportSpine(
           } : null;
           const mesh: Record<string, unknown> = {
             type: "mesh", uvs: meshUvs(ref.mesh, ref.mesh.width, ref.mesh.height), triangles: [...ref.mesh.triangles],
-            vertices: spineVertices(ref.mesh, ref.pivot, bones, (id) => nameOf(id), node.slotBone ?? node.id), hull: ref.mesh.hull,
+            vertices: boneburstVertices(ref.mesh, ref.pivot, bones, (id) => nameOf(id), node.slotBone ?? node.id), hull: ref.mesh.hull,
             width: ref.mesh.width, height: ref.mesh.height,
           };
           if (ref.mesh.edges?.length) mesh.edges = [...ref.mesh.edges];
@@ -416,10 +416,10 @@ export function exportSpine(
           if ((ref.name ?? key) !== item.name) mesh.path = item.name;
           // Its deform keys, in its skin at its display (`deformKeysOf`).
           if (scope.depth === 0) rootMeshes.push({ target: { nodeId: node.id, skin, index }, slot: name, key, mesh: ref.mesh, pivot: ref.pivot, bones });
-          return mesh as unknown as SpineAttachment;
+          return mesh as unknown as BoneBurstAttachment;
         }
         const centre = regionCentre(item.width, item.height, ref.pivot);
-        const region: SpineRegionAttachment = { width: item.width, height: item.height };
+        const region: BoneBurstRegionAttachment = { width: item.width, height: item.height };
         if (key !== item.name) region.path = item.name;
         if (ref.sequence) {
           // A sequence (ARCHITECTURE ▸ Sequences): the regions are path + number.
@@ -451,7 +451,7 @@ export function exportSpine(
       // under the node's name, at the slot bone, which is the node itself.
       if (node.kind === "box" || node.kind === "point" || node.kind === "path") {
         const key = node.key ?? node.name;
-        const colored = (att: Record<string, unknown>) => (node.attachmentColor ? { ...att, color: node.attachmentColor } : att) as SpineAttachment;
+        const colored = (att: Record<string, unknown>) => (node.attachmentColor ? { ...att, color: node.attachmentColor } : att) as BoneBurstAttachment;
         // A weighted box or path is written per bone, as a weighted mesh is.
         const outlineVertices = (o: { points: number[] } & OutlineWeights): Array<number | string> => {
           if (!o.weights?.some((w) => w.length)) return o.points.map((v, i) => nz(i % 2 ? -v : v));
@@ -461,10 +461,10 @@ export function exportSpine(
             setup: (id) => (dropped(id) ? undefined : setupPose.get(id)?.world),
             node: setupPose.get(node.id)?.world ?? mat(),
           };
-          return spineVertices(outlineAsMesh(o), { x: 0, y: 0 }, bones, (id) => nameOf(id), node.slotBone ?? node.id);
+          return boneburstVertices(outlineAsMesh(o), { x: 0, y: 0 }, bones, (id) => nameOf(id), node.slotBone ?? node.id);
         };
         /** The attachment of `n` (the node, or as a skin outlines it); null, left out. */
-        const outlineAttachment = (n: Node, where: string): SpineAttachment | null => {
+        const outlineAttachment = (n: Node, where: string): BoneBurstAttachment | null => {
           if (n.kind === "path") {
             const shape = n.path;
             if (!shape || shape.points.length < 12) { diagnostics.push({ severity: "warning", message: `Path "${node.name}"${where} has fewer than two knots; it is left out.` }); return null; }
@@ -476,7 +476,7 @@ export function exportSpine(
             att.lengths = fileLengthsOf(shape) ?? pathLengths(shape);
             return colored(att);
           }
-          if (n.kind === "point") return colored({ type: "point", ...pointToSpine(n) });
+          if (n.kind === "point") return colored({ type: "point", ...pointToBoneBurst(n) });
           if ((n.box?.points.length ?? 0) < 6) { diagnostics.push({ severity: "warning", message: `Bounding box "${node.name}"${where} has fewer than three points; it is left out.` }); return null; }
           return colored({ type: "boundingbox", vertexCount: n.box!.points.length / 2, vertices: outlineVertices(n.box!) });
         };
@@ -538,7 +538,7 @@ export function exportSpine(
         if (Object.keys(slotAttachments).length) attachments[name] = slotAttachments;
         slotPaths.set(pathOf(node.id), name);
         displayKeys.set(pathOf(node.id), keys);
-        const slot: SpineSlot = { name, bone: riding ? nameOf(node.slotBone!) : name };
+        const slot: BoneBurstSlot = { name, bone: riding ? nameOf(node.slotBone!) : name };
         const setupName = scope.setupVisible ? keys.get(node.setupDisplay ?? 0) ?? null : null;
         const twoColor = hasOffsets(node.color)
           || s.animations.some((a) => a.tracks[node.id]?.keys.some((k) => hasOffsets(k.color)));
@@ -575,7 +575,7 @@ export function exportSpine(
         let content = `${name}/${child.name}`;
         for (let n = 2; taken2.has(content); n++) content = `${name}/${child.name} (${n})`;
         taken2.add(content);
-        const offset = toSpineLocal({ x: -ref.pivot.x, y: -ref.pivot.y, skewX: 0, skewY: 0, scaleX: 1, scaleY: 1 });
+        const offset = toBoneBurstLocal({ x: -ref.pivot.x, y: -ref.pivot.y, skewX: 0, skewY: 0, scaleX: 1, scaleY: 1 });
         bones.push({ name: content, parent: name, ...withoutDefaults(offset) });
         setups.set(content, offset);
         const inner = childScope(scope, node, index, child);
@@ -593,7 +593,7 @@ export function exportSpine(
      */
     const emitMasked = (maskLayer: Layer | undefined, members: Layer[]): void => {
       const maskNode = maskLayer ? s.nodes[maskLayer.nodeId] : undefined;
-      let clip: { index: number; name: string; atts: SpineClippingAttachment[]; plan: SlotPlan } | null = null;
+      let clip: { index: number; name: string; atts: BoneBurstClippingAttachment[]; plan: SlotPlan } | null = null;
       if (maskNode && !skipped.has(maskNode.id) && producesSlot(maskNode)) {
         clip = clipSlot(scope, maskNode, nameOf(maskNode.id));
       }
@@ -643,8 +643,8 @@ export function exportSpine(
    *  the bone's space about its transform point. */
   const clipSlot = (scope: Scope, node: Node, name: string) => {
     const keys = new Map<number, string>();
-    const slotAtts: Record<string, SpineClippingAttachment> = {};
-    const atts: SpineClippingAttachment[] = [];
+    const slotAtts: Record<string, BoneBurstClippingAttachment> = {};
+    const atts: BoneBurstClippingAttachment[] = [];
     const taken = new Set<string>();
     const warn = (message: string) => diagnostics.push({ severity: "warning", message });
     for (const [index, ref] of exportedDisplays(scope.sym, node)) {
@@ -670,7 +670,7 @@ export function exportSpine(
       for (let i = 0; i < shape.points.length; i += 2) {
         vertices.push(nz(shape.points[i]! - ref.pivot.x), nz(-(shape.points[i + 1]! - ref.pivot.y)));
       }
-      const att: SpineClippingAttachment = { type: "clipping", end: "", vertexCount: vertices.length / 2, vertices };
+      const att: BoneBurstClippingAttachment = { type: "clipping", end: "", vertexCount: vertices.length / 2, vertices };
       slotAtts[key] = att;
       atts.push(att);
     }
@@ -680,7 +680,7 @@ export function exportSpine(
     }
     attachments[name] = slotAtts;
     const setupName = scope.setupVisible ? keys.get(0) ?? null : null;
-    const slot: SpineSlot = { name, bone: name };
+    const slot: BoneBurstSlot = { name, bone: name };
     if (setupName) slot.attachment = setupName;
     slots.push(slot);
     const plan: SlotPlan = { scope, node, name, displays: keys, setupName, twoColor: false, clip: true };
@@ -750,9 +750,9 @@ export function exportSpine(
   }
 
   /* ── animations ── */
-  const animations: Record<string, SpineAnimation> = {};
+  const animations: Record<string, BoneBurstAnimation> = {};
   /** The sequence keys of `anim` into `out`'s attachment timelines; the last keyed frame. */
-  const sequenceTimelines = (anim: Animation, out: SpineAnimation): number => {
+  const sequenceTimelines = (anim: Animation, out: BoneBurstAnimation): number => {
     let last = 0;
     for (const sq of rootSequences) {
       const keys = anim.sequences?.[sq.nodeId];
@@ -775,12 +775,12 @@ export function exportSpine(
     return last;
   };
   for (const anim of sym.animations) {
-    const out: SpineAnimation = {};
+    const out: BoneBurstAnimation = {};
     let lastFrame = 0;
     // A slider plays an animation inside the runtime: the stage's rig needs its
     // keys. Deform and sequence keys it needs always: the stage sets neither.
     if (options.setupOnly && !sym.sliders?.some((k) => k.animId === anim.id)) {
-      const own: SpineAnimation = {};
+      const own: BoneBurstAnimation = {};
       const deforms = deformTimelines(anim, rootMeshes, fps);
       if (deforms) own.attachments = deforms.timelines;
       sequenceTimelines(anim, own);
@@ -868,7 +868,7 @@ export function exportSpine(
     const end = anim.endsAtLastFrame ? anim.duration - 1 : anim.duration;
     const reached = Math.max(lastFrame, Math.round(lastTime(carried) * fps - 1e-6));
     if (end > reached) {
-      const order = (out.drawOrder as SpineDrawOrderKey[] | undefined) ?? [];
+      const order = (out.drawOrder as BoneBurstDrawOrderKey[] | undefined) ?? [];
       const held = order.length ? order[order.length - 1]!.offsets : undefined;
       out.drawOrder = [...order, held ? { time: keyTime(end, fps), offsets: held } : { time: keyTime(end, fps) }];
     }
@@ -881,25 +881,25 @@ export function exportSpine(
   reportImageNames(project, [...usedImages], diagnostics);
 
   const carry = sym.spine;
-  const skeleton: SpineSkeletonFile = { skeleton: { ...carry?.header, spine: SPINE_VERSION, fps }, bones };
+  const skeleton: BoneBurstSkeletonFile = { skeleton: { ...carry?.header, spine: BONEBURST_VERSION, fps }, bones };
   if (slots.length) skeleton.slots = slots;
-  const allConstraints: SpineConstraint[] = [...constraints, ...(carry?.constraints ?? []) as SpineConstraint[]];
+  const allConstraints: BoneBurstConstraint[] = [...constraints, ...(carry?.constraints ?? []) as BoneBurstConstraint[]];
   // The carried ones take their place in the order; a nested symbol's go last.
   const ordered = carry ? byOrder(allConstraints, sym.constraintOrder ?? [], (c) => c.name) : allConstraints;
   if (ordered.length) skeleton.constraints = ordered;
-  const skins: SpineSkin[] = [{ name: "default", attachments }];
+  const skins: BoneBurstSkin[] = [{ name: "default", attachments }];
   const modelSkins = new Map(skinsOfModel(sym, bones, boneNodes, rootIk, rootTc, rootCn, skinAttachments).map((sk) => [sk.name, sk]));
   for (const sk of modelSkins.values()) skins.push(sk);
   for (const raw of carry?.skins ?? []) {
-    const skin = raw as unknown as SpineSkin;
+    const skin = raw as unknown as BoneBurstSkin;
     // Copied down to the slot maps: the pass below rewrites entries, and the
     // document must not change under an export.
     const own = Object.fromEntries(Object.entries(skin.attachments ?? {}).map(([slot, byKey]) => [slot, { ...byKey }]));
     const model = modelSkins.get(skin.name);
     if (model) {
       // What the model holds wins a key both have; the rest is the file's.
-      const merged: SpineSkin = { ...skin, ...model };
-      const atts: Record<string, Record<string, SpineAttachment>> = own;
+      const merged: BoneBurstSkin = { ...skin, ...model };
+      const atts: Record<string, Record<string, BoneBurstAttachment>> = own;
       for (const [slot, byKey] of Object.entries(model.attachments ?? {})) atts[slot] = { ...atts[slot], ...byKey };
       if (Object.keys(atts).length) merged.attachments = atts; else delete merged.attachments;
       for (const field of ["bones", ...SKIN_CONSTRAINT_KINDS] as const) {
@@ -910,7 +910,7 @@ export function exportSpine(
       continue;
     }
     if (skin.name !== "default") { skins.push({ ...skin, attachments: own }); continue; }
-    const merged: Record<string, Record<string, SpineAttachment>> = { ...attachments };
+    const merged: Record<string, Record<string, BoneBurstAttachment>> = { ...attachments };
     for (const [slot, byKey] of Object.entries(own)) merged[slot] = { ...byKey, ...merged[slot] };
     skins[0] = { ...skin, attachments: merged };
   }
@@ -922,11 +922,11 @@ export function exportSpine(
   for (const skin of skins) {
     for (const [slot, byKey] of Object.entries(skin.attachments ?? {})) {
       for (const [key, att] of Object.entries(byKey)) {
-        byKey[key] = bonesToIndices(att as SpineRaw, boneIndex, (bone) => diagnostics.push({
+        byKey[key] = bonesToIndices(att as BoneBurstRaw, boneIndex, (bone) => diagnostics.push({
           severity: "error",
           message: `"${slot}" ▸ "${key}" in skin "${skin.name}" is weighted to a bone "${bone}" the skeleton no longer has.`,
         }));
-        for (const region of regionsOf(att as SpineRaw, key)) {
+        for (const region of regionsOf(att as BoneBurstRaw, key)) {
           const id = imageNamed.get(region);
           if (id) usedImages.add(id);
           else diagnostics.push({ severity: "error", message: `"${slot}" ▸ "${key}" in skin "${skin.name}" draws the image "${region}", which is not in the library.` });
@@ -934,7 +934,7 @@ export function exportSpine(
       }
     }
   }
-  const eventDefs = { ...(carry?.events as SpineSkeletonFile["events"]), ...eventDefsOf(sym) };
+  const eventDefs = { ...(carry?.events as BoneBurstSkeletonFile["events"]), ...eventDefsOf(sym) };
   if (Object.keys(eventDefs).length) skeleton.events = eventDefs;
   skeleton.skins = skins;
   if (Object.keys(animations).length) skeleton.animations = animations;
@@ -944,7 +944,7 @@ export function exportSpine(
   if (!options.setupOnly) {
     if (!sanitizeExportSettings(project.exportSettings).nonessential) Object.assign(skeleton, withoutNonessential(skeleton));
     const { hash: _old, ...header } = skeleton.skeleton;
-    skeleton.skeleton = { hash: contentHash(spineJson({ ...skeleton, skeleton: header })), ...header };
+    skeleton.skeleton = { hash: contentHash(boneburstJson({ ...skeleton, skeleton: header })), ...header };
   }
 
   const names = new Map<NodeId, string>();
@@ -1143,8 +1143,8 @@ export function sliceRuns<T>(runs: Run[], channelFor: (anim: Animation | null) =
  * order, for any row value; a bezier's control values are those at the
  * interval's ends, mixed by the control's y.
  */
-function keyBase<T>(r: Row<T>, fps: number, channels: (t: T) => number[]): { time?: number; curve?: SpineCurve } {
-  const k: { time?: number; curve?: SpineCurve } = {};
+function keyBase<T>(r: Row<T>, fps: number, channels: (t: T) => number[]): { time?: number; curve?: BoneBurstCurve } {
+  const k: { time?: number; curve?: BoneBurstCurve } = {};
   if (r.frame !== 0) k.time = keyTime(r.frame, fps);
   if (r.stepped) k.curve = "stepped";
   else if (r.curve) {
@@ -1159,31 +1159,31 @@ function keyBase<T>(r: Row<T>, fps: number, channels: (t: T) => number[]): { tim
 /* ── bone timelines ──────────────────────────────────────────────────────── */
 
 function boneTimelines(
-  node: Node, runs: Run[], setup: SpineLocal, fps: number, diags: ExportDiagnostic[],
-): { timelines: SpineBoneTimelines; lastFrame: number } | null {
-  const out: SpineBoneTimelines = {};
+  node: Node, runs: Run[], setup: BoneBurstLocal, fps: number, diags: ExportDiagnostic[],
+): { timelines: BoneBurstBoneTimelines; lastFrame: number } | null {
+  const out: BoneBurstBoneTimelines = {};
   let lastFrame = 0;
-  const kv = (t: Transform) => keyValues(toSpineLocal(t), setup);
+  const kv = (t: Transform) => keyValues(toBoneBurstLocal(t), setup);
   const rowsOf = (channel: TweenChannel) =>
     sliceRuns(runs, (anim) => transformChannel(anim?.tracks[node.id], node.bind, channel)).map((r) => ({ r, v: kv(r.t) }));
-  const base = (r: Row<Transform>, channels: (v: SpineKeyValues) => number[]) => {
+  const base = (r: Row<Transform>, channels: (v: BoneBurstKeyValues) => number[]) => {
     lastFrame = Math.max(lastFrame, r.frame);
     return keyBase(r, fps, (t) => channels(kv(t)));
   };
-  const moves = (vs: Array<{ v: SpineKeyValues }>, pick: (v: SpineKeyValues) => number[], rest: number) =>
+  const moves = (vs: Array<{ v: BoneBurstKeyValues }>, pick: (v: BoneBurstKeyValues) => number[], rest: number) =>
     vs.some(({ v }) => pick(v).some((x) => Math.abs(x - rest) > 1e-9));
 
   // Two axes eased apart anywhere: a timeline per axis (translatex and
   // translatey), each with its own keys. Otherwise one timeline for both.
   const apart = (p: TweenChannel, q: TweenChannel) => runs.some(({ anim }) =>
     anim?.tracks[node.id]?.keys.some((k) => !sameEase(easeOf(k, p), easeOf(k, q))));
-  type Axis = { key: keyof SpineKeyValues; channel: TweenChannel; timeline: string };
+  type Axis = { key: keyof BoneBurstKeyValues; channel: TweenChannel; timeline: string };
   const perAxis = (axes: Axis[], rest: number) => {
     for (const { key, channel, timeline } of axes) {
       const rows = rowsOf(channel);
       if (!moves(rows, (v) => [v[key]!], rest)) continue;
       out[timeline] = rows.map(({ r, v }) => {
-        const k: { time?: number; curve?: SpineCurve; value?: number } = base(r, (w) => [w[key]!]);
+        const k: { time?: number; curve?: BoneBurstCurve; value?: number } = base(r, (w) => [w[key]!]);
         if (v[key] !== rest) k.value = v[key]!;
         return k;
       });
@@ -1218,7 +1218,7 @@ function boneTimelines(
     perAxis([{ key: "scaleX", channel: "scaleX", timeline: "scalex" }, { key: "scaleY", channel: "scaleY", timeline: "scaley" }], 1);
   } else if (moves(scl, (v) => [v.scaleX!, v.scaleY!], 1)) {
     out.scale = scl.map(({ r, v }) => {
-      const k: { time?: number; curve?: SpineCurve; x?: number; y?: number } = base(r, (w) => [w.scaleX!, w.scaleY!]);
+      const k: { time?: number; curve?: BoneBurstCurve; x?: number; y?: number } = base(r, (w) => [w.scaleX!, w.scaleY!]);
       if (v.scaleX !== 1) k.x = v.scaleX!;
       if (v.scaleY !== 1) k.y = v.scaleY!;
       return k;
@@ -1239,16 +1239,16 @@ function boneTimelines(
  * over the mix and over the softness: Spine reads both halves.
  */
 function ikTimelines(
-  sym: SymbolItem, anim: Animation, written: ReadonlyMap<IkId, SpineIkConstraint>, fps: number,
-): Record<string, SpineIkKey[]> | null {
-  const out: Record<string, SpineIkKey[]> = {};
+  sym: SymbolItem, anim: Animation, written: ReadonlyMap<IkId, BoneBurstIkConstraint>, fps: number,
+): Record<string, BoneBurstIkKey[]> | null {
+  const out: Record<string, BoneBurstIkKey[]> = {};
   for (const k of sym.ik) {
     const keys = anim.ik?.[k.id];
     const c = written.get(k.id);
     if (!keys?.length || !c) continue;
     const softOf = (key: IkKey) => key.softness ?? k.softness ?? 0;
     out[c.name] = keys.map((key, i) => {
-      const o: SpineIkKey = {};
+      const o: BoneBurstIkKey = {};
       const time = keyTime(key.frame, fps);
       if (time) o.time = time;
       if (key.mix !== 1) o.mix = key.mix;
@@ -1296,14 +1296,14 @@ function constraintKeyTimelines(sym: SymbolItem, anim: Animation, fps: number): 
  * The animation's deform keys as Spine's `deform` timelines, per mesh display
  * of the exported symbol whose point count the keys fit: offsets in the
  * slot bone's space, or per weighted entry in that bone's setup space
- * (`spineDeform`). A tween is one cubic over 0..1, as Spine reads it.
+ * (`boneburstDeform`). A tween is one cubic over 0..1, as Spine reads it.
  */
 function deformTimelines(
   anim: Animation,
   meshes: ReadonlyArray<{ target: DeformTarget; slot: string; key: string; mesh: MeshData; bones: MeshBones | null }>,
   fps: number,
-): { timelines: Record<string, Record<string, Record<string, { deform: Array<{ time?: number; vertices?: number[]; curve?: SpineCurve }> }>>>; lastFrame: number } | null {
-  const out: Record<string, Record<string, Record<string, { deform: Array<{ time?: number; vertices?: number[]; curve?: SpineCurve }> }>>> = {};
+): { timelines: Record<string, Record<string, Record<string, { deform: Array<{ time?: number; vertices?: number[]; curve?: BoneBurstCurve }> }>>>; lastFrame: number } | null {
+  const out: Record<string, Record<string, Record<string, { deform: Array<{ time?: number; vertices?: number[]; curve?: BoneBurstCurve }> }>>> = {};
   let lastFrame = 0;
   for (const m of meshes) {
     const keys = deformKeysOf(anim, m.target);
@@ -1311,10 +1311,10 @@ function deformTimelines(
     lastFrame = Math.max(lastFrame, keys[keys.length - 1]!.frame);
     ((out[m.target.skin ?? "default"] ??= {})[m.slot] ??= {})[m.key] = {
       deform: keys.map((key, i) => {
-        const o: { time?: number; vertices?: number[]; curve?: SpineCurve } = {};
+        const o: { time?: number; vertices?: number[]; curve?: BoneBurstCurve } = {};
         const time = keyTime(key.frame, fps);
         if (time) o.time = time;
-        if (key.offsets.some((v) => v !== 0)) o.vertices = spineDeform(m.mesh, key.offsets, m.bones);
+        if (key.offsets.some((v) => v !== 0)) o.vertices = boneburstDeform(m.mesh, key.offsets, m.bones);
         const next = keys[i + 1];
         if (next && key.tween?.kind === "none") o.curve = "stepped";
         else if (next && key.tween?.kind === "curve") {
@@ -1343,13 +1343,13 @@ const TC_OFFSET: Record<TcChannel, "rotation" | "x" | "y" | "scaleX" | "scaleY" 
  * to is written, the defaults included: the runtime reads a missing `mixY`
  * as `mixX` and a missing `mixScaleY` as `mixScaleX`, not as 1.
  */
-function transformConstraintOf(k: TransformConstraint, name: string, bones: string[], source: string): SpineTransformConstraint {
-  const out: SpineTransformConstraint = { type: "transform", name, bones, source };
+function transformConstraintOf(k: TransformConstraint, name: string, bones: string[], source: string): BoneBurstTransformConstraint {
+  const out: BoneBurstTransformConstraint = { type: "transform", name, bones, source };
   if (k.localSource) out.localSource = true;
   if (k.localTarget) out.localTarget = true;
   if (k.additive) out.additive = true;
   if (k.clamp) out.clamp = true;
-  const properties: NonNullable<SpineTransformConstraint["properties"]> = {};
+  const properties: NonNullable<BoneBurstTransformConstraint["properties"]> = {};
   for (const p of k.properties) {
     const to: Record<string, { offset?: number; max?: number; scale?: number }> = {};
     for (const t of p.to) {
@@ -1374,15 +1374,15 @@ function transformConstraintOf(k: TransformConstraint, name: string, bones: stri
 /** The animation's transform constraint keys as Spine's `transform`
  *  timelines: all six mixes on every key; a tween is one cubic over each. */
 function transformTimelines(
-  sym: SymbolItem, anim: Animation, written: ReadonlyMap<TcId, SpineTransformConstraint>, fps: number,
-): Record<string, SpineTransformKey[]> | null {
-  const out: Record<string, SpineTransformKey[]> = {};
+  sym: SymbolItem, anim: Animation, written: ReadonlyMap<TcId, BoneBurstTransformConstraint>, fps: number,
+): Record<string, BoneBurstTransformKey[]> | null {
+  const out: Record<string, BoneBurstTransformKey[]> = {};
   for (const k of sym.transforms ?? []) {
     const keys = anim.transforms?.[k.id];
     const c = written.get(k.id);
     if (!keys?.length || !c) continue;
     out[c.name] = keys.map((key, i) => {
-      const o: SpineTransformKey = {};
+      const o: BoneBurstTransformKey = {};
       const time = keyTime(key.frame, fps);
       if (time) o.time = time;
       for (const ch of TC_CHANNELS) o[TC_MIX[ch]] = key.mix[ch];
@@ -1408,10 +1408,10 @@ function transformTimelines(
  *  event with a sound always writes its volume and balance: spine-core
  *  4.3.13 reads a missing volume as 0 (`Event.volume = 0`), so a volume of 1
  *  left off plays silent. */
-function eventDefsOf(sym: SymbolItem): Record<string, SpineEventData> {
-  const out: Record<string, SpineEventData> = {};
+function eventDefsOf(sym: SymbolItem): Record<string, BoneBurstEventData> {
+  const out: Record<string, BoneBurstEventData> = {};
   for (const d of sym.events ?? []) {
-    const e: SpineEventData = {};
+    const e: BoneBurstEventData = {};
     if (d.int) e.int = d.int;
     if (d.float) e.float = d.float;
     if (d.string) e.string = d.string;
@@ -1431,12 +1431,12 @@ function eventDefsOf(sym: SymbolItem): Record<string, SpineEventData> {
  * writes its balance: spine-core 4.3.13 defaults a key's balance to the
  * event's VOLUME (`SkeletonJson`, "balance", setup.volume).
  */
-function eventTimeline(sym: SymbolItem, anim: Animation, fps: number): SpineEventKey[] | null {
+function eventTimeline(sym: SymbolItem, anim: Animation, fps: number): BoneBurstEventKey[] | null {
   const keys = anim.events?.filter((k) => sym.events?.some((d) => d.name === k.name));
   if (!keys?.length) return null;
   return keys.map((k) => {
     const def = sym.events!.find((d) => d.name === k.name)!;
-    const o: SpineEventKey = { name: k.name };
+    const o: BoneBurstEventKey = { name: k.name };
     const time = keyTime(k.frame, fps);
     if (time) o.time = time;
     if (k.int !== undefined) o.int = k.int;
@@ -1462,7 +1462,7 @@ function eventTimeline(sym: SymbolItem, anim: Animation, fps: number): SpineEven
 function drawOrderTimeline(
   sym: SymbolItem, anim: Animation, setup: readonly string[],
   blocks: ReadonlyArray<{ ids: NodeId[]; start: number; end: number }>, fps: number,
-): SpineDrawOrderKey[] | null {
+): BoneBurstDrawOrderKey[] | null {
   if (!anim.drawOrder?.length) return null;
   return anim.drawOrder.map((k) => {
     const rank = new Map(orderAt(sym, anim, k.frame).map((id, i) => [id, i]));
@@ -1473,7 +1473,7 @@ function drawOrderTimeline(
     const seq = blocks.map((b, i) => (at[i] === Infinity ? b : moving[m++]!.b));
     const names = seq.flatMap((b) => setup.slice(b.start, b.end));
     const offsets = toOffsets(names, setup).map((o) => ({ slot: o.item, offset: o.offset }));
-    const key: SpineDrawOrderKey = {};
+    const key: BoneBurstDrawOrderKey = {};
     const time = keyTime(k.frame, fps);
     if (time) key.time = time;
     if (offsets.length) key.offsets = offsets;
@@ -1500,11 +1500,11 @@ function omitKey(o: Record<string, unknown>, key: string): Record<string, unknow
  */
 function slotTimelines(
   plan: SlotPlan, animName: string, fps: number,
-): { timelines: SpineSlotTimelines; lastFrame: number } | null {
+): { timelines: BoneBurstSlotTimelines; lastFrame: number } | null {
   const { scope, node, displays, setupName } = plan;
   const frames = scope.frames.get(animName)!;
   const alpha = scope.alpha.get(animName)!;
-  const out: SpineSlotTimelines = {};
+  const out: BoneBurstSlotTimelines = {};
   let lastFrame = 0;
   const time = (frame: number) => {
     lastFrame = Math.max(lastFrame, frame);
@@ -1517,7 +1517,7 @@ function slotTimelines(
     const st = localAt(node, fa.anim, fa.frame, "animate");
     return st.onTrack && st.displayIndex >= 0 ? displays.get(st.displayIndex) ?? null : null;
   };
-  const changes: SpineAttachmentKey[] = [];
+  const changes: BoneBurstAttachmentKey[] = [];
   let prev: string | null | undefined;
   for (let f = 0; f < frames.length; f++) {
     const name = shownAt(f);
@@ -1556,14 +1556,14 @@ function slotTimelines(
     const key = (c: ColorTransform) => lightHex(c) + darkHex(c);
     if (rows.some((r) => key(r.t) !== key(setupBind))) {
       lastFrame = Math.max(lastFrame, ...rows.map((r) => r.frame));
-      out.rgba2 = rows.map((r): SpineRgba2Key => ({ ...keyBase(r, fps, tintChannels), light: lightHex(r.t), dark: darkHex(r.t) }));
+      out.rgba2 = rows.map((r): BoneBurstRgba2Key => ({ ...keyBase(r, fps, tintChannels), light: lightHex(r.t), dark: darkHex(r.t) }));
     }
   } else {
     const setupHex = colorHex(setupBind) ?? "ffffffff";
     if (rows.some((r) => (colorHex(r.t) ?? "ffffffff") !== setupHex)) {
       const channels = (c: ColorTransform) => [c.rM, c.gM, c.bM, c.aM].map((m) => byte(m / 100) / 255);
       lastFrame = Math.max(lastFrame, ...rows.map((r) => r.frame));
-      out.rgba = rows.map((r): SpineRgbaKey => ({ ...keyBase(r, fps, channels), color: colorHex(r.t) ?? "ffffffff" }));
+      out.rgba = rows.map((r): BoneBurstRgbaKey => ({ ...keyBase(r, fps, channels), color: colorHex(r.t) ?? "ffffffff" }));
     }
   }
 
@@ -1637,11 +1637,11 @@ function warnOffsets(node: Node, warned: Set<NodeId>, diags: ExportDiagnostic[])
   });
 }
 
-const BLEND: Partial<Record<NonNullable<Node["blendMode"]>, SpineBlendMode>> = {
+const BLEND: Partial<Record<NonNullable<Node["blendMode"]>, BoneBurstBlendMode>> = {
   add: "additive", multiply: "multiply", screen: "screen",
 };
 
-function blendOf(node: Node, diags: ExportDiagnostic[]): SpineBlendMode | undefined {
+function blendOf(node: Node, diags: ExportDiagnostic[]): BoneBurstBlendMode | undefined {
   const mode = node.blendMode;
   if (!mode || mode === "normal") return undefined;
   const mapped = BLEND[mode];
@@ -1662,20 +1662,20 @@ function blendOf(node: Node, diags: ExportDiagnostic[]): SpineBlendMode | undefi
  * name, one list per kind, all marked `skin` as Spine requires.
  */
 function skinsOfModel(
-  sym: SymbolItem, bones: SpineBone[], boneNodes: Array<{ scope: Scope; node: Node; name: string }>,
-  rootIk: Map<IkId, SpineIkConstraint>, rootTc: Map<TcId, SpineTransformConstraint>, rootCn: Map<CnId, Record<string, unknown>>,
-  attachments: Map<string, Record<string, Record<string, SpineAttachment>>>,
-): SpineSkin[] {
+  sym: SymbolItem, bones: BoneBurstBone[], boneNodes: Array<{ scope: Scope; node: Node; name: string }>,
+  rootIk: Map<IkId, BoneBurstIkConstraint>, rootTc: Map<TcId, BoneBurstTransformConstraint>, rootCn: Map<CnId, Record<string, unknown>>,
+  attachments: Map<string, Record<string, Record<string, BoneBurstAttachment>>>,
+): BoneBurstSkin[] {
   const nameOf = new Map(boneNodes.filter((b) => b.scope.depth === 0).map((b) => [b.node.id, b.name]));
   return (sym.skins ?? []).map((def) => {
     const set = skinBoneSet(sym, def);
     const names = new Set([...set].map((id) => nameOf.get(id)).filter((n): n is string => !!n));
     const own = bones.filter((b) => names.has(b.name));
     for (const b of own) b.skin = true;
-    const ik = (def.ik ?? []).map((id) => rootIk.get(id)).filter((c): c is SpineIkConstraint => !!c);
-    const tc = (def.transforms ?? []).map((id) => rootTc.get(id)).filter((c): c is SpineTransformConstraint => !!c);
+    const ik = (def.ik ?? []).map((id) => rootIk.get(id)).filter((c): c is BoneBurstIkConstraint => !!c);
+    const tc = (def.transforms ?? []).map((id) => rootTc.get(id)).filter((c): c is BoneBurstTransformConstraint => !!c);
     for (const c of [...ik, ...tc]) c.skin = true;
-    const skin: SpineSkin = { name: def.name };
+    const skin: BoneBurstSkin = { name: def.name };
     if (def.color) (skin as unknown as Record<string, unknown>).color = def.color;
     const atts = attachments.get(def.name);
     if (atts) skin.attachments = atts;
@@ -1833,8 +1833,8 @@ function uniqueNames(sym: SymbolItem, diags: ExportDiagnostic[], top: boolean, o
   return map;
 }
 
-function withoutDefaults(s: SpineLocal): Partial<SpineLocal> {
-  const out: Partial<SpineLocal> = {};
+function withoutDefaults(s: BoneBurstLocal): Partial<BoneBurstLocal> {
+  const out: Partial<BoneBurstLocal> = {};
   if (s.x !== 0) out.x = s.x;
   if (s.y !== 0) out.y = s.y;
   if (s.rotation !== 0) out.rotation = s.rotation;
@@ -1868,7 +1868,7 @@ export function contentHash(text: string): string {
 /** Spine JSON as text. Numbers are written exactly: key times are float32
  *  values chosen to land on their frame (`keyTime`), and rounding them would
  *  move them again. */
-export function spineJson(file: SpineSkeletonFile, minify = false): string {
+export function boneburstJson(file: BoneBurstSkeletonFile, minify = false): string {
   return JSON.stringify(file, (_k, v) => (typeof v === "number" && Object.is(v, -0) ? 0 : v), minify ? undefined : 2);
 }
 
@@ -1883,7 +1883,7 @@ function rides(sym: SymbolItem, node: Node): boolean {
  * otherwise make the runtime throw, or quietly skip it. An error each, so
  * the export refuses.
  */
-function checkCarried(file: SpineSkeletonFile, sym: SymbolItem, diags: ExportDiagnostic[]): void {
+function checkCarried(file: BoneBurstSkeletonFile, sym: SymbolItem, diags: ExportDiagnostic[]): void {
   const have: Record<CarriedRef["kind"], Set<string>> = {
     bone: new Set(file.bones.map((b) => b.name)),
     slot: new Set((file.slots ?? []).map((sl) => sl.name)),
@@ -1916,7 +1916,7 @@ function rootBoneOf(sym: SymbolItem): Node | undefined {
 
 /** `generated` with `carried`'s timelines, a carried attachment's timelines
  *  kept where the document has none (the stage rig's `setupOnly` animation). */
-function mergeAttachmentTimelines(generated: SpineAnimation, carried: Record<string, unknown>): SpineAnimation {
+function mergeAttachmentTimelines(generated: BoneBurstAnimation, carried: Record<string, unknown>): BoneBurstAnimation {
   const out = { ...carried, ...generated } as Record<string, unknown>;
   const fromFile = carried.attachments as Record<string, Record<string, Record<string, unknown>>> | undefined;
   if (generated.attachments && fromFile) {
@@ -1929,6 +1929,6 @@ function mergeAttachmentTimelines(generated: SpineAnimation, carried: Record<str
     }
     out.attachments = into;
   }
-  return out as SpineAnimation;
+  return out as BoneBurstAnimation;
 }
 

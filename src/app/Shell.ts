@@ -12,7 +12,7 @@ import { APP_NAME, documentTitle } from "@/core/about";
 import markSvg from "@/assets/boneburst-mark.svg?raw";
 import type { Store } from "./Store";
 import { SetStageSkins } from "@/core/history/commands";
-import { skinsOf, stageSkinOf, toggledSkins } from "@/core/spine/spinePose";
+import { skinsOf, stageSkinOf, toggledSkins } from "@/core/boneburst/boneburstPose";
 
 export interface MenuItemDef {
   label: string;

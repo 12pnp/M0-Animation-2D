@@ -3,13 +3,13 @@ import { reseed, newIkId, type NodeId } from "@/core/doc/ids";
 import { createProject, createNode, createLayer } from "@/core/doc/defaults";
 import { isSymbol, type SymbolItem } from "@/core/doc/types";
 import { evaluateSymbol, invalidateBounds } from "@/core/doc/pose";
-import { LooseBones } from "@/core/spine/runtime/bones";
-import { oneBone } from "@/core/spine/runtime/ik";
+import { LooseBones } from "@/core/boneburst/runtime/bones";
+import { oneBone } from "@/core/boneburst/runtime/ik";
 
 beforeEach(() => { reseed(); invalidateBounds(); });
 
 /**
- * The solver is the runtime's (`core/spine/runtime/ik.ts`), held to
+ * The solver is the runtime's (`core/boneburst/runtime/ik.ts`), held to
  * spine-core in runtimeConstraints.test.ts and, on the stage, on whole rigs
  * in spineParity.test.ts. These are the behaviours the editor relies on.
  */

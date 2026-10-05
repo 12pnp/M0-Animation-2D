@@ -3,11 +3,11 @@ import {
   deleteTcKeys, FULL_MIX, identityProperties, isIdentityMap, moveTcKeys, NEW_MAPPING, tcMixAt, tcSolveOf, tcTweenOf, transformPlan, usedMixes,
   withMapping, withoutMapping, withSourceOffset, withTcKey, withTcTween,
 } from "@/core/doc/transformKeys";
-import { LooseBones } from "@/core/spine/runtime/bones";
-import { solveTransform } from "@/core/spine/runtime/transform";
+import { LooseBones } from "@/core/boneburst/runtime/bones";
+import { solveTransform } from "@/core/boneburst/runtime/transform";
 import { migrate, validateProject } from "@/core/doc/schema";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
-import { importSpine } from "@/core/spine/importSpine";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import { History } from "@/core/history/History";
 import { RemoveNodes } from "@/core/history/commands";
 import { DOC_VERSION, type Animation, type SymbolItem, type TcKey, type TransformConstraint } from "@/core/doc/types";
@@ -116,8 +116,8 @@ describe("transform constraints in files", () => {
       { frame: 6, mix: { ...half }, tween: { kind: "none" } },
       { frame: 12, mix: { ...FULL_MIX, shearY: 0 } },
     ] };
-    const file = JSON.parse(spineJson(exportSpine(project).skeleton));
-    const opened = importSpine(file, "stickman", new Map()).project;
+    const file = JSON.parse(boneburstJson(exportBoneBurst(project).skeleton));
+    const opened = importBoneBurst(file, "stickman", new Map()).project;
     const sym = opened.items[opened.rootSymbolId] as SymbolItem;
     const back = sym.transforms!.find((c) => c.name === "follow")!;
     const { id: _a, boneIds: _b, sourceId: _c, ...rest } = back;

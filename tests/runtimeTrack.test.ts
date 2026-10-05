@@ -2,18 +2,18 @@ import { describe, expect, it } from "vitest";
 import {
   AnimationState, AnimationStateData, AtlasAttachmentLoader, BoundingBoxAttachment, Physics, PointAttachment, Skeleton, SkeletonJson, TextureAtlas,
 } from "@esotericsoftware/spine-core";
-import { readAtlas } from "@/core/spine/runtime/atlasRead";
-import { type EventFire, readRig } from "@/core/spine/runtime/rigData";
-import { Rig } from "@/core/spine/runtime/rig";
-import { Track } from "@/core/spine/runtime/track";
-import { atlasText } from "@/core/spine/atlas";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
+import { readAtlas } from "@/core/boneburst/runtime/atlasRead";
+import { type EventFire, readRig } from "@/core/boneburst/runtime/rigData";
+import { Rig } from "@/core/boneburst/runtime/rig";
+import { Track } from "@/core/boneburst/runtime/track";
+import { atlasText } from "@/core/boneburst/atlas";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
 import { loadStickman } from "./fixtures/stickman";
 import { sampleRigs } from "./fixtures/spineSamples";
 import { type Json, solvable, trimmedPage } from "./fixtures/runtimeOracle";
 
 /**
- * The BoneBurst runtime's track (`core/spine/runtime/track.ts`) against
+ * The BoneBurst runtime's track (`core/boneburst/runtime/track.ts`) against
  * spine-core's `AnimationState`, stepped with uneven frame times: the events
  * each step fires, with their values, and every bone's world matrix. The
  * stickman export runs everywhere (with events added to it); spine-unity's
@@ -95,8 +95,8 @@ function play(name: string, file: Json, atlas: string, plan: Array<{ anim: strin
 /** The stickman export, with events keyed on both its animations. */
 async function stickman(): Promise<{ file: Json; atlas: string }> {
   const { project } = await loadStickman();
-  const exported = exportSpine(project, project.rootSymbolId);
-  const file = JSON.parse(spineJson(exported.skeleton)) as Json;
+  const exported = exportBoneBurst(project, project.rootSymbolId);
+  const file = JSON.parse(boneburstJson(exported.skeleton)) as Json;
   file.events = { step: { int: 1, float: 0.5, string: "left" }, land: { audio: "land.wav", volume: 0.8, balance: -0.2 } };
   const animations = file.animations as Record<string, Json>;
   for (const anim of Object.values(animations)) {

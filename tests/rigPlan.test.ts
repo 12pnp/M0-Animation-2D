@@ -5,14 +5,14 @@ import { normalizeLayerOrder } from "@/core/doc/layerTree";
 import type { Node, SymbolItem } from "@/core/doc/types";
 import { apply, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { matrixOf, tf } from "@/core/math/Transform";
-import { boneFromWorld, placeOnBone, siblingOrder, type SpinePoint } from "@/core/rig/rigPlan";
-import { toSpineLocal } from "@/core/spine/transform";
+import { boneFromWorld, placeOnBone, siblingOrder, type BoneBurstPoint } from "@/core/rig/rigPlan";
+import { toBoneBurstLocal } from "@/core/boneburst/transform";
 
 beforeEach(() => reseed());
 
 /** Where a local pose under `parent` lands: its origin and the end of its
  *  x axis `length` along, in skeleton space (y up). */
-function landed(parent: Matrix2D | undefined, local: Matrix2D, length: number): { from: SpinePoint; to: SpinePoint } {
+function landed(parent: Matrix2D | undefined, local: Matrix2D, length: number): { from: BoneBurstPoint; to: BoneBurstPoint } {
   const world = parent ? mul(matrixOf(tf()), parent, local) : local;
   const tip = apply({ x: 0, y: 0 }, world, length, 0);
   return { from: [world.tx, -world.ty], to: [tip.x, -tip.y] };
@@ -30,7 +30,7 @@ const PARENTS: Array<[string, Matrix2D | undefined]> = [
 
 describe("boneFromWorld", () => {
   it.each(PARENTS)("puts the joint and tip where asked under a %s parent", (_, parent) => {
-    for (const [from, to] of [[[0, 0], [0, 50]], [[10, 20], [-30, -10]], [[-100, 3], [-99, 3]]] as Array<[SpinePoint, SpinePoint]>) {
+    for (const [from, to] of [[[0, 0], [0, 50]], [[10, 20], [-30, -10]], [[-100, 3], [-99, 3]]] as Array<[BoneBurstPoint, BoneBurstPoint]>) {
       const placed = boneFromWorld(parent, from, to)!;
       const got = landed(parent, matrixOf(placed.bind), placed.length);
       expect(got.from[0]).toBeCloseTo(from[0], 9);
@@ -42,8 +42,8 @@ describe("boneFromWorld", () => {
   });
 
   it("is Spine's rotation at the root: counter-clockwise from +x, y up", () => {
-    expect(toSpineLocal(boneFromWorld(undefined, [10, 20], [10, 50])!.bind)).toMatchObject({ x: 10, y: 20, rotation: 90, scaleX: 1, scaleY: 1 });
-    expect(toSpineLocal(boneFromWorld(undefined, [0, 0], [-5, 0])!.bind).rotation).toBeCloseTo(180, 9);
+    expect(toBoneBurstLocal(boneFromWorld(undefined, [10, 20], [10, 50])!.bind)).toMatchObject({ x: 10, y: 20, rotation: 90, scaleX: 1, scaleY: 1 });
+    expect(toBoneBurstLocal(boneFromWorld(undefined, [0, 0], [-5, 0])!.bind).rotation).toBeCloseTo(180, 9);
   });
 
   it("refuses a bone of no length and a parent scaled to nothing", () => {

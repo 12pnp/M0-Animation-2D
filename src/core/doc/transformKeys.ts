@@ -1,12 +1,12 @@
 import { applyTween, type TweenSpec } from "@/core/math/easing";
-import type { TransformData } from "@/core/spine/runtime/rigData";
+import type { TransformData } from "@/core/boneburst/runtime/rigData";
 import type { NodeId, TcId } from "./ids";
 import { SMOOTH_CURVE, type IkTween } from "./ikKeys";
 import { type Animation, type SymbolItem, TC_CHANNELS, type TcChannel, type TcFrom, type TcKey, type TcTo, type TransformConstraint } from "./types";
 
 export type TcMix = Record<TcChannel, number>;
 
-/** What the runtime's solver (`core/spine/runtime/transform.ts`) reads off a constraint, but its bones. */
+/** What the runtime's solver (`core/boneburst/runtime/transform.ts`) reads off a constraint, but its bones. */
 export type TcSolve = Pick<TransformData, "localSource" | "localTarget" | "additive" | "clamp" | "offsets" | "properties">;
 
 /**

@@ -21,7 +21,7 @@ ground truth, and the `endsAtLastFrame` note on `Animation` in `core/doc/types.t
 | Playback loop | `view/timeline/Playback.ts:87`, `ui.loop` | Wraps at `duration − 1` with `endsAtLastFrame`, otherwise at `duration`. |
 | Clips that loop | `core/rig/motion.ts` (`MotionClip.loop`) | `apply_motion` writes frame `frames` = frame 0. |
 | Onion skin | `core/doc/onion.ts` | Clamped to the animation, so it never wraps. |
-| Pose at any frame | `posedSymbol` (`core/spine/spinePose.ts`) | Includes the IK solve, the same pose the stage draws. |
+| Pose at any frame | `posedSymbol` (`core/boneburst/boneburstPose.ts`) | Includes the IK solve, the same pose the stage draws. |
 | Bone drawing | `Overlay.drawBones` | Draws only the current frame. |
 
 Nothing shows whether frame 0 and the last frame match. Nothing draws movement over
@@ -352,7 +352,7 @@ key's, so the curve can corner there.
     the AI tools, the path-drag gestures in the Keyboard Shortcuts window, and a pointer
     in CLAUDE.md. Done.
 
-Each step keeps `spineParity`, `spineImport` and `spinePose` passing. Step 2 touches what the
+Each step keeps `spineParity`, `spineImport` and `boneburstPose` passing. Step 2 touches what the
 exporter reads (`playTimes`, `endsAtLastFrame`), so rerun `scripts/unity-check/` once. Not
 rerun yet: it needs the Unity Editor open on M0. Nothing in the file's header or format
 changed (only keys and lengths), and spine-core plays every case in `spineParity`.

@@ -1,19 +1,19 @@
 /// <reference path="../../vendor/spine-pixi.d.ts" />
-import { readAtlas } from "@/core/spine/runtime/atlasRead";
-import { readRig } from "@/core/spine/runtime/rigData";
-import { Rig } from "@/core/spine/runtime/rig";
-import type { ClippingData } from "@/core/spine/runtime/rigData";
-import { Track } from "@/core/spine/runtime/track";
-import { type DrawnSlot, drawList, drawnVertices } from "@/core/spine/runtime/draw";
+import { readAtlas } from "@/core/boneburst/runtime/atlasRead";
+import { readRig } from "@/core/boneburst/runtime/rigData";
+import { Rig } from "@/core/boneburst/runtime/rig";
+import type { ClippingData } from "@/core/boneburst/runtime/rigData";
+import { Track } from "@/core/boneburst/runtime/track";
+import { type DrawnSlot, drawList, drawnVertices } from "@/core/boneburst/runtime/draw";
 import type { PreviewRig, RigSource } from "./previewRig";
 import { type TwoColor, twoColorShader } from "./twoColor";
 
 /**
  * The BoneBurst runtime in the Preview (docs/PREVIEW-RUNTIME-PLAN.md): our
- * own reader and pose (`core/spine/runtime/`), drawn as one Pixi mesh per
+ * own reader and pose (`core/boneburst/runtime/`), drawn as one Pixi mesh per
  * slot. The Preview's runtime since P4.
  *
- * The track (`core/spine/runtime/track.ts`) plays, queues and crossfades as
+ * The track (`core/boneburst/runtime/track.ts`) plays, queues and crossfades as
  * spine-core's `AnimationState`; what a file holds that it does not play yet
  * is in `unsupported`.
  */
@@ -41,7 +41,7 @@ export function boneburstRig(src: RigSource): PreviewRig {
 
   // One Pixi mesh per slot, rebuilt when the shape it draws changes: a
   // region's quad, or a mesh attachment's own triangles. What is drawn, in
-  // what order and under which clip, is `drawList`'s (core/spine/runtime/draw.ts).
+  // what order and under which clip, is `drawList`'s (core/boneburst/runtime/draw.ts).
   interface Drawn { mesh: PIXI.Mesh; geometry: PIXI.MeshGeometry; positions: Float32Array; uvs: Float32Array; shape: unknown; twoColor: TwoColor | null }
   const meshes: Array<Drawn | null> = rig.data.slots.map(() => null);
   let drawnOrder = "";

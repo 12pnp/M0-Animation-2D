@@ -14,8 +14,8 @@ import { evaluateSymbol, type Pose, type PoseEntry } from "@/core/doc/pose";
 import { matOf } from "@/core/math/Matrix2D";
 import type { PackedPage } from "@/core/atlas/packed";
 import { atlasText } from "./atlas";
-import { exportSpine } from "./exportSpine";
-import { toSpineLocal } from "./transform";
+import { exportBoneBurst } from "./exportBoneBurst";
+import { toBoneBurstLocal } from "./transform";
 import { readAtlas } from "./runtime/atlasRead";
 import { type AttachmentData, readRig } from "./runtime/rigData";
 import { Rig as Runtime } from "./runtime/rig";
@@ -37,7 +37,7 @@ import type { PhysicsMode } from "./runtime/physics";
  *   out  world matrices, the attachment each slot shows, its colour, the
  *        draw order, and the world vertices of every region and mesh
  *
- * The skeleton comes from `exportSpine` (`setupOnly`), the file the export
+ * The skeleton comes from `exportBoneBurst` (`setupOnly`), the file the export
  * would write, so what the stage draws is what the export plays; keys are
  * the editor's, sampled as the parity tests prove the runtime plays them.
  * It is rebuilt only when the rig's STRUCTURE changes (`structureKey`):
@@ -58,7 +58,7 @@ interface Rig {
   slotNode: Map<number, NodeId>;
   /** The skin key each display index shows, per slot node. */
   displayNames: Map<NodeId, Map<number, string>>;
-  /** Carried shear, per bone node: Spine's own (see `importSpine`). */
+  /** Carried shear, per bone node: Spine's own (see `importBoneBurst`). */
   keepsShear: Set<NodeId>;
   images: Map<string, ItemId>;
   /** Constraints by name (index in the runtime's constraints). */
@@ -124,7 +124,7 @@ function rigFor(project: Project, sym: SymbolItem, skins: readonly string[]): { 
 export { skinsOf, stageSkinOf, toggledSkins } from "@/core/doc/skins";
 
 function buildRig(project: Project, sym: SymbolItem, skins: readonly string[]): { rig: Rig | null; error?: string } {
-  const exported = exportSpine(project, sym.id, { setupOnly: true });
+  const exported = exportBoneBurst(project, sym.id, { setupOnly: true });
   const errors = exported.diagnostics.filter((d) => d.severity === "error");
   if (errors.length) return { rig: null, error: errors[0]!.message };
 
@@ -190,7 +190,7 @@ function buildRig(project: Project, sym: SymbolItem, skins: readonly string[]): 
  * `evaluateSymbol`, posed by the runtime when the symbol came from a Spine
  * file. Anything else, or a rig the runtime refuses (a carried name the
  * edits broke, which the export would refuse too), is the editor's own pose;
- * `spinePoseError` says why.
+ * `boneburstPoseError` says why.
  */
 export function posedSymbol(
   project: Project, sym: SymbolItem, animation: Animation | null, frame: number, mode: "setup" | "animate",
@@ -204,7 +204,7 @@ export function posedSymbol(
 }
 
 /** Why an opened symbol is drawn with the editor's own pose, or null. */
-export function spinePoseError(project: Project, sym: SymbolItem, skins: readonly string[] = stageSkinOf(sym)): string | null {
+export function boneburstPoseError(project: Project, sym: SymbolItem, skins: readonly string[] = stageSkinOf(sym)): string | null {
   return sym.spine || runtimePosed(sym) ? rigFor(project, sym, skins).error ?? null : null;
 }
 
@@ -216,7 +216,7 @@ function applyRig(
   for (const [nodeId, bone] of rig.bones) {
     const e = pose.byNode.get(nodeId);
     if (!e) continue;
-    const l = toSpineLocal(e.local), at = bone * 7;
+    const l = toBoneBurstLocal(e.local), at = bone * 7;
     L[at] = l.x; L[at + 1] = l.y; L[at + 2] = l.rotation; L[at + 3] = l.scaleX; L[at + 4] = l.scaleY;
     if (!rig.keepsShear.has(nodeId)) { L[at + 5] = l.shearX; L[at + 6] = l.shearY; }
   }
@@ -421,7 +421,7 @@ function drawOf(rig: Rig, slot: number, att: AttachmentData | null): PoseEntry["
 
 /** What an opened symbol draws in its setup pose, boxed in its own space;
  *  null when it draws nothing. */
-export function spineBounds(project: Project, sym: SymbolItem, skins: readonly string[] = stageSkinOf(sym)): { x: number; y: number; w: number; h: number } | null {
+export function boneburstBounds(project: Project, sym: SymbolItem, skins: readonly string[] = stageSkinOf(sym)): { x: number; y: number; w: number; h: number } | null {
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (const e of posedSymbol(project, sym, null, 0, "setup", skins).entries) {
     const v = e.spine?.vertices;

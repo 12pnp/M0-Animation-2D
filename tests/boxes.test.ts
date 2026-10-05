@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { reseed } from "@/core/doc/ids";
 import {
-  attachmentPlan, boxFromOutline, roundMoved, boxNodeBounds, boxWeightsWithPoint, inPolygon, outlineWeightsKept, POINT_RADIUS, pointMatrix, pointToSpine,
+  attachmentPlan, boxFromOutline, roundMoved, boxNodeBounds, boxWeightsWithPoint, inPolygon, outlineWeightsKept, POINT_RADIUS, pointMatrix, pointToBoneBurst,
   uniqueNodeName, withBoxPoint, withOutlinePoints, withoutBoxPoint,
 } from "@/core/doc/boxes";
 import { evaluateSymbol } from "@/core/doc/pose";
@@ -9,7 +9,7 @@ import { apply } from "@/core/math/Matrix2D";
 import type { NodeId } from "@/core/doc/ids";
 import { createNode } from "@/core/doc/defaults";
 import { migrate, validateProject } from "@/core/doc/schema";
-import { exportSpine } from "@/core/spine/exportSpine";
+import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
 import { createLayer } from "@/core/doc/defaults";
 import type { SymbolItem } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
@@ -88,7 +88,7 @@ describe("boxes and points in the document and the file", () => {
     const point = createNode("point", "tip", { parentId: node("head") });
     const empty = { ...createNode("box", "empty") };
     for (const n of [box, point, empty]) { rig.nodes[n.id] = n; rig.layers.unshift(createLayer(n.id, n.name, 0)); }
-    const out = exportSpine(project);
+    const out = exportBoneBurst(project);
     const atts = out.skeleton.skins![0]!.attachments!;
     expect(atts.hit).toEqual({ hit: { type: "boundingbox", vertexCount: 3, vertices: [0, 0, 10, 0, 0, 10] } });
     expect(atts.tip).toEqual({ tip: { type: "point" } });
@@ -106,8 +106,8 @@ describe("a point with an offset", () => {
     expect([at.x, at.y]).toEqual([10, 5]);
     expect(along.x).toBeCloseTo(10, 9);
     expect(along.y).toBeCloseTo(6, 9);
-    expect(pointToSpine(p)).toEqual({ x: 10, y: -5, rotation: -90 });
-    expect(pointToSpine(createNode("point", "origin"))).toEqual({});
+    expect(pointToBoneBurst(p)).toEqual({ x: 10, y: -5, rotation: -90 });
+    expect(pointToBoneBurst(createNode("point", "origin"))).toEqual({});
     expect(boxNodeBounds(p)).toEqual({ x: 10 - POINT_RADIUS, y: 5 - POINT_RADIUS, w: POINT_RADIUS * 2, h: POINT_RADIUS * 2 });
   });
 });

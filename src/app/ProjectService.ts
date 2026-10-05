@@ -17,7 +17,7 @@ import { clearRecents, listRecents, type RecentEntry, rememberRecent, } from "@/
 import { Autosaver, type AutosaveRecord, clearAutosave, readAutosave, } from "@/io/project/Autosave";
 import { type RunBusy, runQuietly } from "./busy";
 import { SpineOpenCancelled, cutRegions, readSpineFiles } from "@/io/import/spineFiles";
-import { type AtlasImage, importSpine } from "@/core/spine/importSpine";
+import { type AtlasImage, importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import { type AssetId, newAssetId, reseed } from "@/core/doc/ids";
 
 export interface ProjectServiceEvents {
@@ -247,7 +247,7 @@ export class ProjectService {
         // A dry run with stand-in images: the importer's refusals, before
         // anything of the open project is touched.
         const stand = new Map<string, AtlasImage>(regions.map((r) => [r.name, { name: r.name, width: r.width, height: r.height, assetId: "" as AssetId }]));
-        importSpine(files.json, files.name, stand);
+        importBoneBurst(files.json, files.name, stand);
 
         reseed();
         this.assets.clear();
@@ -258,7 +258,7 @@ export class ProjectService {
         await Promise.all(regions.map((r, i) => this.assets.addWithId(ids[i]!, r.png, r.name)));
         regions.forEach((r, i) => images.set(r.name, { name: r.name, width: r.width, height: r.height, assetId: ids[i]! }));
         report(0.9);
-        const imported = importSpine(files.json, files.name, images);
+        const imported = importBoneBurst(files.json, files.name, images);
         const all = [...warnings, ...imported.diagnostics.map((d) => d.message)];
         return {
           project: imported.project,

@@ -48,7 +48,7 @@ export const TRADEMARK_NOTE =
   + "Esoteric Software or with Morenoise.";
 
 /** How the editor relates to the runtime it exports for. */
-export const SPINE_NOTE =
+export const BONEBURST_NOTE =
   "BoneBurst exports the Spine 4.3 format: a skeleton .json, a .atlas and "
   + "its pages, which any Spine 4.3 runtime plays. The Preview panel plays those "
   + "exact files with BoneBurst's own Spine 4.3 runtime, which its tests hold to "

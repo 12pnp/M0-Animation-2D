@@ -10,13 +10,13 @@ import type { AssetStore } from "@/app/AssetStore";
 import type { ExportDiagnostic } from "@/core/export/diagnostics";
 import { type AtlasOptions, atlasOptionsFor, type AtlasPage, buildAtlas } from "@/io/atlas/AtlasBuilder";
 import { DEFAULT_EXPORT_SETTINGS, type ExportSettings } from "@/core/export/settings";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
-import { atlasText, isAtlasName } from "@/core/spine/atlas";
-import type { SpineSkeletonFile } from "@/core/spine/types";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { atlasText, isAtlasName } from "@/core/boneburst/atlas";
+import type { BoneBurstSkeletonFile } from "@/core/boneburst/types";
 
 export interface ExportResult {
   fileBase: string;
-  skeleton: SpineSkeletonFile;
+  skeleton: BoneBurstSkeletonFile;
   /** The `.atlas` text for `pages`. */
   atlas: string;
   pages: AtlasPage[];
@@ -59,7 +59,7 @@ export async function buildExports(
   onProgress?: (fraction: number) => void,
 ): Promise<Map<ItemId, ExportResult>> {
   const maskShape = await maskShapes(project, assets);
-  const exported = [...new Set(symbolIds)].map((id) => [id, exportSpine(project, id, { maskShape })] as const);
+  const exported = [...new Set(symbolIds)].map((id) => [id, exportBoneBurst(project, id, { maskShape })] as const);
   const used = new Set<ItemId>();
   for (const [, e] of exported) for (const id of e.usedImages) used.add(id);
   const items = [...used]
@@ -88,7 +88,7 @@ export async function buildExports(
 
 /**
  * The outline each mask image clips with, traced from its pixels (on a
- * worker), for `exportSpine`: every image a mask layer shows anywhere in the
+ * worker), for `exportBoneBurst`: every image a mask layer shows anywhere in the
  * document. An image whose pixels are not decoded yet, or which has been
  * replaced by one of another size, is scaled to the item or, failing that,
  * clips with its rectangle.
@@ -128,7 +128,7 @@ export function exportSettingsOf(project: Project): ExportSettings {
 /** Every exported file by name, shared by the zip and the folder export. */
 export async function exportFiles(result: ExportResult): Promise<Record<string, Uint8Array>> {
   const files: Record<string, Uint8Array> = {};
-  files[`${result.fileBase}.json`] = strToU8(spineJson(result.skeleton, result.minifyJson === true));
+  files[`${result.fileBase}.json`] = strToU8(boneburstJson(result.skeleton, result.minifyJson === true));
   files[`${result.fileBase}.${result.atlasTxt ? "atlas.txt" : "atlas"}`] = strToU8(result.atlas);
   for (const page of result.pages) {
     files[`${page.fileStem}.${page.ext}`] = new Uint8Array(await page.blob.arrayBuffer());

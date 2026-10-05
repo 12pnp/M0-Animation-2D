@@ -64,7 +64,7 @@ import { DEFAULT_PREFS, PLAYHEAD_DEFAULT } from "@/core/prefs/prefs";
 import { uiFont, type UiFontSize, uiPx } from "@/core/prefs/fonts";
 import { dragMarkers, type MarkerDrag, type OnionSpan, wrapSpan } from "@/core/doc/onion";
 import { SEAM_TOLERANCE, type SeamGap, seamFrame, seamGap } from "@/core/doc/cycle";
-import { posedSymbol } from "@/core/spine/spinePose";
+import { posedSymbol } from "@/core/boneburst/boneburstPose";
 import { eventSounds, peakBetween, type Waveform } from "@/core/doc/waveform";
 import { constraintKeyFrames, moveConstraintKeys } from "@/core/doc/constraintKeys";
 

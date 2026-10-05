@@ -2,15 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   AnimationState, AnimationStateData, AtlasAttachmentLoader, Physics, Skeleton, SkeletonJson, TextureAtlas,
 } from "@esotericsoftware/spine-core";
-import { readAtlas } from "@/core/spine/runtime/atlasRead";
-import { readRig } from "@/core/spine/runtime/rigData";
-import { Rig } from "@/core/spine/runtime/rig";
-import { Track } from "@/core/spine/runtime/track";
+import { readAtlas } from "@/core/boneburst/runtime/atlasRead";
+import { readRig } from "@/core/boneburst/runtime/rigData";
+import { Rig } from "@/core/boneburst/runtime/rig";
+import { Track } from "@/core/boneburst/runtime/track";
 import { sampleRigs } from "./fixtures/spineSamples";
 import type { Json } from "./fixtures/runtimeOracle";
 
 /**
- * The BoneBurst runtime's physics (`core/spine/runtime/physics.ts`) against
+ * The BoneBurst runtime's physics (`core/boneburst/runtime/physics.ts`) against
  * spine-core 4.3.13, stepped as the Preview steps it — the track, then the
  * skeleton's clock, then the pose with physics updating — with uneven frame
  * times, every bone compared at every step.

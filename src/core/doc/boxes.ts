@@ -58,7 +58,7 @@ export function withPointOffset(node: Node, patch: Partial<NonNullable<Node["poi
 }
 
 /** The point as Spine's attachment writes it: y up, counterclockwise. */
-export function pointToSpine(node: Node): Record<string, number> {
+export function pointToBoneBurst(node: Node): Record<string, number> {
   const p = node.point, out: Record<string, number> = {};
   if (!p) return out;
   if (p.x) out.x = p.x;
@@ -94,7 +94,7 @@ export function outlineWeighted(node: Node): boolean {
 }
 
 /** An outline as a mesh with no triangles, for the mesh rule's functions
- *  (`meshWorld`, `spineVertices`, `localDelta`): its points about 0, 0. */
+ *  (`meshWorld`, `boneburstVertices`, `localDelta`): its points about 0, 0. */
 export function outlineAsMesh(o: { points: number[] } & OutlineWeights): MeshData {
   const m: MeshData = { width: 1, height: 1, points: o.points, triangles: [], hull: 0 };
   if (o.weights) m.weights = o.weights;

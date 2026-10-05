@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { AtlasAttachmentLoader, MeshAttachment, MixFrom, Physics, Skeleton, SkeletonJson, TextureAtlas } from "@esotericsoftware/spine-core";
 import { evaluateSymbol } from "@/core/doc/pose";
-import { atlasText } from "@/core/spine/atlas";
+import { atlasText } from "@/core/boneburst/atlas";
 import { reseed, type AssetId } from "@/core/doc/ids";
-import { importSpine } from "@/core/spine/importSpine";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
-import { meshFromSpine } from "@/core/spine/importMesh";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { meshFromBoneBurst } from "@/core/boneburst/importMesh";
 import { displaysOf } from "@/core/doc/displays";
 import { withPoint, withPointMoved, withPositions, withWeights } from "@/core/mesh/meshEdit";
-import { meshPositions, spineVertices } from "@/core/mesh/meshPose";
+import { meshPositions, boneburstVertices } from "@/core/mesh/meshPose";
 import { mat } from "@/core/math/Matrix2D";
 import type { MeshData, SymbolItem } from "@/core/doc/types";
 import { imagesOf, sampleRigs } from "./fixtures/spineSamples";
@@ -33,7 +33,7 @@ function meshFile(extra: Record<string, unknown> = {}, deform?: unknown) {
 }
 
 function opened(file: unknown) {
-  const project = importSpine(file as never, "m", images).project;
+  const project = importBoneBurst(file as never, "m", images).project;
   const sym = project.items[project.rootSymbolId] as SymbolItem;
   const slot = Object.values(sym.nodes).find((n) => n.name === "skin")!;
   return { project, sym, slot };
@@ -47,7 +47,7 @@ describe("an opened mesh becomes the document's", () => {
     expect(slot.key).toBe("body");
     expect(slot.mesh!.points).toEqual([0, 0, 100, 0, 100, 50, 0, 50]);
     expect(slot.mesh!.vertices).toBeDefined();
-    const out = exportSpine(project).skeleton.skins![0]!.attachments!.skin!.body as unknown as Record<string, number[]>;
+    const out = exportBoneBurst(project).skeleton.skins![0]!.attachments!.skin!.body as unknown as Record<string, number[]>;
     out.vertices!.forEach((v, i) => expect(v).toBeCloseTo(file.skins[0]!.attachments.skin.body.vertices[i]!, 4));
     expect(out.uvs).toEqual(file.skins[0]!.attachments.skin.body.uvs);
   });
@@ -75,11 +75,11 @@ describe("an opened mesh becomes the document's", () => {
   it("a weighted point keeps each bone's offset as the file has it, though they disagree; written back the same", () => {
     const ctx = { width: 10, height: 10, pivot: { x: 5, y: 5 }, node: mat(), bone: (n: string) => ({ id: n as never, setup: mat() }), setupOf: () => mat() };
     const att = { type: "mesh", uvs: [0, 0, 1, 0, 1, 1], triangles: [0, 1, 2], vertices: [1, "a", 0, 0, 1, 1, "a", 10, 0, 1, 2, "a", 10, 10, 0.5, "b", 12, 10, 0.5] };
-    const mesh = meshFromSpine(att, ctx)!;
+    const mesh = meshFromBoneBurst(att, ctx)!;
     expect(mesh.boneOffsets).toEqual([[[0, 0]], [[10, 0]], [[10, -10], [12, -10]]]);
     // The position is where the setup pose shows the point: between the two.
     expect(meshPositions(mesh).slice(4)).toEqual([16, -5]);
-    const back = spineVertices(mesh, ctx.pivot, { now: () => mat(), setup: () => mat(), node: mat() }, (id) => id as string);
+    const back = boneburstVertices(mesh, ctx.pivot, { now: () => mat(), setup: () => mat(), node: mat() }, (id) => id as string);
     expect(back).toEqual(att.vertices);
   });
 
@@ -92,7 +92,7 @@ describe("an opened mesh becomes the document's", () => {
     const { project, sym, slot } = opened(file);
     expect(slot.mesh?.boneOffsets).toBeDefined();
     stageAgainstRuntime(project, sym, "arm");
-    const out = exportSpine(project).skeleton.skins![0]!.attachments!.skin!.body as unknown as Record<string, Array<number | string>>;
+    const out = exportBoneBurst(project).skeleton.skins![0]!.attachments!.skin!.body as unknown as Record<string, Array<number | string>>;
     expect(out.vertices).toEqual(body.vertices);
   });
 
@@ -103,7 +103,7 @@ describe("an opened mesh becomes the document's", () => {
     body.vertices = [2, 1, -10, 6, 0.6, 2, -12, 4, 0.4, 1, 1, 10, 6, 1, 1, 2, 10, -6, 1, 2, 1, -10, -6, 0.5, 2, -40, -5, 0.5];
     (file.animations.wave as Record<string, unknown>).bones = { arm: { rotate: [{ value: 0 }, { time: 1, value: 40 }] }, tip: { rotate: [{ value: 0 }, { time: 1, value: -60 }] } };
     const { project, sym, slot } = opened(file);
-    const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(atlasText([{ name: "p", imagePath: "p.png", width: 128, height: 64, scale: 1, regions: [{ name: "img", x: 0, y: 0, width: 100, height: 50, offsetX: 0, offsetY: 0, originalWidth: 100, originalHeight: 50, rotated: false }] }])))).readSkeletonData(JSON.parse(spineJson(exportSpine(project).skeleton))));
+    const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(atlasText([{ name: "p", imagePath: "p.png", width: 128, height: 64, scale: 1, regions: [{ name: "img", x: 0, y: 0, width: 100, height: 50, offsetX: 0, offsetY: 0, originalWidth: 100, originalHeight: 50, rotated: false }] }])))).readSkeletonData(JSON.parse(boneburstJson(exportBoneBurst(project).skeleton))));
     const anim = sym.animations[0]!;
     // The editor's own path: the symbol without its carry is not posed by the runtime.
     const own = { ...sym, spine: undefined };
@@ -150,7 +150,7 @@ describe("spine-unity's samples", () => {
   it.skipIf(!sampleRigs().length)("some of their meshes become editable, the rest stay carried", () => {
     let editable = 0, carried = 0;
     for (const rig of sampleRigs()) {
-      const project = importSpine(JSON.parse(rig.json), rig.name, imagesOf(rig.atlas)).project;
+      const project = importBoneBurst(JSON.parse(rig.json), rig.name, imagesOf(rig.atlas)).project;
       for (const node of Object.values((project.items[project.rootSymbolId] as SymbolItem).nodes)) {
         for (const d of displaysOf(node)) {
           if (d.mesh) editable++;

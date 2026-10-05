@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { animationAfterRemoval, uniqueAnimationName } from "@/core/doc/animationList";
-import { toggledSkins } from "@/core/spine/spinePose";
+import { toggledSkins } from "@/core/boneburst/boneburstPose";
 
 describe("uniqueAnimationName", () => {
   const cases: Array<[string[], string]> = [

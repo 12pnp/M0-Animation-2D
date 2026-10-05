@@ -1,4 +1,4 @@
-import type { SpineSkeletonFile } from "./types";
+import type { BoneBurstSkeletonFile } from "./types";
 
 /**
  * A skeleton without Spine's nonessential data (ARCHITECTURE ▸ Export
@@ -15,8 +15,8 @@ import type { SpineSkeletonFile } from "./types";
  *
  * A region's or mesh's colour is a tint, not nonessential, and stays.
  */
-export function withoutNonessential(file: SpineSkeletonFile): SpineSkeletonFile {
-  const out = structuredClone(file) as SpineSkeletonFile & Record<string, unknown>;
+export function withoutNonessential(file: BoneBurstSkeletonFile): BoneBurstSkeletonFile {
+  const out = structuredClone(file) as BoneBurstSkeletonFile & Record<string, unknown>;
   const header = out.skeleton as unknown as Record<string, unknown>;
   for (const k of ["fps", "images", "audio"]) delete header[k];
   for (const b of out.bones as unknown as Array<Record<string, unknown>>) for (const k of ["color", "icon", "visible"]) delete b[k];

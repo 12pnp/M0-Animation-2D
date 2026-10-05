@@ -5,7 +5,7 @@ import { DOC_VERSION, type SymbolItem } from "@/core/doc/types";
 import { migrate, validateProject } from "@/core/doc/schema";
 import { History } from "@/core/history/History";
 import { SetBonePrimary } from "@/core/history/commands";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
 
 beforeEach(() => reseed());
 
@@ -47,6 +47,6 @@ describe("Node.primary", () => {
   it("is never exported", () => {
     const { project, leg } = scene();
     leg.primary = true;
-    expect(spineJson(exportSpine(project).skeleton)).not.toContain("primary");
+    expect(boneburstJson(exportBoneBurst(project).skeleton)).not.toContain("primary");
   });
 });

@@ -3,7 +3,7 @@ import type { NodeId } from "@/core/doc/ids";
 import { layerRows } from "@/core/doc/layerTree";
 import { invert, type Matrix2D, mat, mul } from "@/core/math/Matrix2D";
 import { fromMatrix, matrixOf, type Transform, tf } from "@/core/math/Transform";
-import { fromSpineLocal } from "@/core/spine/transform";
+import { fromBoneBurstLocal } from "@/core/boneburst/transform";
 
 /**
  * Where new rig parts go, decided without a store: the AI's rigging tools
@@ -13,11 +13,11 @@ import { fromSpineLocal } from "@/core/spine/transform";
  */
 
 /** A point in skeleton space, y up: what get_pose and render_frame report. */
-export type SpinePoint = readonly [number, number];
+export type BoneBurstPoint = readonly [number, number];
 
 /** A pose in skeleton space as an editor world matrix. */
-function worldOf(at: SpinePoint, rotation: number, scale: number): Matrix2D {
-  return matrixOf(fromSpineLocal({ x: at[0], y: at[1], rotation, shearX: 0, shearY: 0, scaleX: scale, scaleY: scale }));
+function worldOf(at: BoneBurstPoint, rotation: number, scale: number): Matrix2D {
+  return matrixOf(fromBoneBurstLocal({ x: at[0], y: at[1], rotation, shearX: 0, shearY: 0, scaleX: scale, scaleY: scale }));
 }
 
 /** `world` as a setup pose under `parentWorld`; null when the parent's
@@ -35,7 +35,7 @@ function localTo(parentWorld: Matrix2D | undefined, world: Matrix2D): Transform 
  * axis, which is unit length in the world whatever its parents' scale.
  */
 export function boneFromWorld(
-  parentWorld: Matrix2D | undefined, from: SpinePoint, to: SpinePoint,
+  parentWorld: Matrix2D | undefined, from: BoneBurstPoint, to: BoneBurstPoint,
 ): { bind: Transform; length: number } | null {
   const dx = to[0] - from[0], dy = to[1] - from[1];
   const length = Math.hypot(dx, dy);
@@ -50,7 +50,7 @@ export function boneFromWorld(
  * picture upright, as it was drawn.
  */
 export function placeOnBone(
-  boneWorld: Matrix2D | undefined, at: SpinePoint, rotation = 0, scale = 1,
+  boneWorld: Matrix2D | undefined, at: BoneBurstPoint, rotation = 0, scale = 1,
 ): Transform | null {
   return localTo(boneWorld, worldOf(at, rotation, scale));
 }

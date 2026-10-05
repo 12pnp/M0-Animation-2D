@@ -12,7 +12,7 @@ import { handleAt, handlePartner, handlePoint, handlesSmooth, type HandleEnd, mi
 import { quantize, type Transform } from "@/core/math/Transform";
 import { type IkPathDrag, ikTargetFor, targetLocalAt, withBendFlippedAt, withTargetAt } from "@/core/doc/ikPathEdit";
 import type { Pose } from "@/core/doc/pose";
-import { posedSymbol } from "@/core/spine/spinePose";
+import { posedSymbol } from "@/core/boneburst/boneburstPose";
 import { EditTracks, EditTracksAndIk, SetIkKeys } from "@/core/history/timelineCommands";
 
 /**

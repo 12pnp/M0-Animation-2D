@@ -1,7 +1,7 @@
 import type { Transform } from "@/core/math/Transform";
 import type { ExportSettings } from "@/core/export/settings";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
-import type { SpineInherit } from "@/core/spine/types";
+import type { BoneBurstInherit } from "@/core/boneburst/types";
 import type { AnimId, AssetId, CnId, FolderId, IkId, ItemId, LayerId, NodeId, TcId } from "./ids";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
@@ -74,8 +74,8 @@ export interface SymbolItem {
   folderId?: FolderId;
   /** Opened from a Spine file: what the model does not hold, carried to the
    *  export as it came. The stage poses such a symbol through the runtime
-   *  (`core/spine/spinePose.ts`), so what it carries is also what it shows. */
-  spine?: SpineCarry;
+   *  (`core/boneburst/boneburstPose.ts`), so what it carries is also what it shows. */
+  spine?: BoneBurstCarry;
   /** The skins the stage and Preview show, combined as Spine combines
    *  skins (the default skin under them all). Absent: the default skin, or
    *  the first other one when it draws nothing (`stageSkinOf`).
@@ -129,10 +129,10 @@ export interface EventKey {
  * the export writes them back: constraints other than the IK it solves,
  * attachments that are not displays (every skin but the default one whole),
  * events. Bones and slots are named, never indexed: weighted vertices hold
- * bone NAMES here (`core/spine/carry.ts`), and the export checks that every
+ * bone NAMES here (`core/boneburst/carry.ts`), and the export checks that every
  * name still exists.
  */
-export interface SpineCarry {
+export interface BoneBurstCarry {
   /** Header fields other than `spine` and `fps`: hash, bounds, images, audio, referenceScale. */
   header: Record<string, unknown>;
   /** Constraints kept as the file has them. */
@@ -236,8 +236,8 @@ export interface Node {
    *  Bones row (`boneRow`). Editor only; never exported. */
   primary?: true;
   /** What the bone takes from its parent, Spine's `inherit`. Absent: all of
-   *  it. Only the Spine pose applies the other modes (`spinePose.ts`). */
-  inherit?: SpineInherit;
+   *  it. Only the Spine pose applies the other modes (`boneburstPose.ts`). */
+  inherit?: BoneBurstInherit;
   /**
    * Spine's slot on a bone: this layer draws on the bone node named here and
    * has no transform of its own (its bind stays identity, it is never keyed
@@ -249,7 +249,7 @@ export interface Node {
   /** The display the bind pose shows; -1 none. Absent: 0. */
   setupDisplay?: number;
   /** Display 0's Spine attachment, when opened from a Spine file. */
-  attachment?: SpineAttachmentRef;
+  attachment?: BoneBurstAttachmentRef;
   /** Display 0's attachment key, kept from an opened file once the model
    *  holds the attachment itself (a mesh made editable): what attachment keys
    *  and linked meshes name. Absent: the image's name. */
@@ -273,7 +273,7 @@ export interface DisplayRef {
   itemId: ItemId;
   pivot: { x: number; y: number };
   /** The Spine attachment it came from, opened from a Spine file. */
-  attachment?: SpineAttachmentRef;
+  attachment?: BoneBurstAttachmentRef;
   /** Its attachment key, as `Node.key` is display 0's. */
   key?: string;
   /** The attachment's own name (Spine's `name`, which the region path
@@ -414,7 +414,7 @@ export interface DeformKey {
  * keeps its own offset, rotation and size, a mesh its vertices, weights and
  * triangles. `itemId` is the image its `path` (or name) names.
  */
-export interface SpineAttachmentRef {
+export interface BoneBurstAttachmentRef {
   /** Its key in the skin: what attachment keys name. */
   name: string;
   /** The attachment's JSON; weighted vertices name their bones. */
@@ -639,7 +639,7 @@ export interface ValueKey {
 /** One inherit key: the bone takes `inherit` of its parent from `frame` on. */
 export interface InheritKey {
   frame: number;
-  inherit: SpineInherit;
+  inherit: BoneBurstInherit;
 }
 
 /** One IK key. `tween` eases the mix (and softness) to the next key: linear when absent,

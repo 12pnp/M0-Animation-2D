@@ -1,6 +1,6 @@
 import type { Pose } from "@/core/doc/pose";
 import type { Animation, Project, SymbolItem } from "@/core/doc/types";
-import { posedSymbol } from "@/core/spine/spinePose";
+import { posedSymbol } from "@/core/boneburst/boneburstPose";
 
 export type PathSampler = (frame: number, force?: boolean) => Pose | null;
 

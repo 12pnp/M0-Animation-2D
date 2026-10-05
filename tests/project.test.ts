@@ -5,7 +5,7 @@ import { isSymbol, DOC_VERSION, type Project, type SymbolItem } from "@/core/doc
 import { tf } from "@/core/math/Transform";
 import { TWEEN_LINEAR } from "@/core/math/easing";
 import { serializeProject, deserializeProject } from "@/io/project/ProjectFile";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
 import { validateProject, migrate } from "@/core/doc/schema";
 import type { AssetStore } from "@/app/AssetStore";
 
@@ -82,11 +82,11 @@ describe("project round trip", () => {
     // two skeletons diverge.
     const assets = fakeAssets();
     const project = richProject(assets);
-    const before = spineJson(exportSpine(project).skeleton);
+    const before = boneburstJson(exportBoneBurst(project).skeleton);
 
     const blob = await serializeProject(project, assets.store);
     const { project: loaded } = await deserializeProject(await blob.arrayBuffer(), assets.store);
-    expect(spineJson(exportSpine(loaded).skeleton)).toBe(before);
+    expect(boneburstJson(exportBoneBurst(loaded).skeleton)).toBe(before);
   });
 
   it("preserves the document exactly", async () => {

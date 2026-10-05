@@ -13,7 +13,7 @@ import {
     SETUP_CONTEXT,
 } from "@/core/doc/pose";
 import { maskGroups } from "@/core/doc/layerTree";
-import { posedSymbol } from "@/core/spine/spinePose";
+import { posedSymbol } from "@/core/boneburst/boneburstPose";
 import type { AssetStore } from "@/app/AssetStore";
 
 /**
@@ -187,7 +187,7 @@ export class SceneRenderer {
   }
 
   /**
-   * A symbol the Spine runtime posed (`spinePose.ts`): its slots in the
+   * A symbol the Spine runtime posed (`boneburstPose.ts`): its slots in the
    * runtime's draw order, each the geometry the runtime computed. A clipping
    * attachment clips from the next slot through its end slot, one at a time,
    * as `SkeletonClipping` does: a clip met while another is on is ignored.

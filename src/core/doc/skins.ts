@@ -250,7 +250,7 @@ export function withRenamedSkin(sym: SymbolItem, from: string, to: string): Skin
 }
 
 /** A skin's colour in Spine's editor when the file gives none (spine-core's `Skin.color`). */
-export const SPINE_SKIN_COLOR = "fe9e4fff";
+export const BONEBURST_SKIN_COLOR = "fe9e4fff";
 
 /** `name` with its colour set ("rrggbbaa"), or Spine's default (undefined). */
 export function withSkinColor(sym: SymbolItem, name: string, color: string | undefined): SkinState {

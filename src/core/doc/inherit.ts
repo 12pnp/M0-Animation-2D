@@ -1,8 +1,8 @@
 import type { NodeId } from "./ids";
 import { runtimeSolved } from "./constraints";
 import type { Animation, InheritKey, Node, SymbolItem } from "./types";
-import type { SpineInherit } from "@/core/spine/types";
-import { keyTime } from "@/core/spine/transform";
+import type { BoneBurstInherit } from "@/core/boneburst/types";
+import { keyTime } from "@/core/boneburst/transform";
 
 /**
  * Inherit modes (ARCHITECTURE ▸ Inherit modes), pure: what a bone takes from
@@ -10,9 +10,9 @@ import { keyTime } from "@/core/spine/transform";
  * (`Animation.inherits`, Spine's stepped `inherit` timeline).
  */
 
-export const INHERIT_MODES: readonly SpineInherit[] = ["normal", "onlyTranslation", "noRotationOrReflection", "noScale", "noScaleOrReflection"];
+export const INHERIT_MODES: readonly BoneBurstInherit[] = ["normal", "onlyTranslation", "noRotationOrReflection", "noScale", "noScaleOrReflection"];
 
-export const INHERIT_LABELS: Record<SpineInherit, string> = {
+export const INHERIT_LABELS: Record<BoneBurstInherit, string> = {
   normal: "Everything",
   onlyTranslation: "Position only",
   noRotationOrReflection: "No rotation or reflection",
@@ -20,12 +20,12 @@ export const INHERIT_LABELS: Record<SpineInherit, string> = {
   noScaleOrReflection: "No scale or reflection",
 };
 
-export function isInherit(v: unknown): v is SpineInherit {
+export function isInherit(v: unknown): v is BoneBurstInherit {
   return typeof v === "string" && (INHERIT_MODES as readonly string[]).includes(v);
 }
 
 /** The bone's mode at `frame`: the last key at or before it, else its own. */
-export function inheritAt(node: Node, anim: Animation | null | undefined, frame: number): SpineInherit {
+export function inheritAt(node: Node, anim: Animation | null | undefined, frame: number): BoneBurstInherit {
   let mode = node.inherit ?? "normal";
   for (const k of anim?.inherits?.[node.id] ?? []) if (k.frame <= frame) mode = k.inherit;
   return mode;
@@ -43,7 +43,7 @@ export function runtimePosed(sym: SymbolItem): boolean {
 }
 
 /** `keys` with `mode` keyed at `frame`, replacing a key there. */
-export function withInheritKey(keys: readonly InheritKey[], frame: number, mode: SpineInherit): InheritKey[] {
+export function withInheritKey(keys: readonly InheritKey[], frame: number, mode: BoneBurstInherit): InheritKey[] {
   return [...keys.filter((k) => k.frame !== frame), { frame, inherit: mode }].sort((a, b) => a.frame - b.frame);
 }
 
@@ -59,7 +59,7 @@ export function inheritTimeline(keys: readonly InheritKey[], fps: number): Array
 
 /** A file's `inherit` timeline as keys, each on the first whole frame it
  *  shows on; null when a key names no mode (then it stays carried). */
-export function inheritKeysFromSpine(raw: unknown, fps: number): InheritKey[] | null {
+export function inheritKeysFromBoneBurst(raw: unknown, fps: number): InheritKey[] | null {
   if (!Array.isArray(raw)) return null;
   const keys: InheritKey[] = [];
   for (const k of raw) {

@@ -18,8 +18,8 @@ import { childFrame, displayContext, evaluateSymbol, type FrameContext, type Pos
 import { apply, type Matrix2D, mat, mul, translate } from "@/core/math/Matrix2D";
 import { tf, toMatrix, type Transform } from "@/core/math/Transform";
 import type { PackedPage } from "@/core/atlas/packed";
-import { atlasText } from "@/core/spine/atlas";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
+import { atlasText } from "@/core/boneburst/atlas";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
 import { loadFixture } from "./fixtures/realProject";
 import { loadStickman } from "./fixtures/stickman";
 import { cyclePlan } from "@/core/doc/cycle";
@@ -61,9 +61,9 @@ function pageFor(project: Project, ids: ItemId[]): PackedPage {
 }
 
 function runtimeFor(project: Project, symbolId: ItemId) {
-  const exported = exportSpine(project, symbolId);
+  const exported = exportBoneBurst(project, symbolId);
   // Through the text, as a file would go.
-  const json = JSON.parse(spineJson(exported.skeleton));
+  const json = JSON.parse(boneburstJson(exported.skeleton));
   const atlas = new TextureAtlas(atlasText([pageFor(project, exported.usedImages)]));
   const data = new SkeletonJson(new AtlasAttachmentLoader(atlas)).readSkeletonData(json);
   return { exported, skeleton: new Skeleton(data) };
@@ -97,7 +97,7 @@ interface Drawn {
  * shown instance evaluating its symbol at `childFrame(displayContext)`,
  * hanging it off its world at −pivot, multiplying its alpha down, and
  * handing its own animation and frame to the next level. Paint order; keys
- * are the export's paths (`SpineExport.paths`).
+ * are the export's paths (`BoneBurstExport.paths`).
  */
 function stagePose(project: Project, sym: SymbolItem, ctx: FrameContext, depth = 0, key = "", base = mat(), alpha = 1, shownAbove = true): Drawn[] {
   const here = depth === 0 ? { animation: sym.animations.find((a) => a.name === ctx.animationName) ?? null, frame: ctx.frame } : childFrame(sym, ctx);
@@ -1043,7 +1043,7 @@ describe("meshes", () => {
     const anim = sym.animations[0]!;
     const track = anim.tracks[torso.id] ?? { nodeId: torso.id, endFrame: anim.duration - 1, keys: [key(0, torso.bind)] };
     anim.tracks[torso.id] = { ...track, keys: [...track.keys.filter((k) => k.frame !== 5 && k.frame !== 11), key(5, torso.bind, { displayIndex: 1, tween: { kind: "none" } }), key(11, torso.bind, { tween: { kind: "none" } })].sort((a, b) => a.frame - b.frame) };
-    const out = exportSpine(project).skeleton.skins![0]!.attachments!;
+    const out = exportBoneBurst(project).skeleton.skins![0]!.attachments!;
     const slot = Object.values(out).find((atts) => Object.values(atts).some((a) => (a as { type?: string }).type === "linkedmesh"))!;
     const linked = Object.values(slot).find((a) => (a as { type?: string }).type === "linkedmesh") as unknown as Record<string, unknown>;
     expect(linked).toMatchObject({ type: "linkedmesh", ...(deform ? {} : { timelines: false }) });
@@ -1096,7 +1096,7 @@ describe("skins", () => {
     ];
     expect(across(project, rig, [[], ["red"], ["blue"], ["red", "blue"], ["blue", "red"]])).toBeGreaterThan(100);
     // The export: the skin's attachment under the default one's key.
-    const out = exportSpine(project, rig.id).skeleton;
+    const out = exportBoneBurst(project, rig.id).skeleton;
     const red = out.skins!.find((sk) => sk.name === "red")!;
     expect(Object.keys(red.attachments!.torso!)).toEqual(Object.keys(out.skins![0]!.attachments!.torso!));
   });
@@ -1111,7 +1111,7 @@ describe("skins", () => {
     across(project, rig, [[], ["red"], ["other"]]);
     rig.stageSkins = [];
     expect(evaluateSymbol(rig, rig.animations[0]!, 3).byNode.get(node("torso"))!.visible).toBe(false);
-    expect(exportSpine(project, rig.id).skeleton.skins![0]!.attachments!.torso).toBeUndefined();
+    expect(exportBoneBurst(project, rig.id).skeleton.skins![0]!.attachments!.torso).toBeUndefined();
   });
 
   it("skin bones: off without their skin, on with it or with a skin listing a descendant", async () => {
@@ -1127,7 +1127,7 @@ describe("skins", () => {
     expect(pose.byNode.get(node("head_art"))!.visible).toBe(true);
     // The chest is on (the head hangs from it), its picture is not: "upper" lists it.
     expect(pose.byNode.get(node("torso"))!.visible).toBe(false);
-    const bones = exportSpine(project, rig.id).skeleton.bones;
+    const bones = exportBoneBurst(project, rig.id).skeleton.bones;
     expect(bones.find((b) => b.name === "torso")!.skin).toBe(true);
     expect(bones.find((b) => b.name === "hips")!.skin).toBeUndefined();
   });
@@ -1140,7 +1140,7 @@ describe("skins", () => {
     }];
     rig.skins = [{ name: "legs", ik: [rig.ik[0]!.id, rig.ik[1]!.id] }, { name: "follow", transforms: [rig.transforms![0]!.id] }];
     expect(across(project, rig, [[], ["legs"], ["follow"], ["legs", "follow"]])).toBeGreaterThan(100);
-    const out = exportSpine(project, rig.id).skeleton;
+    const out = exportBoneBurst(project, rig.id).skeleton;
     expect(out.constraints!.filter((c) => (c as { skin?: boolean }).skin).map((c) => c.name).sort()).toEqual(["follow", "leg_far_shin_ik", "leg_near_shin_ik"]);
   });
 });
@@ -1174,7 +1174,7 @@ describe("boxes and points", () => {
       weights: [[[node("arm_near_up"), 1]], [[node("arm_near_up"), 0.5], [node("arm_near_fore"), 0.5]], [[node("arm_near_fore"), 1]], [[node("arm_near_up"), 0.3], [node("arm_near_fore"), 0.7]]],
     };
     for (const n of [point, box]) { rig.nodes[n.id] = n; rig.layers.unshift(createLayer(n.id, n.name, rig.layers.length)); }
-    const att = exportSpine(project).skeleton.skins![0]!.attachments!;
+    const att = exportBoneBurst(project).skeleton.skins![0]!.attachments!;
     expect(att.muzzle!.muzzle).toMatchObject({ type: "point", x: 12, y: 5, rotation: -35 });
     expect((att.sleeve!.sleeve as { vertices: unknown[] }).vertices[0]).toBe(1);
     expect(checkParity(project, rig.id).checks).toBeGreaterThan(100);
@@ -1198,7 +1198,7 @@ describe("sequences", () => {
     const modes = ["loop", "pingpong", "once", "loopReverse", "pingpongReverse", "onceReverse", "hold"] as const;
     rig.animations[0]!.sequences = { [fx.id]: modes.map((mode, i) => ({ frame: 2 + i * 4, mode, index: i % 3, delay: [1, 1.5, 0.75, 2][i % 4]! })) };
     rig.animations[1]!.sequences = { [fx.id]: [{ frame: 0, mode: "pingpong", index: 4, delay: 0.5 }] };
-    const out = exportSpine(project);
+    const out = exportBoneBurst(project);
     expect(out.skeleton.skins![0]!.attachments!.fx).toEqual({ fx_08: { width: 24, height: 16, path: "fx_", x: 8, sequence: { count: 5, start: 8, digits: 2, setup: 2 } } });
     expect(checkParity(project, rig.id).checks).toBeGreaterThan(100);
   });

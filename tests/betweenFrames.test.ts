@@ -3,9 +3,9 @@ import { AtlasAttachmentLoader, MeshAttachment, MixFrom, Physics, RegionAttachme
 import { reseed, type AssetId } from "@/core/doc/ids";
 import { createImageItem, createLayer, createNode } from "@/core/doc/defaults";
 import { bakedSequenceKeys, sequenceIndexAt } from "@/core/doc/sequence";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
-import { importSpine } from "@/core/spine/importSpine";
-import { atlasText } from "@/core/spine/atlas";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
+import { atlasText } from "@/core/boneburst/atlas";
 import { isImage, type MeshData, type Project, type SequenceKey, type SymbolItem } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
 
@@ -49,7 +49,7 @@ describe("deform keys between frames", () => {
     rig.nodes[torso.id] = { ...torso, mesh };
     const anim = rig.animations[0]!;
     anim.deforms = { [torso.id]: [{ frame: 0, offsets: new Array(8).fill(0), tween: { kind: "curve", curve: [0.3, 0, 0.6, 1] } }, { frame: 6, offsets: [10, 0, 10, 0, 0, 5, 0, 5] }, { frame: 12, offsets: new Array(8).fill(0), tween: { kind: "none" } }, { frame: 15, offsets: [0, -8, 0, -8, 0, 0, 0, 0] }] };
-    const file = exportSpine(project).skeleton as unknown as { animations: Record<string, { attachments: Record<string, Record<string, Record<string, { deform: Array<{ time?: number; curve?: number[] }> }>>> }> };
+    const file = exportBoneBurst(project).skeleton as unknown as { animations: Record<string, { attachments: Record<string, Record<string, Record<string, { deform: Array<{ time?: number; curve?: number[] }> }>>> }> };
     const deform = file.animations[anim.name]!.attachments.default![torso.name]![Object.keys(file.animations[anim.name]!.attachments.default![torso.name]!)[0]!]!.deform;
     // Move the middle keys off the frames (their curves with them).
     const fps = project.frameRate;
@@ -59,7 +59,7 @@ describe("deform keys between frames", () => {
       k.time += shift;
       if (Array.isArray(k.curve)) { k.curve[0] += shift; k.curve[2] += shift; }
     }
-    const result = importSpine(file as never, "stickman", imagesOf(project));
+    const result = importBoneBurst(file as never, "stickman", imagesOf(project));
     const sym = result.project.items[result.project.rootSymbolId] as SymbolItem;
     const opened = sym.animations.find((a) => a.name === anim.name)!;
     const node = Object.values(sym.nodes).find((n) => n.name === torso.name && n.kind === "image")!;
@@ -68,7 +68,7 @@ describe("deform keys between frames", () => {
     expect((opened.spine?.attachments as Record<string, unknown> | undefined)?.default).toBeUndefined();
     const frames = Math.min(anim.duration, 20);
     const want = vertices(skeletonOf(project, file), anim.name, fps, frames, torso.name);
-    const got = vertices(skeletonOf(result.project, spineJson(exportSpine(result.project).skeleton)), anim.name, fps, frames, torso.name);
+    const got = vertices(skeletonOf(result.project, boneburstJson(exportBoneBurst(result.project).skeleton)), anim.name, fps, frames, torso.name);
     got.forEach((v, f) => v.forEach((x, i) => expect(x, `frame ${f} ${i}`).toBeCloseTo(want[f]![i]!, 3)));
   });
 });
@@ -98,18 +98,18 @@ describe("sequence keys between frames", () => {
     rig.layers.unshift(createLayer(fx.id, fx.name, rig.layers.length));
     const anim = rig.animations[0]!;
     anim.sequences = { [fx.id]: [k(2, "loop", 0, 1), k(9, "pingpong", 3, 2)] };
-    const file = exportSpine(project).skeleton as unknown as { animations: Record<string, { attachments: { default: Record<string, Record<string, { sequence: Array<{ time?: number }> }>> } }> };
+    const file = exportBoneBurst(project).skeleton as unknown as { animations: Record<string, { attachments: { default: Record<string, Record<string, { sequence: Array<{ time?: number }> }>> } }> };
     const seq = file.animations[anim.name]!.attachments.default.fx!.fx_08!.sequence;
     const fps = project.frameRate;
     for (const key of seq) key.time = (key.time ?? 0) + 0.45 / fps;
-    const result = importSpine(file as never, "stickman", imagesOf(project));
+    const result = importBoneBurst(file as never, "stickman", imagesOf(project));
     const sym = result.project.items[result.project.rootSymbolId] as SymbolItem;
     const opened = sym.animations.find((a) => a.name === anim.name)!;
     const back = Object.values(sym.nodes).find((n) => n.name === "fx" && n.kind === "image")!;
     expect(opened.sequences?.[back.id]?.every((x) => x.mode === "hold")).toBe(true);
     const n = Math.min(anim.duration, 24);
     const want = vertices(skeletonOf(project, file), anim.name, fps, n, "fx");
-    const got = vertices(skeletonOf(result.project, spineJson(exportSpine(result.project).skeleton)), anim.name, fps, n, "fx");
+    const got = vertices(skeletonOf(result.project, boneburstJson(exportBoneBurst(result.project).skeleton)), anim.name, fps, n, "fx");
     expect(got).toEqual(want);
   });
 });

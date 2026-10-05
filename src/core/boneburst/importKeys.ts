@@ -1,5 +1,5 @@
 import type { ChannelEases, EaseSpec, TweenChannel, TweenSpec } from "@/core/math/easing";
-import { CHANNEL_PARENT, CURVE_Y_LIMIT, readPolyline, sameEase, spinePolyline } from "@/core/math/easing";
+import { CHANNEL_PARENT, CURVE_Y_LIMIT, readPolyline, sameEase, boneburstPolyline } from "@/core/math/easing";
 
 /**
  * Spine's per-channel keys turned into the editor's keyframes.
@@ -52,7 +52,7 @@ export function valueAt(c: Comp, f: number): number {
   if (!b || f === a.frame || a.curve === "stepped") return a.value;
   if (!a.curve) return a.value + ((b.value - a.value) * (f - a.frame)) / (b.frame - a.frame);
   const [c1x, c1y, c2x, c2y] = a.curve;
-  return readPolyline(spinePolyline({ x0: a.frame, y0: a.value, c1x, c1y, c2x, c2y, x1: b.frame, y1: b.value }), f);
+  return readPolyline(boneburstPolyline({ x0: a.frame, y0: a.value, c1x, c1y, c2x, c2y, x1: b.frame, y1: b.value }), f);
 }
 
 type CompEase = { kind: "const" } | { kind: "hold" } | { kind: "linear" } | { kind: "curve"; c: number[] } | null;
@@ -100,7 +100,7 @@ function fitValues(n: number[], a: number, b: number, target: (f: number) => num
   for (let f = Math.floor(a) + 1; f < b; f++) if (f > a) frames.push(f);
   if (frames.length === 0) return;
   const played = (y1: number, y2: number, p: number) =>
-    readPolyline(spinePolyline({ x0: 0, y0: 0, c1x: n[0]!, c1y: y1, c2x: n[2]!, c2y: y2, x1: 1, y1: 1 }), p);
+    readPolyline(boneburstPolyline({ x0: 0, y0: 0, c1x: n[0]!, c1y: y1, c2x: n[2]!, c2y: y2, x1: 1, y1: 1 }), p);
   const lambda = 1e-6;
   let s11 = lambda, s12 = 0, s22 = lambda, r1 = lambda * n[1]!, r2 = lambda * n[3]!;
   for (const f of frames) {

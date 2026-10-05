@@ -11,8 +11,8 @@ flowchart LR
     subgraph EDITOR["BoneBurst (browser)"]
         DOC["core/doc<br/>Project · Node · Keyframe"]
         HIST["core/history<br/>Command · History"]
-        EXP["core/export/exportSpine.ts"]
-        IMP["core/import/importSpine.ts"]
+        EXP["core/export/exportBoneBurst.ts"]
+        IMP["core/import/importBoneBurst.ts"]
         AGENT["app/AgentApi.ts<br/>ops → Commands"]
         STAGE["view/viewport<br/>SceneRenderer (Canvas2D)"]
         PREV["preview/previewClient<br/>spine-pixi-v8 4.3"]
@@ -121,8 +121,8 @@ one, and the AI checks its own result against the runtime. Two ways to connect:
 | # | Phase | Done when |
 |---|---|---|
 | 0 | **Done.** Clean copy, new git repo, DragonBones vendor, exporter and extensions removed, branding renamed | 631 tests green (79 export tests listed below), build clean |
-| 1 | **Done.** `core/spine/types.ts` (contract read from spine-core 4.3.13), `core/spine/transform.ts` (mapping, relative keys, `keyTime`, `regionCentre`) | checked against the real runtime; 8 deliberate bugs each fail |
-| 2 | **Done.** `core/spine/exportSpine.ts` and `core/spine/atlas.ts`; File ▸ Export writes `.json`, `.atlas`, pages | spine-core plays every fixture symbol as the stage draws it, every frame; the real packer's output loads in the browser |
+| 1 | **Done.** `core/boneburst/types.ts` (contract read from spine-core 4.3.13), `core/boneburst/transform.ts` (mapping, relative keys, `keyTime`, `regionCentre`) | checked against the real runtime; 8 deliberate bugs each fail |
+| 2 | **Done.** `core/boneburst/exportBoneBurst.ts` and `core/boneburst/atlas.ts`; File ▸ Export writes `.json`, `.atlas`, pages | spine-core plays every fixture symbol as the stage draws it, every frame; the real packer's output loads in the browser |
 | 3 | **Done.** Preview and Play mode on spine-pixi-v8 4.3.13 / PixiJS 8.21; one build per edit, per-symbol skeletons over one atlas | every stickman bone (IK included) matches the stage on every frame through the real preview, 3.5e-5 px; found and fixed the IK bend inversion |
 | 4 | **Done.** Stage eases evaluated as Spine plays them, exported as native beziers (frog `body` 107 KB → 7.5 KB); IK solver replaced by a transcription of Spine's | parity on a three-segment curve, every quad ease, 7 targeted and 60 random IK rigs; the old solver failed 3 of the 7 |
 | 5 | **Done.** Symbol instances flattened into one skeleton: content bones at −pivot, slots in the instance's place, the child's own looping timeline laid run by run onto the exported animation, alpha cascaded, IK inside carried | the nested rig, all 11 frog symbols and the real preview match the stage frame by frame; 8 deliberate flattening bugs each fail a test |

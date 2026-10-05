@@ -4,7 +4,7 @@ import type { AnimationReference } from "@/core/doc/types";
 import type { AssetId } from "@/core/doc/ids";
 import { fitReference, referenceSpacing, sheetCells } from "@/core/doc/reference";
 import { symbolBounds } from "@/core/doc/pose";
-import { spineBounds } from "@/core/spine/spinePose";
+import { boneburstBounds } from "@/core/boneburst/boneburstPose";
 import { SetAnimationReference } from "@/core/history/timelineCommands";
 import { cutSheet, naturalOrder, type ReferenceImages, sequenceImages } from "@/io/import/spriteSheet";
 
@@ -92,7 +92,7 @@ export class ReferenceService {
   private rigBox() {
     const project = this.store.project;
     const sym = this.store.currentSymbol;
-    const b = (sym.spine ? spineBounds(project, sym) : null) ?? symbolBounds(project, sym.id);
+    const b = (sym.spine ? boneburstBounds(project, sym) : null) ?? symbolBounds(project, sym.id);
     return b && b.w > 0 && b.h > 0 ? { x: b.x, y: b.y, w: b.w, h: b.h } : null;
   }
 }

@@ -527,7 +527,7 @@ The pure rules are in `core/doc/ikKeys.ts`: `ikPoseAt`, `withIkKey`, `moveIkKeys
   one cubic (`curve`, 4 numbers; "smooth" is 0.42, 0, 0.58, 1), which is what one Spine
   key's curve holds. `applyTween` samples the cubic the way the runtime does.
 - **The stage.** `applyIk` takes the mix and bend from `ikPoseAt` in Animate; a mix of 0
-  skips the solve, as the weight did. An opened rig (`spinePose.ts` ▸ `applyRig`) sets the
+  skips the solve, as the weight did. An opened rig (`boneburstPose.ts` ▸ `applyRig`) sets the
   constraint's `pose.mix` and `pose.bendDirection` after the carried animation, the bend
   inverted as the exporter writes it.
 - **Export** (`ikTimelines`): one `ik` timeline per constraint of the exported symbol, the
@@ -545,7 +545,7 @@ The pure rules are in `core/doc/ikKeys.ts`: `ikPoseAt`, `withIkKey`, `moveIkKeys
   Stretchyman's convert; seven of raptor-pro-and-mask's twelve.
 - **Checked.** `spineParity` plays the stickman with keyed mixes (linear, stepped, smooth),
   flipped bends, and a constraint softness with keyed softness against spine-core; a stage
-  that ignores the softness fails it. `spinePose` and `spineImport` cover the samples'
+  that ignores the softness fails it. `boneburstPose` and `spineImport` cover the samples'
   converted keys. A stage that ignores the keys fails the parity case.
 - **The timeline.** An IK row (`LayerRow.ik`, `focusRows`, `LayerList.ikRow`,
   `FrameGrid.drawIkRow`) draws a diamond per key in the IK target colour, joined where the
@@ -584,7 +584,7 @@ and animation `events` timeline (docs/EVENTS-PLAN.md). `SymbolItem.events: Event
 EventKey[]` (frame, name, and the values it overrides), schema 19. Several keys may share a
 frame and fire in list order. The pure rules are `core/doc/events.ts` (`eventValues`,
 `withEventKey`, `moveEventKeys`, `deleteEventKeys`, `withEventKeyValues`, `renamedEvent`,
-`withoutEvent`, `uniqueEventName`, `eventDefsFromSpine`), tested in `tests/events.test.ts`.
+`withoutEvent`, `uniqueEventName`, `eventDefsFromBoneBurst`), tested in `tests/events.test.ts`.
 Commands: `SetEventKeys` (one animation's keys; a drag merges) and `SetEvents` (the list,
 with the keys a rename or delete changed).
 
@@ -981,14 +981,14 @@ rectangle, which means little in a symbol's own space (inherited from Animo).
 
 Read out of the runtime's parser (`SkeletonJson` in
 `@esotericsoftware/spine-core` 4.3.13, the core of the spine-pixi-v8 build the
-preview will run), not documentation. `src/core/spine/types.ts` is the
-authority and carries a note on every field below; `src/core/spine/transform.ts`
+preview will run), not documentation. `src/core/boneburst/types.ts` is the
+authority and carries a note on every field below; `src/core/boneburst/transform.ts`
 is the mapping. `tests/spineTransform.test.ts` checks both against the runtime
 itself (a dev dependency), not a transcription of it.
 
 ```mermaid
 flowchart LR
-    T["Transform<br/>x y skewX skewY scaleX scaleY<br/>y down"] -->|toSpineLocal| S["SpineLocal<br/>rotation = −skewY<br/>shearY = skewY − skewX<br/>y up"]
+    T["Transform<br/>x y skewX skewY scaleX scaleY<br/>y down"] -->|toBoneBurstLocal| S["BoneBurstLocal<br/>rotation = −skewY<br/>shearY = skewY − skewX<br/>y up"]
     S -->|keyValues vs setup| K["timeline values<br/>translate/rotate/shear: +<br/>scale: ×"]
     F["frame, fps"] -->|keyTime| KT["time: float32 ≤ frame/fps"]
     S --> RT["spine-core<br/>BonePose.updateWorldTransform"]
@@ -1012,7 +1012,7 @@ flowchart LR
 - **Key times are float32 in the runtime** and a key applies once
   `time >= key`. float32(1/60) is after 1/60, so seeking to frame 1 showed
   frame 0 at 60 fps. `keyTime` writes the largest float32 not after
-  `frame / fps`; the JSON must carry it unrounded, so `spineJson` rounds
+  `frame / fps`; the JSON must carry it unrounded, so `boneburstJson` rounds
   nothing.
 - **Duration is the last key's time.** The format has no length field, so an
   animation ending on a hold needs a key at its end.
@@ -1030,20 +1030,20 @@ flowchart LR
   stickman frame. Found by the phase 3 preview, since the Node parity test skipped IK
   bones until then.
 - spine-unity accepts `skeleton.spine` when major.minor match its own
-  (`SkeletonDataCompatibility`); `SPINE_VERSION` is `"4.3.0"`.
+  (`SkeletonDataCompatibility`); `BONEBURST_VERSION` is `"4.3.0"`.
 
 ## The Spine exporter
 
-`core/spine/exportSpine.ts` turns ONE symbol into a skeleton (`exportSpine(project,
+`core/boneburst/exportBoneBurst.ts` turns ONE symbol into a skeleton (`exportBoneBurst(project,
 symbolId)`): the scene for File ▸ Export, the edited symbol for the preview.
-`core/spine/atlas.ts` writes the `.atlas`; `io/export/ExportBundle.ts` packs the pages
+`core/boneburst/atlas.ts` writes the `.atlas`; `io/export/ExportBundle.ts` packs the pages
 and names the files `<name>.json`, `<name>.atlas` and the page images.
 
 ```mermaid
 flowchart LR
-    SYM["SymbolItem"] --> EX["exportSpine"]
+    SYM["SymbolItem"] --> EX["exportBoneBurst"]
     ST["sampleTransformRaw<br/>sampleColorRaw<br/>(the stage's samplers)"] --> EX
-    EX --> J["spineJson → name.json"]
+    EX --> J["boneburstJson → name.json"]
     EX -->|usedImages| AB["buildAtlas → PackedPage[]"]
     AB --> AT["atlasText → name.atlas"]
     AB --> PNG["page images"]
@@ -1080,7 +1080,7 @@ flowchart LR
 ### Nested symbols are flattened
 
 Spine has no skeleton inside a skeleton, so a symbol instance is laid into the one being
-exported. `exportSpine` recurses through `Scope`s: the root symbol, then each symbol an
+exported. `exportBoneBurst` recurses through `Scope`s: the root symbol, then each symbol an
 instance shows, per display.
 
 ```mermaid
@@ -1106,7 +1106,7 @@ flowchart TD
   kept. The stage never starts a run inside a tween today (showing an instance again
   restarts it), so the bake at a run's START is only exercised by unit tests.
 - **Names are paths**: `inst/Sym/node`, content bones `inst/Sym`, IK constraints
-  prefixed the same way. `SpineExport.paths` maps `nodeId#display>nodeId…` to them; the
+  prefixed the same way. `BoneBurstExport.paths` maps `nodeId#display>nodeId…` to them; the
   parity test walks the stage the way `SceneRenderer.drawEntry` does and compares by
   those keys. Every bone name is checked for clashes.
 - **Draw order**: a symbol's slots take its instance's place, recursively.
@@ -1136,11 +1136,11 @@ card, which a dialog under it could not be answered through.
 flowchart LR
     FILES["name.json · name.atlas · pages<br/>(or a zip)"] --> READ["io/import/spineFiles.ts<br/>readSpineFiles · cutRegions"]
     READ -->|"regions upright, untrimmed"| ASSETS["AssetStore"]
-    READ --> IMP["core/spine/importSpine.ts"]
+    READ --> IMP["core/boneburst/importBoneBurst.ts"]
     IMP --> KEYS["importKeys.ts<br/>mergeKeys (checked per interval)"]
-    IMP --> DOC["SymbolItem<br/>+ spine: SpineCarry"]
-    DOC --> EXP["exportSpine"]
-    DOC --> POSE["spinePose.ts<br/>posedSymbol"]
+    IMP --> DOC["SymbolItem<br/>+ spine: BoneBurstCarry"]
+    DOC --> EXP["exportBoneBurst"]
+    DOC --> POSE["boneburstPose.ts<br/>posedSymbol"]
     EXP -->|"setupOnly"| POSE
     POSE -->|"spine-core: worlds, attachments,<br/>draw order, mesh vertices"| STAGE["SceneRenderer.drawSpineEntries"]
 ```
@@ -1189,8 +1189,8 @@ flowchart LR
 
 An opened rig relies on what the editor's pose does not do: meshes, weights, deform keys,
 inherit modes, transform, path, physics and slider constraints, clipping, draw order keys.
-`posedSymbol` (`core/spine/spinePose.ts`) runs `evaluateSymbol`, gives our runtime
-(`core/spine/runtime/`, ARCHITECTURE ▸ The BoneBurst runtime; spine-core until the plan's
+`posedSymbol` (`core/boneburst/boneburstPose.ts`) runs `evaluateSymbol`, gives our runtime
+(`core/boneburst/runtime/`, ARCHITECTURE ▸ The BoneBurst runtime; spine-core until the plan's
 P3b) each bone's local transform and each slot's attachment and colour, applies the carried
 timelines at the frame, and reads back world matrices, attachments, colours, the draw
 order, clipping and every region's and mesh's world vertices (`PoseEntry.spine`,
@@ -1202,7 +1202,7 @@ a mesh triangle by triangle, and clips the way `SkeletonClipping` does: one clip
 through its end slot. `entryBox` and the hit test use the same vertices, so outlines and
 picking follow the mesh. Picking an attachment picks the bone it rides.
 
-The skeleton is `exportSpine(…, { setupOnly: true })`, the file the export writes, less its
+The skeleton is `exportBoneBurst(…, { setupOnly: true })`, the file the export writes, less its
 generated keys, over one untrimmed page of library images. It is rebuilt only when the
 structure changes (`structureKey`). Edits change the symbol in place, so the per-symbol cache
 reads the structure again after any edit (`docEpoch`, bumped by `History`); before, an IK's
@@ -1238,7 +1238,7 @@ spine-unity 4.3 with the preview's runtime, frame by frame (`scripts/unity-check
 runtimes matter to the exporter:
 
 - **spine-csharp requires `skeleton.hash`** and throws without it (`SkeletonJson` has no
-  default for it), where spine-core ignores it. `exportSpine` always writes one: a 64-bit FNV-1a
+  default for it), where spine-core ignores it. `exportBoneBurst` always writes one: a 64-bit FNV-1a
   of the file's own JSON (`contentHash`), which spine-unity uses to tell that a re-export
   changed.
 - **Unity does not import `.atlas` as text.** Export Settings ▸ Files ▸ "Atlas as .atlas.txt
@@ -1304,7 +1304,7 @@ flowchart LR
   `attach`, `add_ik`, `draw_order`, `auto_rig`, the motion library `list_motions`,
   `apply_motion`, and for cycles and paths `set_cycle`, `get_bone_path`, `set_bone_path`. Values are Spine's: y up, degrees counter-clockwise, local to
   the parent bone, absolute. A model knows them better than the editor's Flash
-  conventions, and `toSpineLocal` / `fromSpineLocal` convert exactly.
+  conventions, and `toBoneBurstLocal` / `fromBoneBurstLocal` convert exactly.
 - **Every call that edits is one history step** labelled "AI: …". `set_keys` for many
   bones is one `EditTracks` in one transaction, so Undo takes back an AI edit exactly as it
   takes back a drag. What a key leaves out keeps the value the animation already shows at
@@ -1579,9 +1579,9 @@ only a skin enables), meshes weighted or not, linked meshes, sequences, path and
 attachments, bounding boxes and points, two-colour tint, IK, transform, path, slider and physics
 constraints in the file's order, events, crossfades, and every timeline of those: everything a
 4.3 file holds. The stage poses opened files and rigs with physics, slider or path constraints
-through it (`spinePose.ts`, P3b), and it is the Preview's runtime (P4).
+through it (`boneburstPose.ts`, P3b), and it is the Preview's runtime (P4).
 
-- **The pose is in `core/spine/runtime/`, DOM-free**: `readAtlas` (`atlasRead.ts`), `readRig`
+- **The pose is in `core/boneburst/runtime/`, DOM-free**: `readAtlas` (`atlasRead.ts`), `readRig`
   (`rigData.ts`, the file into our model) and `Rig` (`rig.ts`: setup pose, `apply` at a time,
   `updateWorld`, `regionWorld`, `meshWorld`, `frameOf` for a sequence's image). The stage will
   pose through it too (P3b). Every attachment has `frames` (one, or one per sequence frame), each
@@ -1668,7 +1668,7 @@ through it (`spinePose.ts`, P3b), and it is the Preview's runtime (P4).
   (mode and index do not carry). A file without `skeleton.fps` has fps 0 in both runtimes, and the
   Preview falls back to 24; our reader once defaulted to 30 and seeked every frame elsewhere.
 - **Curve points can differ by one 32-bit step**: spine-core finds them by forward differencing,
-  `spinePolyline` evaluates the cubic. The test compares positions at the rig's size for that
+  `boneburstPolyline` evaluates the cubic. The test compares positions at the rig's size for that
   reason; matrices stay strict.
 - **Bounding boxes and points** draw as nothing, as in Spine; `Rig.vertexWorld` and
   `Rig.pointWorld` give them, and the Preview's debug view outlines them with paths and clipping.
@@ -1944,12 +1944,12 @@ wrong by the edited instance's scale.
 ## Bones and IK
 
 The stage solves IK with our runtime's solver (`oneBone` / `twoBones` in
-`core/spine/runtime/ik.ts`, The BoneBurst runtime); until docs/PREVIEW-RUNTIME-PLAN.md P5 it
+`core/boneburst/runtime/ik.ts`, The BoneBurst runtime); until docs/PREVIEW-RUNTIME-PLAN.md P5 it
 was `core/math/ik.ts`, a transcription of spine-core's. It works in Spine's space on the chain
 bones' LOCAL values against their parents' world matrices; `applyConstraints` in
 `core/doc/pose.ts` puts the chain's parent, root and effector in a `LooseBones`
-(`core/spine/runtime/bones.ts`: `toSpineLocal`, worlds flipped to y up) and takes the solved
-locals back (`fromSpineLocal`). Behaviour it keeps: `mix` (the editor's weight) blends local rotations; a
+(`core/boneburst/runtime/bones.ts`: `toBoneBurstLocal`, worlds flipped to y up) and takes the solved
+locals back (`fromBoneBurstLocal`). Behaviour it keeps: `mix` (the editor's weight) blends local rotations; a
 non-uniform parent scale takes a numeric solve and ZEROES the child's local y; angles use
 the runtime's pi and wrap into (−180, 180] before mixing; a zero weight skips the solve.
 Softness is ported (`IkConstraint.softness`, pixels, two-bone chains only: near full reach
@@ -2101,7 +2101,7 @@ constraint round-trips unchanged.
   once the map is more than each property driving itself (`isIdentityMap`). Pure in
   `core/doc/transformKeys.ts` (`withMapping`, `withoutMapping`, `withSourceOffset`); one
   `SetTransforms` per edit, a scrub one step. AI: `map_transform`.
-- **The solver** is our runtime's (`solveTransform` in `core/spine/runtime/transform.ts`),
+- **The solver** is our runtime's (`solveTransform` in `core/boneburst/runtime/transform.ts`),
   on a `LooseBones` holding the source, the bone and their parents, in Spine's space and with
   its pi; until P5 it was `core/math/transformConstraint.ts`, a transcription of spine-core's.
   The stage runs it in one constraint pass with the IK (`applyConstraints` in `core/doc/pose.ts`), in
@@ -2155,7 +2155,7 @@ per mesh node, one offset pair per point in the node's space.
   world at the setup pose and `B_i` / `S_i` bone i's world now / at the setup pose:
   no weights, `node world now · (p + d)`; weights, `Σ w_i · B_i · S_i⁻¹ · N · (p + d)`.
   Spine stores `S_i⁻¹ · N · p` per bone (y flipped) and a weighted deform per bone entry
-  through the linear part of the same map (`spineVertices`, `spineDeform`).
+  through the linear part of the same map (`boneburstVertices`, `boneburstDeform`).
   - **Weights are not renormalized**, on the stage or in the file: the runtime sums them as
     written.
   - **A weighted mesh has no unweighted point** in Spine: a point with no weights is written
@@ -2199,7 +2199,7 @@ per mesh node, one offset pair per point in the node's space.
 - **Export** writes `type: "mesh"` (uvs, triangles, vertices, hull, width, height, and
   edges when an opened file had them) and each animation's
   `attachments.<skin>.<slot>.<attachment>.deform` timeline.
-- **Opened meshes** (`core/spine/importMesh.ts`, the importer's `editableMeshes`): the default
+- **Opened meshes** (`core/boneburst/importMesh.ts`, the importer's `editableMeshes`): the default
   skin's meshes become the document's, so the Mesh tool, weights and deform keys edit them. A
   Spine mesh keeps its UVs and its vertices apart, and so may the model:
   - `MeshData.points` are always the texture coordinates (the UVs over the image's size);
@@ -2209,7 +2209,7 @@ per mesh node, one offset pair per point in the node's space.
   - A weighted vertex in Spine is an offset per bone, and a file's bones need not agree on
     one setup position (bones moved after binding; the samples disagree by up to 170 px).
     `MeshData.boneOffsets` keeps them as the file has them, per point per weight entry, in
-    the bone's setup space; the pose (`meshWorld`) and the export (`spineVertices`) use them
+    the bone's setup space; the pose (`meshWorld`) and the export (`boneburstVertices`) use them
     where present, else derive them from the position. The position of such a point is where
     the setup pose shows it.
   - Editing: a moved point moves its position alone (its texture coordinate stays) and drops
@@ -2297,7 +2297,7 @@ editing.
   has a display for overrides that display; a key only skins have becomes a skin-only display
   (the first skin's attachment standing in); bones and modelled IK and transform constraints
   become members by id. The rest (points, bounding boxes, paths, path and physics constraints)
-  stays in `SpineCarry.skins` under the skin's name. `spineImport` plays every skin of every
+  stays in `BoneBurstCarry.skins` under the skin's name. `spineImport` plays every skin of every
   sample against the original (369 overrides and 130 skin bones in mix-and-match).
 - **Editing**: the Skins panel makes, renames (also double-click) and deletes skins, its
   switches choose what the stage and Preview show, and a click picks the skin the Properties
@@ -2325,14 +2325,14 @@ a slot on its own bone, like an image, that draws nothing; the overlay outlines 
 colours (`drawBoxes`). `Node.box.points` is the polygon in the node's space, y down; a point
 is its node's origin and x axis moved by `Node.point` `{ x, y, rotation }` (y down, clockwise;
 `pointMatrix`), written as the attachment's `x`, `y`, `rotation` y up and counterclockwise
-(`pointToSpine`); absent, `{ type: "point" }` at 0, 0, 0. Pure in `core/doc/boxes.ts`.
+(`pointToBoneBurst`); absent, `{ type: "point" }` at 0, 0, 0. Pure in `core/doc/boxes.ts`.
 
 - **A point's offset** is edited in Properties ▸ Point (Offset, Rotation; a scrub is one undo
   step, `withPointOffset`). The overlay draws, picks and boxes it there. AI: `set_point`.
 - **Weighted boxes and paths** (opened ones): `OutlineWeights`, `weights` and the file's
   `boneOffsets` per point, as a mesh holds them. Their world points follow the mesh rule
   (`outlineWorld` through `meshWorld`; `PoseEntry.outline`, which a runtime-posed rig reads from
-  spine-core's `computeWorldVertices`), and the export writes them per bone (`spineVertices`
+  spine-core's `computeWorldVertices`), and the export writes them per bone (`boneburstVertices`
   over `outlineAsMesh`). The Mesh tool drags them through `localDelta`; a moved point drops its
   own offsets (`withOutlinePoints`) and only moved points are rounded (`roundMoved`), so an
   opened file's others stay exactly as they were. A point added to a box takes half of each
@@ -2348,7 +2348,7 @@ is its node's origin and x axis moved by `Node.point` `{ x, y, rotation }` (y do
 - **Export** writes the attachment under the node's name, the polygon y up; a box short of
   three points is left out with a warning. Checked against spine-core's
   `computeWorldVertices` and `computeWorldPosition` (`spineParity` ▸ "boxes and points").
-- **Opened ones** (`core/spine/importAttachments.ts`, `outlineOf`): a slot whose only
+- **Opened ones** (`core/boneburst/importAttachments.ts`, `outlineOf`): a slot whose only
   default-skin attachment is a box, a point or a path, and which no other skin fills, becomes
   that node on its slot bone (a weighted one read against each bone's setup world, which the
   importer composes from the bones as it reads them), keeping its key
@@ -2465,7 +2465,7 @@ What a bone takes from its parent, Spine's `inherit`: everything (`normal`, abse
 position only (`onlyTranslation`), or all but rotation and reflection, scale, or scale and
 reflection. `Node.inherit` is the bone's own; `Animation.inherits` (schema 25) keys it, each
 key holding until the next, as Spine's stepped `inherit` timeline (`core/doc/inherit.ts`:
-`inheritAt`, `withInheritKey`, `inheritTimeline`, `inheritKeysFromSpine`).
+`inheritAt`, `withInheritKey`, `inheritTimeline`, `inheritKeysFromBoneBurst`).
 
 - **The runtime poses such a symbol.** The stage composes a bone as its parent's matrix
   times its own, which is `normal` only, so a symbol with any other mode or any inherit key
@@ -3064,7 +3064,7 @@ shows at every whole frame.
 ```mermaid
 flowchart LR
     SPEC["TweenSpec"] --> SEG["easeSegments"]
-    SEG -->|"ease, curve"| POLY["spinePolyline<br/>ends + t = 0.1 … 0.9"]
+    SEG -->|"ease, curve"| POLY["boneburstPolyline<br/>ends + t = 0.1 … 0.9"]
     POLY --> READ["readPolyline<br/>(getBezierValue)"]
     SPEC -->|preset| EXACT["easeFunction at whole frames"]
     READ --> AT["applyTween → stage"]
@@ -3075,7 +3075,7 @@ flowchart LR
 
 - **Spine does not evaluate the bezier.** `CurveTimeline.setBezier` samples each
   segment at parameter 0.1 … 0.9 and `getBezierValue` reads the 10-piece polyline through
-  those points and the two keys, by time. `spinePolyline` / `readPolyline` are that;
+  those points and the two keys, by time. `boneburstPolyline` / `readPolyline` are that;
   `tests/easing.test.ts` checks them against spine-core's own `RotateTimeline`. The
   Ease panel draws that polyline solid over the exact curve dashed.
 - **What each ease is.** `linear`: no curve. `ease` (Classic quad in / out / in-out): one
@@ -3175,7 +3175,7 @@ Read out of the vendored runtime, not assumed:
 
 `ExportSettings.nonessential` (default on, the output as before): Spine's nonessential data,
 what spine-core reads only for its editor and falls back from when absent. Off, the export
-writes the smaller file a game needs (`core/spine/nonessential.ts`, `withoutNonessential`):
+writes the smaller file a game needs (`core/boneburst/nonessential.ts`, `withoutNonessential`):
 no frame rate, image or audio folder, bone colours, icons or visibility, slot visibility, mesh
 size or edges, box, path, point and clip colours. A region's or mesh's colour is a tint and
 stays. Applied after the skeleton is built and before its hash, never to the stage's rig.
@@ -3280,7 +3280,7 @@ the linked layers are drawn TOGETHER where the first of them is in paint order, 
 scratch canvas per nesting depth, and the mask's alpha punches them with `destination-in`.
 A mask not showing (blank key, outside its span, eye off) leaves them unclipped.
 
-**In the export** it is a Spine clipping attachment (`exportSpine`, `clipSlot`):
+**In the export** it is a Spine clipping attachment (`exportBoneBurst`, `clipSlot`):
 
 - The group is gathered where the stage draws it, and a CLIP SLOT on the mask's bone goes
   right before it; the attachment's `end` names the group's last slot, nested content

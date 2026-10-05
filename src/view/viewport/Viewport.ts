@@ -1,16 +1,16 @@
 import { cls, h, on, raf } from "@/view/widgets/dom";
-import { livePhysics } from "@/core/spine/spinePose";
+import { livePhysics } from "@/core/boneburst/boneburstPose";
 import { Camera } from "./Camera";
 import { contentMatrixOf, SceneRenderer } from "./SceneRenderer";
 import { type Guide, Overlay, RULER } from "./Overlay";
 import type { Store } from "@/app/Store";
 import type { AssetStore } from "@/app/AssetStore";
-import { entryBox, type FrameContext, type Pose, type PoseEntry, spinePixelAt } from "@/core/doc/pose";
+import { entryBox, type FrameContext, type Pose, type PoseEntry, boneburstPixelAt } from "@/core/doc/pose";
 import { editedMesh } from "@/core/mesh/meshPlan";
 import { stageSkinOf } from "@/core/doc/skins";
 import { inPolygon, nearPolyline } from "@/core/doc/boxes";
 import { pathPolyline } from "@/core/doc/constraints";
-import { posedSymbol, spineBounds } from "@/core/spine/spinePose";
+import { posedSymbol, boneburstBounds } from "@/core/boneburst/boneburstPose";
 import type { NodeId } from "@/core/doc/ids";
 import { apply, applyInverse, invert, mat, matOf, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { polygonContains, type Rect, rectContains, transformCorners } from "@/core/math/geom";
@@ -506,7 +506,7 @@ export class Viewport {
         if (exclude?.has(e.nodeId)) continue;
         if (e.spine) {
           // Posed by the runtime: its triangles, and the pixel under them.
-          const px = spinePixelAt(e, wx, wy);
+          const px = boneburstPixelAt(e, wx, wy);
           const item = project.items[e.spine.itemId];
           if (!px || !isImage(item) || assets.alphaAt(item.assetId, px.x, px.y) < 8) continue;
           // A slot has no transform of its own: the bone it rides is what
@@ -1149,7 +1149,7 @@ export class Viewport {
     if (this.fitPending) return;
     // An opened Spine rig sits about its own origin, not on a stage: frame it.
     const sym = this.store.currentSymbol;
-    const rig = sym.spine ? spineBounds(this.store.project, sym) : null;
+    const rig = sym.spine ? boneburstBounds(this.store.project, sym) : null;
     if (rig) {
       const m = Math.max(rig.w, rig.h) * 0.08;
       this.camera.fit({ x: rig.x - m, y: rig.y - m, w: rig.w + 2 * m, h: rig.h + 2 * m }, 40, this.fitInset());

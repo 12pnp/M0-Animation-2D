@@ -134,7 +134,7 @@ export function withEventDefValues(def: EventDef, patch: Partial<Omit<EventDef, 
 
 /** Spine's skeleton `events` (`{ name: { int, float, string, audio, volume,
  *  balance } }`) as the event list; volume and balance only with a sound. */
-export function eventDefsFromSpine(raw: Record<string, unknown>): EventDef[] {
+export function eventDefsFromBoneBurst(raw: Record<string, unknown>): EventDef[] {
   const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
   return Object.entries(raw).map(([name, v]) => {
     const r = v && typeof v === "object" ? (v as Record<string, unknown>) : {};

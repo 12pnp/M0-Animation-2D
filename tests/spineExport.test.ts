@@ -10,11 +10,11 @@ import { History } from "@/core/history/History";
 import { SetLayerExcluded, SetParent } from "@/core/history/commands";
 import { tf, type Transform } from "@/core/math/Transform";
 import type { PackedPage } from "@/core/atlas/packed";
-import { atlasText } from "@/core/spine/atlas";
-import { type Channel, colorHex, exportSpine, ROOT_BONE, sliceRuns, spineJson } from "@/core/spine/exportSpine";
-import { keyTime } from "@/core/spine/transform";
+import { atlasText } from "@/core/boneburst/atlas";
+import { type Channel, colorHex, exportBoneBurst, ROOT_BONE, sliceRuns, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { keyTime } from "@/core/boneburst/transform";
 import { sampleTransformRaw } from "@/core/doc/timeline";
-import { SPINE_VERSION, type SpineSkeletonFile } from "@/core/spine/types";
+import { BONEBURST_VERSION, type BoneBurstSkeletonFile } from "@/core/boneburst/types";
 
 beforeEach(() => reseed());
 
@@ -53,12 +53,12 @@ function track(sym: SymbolItem, name: string, keys: Keyframe[], endFrame?: numbe
   anim.tracks[node.id] = { nodeId: node.id, keys, endFrame: endFrame ?? anim.duration - 1 };
 }
 
-const file = (project: Project): SpineSkeletonFile => exportSpine(project).skeleton;
-const messages = (project: Project) => exportSpine(project).diagnostics.map((d) => `${d.severity}: ${d.message}`);
+const file = (project: Project): BoneBurstSkeletonFile => exportBoneBurst(project).skeleton;
+const messages = (project: Project) => exportBoneBurst(project).diagnostics.map((d) => `${d.severity}: ${d.message}`);
 
 /** The export loaded by the runtime, with a plain untrimmed atlas. */
 function load(project: Project): Skeleton {
-  const exported = exportSpine(project);
+  const exported = exportBoneBurst(project);
   const regions = exported.usedImages.map((id, i) => {
     const item = project.items[id] as { name: string; width: number; height: number };
     return { name: item.name, x: 0, y: i * 100, width: item.width, height: item.height, offsetX: 0, offsetY: 0,
@@ -66,7 +66,7 @@ function load(project: Project): Skeleton {
   });
   const page: PackedPage = { name: "p", imagePath: "p.png", width: 512, height: 512, scale: 1, regions };
   const atlas = new TextureAtlas(atlasText([page]));
-  return new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(atlas)).readSkeletonData(JSON.parse(spineJson(exported.skeleton))));
+  return new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(atlas)).readSkeletonData(JSON.parse(boneburstJson(exported.skeleton))));
 }
 
 /* ── the file ── */
@@ -74,8 +74,8 @@ function load(project: Project): Skeleton {
 describe("skeleton structure", () => {
   it("writes the 4.3 header spine-unity checks, and the frame rate", () => {
     const { project } = scene(["a"]);
-    expect(file(project).skeleton).toEqual({ hash: expect.stringMatching(/^[A-Za-z0-9+/]{11}$/), spine: SPINE_VERSION, fps: 24 });
-    expect(SPINE_VERSION.split(".").slice(0, 2)).toEqual(["4", "3"]);
+    expect(file(project).skeleton).toEqual({ hash: expect.stringMatching(/^[A-Za-z0-9+/]{11}$/), spine: BONEBURST_VERSION, fps: 24 });
+    expect(BONEBURST_VERSION.split(".").slice(0, 2)).toEqual(["4", "3"]);
   });
 
   it("hashes the content, as spine-csharp requires: the same file the same hash", () => {
@@ -442,7 +442,7 @@ describe("what does not reach the file", () => {
     const { project, sym } = scene(["keep", "drop"]);
     track(sym, "drop", [key(0, tf()), key(4, tf(10, 0))], undefined, 5);
     sym.layers.find((l) => l.name === "drop")!.excludeFromExport = true;
-    const result = exportSpine(project);
+    const result = exportBoneBurst(project);
     expect(result.skeleton.bones.map((b) => b.name)).toEqual([ROOT_BONE, "keep"]);
     expect(result.skeleton.slots!.map((s) => s.name)).toEqual(["keep"]);
     expect(result.skeleton.animations!.animation!.bones).toBeUndefined();
@@ -524,7 +524,7 @@ describe("what does not reach the file", () => {
     mask.isMask = true;
     sym.layers.find((l) => l.name === "a")!.maskedBy = mask.id;
     nodeNamed(sym, "mask").pivot = { x: 10, y: 5 };
-    const out = exportSpine(project, undefined, {
+    const out = exportBoneBurst(project, undefined, {
       maskShape: () => ({ points: [0, 0, 40, 0, 20, 20], islands: 0, holes: 0, soft: true }),
     });
     const clip = out.skeleton.skins![0]!.attachments!.mask!.mask as { vertices: number[] };
@@ -575,7 +575,7 @@ describe("nested symbols", () => {
   it("leaves out a symbol only an excluded layer shows, art and all", () => {
     const { project, sym } = withInstance();
     sym.layers.find((l) => l.name === "inst")!.excludeFromExport = true;
-    const out = exportSpine(project);
+    const out = exportBoneBurst(project);
     expect(out.skeleton.bones.map((b) => b.name)).toEqual([ROOT_BONE]);
     expect(out.usedImages).toEqual([]);
   });
@@ -634,7 +634,7 @@ describe("the .atlas file", () => {
     nodeNamed(sym, "a").pivot = { x: 7, y: 9 };
     nodeNamed(sym, "a").bind = tf(100, 50, 20, 20);
     const skeleton = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(atlasText([page]))))
-      .readSkeletonData(JSON.parse(spineJson(exportSpine(project).skeleton))));
+      .readSkeletonData(JSON.parse(boneburstJson(exportBoneBurst(project).skeleton))));
     skeleton.updateWorldTransform(Physics.none);
     const slot = skeleton.findSlot("a")!;
     const attachment = slot.appliedPose.getAttachment() as RegionAttachment;
@@ -702,7 +702,7 @@ describe("symbol choice", () => {
     }
     project.items[inner.id] = inner;
     expect(isSymbol(project.items[inner.id])).toBe(true);
-    expect(exportSpine(project, inner.id).skeleton.slots!.map((s) => s.name)).toEqual(["x", "y"]);
+    expect(exportBoneBurst(project, inner.id).skeleton.slots!.map((s) => s.name)).toEqual(["x", "y"]);
   });
 });
 

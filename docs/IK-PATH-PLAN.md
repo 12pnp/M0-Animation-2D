@@ -111,7 +111,7 @@ store and no DOM.
      Check the Local panel's "anywhere else drags the bone" press too.
    - Real mouse drags on `stickman.boneburst`: stage dot, Local panel, World panel, at a
      cycle's frame 0, with ⇧.
-   - Check that `spinePose`/`spineParity` stay green. Nothing changes in the export,
+   - Check that `boneburstPose`/`spineParity` stay green. Nothing changes in the export,
      since only the target's keys change.
 5. **AI.** `set_bone_path` on a chain bone keys the target the same way instead of
    refusing (`addedKeys` lists the target's keys). Update its description in `tools.json`.

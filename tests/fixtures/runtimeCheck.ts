@@ -1,9 +1,9 @@
 import { expect } from "vitest";
 import { AtlasAttachmentLoader, MixFrom, Physics, Skeleton, SkeletonJson, TextureAtlas } from "@esotericsoftware/spine-core";
 import { evaluateSymbol } from "@/core/doc/pose";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
-import { atlasText } from "@/core/spine/atlas";
-import { posedSymbol } from "@/core/spine/spinePose";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { atlasText } from "@/core/boneburst/atlas";
+import { posedSymbol } from "@/core/boneburst/boneburstPose";
 import { isImage, type Project, type SymbolItem } from "@/core/doc/types";
 
 /**
@@ -13,11 +13,11 @@ import { isImage, type Project, type SymbolItem } from "@/core/doc/types";
  * so a test can show the runtime did something.
  */
 export function stageAgainstRuntime(project: Project, sym: SymbolItem, bone: string): number {
-  const out = exportSpine(project);
+  const out = exportBoneBurst(project);
   expect(out.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
   const regions = out.usedImages.map((id, i) => { const it = project.items[id]; if (!isImage(it)) throw new Error("image"); return { name: it.name, x: 0, y: i * 200, width: it.width, height: it.height, offsetX: 0, offsetY: 0, originalWidth: it.width, originalHeight: it.height, rotated: false }; });
   const atlas = new TextureAtlas(atlasText([{ name: "p", imagePath: "p.png", width: 512, height: 4096, scale: 1, regions }]));
-  const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(atlas)).readSkeletonData(JSON.parse(spineJson(out.skeleton))));
+  const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(atlas)).readSkeletonData(JSON.parse(boneburstJson(out.skeleton))));
   const id = Object.values(sym.nodes).find((n) => n.name === bone)!.id;
   let moved = 0;
   for (const anim of sym.animations) {

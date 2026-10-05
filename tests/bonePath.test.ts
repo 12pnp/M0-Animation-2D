@@ -5,7 +5,7 @@ import { createAnimation, createKeyframe, createLayer, createNode, createSymbol 
 import { evaluateSymbol } from "@/core/doc/pose";
 import { bonePaths, keyedIn, parentSpace, pathBoneIds, pathFrames, pathPoint } from "@/core/doc/bonePath";
 import { TWEEN_LINEAR, type TweenSpec } from "@/core/math/easing";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
 import type { Animation, Keyframe, Node, SymbolItem } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
 
@@ -119,7 +119,7 @@ describe("the path of an IK-solved bone is the one spine-core plays", () => {
     expect(path.points.some((p) => p.key)).toBe(false);
 
     // Bones only: no attachment loader needed.
-    const file = JSON.parse(spineJson(exportSpine(project).skeleton));
+    const file = JSON.parse(boneburstJson(exportBoneBurst(project).skeleton));
     delete file.skins;
     const skeleton = new Skeleton(new SkeletonJson({} as never).readSkeletonData(file));
     const animation = skeleton.data.findAnimation("run")!;

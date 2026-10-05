@@ -1,6 +1,6 @@
 /**
  * One image placed on a page, in page pixels with a top-left origin. The
- * format writer (`core/spine/atlas.ts`) serialises this; it holds
+ * format writer (`core/boneburst/atlas.ts`) serialises this; it holds
  * everything a trimmed region needs and names no runtime.
  */
 export interface PackedRegion {

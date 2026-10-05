@@ -6,11 +6,11 @@ import { meshOfDisplay } from "@/core/doc/displays";
 import { editedMesh } from "@/core/mesh/meshPlan";
 import { migrate, validateProject } from "@/core/doc/schema";
 import { SetMesh } from "@/core/history/meshCommands";
-import { exportSpine } from "@/core/spine/exportSpine";
-import { importSpine } from "@/core/spine/importSpine";
+import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import type { MeshData, Project, SymbolItem } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
-import { posedSymbol } from "@/core/spine/spinePose";
+import { posedSymbol } from "@/core/boneburst/boneburstPose";
 import { imagesOf, sampleRigs } from "./fixtures/spineSamples";
 
 beforeEach(() => reseed());
@@ -97,10 +97,10 @@ describe("spine-unity's samples", () => {
     let meshes = 0, links = 0;
     for (const r of sampleRigs()) {
       const file = JSON.parse(r.json);
-      const project = importSpine(file, r.name, imagesOf(r.atlas)).project;
+      const project = importBoneBurst(file, r.name, imagesOf(r.atlas)).project;
       const sym = project.items[project.rootSymbolId] as SymbolItem;
       for (const def of sym.skins ?? []) for (const byIndex of Object.values(def.displays ?? {})) for (const d of Object.values(byIndex)) { if (d.mesh) meshes++; if (d.linked) links++; }
-      const out = exportSpine(project).skeleton as unknown as { skins: Array<{ name: string; attachments: Record<string, Record<string, Record<string, unknown>>> }> };
+      const out = exportBoneBurst(project).skeleton as unknown as { skins: Array<{ name: string; attachments: Record<string, Record<string, Record<string, unknown>>> }> };
       // Each linked mesh is written with its source and the skin it names.
       for (const skin of file.skins ?? []) for (const [slot, atts] of Object.entries(skin.attachments ?? {}) as Array<[string, Record<string, Record<string, unknown>>]>) {
         for (const [key, att] of Object.entries(atts)) {
@@ -116,7 +116,7 @@ describe("spine-unity's samples", () => {
 
   it.skipIf(!sampleRigs().some((r) => r.name === "mix-and-match"))("the stage knows which display a skin shows, though the attachment is named apart from its key", () => {
     const r = sampleRigs().find((x) => x.name === "mix-and-match")!;
-    const project = importSpine(JSON.parse(r.json), r.name, imagesOf(r.atlas)).project;
+    const project = importBoneBurst(JSON.parse(r.json), r.name, imagesOf(r.atlas)).project;
     const sym = project.items[project.rootSymbolId] as SymbolItem;
     const pose = posedSymbol(project, sym, null, 0, "setup", ["skin-base", "full-skins/girl"]);
     const body = Object.values(sym.nodes).find((n) => n.name === "body" && n.kind === "image")!;

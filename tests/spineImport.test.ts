@@ -3,9 +3,9 @@ import {
   AtlasAttachmentLoader, MeshAttachment, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
 } from "@esotericsoftware/spine-core";
 import { reseed } from "@/core/doc/ids";
-import { importSpine } from "@/core/spine/importSpine";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import { imagesOf, type SampleRig, sampleRigs } from "./fixtures/spineSamples";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
 import { DEFAULT_EXPORT_SETTINGS } from "@/core/export/settings";
 
 /**
@@ -24,15 +24,15 @@ interface Worst { matrix: number; position: number; vertex: number; color: numbe
 function compare(rig: SampleRig, skin?: string, step = 1, nonessential = true): { worst: Worst; baked: number; warnings: string[] } {
   const atlasText = rig.atlas;
   const original = JSON.parse(rig.json);
-  const imported = importSpine(original, rig.name, imagesOf(atlasText));
+  const imported = importBoneBurst(original, rig.name, imagesOf(atlasText));
   if (!nonessential) imported.project.exportSettings = { ...DEFAULT_EXPORT_SETTINGS, nonessential: false };
-  const exported = exportSpine(imported.project);
+  const exported = exportBoneBurst(imported.project);
   const errors = exported.diagnostics.filter((d) => d.severity === "error");
   if (errors.length) throw new Error(`${rig.name}: export refused: ${errors.map((e) => e.message).join("; ")}`);
 
   const read = (json: unknown) => new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(atlasText))).readSkeletonData(json));
   const a = read(original);
-  const b = read(JSON.parse(spineJson(exported.skeleton)));
+  const b = read(JSON.parse(boneburstJson(exported.skeleton)));
   if (skin) { a.setSkin(skin); b.setSkin(skin); }
   const rate = imported.project.frameRate;
   const worst: Worst = { matrix: 0, position: 0, vertex: 0, color: 0, frames: 0 };

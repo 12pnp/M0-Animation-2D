@@ -5,9 +5,9 @@ import { deformKeysOf, drawnDeformTarget, withDeformKeysOf } from "@/core/mesh/d
 import { deformRow } from "@/core/mesh/meshPlan";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { migrate, validateProject } from "@/core/doc/schema";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
-import { importSpine } from "@/core/spine/importSpine";
-import { atlasText } from "@/core/spine/atlas";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
+import { atlasText } from "@/core/boneburst/atlas";
 import { isImage, type Animation, type DeformKey, type MeshData, type Project, type SymbolItem } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
 import { imagesOf, sampleRigs } from "./fixtures/spineSamples";
@@ -44,11 +44,11 @@ describe("which display a list of deform keys is", () => {
 
 /** spine-core playing the export: each mesh slot's world vertices, y down. */
 function runtime(project: Project, skin: string | null): Skeleton {
-  const out = exportSpine(project);
+  const out = exportBoneBurst(project);
   expect(out.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
   const regions = out.usedImages.map((id, i) => { const it = project.items[id]; if (!isImage(it)) throw new Error("image"); return { name: it.name, x: 0, y: i * 200, width: it.width, height: it.height, offsetX: 0, offsetY: 0, originalWidth: it.width, originalHeight: it.height, rotated: false }; });
   const atlas = new TextureAtlas(atlasText([{ name: "p", imagePath: "p.png", width: 512, height: 4096, scale: 1, regions }]));
-  const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(atlas)).readSkeletonData(JSON.parse(spineJson(out.skeleton))));
+  const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(atlas)).readSkeletonData(JSON.parse(boneburstJson(out.skeleton))));
   if (skin) sk.setSkin(skin);
   return sk;
 }
@@ -103,7 +103,7 @@ describe("the stage plays every display's deform keys as spine-core plays the ex
     rig.nodes[torso.id] = { ...torso, mesh, extraDisplays: [{ itemId: torso.itemId!, pivot: torso.pivot, mesh, key: "second" }] };
     rig.animations[0]!.displayDeforms = { default: { [torso.id]: { 1: [k(0, 0, 0, 0, 0, 0, 0), k(6, 2, 2, 0, 0, 0, 0)] } } };
     const images = new Map(Object.values(project.items).filter((i) => i.kind === "image").map((i) => [i.name, { name: i.name, width: (i as { width: number }).width, height: (i as { height: number }).height, assetId: (i as unknown as { assetId: never }).assetId }]));
-    const opened = importSpine(exportSpine(project).skeleton as never, "stickman", images).project;
+    const opened = importBoneBurst(exportBoneBurst(project).skeleton as never, "stickman", images).project;
     const sym = opened.items[opened.rootSymbolId] as SymbolItem;
     const back = Object.values(sym.nodes).find((n) => n.name === torso.name && n.kind === "image")!;
     const anim = sym.animations.find((a) => a.name === rig.animations[0]!.name)!;
@@ -129,7 +129,7 @@ describe("the Deform row", () => {
 describe("spine-unity's samples", () => {
   it.skipIf(!sampleRigs().some((r) => r.name === "Goblins"))("Goblins' skin deform timelines become keys", () => {
     const r = sampleRigs().find((x) => x.name === "Goblins")!;
-    const project = importSpine(JSON.parse(r.json), r.name, imagesOf(r.atlas)).project;
+    const project = importBoneBurst(JSON.parse(r.json), r.name, imagesOf(r.atlas)).project;
     const sym = project.items[project.rootSymbolId] as SymbolItem;
     const lists = sym.animations.flatMap((a) => Object.values(a.displayDeforms?.goblin ?? {}).concat(Object.values(a.displayDeforms?.goblingirl ?? {})));
     expect(lists.length).toBeGreaterThan(0);

@@ -7,7 +7,7 @@ import { nz } from "@/core/math/angle";
  * The editor is Flash: y points DOWN, the x axis points at `skewY` and the y
  * axis at `skewX + 90`. Spine data is y UP, the x axis points at
  * `rotation + shearX` and the y axis at `rotation + 90 + shearY` (see
- * `SpineBoneTransform`). Flipping y conjugates a local matrix by
+ * `BoneBurstBoneTransform`). Flipping y conjugates a local matrix by
  * diag(1, −1), which negates both axis angles, so
  *
  *   rotation = −skewY    shearX = 0    shearY = skewY − skewX
@@ -18,7 +18,7 @@ import { nz } from "@/core/math/angle";
  * timelines interpolate them as raw numbers, so a tween turns the way the
  * editor's does.
  */
-export interface SpineLocal {
+export interface BoneBurstLocal {
   x: number;
   y: number;
   rotation: number;
@@ -28,7 +28,7 @@ export interface SpineLocal {
   scaleY: number;
 }
 
-export function toSpineLocal(t: Transform): SpineLocal {
+export function toBoneBurstLocal(t: Transform): BoneBurstLocal {
   return {
     x: nz(t.x),
     y: nz(-t.y),
@@ -41,7 +41,7 @@ export function toSpineLocal(t: Transform): SpineLocal {
 }
 
 /** The inverse, for any Spine bone, shearX included. */
-export function fromSpineLocal(s: SpineLocal): Transform {
+export function fromBoneBurstLocal(s: BoneBurstLocal): Transform {
   return {
     x: nz(s.x),
     y: nz(-s.y),
@@ -57,7 +57,7 @@ export function fromSpineLocal(s: SpineLocal): Transform {
  * are ADDED to the setup value; scale keys MULTIPLY it. A scale channel is
  * null when the setup scale is 0 and the pose is not: no key can reach it.
  */
-export interface SpineKeyValues {
+export interface BoneBurstKeyValues {
   x: number;
   y: number;
   rotate: number;
@@ -67,7 +67,7 @@ export interface SpineKeyValues {
   scaleY: number | null;
 }
 
-export function keyValues(pose: SpineLocal, setup: SpineLocal): SpineKeyValues {
+export function keyValues(pose: BoneBurstLocal, setup: BoneBurstLocal): BoneBurstKeyValues {
   return {
     x: nz(pose.x - setup.x),
     y: nz(pose.y - setup.y),

@@ -10,13 +10,13 @@ import { migrate, validateProject } from "@/core/doc/schema";
 import { History } from "@/core/history/History";
 import { SetStageSkins } from "@/core/history/commands";
 import { SetIkOptions } from "@/core/history/ikCommands";
-import { importSpine } from "@/core/spine/importSpine";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
-import { posedSymbol, spinePoseError, stageSkinOf } from "@/core/spine/spinePose";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { posedSymbol, boneburstPoseError, stageSkinOf } from "@/core/boneburst/boneburstPose";
 import { imagesOf, type SampleRig, sampleRigs } from "./fixtures/spineSamples";
 
 /**
- * The stage draws an opened Spine file through the runtime (`spinePose.ts`):
+ * The stage draws an opened Spine file through the runtime (`boneburstPose.ts`):
  * the document's pose in, the runtime's worlds, attachments, colours, draw
  * order and vertices out. That must be what the EXPORT plays, frame by
  * frame, or the stage would show one thing and the file another. The
@@ -30,10 +30,10 @@ const found = sampleRigs();
 /** Every frame of every animation, the stage against the export played
  *  with the skins the stage shows; how many attachments were compared. */
 function compare(rig: SampleRig, project: Project, sym: SymbolItem): number {
-  expect(spinePoseError(project, sym)).toBeNull();
-  const exported = exportSpine(project);
+  expect(boneburstPoseError(project, sym)).toBeNull();
+  const exported = exportBoneBurst(project);
   const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(rig.atlas)))
-    .readSkeletonData(JSON.parse(spineJson(exported.skeleton))));
+    .readSkeletonData(JSON.parse(boneburstJson(exported.skeleton))));
   // A rig without a default skin shows ones the stage picks; so must the file.
   const skins = stageSkinOf(sym);
   if (skins.length) {
@@ -110,7 +110,7 @@ function compare(rig: SampleRig, project: Project, sym: SymbolItem): number {
 describe.skipIf(found.length === 0)("the stage poses an opened Spine file as its export plays", () => {
   for (const rig of found) {
     it(rig.name, () => {
-      const { project } = importSpine(JSON.parse(rig.json), rig.name, imagesOf(rig.atlas));
+      const { project } = importBoneBurst(JSON.parse(rig.json), rig.name, imagesOf(rig.atlas));
       expect(compare(rig, project, project.items[project.rootSymbolId] as SymbolItem)).toBeGreaterThan(0);
     });
   }
@@ -120,7 +120,7 @@ const mix = found.find((r) => r.name === "mix-and-match");
 
 describe.skipIf(!mix)("skins", () => {
   const open = () => {
-    const { project } = importSpine(JSON.parse(mix!.json), mix!.name, imagesOf(mix!.atlas));
+    const { project } = importBoneBurst(JSON.parse(mix!.json), mix!.name, imagesOf(mix!.atlas));
     return { project, sym: project.items[project.rootSymbolId] as SymbolItem };
   };
   /** What the setup pose draws: each slot's attachment and where. */
@@ -178,7 +178,7 @@ describe("the stage's rig follows edits", () => {
       bones: [{ name: "root" }, { name: "a", parent: "root", length: 50 }, { name: "b", parent: "a", x: 50, length: 50 }, { name: "t", parent: "root", x: 60, y: 40 }],
       constraints: [{ type: "ik", name: "k", bones: ["a", "b"], target: "t" }],
     };
-    const { project } = importSpine(file as never, "x", new Map());
+    const { project } = importBoneBurst(file as never, "x", new Map());
     const sym = project.items[project.rootSymbolId] as SymbolItem;
     const history = new History(project);
     const b = Object.values(sym.nodes).find((n) => n.name === "b")!.id;

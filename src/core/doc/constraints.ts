@@ -5,7 +5,7 @@ import type { PathConstraint, PathShape, PhysicsConstraint, SliderConstraint, Sl
  * Physics, slider and path constraints (ARCHITECTURE ▸ Physics, sliders and
  * paths), pure: Spine 4.3's defaults, the JSON both ways, path geometry and
  * where a new one goes. The runtime solves them: a symbol that has any is
- * posed by spine-core (`spinePose.ts`), so the stage plays what the export
+ * posed by spine-core (`boneburstPose.ts`), so the stage plays what the export
  * plays.
  */
 
@@ -33,14 +33,14 @@ export function runtimeSolved(sym: SymbolItem): boolean {
 
 type Raw = Record<string, unknown>;
 
-export function physicsToSpine(k: PhysicsConstraint, bone: string): Raw {
+export function physicsToBoneBurst(k: PhysicsConstraint, bone: string): Raw {
   const out: Raw = { type: "physics", name: k.name, bone };
   for (const s of PHYSICS_SETTINGS) if (k[s] !== undefined && k[s] !== PHYSICS_DEFAULTS[s]) out[s] = k[s];
   if (k.scaleY) out.scaleY = k.scaleY;
   return out;
 }
 
-export function physicsFromSpine(c: Raw, id: CnId, boneId: NodeId): PhysicsConstraint {
+export function physicsFromBoneBurst(c: Raw, id: CnId, boneId: NodeId): PhysicsConstraint {
   const k: PhysicsConstraint = { id, name: String(c.name), boneId };
   for (const s of PHYSICS_SETTINGS) {
     const v = c[s];
@@ -53,7 +53,7 @@ export function physicsFromSpine(c: Raw, id: CnId, boneId: NodeId): PhysicsConst
 /** The physics fields this model holds; the rest of a file's constraint is carried. */
 export const PHYSICS_FIELDS = new Set(["type", "name", "bone", "scaleY", "skin", ...PHYSICS_SETTINGS]);
 
-export function sliderToSpine(k: SliderConstraint, animation: string, bone: string | null): Raw {
+export function sliderToBoneBurst(k: SliderConstraint, animation: string, bone: string | null): Raw {
   const out: Raw = { type: "slider", name: k.name, animation };
   if (k.additive) out.additive = true;
   if (k.loop) out.loop = true;
@@ -68,7 +68,7 @@ export function sliderToSpine(k: SliderConstraint, animation: string, bone: stri
   return out;
 }
 
-export function sliderFromSpine(c: Raw, id: CnId, animId: AnimId, boneId: NodeId | undefined): SliderConstraint {
+export function sliderFromBoneBurst(c: Raw, id: CnId, animId: AnimId, boneId: NodeId | undefined): SliderConstraint {
   const k: SliderConstraint = { id, name: String(c.name), animId };
   if (c.additive === true) k.additive = true;
   if (c.loop === true) k.loop = true;
@@ -86,7 +86,7 @@ export function sliderFromSpine(c: Raw, id: CnId, animId: AnimId, boneId: NodeId
 
 export const SLIDER_FIELDS = new Set(["type", "name", "animation", "additive", "loop", "mix", "bone", "property", "from", "to", "scale", "max", "local", "time", "skin"]);
 
-export function pathToSpine(k: PathConstraint, bones: string[], slot: string): Raw {
+export function pathToBoneBurst(k: PathConstraint, bones: string[], slot: string): Raw {
   const out: Raw = { type: "path", name: k.name, bones, slot };
   for (const [f, d] of Object.entries(PATH_DEFAULTS)) {
     const v = k[f as keyof typeof PATH_DEFAULTS];
@@ -95,7 +95,7 @@ export function pathToSpine(k: PathConstraint, bones: string[], slot: string): R
   return out;
 }
 
-export function pathFromSpine(c: Raw, id: CnId, boneIds: NodeId[], pathId: NodeId): PathConstraint {
+export function pathFromBoneBurst(c: Raw, id: CnId, boneIds: NodeId[], pathId: NodeId): PathConstraint {
   const k: PathConstraint = { id, name: String(c.name), boneIds, pathId };
   const modes = { positionMode: ["fixed", "percent"], spacingMode: ["length", "fixed", "percent", "proportional"], rotateMode: ["tangent", "chain", "chainScale"] } as const;
   for (const [f, allowed] of Object.entries(modes)) {

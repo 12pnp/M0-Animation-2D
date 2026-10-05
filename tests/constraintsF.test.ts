@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { newCnId, reseed } from "@/core/doc/ids";
 import {
-  newPathConstraint, newPhysics, newSlider, pathFromSpine, pathLengths, pathThrough, pathToSpine, physicsFromSpine, physicsToSpine,
-  runtimeSolved, sliderFromSpine, sliderToSpine, uniqueConstraintName, withKnotMoved,
+  newPathConstraint, newPhysics, newSlider, pathFromBoneBurst, pathLengths, pathThrough, pathToBoneBurst, physicsFromBoneBurst, physicsToBoneBurst,
+  runtimeSolved, sliderFromBoneBurst, sliderToBoneBurst, uniqueConstraintName, withKnotMoved,
 } from "@/core/doc/constraints";
 import { createImageItem, createLayer, createNode } from "@/core/doc/defaults";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { migrate, validateProject } from "@/core/doc/schema";
-import { exportSpine } from "@/core/spine/exportSpine";
-import { posedSymbol } from "@/core/spine/spinePose";
+import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
+import { posedSymbol } from "@/core/boneburst/boneburstPose";
 import type { SymbolItem } from "@/core/doc/types";
 import { tf } from "@/core/math/Transform";
 import { boxOutline, makeMesh } from "@/core/mesh/makeMesh";
@@ -20,23 +20,23 @@ beforeEach(() => reseed());
 describe("Spine's JSON both ways", () => {
   it("physics: defaults left out, the rest kept", () => {
     const k = { ...newPhysics({ ...emptySym(), nodes: {} } as SymbolItem, "b" as never, newCnId()), name: "p", inertia: 0.3, scaleY: "volume" as const };
-    const json = physicsToSpine(k, "bone");
+    const json = physicsToBoneBurst(k, "bone");
     expect(json).toEqual({ type: "physics", name: "p", bone: "bone", rotate: 1, inertia: 0.3, scaleY: "volume" });
-    expect(physicsFromSpine(json, k.id, k.boneId)).toEqual(k);
+    expect(physicsFromBoneBurst(json, k.id, k.boneId)).toEqual(k);
   });
   it("slider: a bone's property, or a time", () => {
     const driven = { id: newCnId(), name: "s", animId: "a1" as never, boneId: "b" as never, property: "x" as const, from: 10, to: 0.5, scale: 0.02, loop: true };
-    const json = sliderToSpine(driven, "wave", "bone");
+    const json = sliderToBoneBurst(driven, "wave", "bone");
     expect(json).toEqual({ type: "slider", name: "s", animation: "wave", loop: true, bone: "bone", property: "x", from: 10, to: 0.5, scale: 0.02 });
-    expect(sliderFromSpine(json, driven.id, driven.animId, driven.boneId)).toEqual(driven);
-    expect(sliderToSpine({ id: newCnId(), name: "t", animId: "a1" as never, time: 0.25 }, "wave", null)).toEqual({ type: "slider", name: "t", animation: "wave", time: 0.25 });
+    expect(sliderFromBoneBurst(json, driven.id, driven.animId, driven.boneId)).toEqual(driven);
+    expect(sliderToBoneBurst({ id: newCnId(), name: "t", animId: "a1" as never, time: 0.25 }, "wave", null)).toEqual({ type: "slider", name: "t", animation: "wave", time: 0.25 });
   });
   it("path: modes and values, mixY read as mixX when absent", () => {
     const k = { id: newCnId(), name: "p", boneIds: ["a" as never], pathId: "n" as never, rotateMode: "chain" as const, spacingMode: "percent" as const, position: 0.2, mixX: 0.5, mixY: 0.5 };
-    const json = pathToSpine(k, ["a"], "rail");
+    const json = pathToBoneBurst(k, ["a"], "rail");
     expect(json).toEqual({ type: "path", name: "p", bones: ["a"], slot: "rail", spacingMode: "percent", rotateMode: "chain", position: 0.2, mixX: 0.5, mixY: 0.5 });
     const { mixY: _m, ...noMixY } = json;
-    expect(pathFromSpine(noMixY, k.id, k.boneIds, k.pathId)).toEqual(k);
+    expect(pathFromBoneBurst(noMixY, k.id, k.boneIds, k.pathId)).toEqual(k);
   });
 });
 
@@ -89,7 +89,7 @@ describe("the stage poses physics, sliders and paths through the runtime", () =>
     const { project, rig, node } = await loadStickman();
     rig.physics = [{ ...newPhysics(rig, node("head"), newCnId()), inertia: 0.8, gravity: 50 }];
     stageAgainstRuntime(project, rig, "head");
-    const json = exportSpine(project).skeleton.constraints!.find((c) => c.name === "head_physics");
+    const json = exportBoneBurst(project).skeleton.constraints!.find((c) => c.name === "head_physics");
     expect(json).toEqual({ type: "physics", name: "head_physics", bone: "head", rotate: 1, inertia: 0.8, gravity: 50 });
   });
 });

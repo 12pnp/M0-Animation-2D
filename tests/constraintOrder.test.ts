@@ -3,8 +3,8 @@ import { reseed, newIkId, newTcId, newCnId } from "@/core/doc/ids";
 import { byOrder, constraintEntries, orderAfterEdit, orderFrom, withConstraintMoved } from "@/core/doc/constraintOrder";
 import { createProject } from "@/core/doc/defaults";
 import { migrate, validateProject } from "@/core/doc/schema";
-import { exportSpine } from "@/core/spine/exportSpine";
-import { importSpine } from "@/core/spine/importSpine";
+import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import { identityProperties } from "@/core/doc/transformKeys";
 import type { SymbolItem } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
@@ -80,23 +80,23 @@ describe("the order in the file", () => {
   it("the export writes the symbol's order; without one, IK then transform", async () => {
     const { project, rig } = await loadStickman();
     rig.transforms = [{ id: newTcId(), name: "follow", boneIds: [rig.ik[0]!.boneId], sourceId: rig.ik[1]!.boneId, mix: { rotate: 1, x: 0, y: 0, scaleX: 0, scaleY: 0, shearY: 0 }, properties: identityProperties() }];
-    const plain = exportSpine(project).skeleton.constraints!.map((c) => c.name);
+    const plain = exportBoneBurst(project).skeleton.constraints!.map((c) => c.name);
     expect(plain).toEqual([...rig.ik.map((k) => k.name), "follow"]);
     rig.constraintOrder = ["follow", rig.ik[2]!.name];
-    const ordered = exportSpine(project).skeleton.constraints!.map((c) => c.name);
+    const ordered = exportBoneBurst(project).skeleton.constraints!.map((c) => c.name);
     expect(ordered).toEqual(["follow", rig.ik[2]!.name, ...rig.ik.filter((_, i) => i !== 2).map((k) => k.name)]);
   });
 
   it("an opened file keeps its order, the carried ones among the model's", async () => {
     const { project, rig } = await loadStickman();
     rig.constraintOrder = [rig.ik[3]!.name, rig.ik[0]!.name];
-    const file = exportSpine(project).skeleton;
-    const opened = importSpine(file as never, "stickman", new Map()).project;
+    const file = exportBoneBurst(project).skeleton;
+    const opened = importBoneBurst(file as never, "stickman", new Map()).project;
     const sym = opened.items[opened.rootSymbolId] as SymbolItem;
     expect(sym.constraintOrder!.slice(0, 2)).toEqual([rig.ik[3]!.name, rig.ik[0]!.name]);
     sym.spine!.constraints.push({ type: "path", name: "carried", bones: [], slot: "x" });
     sym.constraintOrder = ["carried", ...sym.constraintOrder!];
-    expect(exportSpine(opened).skeleton.constraints!.map((c) => c.name)[0]).toBe("carried");
+    expect(exportBoneBurst(opened).skeleton.constraints!.map((c) => c.name)[0]).toBe("carried");
   });
 
   it("load: a version 23 file's carried order moves to the symbol; the list keeps names, once", () => {

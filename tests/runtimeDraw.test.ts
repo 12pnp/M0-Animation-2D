@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
   AtlasAttachmentLoader, ClippingAttachment, MixFrom, Physics, Skeleton, SkeletonJson, SkeletonRendererCore, type Slot, TextureAtlas,
 } from "@esotericsoftware/spine-core";
-import { atlasText } from "@/core/spine/atlas";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
-import { readAtlas } from "@/core/spine/runtime/atlasRead";
-import { readRig } from "@/core/spine/runtime/rigData";
-import { Rig } from "@/core/spine/runtime/rig";
-import { drawList, drawnVertices } from "@/core/spine/runtime/draw";
+import { atlasText } from "@/core/boneburst/atlas";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { readAtlas } from "@/core/boneburst/runtime/atlasRead";
+import { readRig } from "@/core/boneburst/runtime/rigData";
+import { Rig } from "@/core/boneburst/runtime/rig";
+import { drawList, drawnVertices } from "@/core/boneburst/runtime/draw";
 import { loadFixture } from "./fixtures/realProject";
 import { loadStickman } from "./fixtures/stickman";
 import { sampleRigs } from "./fixtures/spineSamples";
@@ -15,7 +15,7 @@ import { type Json, trimmedPage } from "./fixtures/runtimeOracle";
 
 /**
  * The Preview's gate (docs/PREVIEW-RUNTIME-PLAN.md, P4): what the BoneBurst
- * runtime hands the renderer (`core/spine/runtime/draw.ts`) against what
+ * runtime hands the renderer (`core/boneburst/runtime/draw.ts`) against what
  * spine-core's own renderer core draws, y down as the Preview poses, at every
  * frame: each triangle's positions, UVs, colour, dark colour, blend mode and
  * atlas page, in draw order.
@@ -166,15 +166,15 @@ function drawCompare(name: string, file: Json, atlas: string, skin?: string, str
 describe("what the Preview draws against spine-core's renderer", () => {
   it("the stickman export", async () => {
     const { project } = await loadStickman();
-    const exported = exportSpine(project, project.rootSymbolId);
-    const r = drawCompare("stickman", JSON.parse(spineJson(exported.skeleton)), atlasText([trimmedPage(project, exported.usedImages)]));
+    const exported = exportBoneBurst(project, project.rootSymbolId);
+    const r = drawCompare("stickman", JSON.parse(boneburstJson(exported.skeleton)), atlasText([trimmedPage(project, exported.usedImages)]));
     expect(r.triangles).toBeGreaterThan(1000);
   });
 
   it("the frog export", async () => {
     const { project } = await loadFixture();
-    const exported = exportSpine(project, project.rootSymbolId);
-    const r = drawCompare("frog", JSON.parse(spineJson(exported.skeleton)), atlasText([trimmedPage(project, exported.usedImages)]));
+    const exported = exportBoneBurst(project, project.rootSymbolId);
+    const r = drawCompare("frog", JSON.parse(boneburstJson(exported.skeleton)), atlasText([trimmedPage(project, exported.usedImages)]));
     expect(r.triangles).toBeGreaterThan(50);
   });
 

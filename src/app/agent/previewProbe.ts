@@ -2,7 +2,7 @@ import type { Store } from "@/app/Store";
 import type { AssetStore } from "@/app/AssetStore";
 import { buildExports } from "@/io/export/ExportBundle";
 import { PreviewHost } from "@/preview/previewHost";
-import { stageSkinOf } from "@/core/spine/spinePose";
+import { stageSkinOf } from "@/core/boneburst/boneburstPose";
 import type { PreviewProbe } from "./AgentApi";
 
 /**

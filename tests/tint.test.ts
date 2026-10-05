@@ -4,9 +4,9 @@ import { createNode } from "@/core/doc/defaults";
 import { displaysOf, withDisplayTint } from "@/core/doc/displays";
 import { runtimePosed } from "@/core/doc/inherit";
 import { migrate, validateProject } from "@/core/doc/schema";
-import { exportSpine } from "@/core/spine/exportSpine";
-import { importSpine } from "@/core/spine/importSpine";
-import { posedSymbol } from "@/core/spine/spinePose";
+import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
+import { posedSymbol } from "@/core/boneburst/boneburstPose";
 import type { SymbolItem } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
 
@@ -37,7 +37,7 @@ describe("in the file and on the stage", () => {
     const torso = Object.values(rig.nodes).find((n) => n.itemId && n.name.includes("torso"))!;
     rig.nodes[torso.id] = withDisplayTint(torso, 0, "8040ffcc");
     expect(runtimePosed(rig)).toBe(true);
-    const out = exportSpine(project);
+    const out = exportBoneBurst(project);
     const slot = out.skeleton.slots!.find((s) => s.name === torso.name)!;
     const att = out.skeleton.skins![0]!.attachments![slot.name]!;
     expect(Object.values(att)[0]).toMatchObject({ color: "8040ffcc" });
@@ -46,7 +46,7 @@ describe("in the file and on the stage", () => {
     expect(e.color.gM).toBeCloseTo((0x40 / 255) * 100, 3);
     expect(e.color.aM).toBeCloseTo((0xcc / 255) * 100, 3);
     const images = new Map(Object.values(project.items).filter((i) => i.kind === "image").map((i) => [i.name, { name: i.name, width: (i as { width: number }).width, height: (i as { height: number }).height, assetId: (i as unknown as { assetId: never }).assetId }]));
-    const opened = importSpine(out.skeleton as never, "stickman", images).project;
+    const opened = importBoneBurst(out.skeleton as never, "stickman", images).project;
     const back = Object.values((opened.items[opened.rootSymbolId] as SymbolItem).nodes).find((n) => n.name === torso.name && n.kind === "image");
     expect(back && displaysOf(back)[0]!.tint).toBe("8040ffcc");
   });

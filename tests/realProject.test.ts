@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "vitest";
 import { reseed, type NodeId, type ItemId } from "@/core/doc/ids";
 import { createNode, createLayer } from "@/core/doc/defaults";
 import { DOC_VERSION, isImage, isSymbol, type SymbolItem, type Track } from "@/core/doc/types";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
 import { sampleTransformRaw } from "@/core/doc/timeline";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { AddNode, ReplaceImageAsset, SetLayerExcluded, SetNodeItem } from "@/core/history/commands";
@@ -53,22 +53,22 @@ const nodeOf = (sym: SymbolItem, layerName: string) =>
   sym.nodes[sym.layers.find((l) => l.name === layerName)!.nodeId]!;
 /** A symbol of the fixture exported on its own, as the preview asks for it. */
 const exportOf = (fx: Fixture, name: string) =>
-  exportSpine(fx.project, fx.itemId(name));
-const fileOf = (fx: Fixture, name: string) => spineJson(exportOf(fx, name).skeleton);
+  exportBoneBurst(fx.project, fx.itemId(name));
+const fileOf = (fx: Fixture, name: string) => boneburstJson(exportOf(fx, name).skeleton);
 
 describe("the fixture itself", () => {
   let fx: Fixture;
   beforeEach(async () => { fx = await loadFixture(); });
 
   it("says that the scene's one-frame animation freezes the looping frog inside it", () => {
-    const warnings = exportSpine(fx.project).diagnostics.map((d) => d.message);
+    const warnings = exportBoneBurst(fx.project).diagnostics.map((d) => d.message);
     expect(warnings.some((m) => m.includes('"frog_green_1_1_rest"') && m.includes("which lasts 1") && m.includes("to 120 frames"))).toBe(true);
   });
 
   it("exports every symbol without errors", () => {
     for (const item of Object.values(fx.project.items)) {
       if (!isSymbol(item)) continue;
-      const errors = exportSpine(fx.project, item.id).diagnostics.filter((d) => d.severity === "error");
+      const errors = exportBoneBurst(fx.project, item.id).diagnostics.filter((d) => d.severity === "error");
       expect(errors, item.name).toEqual([]);
     }
   });

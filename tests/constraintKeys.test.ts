@@ -1,14 +1,14 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { newCnId, reseed, type CnId } from "@/core/doc/ids";
 import {
-  bakedChannelKeys, channelKeysFromSpine, channelTimeline, constraintKeyFrames, deleteConstraintKeys, moveConstraintKeys, valueAt,
+  bakedChannelKeys, channelKeysFromBoneBurst, channelTimeline, constraintKeyFrames, deleteConstraintKeys, moveConstraintKeys, valueAt,
   withChannelKeys, withConstraintTween, withValueKey,
 } from "@/core/doc/constraintKeys";
 import { newPathConstraint, newPhysics, newSlider, pathThrough } from "@/core/doc/constraints";
 import { createLayer, createNode } from "@/core/doc/defaults";
 import { migrate, validateProject } from "@/core/doc/schema";
-import { exportSpine } from "@/core/spine/exportSpine";
-import { importSpine } from "@/core/spine/importSpine";
+import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import type { SymbolItem, ValueKey } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
 import { stageAgainstRuntime } from "./fixtures/runtimeCheck";
@@ -56,7 +56,7 @@ describe("Spine's timelines", () => {
     expect(raw[0]).toMatchObject({ value: 0.5 });
     expect(raw[1]).toMatchObject({ value: 2, curve: "stepped" });
     expect(raw[2]).toMatchObject({ value: 0 });
-    const back = channelKeysFromSpine(raw, 30, 0)!;
+    const back = channelKeysFromBoneBurst(raw, 30, 0)!;
     expect(back.map((x) => [x.frame, x.value, x.tween?.kind ?? "linear"])).toEqual([[0, 0.5, "curve"], [10, 2, "none"], [15, 0, "linear"]]);
     (back[0]!.tween as unknown as { curve: number[] }).curve.forEach((v, i) => expect(v).toBeCloseTo([0.25, 0.1, 0.75, 0.9][i]!, 5));
   });
@@ -64,15 +64,15 @@ describe("Spine's timelines", () => {
     const raw = channelTimeline([k(0, 1, { kind: "curve", curve: [0.3, 0, 0.7, 1] }), k(6, 0.25)], 30, true);
     expect(raw[1]).toMatchObject({ mixRotate: 0.25, mixX: 0.25, mixY: 0.25 });
     expect((raw[0]!.curve as number[]).length).toBe(12);
-    expect(channelKeysFromSpine(raw, 30, 1, true)!.map((x) => x.value)).toEqual([1, 0.25]);
-    expect(channelKeysFromSpine([{ mixRotate: 1, mixX: 0.5 }], 30, 1, true)).toBeNull();
+    expect(channelKeysFromBoneBurst(raw, 30, 1, true)!.map((x) => x.value)).toEqual([1, 0.25]);
+    expect(channelKeysFromBoneBurst([{ mixRotate: 1, mixX: 0.5 }], 30, 1, true)).toBeNull();
   });
   it.each([
     { name: "a key between frames", raw: [{ time: 0.11, value: 1 }] },
     { name: "two keys on one frame", raw: [{ value: 1 }, { time: 0, value: 2 }] },
     { name: "a bent constant", raw: [{ value: 1, curve: [0.1, 3, 0.2, 1] }, { time: 0.2, value: 1 }] },
   ])("stays carried: $name", ({ raw }) => {
-    expect(channelKeysFromSpine(raw, 30, 0)).toBeNull();
+    expect(channelKeysFromBoneBurst(raw, 30, 0)).toBeNull();
   });
   it.each([
     { name: "linear across a key between frames", raw: [{ time: 0, value: 0 }, { time: 0.05, value: 1.5 }, { time: 0.1, value: 3 }], want: [[0, 0], [1, 1], [2, 2], [3, 3]] },
@@ -89,7 +89,7 @@ describe("Spine's timelines", () => {
     expect(baked[2]!.value).toBeGreaterThan(0.4);
   });
   it("a missing value reads as the channel's default", () => {
-    expect(channelKeysFromSpine([{ time: 0.1 }], 30, 1)).toEqual([k(3, 1)]);
+    expect(channelKeysFromBoneBurst([{ time: 0.1 }], 30, 1)).toEqual([k(3, 1)]);
   });
 });
 
@@ -133,11 +133,11 @@ describe("the stage plays the keys as spine-core plays the export", () => {
     const { project, rig } = await loadStickman();
     const slider = newSlider(rig, rig.animations[1]!.id, null, newCnId(), 0);
     rig.sliders = [slider];
-    const file = exportSpine(project).skeleton as unknown as Record<string, Record<string, Record<string, unknown>>>;
+    const file = exportBoneBurst(project).skeleton as unknown as Record<string, Record<string, Record<string, unknown>>>;
     const first = Object.keys(file.animations!)[0]!;
     // Keys at 0.11 s and 0.258 s: on no frame at the rig's rate or a multiple up to 120.
     file.animations![first]!.slider = { [slider.name]: { time: [{ time: 0.11, value: 0.1, curve: [0.15, 0.1, 0.2, 0.5] }, { time: 0.258333, value: 0.5, curve: "stepped" }, { time: 0.4, value: 0.2 }] } };
-    const result = importSpine(file as never, "stickman", new Map());
+    const result = importBoneBurst(file as never, "stickman", new Map());
     const sym = result.project.items[result.project.rootSymbolId] as SymbolItem;
     const anim = sym.animations.find((a) => a.name === first)!;
     const keys = anim.constraintKeys?.[sym.sliders![0]!.id]?.time;
@@ -167,7 +167,7 @@ describe("the stage plays the keys as spine-core plays the export", () => {
     rig.paths = [pc];
     rig.skins = [{ name: "rails", constraints: [pc.id] }];
     rig.animations[0]!.constraintKeys = { [pc.id]: { position: [k(0, 0.1), k(12, 0.6)], mix: [k(4, 1, { kind: "none" }), k(9, 0.4)] } };
-    const opened = importSpine(exportSpine(project).skeleton as never, "stickman", new Map()).project;
+    const opened = importBoneBurst(exportBoneBurst(project).skeleton as never, "stickman", new Map()).project;
     const sym = opened.items[opened.rootSymbolId] as SymbolItem;
     expect(sym.spine!.constraints.filter((c) => c.type === "path")).toEqual([]);
     const back = sym.paths![0]!;
@@ -191,7 +191,7 @@ describe("the stage plays the keys as spine-core plays the export", () => {
       [s.id]: { time: [k(0, 0), k(8, 0.4)] },
     };
     rig.animations[0]!.spine = { physics: { [p.name]: { reset: [{ time: 0.25 }] } } };
-    const opened = importSpine(exportSpine(project).skeleton as never, "stickman", new Map()).project;
+    const opened = importBoneBurst(exportBoneBurst(project).skeleton as never, "stickman", new Map()).project;
     const sym = opened.items[opened.rootSymbolId] as SymbolItem;
     const anim = sym.animations.find((a) => a.name === rig.animations[0]!.name)!;
     const p2 = sym.physics![0]!, s2 = sym.sliders![0]!;

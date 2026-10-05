@@ -3,8 +3,8 @@ import { reseed, type ItemId } from "@/core/doc/ids";
 import { linkableDisplays, meshOfDisplay, withLink, displaysOf } from "@/core/doc/displays";
 import { createNode } from "@/core/doc/defaults";
 import { migrate, validateProject } from "@/core/doc/schema";
-import { exportSpine } from "@/core/spine/exportSpine";
-import { importSpine } from "@/core/spine/importSpine";
+import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import type { MeshData, SymbolItem } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
 
@@ -66,7 +66,7 @@ describe("linking a display to a mesh", () => {
     const anim = rig.animations[0]!;
     anim.tracks[torso.id] = { nodeId: torso.id, endFrame: anim.duration - 1, keys: [{ frame: 0, transform: torso.bind, displayIndex: 0, tween: { kind: "none" } }, { frame: 3, transform: torso.bind, displayIndex: 1, tween: { kind: "none" } }] };
     const images = new Map(Object.values(project.items).filter((i) => i.kind === "image").map((i) => [i.name, { name: i.name, width: (i as { width: number }).width, height: (i as { height: number }).height, assetId: (i as unknown as { assetId: never }).assetId }]));
-    const opened = importSpine(exportSpine(project).skeleton as never, "stickman", images).project;
+    const opened = importBoneBurst(exportBoneBurst(project).skeleton as never, "stickman", images).project;
     const back = Object.values((opened.items[opened.rootSymbolId] as SymbolItem).nodes).find((x) => x.name === torso.name && x.kind === "image")!;
     expect(back.mesh).toBeDefined();
     expect(back.extraDisplays?.[0]).toMatchObject({ key: "head", linked: { to: 0, deform: false } });

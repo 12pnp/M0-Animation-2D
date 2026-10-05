@@ -4,10 +4,10 @@ import {
 } from "@esotericsoftware/spine-core";
 import { reseed, type AssetId } from "@/core/doc/ids";
 import type { SymbolItem } from "@/core/doc/types";
-import { type AtlasImage, importSpine } from "@/core/spine/importSpine";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
-import { posedSymbol } from "@/core/spine/spinePose";
-import type { SpineRaw } from "@/core/spine/types";
+import { type AtlasImage, importBoneBurst } from "@/core/boneburst/importBoneBurst";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { posedSymbol } from "@/core/boneburst/boneburstPose";
+import type { BoneBurstRaw } from "@/core/boneburst/types";
 
 /**
  * The importer's own rules, on small hand-made skeletons: what the sample
@@ -22,12 +22,12 @@ const images = (...specs: Array<[string, number, number]>) =>
 const atlasFor = (specs: Array<[string, number, number]>) =>
   ["p.png", "size:512,512", ...specs.flatMap(([n, w, h], i) => [n, `bounds:0,${i * 10},${w},${h}`])].join("\n");
 
-function skeleton(parts: Partial<Record<string, unknown>>): SpineRaw {
+function skeleton(parts: Partial<Record<string, unknown>>): BoneBurstRaw {
   return { skeleton: { spine: "4.3.74", fps: 30 }, bones: [{ name: "root" }], ...parts };
 }
 
 /** The largest gap between two skeletons' bone worlds, frame by frame. */
-function playsAlike(a: SpineRaw, b: unknown, anim: string, frames: number): number {
+function playsAlike(a: BoneBurstRaw, b: unknown, anim: string, frames: number): number {
   const posed = (json: unknown) => {
     const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(""))).readSkeletonData(json));
     return (f: number) => {
@@ -53,14 +53,14 @@ function sym(project: { items: Record<string, unknown>; rootSymbolId: string }):
 describe("frame rate", () => {
   it("runs at the first multiple of the file's rate that puts every key on a frame", () => {
     const file = skeleton({ animations: { a: { bones: { root: { rotate: [{}, { time: 1 / 60, value: 10 }, { time: 0.5, value: 20 }] } } } } });
-    const { project, diagnostics } = importSpine(file, "x", images());
+    const { project, diagnostics } = importBoneBurst(file, "x", images());
     expect(project.frameRate).toBe(60);
     expect(diagnostics.some((d) => d.message.includes("60 fps"))).toBe(true);
   });
 
   it("keeps the file's rate for keys no rate up to 120 reaches, and says how many", () => {
     const file = skeleton({ animations: { a: { bones: { root: { rotate: [{}, { time: 0.0441, value: 10 }, { time: 0.5, value: 20 }] } } } } });
-    const { project, diagnostics } = importSpine(file, "x", images());
+    const { project, diagnostics } = importBoneBurst(file, "x", images());
     expect(project.frameRate).toBe(30);
     expect(diagnostics.some((d) => d.message.startsWith("1 key(s) fall between frames"))).toBe(true);
   });
@@ -73,7 +73,7 @@ describe("keys", () => {
         { value: 0, curve: [0.2, 0, 0.3, 90] }, { time: 0.5, value: 90 },
       ] } } } },
     });
-    const { project, baked } = importSpine(file, "x", images());
+    const { project, baked } = importBoneBurst(file, "x", images());
     const anim = sym(project).animations[0]!;
     expect(baked).toBe(0);
     expect(anim.endsAtLastFrame).toBe(true);
@@ -82,10 +82,10 @@ describe("keys", () => {
     expect(keys.map((k) => k.frame)).toEqual([0, 15]);
     expect(keys[0]!.tween.kind).toBe("curve");
     // The export writes the curve back where it was and ends at 0.5 s.
-    const out = exportSpine(project).skeleton.animations!.a!.bones!.root!.rotate!;
+    const out = exportBoneBurst(project).skeleton.animations!.a!.bones!.root!.rotate!;
     expect(out.length).toBe(2);
     expect(out[0]!.curve).toEqual([expect.closeTo(0.2, 9), expect.closeTo(0, 9), expect.closeTo(0.3, 9), expect.closeTo(90, 9)]);
-    expect(exportSpine(project).skeleton.animations!.a!.drawOrder).toBeUndefined();
+    expect(exportBoneBurst(project).skeleton.animations!.a!.drawOrder).toBeUndefined();
   });
 
   it("cuts a bezier where another value is keyed inside it, the short piece a curve", () => {
@@ -101,7 +101,7 @@ describe("keys", () => {
         translate: [{ x: 0 }, { time: 28 / 30, x: 10 }, { time: 1, x: 20 }],
       } } } },
     });
-    const { project, baked } = importSpine(file, "x", images());
+    const { project, baked } = importBoneBurst(file, "x", images());
     const keys = Object.values(sym(project).animations[0]!.tracks)[0]!.keys;
     expect(baked).toBe(1);
     // Position tweens straight there; rotation's curve is its override.
@@ -117,7 +117,7 @@ describe("keys", () => {
       skins: [{ name: "default", attachments: { s: { a: { width: 2, height: 2 }, b: { width: 2, height: 2 } } } }],
       animations: { go: { slots: { s: { attachment: [{ time: 0.0441, name: "b" }, { time: 0.2, name: "a" }] } } } },
     });
-    const { project } = importSpine(file, "x", images(["a", 2, 2], ["b", 2, 2]));
+    const { project } = importBoneBurst(file, "x", images(["a", 2, 2], ["b", 2, 2]));
     const s = sym(project);
     const shown = (f: number) => posedSymbol(project, s, s.animations[0]!, f, "animate").entries.find((e) => e.node.name === "s")!.displayIndex;
     // 0.0441 s is frame 1.32 at 30 fps (no rate up to 120 puts it on a
@@ -131,19 +131,19 @@ describe("keys", () => {
         { x: 0, y: 0, curve: [0.1, 0, 0.2, 10, 0.1, 0, 0.3, 0] }, { time: 0.5, x: 10, y: 10 },
       ] } } } },
     });
-    const { project, baked } = importSpine(file, "x", images());
+    const { project, baked } = importBoneBurst(file, "x", images());
     expect(baked).toBe(0);
     const keys = Object.values(sym(project).animations[0]!.tracks)[0]!.keys;
     expect(keys.map((k) => k.frame)).toEqual([0, 15]);
     expect(keys[0]!.tween.kind).toBe("curve");
     expect(keys[0]!.eases?.y?.kind).toBe("curve");
 
-    const bone = exportSpine(project).skeleton.animations!.a!.bones!.root!;
+    const bone = exportBoneBurst(project).skeleton.animations!.a!.bones!.root!;
     expect(bone.translate).toBeUndefined();
     const tx = bone.translatex as Array<{ curve?: number[] }>, ty = bone.translatey as Array<{ curve?: number[] }>;
     expect(tx[0]!.curve).toEqual([0.1, 0, 0.2, 10].map((v) => expect.closeTo(v, 9)));
     expect(ty[0]!.curve).toEqual([0.1, 0, 0.3, 0].map((v) => expect.closeTo(v, 9)));
-    expect(playsAlike(file, spineJson(exportSpine(project).skeleton), "a", 16)).toBeLessThan(1e-4);
+    expect(playsAlike(file, boneburstJson(exportBoneBurst(project).skeleton), "a", 16)).toBeLessThan(1e-4);
   });
 
   it("eases shear apart from rotation, and a shear on the key's own ease stays on it", () => {
@@ -156,15 +156,15 @@ describe("keys", () => {
         shear: [{ y: 0 }, { time: 0.5, y: 20 }],
       } } } },
     });
-    const { project, baked } = importSpine(file, "x", images());
+    const { project, baked } = importBoneBurst(file, "x", images());
     expect(baked).toBe(0);
     const k = Object.values(sym(project).animations[0]!.tracks)[0]!.keys[0]!;
     expect(k.tween.kind).toBe("linear");
     expect(k.eases?.rotation?.kind).toBe("curve");
     expect(k.eases?.shear?.kind).toBe("linear");
-    const bone = exportSpine(project).skeleton.animations!.a!.bones!.root!;
+    const bone = exportBoneBurst(project).skeleton.animations!.a!.bones!.root!;
     expect(bone.shear![0]!.curve).toBeUndefined();
-    expect(playsAlike(file, spineJson(exportSpine(project).skeleton), "a", 16)).toBeLessThan(1e-4);
+    expect(playsAlike(file, boneburstJson(exportBoneBurst(project).skeleton), "a", 16)).toBeLessThan(1e-4);
   });
 
   it("turns light and dark into multiplier and offset, and back to the same bytes", () => {
@@ -172,11 +172,11 @@ describe("keys", () => {
       slots: [{ name: "s", bone: "root", color: "c08040ff", dark: "102030" }],
       animations: { a: { slots: { s: { rgba2: [{ light: "ffffffff", dark: "000000" }, { time: 0.2, light: "80a0c0ff", dark: "204060" }] } } } },
     });
-    const { project } = importSpine(file, "x", images());
+    const { project } = importBoneBurst(file, "x", images());
     const node = Object.values(sym(project).nodes).find((n) => n.name === "s")!;
     expect(node.color!.rO).toBeCloseTo(0x10, 9);
     expect(node.color!.rM).toBeCloseTo(((0xc0 - 0x10) / 255) * 100, 9);
-    const out = exportSpine(project).skeleton;
+    const out = exportBoneBurst(project).skeleton;
     expect(out.slots![0]).toMatchObject({ color: "c08040ff", dark: "102030" });
     expect(out.animations!.a!.slots!.s!.rgba2!.map((k) => [k.light, k.dark])).toEqual([["ffffffff", "000000"], ["80a0c0ff", "204060"]]);
     // The stage hands the runtime the same dark colour, and draws it.
@@ -193,8 +193,8 @@ describe("structure", () => {
       slots: [{ name: "head", bone: "head", attachment: "head" }],
       skins: [{ name: "default", attachments: { head: { head: { width: 4, height: 4 } } } }],
     };
-    const { project } = importSpine(file, "x", images(["head", 4, 4]));
-    const out = exportSpine(project).skeleton;
+    const { project } = importBoneBurst(file, "x", images(["head", 4, 4]));
+    const out = exportBoneBurst(project).skeleton;
     expect(out.bones.map((b) => b.name)).toEqual(["Base", "head"]);
     expect(out.bones[0]!.parent).toBeUndefined();
     expect(out.slots).toEqual([{ name: "head", bone: "head", attachment: "head" }]);
@@ -206,8 +206,8 @@ describe("structure", () => {
       slots: [{ name: "s", bone: "root" }],
       skins: [{ name: "default", attachments: { s: { a: { width: 2, height: 2 } } } }],
     });
-    const { project } = importSpine(file, "x", images(["a", 2, 2]));
-    expect(exportSpine(project).skeleton.slots).toEqual([{ name: "s", bone: "root" }]);
+    const { project } = importBoneBurst(file, "x", images(["a", 2, 2]));
+    expect(exportBoneBurst(project).skeleton.slots).toEqual([{ name: "s", bone: "root" }]);
   });
 
   it("re-indexes weighted vertices for the bone order it writes", () => {
@@ -220,11 +220,11 @@ describe("structure", () => {
       slots: [{ name: "m", bone: "root", attachment: "m" }],
       skins: [{ name: "default", attachments: { m: { m: { type: "mesh", uvs: [0, 0, 1, 0, 1, 1], triangles: [0, 1, 2], vertices: verts, width: 4, height: 4 } } } }],
     };
-    const { project } = importSpine(file, "x", images(["m", 4, 4]));
-    const out = exportSpine(project).skeleton;
+    const { project } = importBoneBurst(file, "x", images(["m", 4, 4]));
+    const out = exportBoneBurst(project).skeleton;
     const order = out.bones.map((b) => b.name);
     expect(order).not.toEqual(["root", "a", "b", "a2"]);
-    const written = (out.skins![0]!.attachments!.m!.m as SpineRaw).vertices as number[];
+    const written = (out.skins![0]!.attachments!.m!.m as BoneBurstRaw).vertices as number[];
     const names = ["root", "a", "b", "a2"];
     // Every bone entry names the same bone as before.
     const read = (v: number[], bones: string[]) => {
@@ -245,7 +245,7 @@ describe("structure", () => {
       att.computeWorldVertices(sk, slot, 0, v.length, v, 0, 2);
       return v;
     };
-    expect(place(JSON.parse(spineJson(out)))).toEqual(place(file));
+    expect(place(JSON.parse(boneburstJson(out)))).toEqual(place(file));
   });
 
   it("keeps other constraints as they came, in the file's order: physics the model's, a path carried", () => {
@@ -257,10 +257,10 @@ describe("structure", () => {
       slots: [{ name: "s", bone: "root" }],
       constraints: [physics, { type: "ik", name: "k", bones: ["a"], target: "t", softness: 3 }, path],
     };
-    const { project } = importSpine(file, "x", images());
+    const { project } = importBoneBurst(file, "x", images());
     expect(sym(project).ik.map((k) => k.name)).toEqual(["k"]);
     expect(sym(project).physics!.map((k) => k.name)).toEqual(["q"]);
-    const out = exportSpine(project).skeleton.constraints!;
+    const out = exportBoneBurst(project).skeleton.constraints!;
     expect(out.map((c) => c.name)).toEqual(["q", "k", "p"]);
     expect(out[0]).toEqual(physics);
     expect(out[2]).toEqual(path);
@@ -274,10 +274,10 @@ describe("structure", () => {
       slots: [{ name: "s", bone: "root" }],
       constraints: [{ type: "path", name: "q", bones: ["a"], slot: "s" }],
     };
-    const { project } = importSpine(file, "x", images());
+    const { project } = importBoneBurst(file, "x", images());
     const a = Object.values(sym(project).nodes).find((n) => n.name === "a")!;
     a.name = "renamed";
-    const errors = exportSpine(project).diagnostics.filter((d) => d.severity === "error");
+    const errors = exportBoneBurst(project).diagnostics.filter((d) => d.severity === "error");
     expect(errors.map((e) => e.message)).toEqual([expect.stringContaining('needs the bone "a"')]);
   });
 
@@ -291,11 +291,11 @@ describe("structure", () => {
         { name: "other", attachments: { m: { m2: { type: "mesh", uvs: [0, 0, 1, 0, 1, 1], triangles: [0, 1, 2], vertices: [1, 1, 0, 0, 1, 1, 1, 1, 0, 1, 1, 0, 1, 1], width: 4, height: 4 } } } },
       ],
     };
-    const { project } = importSpine(file, "x", images(["m", 4, 4], ["m2", 4, 4]));
+    const { project } = importBoneBurst(file, "x", images(["m", 4, 4], ["m2", 4, 4]));
     const before = JSON.stringify(project);
-    const first = spineJson(exportSpine(project).skeleton);
+    const first = boneburstJson(exportBoneBurst(project).skeleton);
     expect(JSON.stringify(project)).toBe(before);
-    expect(spineJson(exportSpine(project).skeleton)).toBe(first);
+    expect(boneburstJson(exportBoneBurst(project).skeleton)).toBe(first);
   });
 
   it("keeps Spine's own shear on a bone that does not inherit everything", () => {
@@ -304,8 +304,8 @@ describe("structure", () => {
       bones: [{ name: "root", scaleX: 2 }, { name: "a", parent: "root", inherit: "noScale", rotation: 30, shearX: 20 }],
       animations: { go: { bones: { a: { shear: [{ x: 5 }, { time: 1, x: 40 }] } } } },
     };
-    const { project } = importSpine(file, "x", images());
-    const out = JSON.parse(spineJson(exportSpine(project).skeleton));
+    const { project } = importBoneBurst(file, "x", images());
+    const out = JSON.parse(boneburstJson(exportBoneBurst(project).skeleton));
     const pose = (json: unknown) => {
       const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(""))).readSkeletonData(json));
       sk.setupPose();
@@ -341,8 +341,8 @@ describe("structure", () => {
         transform: { "item-to-hand": [{}] },
       } },
     });
-    const { project } = importSpine(file, "x", images());
-    expect(playsAlike(file, JSON.parse(spineJson(exportSpine(project).skeleton)), "go", 31)).toBeLessThan(1e-4);
+    const { project } = importBoneBurst(file, "x", images());
+    expect(playsAlike(file, JSON.parse(boneburstJson(exportBoneBurst(project).skeleton)), "go", 31)).toBeLessThan(1e-4);
     // The stage too, at a frame where the shear is keyed.
     const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(""))).readSkeletonData(file));
     sk.setupPose();
@@ -368,7 +368,7 @@ describe("skins", () => {
       ],
     });
     const imgs: Array<[string, number, number]> = [["a", 8, 8], ["b", 6, 6], ["c1", 4, 4], ["c2", 4, 4]];
-    const { project } = importSpine(file, "x", images(...imgs));
+    const { project } = importBoneBurst(file, "x", images(...imgs));
     const s = sym(project);
     const node = (name: string) => Object.values(s.nodes).find((n) => n.name === name)!;
     const item = (name: string) => Object.values(project.items).find((i) => i.name === name)!.id;
@@ -384,12 +384,12 @@ describe("skins", () => {
     expect(x!.ik).toEqual([s.ik[0]!.id]);
     // What the model cannot hold stays carried, merged back by name.
     expect(s.spine!.skins.filter((k) => k.name !== "default")).toEqual([{ name: "x", path: ["p"] }, { name: "y", attachments: { hat: { pt: { type: "point" } } } }]);
-    const out = JSON.parse(spineJson(exportSpine(project).skeleton));
-    const skinsOut = Object.fromEntries((out.skins as SpineRaw[]).map((k) => [k.name, k]));
+    const out = JSON.parse(boneburstJson(exportBoneBurst(project).skeleton));
+    const skinsOut = Object.fromEntries((out.skins as BoneBurstRaw[]).map((k) => [k.name, k]));
     expect(skinsOut.default!.attachments).toEqual({ body: { a: { width: 8, height: 8 } } });
     expect(skinsOut.x).toMatchObject({ bones: ["arm"], ik: ["reach"], path: ["p"], attachments: { body: { a: { path: "b", width: 6, height: 6 } }, hat: { c: { path: "c1", width: 4, height: 4 } } } });
     expect(skinsOut.y!.attachments).toEqual({ hat: { c: { path: "c2", width: 4, height: 4 }, pt: { type: "point" } } });
-    expect(out.slots.find((sl: SpineRaw) => sl.name === "hat").attachment).toBe("c");
+    expect(out.slots.find((sl: BoneBurstRaw) => sl.name === "hat").attachment).toBe("c");
     // spine-core reads it, and with "y" the hat shows c2.
     const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(atlasFor(imgs)))).readSkeletonData(out));
     sk.setSkin("y");

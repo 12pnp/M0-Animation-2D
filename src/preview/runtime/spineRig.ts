@@ -24,7 +24,7 @@ export function spineRig(src: RigSource): PreviewRig {
       });
     },
   });
-  // The stage's skins, combined as `spinePose.combineSkins` does.
+  // The stage's skins, combined as `boneburstPose.combineSkins` does.
   const skins = src.skins.map((n) => data.findSkin(n)).filter((s): s is spine.Skin => !!s);
   if (skins.length) {
     const combined = new spine.Skin(src.skins.join(" + "));

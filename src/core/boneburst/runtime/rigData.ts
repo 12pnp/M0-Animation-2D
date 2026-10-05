@@ -1,6 +1,6 @@
-import type { SpineInherit } from "../types";
+import type { BoneBurstInherit } from "../types";
 import type { Atlas, AtlasRegion } from "./atlasRead";
-import { spinePolyline } from "@/core/math/easing";
+import { boneburstPolyline } from "@/core/math/easing";
 
 /**
  * A Spine 4.3 skeleton JSON read into the BoneBurst runtime's model
@@ -33,7 +33,7 @@ export interface BoneData {
   length: number;
   x: number; y: number; rotation: number;
   scaleX: number; scaleY: number; shearX: number; shearY: number;
-  inherit: SpineInherit;
+  inherit: BoneBurstInherit;
   /** Only active while a shown skin lists it (or a bone under it). */
   skinRequired: boolean;
 }
@@ -215,7 +215,7 @@ export type TimelineBody =
   /** A transform constraint's six mixes, curved. */
   | { kind: "transform"; constraint: number; times: number[]; mixes: Record<TransformProp, Channel> }
   /** A bone's inherit mode from each key on. */
-  | { kind: "inherit"; bone: number; times: number[]; modes: SpineInherit[] }
+  | { kind: "inherit"; bone: number; times: number[]; modes: BoneBurstInherit[] }
   /** Which sequence frame a slot shows, from each key on. */
   | { kind: "sequence"; slot: number; attachment: AttachmentData; times: number[]; modes: SequenceMode[]; indices: number[]; delays: number[] };
 
@@ -431,7 +431,7 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
   const boneIndex = new Map<string, number>();
   for (const b of list(file.bones)) {
     const name = String(b.name);
-    const inherit = (typeof b.inherit === "string" ? b.inherit : "normal") as SpineInherit;
+    const inherit = (typeof b.inherit === "string" ? b.inherit : "normal") as BoneBurstInherit;
     const bone: BoneData = {
       index: bones.length, name, parent: typeof b.parent === "string" ? boneIndex.get(b.parent) ?? -1 : -1,
       length: num(b.length, 0),
@@ -881,7 +881,7 @@ function channels(keys: Json[], count: number, pick: (k: Json, i: number, at: nu
       if (k.curve === "stepped") return "stepped";
       if (!Array.isArray(k.curve)) return null;
       const cv = k.curve as number[];
-      return spinePolyline({
+      return boneburstPolyline({
         x0: times[i]!, y0: values[i]!,
         c1x: num(cv[c * 4], times[i]!), c1y: num(cv[c * 4 + 1], values[i]!),
         c2x: num(cv[c * 4 + 2], times[i + 1]!), c2y: num(cv[c * 4 + 3], values[i + 1]!),
@@ -980,7 +980,7 @@ function readAnimation(
       if (kind === "inherit") {
         push({
           kind: "inherit", bone, times: keys.map((k) => Math.fround(num(k.time, 0))),
-          modes: keys.map((k) => (typeof k.inherit === "string" ? k.inherit : "normal") as SpineInherit),
+          modes: keys.map((k) => (typeof k.inherit === "string" ? k.inherit : "normal") as BoneBurstInherit),
         });
         seal([`inherit ${bone}`]);
         continue;
@@ -1154,7 +1154,7 @@ function readDeform(slot: number, mesh: MeshData | PathData | ClippingData | Box
     if (k.curve === "stepped") return "stepped";
     if (!Array.isArray(k.curve)) return null;
     const cv = k.curve as number[];
-    return spinePolyline({
+    return boneburstPolyline({
       x0: times[i]!, y0: 0, c1x: num(cv[0], times[i]!), c1y: num(cv[1], 0),
       c2x: num(cv[2], times[i + 1]!), c2y: num(cv[3], 1), x1: times[i + 1]!, y1: 1,
     }).map(Math.fround);

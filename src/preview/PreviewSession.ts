@@ -3,7 +3,7 @@ import type { AssetStore } from "@/app/AssetStore";
 import type { PreviewHost } from "./previewHost";
 import { buildExports, type ExportResult } from "@/io/export/ExportBundle";
 import { symbolBounds } from "@/core/doc/pose";
-import { spineBounds, stageSkinOf } from "@/core/spine/spinePose";
+import { boneburstBounds, stageSkinOf } from "@/core/boneburst/boneburstPose";
 import { isSymbol, type SymbolItem } from "@/core/doc/types";
 import type { ItemId } from "@/core/doc/ids";
 
@@ -320,7 +320,7 @@ export class PreviewSession {
     // The editor knows the rig's extent; Pixi cannot measure it. An opened
     // Spine rig is measured as the runtime draws it (meshes included).
     const skins = stageSkinOf(sym);
-    const b = (sym.spine ? spineBounds(project, sym, skins) : null) ?? symbolBounds(project, sym.id);
+    const b = (sym.spine ? boneburstBounds(project, sym, skins) : null) ?? symbolBounds(project, sym.id);
     return {
       animation,
       frame: here ? this.store.ui.frame : 0,

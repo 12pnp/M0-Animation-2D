@@ -8,19 +8,19 @@ import { Store } from "@/app/Store";
 import { AGENT_TOOLS, AgentApi, AgentError, type AgentVision, type BoneMark, IMAGES_KEY } from "@/app/agent/AgentApi";
 import type { AssetId } from "@/core/doc/ids";
 import { SetAnimationReference } from "@/core/history/timelineCommands";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
-import { atlasText } from "@/core/spine/atlas";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { atlasText } from "@/core/boneburst/atlas";
 import { isImage, type Node, type Project, type SymbolItem } from "@/core/doc/types";
 import type { NodeId } from "@/core/doc/ids";
 import { createAnimation, createImageItem, createLayer, createNode } from "@/core/doc/defaults";
 import { fromMatrix, tf } from "@/core/math/Transform";
 import { buildFlatPsdImport } from "@/core/doc/psdImport";
 import { AddLibraryItem, AddNode } from "@/core/history/commands";
-import { posedSymbol } from "@/core/spine/spinePose";
+import { posedSymbol } from "@/core/boneburst/boneburstPose";
 import { apply } from "@/core/math/Matrix2D";
 import { pt } from "@/core/math/geom";
 import { loadStickman } from "./fixtures/stickman";
-import { importSpine } from "@/core/spine/importSpine";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import { imagesOf, sampleRigs } from "./fixtures/spineSamples";
 
 /**
@@ -40,7 +40,7 @@ async function setup() {
 /** The export, played by spine-core at a frame: each bone's local pose as
  *  animated (before constraints). */
 function played(store: Store, animation: string, frame: number) {
-  const exported = exportSpine(store.project);
+  const exported = exportBoneBurst(store.project);
   const images = exported.usedImages.map((id) => store.project.items[id]).filter(isImage);
   let y = 0;
   const atlas = atlasText([{ name: "p", imagePath: "p.png", width: 1024, height: 1024, scale: 1, regions: images.map((i) => {
@@ -48,7 +48,7 @@ function played(store: Store, animation: string, frame: number) {
     y += i.height;
     return r;
   }) }]);
-  const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(atlas))).readSkeletonData(JSON.parse(spineJson(exported.skeleton))));
+  const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(atlas))).readSkeletonData(JSON.parse(boneburstJson(exported.skeleton))));
   sk.setupPose();
   sk.data.findAnimation(animation)!.apply(sk, 0, frame / store.project.frameRate, false, null, 1, MixFrom.setup, false, false, false);
   sk.updateWorldTransform(Physics.none);
@@ -102,7 +102,7 @@ describe("the AI's tools", () => {
     expect(at(bone).rotation).toBeCloseTo(-20, 4);
     expect(at(bone).y).toBeCloseTo(5, 4);
     // The loop wraps at 24: the file lasts exactly 24 frames.
-    const exported = exportSpine(store.project).skeleton.animations!.walk!;
+    const exported = exportBoneBurst(store.project).skeleton.animations!.walk!;
     const times = Object.values(exported.bones!).flatMap((t) => Object.values(t).flatMap((keys) => (keys as Array<{ time?: number }>).map((k) => k.time ?? 0)));
     expect(Math.max(...times) * store.project.frameRate).toBeCloseTo(24, 4);
 
@@ -154,7 +154,7 @@ describe("the AI's tools", () => {
     const pose = await api.call("get_pose", { animation: "run", frame: 5 }) as { bones: Record<string, { x: number; y: number; rotation: number }> };
     const at = played(store, "run", 5);
     expect(Object.keys(pose.bones).length).toBeGreaterThan(5);
-    const names = new Map(exportSpine(store.project).names);
+    const names = new Map(exportBoneBurst(store.project).names);
     for (const [bone, v] of Object.entries(pose.bones)) {
       const id = Object.values(store.currentSymbol.nodes).find((n) => n.name === bone)!.id;
       const w = at.world(names.get(id)!);
@@ -180,7 +180,7 @@ describe("the AI's tools", () => {
 
   const mix = sampleRigs().find((r) => r.name === "mix-and-match");
   it.skipIf(!mix)("list an opened rig's skins, and show chosen ones in one undo step", async () => {
-    const { project } = importSpine(JSON.parse(mix!.json), mix!.name, imagesOf(mix!.atlas));
+    const { project } = importBoneBurst(JSON.parse(mix!.json), mix!.name, imagesOf(mix!.atlas));
     const store = new Store(project);
     const api = new AgentApi(store);
     const rig = await api.call("get_rig") as { skins: string[]; showing: { skins: string[] }; animations: Array<{ name: string }> };
@@ -363,7 +363,7 @@ describe("rigging through the AI's tools", () => {
       const anim = await from.call("get_animation", { animation: name }) as Anim;
       await api.call("new_animation", { name, frames: anim.frames });
       await api.call("set_keys", { animation: name, keys: Object.entries(anim.bones).flatMap(([bone, keys]) => keys.map((k) => ({ bone, ...k }))) });
-      const names = new Map(exportSpine(store.project).names);
+      const names = new Map(exportBoneBurst(store.project).names);
       for (let f = 0; f <= anim.frames; f += 3) {
         const want = await from.call("get_pose", { animation: name, frame: f }) as Pose;
         const got = await api.call("get_pose", { animation: name, frame: f }) as Pose;
@@ -510,7 +510,7 @@ describe("the motion library through the AI's tools", () => {
       else expect(y, `frame ${f}`).toBeGreaterThan(out.ground! - 0.5);
     }
     // The exported file plays it as the editor shows it.
-    const names = new Map(exportSpine(store.project).names);
+    const names = new Map(exportBoneBurst(store.project).names);
     for (const f of [0, Math.floor(out.frames / 3), Math.floor(out.frames / 2)]) {
       const runtime = played(store, out.animation, f);
       const { bones } = await api.call("get_pose", { animation: out.animation, frame: f }) as Pose;
@@ -793,7 +793,7 @@ describe("cycles and bone paths through the AI's tools", () => {
     const path = await api.call("make_path", { bones: ["head", "chest"] }) as { constraint: string; bones: string[]; knots: number };
     expect(path).toMatchObject({ constraint: "chest_path", bones: ["chest", "head"], knots: 3 });
     expect(store.history.undoLabel).toBe("Make Path");
-    expect(exportSpine(store.project).diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    expect(exportBoneBurst(store.project).diagnostics.filter((d) => d.severity === "error")).toEqual([]);
   });
 
   it("key properties: what changed, all, or groups; the pose stays; one undo step", async () => {
@@ -847,7 +847,7 @@ describe("cycles and bone paths through the AI's tools", () => {
     expect(out.keys).toEqual([{ frame: 3, value: 40, tween: { kind: "none" } }]);
     expect(store.history.undoLabel).toBe(`AI: Key "head_physics" gravity at 4`);
     const run = store.currentSymbol.animations.find((a) => a.name === "run")!;
-    expect(exportSpine(store.project).skeleton.animations!.run!.physics).toEqual({ head_physics: { gravity: [{ time: expect.closeTo(3 / store.project.frameRate, 6), value: 40 }] } });
+    expect(exportBoneBurst(store.project).skeleton.animations!.run!.physics).toEqual({ head_physics: { gravity: [{ time: expect.closeTo(3 / store.project.frameRate, 6), value: 40 }] } });
     expect(Object.keys(run.constraintKeys!)).toHaveLength(1);
     await api.call("key_constraint", { animation: "run", constraint: "head_physics", channel: "gravity", frame: 3, delete: true });
     expect(store.currentSymbol.animations.find((a) => a.name === "run")!.constraintKeys).toBeUndefined();
@@ -864,7 +864,7 @@ describe("cycles and bone paths through the AI's tools", () => {
     const keyed = await api.call("set_inherit", { bone: "head", inherit: "noScale", animation: "run", frame: 4 }) as { keys: unknown[] };
     expect(keyed.keys).toEqual([{ frame: 4, inherit: "noScale" }]);
     expect(store.history.undoLabel).toBe(`AI: Inherit "head" at 5`);
-    expect(exportSpine(store.project).diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    expect(exportBoneBurst(store.project).diagnostics.filter((d) => d.severity === "error")).toEqual([]);
     expect(await api.call("set_inherit", { bone: "head", animation: "run", frame: 4, delete: true })).toMatchObject({ keys: [] });
     await expect(api.call("set_inherit", { bone: "head", inherit: "sideways" })).rejects.toThrow(/inherit is one of/);
     await expect(api.call("set_inherit", { bone: "head", animation: "run", frame: 2, delete: true })).rejects.toThrow(/no inherit key at frame 2/);
@@ -876,7 +876,7 @@ describe("cycles and bone paths through the AI's tools", () => {
     expect(await api.call("set_point", { point: "eye", x: 8, y: -3 })).toEqual({ point: "eye", x: 8, y: -3, rotation: 0 });
     expect(await api.call("set_point", { point: "eye", rotation: 45 })).toEqual({ point: "eye", x: 8, y: -3, rotation: 45 });
     expect(store.history.undoLabel).toBe(`AI: Move Point "eye"`);
-    const skin = exportSpine(store.project).skeleton.skins![0]!.attachments!;
+    const skin = exportBoneBurst(store.project).skeleton.skins![0]!.attachments!;
     expect(skin.eye!.eye).toMatchObject({ type: "point", x: 8, y: 3, rotation: -45 });
     await expect(api.call("set_point", { point: "head", x: 1 })).rejects.toThrow(/not a point/);
     await expect(api.call("set_point", { point: "eye" })).rejects.toThrow(/Give x, y or rotation/);
@@ -887,7 +887,7 @@ describe("cycles and bone paths through the AI's tools", () => {
     const torso = Object.values(store.currentSymbol.nodes).find((n) => n.itemId && n.name.includes("torso"))!;
     expect(await api.call("set_tint", { layer: torso.name, color: "#ff8000" })).toEqual({ layer: torso.name, display: 0, tint: "ff8000ff" });
     expect(store.history.undoLabel).toBe(`AI: Tint "${torso.name}"`);
-    const att = exportSpine(store.project).skeleton.skins![0]!.attachments![torso.name]!;
+    const att = exportBoneBurst(store.project).skeleton.skins![0]!.attachments![torso.name]!;
     expect(Object.values(att)[0]).toMatchObject({ color: "ff8000ff" });
     expect(await api.call("set_tint", { layer: torso.name, color: null })).toMatchObject({ tint: null });
     await expect(api.call("set_tint", { layer: torso.name, color: "orange" })).rejects.toThrow(/rrggbb/);
@@ -901,7 +901,7 @@ describe("cycles and bone paths through the AI's tools", () => {
     expect(out.properties.find((p) => p.from === "rotate")!.to.map((t) => [t.to, t.scale])).toEqual([["rotate", 1], ["x", 0.5]]);
     expect(store.history.undoLabel).toBe(`AI: Transform Map "nod"`);
     await api.call("map_transform", { constraint: "nod", from: "rotate", to: "rotate", remove: true, sourceOffset: 10 });
-    const file = exportSpine(store.project).skeleton.constraints!.find((c) => (c as { name: string }).name === "nod") as { properties: Record<string, { offset?: number; to: Record<string, unknown> }> };
+    const file = exportBoneBurst(store.project).skeleton.constraints!.find((c) => (c as { name: string }).name === "nod") as { properties: Record<string, { offset?: number; to: Record<string, unknown> }> };
     expect(Object.keys(file.properties.rotate!.to)).toEqual(["x"]);
     expect(file.properties.rotate!.offset).toBe(10);
     await expect(api.call("map_transform", { constraint: "nope", from: "x", to: "x" })).rejects.toThrow(/no transform constraint/);
@@ -926,7 +926,7 @@ describe("cycles and bone paths through the AI's tools", () => {
     expect(last).toBe("head_physics");
     const out = await api.call("set_constraint_order", { order: [last] }) as { constraintOrder: string[] };
     expect(out.constraintOrder).toEqual([last, ...rig.constraintOrder.slice(0, -1)]);
-    expect(exportSpine(store.project).skeleton.constraints![0]!.name).toBe(last);
+    expect(exportBoneBurst(store.project).skeleton.constraints![0]!.name).toBe(last);
     expect(store.history.undoLabel).toBe("AI: Constraint Order");
     await expect(api.call("set_constraint_order", { order: ["nope"] })).rejects.toThrow(/no constraint called "nope"/);
   });

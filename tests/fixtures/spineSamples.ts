@@ -2,7 +2,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { TextureAtlas } from "@esotericsoftware/spine-core";
 import type { AssetId } from "@/core/doc/ids";
-import type { AtlasImage } from "@/core/spine/importSpine";
+import type { AtlasImage } from "@/core/boneburst/importBoneBurst";
 
 /**
  * spine-unity's sample skeletons, from the M0-Animation2D project next to

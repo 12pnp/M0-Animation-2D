@@ -1,4 +1,4 @@
-import type { SpineRaw } from "./types";
+import type { BoneBurstRaw } from "./types";
 
 /**
  * What an opened Spine file carries through the editor untouched: the JSON
@@ -12,7 +12,7 @@ import type { SpineRaw } from "./types";
  */
 
 /** How many vertices an attachment has, or 0 when it has none. */
-export function vertexCountOf(att: SpineRaw): number {
+export function vertexCountOf(att: BoneBurstRaw): number {
   const type = att.type ?? "region";
   if (type === "mesh") return Array.isArray(att.uvs) ? att.uvs.length / 2 : 0;
   if (type === "path" || type === "boundingbox" || type === "clipping") return Number(att.vertexCount) || 0;
@@ -21,7 +21,7 @@ export function vertexCountOf(att: SpineRaw): number {
 
 /** Weighted: each vertex lists its bones, `[count, (bone, x, y, weight) × count]`,
  *  rather than one x, y. */
-export function isWeighted(att: SpineRaw): boolean {
+export function isWeighted(att: BoneBurstRaw): boolean {
   const n = vertexCountOf(att);
   return n > 0 && Array.isArray(att.vertices) && att.vertices.length !== n * 2;
 }
@@ -36,7 +36,7 @@ function eachBone(vertices: unknown[], count: number, visit: (at: number) => voi
 }
 
 /** The attachment with its weighted vertices naming their bones. */
-export function bonesToNames(att: SpineRaw, bones: readonly string[]): SpineRaw {
+export function bonesToNames(att: BoneBurstRaw, bones: readonly string[]): BoneBurstRaw {
   if (!isWeighted(att)) return att;
   const vertices = [...(att.vertices as unknown[])];
   eachBone(vertices, vertexCountOf(att), (at) => {
@@ -47,7 +47,7 @@ export function bonesToNames(att: SpineRaw, bones: readonly string[]): SpineRaw 
 
 /** The attachment with its weighted vertices indexing `index`; a name it
  *  does not hold is reported and left out of the result's validity. */
-export function bonesToIndices(att: SpineRaw, index: ReadonlyMap<string, number>, missing: (name: string) => void): SpineRaw {
+export function bonesToIndices(att: BoneBurstRaw, index: ReadonlyMap<string, number>, missing: (name: string) => void): BoneBurstRaw {
   if (!isWeighted(att)) return att;
   const vertices = [...(att.vertices as unknown[])];
   eachBone(vertices, vertexCountOf(att), (at) => {
@@ -59,7 +59,7 @@ export function bonesToIndices(att: SpineRaw, index: ReadonlyMap<string, number>
 }
 
 /** The bone names a weighted attachment uses. */
-export function weightedBones(att: SpineRaw): string[] {
+export function weightedBones(att: BoneBurstRaw): string[] {
   if (!isWeighted(att)) return [];
   const out: string[] = [];
   const vertices = att.vertices as unknown[];
@@ -69,7 +69,7 @@ export function weightedBones(att: SpineRaw): string[] {
 
 /** The atlas regions an attachment draws: its path (or name), or one per
  *  frame of a sequence. None for the types that draw nothing. */
-export function regionsOf(att: SpineRaw, key: string): string[] {
+export function regionsOf(att: BoneBurstRaw, key: string): string[] {
   const type = att.type ?? "region";
   if (type !== "region" && type !== "mesh" && type !== "linkedmesh") return [];
   const path = typeof att.path === "string" ? att.path : typeof att.name === "string" ? att.name : key;
@@ -90,7 +90,7 @@ const str = (v: unknown): v is string => typeof v === "string";
 const obj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 
 /** Every bone, slot and constraint a carried constraint names. */
-export function constraintRefs(c: SpineRaw): CarriedRef[] {
+export function constraintRefs(c: BoneBurstRaw): CarriedRef[] {
   const out: CarriedRef[] = [];
   const where = `constraint "${String(c.name)}"`;
   if (Array.isArray(c.bones)) for (const b of c.bones) if (str(b)) out.push({ kind: "bone", name: b, where });
@@ -106,7 +106,7 @@ export const SKIN_CONSTRAINT_KINDS = ["ik", "transform", "path", "physics", "sli
 
 /** Every name a carried skin relies on: its slots, the bones and
  *  constraints it enables, weighted bones, linked meshes' parents. */
-export function skinRefs(skin: SpineRaw): CarriedRef[] {
+export function skinRefs(skin: BoneBurstRaw): CarriedRef[] {
   const out: CarriedRef[] = [];
   const where = `skin "${String(skin.name)}"`;
   for (const b of (skin.bones as unknown[] | undefined) ?? []) if (str(b)) out.push({ kind: "bone", name: b, where });
@@ -129,7 +129,7 @@ export function skinRefs(skin: SpineRaw): CarriedRef[] {
 }
 
 /** Every name a carried animation relies on. */
-export function animationRefs(anim: SpineRaw, animName: string): CarriedRef[] {
+export function animationRefs(anim: BoneBurstRaw, animName: string): CarriedRef[] {
   const out: CarriedRef[] = [];
   const where = `animation "${animName}"`;
   const keysOf = (group: unknown, kind: RefKind) => {

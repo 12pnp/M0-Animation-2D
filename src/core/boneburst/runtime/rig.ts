@@ -1,5 +1,5 @@
 import { readPolyline } from "@/core/math/easing";
-import type { SpineInherit } from "../types";
+import type { BoneBurstInherit } from "../types";
 import { type Bones, localFromWorld, normalWorld } from "./bones";
 import { type IkPose, solveIk } from "./ik";
 import { solveTransform } from "./transform";
@@ -39,7 +39,7 @@ export class Rig implements Bones {
   /** Per bone: x y rotation scaleX scaleY shearX shearY, the local pose. */
   readonly local: Float64Array;
   /** Per bone: its inherit mode now (keys can change it). */
-  readonly inherit: SpineInherit[];
+  readonly inherit: BoneBurstInherit[];
   /** Per bone: a b c d worldX worldY, y up; (a, c) is the bone's x axis. */
   readonly world: Float64Array;
   /** Per bone: 1 when it is posed and its slots drawn. A skin-required bone

@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { evaluateSymbol } from "@/core/doc/pose";
 import type { Project, SymbolItem } from "@/core/doc/types";
-import { exportSpine } from "@/core/spine/exportSpine";
+import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
 import { loadStickman } from "./fixtures/stickman";
 
 /**
@@ -29,7 +29,7 @@ beforeAll(async () => {
 
 describe("stickman rig", () => {
   it("exports one clean skeleton with both animations", () => {
-    const { skeleton, diagnostics } = exportSpine(project);
+    const { skeleton, diagnostics } = exportBoneBurst(project);
     expect(diagnostics).toEqual([]);
     expect(skeleton.constraints).toHaveLength(4);
     // 11 pieces of art, and no slot for the bones or the IK targets.

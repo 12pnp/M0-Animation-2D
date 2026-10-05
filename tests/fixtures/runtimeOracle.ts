@@ -1,9 +1,9 @@
 import {
   AtlasAttachmentLoader, BoundingBoxAttachment, ClippingAttachment, MeshAttachment, MixFrom, PointAttachment, Vector2, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
 } from "@esotericsoftware/spine-core";
-import { readAtlas } from "@/core/spine/runtime/atlasRead";
-import { type BoxData, type ClippingData, type MeshData, type PointData, type RegionData, readRig } from "@/core/spine/runtime/rigData";
-import { Rig } from "@/core/spine/runtime/rig";
+import { readAtlas } from "@/core/boneburst/runtime/atlasRead";
+import { type BoxData, type ClippingData, type MeshData, type PointData, type RegionData, readRig } from "@/core/boneburst/runtime/rigData";
+import { Rig } from "@/core/boneburst/runtime/rig";
 import type { PackedPage } from "@/core/atlas/packed";
 import { isImage, type Project } from "@/core/doc/types";
 import type { ItemId } from "@/core/doc/ids";

@@ -3,9 +3,9 @@ import { MathUtils, MixFrom, Physics, Skeleton, SkeletonJson } from "@esotericso
 import { type Matrix2D, mat, mul } from "@/core/math/Matrix2D";
 import { type Transform, tf, toMatrix } from "@/core/math/Transform";
 import {
-  fromSpineLocal, keyTime, keyValues, regionCentre, type SpineLocal, toSpineLocal,
-} from "@/core/spine/transform";
-import { SPINE_VERSION, type SpineBone, type SpineSkeletonFile } from "@/core/spine/types";
+  fromBoneBurstLocal, keyTime, keyValues, regionCentre, type BoneBurstLocal, toBoneBurstLocal,
+} from "@/core/boneburst/transform";
+import { BONEBURST_VERSION, type BoneBurstBone, type BoneBurstSkeletonFile } from "@/core/boneburst/types";
 
 /**
  * The transform mapping, checked against the Spine runtime itself
@@ -19,13 +19,13 @@ import { SPINE_VERSION, type SpineBone, type SpineSkeletonFile } from "@/core/sp
 // skeletons never call it.
 const reader = () => new SkeletonJson({} as never);
 
-function load(file: SpineSkeletonFile): Skeleton {
+function load(file: BoneBurstSkeletonFile): Skeleton {
   const skeleton = new Skeleton(reader().readSkeletonData(file));
   skeleton.updateWorldTransform(Physics.none);
   return skeleton;
 }
 
-function bone(name: string, parent: string | undefined, s: SpineLocal): SpineBone {
+function bone(name: string, parent: string | undefined, s: BoneBurstLocal): BoneBurstBone {
   return { name, ...(parent ? { parent } : {}), ...s };
 }
 
@@ -68,7 +68,7 @@ const PI_REL_ERROR = Math.abs(MathUtils.PI - Math.PI) / Math.PI;
  * scale; parents carry the error down through their own matrix norm. A
  * mismatch beyond this is the mapping's fault, not the runtime's pi.
  */
-function piErrorBounds(locals: SpineLocal[]): number[] {
+function piErrorBounds(locals: BoneBurstLocal[]): number[] {
   const rad = Math.PI / 180;
   let err = 0;           // bound on any parent linear component's error
   let errT = 0;          // bound on the parent's translation error
@@ -119,9 +119,9 @@ const TABLE: Array<[string, Transform]> = [
   ["near-singular skew", tf(0, 0, 89.9, -0.1, 2, 3)],
 ];
 
-describe("toSpineLocal / fromSpineLocal", () => {
+describe("toBoneBurstLocal / fromBoneBurstLocal", () => {
   it.each(TABLE)("round-trips %s exactly", (_name, t) => {
-    const back = fromSpineLocal(toSpineLocal(t));
+    const back = fromBoneBurstLocal(toBoneBurstLocal(t));
     expect(back.x).toBeCloseTo(t.x, 12);
     expect(back.y).toBeCloseTo(t.y, 12);
     expect(back.skewX).toBeCloseTo(t.skewX, 12);
@@ -131,19 +131,19 @@ describe("toSpineLocal / fromSpineLocal", () => {
   });
 
   it("keeps multi-turn angles unwrapped", () => {
-    expect(toSpineLocal(tf(0, 0, 900, 900)).rotation).toBe(-900);
-    expect(fromSpineLocal({ ...toSpineLocal(tf()), rotation: -1080 }).skewY).toBe(1080);
+    expect(toBoneBurstLocal(tf(0, 0, 900, 900)).rotation).toBe(-900);
+    expect(fromBoneBurstLocal({ ...toBoneBurstLocal(tf()), rotation: -1080 }).skewY).toBe(1080);
   });
 
   it("writes no negative zero", () => {
-    const s = toSpineLocal(tf(0, 0, 0, 0));
+    const s = toBoneBurstLocal(tf(0, 0, 0, 0));
     for (const v of Object.values(s)) expect(Object.is(v, -0)).toBe(false);
   });
 
   it("reads a bone with shearX as the same matrix", () => {
-    const s: SpineLocal = { x: 1, y: 2, rotation: 20, shearX: 15, shearY: -30, scaleX: 1.2, scaleY: 0.7 };
-    const skeleton = load({ skeleton: { spine: SPINE_VERSION }, bones: [bone("b", undefined, s)] });
-    const m = toMatrix(mat(), fromSpineLocal(s));
+    const s: BoneBurstLocal = { x: 1, y: 2, rotation: 20, shearX: 15, shearY: -30, scaleX: 1.2, scaleY: 0.7 };
+    const skeleton = load({ skeleton: { spine: BONEBURST_VERSION }, bones: [bone("b", undefined, s)] });
+    const m = toMatrix(mat(), fromBoneBurstLocal(s));
     expectClose(runtimeWorld(skeleton, "b"), expectedSpineWorld(m), RUNTIME_PI_EPS);
   });
 });
@@ -156,7 +156,7 @@ describe("the runtime composes the editor's world matrices, flipped", () => {
 
 
   it.each(TABLE)("single bone: %s", (_name, t) => {
-    const skeleton = load({ skeleton: { spine: SPINE_VERSION }, bones: [bone("b", undefined, toSpineLocal(t))] });
+    const skeleton = load({ skeleton: { spine: BONEBURST_VERSION }, bones: [bone("b", undefined, toBoneBurstLocal(t))] });
     expectClose(runtimeWorld(skeleton, "b"), expectedSpineWorld(toMatrix(mat(), t)), RUNTIME_PI_EPS);
   });
 
@@ -167,9 +167,9 @@ describe("the runtime composes the editor's world matrices, flipped", () => {
     for (let n = 0; n < 200; n++) {
       const depth = 1 + Math.floor(r() * 6);
       const locals = Array.from({ length: depth }, () => randomTransform(r));
-      const bones = locals.map((t, i) => bone(`b${i}`, i ? `b${i - 1}` : undefined, toSpineLocal(t)));
-      const skeleton = load({ skeleton: { spine: SPINE_VERSION }, bones });
-      const bounds = piErrorBounds(locals.map(toSpineLocal));
+      const bones = locals.map((t, i) => bone(`b${i}`, i ? `b${i - 1}` : undefined, toBoneBurstLocal(t)));
+      const skeleton = load({ skeleton: { spine: BONEBURST_VERSION }, bones });
+      const bounds = piErrorBounds(locals.map(toBoneBurstLocal));
       let world = mat();
       locals.forEach((t, i) => {
         world = mul(mat(), world, toMatrix(mat(), t));
@@ -193,13 +193,13 @@ describe("keyValues: animated poses through the runtime's own timelines", () => 
    *  by the runtime at every frame and compared with the editor's linear
    *  tween of the six transform fields. */
   function checkTween(parent: Transform, setup: Transform, from: Transform, to: Transform, frames: number): void {
-    const s = toSpineLocal(setup);
-    const k0 = keyValues(toSpineLocal(from), s);
-    const k1 = keyValues(toSpineLocal(to), s);
+    const s = toBoneBurstLocal(setup);
+    const k0 = keyValues(toBoneBurstLocal(from), s);
+    const k1 = keyValues(toBoneBurstLocal(to), s);
     const t1 = keyTime(frames, fps);
-    const file: SpineSkeletonFile = {
-      skeleton: { spine: SPINE_VERSION, fps },
-      bones: [bone("p", undefined, toSpineLocal(parent)), bone("c", "p", s)],
+    const file: BoneBurstSkeletonFile = {
+      skeleton: { spine: BONEBURST_VERSION, fps },
+      bones: [bone("p", undefined, toBoneBurstLocal(parent)), bone("c", "p", s)],
       animations: {
         a: {
           bones: {
@@ -243,9 +243,9 @@ describe("keyValues: animated poses through the runtime's own timelines", () => 
   });
 
   it("has no scale key for a zero setup scale unless the pose is zero too", () => {
-    const setup = toSpineLocal(tf(0, 0, 0, 0, 0, 1));
-    expect(keyValues(toSpineLocal(tf(0, 0, 0, 0, 2, 1)), setup).scaleX).toBeNull();
-    expect(keyValues(toSpineLocal(tf(0, 0, 0, 0, 0, 1)), setup).scaleX).toBe(1);
+    const setup = toBoneBurstLocal(tf(0, 0, 0, 0, 0, 1));
+    expect(keyValues(toBoneBurstLocal(tf(0, 0, 0, 0, 2, 1)), setup).scaleX).toBeNull();
+    expect(keyValues(toBoneBurstLocal(tf(0, 0, 0, 0, 0, 1)), setup).scaleX).toBe(1);
   });
 });
 
@@ -268,7 +268,7 @@ describe("keyTime", () => {
   function shownFrames(fps: number, frames: number, time: (f: number) => number): number[] {
     const keys = Array.from({ length: frames + 1 }, (_, f) => ({ time: time(f), value: f, curve: "stepped" as const }));
     const skeleton = load({
-      skeleton: { spine: SPINE_VERSION, fps },
+      skeleton: { spine: BONEBURST_VERSION, fps },
       bones: [{ name: "b" }],
       animations: { a: { bones: { b: { rotate: keys } } } },
     });

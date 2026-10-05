@@ -47,7 +47,7 @@ Pure functions in `core/doc/drawOrder.ts`, table-tested:
 3. **Export and import.** The exporter writes a `drawOrder` timeline from the keys:
    offsets over the flattened slot list, a nested symbol's slots moving as one
    block. The importer turns an opened file's draw order keys into the model
-   instead of carrying them. `spineParity`, `spineImport` and `spinePose` stay
+   instead of carrying them. `spineParity`, `spineImport` and `boneburstPose` stay
    green; a stickman parity case with draw order keys is added.
 4. **The row.** A **Draw order** row at the top of the timeline (always shown
    when the animation has keys, and in the focused view): a key per frame, drag to

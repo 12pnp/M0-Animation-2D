@@ -6,7 +6,7 @@ import logoSvg from "@/assets/morenoise-mark.svg?raw";
 import {
   APP_NAME, APP_TAGLINE, APP_VERSION, CREDITS, LICENSE_ID, LICENSE_NOTE,
   ORIGIN_AUTHOR, ORIGIN_AUTHOR_URL, ORIGIN_NAME, ORIGIN_REPO_URL, REPO_URL,
-  SPINE_NOTE, TRADEMARK_NOTE,
+  BONEBURST_NOTE, TRADEMARK_NOTE,
 } from "@/core/about";
 
 function link(href: string, text: string, cls = "about-link"): HTMLAnchorElement {
@@ -54,7 +54,7 @@ export function renderAbout(pane: HTMLElement): void {
   ));
 
   body.appendChild(h("h4", null, "How it works"));
-  body.appendChild(h("p", null, SPINE_NOTE));
+  body.appendChild(h("p", null, BONEBURST_NOTE));
 
   body.appendChild(h("h4", null, "Credits"));
   const list = h("ul", { class: "about-credits" });

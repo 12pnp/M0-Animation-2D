@@ -1,8 +1,8 @@
-import { applyTween, readPolyline, spinePolyline, type TweenSpec } from "@/core/math/easing";
+import { applyTween, readPolyline, boneburstPolyline, type TweenSpec } from "@/core/math/easing";
 import type { CnId, NodeId } from "./ids";
 import { PATH_DEFAULTS, PHYSICS_DEFAULTS } from "./constraints";
 import type { Animation, PathConstraint, PhysicsConstraint, SliderConstraint, SymbolItem, ValueKey } from "./types";
-import { keyTime } from "@/core/spine/transform";
+import { keyTime } from "@/core/boneburst/transform";
 
 /**
  * Keys of physics, slider and path constraints (ARCHITECTURE ▸ Physics,
@@ -173,7 +173,7 @@ export function channelTimeline(keys: readonly ValueKey[], fps: number, pathMix 
  * a path key's three mixes differ, or a curve's halves are not one cubic
  * (then the timeline stays carried). `missing`: what a key without a value reads as.
  */
-export function channelKeysFromSpine(raw: unknown, fps: number, missing: number, pathMix = false): ValueKey[] | null {
+export function channelKeysFromBoneBurst(raw: unknown, fps: number, missing: number, pathMix = false): ValueKey[] | null {
   if (!Array.isArray(raw) || !raw.length) return null;
   const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
   const valueOf = (r: Raw): number | null => {
@@ -245,7 +245,7 @@ export function bakedChannelKeys(raw: unknown, fps: number, missing: number, pat
     if (!b || a.curve === "stepped" || f <= a.at) return a.value;
     if (!a.curve) return a.value + ((b.value - a.value) * (f - a.at)) / (b.at - a.at);
     const [c1x, c1y, c2x, c2y] = a.curve as [number, number, number, number];
-    return readPolyline(spinePolyline({ x0: a.at, y0: a.value, c1x, c1y, c2x, c2y, x1: b.at, y1: b.value }), f);
+    return readPolyline(boneburstPolyline({ x0: a.at, y0: a.value, c1x, c1y, c2x, c2y, x1: b.at, y1: b.value }), f);
   };
   const first = Math.ceil(keys[0]!.at - 1e-3) || 0, last = Math.ceil(keys[keys.length - 1]!.at - 1e-3) || 0;
   const out: ValueKey[] = [];

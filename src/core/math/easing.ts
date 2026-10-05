@@ -6,7 +6,7 @@
  * one cubic bezier per key interval and does not evaluate it exactly:
  * `CurveTimeline.setBezier` samples it at parameter 0.1 … 0.9 and
  * `getBezierValue` reads the 10-segment polyline through those points and
- * the two keys, by time. `spinePolyline` / `readPolyline` are that, and
+ * the two keys, by time. `boneburstPolyline` / `readPolyline` are that, and
  * `tests/easing.test.ts` checks them against spine-core itself.
  *
  * What each ease is, in Spine:
@@ -182,7 +182,7 @@ export function easeSegments(spec: TweenSpec): EaseSegment[] | null {
  * The runtime gets the inner points by forward differencing; evaluating
  * the cubic directly gives the same points to rounding.
  */
-export function spinePolyline(s: EaseSegment): Float64Array {
+export function boneburstPolyline(s: EaseSegment): Float64Array {
   const out = new Float64Array(22);
   for (let i = 0; i <= 10; i++) {
     const t = i / 10, l = 1 - t;
@@ -214,7 +214,7 @@ const polyCache = new WeakMap<object, Array<{ x0: number; x1: number; pts: Float
 function polylinesOf(spec: Extract<TweenSpec, { kind: "ease" | "curve" }>) {
   let polys = polyCache.get(spec);
   if (!polys) {
-    polys = easeSegments(spec)!.map((s) => ({ x0: s.x0, x1: s.x1, pts: spinePolyline(s) }));
+    polys = easeSegments(spec)!.map((s) => ({ x0: s.x0, x1: s.x1, pts: boneburstPolyline(s) }));
     polyCache.set(spec, polys);
   }
   return polys;

@@ -1,5 +1,5 @@
 import { SIDES, type MotionView } from "./motion";
-import type { SpinePoint } from "./rigPlan";
+import type { BoneBurstPoint } from "./rigPlan";
 
 /**
  * A whole rig from a character's joints (the AI's `auto_rig`): the joints a
@@ -9,7 +9,7 @@ import type { SpinePoint } from "./rigPlan";
  * bone draw in the order the artist stacked the layers.
  */
 
-export type Joints = Record<string, SpinePoint>;
+export type Joints = Record<string, BoneBurstPoint>;
 
 /** A picture layer as get_rig lists it. */
 export interface RigLayer {
@@ -17,13 +17,13 @@ export interface RigLayer {
   size: readonly [number, number];
   /** The pixel it turns about, and where that pixel is (skeleton space). */
   pivot: readonly [number, number];
-  at: SpinePoint;
+  at: BoneBurstPoint;
   rotation: number;
   /** Stacking, 0 at the front. */
   z: number;
 }
 
-export interface PlannedBone { name: string; parent: string | null; from: SpinePoint; to: SpinePoint }
+export interface PlannedBone { name: string; parent: string | null; from: BoneBurstPoint; to: BoneBurstPoint }
 
 export interface AutoRigPlan {
   bones: PlannedBone[];
@@ -41,11 +41,11 @@ export function jointNames(view: MotionView): string[] {
   return ["pelvis", "chest", "neck", "head", ...SIDES[view].flatMap((s) => limbs.map((l) => `${l}.${s}`))];
 }
 
-const sub = (a: SpinePoint, b: SpinePoint): [number, number] => [a[0] - b[0], a[1] - b[1]];
+const sub = (a: BoneBurstPoint, b: BoneBurstPoint): [number, number] => [a[0] - b[0], a[1] - b[1]];
 const len = (v: readonly [number, number]) => Math.hypot(v[0], v[1]);
 
 /** Where skeleton point `p` is in a layer's pixels. */
-export function layerPixel(layer: RigLayer, p: SpinePoint): [number, number] {
+export function layerPixel(layer: RigLayer, p: BoneBurstPoint): [number, number] {
   const r = (-layer.rotation * Math.PI) / 180;
   const [dx, dy] = sub(p, layer.at);
   const x = dx * Math.cos(r) - dy * Math.sin(r), y = dx * Math.sin(r) + dy * Math.cos(r);
@@ -68,7 +68,7 @@ function fit(layer: RigLayer, b: PlannedBone): number {
   if (inside === 0) return -Infinity;
   // The picture's centre in skeleton space, and its distance to the bone.
   const r = (layer.rotation * Math.PI) / 180, cx = w / 2 - layer.pivot[0], cy = layer.pivot[1] - h / 2;
-  const c: SpinePoint = [layer.at[0] + cx * Math.cos(r) - cy * Math.sin(r), layer.at[1] + cx * Math.sin(r) + cy * Math.cos(r)];
+  const c: BoneBurstPoint = [layer.at[0] + cx * Math.cos(r) - cy * Math.sin(r), layer.at[1] + cx * Math.sin(r) + cy * Math.cos(r)];
   const d = sub(b.to, b.from), dd = d[0] * d[0] + d[1] * d[1];
   const t = Math.max(0, Math.min(1, ((c[0] - b.from[0]) * d[0] + (c[1] - b.from[1]) * d[1]) / dd));
   const off = len(sub(c, [b.from[0] + d[0] * t, b.from[1] + d[1] * t]));
@@ -96,7 +96,7 @@ export function autoRigPlan(
   const named = new Map<string, string>();
   const taken = (n: string) => !!opts.taken?.(n) || layers.some((l) => l.name === n);
   const nameOf = (base: string) => named.get(base) ?? base;
-  const add = (base: string, parentBase: string | null, from: SpinePoint, to: SpinePoint) => {
+  const add = (base: string, parentBase: string | null, from: BoneBurstPoint, to: BoneBurstPoint) => {
     if (len(sub(to, from)) < 1) { notes.push(`${base} has no length: left out, and what hangs from it.`); return false; }
     let name = base;
     for (let i = 1; taken(name); i++) name = i === 1 ? `${base}_bone` : `${base}_bone${i}`;
@@ -118,7 +118,7 @@ export function autoRigPlan(
   const ik: string[] = [];
   for (const side of SIDES[view]) {
     // A chain stops at its first missing joint.
-    const chain = (parent: string, start: SpinePoint | undefined, parts: Array<[string, string]>): string[] => {
+    const chain = (parent: string, start: BoneBurstPoint | undefined, parts: Array<[string, string]>): string[] => {
       const made: string[] = [];
       let from = start, up2 = parent;
       for (const [bone, joint] of parts) {

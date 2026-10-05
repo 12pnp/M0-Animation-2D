@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { atlasText } from "@/core/spine/atlas";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
+import { atlasText } from "@/core/boneburst/atlas";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
 import { loadFixture } from "./fixtures/realProject";
 import { loadStickman } from "./fixtures/stickman";
 import { sampleRigs } from "./fixtures/spineSamples";
@@ -17,16 +17,16 @@ import { type Counts, type Json, compare, trimmedPage } from "./fixtures/runtime
 describe("BoneBurst runtime vs spine-core", () => {
   it("the stickman export", async () => {
     const { project } = await loadStickman();
-    const exported = exportSpine(project, project.rootSymbolId);
-    const r = compare("stickman", JSON.parse(spineJson(exported.skeleton)), atlasText([trimmedPage(project, exported.usedImages)]));
+    const exported = exportBoneBurst(project, project.rootSymbolId);
+    const r = compare("stickman", JSON.parse(boneburstJson(exported.skeleton)), atlasText([trimmedPage(project, exported.usedImages)]));
     expect(r.bones).toBeGreaterThan(100);
     expect(r.regions).toBeGreaterThan(100);
   });
 
   it("the frog export", async () => {
     const { project } = await loadFixture();
-    const exported = exportSpine(project, project.rootSymbolId);
-    const r = compare("frog", JSON.parse(spineJson(exported.skeleton)), atlasText([trimmedPage(project, exported.usedImages)]));
+    const exported = exportBoneBurst(project, project.rootSymbolId);
+    const r = compare("frog", JSON.parse(boneburstJson(exported.skeleton)), atlasText([trimmedPage(project, exported.usedImages)]));
     expect(r.regions).toBeGreaterThan(10);
   });
 

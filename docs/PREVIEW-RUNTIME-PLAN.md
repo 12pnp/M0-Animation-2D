@@ -1,7 +1,7 @@
 # Preview runtime — plan
 
 Goal: replace the official Spine runtime in the Preview panel, the stage's
-posing (`spinePose`, and the solvers transcribed from spine-core) and the
+posing (`boneburstPose`, and the solvers transcribed from spine-core) and the
 Open-Spine path with our own code, so the shipped app contains **zero Esoteric
 runtime code**. That removes the Spine Runtimes License from the product, and with it
 the condition in `THIRD-PARTY-NOTICES.md` that *every user of the product must
@@ -26,8 +26,8 @@ built on it.
 
 Some groundwork exists in this repo already, but not all of it is clean:
 
-- **Ours, reusable:** `src/core/spine/` `importSpine` and its `import*`
-  helpers, `exportSpine`, `atlas` (an atlas *writer* only), `transform`;
+- **Ours, reusable:** `src/core/boneburst/` `importBoneBurst` and its `import*`
+  helpers, `exportBoneBurst`, `atlas` (an atlas *writer* only), `transform`;
   `src/core/math/easing.ts`; `src/core/mesh/`.
 - **Transcribed from spine-core, must be rewritten clean-room:**
   `src/core/math/ik.ts` (from `IkConstraint.apply1` / `apply2`) and
@@ -35,7 +35,7 @@ Some groundwork exists in this repo already, but not all of it is clean:
   of spine-core 4.3.13 by their own headers. They are derived code under the
   Spine Runtimes License, so they cannot count as groundwork for an
   Esoteric-free build.
-- **To audit:** `src/core/spine/types.ts` is modelled on spine-core 4.3.13's
+- **To audit:** `src/core/boneburst/types.ts` is modelled on spine-core 4.3.13's
   data classes; check whether it is a description of the format or a copy.
 
 ## What uses the official runtime today
@@ -44,7 +44,7 @@ As the plan started; each phase's status below says what it moved off it.
 
 - **Preview panel / Play mode**: `preview.html` loads `/vendor/spine-pixi-v8.js`
   and plays the exported files frame by frame against the stage.
-- **The stage**: `src/core/spine/spinePose.ts` imports spine-core and hands it
+- **The stage**: `src/core/boneburst/boneburstPose.ts` imports spine-core and hands it
   the document's pose for any symbol that needs what the editor's own pose does
   not do: meshes and their weights and deform keys, inherit modes, transform,
   path, physics and slider constraints, clipping, draw order keys. This is not
@@ -56,7 +56,7 @@ As the plan started; each phase's status below says what it moved off it.
 - **Open Spine file**: `src/io/import/spineFiles.ts` reads the atlas with
   spine-core's `TextureAtlas`; we have no atlas reader of our own.
 - **Tests**: 20 test files import spine-core as the oracle (`spineParity`,
-  `spinePose`, `spineTransform`, `spineImport`, `unityParity`,
+  `boneburstPose`, `spineTransform`, `spineImport`, `unityParity`,
   `fixtures/runtimeCheck.ts`, …). They stay; see P5.
 - **AI**: `render_frame` in the MCP bridge screenshots the preview.
 
@@ -64,7 +64,7 @@ As the plan started; each phase's status below says what it moved off it.
 
 - The BoneBurst preview runtime (the pipeline in `core/`, the renderer in
   `src/preview/runtime/`):
-  - a Spine 4.3 JSON reader into our own model (extend `core/spine/types`);
+  - a Spine 4.3 JSON reader into our own model (extend `core/boneburst/types`);
   - a pose pipeline: bones → world transforms → slots → attachments (region,
     mesh, linked mesh, bounding box, point, clipping) → skins → draw order;
   - an AnimationState equivalent: all timeline types (rotate/translate/scale/
@@ -79,7 +79,7 @@ As the plan started; each phase's status below says what it moved off it.
     two-colour tint shader the stage already uses;
   - an atlas reader (libgdx `.atlas` text) to replace `TextureAtlas` in
     `spineFiles.ts`.
-- **The stage uses the same pose pipeline**: `spinePose.ts` switches from
+- **The stage uses the same pose pipeline**: `boneburstPose.ts` switches from
   spine-core to the same pose. The DOM-free part of the pipeline (reader,
   pose, timelines, constraints) belongs in `core/`, so the stage and the
   Preview both import it; only the Pixi renderer adapter sits in
@@ -131,12 +131,12 @@ As the plan started; each phase's status below says what it moved off it.
   Spine already reads atlases with ours (P0); what is left of spine-core in
   `src/` is the stage's posing, P3b. The oracle tests now run every sample
   whole: nothing is taken out of the files.
-- **P3b — the stage.** `spinePose.ts` poses through our pipeline instead of
+- **P3b — the stage.** `boneburstPose.ts` poses through our pipeline instead of
   spine-core, for opened files and for authored rigs with physics, slider or
   path constraints alike. Gate: `tests/spinePose.test.ts` (the stage equals the
   export) and `tests/spineParity.test.ts` stay green with spine-core as the
   oracle only. Audit `types.ts`.
-  **Done.** `spinePose.ts` builds our `Rig` from the same exported skeleton;
+  **Done.** `boneburstPose.ts` builds our `Rig` from the same exported skeleton;
   both gates pass, and nothing in `src/` imports spine-core (the production
   editor bundle holds none of it). In the app, Stretchyman opened through
   File ▸ Open Spine matches spine-pixi in the Preview on every bone. The stage
@@ -149,7 +149,7 @@ As the plan started; each phase's status below says what it moved off it.
 - **P4 — parity gates.** Golden-file suites vs the dev oracle in CI; the
   default Preview flips to our runtime; the official runtime is reachable only
   through `--dev-oracle`.
-  **Done.** What the Preview draws is decided in `core/spine/runtime/draw.ts`
+  **Done.** What the Preview draws is decided in `core/boneburst/runtime/draw.ts`
   (`drawList`) and the Pixi adapter only applies it; `tests/runtimeDraw.test.ts`
   holds every triangle of it, every frame, to spine-core's `SkeletonRendererCore`
   (positions, UVs, colours, blend, page; clips by what they cover). It found the
@@ -157,7 +157,7 @@ As the plan started; each phase's status below says what it moved off it.
   our exports (stickman, frog with its clipped eyelids) — spine-unity's samples
   are not in the repository and run where the folder exists — beside the oracle
   suites (`spineRuntime`, `runtimeConstraints`, `runtimeTrack`,
-  `runtimePhysics`, `spinePose`, `spineParity`). The Preview plays ours by
+  `runtimePhysics`, `boneburstPose`, `spineParity`). The Preview plays ours by
   default; spine-pixi-v8 loads only in `npm run dev:oracle` (`vite --mode
   oracle`), and a build drops `dist/vendor/spine-pixi-v8.js`. In the app the
   frog's Preview is pixel-identical between the two. Left for P5: the file in
@@ -174,7 +174,7 @@ As the plan started; each phase's status below says what it moved off it.
   verify `dist/` contains no Esoteric bytes.
   **Done, but for the legal review (Risks).** The stage's IK and transform
   constraints are the runtime's solvers (`oneBone`, `twoBones`,
-  `solveTransform`) on a `LooseBones` (`core/spine/runtime/bones.ts`); the
+  `solveTransform`) on a `LooseBones` (`core/boneburst/runtime/bones.ts`); the
   transcribed `core/math/ik.ts` and `transformConstraint.ts` are deleted, their
   channel types moved to `core/doc/types.ts`. The switch found two runtime
   bugs, both measured and now in `tests/runtimeConstraints.test.ts`: a local
@@ -222,7 +222,7 @@ remain the user's own content.
   should not work from the transcribed files they replace. (P5 replaced them by
   the runtime's, written without opening them; P5 itself read only their
   interfaces to swap the callers.)
-- `src/core/spine/types.ts`, the JSON contract, says its field names and
+- `src/core/boneburst/types.ts`, the JSON contract, says its field names and
   defaults were read out of spine-core's JSON parser: facts about the format,
   no code, but provenance the legal review should see.
 - **The runtime's author is not clean-room (decided 2026-10-05).** P0–P2 are

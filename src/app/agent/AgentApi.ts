@@ -1,6 +1,6 @@
 import { CONSTRAINT_CHANNELS, channelKeysOf, keyedConstraint, withChannelKeys, withValueKey } from "@/core/doc/constraintKeys";
 import { INHERIT_MODES, isInherit, withInheritKey } from "@/core/doc/inherit";
-import type { SpineInherit } from "@/core/spine/types";
+import type { BoneBurstInherit } from "@/core/boneburst/types";
 import { changedProps, KEY_GROUPS, type KeyGroup, keyProps } from "@/core/doc/keyButtons";
 import { offsetPlan, offsetTrack } from "@/core/doc/offset";
 import { constraintEntries, orderFrom } from "@/core/doc/constraintOrder";
@@ -35,7 +35,7 @@ import { AddNode, createsCycle, RenameNode, SetLayerOrder, SetParent, SetPivot, 
 import { AddIkConstraint, SetIkOptions } from "@/core/history/ikCommands";
 import { autoRigPlan, jointNames, type RigLayer } from "@/core/rig/autoRig";
 import { evaluateSymbol } from "@/core/doc/pose";
-import { boneFromWorld, placeOnBone, siblingOrder, type SpinePoint } from "@/core/rig/rigPlan";
+import { boneFromWorld, placeOnBone, siblingOrder, type BoneBurstPoint } from "@/core/rig/rigPlan";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
 import { CURVE_Y_LIMIT, easeOf, sameEase } from "@/core/math/easing";
 import { applySkins, doSetSkinImage, doSetSkinMembers, doSetSkinOnly } from "@/app/SkinOps";
@@ -45,9 +45,9 @@ import { PHYSICS_DEFAULTS, PHYSICS_SETTINGS, SLIDER_PROPERTIES } from "@/core/do
 import { SEQUENCE_MODES, withSequenceKey } from "@/core/doc/sequence";
 import { EditNode, SetConstraintKeys, SetConstraintOrder, SetInheritKeys, SetSequenceKeys } from "@/core/history/attachmentCommands";
 import type { SequenceKey } from "@/core/doc/types";
-import { posedSymbol, skinsOf, stageSkinOf } from "@/core/spine/spinePose";
-import { exportSpine } from "@/core/spine/exportSpine";
-import { fromSpineLocal, type SpineLocal, toSpineLocal } from "@/core/spine/transform";
+import { posedSymbol, skinsOf, stageSkinOf } from "@/core/boneburst/boneburstPose";
+import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
+import { fromBoneBurstLocal, type BoneBurstLocal, toBoneBurstLocal } from "@/core/boneburst/transform";
 import TOOLS from "./tools.json";
 
 /**
@@ -58,8 +58,8 @@ import TOOLS from "./tools.json";
  *
  * Values are Spine's (x right, y UP, degrees counter-clockwise, local to
  * the parent bone): the rigs are Spine rigs, and a model knows Spine's
- * conventions better than the editor's Flash ones. `toSpineLocal` /
- * `fromSpineLocal` convert, exactly.
+ * conventions better than the editor's Flash ones. `toBoneBurstLocal` /
+ * `fromBoneBurstLocal` convert, exactly.
  *
  * The same class serves the MCP bridge and the prompt panel
  * (`AgentBridge.ts`); `check_preview` needs the page's Preview and is
@@ -242,7 +242,7 @@ export class AgentApi {
         name: n.name,
         parent: nameOf(n.parentId),
         ...(n.boneLength ? { length: round(n.boneLength) } : {}),
-        setup: spine(toSpineLocal(n.bind)),
+        setup: spine(toBoneBurstLocal(n.bind)),
         ...(n.inherit ? { inherit: n.inherit } : {}),
       })),
       slots: s.layers.map((l) => s.nodes[l.nodeId]).filter((n): n is Node => !!n && (n.kind === "image" || n.kind === "symbol"))
@@ -281,7 +281,7 @@ export class AgentApi {
       if (!track) continue;
       bones[n.name] = track.keys.map((k) => {
         const own = axisEases(k);
-        return { frame: k.frame, ...spine(toSpineLocal(k.transform)), ease: easeName(k.tween), ...(own ? { eases: own } : {}) };
+        return { frame: k.frame, ...spine(toBoneBurstLocal(k.transform)), ease: easeName(k.tween), ...(own ? { eases: own } : {}) };
       });
     }
     const seam = this.seamOf(anim);
@@ -361,15 +361,15 @@ export class AgentApi {
         i = keyIndexAt(track, k.frame);
       }
       const key = track.keys[i]!;
-      const now = toSpineLocal(key.transform);
-      const next: SpineLocal = { ...now };
+      const now = toBoneBurstLocal(key.transform);
+      const next: BoneBurstLocal = { ...now };
       for (const ch of ["x", "y", "rotation", "scaleX", "scaleY"] as const) {
         const v = k[ch];
         if (v === undefined) continue;
         if (typeof v !== "number" || !Number.isFinite(v)) throw new AgentError(`Key for "${k.bone}" at ${k.frame}: ${ch} must be a number.`);
         next[ch] = v;
       }
-      const patch: Partial<Keyframe> = { transform: fromSpineLocal(next) };
+      const patch: Partial<Keyframe> = { transform: fromBoneBurstLocal(next) };
       if (k.ease !== undefined) patch.tween = tweenOf(k.ease);
       else if (fresh) patch.tween = { kind: "linear" };
       const replaced: Keyframe = { ...key, ...patch };
@@ -476,12 +476,12 @@ export class AgentApi {
         const parent = b.parent !== undefined ? this.bone(b.parent) : null;
         const node = createNode("bone", b.name, { parentId: parent?.id ?? null });
         if (b.from) {
-          const placed = boneFromWorld(parent ? this.setupWorld(parent.id) : undefined, b.from as unknown as SpinePoint, b.to as unknown as SpinePoint);
+          const placed = boneFromWorld(parent ? this.setupWorld(parent.id) : undefined, b.from as unknown as BoneBurstPoint, b.to as unknown as BoneBurstPoint);
           if (!placed) throw new AgentError(`Bone "${b.name}": its parent "${b.parent}" is scaled to nothing.`);
           node.bind = placed.bind;
           node.boneLength = Math.max(1, round(placed.length, 2));
         } else {
-          node.bind = fromSpineLocal({ x: b.x ?? 0, y: b.y ?? 0, rotation: b.rotation ?? 0, shearX: 0, shearY: 0, scaleX: 1, scaleY: 1 });
+          node.bind = fromBoneBurstLocal({ x: b.x ?? 0, y: b.y ?? 0, rotation: b.rotation ?? 0, shearX: 0, shearY: 0, scaleX: 1, scaleY: 1 });
           node.boneLength = Math.max(1, round(b.length!, 2));
         }
         this.store.apply(new AddNode(label, this.store.currentSymbolId, node, createLayer(node.id, node.name, this.sym.layers.length), 0));
@@ -527,7 +527,7 @@ export class AgentApi {
       if (typeof scale !== "number" || !(scale > 0)) throw new AgentError(`"${name}": scale must be above 0.`);
       if (it.rotation !== undefined && (typeof it.rotation !== "number" || !Number.isFinite(it.rotation))) throw new AgentError(`"${name}": rotation must be a number.`);
       const boneWorld = this.setupWorld(bone.id);
-      const at: SpinePoint = it.at === undefined ? [boneWorld?.tx ?? 0, -(boneWorld?.ty ?? 0)] : point(it.at, `"${name}": at`);
+      const at: BoneBurstPoint = it.at === undefined ? [boneWorld?.tx ?? 0, -(boneWorld?.ty ?? 0)] : point(it.at, `"${name}": at`);
       const bind = placeOnBone(boneWorld, at, it.rotation ?? 0, scale);
       if (!bind) throw new AgentError(`"${it.bone}" is scaled to nothing.`);
       const node = createNode("image", name, { parentId: bone.id, itemId: image.id });
@@ -675,12 +675,12 @@ export class AgentApi {
    * solving: the solver's choice is not guessable from `bendPositive`
    * alone (ARCHITECTURE ▸ Bones and IK).
    */
-  private settleBend(effectorName: string, chain: Array<{ name: string; from: SpinePoint; to: SpinePoint }>, facing: "right" | "left" | null): void {
+  private settleBend(effectorName: string, chain: Array<{ name: string; from: BoneBurstPoint; to: BoneBurstPoint }>, facing: "right" | "left" | null): void {
     const s = this.sym;
     const k = s.ik.find((x) => s.nodes[x.boneId]?.name === effectorName);
     const ids = k ? ikChain(s, k) : [];
     if (!k || ids.length !== 2 || chain.length !== 2) return;
-    const angle = (b: { from: SpinePoint; to: SpinePoint }) => Math.atan2(b.to[1] - b.from[1], b.to[0] - b.from[0]);
+    const angle = (b: { from: BoneBurstPoint; to: BoneBurstPoint }) => Math.atan2(b.to[1] - b.from[1], b.to[0] - b.from[0]);
     const [root, eff] = ids.map((id) => chain.find((c) => c.name === s.nodes[id]!.name)!);
     const drawn = Math.sin(angle(eff!) - angle(root!));
     // Turn sign root → effector, y up: a knee forward bends a right-facing leg clockwise.
@@ -744,7 +744,7 @@ export class AgentApi {
     const rig: RigBone[] = this.bones().map((n) => {
       const m = setup.byNode.get(n.id)?.world;
       return {
-        name: n.id, parent: n.parentId && s.nodes[n.parentId] ? n.parentId : null, local: toSpineLocal(n.bind), length: n.boneLength ?? 0,
+        name: n.id, parent: n.parentId && s.nodes[n.parentId] ? n.parentId : null, local: toBoneBurstLocal(n.bind), length: n.boneLength ?? 0,
         setup: m ? { x: m.tx, y: -m.ty, rotation: (Math.atan2(-m.b, m.a) * 180) / Math.PI, scaleX: Math.hypot(m.a, m.b) } : { x: 0, y: 0, rotation: 0, scaleX: 1 },
       };
     });
@@ -1034,7 +1034,7 @@ export class AgentApi {
       if (args.delete === true) throw new AgentError("delete removes a key: give the animation and frame.");
       this.store.apply(new EditNode(`AI: Inherit "${bone.name}"`, this.store.currentSymbolId, bone.id, (n) => {
         const out = { ...n };
-        if (mode !== "normal") out.inherit = mode as SpineInherit; else delete out.inherit;
+        if (mode !== "normal") out.inherit = mode as BoneBurstInherit; else delete out.inherit;
         return out;
       }));
       this.store.emit("stage");
@@ -1047,7 +1047,7 @@ export class AgentApi {
     if (args.delete === true) {
       if (!before.some((k) => k.frame === frame)) throw new AgentError(`"${bone.name}" has no inherit key at frame ${frame}.`);
       keys = before.filter((k) => k.frame !== frame);
-    } else keys = withInheritKey(before, frame, mode as SpineInherit);
+    } else keys = withInheritKey(before, frame, mode as BoneBurstInherit);
     this.store.apply(new SetInheritKeys(`AI: Inherit "${bone.name}" at ${frame + 1}`, this.store.currentSymbolId, anim.id, bone.id, keys));
     this.store.emit("timeline");
     this.store.emit("stage");
@@ -1615,7 +1615,7 @@ export class AgentApi {
       ? framesArg.map(Number).filter((f) => Number.isInteger(f) && f >= 0)
       : Array.from({ length: Math.min(last + 1, 121) }, (_, i) => Math.round((i * last) / Math.min(last, 120)));
     // The runtime knows bones by their exported names.
-    const names = exportSpine(this.store.project, this.sym.id, { setupOnly: true }).names;
+    const names = exportBoneBurst(this.store.project, this.sym.id, { setupOnly: true }).names;
     let worst = 0, where = "";
     for (const f of [...new Set(frames)]) {
       const runtime = await this.preview.matricesAt(anim.name, f);
@@ -1639,7 +1639,7 @@ function mark(b: { name: string; from: [number, number]; to: [number, number] },
   return { name: b.name, from: view.toPixel(...b.from), to: view.toPixel(...b.to), ...(side ? { side } : {}) };
 }
 
-function spine(l: SpineLocal) {
+function spine(l: BoneBurstLocal) {
   const out: Record<string, number> = { x: round(l.x), y: round(l.y), rotation: round(l.rotation), scaleX: round(l.scaleX), scaleY: round(l.scaleY) };
   if (l.shearY) out.shearY = round(l.shearY);
   return out;
@@ -1695,7 +1695,7 @@ function easesOf(raw: unknown, where: string): ChannelEases | null {
   return Object.keys(out).length ? out : null;
 }
 
-function point(v: unknown, where: string): SpinePoint {
+function point(v: unknown, where: string): BoneBurstPoint {
   if (!Array.isArray(v) || v.length !== 2 || !v.every((n) => typeof n === "number" && Number.isFinite(n))) throw new AgentError(`${where} is two numbers, [x, y].`);
   return [v[0] as number, v[1] as number];
 }

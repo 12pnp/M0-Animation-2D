@@ -2,7 +2,7 @@ import { BONE_ICONS, boneIconGlyph } from "@/core/doc/boneIcons";
 import type { LinkedMesh } from "@/core/doc/types";
 import { channelKeysOf, channelOf, constraintHost, keyedConstraint, setupValue, valueAt, withChannelKeys, withValueKey } from "@/core/doc/constraintKeys";
 import { INHERIT_LABELS, INHERIT_MODES, inheritAt, withInheritKey } from "@/core/doc/inherit";
-import type { SpineInherit } from "@/core/spine/types";
+import type { BoneBurstInherit } from "@/core/boneburst/types";
 import { type ConstraintKind, constraintEntries, withConstraintMoved } from "@/core/doc/constraintOrder";
 import { clear, cls, h, on } from "@/view/widgets/dom";
 import { icon } from "@/view/icons";
@@ -539,7 +539,7 @@ export class PropertiesPanel implements Panel {
     inherit.value = inheritNow();
     this.ikSync.push(() => { if (document.activeElement !== inherit) inherit.value = inheritNow(); });
     on(inherit, "change", () => {
-      const mode = inherit.value as SpineInherit;
+      const mode = inherit.value as BoneBurstInherit;
       if (animate) {
         doSetInheritKeys(this.store, node.id, withInheritKey(this.store.currentAnimation?.inherits?.[node.id] ?? [], this.store.ui.frame, mode), "Inherit Key");
         return;

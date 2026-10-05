@@ -4,7 +4,7 @@ import type { Panel } from "@/view/widgets/Dock";
 import type { Store } from "@/app/Store";
 import { icon, type IconName } from "@/view/icons";
 import { SetStageSkins } from "@/core/history/commands";
-import { DEFAULT_SKIN, editedSkin, SPINE_SKIN_COLOR, skinsOf, stageSkinOf, toggledSkins, withSkinColor } from "@/core/doc/skins";
+import { DEFAULT_SKIN, editedSkin, BONEBURST_SKIN_COLOR, skinsOf, stageSkinOf, toggledSkins, withSkinColor } from "@/core/doc/skins";
 import { doDeleteSkin, doNewSkin, doRenameSkin } from "@/app/SkinOps";
 
 /**
@@ -87,7 +87,7 @@ export class SkinsPanel implements Panel {
       const def = sym.skins?.find((d) => d.name === name);
       const swatch = def ? h("input", { type: "color", class: "skin-color", title: "This skin's colour in Spine's editor" }) as HTMLInputElement : null;
       if (swatch) {
-        swatch.value = `#${(def!.color ?? SPINE_SKIN_COLOR).slice(0, 6)}`;
+        swatch.value = `#${(def!.color ?? BONEBURST_SKIN_COLOR).slice(0, 6)}`;
         on(swatch, "change", () => this.store.apply(new SetSkins("Skin Colour", sym.id, withSkinColor(this.store.currentSymbol, name, `${swatch.value.slice(1)}ff`))));
       }
       const row = h("div", { class: `skins-row${group ? " nested" : ""}`, title: "Click to edit this skin in the Properties panel; double-click to rename it" }, box, ...(swatch ? [swatch] : []), label);

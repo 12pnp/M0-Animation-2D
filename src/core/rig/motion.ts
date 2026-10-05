@@ -1,6 +1,6 @@
 import { apply, invert, type Matrix2D, mat, mul } from "@/core/math/Matrix2D";
 import { matrixOf } from "@/core/math/Transform";
-import { fromSpineLocal, type SpineLocal } from "@/core/spine/transform";
+import { fromBoneBurstLocal, type BoneBurstLocal } from "@/core/boneburst/transform";
 
 /**
  * Motion clips and retargeting them onto a rig (the AI's `apply_motion`).
@@ -63,7 +63,7 @@ export interface RigBone {
   name: string;
   parent: string | null;
   /** Its setup pose, local to the parent. */
-  local: SpineLocal;
+  local: BoneBurstLocal;
   length: number;
   /** Where the runtime poses it in the setup pose, in skeleton space. */
   setup: { x: number; y: number; rotation: number; scaleX: number };
@@ -252,7 +252,7 @@ export function retarget(req: RetargetRequest): RetargetResult {
           const p = localPoint(parent, b.setup.x + (left ? -ox : ox) * legLength, b.setup.y + oy * legLength + hipsLift);
           l.x = p[0]; l.y = p[1];
         }
-        const m = matrixOf(fromSpineLocal(l));
+        const m = matrixOf(fromBoneBurstLocal(l));
         world.set(b.name, parent ? mul(mat(), parent, m) : m);
         const chain = flips.get(b.name);
         if (chain) unbend(chain.chain[0]!, b, chain.bend!);
@@ -271,12 +271,12 @@ export function retarget(req: RetargetRequest): RetargetResult {
       const rootParent = root.parent ? world.get(root.parent) : undefined;
       const rl = local.get(rootName)!;
       rl.rotation = localRotationFor(rootParent, Math.atan2(ky - a.y, kx - a.x) / DEG, rl.rotation);
-      const rm = matrixOf(fromSpineLocal(rl));
+      const rm = matrixOf(fromBoneBurstLocal(rl));
       world.set(rootName, rootParent ? mul(mat(), rootParent, rm) : rm);
       const el = local.get(effector.name)!;
       // The effector hangs at the joint: its local x, y are unchanged.
       el.rotation = localRotationFor(world.get(rootName), Math.atan2(t.y - ky, t.x - kx) / DEG, el.rotation);
-      world.set(effector.name, mul(mat(), world.get(rootName)!, matrixOf(fromSpineLocal(el))));
+      world.set(effector.name, mul(mat(), world.get(rootName)!, matrixOf(fromBoneBurstLocal(el))));
       flipped.add(rootName);
     };
     const lowest = () => Math.min(...feet.flatMap((f) => f.ends.map((e) => -apply({ x: 0, y: 0 }, world.get(f.bone)!, e, 0).y)));

@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  deleteEventKeys, eventDefsFromSpine, eventFrames, eventValues, moveEventKeys, renamedEvent, uniqueEventName,
+  deleteEventKeys, eventDefsFromBoneBurst, eventFrames, eventValues, moveEventKeys, renamedEvent, uniqueEventName,
   withEventDefValues, withEventKey, withEventKeyValues, withoutEvent,
 } from "@/core/doc/events";
 import { migrate, validateProject } from "@/core/doc/schema";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
-import { importSpine } from "@/core/spine/importSpine";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import { DOC_VERSION, type Animation, type EventDef, type EventKey, type SymbolItem } from "@/core/doc/types";
 import type { AnimId } from "@/core/doc/ids";
 import { loadStickman } from "./fixtures/stickman";
@@ -80,7 +80,7 @@ describe("the event list", () => {
     expect(out.keys.get("a2" as AnimId)).toEqual([]);
   });
   it("Spine's skeleton events as the list", () => {
-    expect(eventDefsFromSpine({ a: { int: 3.7, string: "x" }, b: { audio: "s.ogg", volume: 0.2, balance: 0.1 }, c: { volume: 0.3 } }))
+    expect(eventDefsFromBoneBurst({ a: { int: 3.7, string: "x" }, b: { audio: "s.ogg", volume: 0.2, balance: 0.1 }, c: { volume: 0.3 } }))
       .toEqual([{ name: "a", int: 3, string: "x" }, { name: "b", audio: "s.ogg", volume: 0.2, balance: 0.1 }, { name: "c" }]);
   });
 });
@@ -118,8 +118,8 @@ describe("events in files", () => {
       { frame: 11, name: "hit", balance: 0.5, string: "x" },
     ];
     rig.animations[0]!.events = keys;
-    const file = JSON.parse(spineJson(exportSpine(project).skeleton));
-    const opened = importSpine(file, "stickman", new Map()).project;
+    const file = JSON.parse(boneburstJson(exportBoneBurst(project).skeleton));
+    const opened = importBoneBurst(file, "stickman", new Map()).project;
     const sym = opened.items[opened.rootSymbolId] as SymbolItem;
     expect(sym.events).toEqual(rig.events);
     const back = sym.animations.find((a) => a.name === rig.animations[0]!.name)!;
@@ -131,10 +131,10 @@ describe("events in files", () => {
     const { project, rig } = await loadStickman();
     rig.events = [step];
     rig.animations[0]!.events = [{ frame: 1, name: "step" }];
-    const file = JSON.parse(spineJson(exportSpine(project).skeleton));
+    const file = JSON.parse(boneburstJson(exportBoneBurst(project).skeleton));
     const name = rig.animations[0]!.name;
     file.animations[name].events[0].time = 0.1234567 / project.frameRate;
-    const sym = importSpine(file, "stickman", new Map()).project;
+    const sym = importBoneBurst(file, "stickman", new Map()).project;
     const back = (sym.items[sym.rootSymbolId] as SymbolItem).animations.find((a) => a.name === name)!;
     expect(back.events).toBeUndefined();
     expect(back.spine?.events).toHaveLength(1);

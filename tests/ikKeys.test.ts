@@ -5,8 +5,8 @@ import {
 } from "@/core/doc/ikKeys";
 import { focusRows } from "@/core/doc/layerTree";
 import { migrate, validateProject } from "@/core/doc/schema";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
-import { importSpine } from "@/core/spine/importSpine";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import { applyTween } from "@/core/math/easing";
 import { DOC_VERSION, type Animation, type IkConstraint, type IkKey, type SymbolItem } from "@/core/doc/types";
 import type { IkId, NodeId } from "@/core/doc/ids";
@@ -197,8 +197,8 @@ describe("IK keys in files", () => {
       [b!.id]: [{ frame: 2, mix: 1, bendPositive: b!.bendPositive, softness: 25 }],
     };
     rig.animations[0]!.ik = keys;
-    const file = JSON.parse(spineJson(exportSpine(project).skeleton));
-    const opened = importSpine(file, "stickman", new Map()).project;
+    const file = JSON.parse(boneburstJson(exportBoneBurst(project).skeleton));
+    const opened = importBoneBurst(file, "stickman", new Map()).project;
     const sym = opened.items[opened.rootSymbolId] as SymbolItem;
     expect(sym.ik.find((c) => c.name === a!.name)!.softness).toBe(10);
     const back = sym.animations.find((x) => x.name === rig.animations[0]!.name)!;
@@ -221,9 +221,9 @@ describe("IK keys in files", () => {
       [b!.id]: [{ frame: 3, mix: 0, bendPositive: !b!.bendPositive }],
     };
     rig.animations[0]!.ik = keys;
-    const file = JSON.parse(spineJson(exportSpine(project).skeleton));
+    const file = JSON.parse(boneburstJson(exportBoneBurst(project).skeleton));
     expect(Object.keys(file.animations[rig.animations[0]!.name].ik)).toHaveLength(2);
-    const opened = importSpine(file, "stickman", new Map()).project;
+    const opened = importBoneBurst(file, "stickman", new Map()).project;
     const sym = opened.items[opened.rootSymbolId] as SymbolItem;
     const byName = (s: SymbolItem, id: string) => s.ik.find((c) => c.id === id)!.name;
     const back = sym.animations.find((x) => x.name === rig.animations[0]!.name)!;

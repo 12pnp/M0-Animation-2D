@@ -13,8 +13,8 @@ import { loadStickman } from "./fixtures/stickman";
 import { AtlasAttachmentLoader, Skeleton, SkeletonJson, TextureAtlas } from "@esotericsoftware/spine-core";
 import { newCnId } from "@/core/doc/ids";
 import { newPhysics } from "@/core/doc/constraints";
-import { exportSpine } from "@/core/spine/exportSpine";
-import { importSpine } from "@/core/spine/importSpine";
+import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 
 beforeEach(() => reseed());
 
@@ -218,7 +218,7 @@ describe("physics, sliders and paths in a skin", () => {
     const phys = { ...newPhysics(rig, node("head"), newCnId()), gravity: 40 };
     rig.physics = [phys];
     rig.skins = [{ name: "windy", constraints: [phys.id] }];
-    const out = exportSpine(project).skeleton;
+    const out = exportBoneBurst(project).skeleton;
     expect(out.skins!.find((s) => s.name === "windy")).toMatchObject({ physics: [phys.name] });
     expect(out.constraints!.find((c) => c.name === phys.name)).toMatchObject({ skin: true });
     const data = new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(""))).readSkeletonData(JSON.parse(JSON.stringify({ ...out, skins: out.skins!.map((s) => ({ ...s, attachments: {} })) })));
@@ -228,7 +228,7 @@ describe("physics, sliders and paths in a skin", () => {
     expect(c.active).toBe(false);
     sk.setSkin("windy"); sk.updateCache();
     expect(c.active).toBe(true);
-    const opened = importSpine(out as never, "stickman", new Map()).project;
+    const opened = importBoneBurst(out as never, "stickman", new Map()).project;
     const sym = opened.items[opened.rootSymbolId] as SymbolItem;
     const id = sym.physics!.find((k) => k.name === phys.name)!.id;
     expect(sym.skins!.find((s) => s.name === "windy")!.constraints).toEqual([id]);

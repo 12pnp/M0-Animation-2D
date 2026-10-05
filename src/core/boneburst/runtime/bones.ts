@@ -1,4 +1,4 @@
-import type { SpineInherit } from "../types";
+import type { BoneBurstInherit } from "../types";
 import { DEG_RAD } from "./rigData";
 
 /**
@@ -10,7 +10,7 @@ import { DEG_RAD } from "./rigData";
 export interface Bones {
   readonly local: Float64Array;
   readonly world: Float64Array;
-  readonly inherit: ArrayLike<SpineInherit>;
+  readonly inherit: ArrayLike<BoneBurstInherit>;
   readonly data: { readonly bones: ReadonlyArray<{ readonly parent: number; readonly length: number }> };
   /** The skeleton's placement, which a root bone takes. */
   readonly x: number;
@@ -78,7 +78,7 @@ export function localFromWorld(
 export class LooseBones implements Bones {
   readonly local: Float64Array;
   readonly world: Float64Array;
-  readonly inherit: SpineInherit[];
+  readonly inherit: BoneBurstInherit[];
   readonly data: { bones: Array<{ parent: number; length: number }> };
   readonly x = 0;
   readonly y = 0;

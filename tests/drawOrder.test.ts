@@ -8,7 +8,7 @@ import {
 } from "@/core/doc/drawOrder";
 import { migrate, validateProject } from "@/core/doc/schema";
 import { evaluateSymbol } from "@/core/doc/pose";
-import { importSpine } from "@/core/spine/importSpine";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import {
   deleteDrawOrderKeys, dropOrderAt, drawUnits, moveDrawOrderKeys, placedInFront, reorderAt, withFront,
 } from "@/core/doc/drawOrder";
@@ -156,7 +156,7 @@ describe("an opened file's draw order keys", () => {
     animations: { go: { drawOrder: [{ time, offsets: [{ slot: "a", offset: 2 }] }, { time: 1 }] } },
   });
   const open = (time: number) => {
-    const { project } = importSpine(file(time) as never, "f", new Map());
+    const { project } = importBoneBurst(file(time) as never, "f", new Map());
     const s = project.items[project.rootSymbolId] as SymbolItem;
     const name = (id: NodeId) => s.nodes[id]!.name;
     return { anim: s.animations.find((a) => a.name === "go")!, name };

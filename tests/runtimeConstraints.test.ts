@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { AtlasAttachmentLoader, Physics, Skeleton, SkeletonJson, TextureAtlas } from "@esotericsoftware/spine-core";
-import { LooseBones } from "@/core/spine/runtime/bones";
+import { LooseBones } from "@/core/boneburst/runtime/bones";
 import { type Json, compare } from "./fixtures/runtimeOracle";
 
 /**

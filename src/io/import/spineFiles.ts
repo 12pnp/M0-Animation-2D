@@ -1,4 +1,4 @@
-import { readAtlas } from "@/core/spine/runtime/atlasRead";
+import { readAtlas } from "@/core/boneburst/runtime/atlasRead";
 import { unzipFiles } from "@/io/zip";
 
 /**

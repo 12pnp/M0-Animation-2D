@@ -8,39 +8,39 @@
  * defaults, no code of it (docs/PREVIEW-RUNTIME-PLAN.md ▸ Risks). The notes record what fails
  * SILENTLY when it is guessed wrong. What the editor writes is typed; what
  * an opened file carries through untouched (meshes, paths, physics, sliders,
- * deform keys …) is `SpineRaw`, checked only for the names it references
+ * deform keys …) is `BoneBurstRaw`, checked only for the names it references
  * (`carry.ts`).
  */
 
 /** JSON the editor carries without modelling it. */
-export type SpineRaw = Record<string, unknown>;
+export type BoneBurstRaw = Record<string, unknown>;
 
 /**
  * spine-unity accepts a JSON file when the MAJOR.MINOR of `skeleton.spine`
  * matches its own (`SkeletonDataCompatibility`); spine-core does not check.
  */
-export const SPINE_VERSION = "4.3.0";
+export const BONEBURST_VERSION = "4.3.0";
 
-export interface SpineSkeletonFile {
-  skeleton: SpineHeader;
+export interface BoneBurstSkeletonFile {
+  skeleton: BoneBurstHeader;
   /**
    * PARENTS BEFORE CHILDREN. The parser resolves `parent` against the bones
    * read so far, and a parent it cannot find yet is not an error: the bone
    * silently becomes a root.
    */
-  bones: SpineBone[];
+  bones: BoneBurstBone[];
   /** Draw order, BACK TO FRONT: slot 0 is drawn first. */
-  slots?: SpineSlot[];
+  slots?: BoneBurstSlot[];
   /** Every constraint type in one list, told apart by `type` (4.3 layout). */
-  constraints?: SpineConstraint[];
-  skins?: SpineSkin[];
+  constraints?: BoneBurstConstraint[];
+  skins?: BoneBurstSkin[];
   /** Keyed by event name. */
-  events?: Record<string, SpineEventData>;
+  events?: Record<string, BoneBurstEventData>;
   /** Keyed by animation name. */
-  animations?: Record<string, SpineAnimation>;
+  animations?: Record<string, BoneBurstAnimation>;
 }
 
-export interface SpineHeader {
+export interface BoneBurstHeader {
   spine: string;
   /** REQUIRED by spine-csharp 4.3.40 (`SkeletonJson` reads it without a
    *  default and throws), though spine-core does not care. */
@@ -64,7 +64,7 @@ export interface SpineHeader {
  *   c = sin(rotation + shearX)·scaleX    d = sin(rotation + 90 + shearY)·scaleY
  * (column (a, c) is the x axis), from `BonePose.updateWorldTransform`.
  */
-export interface SpineBoneTransform {
+export interface BoneBurstBoneTransform {
   x?: number;
   y?: number;
   rotation?: number;
@@ -79,15 +79,15 @@ export interface SpineBoneTransform {
  * letter and indexing the enum: a misspelling becomes undefined, not an
  * error.
  */
-export type SpineInherit =
+export type BoneBurstInherit =
   | "normal" | "onlyTranslation" | "noRotationOrReflection" | "noScale" | "noScaleOrReflection";
 
-export interface SpineBone extends SpineBoneTransform {
+export interface BoneBurstBone extends BoneBurstBoneTransform {
   name: string;
   parent?: string;
   length?: number;
   /** Absent = "normal": the full parent matrix, which is what Flash does. */
-  inherit?: SpineInherit;
+  inherit?: BoneBurstInherit;
   /** Editor-only colour, "rrggbbaa". */
   color?: string;
   /** Only in the skins that list it. */
@@ -95,9 +95,9 @@ export interface SpineBone extends SpineBoneTransform {
 }
 
 /** The four blend modes the runtime has. */
-export type SpineBlendMode = "normal" | "additive" | "multiply" | "screen";
+export type BoneBurstBlendMode = "normal" | "additive" | "multiply" | "screen";
 
-export interface SpineSlot {
+export interface BoneBurstSlot {
   name: string;
   /** Must exist: an unknown bone throws. */
   bone: string;
@@ -107,16 +107,16 @@ export interface SpineSlot {
   dark?: string;
   /** Attachment shown in the setup pose, by its key in the skin. Absent = none. */
   attachment?: string;
-  blend?: SpineBlendMode;
+  blend?: BoneBurstBlendMode;
   visible?: boolean;
 }
 
 /** The IK the editor writes, or any constraint carried from an opened file. */
-export type SpineConstraint = SpineIkConstraint | SpineTransformConstraint | (SpineRaw & { type: string; name: string });
+export type BoneBurstConstraint = BoneBurstIkConstraint | BoneBurstTransformConstraint | (BoneBurstRaw & { type: string; name: string });
 
 /** Spine 4.3's transform constraint: `bones` follow `source` through
  *  `properties` (source property → target properties). */
-export interface SpineTransformConstraint {
+export interface BoneBurstTransformConstraint {
   type: "transform";
   name: string;
   bones: string[];
@@ -133,13 +133,13 @@ export interface SpineTransformConstraint {
 }
 
 /** A transform constraint key: the six mixes, absolute. */
-export interface SpineTransformKey {
+export interface BoneBurstTransformKey {
   time?: number;
   mixRotate?: number; mixX?: number; mixY?: number; mixScaleX?: number; mixScaleY?: number; mixShearY?: number;
-  curve?: SpineCurve;
+  curve?: BoneBurstCurve;
 }
 
-export interface SpineIkConstraint {
+export interface BoneBurstIkConstraint {
   type: "ik";
   name: string;
   /** One bone (look-at) or two (parent, child). Unknown names throw. */
@@ -158,11 +158,11 @@ export interface SpineIkConstraint {
   skin?: boolean;
 }
 
-export interface SpineSkin {
+export interface BoneBurstSkin {
   /** "default" is the skin the skeleton starts with. */
   name: string;
   /** slot name → attachment key → attachment. */
-  attachments?: Record<string, Record<string, SpineAttachment>>;
+  attachments?: Record<string, Record<string, BoneBurstAttachment>>;
   /** Bones and constraints only this skin enables, by name, constraints
    *  one list per kind. */
   bones?: string[];
@@ -176,13 +176,13 @@ export interface SpineSkin {
 
 /** Mesh, linked mesh, path, point and bounding box attachments arrive only
  *  from opened files, carried as they came. */
-export type SpineAttachment = SpineRegionAttachment | SpineClippingAttachment | SpineRaw;
+export type BoneBurstAttachment = BoneBurstRegionAttachment | BoneBurstClippingAttachment | BoneBurstRaw;
 
 /**
  * An image. `x`/`y` place the image's CENTRE in the bone's space (y up);
  * `rotation` and scales apply about that centre.
  */
-export interface SpineRegionAttachment {
+export interface BoneBurstRegionAttachment {
   /** Absent = "region". */
   type?: "region";
   /** Absent = the attachment's key. */
@@ -205,7 +205,7 @@ export interface SpineRegionAttachment {
  * Clips every slot from its own slot up to `end` (inclusive) in draw order,
  * or to the last slot when `end` is absent. A polygon, not an alpha mask.
  */
-export interface SpineClippingAttachment {
+export interface BoneBurstClippingAttachment {
   type: "clipping";
   name?: string;
   end?: string;
@@ -217,7 +217,7 @@ export interface SpineClippingAttachment {
   color?: string;
 }
 
-export interface SpineEventData {
+export interface BoneBurstEventData {
   int?: number;
   float?: number;
   string?: string;
@@ -233,49 +233,49 @@ export interface SpineEventData {
  * bezier in ABSOLUTE units, seconds and the stored (relative) value, not
  * 0..1.
  */
-export type SpineCurve = "stepped" | number[];
+export type BoneBurstCurve = "stepped" | number[];
 
-export interface SpineKey {
+export interface BoneBurstKey {
   /** Seconds. Absent = 0. */
   time?: number;
-  curve?: SpineCurve;
+  curve?: BoneBurstCurve;
 }
 
 /** RELATIVE to the setup value: pose = setup + value. Absent value = 0. */
-export interface SpineRotateKey extends SpineKey { value?: number }
+export interface BoneBurstRotateKey extends BoneBurstKey { value?: number }
 /** Relative, as rotate. */
-export interface SpineTranslateKey extends SpineKey { x?: number; y?: number }
+export interface BoneBurstTranslateKey extends BoneBurstKey { x?: number; y?: number }
 /** MULTIPLICATIVE: pose = setup × value, so a setup scale of 0 cannot be
  *  animated at all. Absent = 1. */
-export interface SpineScaleKey extends SpineKey { x?: number; y?: number }
+export interface BoneBurstScaleKey extends BoneBurstKey { x?: number; y?: number }
 /** Relative, as rotate. */
-export interface SpineShearKey extends SpineKey { x?: number; y?: number }
+export interface BoneBurstShearKey extends BoneBurstKey { x?: number; y?: number }
 
-export interface SpineBoneTimelines {
-  rotate?: SpineRotateKey[];
-  translate?: SpineTranslateKey[];
-  scale?: SpineScaleKey[];
-  shear?: SpineShearKey[];
+export interface BoneBurstBoneTimelines {
+  rotate?: BoneBurstRotateKey[];
+  translate?: BoneBurstTranslateKey[];
+  scale?: BoneBurstScaleKey[];
+  shear?: BoneBurstShearKey[];
   /** Carried from an opened file: translatex, inherit … */
   [timeline: string]: unknown;
 }
 
 /** No curve: attachments switch. `name` null hides the slot's attachment. */
-export interface SpineAttachmentKey { time?: number; name: string | null }
-export interface SpineRgbaKey extends SpineKey { color: string }
-export interface SpineRgba2Key extends SpineKey { light: string; dark: string }
+export interface BoneBurstAttachmentKey { time?: number; name: string | null }
+export interface BoneBurstRgbaKey extends BoneBurstKey { color: string }
+export interface BoneBurstRgba2Key extends BoneBurstKey { light: string; dark: string }
 
 /** Any other key name throws. */
-export interface SpineSlotTimelines {
-  attachment?: SpineAttachmentKey[];
-  rgba?: SpineRgbaKey[];
-  rgba2?: SpineRgba2Key[];
+export interface BoneBurstSlotTimelines {
+  attachment?: BoneBurstAttachmentKey[];
+  rgba?: BoneBurstRgbaKey[];
+  rgba2?: BoneBurstRgba2Key[];
   /** Carried from an opened file: sequence … */
   [timeline: string]: unknown;
 }
 
 /** Absolute, not relative. Curve channels: mix, softness. */
-export interface SpineIkKey extends SpineKey {
+export interface BoneBurstIkKey extends BoneBurstKey {
   mix?: number;
   softness?: number;
   bendPositive?: boolean;
@@ -284,12 +284,12 @@ export interface SpineIkKey extends SpineKey {
 }
 
 /** Absent `offsets` = the setup draw order. */
-export interface SpineDrawOrderKey {
+export interface BoneBurstDrawOrderKey {
   time?: number;
   offsets?: Array<{ slot: string; offset: number }>;
 }
 
-export interface SpineEventKey {
+export interface BoneBurstEventKey {
   time?: number;
   name: string;
   int?: number;
@@ -304,12 +304,12 @@ export interface SpineEventKey {
  * no field for it. An animation that ends on a hold is shorter in the
  * runtime than in the editor unless a key sits at the end.
  */
-export interface SpineAnimation {
-  bones?: Record<string, SpineBoneTimelines>;
-  slots?: Record<string, SpineSlotTimelines>;
-  ik?: Record<string, SpineIkKey[]>;
-  drawOrder?: SpineDrawOrderKey[];
-  events?: SpineEventKey[];
+export interface BoneBurstAnimation {
+  bones?: Record<string, BoneBurstBoneTimelines>;
+  slots?: Record<string, BoneBurstSlotTimelines>;
+  ik?: Record<string, BoneBurstIkKey[]>;
+  drawOrder?: BoneBurstDrawOrderKey[];
+  events?: BoneBurstEventKey[];
   /** Carried from an opened file: attachments (deform, sequence),
    *  transform, path, physics and slider keys. */
   [group: string]: unknown;

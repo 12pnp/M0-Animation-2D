@@ -1,19 +1,19 @@
-import { CONSTRAINT_CHANNELS, bakedChannelKeys, channelKeysFromSpine, withChannelKeys } from "@/core/doc/constraintKeys";
-import { inheritKeysFromSpine } from "@/core/doc/inherit";
+import { CONSTRAINT_CHANNELS, bakedChannelKeys, channelKeysFromBoneBurst, withChannelKeys } from "@/core/doc/constraintKeys";
+import { inheritKeysFromBoneBurst } from "@/core/doc/inherit";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { displaysOf } from "@/core/doc/displays";
-import { deformKeysFromSpine, meshFromSpine, type MeshContext } from "./importMesh";
+import { deformKeysFromBoneBurst, meshFromBoneBurst, type MeshContext } from "./importMesh";
 import { assignDeforms, type DeformTarget, withDeformKeysOf } from "@/core/mesh/deform";
 import { type Outline, outlineOf, sequenceDisplayOf } from "./importAttachments";
 import { bakedSequenceKeys, SEQUENCE_MODES } from "@/core/doc/sequence";
 import type { AssetId, CnId, IkId, NodeId, TcId } from "@/core/doc/ids";
 import { fromOffsets } from "@/core/doc/drawOrder";
-import { eventDefsFromSpine, eventValues } from "@/core/doc/events";
+import { eventDefsFromBoneBurst, eventValues } from "@/core/doc/events";
 import { newAnimId, newCnId, newIkId, newTcId } from "@/core/doc/ids";
 import type { TcChannel, TcFrom, TcTo } from "@/core/doc/types";
 import type {
   MeshData,  Animation, BlendMode, DeformKey, DrawOrderKey, SequenceKey, ColorTransform, DisplayRef, EventDef, EventKey, IkConstraint, IkKey, ImageItem, TcKey, TransformConstraint, Keyframe, Layer, Node, Project,
-  SkinDef, SpineAttachmentRef, SymbolItem, Track,
+  SkinDef, BoneBurstAttachmentRef, SymbolItem, Track,
 } from "@/core/doc/types";
 import { isDefaultColor, isImage } from "@/core/doc/types";
 import { createAnimation, createImageItem, createLayer, createNode, createProject } from "@/core/doc/defaults";
@@ -22,10 +22,10 @@ import { IDENTITY, cloneTf, matrixOf, type Transform } from "@/core/math/Transfo
 import { mat, mul, type Matrix2D } from "@/core/math/Matrix2D";
 import type { ExportDiagnostic } from "@/core/export/diagnostics";
 import { bonesToNames, lastTime, regionsOf, SKIN_CONSTRAINT_KINDS } from "./carry";
-import { PATH_FIELDS, pathFromSpine, PHYSICS_FIELDS, physicsFromSpine, SLIDER_FIELDS, sliderFromSpine } from "@/core/doc/constraints";
+import { PATH_FIELDS, pathFromBoneBurst, PHYSICS_FIELDS, physicsFromBoneBurst, SLIDER_FIELDS, sliderFromBoneBurst } from "@/core/doc/constraints";
 import { type ChannelGroup, type Comp, type CompKey, type KeyTiming, mergeKeys, valueAt } from "./importKeys";
-import { fromSpineLocal, type SpineLocal } from "./transform";
-import { SPINE_VERSION, type SpineInherit, type SpineRaw } from "./types";
+import { fromBoneBurstLocal, type BoneBurstLocal } from "./transform";
+import { BONEBURST_VERSION, type BoneBurstInherit, type BoneBurstRaw } from "./types";
 
 /**
  * A Spine 4.3 skeleton JSON opened as a project, for editing.
@@ -54,7 +54,7 @@ import { SPINE_VERSION, type SpineInherit, type SpineRaw } from "./types";
 
 export interface AtlasImage { name: string; width: number; height: number; assetId: AssetId }
 
-export interface SpineImport {
+export interface BoneBurstImport {
   project: Project;
   diagnostics: ExportDiagnostic[];
   /** Intervals written frame by frame, because no ease of the editor's
@@ -62,7 +62,7 @@ export interface SpineImport {
   baked: number;
 }
 
-const obj = (v: unknown): v is SpineRaw => !!v && typeof v === "object" && !Array.isArray(v);
+const obj = (v: unknown): v is BoneBurstRaw => !!v && typeof v === "object" && !Array.isArray(v);
 const num = (v: unknown, fallback: number) => (typeof v === "number" && Number.isFinite(v) ? v : fallback);
 const str = (v: unknown): v is string => typeof v === "string";
 
@@ -71,9 +71,9 @@ const BONE_FIELDS = new Set(["name", "parent", "length", "x", "y", "rotation", "
 const SLOT_FIELDS = new Set(["name", "bone", "color", "dark", "attachment", "blend"]);
 const IK_FIELDS = new Set(["type", "name", "bones", "target", "mix", "bendPositive", "softness", "stretch", "compress", "scaleY"]);
 const BLEND: Record<string, BlendMode> = { additive: "add", multiply: "multiply", screen: "screen" };
-const INHERIT = new Set<SpineInherit>(["normal", "onlyTranslation", "noRotationOrReflection", "noScale", "noScaleOrReflection"]);
+const INHERIT = new Set<BoneBurstInherit>(["normal", "onlyTranslation", "noRotationOrReflection", "noScale", "noScaleOrReflection"]);
 
-export function importSpine(file: unknown, name: string, images: ReadonlyMap<string, AtlasImage>): SpineImport {
+export function importBoneBurst(file: unknown, name: string, images: ReadonlyMap<string, AtlasImage>): BoneBurstImport {
   const diagnostics: ExportDiagnostic[] = [];
   const warn = (message: string) => diagnostics.push({ severity: "warning", message });
   if (!obj(file) || !obj(file.skeleton) || !Array.isArray(file.bones)) {
@@ -81,9 +81,9 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
   }
   const header = file.skeleton;
   const version = str(header.spine) ? header.spine : "";
-  if (version.split(".").slice(0, 2).join(".") !== SPINE_VERSION.split(".").slice(0, 2).join(".")) {
+  if (version.split(".").slice(0, 2).join(".") !== BONEBURST_VERSION.split(".").slice(0, 2).join(".")) {
     throw new Error(
-      `The file was exported by Spine ${version || "(unknown version)"}; only Spine ${SPINE_VERSION.split(".").slice(0, 2).join(".")} ` +
+      `The file was exported by Spine ${version || "(unknown version)"}; only Spine ${BONEBURST_VERSION.split(".").slice(0, 2).join(".")} ` +
       "JSON can be opened. Export it again from Spine 4.3.",
     );
   }
@@ -112,13 +112,13 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     project.itemOrder.push(item.id);
     itemByRegion.set(img.name, item);
   }
-  const displayItem = (att: SpineRaw, key: string) => displayItemOf(itemByRegion, att, key);
+  const displayItem = (att: BoneBurstRaw, key: string) => displayItemOf(itemByRegion, att, key);
 
   /* ── bones ── */
   const bonesIn = file.bones.filter(obj);
   const boneNames = bonesIn.map((b) => String(b.name));
   const boneNode = new Map<string, Node>();
-  const boneSetup = new Map<string, SpineLocal>();
+  const boneSetup = new Map<string, BoneBurstLocal>();
   // Each bone's world at the setup pose, for the weighted boxes and paths the
   // slots read (the editor's composition, as `editableMeshes` measures).
   const boneWorld = new Map<string, Matrix2D>();
@@ -132,14 +132,14 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     const boneName = String(b.name);
     const parent = str(b.parent) ? boneNode.get(b.parent) : undefined;
     if (str(b.parent) && !parent) warn(`Bone "${boneName}" names a parent "${b.parent}" that comes after it or does not exist; it is a root bone now.`);
-    const setup: SpineLocal = {
+    const setup: BoneBurstLocal = {
       x: num(b.x, 0), y: num(b.y, 0), rotation: num(b.rotation, 0),
       shearX: num(b.shearX, 0), shearY: num(b.shearY, 0), scaleX: num(b.scaleX, 1), scaleY: num(b.scaleY, 1),
     };
     const node = createNode("bone", boneName, { parentId: parent?.id ?? null });
     node.boneLength = num(b.length, 0);
     if (str(b.inherit) && b.inherit !== "normal") {
-      if (INHERIT.has(b.inherit as SpineInherit)) node.inherit = b.inherit as SpineInherit;
+      if (INHERIT.has(b.inherit as BoneBurstInherit)) node.inherit = b.inherit as BoneBurstInherit;
       else warn(`Bone "${boneName}": unknown inherit mode "${b.inherit}", read as normal.`);
     }
     if (str(b.color) && /^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(b.color)) node.boneColor = b.color.toLowerCase();
@@ -159,7 +159,7 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
       setup.shearX = 0;
       setup.shearY = 0;
     }
-    node.bind = fromSpineLocal(setup);
+    node.bind = fromBoneBurstLocal(setup);
     if (Object.keys(rest).length) node.spine = { bone: rest };
     sym.nodes[node.id] = node;
     boneNode.set(boneName, node);
@@ -170,9 +170,9 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
   /* ── skins: the default skin's regions and meshes become displays ── */
   const skinsIn = Array.isArray(file.skins) ? file.skins.filter(obj) : [];
   const defaultSkin = skinsIn.find((s) => s.name === "default");
-  const carriedSkins: SpineRaw[] = [];
-  const defaultAtts = obj(defaultSkin?.attachments) ? (defaultSkin!.attachments as Record<string, SpineRaw>) : {};
-  const carriedDefault: Record<string, Record<string, SpineRaw>> = {};
+  const carriedSkins: BoneBurstRaw[] = [];
+  const defaultAtts = obj(defaultSkin?.attachments) ? (defaultSkin!.attachments as Record<string, BoneBurstRaw>) : {};
+  const carriedDefault: Record<string, Record<string, BoneBurstRaw>> = {};
 
   /* ── slots ── */
   // The skins' own outlines of slots that became box, point or path nodes, by slot then skin.
@@ -192,10 +192,10 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     const setupName = str(s.attachment) ? s.attachment : null;
     // A key only other skins fill is a skin-only display (Spine's skin
     // placeholder, ARCHITECTURE ▸ Skins), the first skin's attachment standing in.
-    const skinOnly = new Map<string, SpineRaw>();
+    const skinOnly = new Map<string, BoneBurstRaw>();
     for (const skin of skinsIn) {
       if (skin === defaultSkin || !obj(skin.attachments) || !obj(skin.attachments[slotName])) continue;
-      for (const [key, att] of Object.entries(skin.attachments[slotName] as SpineRaw)) {
+      for (const [key, att] of Object.entries(skin.attachments[slotName] as BoneBurstRaw)) {
         if (!(key in byKey) && !skinOnly.has(key) && obj(att) && displayItem(att, key)) skinOnly.set(key, att);
       }
     }
@@ -207,13 +207,13 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
       node: boneWorld.get(String(s.bone))!,
       bone: (n: string) => (boneNode.has(n) ? { id: boneNode.get(n)!.id, setup: boneWorld.get(n)! } : undefined),
     };
-    let outline = sole.length === 1 && !skinOnly.size && obj(sole[0]![1]) ? outlineOf(bonesToNames(sole[0]![1] as SpineRaw, boneNames), outlineBones) : null;
+    let outline = sole.length === 1 && !skinOnly.size && obj(sole[0]![1]) ? outlineOf(bonesToNames(sole[0]![1] as BoneBurstRaw, boneNames), outlineBones) : null;
     // Other skins filling the slot hold it only with an outline of the same
     // kind under the same key, each the skin's own (`SkinDef.outlines`).
     const skinned = new Map<string, Outline>();
     for (const skin of outline ? otherSkins : []) {
-      const entries = Object.entries((skin.attachments as Record<string, SpineRaw>)[slotName]!);
-      const theirs = entries.length === 1 && entries[0]![0] === sole[0]![0] && obj(entries[0]![1]) ? outlineOf(bonesToNames(entries[0]![1] as SpineRaw, boneNames), outlineBones) : null;
+      const entries = Object.entries((skin.attachments as Record<string, BoneBurstRaw>)[slotName]!);
+      const theirs = entries.length === 1 && entries[0]![0] === sole[0]![0] && obj(entries[0]![1]) ? outlineOf(bonesToNames(entries[0]![1] as BoneBurstRaw, boneNames), outlineBones) : null;
       if (theirs?.kind !== outline!.kind) { skinned.clear(); break; }
       skinned.set(String(skin.name), theirs);
     }
@@ -246,7 +246,7 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
       }
       // Its colour is the display's tint, written back onto the data (`DisplayRef.tint`).
       const { color: _c, ...data } = bonesToNames(att, boneNames);
-      const ref: SpineAttachmentRef = { name: key, data };
+      const ref: BoneBurstAttachmentRef = { name: key, data };
       const display: DisplayRef = { itemId: item.id, pivot: { x: item.width / 2, y: item.height / 2 }, attachment: ref, ...tintOf(att) };
       if (!(key in byKey)) display.skinOnly = true;
       displays.push(display);
@@ -307,7 +307,7 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
 
   /* ── constraints ── */
   const constraintsIn = Array.isArray(file.constraints) ? file.constraints.filter(obj) : [];
-  const carriedConstraints: SpineRaw[] = [];
+  const carriedConstraints: BoneBurstRaw[] = [];
   for (const c of constraintsIn) {
     const ik = c.type === "ik" ? ikOf(c, boneNode, warn) : null;
     const tc = c.type === "transform" ? transformOf(c, boneNode) : null;
@@ -331,8 +331,8 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     // Its colour in Spine's editor (`SkinDef.color`).
     const color = str(skin.color) && /^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(skin.color) ? (skin.color.length === 6 ? skin.color + "ff" : skin.color).toLowerCase() : null;
     if (color) def.color = color;
-    const rest: SpineRaw = pick(skin, (k) => k !== "attachments" && k !== "bones" && !(SKIN_CONSTRAINT_KINDS as readonly string[]).includes(k) && !(k === "color" && color)) ?? {};
-    const atts: Record<string, Record<string, SpineRaw>> = {};
+    const rest: BoneBurstRaw = pick(skin, (k) => k !== "attachments" && k !== "bones" && !(SKIN_CONSTRAINT_KINDS as readonly string[]).includes(k) && !(k === "color" && color)) ?? {};
+    const atts: Record<string, Record<string, BoneBurstRaw>> = {};
     for (const [slot, byKey] of Object.entries(obj(skin.attachments) ? skin.attachments : {})) {
       if (!obj(byKey)) continue;
       const node = slotNode.get(slot);
@@ -344,9 +344,9 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
       const names = node ? displayNames(node) : [];
       for (const [key, att] of Object.entries(byKey)) {
         if (!obj(att)) continue;
-        const data = bonesToNames(att as SpineRaw, boneNames);
+        const data = bonesToNames(att as BoneBurstRaw, boneNames);
         const index = names.indexOf(key);
-        const item = displayItem(att as SpineRaw, key);
+        const item = displayItem(att as BoneBurstRaw, key);
         // Under a key the slot has a display for: that display, in this skin.
         if (node && index >= 0 && item) {
           const { color: _c, ...rest } = data;
@@ -382,7 +382,7 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
   };
   // The events become the document's (`SymbolItem.events`).
   if (obj(file.events)) {
-    const defs = eventDefsFromSpine(file.events);
+    const defs = eventDefsFromBoneBurst(file.events);
     if (defs.length) sym.events = defs;
   }
 
@@ -394,7 +394,7 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     const anim: Animation = {
       id: newAnimId(), name: animName, duration: end + 1, playTimes: 0, tracks: {}, endsAtLastFrame: true,
     };
-    const carried: SpineRaw = pick(animRaw, (k) => k !== "bones" && k !== "slots") ?? {};
+    const carried: BoneBurstRaw = pick(animRaw, (k) => k !== "bones" && k !== "slots") ?? {};
 
     const bonesAnim = obj(animRaw.bones) ? animRaw.bones : {};
     for (const [boneName, timelines] of Object.entries(bonesAnim)) {
@@ -403,14 +403,14 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
       const setup = boneSetup.get(boneName)!;
       const { groups, rest } = boneComps(timelines, setup, rate, shearKept.has(boneName));
       // Inherit keys become the document's when each lands on a frame.
-      const inherits = rest && "inherit" in rest ? inheritKeysFromSpine(rest.inherit, rate) : null;
+      const inherits = rest && "inherit" in rest ? inheritKeysFromBoneBurst(rest.inherit, rate) : null;
       if (inherits) {
         (anim.inherits ??= {})[node.id] = inherits;
         delete rest!.inherit;
       }
-      if (rest && Object.keys(rest).length) ((carried.bones ??= {}) as SpineRaw)[boneName] = rest;
+      if (rest && Object.keys(rest).length) ((carried.bones ??= {}) as BoneBurstRaw)[boneName] = rest;
       if (groups.length === 0) continue;
-      const frameOf = (f: number): Transform => fromSpineLocal(boneLocalAt(groups, setup, f));
+      const frameOf = (f: number): Transform => fromBoneBurstLocal(boneLocalAt(groups, setup, f));
       const made = trackOf(node, groups, [], end, (f) => ({ transform: frameOf(f), displayIndex: 0 }), (track, f) => {
         const got = sampleTransformRaw(track, f)!, want = frameOf(f);
         return close(got.x, want.x, 1e-3) && close(got.y, want.y, 1e-3) && close(got.skewX, want.skewX, 1e-3)
@@ -434,7 +434,7 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
         if (keys.every((k) => k.name === null || names.includes(k.name))) switches = keys;
         else (rest ??= {}).attachment = timelines.attachment;
       }
-      if (rest) ((carried.slots ??= {}) as SpineRaw)[slotName] = rest;
+      if (rest) ((carried.slots ??= {}) as BoneBurstRaw)[slotName] = rest;
       if (!group && switches.length === 0) continue;
       const setupDisplay = node.setupDisplay ?? 0;
       const shownAt = (f: number) => {
@@ -486,7 +486,7 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     }
     // Transform constraint keys likewise (`Animation.transforms`).
     if (obj(animRaw.transform)) {
-      const rest: SpineRaw = {};
+      const rest: BoneBurstRaw = {};
       for (const [name, list] of Object.entries(animRaw.transform)) {
         const k = sym.transforms?.find((c) => c.name === name);
         const keys = k && Array.isArray(list) ? transformKeysOf(list, rate) : null;
@@ -500,7 +500,7 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     // lands on a frame and changes only what the editor keys (the mix, the
     // bend); otherwise that constraint's timeline is carried as it came.
     if (obj(animRaw.ik)) {
-      const rest: SpineRaw = {};
+      const rest: BoneBurstRaw = {};
       for (const [name, list] of Object.entries(animRaw.ik)) {
         const k = sym.ik.find((c) => c.name === name);
         const keys = k && Array.isArray(list) ? ikKeysOf(list, k, rate) : null;
@@ -524,20 +524,20 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
   carry.constraints = carry.constraints.filter((c) => {
     const keys = Object.keys(c);
     if (c.type === "physics" && keys.every((k) => PHYSICS_FIELDS.has(k)) && str(c.bone) && boneNode.has(c.bone)) {
-      (sym.physics ??= []).push(physicsFromSpine(c, newCnId(), boneNode.get(c.bone)!.id));
+      (sym.physics ??= []).push(physicsFromBoneBurst(c, newCnId(), boneNode.get(c.bone)!.id));
       return false;
     }
     // A path constraint whose slot holds a path node (ARCHITECTURE ▸ Physics, sliders and paths).
     const pathNode = c.type === "path" && str(c.slot) ? slotNode.get(c.slot) : undefined;
     const pathBones = Array.isArray(c.bones) ? c.bones.map((b) => (str(b) ? boneNode.get(b) : undefined)) : [];
     if (pathNode?.kind === "path" && keys.every((k) => PATH_FIELDS.has(k) || (k === "skin" && c.skin === true)) && pathBones.length && pathBones.every((b) => b)) {
-      (sym.paths ??= []).push(pathFromSpine(c, newCnId(), pathBones.map((b) => b!.id), pathNode.id));
+      (sym.paths ??= []).push(pathFromBoneBurst(c, newCnId(), pathBones.map((b) => b!.id), pathNode.id));
       return false;
     }
     const anim = c.type === "slider" && str(c.animation) ? sym.animations.find((a) => a.name === c.animation) : undefined;
     const bone = str(c.bone) ? boneNode.get(c.bone) : undefined;
     if (anim && keys.every((k) => SLIDER_FIELDS.has(k)) && (c.bone === undefined || bone)) {
-      (sym.sliders ??= []).push(sliderFromSpine(c, newCnId(), anim.id, bone?.id));
+      (sym.sliders ??= []).push(sliderFromBoneBurst(c, newCnId(), anim.id, bone?.id));
       return false;
     }
     return true;
@@ -553,18 +553,18 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     for (const group of ["physics", "slider", "path"] as const) {
       const timelines = anim.spine?.[group];
       if (!obj(timelines)) continue;
-      const rest: SpineRaw = {};
+      const rest: BoneBurstRaw = {};
       for (const [name, channels] of Object.entries(timelines)) {
         const m = modelled.get(name);
         if (!m || m.kind !== group || !obj(channels)) { rest[name] = channels; continue; }
-        const left: SpineRaw = {};
+        const left: BoneBurstRaw = {};
         for (const [channel, list] of Object.entries(channels)) {
           const known = (CONSTRAINT_CHANNELS[group] as readonly string[]).includes(channel);
           // A value a key leaves out: physics' and a path's position and spacing read 0, mixes 1.
           const missing = group !== "slider" && channel !== "mix" ? 0 : 1;
           const pathMix = group === "path" && channel === "mix";
           // A key between frames: the channel written frame by frame instead.
-          const exact = known ? channelKeysFromSpine(list, rate, missing, pathMix) : null;
+          const exact = known ? channelKeysFromBoneBurst(list, rate, missing, pathMix) : null;
           const keys = exact ?? (known && offFrame(list, rate) ? bakedChannelKeys(list, rate, missing, pathMix) : null);
           if (keys && !exact) baked++;
           if (keys) anim.constraintKeys = withChannelKeys(anim.constraintKeys, m.id, channel, keys);
@@ -572,9 +572,9 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
         }
         if (Object.keys(left).length) rest[name] = left;
       }
-      const spine = { ...anim.spine };
-      if (Object.keys(rest).length) spine[group] = rest; else delete spine[group];
-      if (Object.keys(spine).length) anim.spine = spine; else delete anim.spine;
+      const boneburst = { ...anim.spine };
+      if (Object.keys(rest).length) boneburst[group] = rest; else delete boneburst[group];
+      if (Object.keys(boneburst).length) anim.spine = boneburst; else delete anim.spine;
     }
   }
   // Skins listing the physics and sliders the model now holds have them as members.
@@ -599,7 +599,7 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
 
 /**
  * The default skin's meshes the model can hold become the document's
- * (ARCHITECTURE ▸ Meshes ▸ Opened meshes): `meshFromSpine`, and each
+ * (ARCHITECTURE ▸ Meshes ▸ Opened meshes): `meshFromBoneBurst`, and each
  * animation's deform timeline as keys. A mesh another display's deform keys,
  * or a timeline that does not convert, stays carried, the whole mesh at once.
  */
@@ -619,7 +619,7 @@ function editableMeshes(project: Project, sym: SymbolItem, slotNode: Map<string,
     for (const anim of sym.animations) {
       const raw = deformOf(anim, skin, slot, key);
       if (raw === undefined) continue;
-      const keys = deformKeysFromSpine(raw, mesh, ctx, rate);
+      const keys = deformKeysFromBoneBurst(raw, mesh, ctx, rate);
       if (!keys) return false;
       deforms.set(anim, keys);
     }
@@ -637,7 +637,7 @@ function editableMeshes(project: Project, sym: SymbolItem, slotNode: Map<string,
       const item = project.items[d.itemId];
       if (!att || d.skinOnly || att.data.type !== "mesh" || !isImage(item)) return;
       const ctx = { width: item.width, height: item.height, pivot: d.pivot, node: nodeWorld, bone, setupOf };
-      const mesh = meshFromSpine(att.data, ctx);
+      const mesh = meshFromBoneBurst(att.data, ctx);
       if (!mesh) return;
       if (!takeDeforms({ nodeId: slot.id, skin: null, index }, "default", slotName, att.name, mesh, ctx)) return;
       replaceDisplay(sym, slot.id, index, { mesh, key: att.name, ...nameOf(att) });
@@ -677,7 +677,7 @@ function editableMeshes(project: Project, sym: SymbolItem, slotNode: Map<string,
     const nodeWorld = setup.get(nodeId)?.world;
     if (att.data.type !== "mesh" || !isImage(item) || !nodeWorld) return null;
     const ctx = { width: item.width, height: item.height, pivot: ref.pivot, node: nodeWorld, bone, setupOf };
-    const mesh = meshFromSpine(att.data, ctx);
+    const mesh = meshFromBoneBurst(att.data, ctx);
     if (!mesh || !takeDeforms({ nodeId, skin: def.name, index }, def.name, slot, att.name, mesh, ctx)) return null;
     return { itemId: ref.itemId, pivot: ref.pivot, mesh, key: att.name, ...nameOf(att) };
   });
@@ -702,14 +702,14 @@ function editableMeshes(project: Project, sym: SymbolItem, slotNode: Map<string,
 }
 
 /** An attachment's own colour (Spine's `color`) as a display's tint; white is none. */
-function tintOf(data: SpineRaw): { tint?: string } {
+function tintOf(data: BoneBurstRaw): { tint?: string } {
   if (!str(data.color) || !/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(data.color)) return {};
   const t = (data.color.length === 6 ? data.color + "ff" : data.color).toLowerCase();
   return t === "ffffffff" ? {} : { tint: t };
 }
 
 /** An attachment's own name, kept where it is not its key. */
-const nameOf = (att: SpineAttachmentRef): { name?: string } => (str(att.data.name) && att.data.name !== att.name ? { name: att.data.name } : {});
+const nameOf = (att: BoneBurstAttachmentRef): { name?: string } => (str(att.data.name) && att.data.name !== att.name ? { name: att.data.name } : {});
 
 const LINKED_FIELDS = new Set(["type", "name", "path", "source", "slot", "skin", "timelines", "width", "height", "color"]);
 
@@ -738,7 +738,7 @@ function sequenceKeys(sym: SymbolItem, slotNode: Map<string, Node>, rate: number
     const node = sym.nodes[slot.id]!;
     if (!node.sequence || !node.key) continue;
     for (const anim of sym.animations) {
-      const atts = anim.spine?.attachments as Record<string, Record<string, Record<string, SpineRaw>>> | undefined;
+      const atts = anim.spine?.attachments as Record<string, Record<string, Record<string, BoneBurstRaw>>> | undefined;
       const raw = atts?.default?.[slotName]?.[node.key]?.sequence;
       if (!Array.isArray(raw)) continue;
       const read: SequenceKey[] = [];
@@ -762,28 +762,28 @@ function sequenceKeys(sym: SymbolItem, slotNode: Map<string, Node>, rate: number
       if (!Object.keys(att).length) delete copy.default![slotName]![node.key];
       if (!Object.keys(copy.default![slotName]!).length) delete copy.default![slotName];
       if (!Object.keys(copy.default!).length) delete copy.default;
-      const spine = { ...anim.spine };
-      if (Object.keys(copy).length) spine.attachments = copy; else delete spine.attachments;
-      if (Object.keys(spine).length) anim.spine = spine; else delete anim.spine;
+      const boneburst = { ...anim.spine };
+      if (Object.keys(copy).length) boneburst.attachments = copy; else delete boneburst.attachments;
+      if (Object.keys(boneburst).length) anim.spine = boneburst; else delete anim.spine;
     }
   }
 }
 
 function deformOf(anim: Animation, skin: string, slot: string, key: string): unknown {
-  const atts = anim.spine?.attachments as Record<string, Record<string, Record<string, SpineRaw>>> | undefined;
+  const atts = anim.spine?.attachments as Record<string, Record<string, Record<string, BoneBurstRaw>>> | undefined;
   return atts?.[skin]?.[slot]?.[key]?.deform;
 }
 
 function dropCarriedDeform(anim: Animation, skin: string, slot: string, key: string): void {
-  const atts = structuredClone(anim.spine!.attachments) as Record<string, Record<string, Record<string, SpineRaw>>>;
+  const atts = structuredClone(anim.spine!.attachments) as Record<string, Record<string, Record<string, BoneBurstRaw>>>;
   const att = atts[skin]![slot]![key]!;
   delete att.deform;
   if (!Object.keys(att).length) delete atts[skin]![slot]![key];
   if (!Object.keys(atts[skin]![slot]!).length) delete atts[skin]![slot];
   if (!Object.keys(atts[skin]!).length) delete atts[skin];
-  const spine = { ...anim.spine };
-  if (Object.keys(atts).length) spine.attachments = atts; else delete spine.attachments;
-  if (Object.keys(spine).length) anim.spine = spine; else delete anim.spine;
+  const boneburst = { ...anim.spine };
+  if (Object.keys(atts).length) boneburst.attachments = atts; else delete boneburst.attachments;
+  if (Object.keys(boneburst).length) anim.spine = boneburst; else delete anim.spine;
 }
 
 /** Whether a timeline has a key between frames at `rate`. */
@@ -824,7 +824,7 @@ function frameOf(t: number, rate: number): number {
 
 /* ── bone keys ───────────────────────────────────────────────────────────── */
 
-type BoneValue = keyof SpineLocal;
+type BoneValue = keyof BoneBurstLocal;
 
 /** Which timeline value feeds which pose value, and how its keys add to or
  *  multiply the setup pose. */
@@ -856,9 +856,9 @@ export function localSourceBones(constraints: unknown): Set<string> {
 interface BoneGroups extends ChannelGroup { values: BoneValue[] }
 
 /** A bone's keyed values, grouped by the editor's tween channels. */
-function boneComps(timelines: SpineRaw, setup: SpineLocal, rate: number, keepShear: boolean): { groups: BoneGroups[]; rest: SpineRaw | null } {
+function boneComps(timelines: BoneBurstRaw, setup: BoneBurstLocal, rate: number, keepShear: boolean): { groups: BoneGroups[]; rest: BoneBurstRaw | null } {
   const comps = new Map<BoneValue, Comp>();
-  const rest: SpineRaw = {};
+  const rest: BoneBurstRaw = {};
   for (const [timeline, keys] of Object.entries(timelines)) {
     const spec = keepShear && SHEAR_TIMELINES.includes(timeline) ? undefined : BONE_TIMELINES[timeline];
     if (!spec || !Array.isArray(keys)) { rest[timeline] = keys; continue; }
@@ -879,7 +879,7 @@ function boneComps(timelines: SpineRaw, setup: SpineLocal, rate: number, keepShe
     return { channel, comps: cs, eps, values: values.filter((v) => comps.has(v)), ...(refined.length ? { parts: refined } : {}) };
   };
   // The stage's rotation turns skewY, which is rotation + shearX; its shear
-  // is skewY − skewX, shearY − shearX (`fromSpineLocal`).
+  // is skewY − skewX, shearY − shearX (`fromBoneBurstLocal`).
   const groups = [
     group("position", ["x", "y"], 1e-6, [["x", ["x"]], ["y", ["y"]]]),
     group("rotation", ["rotation", "shearX", "shearY"], 1e-6, [["rotation", ["rotation", "shearX"]], ["shear", ["shearX", "shearY"]]]),
@@ -890,7 +890,7 @@ function boneComps(timelines: SpineRaw, setup: SpineLocal, rate: number, keepShe
 
 /** The bone's local pose at a frame: its keyed values, the setup pose for
  *  the rest. */
-function boneLocalAt(groups: BoneGroups[], setup: SpineLocal, f: number): SpineLocal {
+function boneLocalAt(groups: BoneGroups[], setup: BoneBurstLocal, f: number): BoneBurstLocal {
   const out = { ...setup };
   for (const g of groups) g.values.forEach((v, i) => { out[v] = valueAt(g.comps[i]!, f); });
   return out;
@@ -902,8 +902,8 @@ function boneLocalAt(groups: BoneGroups[], setup: SpineLocal, f: number): SpineL
  * each key's curve (x then y for two-value timelines).
  */
 function compOf(
-  keys: SpineRaw[], rate: number, index: number,
-  value: (k: SpineRaw) => number, abs: (v: number) => number, setup: number,
+  keys: BoneBurstRaw[], rate: number, index: number,
+  value: (k: BoneBurstRaw) => number, abs: (v: number) => number, setup: number,
 ): Comp {
   const out: CompKey[] = [];
   keys.forEach((k, i) => {
@@ -936,7 +936,7 @@ function hexColor(v: unknown, fallback: number[]): number[] {
   return out;
 }
 
-function slotSetup(s: SpineRaw): Rgba2 {
+function slotSetup(s: BoneBurstRaw): Rgba2 {
   const [r, g, b, a] = hexColor(s.color, [1, 1, 1, 1]) as [number, number, number, number];
   const [dr, dg, db] = hexColor(s.dark, [0, 0, 0]) as [number, number, number];
   return { r, g, b, a, dr, dg, db };
@@ -956,25 +956,25 @@ function slotColor(color: unknown, dark: unknown): ColorTransform {
 }
 
 /** Which colour values each colour timeline keys, in its curve order. */
-const COLOR_TIMELINES: Record<string, Array<{ ch: typeof CHANNELS[number]; read: (k: SpineRaw) => number }>> = {
-  rgba: (["r", "g", "b", "a"] as const).map((ch, i) => ({ ch, read: (k: SpineRaw) => hexColor(k.color, [1, 1, 1, 1])[i]! })),
-  rgb: (["r", "g", "b"] as const).map((ch, i) => ({ ch, read: (k: SpineRaw) => hexColor(k.color, [1, 1, 1])[i]! })),
-  alpha: [{ ch: "a", read: (k: SpineRaw) => num(k.value, 1) }],
+const COLOR_TIMELINES: Record<string, Array<{ ch: typeof CHANNELS[number]; read: (k: BoneBurstRaw) => number }>> = {
+  rgba: (["r", "g", "b", "a"] as const).map((ch, i) => ({ ch, read: (k: BoneBurstRaw) => hexColor(k.color, [1, 1, 1, 1])[i]! })),
+  rgb: (["r", "g", "b"] as const).map((ch, i) => ({ ch, read: (k: BoneBurstRaw) => hexColor(k.color, [1, 1, 1])[i]! })),
+  alpha: [{ ch: "a", read: (k: BoneBurstRaw) => num(k.value, 1) }],
   rgba2: [
-    ...(["r", "g", "b", "a"] as const).map((ch, i) => ({ ch, read: (k: SpineRaw) => hexColor(k.light, [1, 1, 1, 1])[i]! })),
-    ...(["dr", "dg", "db"] as const).map((ch, i) => ({ ch, read: (k: SpineRaw) => hexColor(k.dark, [0, 0, 0])[i]! })),
+    ...(["r", "g", "b", "a"] as const).map((ch, i) => ({ ch, read: (k: BoneBurstRaw) => hexColor(k.light, [1, 1, 1, 1])[i]! })),
+    ...(["dr", "dg", "db"] as const).map((ch, i) => ({ ch, read: (k: BoneBurstRaw) => hexColor(k.dark, [0, 0, 0])[i]! })),
   ],
   rgb2: [
-    ...(["r", "g", "b"] as const).map((ch, i) => ({ ch, read: (k: SpineRaw) => hexColor(k.light, [1, 1, 1])[i]! })),
-    ...(["dr", "dg", "db"] as const).map((ch, i) => ({ ch, read: (k: SpineRaw) => hexColor(k.dark, [0, 0, 0])[i]! })),
+    ...(["r", "g", "b"] as const).map((ch, i) => ({ ch, read: (k: BoneBurstRaw) => hexColor(k.light, [1, 1, 1])[i]! })),
+    ...(["dr", "dg", "db"] as const).map((ch, i) => ({ ch, read: (k: BoneBurstRaw) => hexColor(k.dark, [0, 0, 0])[i]! })),
   ],
 };
 
 type ColorGroup = ChannelGroup & { chans: Array<typeof CHANNELS[number]>; setup: Rgba2 };
 
-function colorComps(timelines: SpineRaw, setup: Rgba2, rate: number): { group: ColorGroup | null; rest: SpineRaw | null } {
+function colorComps(timelines: BoneBurstRaw, setup: Rgba2, rate: number): { group: ColorGroup | null; rest: BoneBurstRaw | null } {
   const comps = new Map<typeof CHANNELS[number], Comp>();
-  const rest: SpineRaw = {};
+  const rest: BoneBurstRaw = {};
   for (const [timeline, keys] of Object.entries(timelines)) {
     if (timeline === "attachment") continue;
     const spec = COLOR_TIMELINES[timeline];
@@ -1123,7 +1123,7 @@ const isTcName = (v: string): v is TcChannel => (TC_NAMES as readonly string[]).
  * `SkeletonJson` reads them: `mixY` defaults to `mixX`, `mixScaleY` to
  * `mixScaleX`, the rest to 1.
  */
-function transformOf(c: SpineRaw, bones: Map<string, Node>): TransformConstraint | null {
+function transformOf(c: BoneBurstRaw, bones: Map<string, Node>): TransformConstraint | null {
   const names = Array.isArray(c.bones) ? c.bones.map(String) : [];
   const source = str(c.source) ? bones.get(c.source) : undefined;
   const targets = names.map((n) => bones.get(n));
@@ -1159,7 +1159,7 @@ function transformOf(c: SpineRaw, bones: Map<string, Node>): TransformConstraint
  *  falls between frames or a curve's six halves are not one cubic. */
 function transformKeysOf(list: unknown[], rate: number): TcKey[] | null {
   const keys: TcKey[] = [];
-  const mixesOf = (r: SpineRaw) => {
+  const mixesOf = (r: BoneBurstRaw) => {
     const x = num(r.mixX, 1), sx = num(r.mixScaleX, 1);
     return { rotate: num(r.mixRotate, 1), x, y: num(r.mixY, x), scaleX: sx, scaleY: num(r.mixScaleY, 1), shearY: num(r.mixShearY, 1) };
   };
@@ -1194,7 +1194,7 @@ function transformKeysOf(list: unknown[], rate: number): TcKey[] | null {
   return keys.length && new Set(keys.map((x) => x.frame)).size === keys.length ? keys : null;
 }
 
-function ikOf(c: SpineRaw, bones: Map<string, Node>, warn: (m: string) => void): IkConstraint | null {
+function ikOf(c: BoneBurstRaw, bones: Map<string, Node>, warn: (m: string) => void): IkConstraint | null {
   const names = Array.isArray(c.bones) ? c.bones.map(String) : [];
   const chain = names.map((n) => bones.get(n));
   const target = str(c.target) ? bones.get(c.target) : undefined;
@@ -1226,14 +1226,14 @@ function ikOf(c: SpineRaw, bones: Map<string, Node>, warn: (m: string) => void):
 
 /** The image a default-skin or skin attachment shows as a display: a region,
  *  mesh or linked mesh drawing one region the atlas has, not a sequence. */
-function displayItemOf(itemByRegion: Map<string, ImageItem>, att: SpineRaw, key: string): ImageItem | undefined {
+function displayItemOf(itemByRegion: Map<string, ImageItem>, att: BoneBurstRaw, key: string): ImageItem | undefined {
   if (att.sequence || !(att.type === undefined || att.type === "region" || att.type === "mesh" || att.type === "linkedmesh")) return undefined;
   const regions = regionsOf(att, key);
   return regions.length === 1 ? itemByRegion.get(regions[0]!) : undefined;
 }
 
-function pick(o: SpineRaw, keep: (k: string) => boolean): SpineRaw | null {
-  const out: SpineRaw = {};
+function pick(o: BoneBurstRaw, keep: (k: string) => boolean): BoneBurstRaw | null {
+  const out: BoneBurstRaw = {};
   for (const [k, v] of Object.entries(o)) if (keep(k)) out[k] = v;
   return Object.keys(out).length ? out : null;
 }

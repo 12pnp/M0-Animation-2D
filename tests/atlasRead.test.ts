@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TextureAtlas } from "@esotericsoftware/spine-core";
-import { readAtlas } from "@/core/spine/runtime/atlasRead";
-import { atlasText } from "@/core/spine/atlas";
+import { readAtlas } from "@/core/boneburst/runtime/atlasRead";
+import { atlasText } from "@/core/boneburst/atlas";
 import { sampleRigs } from "./fixtures/spineSamples";
 
 /**

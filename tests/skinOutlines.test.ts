@@ -6,9 +6,9 @@ import { outlineSkin, skinnedOutline } from "@/core/doc/boxes";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { migrate, validateProject } from "@/core/doc/schema";
 import { SetSkinOutline } from "@/core/history/skinCommands";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
-import { importSpine } from "@/core/spine/importSpine";
-import { atlasText } from "@/core/spine/atlas";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
+import { atlasText } from "@/core/boneburst/atlas";
 import { apply } from "@/core/math/Matrix2D";
 import type { Project, SymbolItem } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
@@ -62,11 +62,11 @@ describe("a skin's own box, point or path", () => {
 });
 
 function runtime(project: Project, skin: string): Skeleton {
-  const out = exportSpine(project);
+  const out = exportBoneBurst(project);
   expect(out.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
   const regions = out.usedImages.map((id, i) => { const it = project.items[id] as { name: string; width: number; height: number }; return { name: it.name, x: 0, y: i * 200, width: it.width, height: it.height, offsetX: 0, offsetY: 0, originalWidth: it.width, originalHeight: it.height, rotated: false }; });
   const atlas = new TextureAtlas(atlasText([{ name: "p", imagePath: "p.png", width: 512, height: 4096, scale: 1, regions }]));
-  const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(atlas)).readSkeletonData(JSON.parse(spineJson(out.skeleton))));
+  const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(atlas)).readSkeletonData(JSON.parse(boneburstJson(out.skeleton))));
   sk.setSkin(skin);
   sk.setupPose();
   sk.updateWorldTransform(Physics.reset);
@@ -100,7 +100,7 @@ describe("in the file", () => {
 
   it("export then open: the node and each skin's own come back", async () => {
     const { project } = await rig();
-    const opened = importSpine(exportSpine(project).skeleton as never, "stickman", new Map()).project;
+    const opened = importBoneBurst(exportBoneBurst(project).skeleton as never, "stickman", new Map()).project;
     const sym = opened.items[opened.rootSymbolId] as SymbolItem;
     const hurt = Object.values(sym.nodes).find((n) => n.name === "hurt" && n.kind !== "bone")!, eye = Object.values(sym.nodes).find((n) => n.name === "eye" && n.kind !== "bone")!;
     expect(hurt.kind).toBe("box");

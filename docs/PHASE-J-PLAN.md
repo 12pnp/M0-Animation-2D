@@ -17,7 +17,7 @@ sequences (Dragon). Phase J makes them the document's, in this order:
    display, so a symbol with one is posed by spine-core (`runtimePosed`).
 3. **Weighted boxes and paths.** A box or path holds `weights` and the file's `boneOffsets`, as a
    mesh does. The pose, the export and the Mesh tool share the mesh rule (`meshWorld`,
-   `spineVertices`), and a moved point drops its own offsets.
+   `boneburstVertices`), and a moved point drops its own offsets.
 4. **Other skins' meshes and linked meshes.** A skin's mesh is a skin display with a `mesh`; a
    linked mesh may name its source's skin (`linked.skin`, Spine's `skin`). In Setup mode the
    Mesh tool edits the mesh the stage shows. A skin mesh that an animation deforms stays

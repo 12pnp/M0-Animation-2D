@@ -95,7 +95,7 @@ export function meshUvs(mesh: MeshData, width: number, height: number): number[]
  * its own node (`self`) at weight 1, where the stage leaves it: Spine has no
  * unweighted point in a weighted mesh.
  */
-export function spineVertices(
+export function boneburstVertices(
   mesh: MeshData, pivot: { x: number; y: number }, bones: MeshBones | null, nameOf: (id: NodeId) => string, self?: NodeId,
 ): Array<number | string> {
   const n = mesh.points.length / 2;
@@ -119,7 +119,7 @@ export function spineVertices(
 /** A deform key's offsets as Spine's `deform` vertices: per point (no
  *  weights) in the slot bone's space, or per weighted entry in that bone's
  *  setup space, both y up. */
-export function spineDeform(mesh: MeshData, offsets: readonly number[], bones: MeshBones | null): number[] {
+export function boneburstDeform(mesh: MeshData, offsets: readonly number[], bones: MeshBones | null): number[] {
   const n = mesh.points.length / 2;
   const out: number[] = [];
   const lin = (m: Matrix2D) => ({ ...m, tx: 0, ty: 0 });

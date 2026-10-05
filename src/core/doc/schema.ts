@@ -4,7 +4,7 @@ import type { DeformKey, DisplayRef, EventDef, EventKey, IkKey, LibraryFolder, M
 import { SEQUENCE_MODES } from "./sequence";
 import { PHYSICS_SETTINGS, SLIDER_PROPERTIES } from "./constraints";
 import type { AnimId, CnId, NodeId } from "./ids";
-import { eventDefsFromSpine, withEventDefValues } from "./events";
+import { eventDefsFromBoneBurst, withEventDefValues } from "./events";
 import { DEFAULT_MOTION_BLUR, DOC_VERSION, type MotionBlurSettings, TIMELINE_PROPS } from "./types";
 import { observeId } from "./ids";
 import { isDefaultExport, sanitizeExportSettings } from "@/core/export/settings";
@@ -841,7 +841,7 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
     for (const item of Object.values(items)) {
       const carried = item.spine?.events;
       if (!carried || typeof carried !== "object" || item.events) continue;
-      item.events = eventDefsFromSpine(carried as Record<string, unknown>);
+      item.events = eventDefsFromBoneBurst(carried as Record<string, unknown>);
       delete item.spine!.events;
     }
     return { ...p, version: 19 };

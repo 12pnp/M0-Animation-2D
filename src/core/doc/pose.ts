@@ -4,10 +4,10 @@ import { ikPoseAt } from "./ikKeys";
 import { tcMixAt, tcSolveOf } from "./transformKeys";
 import { meshUvs, meshWorld } from "@/core/mesh/meshPose";
 import { deformAt, drawnDeformTarget } from "@/core/mesh/deform";
-import { LooseBones } from "@/core/spine/runtime/bones";
-import { oneBone, twoBones } from "@/core/spine/runtime/ik";
-import { solveTransform } from "@/core/spine/runtime/transform";
-import { fromSpineLocal, type SpineLocal, toSpineLocal } from "@/core/spine/transform";
+import { LooseBones } from "@/core/boneburst/runtime/bones";
+import { oneBone, twoBones } from "@/core/boneburst/runtime/ik";
+import { solveTransform } from "@/core/boneburst/runtime/transform";
+import { fromBoneBurstLocal, type BoneBurstLocal, toBoneBurstLocal } from "@/core/boneburst/transform";
 import { cloneTf, toMatrix, type Transform } from "@/core/math/Transform";
 import type { Animation, ColorTransform, DisplayRef, IkConstraint, Node, Project, SymbolItem, TransformConstraint } from "./types";
 import { byOrder } from "./constraintOrder";
@@ -44,10 +44,10 @@ export interface PoseEntry {
   visible: boolean;
   /** Back-to-front paint order; also the DragonBones slot index. */
   drawIndex: number;
-  /** Posed by the Spine runtime (`core/spine/spinePose.ts`): what the slot
+  /** Posed by the Spine runtime (`core/boneburst/boneburstPose.ts`): what the slot
    *  draws, world geometry included. The renderer draws this instead of
    *  `display` about `world`. */
-  spine?: SpineDraw;
+  spine?: BoneBurstDraw;
   /** Posed by the Spine runtime: a clipping attachment, clipping every
    *  slot drawn after it up to and including `until` (to the end when
    *  null). */
@@ -62,7 +62,7 @@ export interface PoseEntry {
  * An attachment as the runtime places it: textured triangles over an image.
  * Coordinates are the symbol's (y down).
  */
-export interface SpineDraw {
+export interface BoneBurstDraw {
   itemId: ItemId;
   /** World x, y per vertex. */
   vertices: number[];
@@ -317,9 +317,9 @@ export function evaluateSymbol(
  * the editor and fight the runtime the moment the file was played back.
  *
  * The solve is Spine's (`core/math/ik.ts`), run in Spine's space: each
- * chain bone's local transform through `toSpineLocal`, parent worlds
+ * chain bone's local transform through `toBoneBurstLocal`, parent worlds
  * flipped to y up, the result's local rotations back through
- * `fromSpineLocal`. It mirrors the exporter: the bend written inverted (the
+ * `fromBoneBurstLocal`. It mirrors the exporter: the bend written inverted (the
  * flip mirrors the chain), a bone length only on bone nodes, and a zero
  * weight skipping the solve, as the runtime does. The weight and bend are the
  * animation's IK keys at the frame (`ikPoseAt`), the constraint's own without.
@@ -404,24 +404,24 @@ function applyConstraints(
     return false;
   };
 
-  // The runtime's solvers (`core/spine/runtime/`) on a few `LooseBones`,
+  // The runtime's solvers (`core/boneburst/runtime/`) on a few `LooseBones`,
   // in Spine's space: y up, `a b c d` row-major with `(a, c)` the x axis.
   const putWorld = (bones: LooseBones, i: number, m: Matrix2D): void => bones.world.set([m.a, -m.c, -m.b, m.d, m.tx, -m.ty], i * 6);
   const takeWorld = (bones: LooseBones, i: number): Matrix2D => {
     const W = bones.world, w = i * 6;
     return { a: W[w]!, b: -W[w + 2]!, c: -W[w + 1]!, d: W[w + 3]!, tx: W[w + 4]!, ty: -W[w + 5]! };
   };
-  const putLocal = (bones: LooseBones, i: number, t: SpineLocal): void =>
+  const putLocal = (bones: LooseBones, i: number, t: BoneBurstLocal): void =>
     bones.local.set([t.x, t.y, t.rotation, t.scaleX, t.scaleY, t.shearX, t.shearY], i * 7);
   const takeLocal = (bones: LooseBones, i: number): Transform => {
     const L = bones.local, l = i * 7;
-    return fromSpineLocal({ x: L[l]!, y: L[l + 1]!, rotation: L[l + 2]!, scaleX: L[l + 3]!, scaleY: L[l + 4]!, shearX: L[l + 5]!, shearY: L[l + 6]! });
+    return fromBoneBurstLocal({ x: L[l]!, y: L[l + 1]!, rotation: L[l + 2]!, scaleX: L[l + 3]!, scaleY: L[l + 4]!, shearX: L[l + 5]!, shearY: L[l + 6]! });
   };
   /** `e` as bone `i` under bone `i - 1`, which holds its parent's world. */
   const putBone = (bones: LooseBones, i: number, e: PoseEntry): void => {
     putWorld(bones, i - 1, parentWorld(e));
     putWorld(bones, i, e.world);
-    putLocal(bones, i, toSpineLocal(localOf(e)));
+    putLocal(bones, i, toBoneBurstLocal(localOf(e)));
   };
   const lengthOf = (e: PoseEntry): number => (e.node.kind === "bone" ? e.node.boneLength ?? 0 : 0);
 
@@ -450,7 +450,7 @@ function applyConstraints(
       const bones = new LooseBones([{ parent: -1, length: 0 }, { parent: 0, length: lengthOf(root) }, { parent: 1, length: lengthOf(effector) }]);
       putBone(bones, 1, root);
       putWorld(bones, 2, effector.world);
-      putLocal(bones, 2, toSpineLocal(localOf(effector)));
+      putLocal(bones, 2, toBoneBurstLocal(localOf(effector)));
       // The exporter writes the stage's bend the other way round (y up).
       twoBones(bones, 1, 2, tx, ty, bendPositive ? -1 : 1, !!constraint.stretch, scaleY, softness, mix);
       solved.set(root.nodeId, takeLocal(bones, 1));
@@ -537,14 +537,14 @@ export function shownDisplay(e: PoseEntry): { index: number; pivot: { x: number;
 export function entryBox(
   project: Project, e: PoseEntry, ctx: FrameContext = SETUP_CONTEXT,
 ): { x: number; y: number; w: number; h: number } | null {
-  if (e.spine) return spineBox(e);
+  if (e.spine) return boneburstBox(e);
   if (e.node.kind === "box" || e.node.kind === "point" || e.node.kind === "path") return boxNodeBounds(e.node);
   if (!e.display) return null;
   return localBox(project, e.display.itemId, e.display.pivot, displayContext(ctx, e.displaySince));
 }
 
 /** What the runtime drew for an entry, boxed in the entry's own space. */
-function spineBox(e: PoseEntry): { x: number; y: number; w: number; h: number } | null {
+function boneburstBox(e: PoseEntry): { x: number; y: number; w: number; h: number } | null {
   const v = e.spine!.vertices, p = { x: 0, y: 0 };
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
   for (let i = 0; i < v.length; i += 2) {
@@ -558,7 +558,7 @@ function spineBox(e: PoseEntry): { x: number; y: number; w: number; h: number } 
  * The image pixel the runtime drew at a point of the symbol's space, for
  * an entry it posed; null outside its triangles.
  */
-export function spinePixelAt(e: PoseEntry, x: number, y: number): { x: number; y: number } | null {
+export function boneburstPixelAt(e: PoseEntry, x: number, y: number): { x: number; y: number } | null {
   const s = e.spine;
   if (!s) return null;
   const v = s.vertices, uv = s.uvs, t = s.triangles;

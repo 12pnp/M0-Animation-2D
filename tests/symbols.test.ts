@@ -12,7 +12,7 @@ import {
 import { History } from "@/core/history/History";
 import { RenameLibraryItem, SetBindTransform } from "@/core/history/commands";
 import type { AssetId } from "@/core/doc/ids";
-import { exportSpine } from "@/core/spine/exportSpine";
+import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
 
 beforeEach(() => { reseed(); invalidateBounds(); });
 
@@ -65,7 +65,7 @@ describe("ConvertToSymbol", () => {
   it("exports the instance flattened, its slots in its place", () => {
     const { project, root, a, b } = scene();
     new ConvertToSymbol(root.id, [a.id, b.id], "Arms").apply(project);
-    const { skeleton, diagnostics } = exportSpine(project);
+    const { skeleton, diagnostics } = exportBoneBurst(project);
     expect(diagnostics).toEqual([]);
     expect(skeleton.slots!.map((s) => s.name).sort()).toEqual(["Arms/Arms/a", "Arms/Arms/b", "outside"]);
     expect(skeleton.bones.find((x) => x.name === "Arms/Arms")!.parent).toBe("Arms");

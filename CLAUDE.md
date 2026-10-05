@@ -5,7 +5,7 @@ Guidance for Claude Code (claude.ai/code) working in this repository.
 BoneBurst is Animo (github.com/justmorenoise/animo) retargeted from
 DragonBones 5.5 to **Spine 4.3**. [docs/PLAN.md](docs/PLAN.md) is the plan: the
 phases, the DragonBones→Spine mapping, and the checklist of export tests to
-rebuild. Phases 0–9 are done: DragonBones is gone, `src/core/spine/` holds the
+rebuild. Phases 0–9 are done: DragonBones is gone, `src/core/boneburst/` holds the
 Spine 4.3 contract, the transform mapping and the exporter (ARCHITECTURE ▸ The
 Spine 4.3 contract, The Spine exporter), File ▸ Export writes Spine files, and
 the Preview panel runs our own Spine runtime (ARCHITECTURE ▸ The preview is
@@ -25,7 +25,7 @@ paths; the decisions are pure in `core/doc/cycle.ts`, `bonePath.ts`, `pathEdit.t
 `core/doc/events.ts`), and a Graph panel edits property curves and their eases
 (ARCHITECTURE ▸ Graph editor, `core/doc/graphEdit.ts`). Transform constraints are
 Spine 4.3's, solved on the stage by our runtime's solver (ARCHITECTURE ▸
-Transform constraints, `core/spine/runtime/transform.ts`). An image can be a mesh,
+Transform constraints, `core/boneburst/runtime/transform.ts`). An image can be a mesh,
 made from its alpha, bound to bones by weights and keyed by deform (ARCHITECTURE ▸
 Meshes, `core/mesh/`). Skins put their own images in slots and have bones and
 constraints of their own, by spine-core's rules (ARCHITECTURE ▸ Skins, `core/doc/skins.ts`).
@@ -46,7 +46,7 @@ An exporter change must keep
 and compares it with the stage frame by frame. An importer or exporter change
 must keep `tests/spineImport.test.ts` (every M0 sample round-trips) and
 `tests/spinePose.test.ts` (the stage equals the export) passing. A change to our own runtime
-(`core/spine/runtime/`, ARCHITECTURE ▸ The BoneBurst runtime) must keep
+(`core/boneburst/runtime/`, ARCHITECTURE ▸ The BoneBurst runtime) must keep
 `tests/spineRuntime.test.ts`, `tests/runtimeDraw.test.ts` (what the Preview draws) and
 `tests/atlasRead.test.ts` passing. Phase 8 checked the
 exports in Unity (ARCHITECTURE ▸ Checked in Unity, `scripts/unity-check/`): spine-csharp
@@ -159,7 +159,7 @@ npx tsc --noEmit   # typecheck alone; faster than a build while iterating
 AGPL-3.0-or-later, inherited from Animo; keep `LICENSE`, `LICENSE-EXCEPTION.md`
 and `THIRD-PARTY-NOTICES.md`. What the exporter writes is the user's (the
 exception's second clause). No file or package of the Spine Runtimes ships: the Preview and the
-stage pose Spine files with our own runtime (`core/spine/runtime/`,
+stage pose Spine files with our own runtime (`core/boneburst/runtime/`,
 docs/PREVIEW-RUNTIME-PLAN.md). `@esotericsoftware/spine-core` (the test oracle) and
 `spine-pixi-v8` (the Preview's oracle under `npm run dev:oracle`) are dev
 dependencies under the Spine Runtimes License: nothing in `src/` imports them, a

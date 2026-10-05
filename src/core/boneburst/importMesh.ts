@@ -1,11 +1,11 @@
 import { apply, applyInverse, invert, mat, type Matrix2D } from "@/core/math/Matrix2D";
-import { readPolyline, spinePolyline } from "@/core/math/easing";
+import { readPolyline, boneburstPolyline } from "@/core/math/easing";
 import type { NodeId } from "@/core/doc/ids";
 import type { DeformKey, MeshData } from "@/core/doc/types";
 
 /**
  * An opened file's mesh as the editor's (ARCHITECTURE ▸ Meshes ▸ Opened
- * meshes), pure: the inverse of `spineVertices` / `spineDeform`. The UVs over
+ * meshes), pure: the inverse of `boneburstVertices` / `boneburstDeform`. The UVs over
  * the image's size are the points; the vertices, placed back in the slot's
  * space, are the positions (`MeshData.vertices`, left out where they are the
  * points). Null where the model cannot hold the attachment exactly; then it
@@ -34,7 +34,7 @@ export interface MeshContext {
 const finite = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
 
 /** The mesh, or null. */
-export function meshFromSpine(att: Raw, ctx: MeshContext): MeshData | null {
+export function meshFromBoneBurst(att: Raw, ctx: MeshContext): MeshData | null {
   if (att.type !== "mesh" || Object.keys(att).some((k) => !MESH_FIELDS.has(k))) return null;
   const uvs = att.uvs, tris = att.triangles, verts = att.vertices;
   if (!Array.isArray(uvs) || !Array.isArray(tris) || !Array.isArray(verts) || uvs.length < 6 || uvs.length % 2 || !uvs.every(finite)) return null;
@@ -106,7 +106,7 @@ export function boundVertices(
  * offset per point). A key between frames writes the timeline frame by frame:
  * Spine's offsets at every whole frame, straight between (as bone keys are).
  */
-export function deformKeysFromSpine(raw: unknown, mesh: MeshData, ctx: MeshContext, fps: number): DeformKey[] | null {
+export function deformKeysFromBoneBurst(raw: unknown, mesh: MeshData, ctx: MeshContext, fps: number): DeformKey[] | null {
   if (!Array.isArray(raw) || !raw.length) return null;
   const n = mesh.points.length / 2;
   // Each point's entries, in file order: one per point unweighted, one per bone weighted.
@@ -174,7 +174,7 @@ export function deformKeysFromSpine(raw: unknown, mesh: MeshData, ctx: MeshConte
     let pct = (f - a.at) / (b.at - a.at);
     if (a.curve) {
       const c = a.curve as number[];
-      pct = readPolyline(spinePolyline({ x0: a.at, y0: 0, c1x: c[0]! * fps, c1y: c[1]!, c2x: c[2]! * fps, c2y: c[3]!, x1: b.at, y1: 1 }), f);
+      pct = readPolyline(boneburstPolyline({ x0: a.at, y0: 0, c1x: c[0]! * fps, c1y: c[1]!, c2x: c[2]! * fps, c2y: c[3]!, x1: b.at, y1: 1 }), f);
     }
     return a.offsets.map((v, k) => v + (b.offsets[k]! - v) * pct);
   };

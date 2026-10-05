@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { RotateTimeline } from "@esotericsoftware/spine-core";
 import {
-  EASE_FAMILIES, applyTween, easeFunction, exportNote, easeLabel, easeSegments, idealEase, readPolyline, spinePolyline,
+  EASE_FAMILIES, applyTween, easeFunction, exportNote, easeLabel, easeSegments, idealEase, readPolyline, boneburstPolyline,
   easeOf, splitTween, type EaseDir, type EaseSegment, type EaseSpec,
 } from "@/core/math/easing";
 import {
@@ -44,7 +44,7 @@ const DIRS: EaseDir[] = ["in", "out", "inOut"];
 describe("the runtime's curve sampler", () => {
   it("the port reads a segment as spine-core does, in any units", () => {
     for (const seg of randomSegments(60)) {
-      const pts = spinePolyline(seg);
+      const pts = boneburstPolyline(seg);
       for (const [t0, t1, v0, v1] of [[0, 1, 0, 1], [0.5, 1.25, 30, -210], [2, 2.0416667, 5, 5.5]] as const) {
         const rt = runtimeCurve(seg, t0, t1, v0, v1);
         for (let i = 0; i <= 40; i++) {
@@ -60,7 +60,7 @@ describe("the runtime's curve sampler", () => {
 
   it("is the polyline through the curve at parameter 0.1 … 0.9, not the curve", () => {
     const seg = easeSegments({ kind: "curve", curve: [0.9, 0, 0.1, 1] })![0]!;
-    const pts = spinePolyline(seg);
+    const pts = boneburstPolyline(seg);
     // At a sample point the two agree; half way between, the chord is off.
     expect(readPolyline(pts, pts[10]!)).toBeCloseTo(idealEase({ kind: "curve", curve: [0.9, 0, 0.1, 1] }, pts[10]!), 9);
     const mid = (pts[10]! + pts[12]!) / 2;

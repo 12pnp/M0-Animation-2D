@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { apply, type Matrix2D, mat, mul } from "@/core/math/Matrix2D";
 import { matrixOf, tf } from "@/core/math/Transform";
-import { fromSpineLocal, type SpineLocal } from "@/core/spine/transform";
+import { fromBoneBurstLocal, type BoneBurstLocal } from "@/core/boneburst/transform";
 import { boneSide, guessRoles, localRotationFor, type MotionClip, retarget, type RigBone, type RigIk, sampleRole } from "@/core/rig/motion";
 import MOTIONS from "@/core/rig/motions.json";
 
@@ -19,7 +19,7 @@ describe("localRotationFor", () => {
   it.each(PARENTS)("points the bone at the world angle under a %s parent", (_, parent) => {
     for (const theta of [-90, 0, 37, 170]) {
       const r = localRotationFor(parent, theta, 0);
-      const local = matrixOf(fromSpineLocal({ x: 0, y: 0, rotation: r, shearX: 0, shearY: 0, scaleX: 1, scaleY: 1 }));
+      const local = matrixOf(fromBoneBurstLocal({ x: 0, y: 0, rotation: r, shearX: 0, shearY: 0, scaleX: 1, scaleY: 1 }));
       expect(wrap(angleOf(parent ? mul(mat(), parent, local) : local) - theta)).toBeCloseTo(0, 9);
     }
   });
@@ -38,7 +38,7 @@ describe("sampleRole", () => {
 /** A side-view figure: hips at (0, 100) pointing up, a chest, a head, and two
  *  legs of 50 + 50 hanging from the hips; nothing in a T-pose by accident. */
 function figure(): RigBone[] {
-  const bone = (name: string, parent: string | null, local: Partial<SpineLocal>, length: number): RigBone =>
+  const bone = (name: string, parent: string | null, local: Partial<BoneBurstLocal>, length: number): RigBone =>
     ({ name, parent, local: { x: 0, y: 0, rotation: 0, shearX: 0, shearY: 0, scaleX: 1, scaleY: 1, ...local }, length, setup: { x: 0, y: 0, rotation: 0, scaleX: 1 } });
   const bones = [
     bone("hips", null, { x: 0, y: 100, rotation: 90 }, 20),
@@ -61,12 +61,12 @@ function figure(): RigBone[] {
 
 /** World matrices from setup locals with `keyed` values over them: an FK of
  *  the test's own, not the retarget's. */
-function compose(bones: RigBone[], keyed: Map<string, Partial<SpineLocal>>): Map<string, Matrix2D> {
+function compose(bones: RigBone[], keyed: Map<string, Partial<BoneBurstLocal>>): Map<string, Matrix2D> {
   const out = new Map<string, Matrix2D>();
   const at = (b: RigBone): Matrix2D => {
     const done = out.get(b.name);
     if (done) return done;
-    const m = matrixOf(fromSpineLocal({ ...b.local, ...keyed.get(b.name) }));
+    const m = matrixOf(fromBoneBurstLocal({ ...b.local, ...keyed.get(b.name) }));
     const parent = b.parent ? at(bones.find((x) => x.name === b.parent)!) : undefined;
     const w = parent ? mul(mat(), parent, m) : m;
     out.set(b.name, w);
@@ -81,7 +81,7 @@ const clip = (name: string) => CLIPS.find((c) => c.name === name)!;
 
 /** The pose the keys make at `frame`. */
 function posed(bones: RigBone[], keys: ReturnType<typeof retarget>["keys"], frame: number) {
-  const keyed = new Map<string, Partial<SpineLocal>>();
+  const keyed = new Map<string, Partial<BoneBurstLocal>>();
   for (const k of keys.filter((x) => x.frame === frame)) {
     keyed.set(k.bone, { ...(k.rotation !== undefined ? { rotation: k.rotation } : {}), ...(k.x !== undefined ? { x: k.x, y: k.y } : {}) });
   }

@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { reseed } from "@/core/doc/ids";
-import { inheritAt, inheritKeysFromSpine, inheritTimeline, runtimePosed, withInheritKey } from "@/core/doc/inherit";
+import { inheritAt, inheritKeysFromBoneBurst, inheritTimeline, runtimePosed, withInheritKey } from "@/core/doc/inherit";
 import { createNode } from "@/core/doc/defaults";
 import { migrate, validateProject } from "@/core/doc/schema";
-import { exportSpine } from "@/core/spine/exportSpine";
-import { importSpine } from "@/core/spine/importSpine";
+import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import type { Animation, InheritKey, SymbolItem } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
 import { stageAgainstRuntime } from "./fixtures/runtimeCheck";
@@ -38,7 +38,7 @@ describe("Spine's inherit timeline", () => {
     // Times are float32, as every exported key's (`keyTime`).
     expect(raw.map((k) => ({ ...k, ...(k.time !== undefined ? { time: Math.round((k.time as number) * 1e6) / 1e6 } : {}) })))
       .toEqual([{ inherit: "noScale" }, { time: 0.2 }, { time: 0.4, inherit: "onlyTranslation" }]);
-    expect(inheritKeysFromSpine(raw, 30)).toEqual(keys);
+    expect(inheritKeysFromBoneBurst(raw, 30)).toEqual(keys);
   });
 
   it.each([
@@ -46,14 +46,14 @@ describe("Spine's inherit timeline", () => {
     { name: "two before one frame: the later", raw: [{ time: 0.11, inherit: "noScale" }, { time: 0.12, inherit: "onlyTranslation" }], want: [{ frame: 4, inherit: "onlyTranslation" }] },
     { name: "one between frames, then one on the frame after: that one", raw: [{ time: 0.11, inherit: "noScale" }, { time: 4 / 30 }], want: [{ frame: 4, inherit: "normal" }] },
   ])("a key between frames: $name", ({ raw, want }) => {
-    expect(inheritKeysFromSpine(raw, 30)).toEqual(want);
+    expect(inheritKeysFromBoneBurst(raw, 30)).toEqual(want);
   });
 
   it.each([
     { name: "an unknown mode", raw: [{ time: 0, inherit: "sideways" }] },
     { name: "not a list", raw: { inherit: "noScale" } },
   ])("stays carried: $name", ({ raw }) => {
-    expect(inheritKeysFromSpine(raw, 30)).toBeNull();
+    expect(inheritKeysFromBoneBurst(raw, 30)).toBeNull();
   });
 });
 
@@ -104,7 +104,7 @@ describe("the stage poses inherit through the runtime", () => {
     rig.nodes[node("chest")] = { ...rig.nodes[node("chest")]!, inherit: "noScale" };
     const keys: InheritKey[] = [{ frame: 0, inherit: "onlyTranslation" }, { frame: 6, inherit: "normal" }];
     rig.animations[0]!.inherits = { [node("head")]: keys };
-    const opened = importSpine(exportSpine(project).skeleton as never, "stickman", new Map()).project;
+    const opened = importBoneBurst(exportBoneBurst(project).skeleton as never, "stickman", new Map()).project;
     const sym = opened.items[opened.rootSymbolId] as SymbolItem;
     const head = Object.values(sym.nodes).find((n) => n.name === "head")!;
     const chest = Object.values(sym.nodes).find((n) => n.name === "chest")!;

@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { reseed, type AssetId, type ItemId } from "@/core/doc/ids";
-import { fileLengthsOf, outlineOf, sequenceDisplayOf } from "@/core/spine/importAttachments";
-import { importSpine } from "@/core/spine/importSpine";
-import { exportSpine } from "@/core/spine/exportSpine";
+import { fileLengthsOf, outlineOf, sequenceDisplayOf } from "@/core/boneburst/importAttachments";
+import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
+import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
 import { withKnotMoved } from "@/core/doc/constraints";
 import type { SymbolItem } from "@/core/doc/types";
 import { imagesOf, sampleRigs } from "./fixtures/spineSamples";
@@ -91,7 +91,7 @@ describe("an opened file's", () => {
   };
 
   it("boxes, points, paths and sequences become the document's, and are written back the same", () => {
-    const project = importSpine(file as never, "a", images).project;
+    const project = importBoneBurst(file as never, "a", images).project;
     const sym = project.items[project.rootSymbolId] as SymbolItem;
     const byName = (n: string) => Object.values(sym.nodes).find((x) => x.name === n && x.kind !== "bone")!;
     expect(byName("hit")).toMatchObject({ kind: "box", key: "hitbox", attachmentColor: "00ff00ff" });
@@ -101,7 +101,7 @@ describe("an opened file's", () => {
     const anim = sym.animations[0]!;
     expect(anim.sequences?.[byName("fire").id]).toEqual([{ frame: 0, mode: "loop", index: 0, delay: 3 }, { frame: 15, mode: "once", index: 1, delay: 6 }]);
     expect(anim.spine?.attachments).toBeUndefined();
-    const out = exportSpine(project);
+    const out = exportBoneBurst(project);
     expect(out.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
     const atts = out.skeleton.skins![0]!.attachments!;
     expect(atts.hit).toEqual(file.skins[0]!.attachments.hit);
@@ -117,7 +117,7 @@ describe("spine-unity's samples", () => {
   it.skipIf(!sampleRigs().length)("their default-skin boxes and paths become the document's", () => {
     let held = 0;
     for (const rig of sampleRigs()) {
-      const project = importSpine(JSON.parse(rig.json), rig.name, imagesOf(rig.atlas)).project;
+      const project = importBoneBurst(JSON.parse(rig.json), rig.name, imagesOf(rig.atlas)).project;
       for (const n of Object.values((project.items[project.rootSymbolId] as SymbolItem).nodes)) if (n.kind === "box" || n.kind === "path" || n.kind === "point") held++;
     }
     console.log("sample boxes, points and paths held", held);
