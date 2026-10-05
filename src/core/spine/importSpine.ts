@@ -127,6 +127,7 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     const t = obj(a) && obj(a.bones) ? a.bones[boneName] : undefined;
     return obj(t) && SHEAR_TIMELINES.some((k) => k in t);
   });
+  const localSources = localSourceBones(file.constraints);
   for (const b of bonesIn) {
     const boneName = String(b.name);
     const parent = str(b.parent) ? boneNode.get(b.parent) : undefined;
@@ -148,8 +149,10 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     // the local matrix exactly as it was. Under an inherit mode other than
     // normal Spine builds the parent's frame from the rotation alone and
     // shears after, so there the shear stays Spine's own, carried: its
-    // setup values here, its keys with the animation.
-    if (node.inherit && (setup.shearX || setup.shearY || keysShear(boneName))) {
+    // setup values here, its keys with the animation. So it does on a bone a
+    // local-source transform constraint reads: it takes the rotation and
+    // shear y values, not the matrix.
+    if ((node.inherit || localSources.has(boneName)) && (setup.shearX || setup.shearY || keysShear(boneName))) {
       shearKept.add(boneName);
       if (setup.shearX) rest.shearX = setup.shearX;
       if (setup.shearY) rest.shearY = setup.shearY;
@@ -839,6 +842,16 @@ const BONE_TIMELINES: Record<string, Array<{ value: BoneValue; field: string }>>
 };
 
 const SHEAR_TIMELINES = ["shear", "shearx", "sheary"];
+
+/** The bones local-source transform constraints read. */
+export function localSourceBones(constraints: unknown): Set<string> {
+  const out = new Set<string>();
+  if (!Array.isArray(constraints)) return out;
+  for (const c of constraints) {
+    if (obj(c) && c.type === "transform" && c.localSource === true && str(c.source)) out.add(c.source);
+  }
+  return out;
+}
 
 interface BoneGroups extends ChannelGroup { values: BoneValue[] }
 

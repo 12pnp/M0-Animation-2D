@@ -326,6 +326,33 @@ describe("structure", () => {
     const e = posedSymbol(project, sym(project), null, 0, "setup").entries.find((x) => x.node.name === "a")!;
     [e.world.a, e.world.b, e.world.c, e.world.d].forEach((v, i) => expect(v).toBeCloseTo(setupWorld(file)[i]!, 9));
   });
+
+  it("keeps Spine's own shear on a bone a local-source transform constraint reads", () => {
+    // mix-and-match-pro's shovel: the hand takes the item's local rotation,
+    // which folding the item's shear x into it would change.
+    const file = skeleton({
+      bones: [{ name: "root" }, { name: "item", parent: "root", rotation: 10, shearX: 6 }, { name: "hand", parent: "root", x: 50 }],
+      constraints: [{
+        type: "transform", name: "item-to-hand", source: "item", bones: ["hand"], localSource: true, rotation: -39,
+        properties: { rotate: { to: { rotate: { max: 100 } } } }, mixRotate: 0,
+      }],
+      animations: { go: {
+        bones: { item: { shear: [{}, { time: 0.5, x: 14 }, { time: 1 }] } },
+        transform: { "item-to-hand": [{}] },
+      } },
+    });
+    const { project } = importSpine(file, "x", images());
+    expect(playsAlike(file, JSON.parse(spineJson(exportSpine(project).skeleton)), "go", 31)).toBeLessThan(1e-4);
+    // The stage too, at a frame where the shear is keyed.
+    const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(""))).readSkeletonData(file));
+    sk.setupPose();
+    sk.data.findAnimation("go")!.apply(sk, 0, 10 / 30, false, null, 1, MixFrom.setup, false, false, false);
+    sk.updateWorldTransform(Physics.none);
+    const w = sk.findBone("hand")!.appliedPose;
+    const anim = sym(project).animations.find((a) => a.name === "go")!;
+    const e = posedSymbol(project, sym(project), anim, 10, "animate").entries.find((x) => x.node.name === "hand")!;
+    [e.world.a, e.world.b, e.world.c, e.world.d].forEach((v, i) => expect(v).toBeCloseTo([w.a, -w.c, -w.b, w.d][i]!, 6));
+  });
 });
 
 describe("skins", () => {

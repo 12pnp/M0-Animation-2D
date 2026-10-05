@@ -1171,7 +1171,9 @@ flowchart LR
   `(duration − 1) / fps`, and editor playback wraps there.
 - **Shear.** The editor folds shearX into the rotation, which leaves the local matrix as it
   was. Under a non-normal `inherit` Spine builds the parent frame from the rotation alone,
-  so there the shear stays Spine's own, carried.
+  so there the shear stays Spine's own, carried. So it does on the source of a
+  `localSource` transform constraint, which reads the rotation and shear y values, not the
+  matrix: folded, mix-and-match-pro's hands turned with the shovel's shear.
 - **Colour.** Light L and dark D become multiplier L − D and offset D: `lightHex` /
   `darkHex` give the same bytes back.
 
