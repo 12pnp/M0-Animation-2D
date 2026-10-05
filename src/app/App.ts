@@ -185,7 +185,7 @@ export class App {
       this.sounds,
     );
     this.timeline = new TimelinePanel(this.store, this.clipboard, () => this.onionPopup(), this.sounds);
-    this.graph = new GraphPanel(this.store);
+    this.graph = new GraphPanel(this.store, this.timeline.playback);
 
     this.registerPanels();
     this.shell.layoutDocks(

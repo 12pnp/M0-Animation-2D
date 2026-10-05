@@ -27,6 +27,7 @@ import { deleteEventKeys, uniqueEventName, withEventKey } from "@/core/doc/event
 import { deleteIkKeys, ikPoseAt, type IkTween, ikTweenOf, withIkKey, withIkTween } from "@/core/doc/ikKeys";
 import type { DeformKey, Keyframe, Layer, RotateDir } from "@/core/doc/types";
 import { FrameGrid, ROW_HEIGHT } from "./FrameGrid";
+import { transportButtons } from "./transport";
 import { LayerList } from "./LayerList";
 import { Playback } from "./Playback";
 import {
@@ -105,13 +106,10 @@ export class TimelinePanel implements Panel {
   private frameLabel: HTMLElement;
   private elapsedLabel: HTMLElement;
   private tweenLabel: HTMLElement;
-  private playBtn: HTMLButtonElement;
   private hScroll: HTMLElement;
   private hScrollInner: HTMLElement;
   /** The last `scrollX` the two ends agreed on; see `syncHScroll`. */
   private pushedScrollX = 0;
-  /** What the play button currently shows, so it is only rebuilt on change. */
-  private playIconState: boolean | null = null;
   private fpsLabel: HTMLElement;
 
   constructor(
@@ -172,7 +170,6 @@ export class TimelinePanel implements Panel {
     this.elapsedLabel = h("span", { class: "elapsed" }, "0.0 s");
     this.tweenLabel = h("button", { class: "tween", title: "Easing of the tween at the current frame. Click to edit it." }, "");
     on(this.tweenLabel, "pointerup", () => this.openEase());
-    this.playBtn = h("button", { class: "iconbtn", title: "Play (space)" }) as HTMLButtonElement;
 
     this.hScrollInner = h("div");
     this.hScroll = h("div", { class: "hscroll" }, this.hScrollInner);
@@ -246,16 +243,7 @@ export class TimelinePanel implements Panel {
     onAccelChange(groupTitle);
     const del = iconBtn("trash", "Delete layer", () => this.deleteSelectedLayers());
 
-    clear(this.playBtn);
-    this.playBtn.appendChild(icon("play", 13));
-    this.playIconState = false;
-    on(this.playBtn, "click", () => this.playback.toggle());
-
-    const loopBtn = iconBtn("loop", "Loop", () => {
-      this.store.setUi({ loop: !this.store.ui.loop }, "playback");
-      cls(loopBtn, "on", this.store.ui.loop);
-    });
-    cls(loopBtn, "on", this.store.ui.loop);
+    const transport = transportButtons(this.store, this.playback);
 
     const onionBtn = iconBtn("onion", "Onion skin (hold or right-click for options)", () => {
       this.store.setUi({ onionSkin: !this.store.ui.onionSkin }, "stage");
@@ -370,12 +358,7 @@ export class TimelinePanel implements Panel {
     return h("div", { class: "tl-foot" },
       newLayer, newGroup, del,
       h("div", { class: "sep-v" }),
-      iconBtn("first", "First frame", () => this.playback.toStart()),
-      iconBtn("prev", "Previous frame", () => this.playback.stepBy(-1)),
-      this.playBtn,
-      iconBtn("next", "Next frame", () => this.playback.stepBy(1)),
-      iconBtn("last", "Last frame", () => this.playback.toEnd()),
-      loopBtn, onionBtn, multiBtn, focusBtn, keyBtn,
+      ...transport.buttons, onionBtn, multiBtn, focusBtn, keyBtn,
       h("div", { class: "sep-v" }),
       this.animSelect, animMenu,
       h("div", { class: "readout" },
@@ -393,20 +376,6 @@ export class TimelinePanel implements Panel {
     // The frame rate is a document setting and can change under us.
     const fps = `${this.store.project.frameRate} fps`;
     if (this.fpsLabel.textContent !== fps) this.fpsLabel.textContent = fps;
-
-    // Only rebuild the icon when the state actually changes.
-    //
-    // This runs on every frame during playback. Replacing the button's child
-    // SVG that often meant a real click — which spans a good 100ms between
-    // pointerdown and pointerup — lost its target mid-press, so the browser
-    // retargeted the click and the Pause button appeared dead. Synthetic
-    // clicks worked fine, which is exactly why it survived the first pass.
-    if (this.playIconState !== this.store.ui.playing) {
-      this.playIconState = this.store.ui.playing;
-      clear(this.playBtn);
-      this.playBtn.appendChild(icon(this.store.ui.playing ? "pause" : "play", 13));
-      this.playBtn.title = this.store.ui.playing ? "Pause (space)" : "Play (space)";
-    }
 
     this.tweenLabel.textContent = this.tweenAtPlayhead();
 

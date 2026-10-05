@@ -665,8 +665,14 @@ back to `Animation.ik` with each key's bend and softness kept. The rules are pur
   is one undo step from the track as it was at the press.
 - **View**: the wheel zooms time about the pointer (⌥: values), the middle or right button
   pans, F or Fit fits the animation. A view fitted while the panel had no size (a tab never
-  shown) fits again once it has one. Chips switch curves on and off; a property without keys
-  is off until switched on.
+  shown) fits again once it has one.
+- **Laid out as the timeline**: its toolbar on top (`transportButtons` in
+  `view/timeline/transport.ts`, the timeline's own first / previous / play / next / last /
+  loop, driving the timeline's `Playback`), its layer column on the left and its ruler over
+  the plot (`HEADER_HEIGHT`, `DEFAULT_GRID_COLORS`, the same playhead marker); a press on the
+  ruler scrubs. The column lists every layer (`layerRows`); a press selects one, and the
+  subject's curves are rows under it, each a switch. A property without keys is off until
+  switched on. A flat curve, normalized, gets a unit span about its value.
 
 ### The timeline fills its panel, and only the layers scroll
 

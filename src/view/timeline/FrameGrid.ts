@@ -131,7 +131,7 @@ interface FrameRect { top: number; bottom: number; from: number; to: number }
 /** The frame grid's palette. A value rather than a constant so the
  *  Preferences dialog can recolour the playhead, tweens and the selection —
  *  the three things a user squints at on a long timeline. */
-const DEFAULT_GRID_COLORS = {
+export const DEFAULT_GRID_COLORS = {
   headerBg: "#3c3c3c",
   headerAlt: "#464646",
   headerLine: "#2a2a2a",

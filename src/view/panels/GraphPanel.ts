@@ -1,8 +1,15 @@
-import { cls, h, on } from "@/view/widgets/dom";
+import { clear, drag as dragEl, h, on } from "@/view/widgets/dom";
+import { icon, type IconName } from "@/view/icons";
 import type { Panel } from "@/view/widgets/Dock";
 import type { Store } from "@/app/Store";
 import { doSetIkKeys, doSetTrack, ensureTrack } from "@/app/TimelineOps";
-import { uiFont } from "@/core/prefs/fonts";
+import { uiFont, uiPx } from "@/core/prefs/fonts";
+import { layerRows } from "@/core/doc/layerTree";
+import { isCycle } from "@/core/doc/cycle";
+import { DEFAULT_GRID_COLORS, HEADER_HEIGHT, ROW_HEIGHT } from "@/view/timeline/FrameGrid";
+import { playheadLabel } from "@/view/timeline/zoom";
+import type { Playback } from "@/view/timeline/Playback";
+import { transportButtons } from "@/view/timeline/transport";
 import {
   type ChannelKey, channelKeys, deleteChannelKeys, keyChannelAt, setChannel, type TimelineProp,
 } from "@/core/doc/propertyKeys";
@@ -41,7 +48,14 @@ type Drag =
   | { kind: "keys"; x: number; y: number; base: Map<string, Key[]>; baseTrack: Track | undefined; started: boolean }
   | { kind: "handle"; curve: Curve; index: number; end: "out" | "in"; base: Key[]; baseTrack: Track | undefined; started: boolean };
 
-const PAD = { left: 44, right: 10, top: 10, bottom: 18 };
+/** Room for the value labels on the left; `top` is set below the ruler. */
+/** A layer row's icon in the Graph's layer column. */
+function kindIcon(n: Node): IconName {
+  return n.kind === "group" ? "folderItem" : n.kind === "bone" ? "bone" : n.kind === "empty" ? "emptyItem"
+    : n.kind === "box" ? "boxItem" : n.kind === "point" ? "pointItem" : n.kind === "path" ? "pathItem" : "imageItem";
+}
+
+const PAD = { left: 44, right: 10, top: 30, bottom: 10 };
 const HIT = 6;
 
 /**
@@ -57,11 +71,17 @@ export class GraphPanel implements Panel {
   readonly title = "Graph";
   readonly icon = "axes" as const;
   readonly el: HTMLElement;
-  readonly footer: HTMLElement;
 
+  /** The plot: the canvas and what takes the keyboard. */
+  private view: HTMLElement;
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private chips: HTMLElement;
+  /** The layer column, as the timeline's: the subject's curves under its row. */
+  private list: HTMLElement;
+  private animSelect: HTMLSelectElement;
+  private frameLabel: HTMLElement;
+  private fpsLabel: HTMLElement;
+  private elapsedLabel: HTMLElement;
   private dpr = 1;
   private w = 1;
   private h = 1;
@@ -78,18 +98,51 @@ export class GraphPanel implements Panel {
   private drag: Drag | null = null;
   private queued = false;
 
-  constructor(private readonly store: Store) {
+  constructor(private readonly store: Store, private readonly playback: Playback) {
     this.canvas = h("canvas", { class: "graph-canvas" }) as HTMLCanvasElement;
     this.ctx = this.canvas.getContext("2d")!;
-    this.chips = h("div", { class: "graph-chips" });
-    const fit = h("button", { class: "btn", title: "Fit the curves to the view (F)" }, "Fit");
-    on(fit, "click", () => { this.fit(); this.draw(); });
-    this.footer = h("div", { class: "pfooter graph-footer" }, this.chips, h("div", { class: "spacer" }), fit);
-    this.el = h("div", { class: "graph-panel", tabindex: "0" }, this.canvas);
-    new ResizeObserver(() => this.resize()).observe(this.el);
-    store.subscribe((t) => {
-      if (t === "doc" || t === "timeline" || t === "selection" || t === "stage" || t === "frame" || t === "ui") this.schedule();
+    this.view = h("div", { class: "graph-panel", tabindex: "0" }, this.canvas);
+    this.list = h("div", { class: "tl-llist" });
+    const layers = h("div", { class: "tl-layers" },
+      h("div", { class: "tl-lhead graph-lhead" }, h("span", { class: "hint" }, "Curves")),
+      this.list);
+
+    const splitter = h("div", { class: "splitter v" });
+    let startW = 186;
+    dragEl(splitter, {
+      cursor: "ew-resize",
+      onStart: () => { startW = layers.offsetWidth; splitter.classList.add("dragging"); },
+      onMove: (dx) => main.style.setProperty("--tl-layers", `${Math.max(110, Math.min(400, startW + dx))}px`),
+      onEnd: () => splitter.classList.remove("dragging"),
     });
+    const main = h("div", { class: "tl-main" }, layers, splitter, this.view);
+
+    this.animSelect = h("select", { class: "tl-anim", title: "Animation" }) as HTMLSelectElement;
+    on(this.animSelect, "change", () => {
+      const anim = this.store.currentSymbol.animations.find((a) => a.id === this.animSelect.value);
+      if (!anim) return;
+      this.store.setUi({ animId: anim.id, frame: 0 }, "doc");
+      this.store.emit("timeline");
+    });
+    this.frameLabel = h("span", { class: "cur" }, "1");
+    this.fpsLabel = h("span", { class: "fps" });
+    this.elapsedLabel = h("span", { class: "elapsed" });
+    const fit = h("button", { class: "iconbtn", title: "Fit the curves to the view (F)" }, icon("fit", 13));
+    on(fit, "click", () => { this.fit(); this.draw(); });
+    const bar = h("div", { class: "tl-foot" },
+      ...transportButtons(store, playback).buttons,
+      h("div", { class: "sep-v" }),
+      this.animSelect,
+      h("div", { class: "readout" }, this.frameLabel, this.fpsLabel, this.elapsedLabel),
+      h("div", { class: "spacer" }),
+      fit);
+
+    this.el = h("div", { class: "tl graph-tl" }, bar, main);
+    new ResizeObserver(() => this.resize()).observe(this.view);
+    store.subscribe((t) => {
+      if (t === "doc" || t === "timeline" || t === "selection" || t === "stage" || t === "frame" || t === "ui" || t === "playback") this.schedule();
+    });
+    store.prefs.subscribe(() => this.schedule());
     this.wire();
   }
 
@@ -101,11 +154,28 @@ export class GraphPanel implements Panel {
   private schedule(): void {
     if (this.queued) return;
     this.queued = true;
-    requestAnimationFrame(() => { this.queued = false; this.rebuild(); this.draw(); });
+    requestAnimationFrame(() => { this.queued = false; this.rebuild(); this.syncBar(); this.draw(); });
+  }
+
+  private syncBar(): void {
+    const sym = this.store.currentSymbol;
+    const current = this.store.currentAnimation;
+    const ids = sym.animations.map((a) => `${a.id}:${a.name}:${isCycle(a)}`).join("|");
+    if (this.animSelect.dataset.ids !== ids) {
+      this.animSelect.dataset.ids = ids;
+      clear(this.animSelect);
+      for (const a of sym.animations) this.animSelect.appendChild(h("option", { value: a.id }, isCycle(a) ? `${a.name} ↻` : a.name));
+    }
+    if (current) this.animSelect.value = current.id;
+    const frame = this.store.ui.frame;
+    const fps = this.store.project.frameRate;
+    this.frameLabel.textContent = String(frame + 1);
+    this.fpsLabel.textContent = `${fps} fps`;
+    this.elapsedLabel.textContent = `${(frame / fps).toFixed(1)} s`;
   }
 
   private resize(): void {
-    const r = this.el.getBoundingClientRect();
+    const r = this.view.getBoundingClientRect();
     this.dpr = Math.min(3, window.devicePixelRatio || 1);
     // A view fitted while the panel had no size fits again once it has one.
     if (this.w <= 1 || this.h <= 1) this.fitted = "";
@@ -116,8 +186,13 @@ export class GraphPanel implements Panel {
     this.canvas.style.width = `${this.w}px`;
     this.canvas.style.height = `${this.h}px`;
     this.rebuild();
+    this.syncBar();
     this.draw();
   }
+
+  private get fontSize() { return this.store.prefs.value.interface.fontSize; }
+  /** The ruler's height: the timeline's. */
+  private get rulerH(): number { return uiPx(HEADER_HEIGHT, this.fontSize); }
 
   /* ── what is shown ── */
 
@@ -128,6 +203,7 @@ export class GraphPanel implements Panel {
   }
 
   private rebuild(): void {
+    PAD.top = this.rulerH + 8;
     const anim = this.store.currentAnimation;
     const node = this.subject();
     if (node?.id !== this.node?.id) this.picks.clear();
@@ -136,7 +212,7 @@ export class GraphPanel implements Panel {
     // normalized view would otherwise rescale under the pointer.
     const kept = this.drag ? new Map(this.curves.map((c) => [c.id, [c.lo, c.hi]] as const)) : null;
     this.curves = [];
-    if (!anim || !node) { this.renderChips(); return; }
+    if (!anim || !node) { this.renderList(); return; }
     const track = anim.tracks[node.id];
     for (const c of GRAPH_CHANNELS) {
       const keys = channelKeys(track, c.prop);
@@ -162,42 +238,90 @@ export class GraphPanel implements Panel {
     // Fit when what is shown changes: another node, animation or set of curves.
     const sig = `${node.id}|${anim.id}|${this.visible().map((c) => c.id).join(",")}`;
     if (sig !== this.fitted) { this.fitted = sig; this.fit(); }
-    this.renderChips();
+    this.renderList();
   }
 
   /** The curves drawn: switched on, and with keys (or picked on by hand). */
   private visible(): Curve[] {
-    return this.curves.filter((c) => !this.hidden.has(c.id) && (c.keys.length > 0 || this.forced.has(c.id)));
+    return this.curves.filter((c) => this.shown(c));
+  }
+  private shown(c: Curve): boolean {
+    return !this.hidden.has(c.id) && (c.keys.length > 0 || this.forced.has(c.id));
   }
   /** Curves without keys the user switched on. */
   private forced = new Set<string>();
 
-  private renderChips(): void {
-    this.chips.replaceChildren();
-    if (!this.node) {
-      this.chips.appendChild(h("span", { class: "hint" }, "Select a bone to see its curves."));
+  /**
+   * The layer column: every layer, as the timeline lists them; a press
+   * selects one. The subject's curves are rows under it, each a switch.
+   */
+  private renderList(): void {
+    const sym = this.store.currentSymbol;
+    const rowH = `${uiPx(ROW_HEIGHT, this.fontSize)}px`;
+    const rows = layerRows(sym);
+    const sig = JSON.stringify([rowH, this.node?.id, rows.map((r) => [r.node.id, r.layer.name, r.depth]),
+      this.curves.map((c) => [c.id, c.keys.length > 0, this.shown(c)])]);
+    if (this.list.dataset.sig === sig) return;
+    this.list.dataset.sig = sig;
+    this.list.replaceChildren();
+    if (!rows.length) {
+      this.list.appendChild(h("div", { class: "empty" }, "No layers."));
       return;
     }
-    for (const c of this.curves) {
-      const on_ = !this.hidden.has(c.id) && (c.keys.length > 0 || this.forced.has(c.id));
-      const chip = h("button", { class: "graph-chip", title: c.keys.length ? `${c.label}: show or hide its curve` : `${c.label} has no keys` },
-        h("span", { class: "graph-swatch", style: { background: c.color } }), c.label);
-      cls(chip, "on", on_);
-      cls(chip, "empty", !c.keys.length);
-      on(chip, "click", () => {
-        if (on_) { this.hidden.add(c.id); this.forced.delete(c.id); } else { this.hidden.delete(c.id); this.forced.add(c.id); }
-        this.rebuild();
-        this.draw();
+    for (const r of rows) {
+      const row = h("div", {
+        class: `tl-layer${r.node.id === this.node?.id ? " selected" : ""}`,
+        style: { height: rowH, paddingLeft: `${5 + r.depth * 12}px` },
+        title: r.node.kind === "group" ? r.layer.name : `${r.layer.name}: select to show its curves`,
+      }, h("span", { class: "kind" }, icon(kindIcon(r.node), 12)), h("div", { class: "name" }, r.layer.name));
+      on(row, "pointerdown", (ev) => {
+        const e = ev as PointerEvent;
+        if (e.button !== 0) return;
+        this.store.clearFrameSelection();
+        if (e.shiftKey) this.store.toggleNode(r.node.id);
+        else this.store.selectNodes([r.node.id]);
       });
-      this.chips.appendChild(chip);
+      this.list.appendChild(row);
+      if (r.node.id !== this.node?.id) continue;
+      for (const c of this.curves) {
+        const on_ = this.shown(c);
+        const eye = h("div", { class: `dot${on_ ? " on" : ""}` });
+        eye.appendChild(icon(on_ ? "eye" : "eyeOff", 11));
+        const prop = h("div", {
+          class: `tl-layer tl-prop graph-curve${c.keys.length ? "" : " nokeys"}${on_ ? "" : " off"}`,
+          style: { height: rowH, paddingLeft: `${22 + r.depth * 12}px` },
+          title: c.keys.length ? `${c.label}: show or hide its curve` : `${c.label} has no keys: show its value anyway`,
+        }, h("span", { class: "graph-swatch", style: { background: c.color } }), h("div", { class: "name" }, c.label), eye);
+        on(prop, "pointerdown", (ev) => {
+          if ((ev as PointerEvent).button !== 0) return;
+          if (on_) { this.hidden.add(c.id); this.forced.delete(c.id); } else { this.hidden.delete(c.id); this.forced.add(c.id); }
+          this.rebuild();
+          this.draw();
+        });
+        this.list.appendChild(prop);
+      }
     }
+    this.list.querySelector(".tl-layer.selected")?.scrollIntoView({ block: "nearest" });
   }
 
   /* ── mapping ── */
 
   private get normalized(): boolean { return this.visible().length > 1; }
-  private n(c: Curve, v: number): number { return this.normalized ? (v - c.lo) / (c.hi - c.lo) : v; }
-  private v(c: Curve, n: number): number { return this.normalized ? c.lo + n * (c.hi - c.lo) : n; }
+  /** The span a curve is scaled over: a flat one gets a unit span centred on
+   *  its value, so it runs through the middle and its keys still drag. */
+  private span(c: Curve): { lo: number; size: number } {
+    return c.hi - c.lo < 1e-9 ? { lo: c.lo - 0.5, size: 1 } : { lo: c.lo, size: c.hi - c.lo };
+  }
+  private n(c: Curve, v: number): number {
+    if (!this.normalized) return v;
+    const { lo, size } = this.span(c);
+    return (v - lo) / size;
+  }
+  private v(c: Curve, n: number): number {
+    if (!this.normalized) return n;
+    const { lo, size } = this.span(c);
+    return lo + n * size;
+  }
   private xOf(frame: number): number { return PAD.left + (frame - this.from) * this.perFrame; }
   private frameAt(x: number): number { return this.from + (x - PAD.left) / this.perFrame; }
   private yOfN(n: number): number { return PAD.top + ((this.yMax - n) / (this.yMax - this.yMin)) * (this.h - PAD.top - PAD.bottom); }
@@ -240,7 +364,9 @@ export class GraphPanel implements Panel {
     if (!anim || !this.node) {
       ctx.fillStyle = "#888";
       ctx.font = uiFont(11, this.store.prefs.value.interface.fontSize);
-      ctx.fillText(anim ? "Select a bone to see its curves." : "No animation.", PAD.left, 24);
+      ctx.textBaseline = "middle";
+      ctx.fillText(anim ? "Select a bone to see its curves." : "No animation.", PAD.left, PAD.top + 14);
+      if (anim) this.drawRuler(anim.duration);
       return;
     }
     this.drawGrid(anim.duration);
@@ -282,12 +408,84 @@ export class GraphPanel implements Panel {
         ctx.stroke();
       }
     }
-    // The playhead.
-    const px = Math.round(this.xOf(this.store.ui.frame)) + 0.5;
-    ctx.strokeStyle = this.store.prefs.value.timeline.playhead;
+    this.drawRuler(anim.duration);
+  }
+
+  /** The timeline's ruler over the plot: its numbers, seconds and playhead marker. */
+  private drawRuler(duration: number): void {
+    const ctx = this.ctx;
+    const C = DEFAULT_GRID_COLORS;
+    const H = this.rulerH;
+    const fps = this.store.project.frameRate;
+    ctx.fillStyle = C.headerBg;
+    ctx.fillRect(0, 0, this.w, H);
+    const first = Math.max(0, Math.floor(this.frameAt(PAD.left)));
+    const last = Math.ceil(this.frameAt(this.w));
+    if (fps > 0) {
+      // A lighter band every other second, as the timeline marks time.
+      ctx.fillStyle = C.headerAlt;
+      for (let f = Math.floor(first / fps) * fps; f <= last; f += fps) {
+        if (Math.floor(f / fps) % 2 !== 0) continue;
+        const a = Math.max(PAD.left, this.xOf(f - 0.5));
+        ctx.fillRect(a, 0, Math.max(0, this.xOf(f - 0.5 + fps) - a), H);
+      }
+    }
+    const frame = this.store.ui.frame;
+    const px = Math.round(this.xOf(frame)) + 0.5;
+    const markText = String(frame + 1);
+    ctx.font = uiFont(11, this.fontSize);
+    const mark = playheadLabel(px, ctx.measureText(markText).width);
+    const taken: Array<[number, number]> = [[mark.left, mark.left + mark.width]];
+    ctx.font = uiFont(9, this.fontSize);
+    ctx.textBaseline = "middle";
+    ctx.strokeStyle = C.tick;
     ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(px, 0);
+    const label = (f: number, text: string, second: boolean) => {
+      const x = Math.round(this.xOf(f)) + 0.5;
+      if (x < PAD.left) return;
+      const left = x - ctx.measureText(text).width / 2;
+      const right = left + ctx.measureText(text).width;
+      if (taken.some(([a, b]) => left < b + 3 && right + 3 > a)) return;
+      taken.push([left, right]);
+      ctx.moveTo(x, H - 4);
+      ctx.lineTo(x, H - 1);
+      ctx.fillStyle = second ? "#e0e0e0" : C.text;
+      ctx.fillText(text, left, H / 2 - 2);
+    };
+    if (fps > 0) for (let f = Math.max(fps, Math.ceil(first / fps) * fps); f <= last; f += fps) label(f, `${f / fps}s`, true);
+    const step = [1, 2, 5, 10, 20, 50, 100].find((s) => s * this.perFrame >= 28) ?? 200;
+    for (let f = first; f <= last; f++) if (f === 0 || (f + 1) % step === 0) label(f, String(f + 1), false);
+    ctx.stroke();
+    // Past the animation's end, as the plot dims it.
+    const endX = this.xOf(duration - 0.5);
+    if (endX < this.w) { ctx.fillStyle = "rgba(0,0,0,0.25)"; ctx.fillRect(Math.max(0, endX), 0, this.w - endX, H); }
+    ctx.strokeStyle = C.headerLine;
+    ctx.beginPath();
+    ctx.moveTo(0, H - 0.5);
+    ctx.lineTo(this.w, H - 0.5);
+    ctx.stroke();
+
+    // Spine's marker, as the timeline draws it: the number, a triangle whose
+    // tip is on the ruler's lower edge, then the line down the plot.
+    if (px < PAD.left - 1) return;
+    const playhead = this.store.prefs.value.timeline.playhead;
+    const tip = H - 1, arrow = 5, top = tip - arrow;
+    ctx.fillStyle = playhead;
+    ctx.font = uiFont(11, this.fontSize);
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    ctx.fillText(markText, px, top - 3);
+    ctx.textAlign = "start";
+    ctx.beginPath();
+    ctx.moveTo(px - arrow, top);
+    ctx.lineTo(px + arrow, top);
+    ctx.lineTo(px, tip);
+    ctx.closePath();
+    ctx.fill();
+    ctx.strokeStyle = playhead;
+    ctx.beginPath();
+    ctx.moveTo(px, tip);
     ctx.lineTo(px, this.h);
     ctx.stroke();
   }
@@ -322,8 +520,6 @@ export class GraphPanel implements Panel {
       const x = Math.round(this.xOf(f)) + 0.5;
       ctx.strokeStyle = f > duration - 1 ? "#333" : "#3d3d3d";
       ctx.beginPath(); ctx.moveTo(x, PAD.top); ctx.lineTo(x, this.h - PAD.bottom); ctx.stroke();
-      ctx.fillStyle = "#8a8a8a";
-      ctx.fillText(String(f + 1), x + 2, this.h - PAD.bottom / 2);
     }
     // Values: real ones for one curve, 0..1 of each curve's range for several.
     const span = this.yMax - this.yMin;
@@ -480,7 +676,7 @@ export class GraphPanel implements Panel {
 
     on(el, "pointerdown", (ev) => {
       const e = ev as PointerEvent;
-      this.el.focus();
+      this.view.focus();
       const { x, y } = local(e);
       el.setPointerCapture(e.pointerId);
       if (e.button === 1 || e.button === 2) {
@@ -488,6 +684,11 @@ export class GraphPanel implements Panel {
         return;
       }
       if (e.button !== 0) return;
+      if (y < this.rulerH) {
+        this.drag = { kind: "scrub" };
+        this.scrubTo(x);
+        return;
+      }
       const anim = this.store.currentAnimation;
       const baseTrack = this.node && anim ? anim.tracks[this.node.id] : undefined;
       const hd = this.handleAt(x, y);
@@ -500,6 +701,7 @@ export class GraphPanel implements Panel {
         const id = this.pickId(pt.curve, pt.key.frame);
         if (e.shiftKey) { if (this.picks.has(id)) this.picks.delete(id); else this.picks.add(id); }
         else if (!this.picks.has(id)) this.picks = new Set([id]);
+        this.playback.pause();
         this.store.setFrame(pt.key.frame);
         const base = new Map(this.curves.map((c) => [c.id, c.keys] as const));
         this.drag = { kind: "keys", x, y, base, baseTrack, started: false };
@@ -508,7 +710,7 @@ export class GraphPanel implements Panel {
       }
       if (!e.shiftKey) this.picks.clear();
       this.drag = { kind: "scrub" };
-      this.store.setFrame(Math.max(0, Math.round(this.frameAt(x))));
+      this.scrubTo(x);
       this.draw();
     });
 
@@ -524,7 +726,7 @@ export class GraphPanel implements Panel {
         this.yMax = d.yMax + dn;
         this.draw();
       } else if (d.kind === "scrub") {
-        this.store.setFrame(Math.max(0, Math.round(this.frameAt(x))));
+        this.scrubTo(x);
       } else if (d.kind === "keys") {
         this.dragKeys(d, x, y, e.shiftKey);
       } else {
@@ -542,11 +744,16 @@ export class GraphPanel implements Panel {
     on(el, "pointerup", up);
     on(el, "pointercancel", up);
 
-    on(this.el, "keydown", (ev) => {
+    on(this.view, "keydown", (ev) => {
       const e = ev as KeyboardEvent;
       if (e.key === "f" || e.key === "F") { this.fit(); this.draw(); e.preventDefault(); }
       else if ((e.key === "Delete" || e.key === "Backspace") && this.deletePicked()) { e.preventDefault(); e.stopPropagation(); }
     });
+  }
+
+  private scrubTo(x: number): void {
+    this.playback.pause();
+    this.store.setFrame(Math.max(0, Math.round(this.frameAt(x))));
   }
 
   /** Move the picked keys from where they were at the press: whole frames
@@ -572,7 +779,7 @@ export class GraphPanel implements Panel {
       const base = d.base.get(picks[0]!.curve.id)!;
       let keys: Key[] = moveGraphKeys(base, picks, frames, 0);
       for (const p of picks) {
-        const dv = this.normalized ? dn * (p.curve.hi - p.curve.lo) : dn;
+        const dv = this.normalized ? dn * this.span(p.curve).size : dn;
         keys = moveGraphKeys(keys, [{ frame: Math.max(0, p.frame + frames), leaf: p.leaf }], 0, dv);
         next.add(this.pickId(p.curve, Math.max(0, p.frame + frames)));
       }
