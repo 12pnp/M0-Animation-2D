@@ -1564,8 +1564,9 @@ Our own Spine 4.3 runtime, to replace spine-pixi-v8 and spine-core in the shippe
 from spine-core's source; its author is not clean-room (docs/PREVIEW-RUNTIME-PLAN.md ▸ Risks).
 In: bones in every inherit mode, slots, region attachments, skins (and the bones and constraints
 only a skin enables), meshes weighted or not, linked meshes, sequences, path and clipping
-attachments, two-colour tint, IK, transform and path constraints in the file's order, events,
-and every timeline of those. Not yet: crossfades (a queue cuts), slider and physics constraints.
+attachments, two-colour tint, IK, transform, path and slider constraints in the file's order,
+events, crossfades, and every timeline of those. Not yet: physics constraints (P3), points and
+boxes.
 
 - **The pose is in `core/spine/runtime/`, DOM-free**: `readAtlas` (`atlasRead.ts`), `readRig`
   (`rigData.ts`, the file into our model) and `Rig` (`rig.ts`: setup pose, `apply` at a time,
@@ -1580,9 +1581,22 @@ and every timeline of those. Not yet: crossfades (a queue cuts), slider and phys
   derive its local pose from it at once (`worldChanged`), while its parent is current, so a
   later IK reads the constrained result and an untouched bone keeps its applied values. Solvers:
   `ik.ts`, `transform.ts`, `path.ts`.
-- **The track** (`track.ts`, DOM-free): start, seek, queue, time, and the events a pose passes
-  (`firedBetween`); `tests/runtimeTrack.test.ts` steps it beside spine-core's `AnimationState`
-  with uneven frame times.
+- **The track** (`track.ts`, DOM-free) runs as `AnimationState` runs track 0: start, seek,
+  queue, crossfades (entries chained by `mixingFrom`, mix time, a hold mode per file timeline
+  from which properties later entries key), time, and the events the playing animation passes
+  (`firedBetween`). Each timeline applies with an alpha, a blend (setup, first, replace, add) and
+  a direction (`Rig.applyTimeline`); a rotation mixing turns the short way and remembers which
+  way it went (`Rig.applyRotate`); an outgoing animation's attachments go back to the setup pose
+  unless something else sets them (`settleAttachments`). `tests/runtimeTrack.test.ts` steps it
+  beside `AnimationState` with uneven frame times: plain, queued, crossfaded and interrupted
+  crossfades, comparing the mixed pose before constraints strictly.
+  - **4.3, not 4.2** (measured): the modes are flags (first or subsequent, plus hold), and a
+    subsequent timeline is held too; an entry cut off while mixing in holds as far as it has
+    mixed in, growing, not frozen at the cut (4.3 has no interrupt alpha).
+- **Sliders** (`slider.ts`) apply their animation inside the constraint pass, mixed from the
+  current pose or added, at their time or `to + (property − from) × scale` (the property read as
+  a transform constraint reads it); a time below 0 is 0, except that a bone-driven looping one
+  wraps; `max` plays no part. The bones it keys rebuild after it.
 - **The Preview drives a `PreviewRig`** (`src/preview/runtime/`): `spineRig` wraps
   spine-pixi-v8 and is the default; `boneburstRig` draws ours as one Pixi mesh per slot, rebuilt
   when the shape it draws changes (a region's quad, a mesh's own triangles), when

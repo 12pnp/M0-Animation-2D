@@ -109,14 +109,14 @@ Some groundwork exists in this repo already, but not all of it is clean:
   (linked meshes, deform, a skin) to 5e-7, the Dragon's sequence wings.
 - **P2 — behaviour.** IK / transform / path / slider constraints, clipping,
   two-colour tint, events, inherit timelines.
-  **In progress.** Done: inherit modes and keys, IK, transform and path
+  **Done.** Inherit modes and keys, IK, transform, path and slider
   constraints (with their keys, skin-only ones, the file's order), events,
-  two-colour tint, clipping. `tests/runtimeConstraints.test.ts` sweeps each
-  solver's options on built rigs y up and y down; `tests/runtimeTrack.test.ts`
-  steps the track beside `AnimationState`; the samples run with every
-  constraint but physics and sliders. Left: crossfades (the AnimationState
-  mix: held properties, rotation direction, scale signs) and sliders, which
-  apply an animation with a mix and need the same machinery. IK and transform are written
+  two-colour tint, clipping, crossfades. `tests/runtimeConstraints.test.ts`
+  sweeps each solver's options on built rigs y up and y down;
+  `tests/runtimeTrack.test.ts` steps the track beside `AnimationState`, plain,
+  queued, crossfaded and interrupted; the samples run with every constraint
+  but physics. Where 4.3 differs from what its author knew of 4.2 (crossfade
+  modes, interrupted mixes, sliders) the behaviour was measured. IK and transform are written
   clean-room from the format's behaviour and the oracle tests, by someone
   working from the specs rather than from `ik.ts` / `transformConstraint.ts`;
   the new solvers then replace those two files on the stage too.

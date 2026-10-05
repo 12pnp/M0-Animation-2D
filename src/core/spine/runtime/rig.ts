@@ -3,9 +3,10 @@ import type { SpineInherit } from "../types";
 import { type IkPose, solveIk } from "./ik";
 import { solveTransform } from "./transform";
 import { type PathPose, solvePath } from "./path";
+import { type SliderPose, solveSlider } from "./slider";
 import {
   type AnimationData, type AttachmentData, type Channel, DEG_RAD, type Frame, type Interval, type MeshData,
-  type ClippingData, type PathData, type RegionData, type RigData, type SequenceMode, type SkinData, TRANSFORM_PROPS, type TransformMix,
+  type ClippingData, type PathData, type RegionData, type RigData, type SequenceMode, type SkinData, type Timeline, TRANSFORM_PROPS, type TransformMix,
 } from "./rigData";
 
 /**
@@ -43,6 +44,9 @@ export class Rig {
   readonly sequenceIndex: Int32Array;
   /** Slot indices, back to front. */
   drawOrder: number[];
+  /** Per slot during a pose: 2 when a playing animation set its attachment,
+   *  1 when only one mixing out did (`applyAttachment`). */
+  private readonly attachmentMark: Uint8Array;
   /** Per constraint: 1 while it applies (its bones active, its skin shown when it needs one). */
   readonly constraintActive: Uint8Array;
   /** Per IK constraint (by index in `RigData.constraints`): its values now. */
@@ -51,6 +55,8 @@ export class Rig {
   readonly transform: Array<TransformMix | null>;
   /** Per path constraint: its position, spacing and mixes now. */
   readonly path: Array<PathPose | null>;
+  /** Per slider: its time and mix now. */
+  readonly slider: Array<SliderPose | null>;
   /** Per bone: its child bones. */
   private readonly children: number[][];
   /** Per bone: 1 while its world transform is out of date during `updateWorld`. */
@@ -67,6 +73,7 @@ export class Rig {
     this.ik = data.constraints.map((k) => (k.kind === "ik" ? { mix: 0, softness: 0, bendPositive: true, compress: false, stretch: false } : null));
     this.transform = data.constraints.map((k) => (k.kind === "transform" ? { ...k.mix } : null));
     this.path = data.constraints.map((k) => (k.kind === "path" ? { position: 0, spacing: 0, mixRotate: 0, mixX: 0, mixY: 0 } : null));
+    this.slider = data.constraints.map((k) => (k.kind === "slider" ? { time: k.time, mix: k.mix } : null));
     this.local = new Float64Array(data.bones.length * 7);
     this.inherit = data.bones.map((b) => b.inherit);
     this.world = new Float64Array(data.bones.length * 6);
@@ -75,6 +82,7 @@ export class Rig {
     this.attachment = data.slots.map(() => null);
     this.deform = data.slots.map(() => null);
     this.sequenceIndex = new Int32Array(data.slots.length).fill(-1);
+    this.attachmentMark = new Uint8Array(data.slots.length);
     this.drawOrder = data.slots.map((s) => s.index);
     this.defaultSkin = data.skins.find((s) => s.name === "default") ?? null;
     this.setSkins([]);
@@ -94,7 +102,8 @@ export class Rig {
     }
     const listed = new Set(this.skins.flatMap((s) => s.constraints));
     this.data.constraints.forEach((k, i) => {
-      const bones = [k.kind === "ik" ? k.target : k.kind === "transform" ? k.source : this.data.slots[k.slot]!.bone, ...k.bones];
+      const bones = k.kind === "slider" ? (k.bone >= 0 ? [k.bone] : [])
+        : [k.kind === "ik" ? k.target : k.kind === "transform" ? k.source : this.data.slots[k.slot]!.bone, ...k.bones];
       this.constraintActive[i] = bones.every((b) => this.active[b]) && (!k.skinRequired || listed.has(i)) ? 1 : 0;
     });
   }
@@ -115,11 +124,13 @@ export class Rig {
       this.deform[s.index] = null;
     }
     this.sequenceIndex.fill(-1);
+    this.attachmentMark.fill(0);
     this.drawOrder = this.data.slots.map((s) => s.index);
     this.data.constraints.forEach((k, i) => {
       if (k.kind === "ik") Object.assign(this.ik[i]!, { mix: k.mix, softness: k.softness, bendPositive: k.bendPositive, compress: k.compress, stretch: k.stretch });
       else if (k.kind === "transform") Object.assign(this.transform[i]!, k.mix);
-      else Object.assign(this.path[i]!, { position: k.position, spacing: k.spacing, mixRotate: k.mixRotate, mixX: k.mixX, mixY: k.mixY });
+      else if (k.kind === "path") Object.assign(this.path[i]!, { position: k.position, spacing: k.spacing, mixRotate: k.mixRotate, mixX: k.mixX, mixY: k.mixY });
+      else Object.assign(this.slider[i]!, { time: k.time, mix: k.mix });
     });
   }
 
@@ -132,98 +143,247 @@ export class Rig {
   apply(anim: AnimationData, time: number, loop: boolean): void {
     if (loop && anim.duration > 0) time %= anim.duration;
     for (const t of anim.timelines) {
-      switch (t.kind) {
-        case "bone": {
-          const v = sample(t.channel, time);
-          if (v === null) break;
-          const b = this.data.bones[t.bone]!;
-          const at = t.bone * 7;
-          switch (t.prop) {
-            case "rotate": this.local[at + 2] = b.rotation + v; break;
-            case "x": this.local[at] = b.x + v; break;
-            case "y": this.local[at + 1] = b.y + v; break;
-            case "scaleX": this.local[at + 3] = b.scaleX * v; break;
-            case "scaleY": this.local[at + 4] = b.scaleY * v; break;
-            case "shearX": this.local[at + 5] = b.shearX + v; break;
-            case "shearY": this.local[at + 6] = b.shearY + v; break;
+      if (t.kind === "attachment") this.applyAttachment(t, time, "setup", true);
+      else this.applyTimeline(t, time, 1, "setup", false);
+    }
+  }
+
+  /**
+   * One timeline at `time`, mixed in by `alpha` (spine-core's `Timeline.apply`).
+   * `blend` says what it mixes from: the setup pose ("setup"), the current
+   * value ("replace"; "first" the same, except before the first key, where it
+   * fades the value back toward the setup pose), or it adds its change
+   * ("add"). `out` is true while its animation mixes out of a crossfade:
+   * draw order, inherit mode and sequence frame then only reset to the setup
+   * pose, scale keeps the setup's sign, and IK keeps the setup's bend.
+   */
+  applyTimeline(t: Timeline, time: number, alpha: number, blend: Blend, out: boolean): void {
+    switch (t.kind) {
+      case "bone": {
+        const b = this.data.bones[t.bone]!, L = this.local;
+        const at = t.bone * 7 + PROP_OFFSET[t.prop];
+        const setup = b[PROP_FIELD[t.prop]], current = L[at]!;
+        if (time < t.channel.times[0]!) {
+          if (blend === "setup") L[at] = setup;
+          else if (blend === "first") L[at] = current + (setup - current) * alpha;
+          break;
+        }
+        const v = sample(t.channel, time)!;
+        if (t.prop === "scaleX" || t.prop === "scaleY") L[at] = scaleValue(v * setup, alpha, blend, out, current, setup);
+        else if (blend === "setup") L[at] = setup + v * alpha;
+        else if (blend === "add") L[at] = current + v * alpha;
+        else L[at] = current + (v + setup - current) * alpha;
+        break;
+      }
+      case "color": {
+        const at = t.slot * 7 + t.index, c = this.color;
+        const s = this.data.slots[t.slot]!;
+        const setup = t.index < 4 ? s.color[t.index]! : (s.dark ?? [0, 0, 0])[t.index - 4]!;
+        if (time < t.channel.times[0]!) {
+          if (blend === "setup") c[at] = setup;
+          else if (blend === "first") c[at] = c[at]! + (setup - c[at]!) * alpha;
+          break;
+        }
+        const v = sample(t.channel, time)!;
+        if (alpha === 1) c[at] = v;
+        else {
+          const base = blend === "setup" ? setup : c[at]!;
+          c[at] = base + (v - base) * alpha;
+        }
+        break;
+      }
+      case "ik": {
+        const k = this.data.constraints[t.constraint]!;
+        if (k.kind !== "ik") break;
+        const pose = this.ik[t.constraint]!;
+        const i = keyAt(t.times, time);
+        if (i < 0) {
+          if (blend === "setup") Object.assign(pose, { mix: k.mix, softness: k.softness, bendPositive: k.bendPositive, compress: k.compress, stretch: k.stretch });
+          else if (blend === "first") {
+            pose.mix += (k.mix - pose.mix) * alpha;
+            pose.softness += (k.softness - pose.softness) * alpha;
+            Object.assign(pose, { bendPositive: k.bendPositive, compress: k.compress, stretch: k.stretch });
           }
           break;
         }
-        case "color": {
-          const v = sample(t.channel, time);
-          if (v !== null) this.color[t.slot * 7 + t.index] = v;
-          break;
+        const mix = sample(t.mix, time)!, softness = sample(t.softness, time)!;
+        if (blend === "setup") {
+          pose.mix = k.mix + (mix - k.mix) * alpha;
+          pose.softness = k.softness + (softness - k.softness) * alpha;
+          if (out) Object.assign(pose, { bendPositive: k.bendPositive, compress: k.compress, stretch: k.stretch });
+          else Object.assign(pose, { bendPositive: t.bendPositive[i], compress: t.compress[i], stretch: t.stretch[i] });
+        } else {
+          pose.mix += (mix - pose.mix) * alpha;
+          pose.softness += (softness - pose.softness) * alpha;
+          if (!out) Object.assign(pose, { bendPositive: t.bendPositive[i], compress: t.compress[i], stretch: t.stretch[i] });
         }
-        case "ik": {
-          const i = keyAt(t.times, time);
-          if (i < 0) break;
-          const pose = this.ik[t.constraint]!;
-          pose.mix = sample(t.mix, time)!;
-          pose.softness = sample(t.softness, time)!;
-          pose.bendPositive = t.bendPositive[i]!;
-          pose.compress = t.compress[i]!;
-          pose.stretch = t.stretch[i]!;
-          break;
+        break;
+      }
+      case "transform": {
+        const k = this.data.constraints[t.constraint]!;
+        if (k.kind !== "transform") break;
+        const mix = this.transform[t.constraint]!;
+        const before = time < t.times[0]!;
+        for (const p of TRANSFORM_PROPS) {
+          mix[p] = absoluteValue(before ? null : sample(t.mixes[p], time)!, alpha, blend, mix[p], k.mix[p]);
         }
-        case "pathPosition":
-        case "pathSpacing": {
-          const v = sample(t.channel, time);
-          if (v !== null) this.path[t.constraint]![t.kind === "pathPosition" ? "position" : "spacing"] = v;
-          break;
-        }
-        case "pathMix": {
-          if (keyAt(t.times, time) < 0) break;
-          const pose = this.path[t.constraint]!;
-          pose.mixRotate = sample(t.rotate, time)!;
-          pose.mixX = sample(t.x, time)!;
-          pose.mixY = sample(t.y, time)!;
-          break;
-        }
-        case "transform": {
-          if (keyAt(t.times, time) < 0) break;
-          const mix = this.transform[t.constraint]!;
-          for (const p of TRANSFORM_PROPS) mix[p] = sample(t.mixes[p], time)!;
-          break;
-        }
-        case "event": break;
-        case "inherit": {
-          const i = keyAt(t.times, time);
-          if (i >= 0) this.inherit[t.bone] = t.modes[i]!;
-          break;
-        }
-        case "attachment": {
-          const i = keyAt(t.times, time);
-          if (i >= 0) this.setAttachment(t.slot, t.names[i]!);
-          break;
-        }
-        case "drawOrder": {
-          const i = keyAt(t.times, time);
-          if (i >= 0) this.drawOrder = t.orders[i] ?? this.data.slots.map((s) => s.index);
-          break;
-        }
-        case "deform": {
-          if (this.attachmentOf(t.slot)?.timeline !== t.attachment) break;
-          const i = keyAt(t.times, time);
-          if (i < 0) break;
-          const a = t.vertices[i]!;
-          if (i === t.times.length - 1) { this.deform[t.slot] = a; break; }
-          const p = percent(t.curves[i]!, t.times[i]!, t.times[i + 1]!, time);
-          const b = t.vertices[i + 1]!;
-          const out = new Float64Array(a.length);
-          for (let k = 0; k < a.length; k++) out[k] = a[k]! + (b[k]! - a[k]!) * p;
-          this.deform[t.slot] = out;
-          break;
-        }
-        case "sequence": {
-          const att = this.attachmentOf(t.slot);
-          if (att?.timeline !== t.attachment || !att.sequence) break;
-          const i = keyAt(t.times, time);
-          if (i < 0) break;
-          this.sequenceIndex[t.slot] = sequenceFrame(t.modes[i]!, t.indices[i]!, t.delays[i]!, time - t.times[i]!, att.sequence.count);
-          break;
-        }
+        break;
+      }
+      case "pathPosition":
+      case "pathSpacing": {
+        const k = this.data.constraints[t.constraint]!;
+        if (k.kind !== "path") break;
+        const pose = this.path[t.constraint]!, field = t.kind === "pathPosition" ? "position" : "spacing";
+        pose[field] = absoluteValue(time < t.times[0]! ? null : sample(t.channel, time)!, alpha, blend, pose[field], k[field]);
+        break;
+      }
+      case "sliderTime":
+      case "sliderMix": {
+        const k = this.data.constraints[t.constraint]!;
+        if (k.kind !== "slider") break;
+        const pose = this.slider[t.constraint]!, field = t.kind === "sliderTime" ? "time" : "mix";
+        pose[field] = absoluteValue(time < t.times[0]! ? null : sample(t.channel, time)!, alpha, blend, pose[field], k[field]);
+        break;
+      }
+      case "pathMix": {
+        const k = this.data.constraints[t.constraint]!;
+        if (k.kind !== "path") break;
+        const pose = this.path[t.constraint]!, before = time < t.times[0]!;
+        pose.mixRotate = absoluteValue(before ? null : sample(t.rotate, time)!, alpha, blend, pose.mixRotate, k.mixRotate);
+        pose.mixX = absoluteValue(before ? null : sample(t.x, time)!, alpha, blend, pose.mixX, k.mixX);
+        pose.mixY = absoluteValue(before ? null : sample(t.y, time)!, alpha, blend, pose.mixY, k.mixY);
+        break;
+      }
+      case "event": break;
+      case "attachment": break;
+      case "inherit": {
+        const setup = this.data.bones[t.bone]!.inherit;
+        if (out) { if (blend === "setup") this.inherit[t.bone] = setup; break; }
+        const i = keyAt(t.times, time);
+        if (i < 0) { if (blend === "setup" || blend === "first") this.inherit[t.bone] = setup; }
+        else this.inherit[t.bone] = t.modes[i]!;
+        break;
+      }
+      case "drawOrder": {
+        const setup = () => this.data.slots.map((s) => s.index);
+        if (out) { if (blend === "setup") this.drawOrder = setup(); break; }
+        const i = keyAt(t.times, time);
+        if (i < 0) { if (blend === "setup" || blend === "first") this.drawOrder = setup(); }
+        else this.drawOrder = t.orders[i] ?? setup();
+        break;
+      }
+      case "deform": this.applyDeform(t, time, alpha, blend); break;
+      case "sequence": {
+        if (out) { if (blend === "setup") this.sequenceIndex[t.slot] = -1; break; }
+        const att = this.attachmentOf(t.slot);
+        if (!att || att.timeline !== t.attachment || !att.sequence) break;
+        const i = keyAt(t.times, time);
+        if (i < 0) { if (blend === "setup" || blend === "first") this.sequenceIndex[t.slot] = -1; break; }
+        this.sequenceIndex[t.slot] = sequenceFrame(t.modes[i]!, t.indices[i]!, t.delays[i]!, time - t.times[i]!, att.sequence.count);
+        break;
       }
     }
+  }
+
+  /** A deform timeline mixed in by `alpha`. Its vertices are positions for an
+   *  unweighted mesh (the setup ones when it has none) and offsets for a
+   *  weighted one (none: zero). */
+  private applyDeform(t: Extract<Timeline, { kind: "deform" }>, time: number, alpha: number, blend: Blend): void {
+    const att = this.attachmentOf(t.slot);
+    if (!att || att.kind === "region" || att.timeline !== t.attachment) return;
+    let d = this.deform[t.slot];
+    if (!d) blend = "setup";
+    const n = t.vertices[0]!.length, setup = att.weighted ? null : att.vertices;
+    if (time < t.times[0]!) {
+      if (blend === "setup" || (blend === "first" && alpha === 1)) { this.deform[t.slot] = null; return; }
+      if (blend !== "first") return;
+      d = this.deform[t.slot] = Float64Array.from(d!);
+      for (let i = 0; i < n; i++) d[i] = setup ? d[i]! + (setup[i]! - d[i]!) * alpha : d[i]! * (1 - alpha);
+      return;
+    }
+    const i = keyAt(t.times, time);
+    let target = t.vertices[i]!;
+    if (i < t.times.length - 1) {
+      const p = percent(t.curves[i]!, t.times[i]!, t.times[i + 1]!, time), next = t.vertices[i + 1]!;
+      target = target.map((v: number, k: number) => v + (next[k]! - v) * p);
+    }
+    const out = d && d.length === n ? Float64Array.from(d) : new Float64Array(n);
+    for (let k = 0; k < n; k++) {
+      const v = target[k]!, base = setup ? setup[k]! : 0;
+      if (alpha === 1) out[k] = blend === "add" ? out[k]! + v - base : v;
+      else if (blend === "setup") out[k] = setup ? base + (v - base) * alpha : v * alpha;
+      else if (blend === "add") out[k] = out[k]! + (v - base) * alpha;
+      else out[k] = out[k]! + (v - out[k]!) * alpha;
+    }
+    this.deform[t.slot] = out;
+  }
+
+  /**
+   * An attachment timeline at `time` (spine-core's `applyAttachmentTimeline`).
+   * Before its first key it resets to the setup attachment only from the
+   * setup pose. An animation mixing out of a crossfade sets attachments too,
+   * so its deform keys find theirs, but without `attachments` they go back
+   * to the setup pose at the end of the pose unless another timeline sets
+   * them (`settleAttachments`).
+   */
+  applyAttachment(t: Extract<Timeline, { kind: "attachment" }>, time: number, blend: Blend, attachments: boolean): void {
+    if (!this.active[this.data.slots[t.slot]!.bone]) return;
+    const i = keyAt(t.times, time);
+    if (i < 0) { if (blend === "setup" || blend === "first") this.setAttachment(t.slot, this.data.slots[t.slot]!.attachment); }
+    else this.setAttachment(t.slot, t.names[i]!);
+    if (attachments) this.attachmentMark[t.slot] = 2;
+    else if (this.attachmentMark[t.slot]! < 1) this.attachmentMark[t.slot] = 1;
+  }
+
+  /** Slots an outgoing animation alone set go back to their setup attachment. */
+  settleAttachments(): void {
+    this.attachmentMark.forEach((m, slot) => { if (m === 1) this.setAttachment(slot, this.data.slots[slot]!.attachment); });
+    this.attachmentMark.fill(0);
+  }
+
+  /**
+   * A rotate timeline mixed in by `alpha` < 1 (spine-core's
+   * `applyRotateTimeline`): the bone turns the short way toward the key, and
+   * keeps turning the way it started when the short way flips across a half
+   * turn during the mix. `memory[at]` and `memory[at + 1]` keep the total
+   * turn and the last difference between frames; `first` starts them.
+   */
+  applyRotate(t: Extract<Timeline, { kind: "bone" }>, time: number, alpha: number, blend: Blend, memory: Float64Array, at: number, first: boolean): void {
+    if (first) memory[at] = 0;
+    if (alpha === 1) { this.applyTimeline(t, time, 1, blend, false); return; }
+    if (!this.active[t.bone]) return;
+    const b = this.data.bones[t.bone]!, l = t.bone * 7 + 2, L = this.local;
+    let r1: number, r2: number;
+    if (time < t.channel.times[0]!) {
+      if (blend === "setup") { L[l] = b.rotation; return; }
+      if (blend !== "first") return;
+      r1 = L[l]!;
+      r2 = b.rotation;
+    } else {
+      r1 = blend === "setup" ? b.rotation : L[l]!;
+      r2 = b.rotation + sample(t.channel, time)!;
+    }
+    let total: number, diff = r2 - r1;
+    diff -= Math.ceil(diff / 360 - 0.5) * 360;
+    if (diff === 0) total = memory[at]!;
+    else {
+      const lastTotal = first ? 0 : memory[at]!, lastDiff = first ? diff : memory[at + 1]!;
+      const loops = lastTotal - (lastTotal % 360);
+      total = diff + loops;
+      const current = diff >= 0;
+      let dir = lastTotal >= 0;
+      if (Math.abs(lastDiff) <= 90 && Math.sign(lastDiff) !== Math.sign(diff)) {
+        if (Math.abs(lastTotal - loops) > 180) {
+          total += 360 * Math.sign(lastTotal);
+          dir = current;
+        } else if (loops !== 0) total -= 360 * Math.sign(lastTotal);
+        else dir = current;
+      }
+      if (dir !== current) total += 360 * Math.sign(lastTotal);
+      memory[at] = total;
+    }
+    memory[at + 1] = diff;
+    L[l] = r1 + total * alpha;
   }
 
   /**
@@ -244,6 +404,9 @@ export class Rig {
         this.ensure(k.source);
         for (const b of k.bones) this.ensure(b);
         solveTransform(this, k, this.transform[i]!);
+      } else if (k.kind === "slider") {
+        if (k.bone >= 0) this.ensure(k.bone);
+        solveSlider(this, k, this.slider[i]!);
       } else {
         this.ensure(this.data.slots[k.slot]!.bone);
         const path = this.attachmentOf(k.slot);
@@ -270,6 +433,14 @@ export class Rig {
     this.local.set([x, y, rotation, scaleX, scaleY, shearX, shearY], bone * 7);
     this.updateBone(bone);
     this.dirty[bone] = 0;
+    this.stale(bone);
+  }
+
+  /** A slider's animation changed the bone's local pose: it and what is
+   *  under it rebuild when next read. */
+  touched(bone: number): void {
+    if (!this.active[bone]) return;
+    this.dirty[bone] = 1;
     this.stale(bone);
   }
 
@@ -572,4 +743,32 @@ function weightedBones(att: MeshData | PathData): Set<number> {
     for (let j = 0; j < n; j++, i += 4) out.add(v[i]!);
   }
   return out;
+}
+
+/** How a timeline mixes: from the setup pose, from the current value
+ *  ("first" fading back to the setup pose before its first key), or added. */
+export type Blend = "setup" | "first" | "replace" | "add";
+
+const PROP_OFFSET = { x: 0, y: 1, rotate: 2, scaleX: 3, scaleY: 4, shearX: 5, shearY: 6 } as const;
+const PROP_FIELD = { x: "x", y: "y", rotate: "rotation", scaleX: "scaleX", scaleY: "scaleY", shearX: "shearX", shearY: "shearY" } as const;
+
+/** An absolute value (a constraint's mix, a path's position) mixed by
+ *  `alpha`; `value` null before the timeline's first key. */
+function absoluteValue(value: number | null, alpha: number, blend: Blend, current: number, setup: number): number {
+  if (value === null) return blend === "setup" ? setup : blend === "first" ? current + (setup - current) * alpha : current;
+  return blend === "setup" ? setup + (value - setup) * alpha : current + (value - current) * alpha;
+}
+
+/**
+ * A scale key's value (already times the setup scale) mixed by `alpha`.
+ * Mixing never passes through 0: going in, the base takes the key's sign;
+ * going out, the key takes the base's.
+ */
+function scaleValue(value: number, alpha: number, blend: Blend, out: boolean, current: number, setup: number): number {
+  if (alpha === 1) return blend === "add" ? current + value - setup : value;
+  if (blend === "add") return current + (value - setup) * alpha;
+  const base = blend === "setup" ? setup : current;
+  if (out) return base + (Math.abs(value) * Math.sign(base) - base) * alpha;
+  const s = Math.abs(base) * Math.sign(value);
+  return s + (value - s) * alpha;
 }

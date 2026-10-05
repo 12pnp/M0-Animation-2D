@@ -313,3 +313,69 @@ describe("two-colour tint against spine-core", () => {
     compare("two-colour", rig, EMPTY_ATLAS, undefined, undefined, true);
   });
 });
+
+interface SliderCase { name: string; slider: Json; keys?: Json; before?: Json[]; after?: Json[] }
+
+/** A driver bone that turns, moves and scales; a slider playing "pose",
+ *  which moves, turns and scales two bones, tints a slot, swaps its
+ *  attachment and keys an IK mix. */
+function sliderRig(c: SliderCase): Json {
+  const turn = Array.from({ length: 11 }, (_, i) => ({ time: i / 5, value: -100 + i * 45 }));
+  const move = Array.from({ length: 11 }, (_, i) => ({ time: i / 5, x: i * 9 - 40, y: (i % 3) * 15 }));
+  const scale = Array.from({ length: 11 }, (_, i) => ({ time: i / 5, x: 0.5 + i * 0.1, y: 1.5 - i * 0.05 }));
+  return {
+    skeleton: { spine: "4.3.0", fps: 30 },
+    bones: [
+      { name: "root" }, { name: "parent", parent: "root", rotation: 25, scaleX: 1.2 },
+      { name: "drv", parent: "parent", x: 10, y: 5, shearY: 8 },
+      { name: "a", parent: "root", x: 30, length: 40 }, { name: "b", parent: "a", x: 40, length: 30 },
+      { name: "goal", parent: "root", x: 70, y: 20 },
+    ],
+    slots: [{ name: "s", bone: "a", color: "ffffffff" }],
+    constraints: [
+      ...(c.before ?? []),
+      { type: "slider", name: "sl", animation: "pose", ...c.slider },
+      ...(c.after ?? []),
+    ],
+    animations: {
+      pose: {
+        bones: {
+          a: { rotate: [{ value: 0 }, { time: 1, value: 90 }], translate: [{ x: 0 }, { time: 1, x: 20, y: -10 }] },
+          b: { scale: [{ x: 1 }, { time: 1, x: 2, y: 0.5 }], shear: [{ x: 0 }, { time: 0.5, x: 15, y: -10 }] },
+        },
+        slots: { s: { rgba: [{ color: "ff0000ff" }, { time: 1, color: "0000ff80" }] } },
+        ik: { k: [{ mix: 0 }, { time: 1, mix: 1 }] },
+      },
+      drive: {
+        bones: { drv: { rotate: turn, translate: move, scale } },
+        ...(c.keys ? { slider: { sl: c.keys } } : {}),
+      },
+    },
+  };
+}
+
+const IK_AFTER = [{ type: "ik", name: "k", bones: ["a", "b"], target: "goal" }];
+const SLIDER_CASES: SliderCase[] = [
+  { name: "its own time", slider: { time: 0.4 }, after: IK_AFTER },
+  { name: "its own time, half mixed, looping past the end", slider: { time: 1.4, mix: 0.5, loop: true }, after: IK_AFTER },
+  { name: "additive", slider: { time: 0.7, additive: true, mix: 0.6 }, after: IK_AFTER },
+  ...(["rotate", "x", "y", "scaleX", "scaleY", "shearY"] as const).flatMap((property) => [false, true].map((local): SliderCase => ({
+    name: `${property}, ${local ? "local" : "world"}`,
+    slider: { bone: "drv", property, local, scale: property === "rotate" || property === "shearY" ? 0.01 : property.startsWith("scale") ? 0.8 : 0.02, from: 0.1, to: 0.05, loop: property === "rotate" },
+    after: IK_AFTER,
+  }))),
+  { name: "bone-driven below 0, looping", slider: { bone: "drv", property: "x", local: true, scale: 0.05, to: -1, loop: true }, after: IK_AFTER },
+  { name: "keyed time and mix", slider: {}, keys: { time: [{ value: 0 }, { time: 2, value: 1.2, curve: [0.5, 0, 1, 0.5] }], mix: [{ value: 0.2 }, { time: 1, value: 1 }] }, after: IK_AFTER },
+  { name: "before an IK it keys", slider: { time: 0.5 }, before: [], after: IK_AFTER },
+  { name: "after the IK", slider: { time: 0.5 }, before: IK_AFTER },
+];
+
+describe("sliders against spine-core", () => {
+  for (const c of SLIDER_CASES) {
+    it(c.name, () => {
+      const rig = sliderRig(c);
+      expect(compare(c.name, rig, EMPTY_ATLAS).bones).toBeGreaterThan(0);
+      expect(compare(c.name, rig, EMPTY_ATLAS, undefined, undefined, true).bones).toBeGreaterThan(0);
+    });
+  }
+});

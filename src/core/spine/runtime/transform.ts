@@ -16,8 +16,17 @@ const wrapPi = (v: number) => (v > PI ? v - 2 * PI : v < -PI ? v + 2 * PI : v);
 
 /** The source's value of `prop`, offset by the constraint's own offsets. */
 function read(rig: Rig, k: TransformData, prop: TransformProp): number {
-  const s = k.source, o = k.offsets;
-  if (k.localSource) {
+  return boneProperty(rig, k.source, prop, k.localSource, k.offsets);
+}
+
+const NO_OFFSETS: Record<TransformProp, number> = { rotate: 0, x: 0, y: 0, scaleX: 0, scaleY: 0, shearY: 0 };
+
+/**
+ * A bone's `prop`, as a transform constraint or slider reads it: its local
+ * value, or in the world, in the skeleton's unscaled space — plus `o`.
+ */
+export function boneProperty(rig: Rig, s: number, prop: TransformProp, local: boolean, o: Record<TransformProp, number> = NO_OFFSETS): number {
+  if (local) {
     const L = rig.local, l = s * 7;
     switch (prop) {
       case "rotate": return L[l + 2]! + o.rotate;

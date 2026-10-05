@@ -157,7 +157,11 @@ export interface Channel {
 
 export type BoneProp = "rotate" | "x" | "y" | "scaleX" | "scaleY" | "shearX" | "shearY";
 
-export type Timeline =
+/** A timeline of ours, from one of the file's (`unit`), whose property ids
+ *  (`ids`) decide how it mixes with another animation's (`Track`). */
+export type Timeline = TimelineBody & { unit: number; ids: string[] };
+
+export type TimelineBody =
   | { kind: "bone"; bone: number; prop: BoneProp; channel: Channel }
   /** One colour channel of a slot: 0 r, 1 g, 2 b, 3 a; 4 5 6 the dark colour's r g b. */
   | { kind: "color"; slot: number; index: number; channel: Channel }
@@ -171,6 +175,8 @@ export type Timeline =
   | { kind: "ik"; constraint: number; times: number[]; mix: Channel; softness: Channel; bendPositive: boolean[]; compress: boolean[]; stretch: boolean[] }
   /** Events, fired as the track passes their keys (`Track`). */
   | { kind: "event"; times: number[]; events: EventFire[] }
+  /** A slider's time or mix, curved, absolute. */
+  | { kind: "sliderTime" | "sliderMix"; constraint: number; times: number[]; channel: Channel }
   /** A path constraint's position, spacing, or mixes (rotate, x, y), curved. */
   | { kind: "pathPosition" | "pathSpacing"; constraint: number; times: number[]; channel: Channel }
   | { kind: "pathMix"; constraint: number; times: number[]; rotate: Channel; x: Channel; y: Channel }
@@ -186,6 +192,10 @@ export interface AnimationData {
   /** Seconds: the last key's time on any timeline, supported or not. */
   duration: number;
   timelines: Timeline[];
+  /** How many of the file's timelines `timelines` came from. */
+  units: number;
+  /** Every property id its timelines set. */
+  ids: Set<string>;
 }
 
 /** How an IK stretch or squash carries to the bone's y scale. */
@@ -251,8 +261,37 @@ export interface PathConstraintData {
   skinRequired: boolean;
 }
 
+/**
+ * Spine 4.3's slider: it plays an animation at a time — its own, or read off
+ * a bone's property: `to + (value − from) × scale` — mixed in by `mix`,
+ * from the current pose or added. Measured against spine-core: the property
+ * is read as a transform constraint reads it (no offsets); a time below 0 is
+ * 0, except that a bone-driven time that loops wraps into the animation,
+ * negative ones included; `max` changes nothing played.
+ */
+export interface SliderData {
+  kind: "slider";
+  name: string;
+  /** Index in `RigData.animations`. */
+  animation: number;
+  /** The bone whose property sets the time, or -1. */
+  bone: number;
+  property: TransformProp;
+  local: boolean;
+  from: number;
+  to: number;
+  scale: number;
+  loop: boolean;
+  additive: boolean;
+  time: number;
+  mix: number;
+  skinRequired: boolean;
+  /** The bones its animation keys, to rebuild after it. */
+  bones: number[];
+}
+
 /** Every constraint, in the order they apply. */
-export type ConstraintData = IkData | TransformData | PathConstraintData;
+export type ConstraintData = IkData | TransformData | PathConstraintData | SliderData;
 
 /**
  * A transform constraint's mixes, as spine-core 4.3.13 reads them (measured):
@@ -352,6 +391,8 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
 
   const constraints: ConstraintData[] = [];
   const constraintIndex = new Map<string, number>();
+  // A slider names its animation, which is read later.
+  const sliderAnimations = new Map<number, string>();
   // 4.3 lists every constraint in one array, in order; older files kept one
   // list per kind.
   const declared: Json[] = [
@@ -417,6 +458,18 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
         mixRotate: num(k.mixRotate, 1), mixX, mixY: num(k.mixY, mixX),
         skinRequired: k.skin === true,
       });
+    } else if (type === "slider") {
+      const bone = typeof k.bone === "string" ? boneIndex.get(k.bone) : undefined;
+      if (typeof k.bone === "string" && bone === undefined) { unsupported.add("sliders with unknown bones"); continue; }
+      constraintIndex.set(name, constraints.length);
+      constraints.push({
+        kind: "slider", name, animation: -1, bone: bone ?? -1,
+        property: (TRANSFORM_PROPS as readonly string[]).includes(k.property as string) ? k.property as TransformProp : "rotate",
+        local: k.local === true, from: num(k.from, 0), to: num(k.to, 0), scale: num(k.scale, 1),
+        loop: k.loop === true, additive: k.additive === true, time: num(k.time, 0), mix: num(k.mix, 1),
+        skinRequired: k.skin === true, bones: [],
+      });
+      sliderAnimations.set(constraints.length - 1, String(k.animation));
     } else {
       unsupported.add(`${type} constraints`);
     }
@@ -475,6 +528,13 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
   const animations: AnimationData[] = [];
   for (const [name, raw] of Object.entries(obj(file.animations))) {
     animations.push(readAnimation(name, obj(raw), boneIndex, slotIndex, constraintIndex, slots.length, skins, eventData, unsupported));
+  }
+
+  for (const [i, animName] of sliderAnimations) {
+    const k = constraints[i] as SliderData;
+    k.animation = animations.findIndex((a) => a.name === animName);
+    if (k.animation < 0) { unsupported.add("sliders without their animation"); continue; }
+    k.bones = [...new Set(animations[k.animation]!.timelines.flatMap((t) => (t.kind === "bone" || t.kind === "inherit" ? [t.bone] : [])))];
   }
 
   return {
@@ -741,12 +801,70 @@ const BONE_TIMELINES: Record<string, { props: BoneProp[]; fields: string[]; neut
   sheary: { props: ["shearY"], fields: ["value"], neutral: 0 },
 };
 
+/** A stable number per attachment, for the property ids of its deform and sequence keys. */
+const attachmentIds = new WeakMap<object, number>();
+let nextAttachmentId = 1;
+function attachmentId(a: object): number {
+  let id = attachmentIds.get(a);
+  if (id === undefined) attachmentIds.set(a, (id = nextAttachmentId++));
+  return id;
+}
+
+/** The property ids a bone timeline kind sets, as the mix's hold modes count them. */
+const BONE_IDS: Record<string, string[]> = {
+  rotate: ["r"], translate: ["x", "y"], translatex: ["x"], translatey: ["y"],
+  scale: ["sx", "sy"], scalex: ["sx"], scaley: ["sy"], shear: ["hx", "hy"], shearx: ["hx"], sheary: ["hy"],
+};
+
 function readAnimation(
   name: string, raw: Json, boneIndex: Map<string, number>, slotIndex: Map<string, number>,
   constraintIndex: Map<string, number>, slotCount: number, skins: SkinData[],
   eventData: Map<string, EventFire>, unsupported: Set<string>,
 ): AnimationData {
   const timelines: Timeline[] = [];
+  // Each of the file's timelines is one unit, which may be several of ours
+  // (one per value channel); a unit's property ids decide its hold mode.
+  let units = 0, sealed = 0;
+  const seal = (ids: string[]) => {
+    const unit = units++;
+    for (let i = sealed; i < timelines.length; i++) Object.assign(timelines[i]!, { unit, ids });
+    sealed = timelines.length;
+  };
+  const push = (t: TimelineBody) => timelines.push(t as Timeline);
+
+  // In spine-core's order: slots, bones, constraints, attachments, draw order, events.
+  for (const [slotName, groups] of Object.entries(obj(raw.slots))) {
+    const slot = slotIndex.get(slotName);
+    if (slot === undefined) continue;
+    for (const [kind, keysRaw] of Object.entries(obj(groups))) {
+      const keys = list(keysRaw);
+      if (!keys.length) continue;
+      if (kind === "attachment") {
+        push({
+          kind: "attachment", slot, times: keys.map((k) => Math.fround(num(k.time, 0))),
+          names: keys.map((k) => (typeof k.name === "string" ? k.name : null)),
+        });
+        seal([`attachment ${slot}`]);
+      } else if (kind === "rgba" || kind === "rgb") {
+        const n = kind === "rgba" ? 4 : 3;
+        const chans = channels(keys, n, (k, i) => parseColor(k.color)[i]!);
+        chans.forEach((channel, index) => push({ kind: "color", slot, index, channel }));
+        seal(kind === "rgba" ? [`rgb ${slot}`, `alpha ${slot}`] : [`rgb ${slot}`]);
+      } else if (kind === "rgba2" || kind === "rgb2") {
+        // The light colour's channels, then the dark's r g b.
+        const light = kind === "rgba2" ? 4 : 3;
+        const chans = channels(keys, light + 3, (k, i) => (i < light ? parseColor(k.light)[i]! : parseColor(k.dark)[i - light]!));
+        chans.forEach((channel, i) => push({ kind: "color", slot, index: i < light ? i : 4 + i - light, channel }));
+        seal(kind === "rgba2" ? [`rgb ${slot}`, `alpha ${slot}`, `rgb2 ${slot}`] : [`rgb ${slot}`, `rgb2 ${slot}`]);
+      } else if (kind === "alpha") {
+        const [channel] = channels(keys, 1, (k) => num(k.value, 1));
+        push({ kind: "color", slot, index: 3, channel: channel! });
+        seal([`alpha ${slot}`]);
+      } else {
+        unsupported.add(`${kind} keys`);
+      }
+    }
+  }
 
   for (const [boneName, groups] of Object.entries(obj(raw.bones))) {
     const bone = boneIndex.get(boneName);
@@ -755,54 +873,68 @@ function readAnimation(
       const keys = list(keysRaw);
       if (!keys.length) continue;
       if (kind === "inherit") {
-        timelines.push({
+        push({
           kind: "inherit", bone, times: keys.map((k) => Math.fround(num(k.time, 0))),
           modes: keys.map((k) => (typeof k.inherit === "string" ? k.inherit : "normal") as SpineInherit),
         });
+        seal([`inherit ${bone}`]);
         continue;
       }
       const spec = BONE_TIMELINES[kind];
       if (!spec) { unsupported.add(`${kind} keys`); continue; }
       const chans = channels(keys, spec.props.length, (k, i) => num(k[spec.fields[i]!], spec.neutral));
-      spec.props.forEach((prop, i) => timelines.push({ kind: "bone", bone, prop, channel: chans[i]! }));
+      spec.props.forEach((prop, i) => push({ kind: "bone", bone, prop, channel: chans[i]! }));
+      seal(BONE_IDS[kind]!.map((id) => `${id} ${bone}`));
     }
   }
 
-  for (const [slotName, groups] of Object.entries(obj(raw.slots))) {
-    const slot = slotIndex.get(slotName);
-    if (slot === undefined) continue;
+  for (const [constraintName, keysRaw] of Object.entries(obj(raw.ik))) {
+    const constraint = constraintIndex.get(constraintName);
+    const keys = list(keysRaw);
+    if (constraint === undefined || !keys.length) continue;
+    // Absolute values; a key without one takes the default, not the setup value.
+    const [mix, softness] = channels(keys, 2, (k, i) => (i === 0 ? num(k.mix, 1) : num(k.softness, 0)));
+    push({
+      kind: "ik", constraint, times: mix!.times, mix: mix!, softness: softness!,
+      bendPositive: keys.map((k) => k.bendPositive !== false),
+      compress: keys.map((k) => k.compress === true),
+      stretch: keys.map((k) => k.stretch === true),
+    });
+    seal([`ik ${constraint}`]);
+  }
+
+  for (const [constraintName, keysRaw] of Object.entries(obj(raw.transform))) {
+    const constraint = constraintIndex.get(constraintName);
+    const keys = list(keysRaw);
+    if (constraint === undefined || !keys.length) continue;
+    const mixes = keys.map(keyMixes);
+    const chans = channels(keys, 6, (_, i, at) => mixes[at]![TRANSFORM_PROPS[i]!]);
+    push({
+      kind: "transform", constraint, times: chans[0]!.times,
+      mixes: Object.fromEntries(TRANSFORM_PROPS.map((p, i) => [p, chans[i]!])) as Record<TransformProp, Channel>,
+    });
+    seal([`transform ${constraint}`]);
+  }
+
+  for (const [constraintName, groups] of Object.entries(obj(raw.path))) {
+    const constraint = constraintIndex.get(constraintName);
+    if (constraint === undefined) continue;
     for (const [kind, keysRaw] of Object.entries(obj(groups))) {
       const keys = list(keysRaw);
       if (!keys.length) continue;
-      if (kind === "attachment") {
-        timelines.push({
-          kind: "attachment", slot, times: keys.map((k) => Math.fround(num(k.time, 0))),
-          names: keys.map((k) => (typeof k.name === "string" ? k.name : null)),
+      if (kind === "position" || kind === "spacing") {
+        const [channel] = channels(keys, 1, (k) => num(k.value, 0));
+        push({ kind: kind === "position" ? "pathPosition" : "pathSpacing", constraint, times: channel!.times, channel: channel! });
+        seal([`path ${kind} ${constraint}`]);
+      } else if (kind === "mix") {
+        const [rotate, x, y] = channels(keys, 3, (k, i) => {
+          const mx = num(k.mixX, 1);
+          return i === 0 ? num(k.mixRotate, 1) : i === 1 ? mx : num(k.mixY, mx);
         });
-      } else if (kind === "rgba" || kind === "rgb") {
-        const n = kind === "rgba" ? 4 : 3;
-        const chans = channels(keys, n, (k, i) => parseColor(k.color)[i]!);
-        chans.forEach((channel, index) => timelines.push({ kind: "color", slot, index, channel }));
-      } else if (kind === "rgba2" || kind === "rgb2") {
-        // The light colour's channels, then the dark's r g b.
-        const light = kind === "rgba2" ? 4 : 3;
-        const chans = channels(keys, light + 3, (k, i) => (i < light ? parseColor(k.light)[i]! : parseColor(k.dark)[i - light]!));
-        chans.forEach((channel, i) => timelines.push({ kind: "color", slot, index: i < light ? i : 4 + i - light, channel }));
-      } else if (kind === "alpha") {
-        const [channel] = channels(keys, 1, (k) => num(k.value, 1));
-        timelines.push({ kind: "color", slot, index: 3, channel: channel! });
-      } else {
-        unsupported.add(`${kind} keys`);
-      }
+        push({ kind: "pathMix", constraint, times: rotate!.times, rotate: rotate!, x: x!, y: y! });
+        seal([`path mix ${constraint}`]);
+      } else unsupported.add(`path ${kind} keys`);
     }
-  }
-
-  const drawOrder = list(raw.drawOrder ?? raw.draworder);
-  if (drawOrder.length) {
-    timelines.push({
-      kind: "drawOrder", times: drawOrder.map((k) => Math.fround(num(k.time, 0))),
-      orders: drawOrder.map((k) => (Array.isArray(k.offsets) ? orderFromOffsets(list(k.offsets), slotIndex, slotCount) : null)),
-    });
   }
 
   for (const [skinName, bySlot] of Object.entries(obj(raw.attachments))) {
@@ -816,72 +948,39 @@ function readAnimation(
         for (const [kind, keysRaw] of Object.entries(obj(groups))) {
           const keys = list(keysRaw);
           if (!keys.length) continue;
-          if (kind === "deform" && attachment.kind !== "region") timelines.push(readDeform(slot, attachment, keys));
-          else if (kind === "sequence") {
+          if (kind === "deform" && attachment.kind !== "region") {
+            push(readDeform(slot, attachment, keys));
+            seal([`deform ${slot} ${attachmentId(attachment)}`]);
+          } else if (kind === "sequence") {
             // A key without a delay keeps the one before it; mode and index
             // do not carry (measured against spine-core).
             let delay = 0;
             const delays = keys.map((k) => (delay = typeof k.delay === "number" ? Math.fround(k.delay) : delay));
-            timelines.push({
+            push({
               kind: "sequence", slot, attachment, times: keys.map((k) => Math.fround(num(k.time, 0))),
               modes: keys.map((k) => (typeof k.mode === "string" ? k.mode : "hold") as SequenceMode),
               indices: keys.map((k) => num(k.index, 0)),
               delays,
             });
+            seal([`sequence ${slot} ${attachmentId(attachment)}`]);
           } else unsupported.add(`${kind} keys`);
         }
       }
     }
   }
 
-  for (const [constraintName, keysRaw] of Object.entries(obj(raw.ik))) {
-    const constraint = constraintIndex.get(constraintName);
-    const keys = list(keysRaw);
-    if (constraint === undefined || !keys.length) continue;
-    // Absolute values; a key without one takes the default, not the setup value.
-    const [mix, softness] = channels(keys, 2, (k, i) => (i === 0 ? num(k.mix, 1) : num(k.softness, 0)));
-    timelines.push({
-      kind: "ik", constraint, times: mix!.times, mix: mix!, softness: softness!,
-      bendPositive: keys.map((k) => k.bendPositive !== false),
-      compress: keys.map((k) => k.compress === true),
-      stretch: keys.map((k) => k.stretch === true),
+  const drawOrder = list(raw.drawOrder ?? raw.draworder);
+  if (drawOrder.length) {
+    push({
+      kind: "drawOrder", times: drawOrder.map((k) => Math.fround(num(k.time, 0))),
+      orders: drawOrder.map((k) => (Array.isArray(k.offsets) ? orderFromOffsets(list(k.offsets), slotIndex, slotCount) : null)),
     });
-  }
-
-  for (const [constraintName, keysRaw] of Object.entries(obj(raw.transform))) {
-    const constraint = constraintIndex.get(constraintName);
-    const keys = list(keysRaw);
-    if (constraint === undefined || !keys.length) continue;
-    const mixes = keys.map(keyMixes);
-    const chans = channels(keys, 6, (_, i, at) => mixes[at]![TRANSFORM_PROPS[i]!]);
-    timelines.push({
-      kind: "transform", constraint, times: chans[0]!.times,
-      mixes: Object.fromEntries(TRANSFORM_PROPS.map((p, i) => [p, chans[i]!])) as Record<TransformProp, Channel>,
-    });
-  }
-
-  for (const [constraintName, groups] of Object.entries(obj(raw.path))) {
-    const constraint = constraintIndex.get(constraintName);
-    if (constraint === undefined) continue;
-    for (const [kind, keysRaw] of Object.entries(obj(groups))) {
-      const keys = list(keysRaw);
-      if (!keys.length) continue;
-      if (kind === "position" || kind === "spacing") {
-        const [channel] = channels(keys, 1, (k) => num(k.value, 0));
-        timelines.push({ kind: kind === "position" ? "pathPosition" : "pathSpacing", constraint, times: channel!.times, channel: channel! });
-      } else if (kind === "mix") {
-        const [rotate, x, y] = channels(keys, 3, (k, i) => {
-          const mx = num(k.mixX, 1);
-          return i === 0 ? num(k.mixRotate, 1) : i === 1 ? mx : num(k.mixY, mx);
-        });
-        timelines.push({ kind: "pathMix", constraint, times: rotate!.times, rotate: rotate!, x: x!, y: y! });
-      } else unsupported.add(`path ${kind} keys`);
-    }
+    seal(["drawOrder"]);
   }
 
   const events = list(raw.events).filter((k) => eventData.has(String(k.name)));
   if (events.length) {
-    timelines.push({
+    push({
       kind: "event", times: events.map((k) => Math.fround(num(k.time, 0))),
       events: events.map((k): EventFire => {
         const e = eventData.get(String(k.name))!;
@@ -893,12 +992,23 @@ function readAnimation(
         };
       }),
     });
+    seal(["event"]);
   }
-  for (const group of ["physics", "slider"]) {
-    if (Object.keys(obj(raw[group])).length) unsupported.add(`${group} keys`);
+  for (const [constraintName, groups] of Object.entries(obj(raw.slider))) {
+    const constraint = constraintIndex.get(constraintName);
+    if (constraint === undefined) continue;
+    for (const [kind, keysRaw] of Object.entries(obj(groups))) {
+      const keys = list(keysRaw);
+      if (!keys.length) continue;
+      if (kind !== "time" && kind !== "mix") { unsupported.add(`slider ${kind} keys`); continue; }
+      const [channel] = channels(keys, 1, (k) => num(k.value, kind === "mix" ? 1 : 0));
+      push({ kind: kind === "time" ? "sliderTime" : "sliderMix", constraint, times: channel!.times, channel: channel! });
+      seal([`slider ${kind} ${constraint}`]);
+    }
   }
+  if (Object.keys(obj(raw.physics)).length) unsupported.add("physics keys");
 
-  return { name, duration: lastTime(raw), timelines };
+  return { name, duration: lastTime(raw), timelines, units, ids: new Set(timelines.flatMap((t) => t.ids)) };
 }
 
 /**
@@ -907,7 +1017,7 @@ function readAnimation(
  * the pose reads it as positions), a weighted one's as the values alone. As
  * the runtime does, both in 32-bit floats.
  */
-function readDeform(slot: number, mesh: MeshData | PathData | ClippingData, keys: Json[]): Timeline {
+function readDeform(slot: number, mesh: MeshData | PathData | ClippingData, keys: Json[]): TimelineBody {
   const times = keys.map((k) => Math.fround(num(k.time, 0)));
   const vertices = keys.map((k) => {
     const out = new Float64Array(mesh.deformLength);

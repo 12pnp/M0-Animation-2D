@@ -12,9 +12,9 @@ import { type TwoColor, twoColorShader } from "./twoColor";
  * our own reader and pose (`core/spine/runtime/`), drawn as one Pixi mesh per
  * slot. Not the default yet; `animo.previewRuntime` = "boneburst" turns it on.
  *
- * The track (`core/spine/runtime/track.ts`) cuts between queued animations
- * instead of crossfading; what else a file holds that it does not play is in
- * `unsupported`.
+ * The track (`core/spine/runtime/track.ts`) plays, queues and crossfades as
+ * spine-core's `AnimationState`; what a file holds that it does not play yet
+ * is in `unsupported`.
  */
 export function boneburstRig(src: RigSource): PreviewRig {
   const atlas = readAtlas(src.atlas);
@@ -30,7 +30,6 @@ export function boneburstRig(src: RigSource): PreviewRig {
   rig.scaleY = -1;
   rig.setSkins(src.skins);
   const unsupported = [...rig.data.unsupported];
-  const flag = (what: string) => { if (!unsupported.includes(what)) unsupported.push(what); };
 
   const display = new PIXI.Container();
   const slotLayer = new PIXI.Container();
@@ -199,7 +198,6 @@ export function boneburstRig(src: RigSource): PreviewRig {
     queue(steps) {
       const resolved = steps.map((step) => ({ anim: find(step.name)!, loop: step.loop, mix: step.mix })).filter((s) => s.anim);
       if (!resolved.length) return;
-      if (resolved.some((s) => s.mix > 0)) flag("crossfades (queued animations cut instead)");
       track.queue(resolved);
       pose();
     },

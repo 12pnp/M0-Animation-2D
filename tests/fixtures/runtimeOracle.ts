@@ -20,7 +20,7 @@ import type { ItemId } from "@/core/doc/ids";
 export type Json = Record<string, unknown>;
 
 /** What the runtime does not solve yet, kept out of the file both read. */
-const NOT_YET = ["physics", "slider"];
+const NOT_YET = ["physics"];
 
 /** The file both runtimes read: what the runtime does not solve yet taken out. */
 export function solvable(file: Json): Json {
