@@ -144,6 +144,8 @@
 .prow input[type="text"], .prow input[type="number"], .prow select { width: 100%; }
 .prow .unit { color: var(--fg-dim); flex: none; }
 .prow.wide { grid-template-columns: 1fr; }
+.prow .fields.corder .corder-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.prow .fields.corder .iconbtn { flex: none; font-size: 9px; }
 
 /* Field with a leading glyph, e.g. X / Y / W / H */
 .field {
@@ -424,9 +426,11 @@
 }
 .preview-event b { color: #ffb35c; font-weight: 600; }
 .preview-event.gone { opacity: 0; }
-.preview-mixbar { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; padding: 4px 6px; border-top: 1px solid var(--line); font-size: 11px; color: var(--fg-dim); }
+.preview-mixbar { display: flex; flex-direction: column; gap: 4px; max-height: 40%; overflow-y: auto; flex: none; padding: 4px 6px; border-top: 1px solid var(--line); font-size: 11px; color: var(--fg-dim); }
 .preview-mixbar[hidden] { display: none; }
-.preview-mixbar select { flex: 1 1 80px; min-width: 60px; }
+.preview-queue-row { display: flex; align-items: center; gap: 5px; }
+.preview-queue-row select { flex: 1 1 80px; min-width: 60px; }
+.preview-queue-n { width: 12px; text-align: right; flex: none; }
 .preview-mix-dur { width: 52px; }
 .events-panel .events-sep { height: 1px; background: var(--line); margin: 4px 0; opacity: 0.5; }
 .events-panel .events-keyname { color: #ffb35c; }

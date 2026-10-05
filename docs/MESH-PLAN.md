@@ -1,6 +1,6 @@
 # Meshes (Spine parity, phase D)
 
-Done (2026-10-05): ARCHITECTURE ▸ Meshes. The Unity check is still to run.
+Done (2026-10-05): ARCHITECTURE ▸ Meshes. Checked in Unity in phase H (ARCHITECTURE ▸ Checked in Unity).
 
 docs/SPINE-PARITY-PLAN.md ▸ Phase D. An image becomes a mesh: its outline and inner points
 triangulated, the points bound to bones by weights, and moved per frame by deform keys, as

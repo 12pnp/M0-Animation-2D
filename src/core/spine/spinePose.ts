@@ -91,7 +91,7 @@ function structureKey(project: Project, sym: SymbolItem): string {
   // A slider's animation is in the rig whole (`setupOnly`): its keys are structure.
   // Deform and sequence keys are in the rig too.
   const anims = sym.animations.map((a) => [a.name, idOf(a.spine), sym.sliders?.some((k) => k.animId === a.id) ? JSON.stringify(a) : 0, JSON.stringify([a.deforms, a.sequences])]);
-  const others = [idOf(sym.physics), idOf(sym.sliders), idOf(sym.paths)];
+  const others = [idOf(sym.physics), idOf(sym.sliders), idOf(sym.paths), sym.constraintOrder ?? null];
   return JSON.stringify([idOf(sym.spine), idOf(sym.skins), project.frameRate, nodes, layers, ik, tcs, anims, others]);
 }
 

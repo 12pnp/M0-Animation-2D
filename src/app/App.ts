@@ -75,7 +75,7 @@ import { isCycle, seamFrame } from "@/core/doc/cycle";
 import { mayReparent } from "@/view/widgets/ikReparentGuard";
 import { menuAnchor, type MenuEntry, showMenu } from "@/view/widgets/Dock";
 import type { Layer, Node } from "@/core/doc/types";
-import { isImage, isSymbol } from "@/core/doc/types";
+import { isImage, isSymbol, TIMELINE_PROPS } from "@/core/doc/types";
 import { itemsOf } from "@/core/doc/displays";
 import {
     applyEdit,
@@ -180,7 +180,7 @@ export class App {
       () => this.shell.floatPanel("preview"),
       this.sounds,
     );
-    this.timeline = new TimelinePanel(this.store, this.clipboard, () => this.onionPopup());
+    this.timeline = new TimelinePanel(this.store, this.clipboard, () => this.onionPopup(), this.sounds);
     this.graph = new GraphPanel(this.store);
 
     this.registerPanels();
@@ -1615,6 +1615,10 @@ export class App {
       () => !!s.currentAnimation && isCycle(s.currentAnimation));
     reg("timeline.closeLoop", () => doCloseLoop(s, tl.insertTargets()),
       () => !!s.currentAnimation && seamFrame(s.currentAnimation) !== null);
+    reg("timeline.offsetKeys", () => tl.offsetKeys(), () => s.ui.mode === "animate" && !!s.currentAnimation);
+    const canKey = () => s.ui.mode === "animate" && !!s.currentAnimation && s.selection.nodes.length > 0;
+    reg("timeline.keyChanged", () => tl.keySelected("changed"), canKey);
+    reg("timeline.keyAll", () => tl.keySelected(TIMELINE_PROPS, "Key All"), canKey);
 
     // Space rather than ⌘P for the timeline: the two clocks are deliberately
     // not the same thing.

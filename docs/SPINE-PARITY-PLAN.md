@@ -37,7 +37,8 @@ Legend:
   an opened file's sequences carried
 - ✅ Bounding box, point and path attachments: made and edited (box and point nodes, path nodes);
   an opened file's carried
-- ☐ Creating any attachment but a region or a clipping
+- ✅ Creating attachments other than regions and clippings: meshes, bounding boxes, points,
+  paths and sequences (not linked meshes)
 
 ### Skins
 
@@ -59,8 +60,8 @@ Legend:
 - ✅ Slider constraint: an animation played by a bone value or a time
 - ✅ Creating and editing path, physics and slider constraints (opened files' physics and
   sliders become editable; paths stay carried)
-- ☐ Constraint order (Spine's order list); opened rigs keep the file's order
-  (`constraintOrder`)
+- ✅ Constraint order: Properties ▸ Constraints moves one up or down; the stage solves and
+  the export writes in it; an opened file's order is kept (ARCHITECTURE ▸ Constraint order)
 
 ### Animation
 
@@ -79,12 +80,12 @@ Legend:
 - ✅ Graph editor: values over time as curves, with handles (ARCHITECTURE ▸ Graph editor)
 - ✅ Audio: an event's sound kept in the project, exported to `audio/`, played in the
   Preview at its volume and balance
-- ☐ A waveform of an event's sound on the timeline
+- ✅ A waveform of an event's sound on the timeline (the Events row)
 - ✅ Animation mixing: crossfading two animations in the Preview (`AnimationStateData.setMix`)
-- ☐ Offset keys in time across many bones at once (Spine's Offset tool); the frame drag moves
-  whole selections only
-- ☐ Key everything, or key only what changed, from the timeline toolbar (Spine's key
-  buttons per channel group)
+- ✅ Offset keys in time across many layers at once, staggered, wrapped round a cycle
+  (Offset Keys…, ARCHITECTURE ▸ Offset keys)
+- ✅ Key what changed, everything, or one group from the timeline toolbar (the Key button,
+  ARCHITECTURE ▸ Key buttons)
 
 ### Import and export
 
@@ -104,9 +105,8 @@ Legend:
 - ✅ Preview panel runs spine-pixi-v8, the export's own runtime
 - ✅ spine-core parity tests: the stage against the export, frame by frame
 - ✅ Preview mixing (Mix from … over … s, Play Mix) and the fired events listed
-- ☐ Preview animation queue of more than two
-- ☐ Unity check run after each format change in this plan (it has not been rerun since IK
-  keys and softness)
+- ✅ Preview animation queue of any length, each crossfaded into
+- ✅ Unity check rerun after phases A to H (ARCHITECTURE ▸ Checked in Unity)
 
 ## Plan
 
@@ -203,6 +203,15 @@ meshes.
 2. Nonessential data options in Export Settings.
 3. Hand and Zoom tools; Compensate; bone colours in the tree.
 4. Video and sprite-sheet export (desktop build).
+
+### Phase H: animation tools and the rest (done, docs/PHASE-H-PLAN.md)
+
+1. Constraint order, edited and solved in order on the stage.
+2. Offset keys (Spine's Offset tool), staggered and wrapped round a cycle.
+3. The timeline's Key button: what changed, everything, or one group.
+4. Waveforms of event sounds on the Events row.
+5. A Preview queue of any length.
+6. The Unity check rerun on rigs holding every format change since phase 8.
 
 ## Not in scope
 

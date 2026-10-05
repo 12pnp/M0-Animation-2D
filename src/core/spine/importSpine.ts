@@ -304,11 +304,12 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     if (Object.keys(rest).length > 1) carriedSkins.push(rest);
   }
   if (skinDefs.length) sym.skins = skinDefs;
+  // Spine applies them in the file's order.
+  if (constraintsIn.length) sym.constraintOrder = constraintsIn.map((c) => String(c.name));
 
   sym.spine = {
     header: pick(header, (k) => k !== "spine" && k !== "fps") ?? {},
     constraints: carriedConstraints,
-    constraintOrder: constraintsIn.map((c) => String(c.name)),
     skins: carriedSkins,
   };
   // The events become the document's (`SymbolItem.events`).

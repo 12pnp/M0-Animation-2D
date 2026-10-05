@@ -530,6 +530,18 @@
     }
   },
   {
+    "name": "set_constraint_order",
+    "description": "Set the order the symbol's constraints are applied in (Spine's constraint order), in one undoable step: `order` names constraints first to last; the ones it leaves out follow, in the order they had. A constraint applied later reads what the earlier ones did to the bones, e.g. a transform constraint before an IK makes the IK reach from the constrained pose. get_rig lists the current order in constraintOrder.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "order": { "type": "array", "items": { "type": "string" } }
+      },
+      "required": ["order"],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "add_slider",
     "description": "Play an animation by a value (Spine 4.3's slider), in one undoable step: with `bone`, its `property` (rotate by default) sets the animation's time: time = to + (value − from) × scale seconds; without, the animation holds at `time`. A dial, a facial expression blend, a door opening by a handle. `loop` wraps the time; `additive` adds the animation over the pose.",
     "input_schema": {
@@ -586,6 +598,41 @@
         "on": { "type": "boolean" }
       },
       "required": ["animation", "on"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "key_properties",
+    "description": "Key properties of `layers` at `frame` without changing the pose, in one undoable step (Spine's key buttons): `properties` \"changed\" (the default) keys each property whose value there is not the setup pose's; \"all\" keys rotate, x, y, scale and shear; or a list of groups from rotate, translate, scale, shear. Use it to pin a pose before editing around it.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "animation": { "type": "string" },
+        "frame": { "type": "integer" },
+        "layers": { "type": "array", "items": { "type": "string" } },
+        "properties": {
+          "oneOf": [
+            { "enum": ["changed", "all"] },
+            { "type": "array", "items": { "enum": ["rotate", "translate", "scale", "shear"] } }
+          ]
+        }
+      },
+      "required": ["animation", "frame", "layers"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "offset_keys",
+    "description": "Move layers' keys in time, in one undoable step (Spine's Offset tool): each of `layers` by `frames` (negative: earlier), or with `stagger` the first by 0, the next by `frames`, the next by twice that, … — overlapping action down a chain (list it root first: a tail, an arm, hair). In a cycle each layer that runs from frame 0 to the join wraps round it (the same loop started elsewhere); otherwise a layer keeps its span: later, its first pose holds and what passes the end is cut; earlier, what passes the start is cut.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "animation": { "type": "string" },
+        "layers": { "type": "array", "items": { "type": "string" } },
+        "frames": { "type": "integer" },
+        "stagger": { "type": "boolean" }
+      },
+      "required": ["animation", "layers", "frames"],
       "additionalProperties": false
     }
   },

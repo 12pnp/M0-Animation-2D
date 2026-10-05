@@ -1,4 +1,5 @@
 import type { Animation, ColorTransform, DisplayRef, IkKey, MeshData, TransformConstraint, ImageItem, Layer, Node, Project, SymbolItem, Track } from "@/core/doc/types";
+import { byOrder } from "@/core/doc/constraintOrder";
 import { DEFAULT_COLOR, isImage, isSymbol, producesSlot } from "@/core/doc/types";
 import type { IkId, ItemId, NodeId, TcId } from "@/core/doc/ids";
 import { descendantsOf, maskGroups } from "@/core/doc/layerTree";
@@ -269,6 +270,7 @@ export function exportSpine(
       boneNodes.push({ scope, node, name });
     }
 
+    const firstConstraint = constraints.length;
     for (const k of s.ik) {
       const effector = dropped(k.boneId) ? undefined : s.nodes[k.boneId];
       const target = dropped(k.targetId) ? undefined : s.nodes[k.targetId];
@@ -330,6 +332,11 @@ export function exportSpine(
     } else if (runtimeSolved(s) && !runtimeWarned.has(s.id)) {
       runtimeWarned.add(s.id);
       diagnostics.push({ severity: "warning", message: `"${s.name}" has physics, slider or path constraints, but only the exported symbol's are written.` });
+    }
+    // Spine applies them in list order: the scope's own order (ARCHITECTURE ▸ Constraint order).
+    if (s.constraintOrder?.length) {
+      const own = constraints.splice(firstConstraint);
+      constraints.push(...byOrder(own, s.constraintOrder, (c) => c.name.slice(scope.prefix.length)));
     }
     if (scope.depth > 0 && !tcKeysWarned.has(s.id) && s.animations.some((a) => a.transforms && Object.keys(a.transforms).length)) {
       tcKeysWarned.add(s.id);
@@ -797,12 +804,9 @@ export function exportSpine(
   const skeleton: SpineSkeletonFile = { skeleton: { ...carry?.header, spine: SPINE_VERSION, fps }, bones };
   if (slots.length) skeleton.slots = slots;
   const allConstraints: SpineConstraint[] = [...constraints, ...(carry?.constraints ?? []) as SpineConstraint[]];
-  if (carry) {
-    // Spine applies constraints in list order: the file's, new ones last.
-    const rank = new Map(carry.constraintOrder.map((n, i) => [n, i]));
-    allConstraints.sort((a, b) => (rank.get(a.name) ?? Infinity) - (rank.get(b.name) ?? Infinity));
-  }
-  if (allConstraints.length) skeleton.constraints = allConstraints;
+  // The carried ones take their place in the order; a nested symbol's go last.
+  const ordered = carry ? byOrder(allConstraints, sym.constraintOrder ?? [], (c) => c.name) : allConstraints;
+  if (ordered.length) skeleton.constraints = ordered;
   const skins: SpineSkin[] = [{ name: "default", attachments }];
   const modelSkins = new Map(skinsOfModel(sym, bones, boneNodes, rootIk, rootTc, skinAttachments).map((sk) => [sk.name, sk]));
   for (const sk of modelSkins.values()) skins.push(sk);

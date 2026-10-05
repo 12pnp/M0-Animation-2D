@@ -8,7 +8,8 @@ import { deformAt } from "@/core/mesh/deform";
 import { type IkBone, type IkWorld, ikApply1, ikApply2 } from "@/core/math/ik";
 import { fromSpineLocal, toSpineLocal } from "@/core/spine/transform";
 import { cloneTf, toMatrix, type Transform } from "@/core/math/Transform";
-import type { Animation, ColorTransform, DisplayRef, Node, Project, SymbolItem } from "./types";
+import type { Animation, ColorTransform, DisplayRef, IkConstraint, Node, Project, SymbolItem, TransformConstraint } from "./types";
+import { byOrder } from "./constraintOrder";
 import { DEFAULT_COLOR, isImage, isSymbol } from "./types";
 import type { ItemId, NodeId } from "./ids";
 import { sampleColorRaw, sampleTransformRaw, spanIndexAt } from "./timeline";
@@ -391,15 +392,24 @@ function applyConstraints(
   };
 
   const spineWorld = (m: Matrix2D): IkWorld => ({ a: m.a, b: -m.c, c: -m.b, d: m.d, worldX: m.tx, worldY: -m.ty });
-  const ikBone = (e: PoseEntry): IkBone => ({ ...toSpineLocal(localOf(e)), ...spineWorld(e.world) });
 
-  for (const constraint of symbol.ik) {
-    if (activity.ikOff.has(constraint.id)) continue;
+  // A bone whose WORLD a transform constraint set has no local to match
+  // until one is derived from it, as the runtime's `validateLocalTransform`
+  // does; any other bone's local is the one it was posed with (keyed or
+  // IK-solved), turns included.
+  const worldSet = new Set<NodeId>();
+  const parentSpine = (e: PoseEntry): TcWorld => spineWorld(parentWorld(e));
+  const appliedLocal = (e: PoseEntry): TcLocal =>
+    worldSet.has(e.nodeId) ? tcLocalOf(spineWorld(e.world), parentSpine(e)) : toSpineLocal(localOf(e));
+  const ikBone = (e: PoseEntry): IkBone => ({ ...appliedLocal(e), ...spineWorld(e.world) });
+
+  const solveIk = (constraint: IkConstraint): void => {
+    if (activity.ikOff.has(constraint.id)) return;
     const { mix, bendPositive, softness } = ikPoseAt(constraint, animation, frame);
-    if (mix === 0) continue;
+    if (mix === 0) return;
     const effector = byNode.get(constraint.boneId);
     const target = byNode.get(constraint.targetId);
-    if (!effector || !target || effector === target) continue;
+    if (!effector || !target || effector === target) return;
 
     // A chain of 2 needs a parent to root it, and falls back to the
     // one-bone solve when there is none (the exporter's rule too).
@@ -408,7 +418,7 @@ function applyConstraints(
     const root = twoBone ? parent! : effector;
 
     // A target inside the chain would chase its own tail.
-    if (isDescendantOf(target.nodeId, root.nodeId)) continue;
+    if (isDescendantOf(target.nodeId, root.nodeId)) return;
 
     const tx = target.world.tx, ty = -target.world.ty;
     const rootParentWorld = parentWorld(root);
@@ -420,6 +430,8 @@ function applyConstraints(
         { stretch: constraint.stretch, scaleY: constraint.scaleY, length: parentLength });
       solved.set(root.nodeId, fromSpineLocal(p));
       solved.set(effector.nodeId, fromSpineLocal(c));
+      worldSet.delete(root.nodeId);
+      worldSet.delete(effector.nodeId);
     } else {
       const b = ikBone(root);
       ikApply1(b, spineWorld(rootParentWorld), tx, ty, mix, {
@@ -427,26 +439,18 @@ function applyConstraints(
         length: root.node.kind === "bone" ? root.node.boneLength ?? 0 : 0,
       });
       solved.set(root.nodeId, fromSpineLocal(b));
+      worldSet.delete(root.nodeId);
     }
     mul(root.world, rootParentWorld, toMatrix(mat(), localOf(root)));
     recompose(root.nodeId);
-  }
+  };
 
-  // Transform constraints, after the IK, in their order (the exporter's).
-  // A bone whose WORLD a constraint set has no local to match until one is
-  // derived from it, as the runtime's `validateLocalTransform` does; any
-  // other bone's local is the one it was posed with (keyed or IK-solved),
-  // turns included.
-  const worldSet = new Set<NodeId>();
-  const parentSpine = (e: PoseEntry): TcWorld => spineWorld(parentWorld(e));
-  const appliedLocal = (e: PoseEntry): TcLocal =>
-    worldSet.has(e.nodeId) ? tcLocalOf(spineWorld(e.world), parentSpine(e)) : toSpineLocal(localOf(e));
-  for (const constraint of symbol.transforms ?? []) {
-    if (activity.tcOff.has(constraint.id)) continue;
+  const solveTc = (constraint: TransformConstraint): void => {
+    if (activity.tcOff.has(constraint.id)) return;
     const mix = tcMixAt(constraint, animation, frame);
-    if (tcIdle(mix)) continue;
+    if (tcIdle(mix)) return;
     const source = byNode.get(constraint.sourceId);
-    if (!source) continue;
+    if (!source) return;
     const data = tcSolveOf(constraint);
     const sl = appliedLocal(source);
     for (const id of constraint.boneIds) {
@@ -464,7 +468,15 @@ function applyConstraints(
       }
       recompose(id);
     }
-  }
+  };
+
+  // In the symbol's constraint order (ARCHITECTURE ▸ Constraint order): by
+  // default every IK, then every transform constraint.
+  const steps = [
+    ...symbol.ik.map((k) => ({ name: k.name, run: () => solveIk(k) })),
+    ...(symbol.transforms ?? []).map((k) => ({ name: k.name, run: () => solveTc(k) })),
+  ];
+  for (const step of byOrder(steps, symbol.constraintOrder, (t) => t.name)) step.run();
 }
 
 /**

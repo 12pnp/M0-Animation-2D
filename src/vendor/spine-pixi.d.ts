@@ -82,6 +82,8 @@ declare namespace spine {
     trackTime: number;
     readonly animation: Animation;
     getAnimationTime(): number;
+    /** The crossfade into this entry; a `delay` <= 0 starts it that long before the previous ends. */
+    setMixDuration(mixDuration: number, delay: number): void;
   }
   interface SpineEvent {
     readonly data: { readonly name: string; readonly audioPath: string | null };

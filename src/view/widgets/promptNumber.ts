@@ -12,7 +12,9 @@ export interface PromptNumberOptions {
   decimals?: number;
   /** A third button on the left of the footer — Delete, for a guide. */
   extra?: { label: string; run(): void };
-  onOk(value: number): void;
+  /** A checkbox under the field; its state goes to `onOk`. */
+  toggle?: { label: string; checked: boolean; title?: string };
+  onOk(value: number, toggled: boolean): void;
 }
 
 /**
@@ -32,15 +34,19 @@ export function promptNumber(opts: PromptNumberOptions): void {
   });
   field.set(opts.value);
 
+  const box = h("input", { type: "checkbox", checked: !!opts.toggle?.checked }) as HTMLInputElement;
   modal.body.appendChild(h("div", { class: "modal-form" },
     h("div", { class: "prow" },
       h("label", null, opts.label),
-      h("div", { class: "fields" }, field.el))));
+      h("div", { class: "fields" }, field.el)),
+    ...(opts.toggle ? [h("div", { class: "prow" },
+      h("label", null, ""),
+      h("label", { class: "fields", title: opts.toggle.title ?? "" }, box, opts.toggle.label))] : [])));
 
   const commit = () => {
     const v = field.get();
     modal.close();
-    opts.onOk(v);
+    opts.onOk(v, box.checked);
   };
 
   if (opts.extra) {

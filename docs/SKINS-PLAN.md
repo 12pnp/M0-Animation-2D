@@ -1,6 +1,6 @@
 # Skins (Spine parity, phase E)
 
-Done (2026-10-05): ARCHITECTURE ▸ Skins. The Unity check is still to run.
+Done (2026-10-05): ARCHITECTURE ▸ Skins. Checked in Unity in phase H (ARCHITECTURE ▸ Checked in Unity).
 
 docs/SPINE-PARITY-PLAN.md ▸ Phase E. One skeleton, several characters or outfits: a skin puts
 its own image in a slot's place, and some bones and constraints exist only in the skins that

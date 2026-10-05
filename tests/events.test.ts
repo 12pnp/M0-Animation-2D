@@ -101,7 +101,7 @@ describe("events in files", () => {
 
   it("an opened file's carried events move to the list (18 -> 19)", async () => {
     const { project, rig } = await loadStickman();
-    rig.spine = { header: {}, constraints: [], constraintOrder: [], skins: [], events: { foot: { int: 1 } } } as never;
+    rig.spine = { header: {}, constraints: [], skins: [], events: { foot: { int: 1 } } } as never;
     const out = validateProject(migrate(JSON.parse(JSON.stringify({ ...project, version: 18 })))).project;
     const sym = out.items[out.rootSymbolId] as SymbolItem;
     expect(sym.events).toEqual([{ name: "foot", int: 1 }]);

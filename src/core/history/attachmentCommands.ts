@@ -3,6 +3,7 @@ import type { Node, Project, SequenceKey, SymbolItem } from "@/core/doc/types";
 import { isSymbol } from "@/core/doc/types";
 import type { AnimId, ItemId, NodeId } from "@/core/doc/ids";
 import { invalidateBounds } from "@/core/doc/pose";
+import { orderAfterEdit } from "@/core/doc/constraintOrder";
 
 function symbolOf(p: Project, id: ItemId): SymbolItem {
   const s = p.items[id];
@@ -108,6 +109,7 @@ export type ConstraintField = "physics" | "sliders" | "paths";
 export class SetConstraintList implements Command {
   readonly touches: TouchSet;
   private before: unknown;
+  private orderBefore: string[] | undefined;
   private captured = false;
 
   constructor(
@@ -125,16 +127,51 @@ export class SetConstraintList implements Command {
   }
 
   apply(p: Project): void {
-    if (!this.captured) { this.before = symbolOf(p, this.symbolId)[this.field]; this.captured = true; }
+    const sym = symbolOf(p, this.symbolId);
+    if (!this.captured) { this.before = sym[this.field]; this.orderBefore = sym.constraintOrder; this.captured = true; }
     this.write(p, this.after);
+    setOrder(sym, orderAfterEdit(this.orderBefore, this.before as never, this.after));
   }
 
-  revert(p: Project): void { this.write(p, this.before); }
+  revert(p: Project): void {
+    this.write(p, this.before);
+    setOrder(symbolOf(p, this.symbolId), this.orderBefore);
+  }
 
   mergeWith(next: Command): boolean {
     if (!(next instanceof SetConstraintList) || next.kind !== this.kind || this.kind === "symbol.constraints") return false;
     if (next.symbolId !== this.symbolId || next.field !== this.field) return false;
     this.after = next.after;
     return true;
+  }
+}
+
+function setOrder(sym: SymbolItem, order: readonly string[] | undefined): void {
+  if (order === sym.constraintOrder) return;
+  if (order?.length) sym.constraintOrder = [...order]; else delete sym.constraintOrder;
+}
+
+/** The order a symbol's constraints are applied in replaced (ARCHITECTURE ▸
+ *  Constraint order); an empty list is the default order. */
+export class SetConstraintOrder implements Command {
+  readonly touches: TouchSet;
+  readonly kind = "symbol.constraintOrder";
+  private before: string[] | undefined;
+  private captured = false;
+
+  constructor(readonly label: string, private readonly symbolId: ItemId, private readonly after: readonly string[]) {
+    this.touches = { symbols: [symbolId], stage: true };
+  }
+
+  apply(p: Project): void {
+    const sym = symbolOf(p, this.symbolId);
+    if (!this.captured) { this.before = sym.constraintOrder; this.captured = true; }
+    setOrder(sym, this.after);
+    invalidateBounds([this.symbolId]);
+  }
+
+  revert(p: Project): void {
+    setOrder(symbolOf(p, this.symbolId), this.before);
+    invalidateBounds([this.symbolId]);
   }
 }

@@ -96,6 +96,11 @@ export function validateProject(raw: unknown): ValidationResult {
 
     for (const nodeId of Object.keys(item.nodes)) observeId(nodeId);
 
+    if (item.constraintOrder !== undefined) {
+      const order = Array.isArray(item.constraintOrder) ? [...new Set(item.constraintOrder.filter((n): n is string => typeof n === "string"))] : [];
+      if (order.length) item.constraintOrder = order; else delete item.constraintOrder;
+    }
+
     if (item.stageSkins !== undefined) {
       const skins = Array.isArray(item.stageSkins) ? item.stageSkins.filter((n): n is string => typeof n === "string") : null;
       if (skins && (item.spine || Array.isArray(item.skins))) item.stageSkins = [...new Set(skins)];
@@ -724,6 +729,17 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   20: (p) => ({ ...p, version: 21 }),
   21: (p) => ({ ...p, version: 22 }),
   22: (p) => ({ ...p, version: 23 }),
+  // 23 -> 24: `SymbolItem.constraintOrder`, which an opened file's order
+  // moves to from `spine.constraintOrder`.
+  23: (p) => {
+    const items = (p.items ?? {}) as Record<string, { constraintOrder?: unknown; spine?: Record<string, unknown> }>;
+    for (const item of Object.values(items)) {
+      if (!item.spine || !("constraintOrder" in item.spine)) continue;
+      item.constraintOrder ??= item.spine.constraintOrder;
+      delete item.spine.constraintOrder;
+    }
+    return { ...p, version: 24 };
+  },
   // 19 -> 20: `SymbolItem.transforms` and `Animation.transforms`, transform
   // constraints and their keys. Additive; an older build would drop them.
   19: (p) => ({ ...p, version: 20 }),

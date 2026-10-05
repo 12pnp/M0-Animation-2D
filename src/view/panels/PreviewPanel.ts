@@ -1,3 +1,4 @@
+import type { QueueEntry } from "@/preview/queue";
 import { clear, cls, h, on } from "@/view/widgets/dom";
 import { icon } from "@/view/icons";
 import type { Panel } from "@/view/widgets/Dock";
@@ -37,10 +38,11 @@ export class PreviewPanel implements Panel, PreviewView {
   private mounted = false;
   private floatBtn: HTMLButtonElement;
   private showStage = true;
-  /** Mixing: play one animation, then crossfade into the chosen one. */
+  /** The queue: animations played one after another, each crossfaded into
+   *  (`preview/queue.ts`). The panel's own state, not the document's. */
   private mixBar: HTMLElement;
-  private mixFrom: HTMLSelectElement;
-  private mixDuration: HTMLInputElement;
+  private queue: QueueEntry[] = [];
+  private animations: string[] = [];
   /** The events the runtime fires, newest last, each fading out. */
   private eventLog: HTMLElement;
   private audio: AudioContext | null = null;
@@ -69,17 +71,7 @@ export class PreviewPanel implements Panel, PreviewView {
 
     this.eventLog = h("div", { class: "preview-events" });
     this.frameWrap.appendChild(this.eventLog);
-    this.mixFrom = h("select", { class: "preview-anim", title: "Play this animation first" }) as HTMLSelectElement;
-    this.mixDuration = h("input", { type: "number", min: "0", step: "0.05", value: "0.2", class: "preview-mix-dur", title: "Mix duration, seconds" }) as HTMLInputElement;
-    const playMix = h("button", { class: "btn", title: "Play the first animation once, then crossfade into the one chosen below, as a game changes animation" }, "Play Mix");
-    on(playMix, "click", () => {
-      const to = this.animSelect.value;
-      if (!this.mixFrom.value || !to) return;
-      this.setPlaying(true);
-      this.host.post({ type: "playMix", from: this.mixFrom.value, to, duration: Number(this.mixDuration.value) || 0 });
-    });
-    this.mixBar = h("div", { class: "preview-mixbar" },
-      h("span", null, "Mix from"), this.mixFrom, h("span", null, "over"), this.mixDuration, h("span", null, "s"), playMix);
+    this.mixBar = h("div", { class: "preview-mixbar" });
     this.mixBar.hidden = true;
     this.el = h("div", { class: "preview" }, this.frameWrap, this.status, this.mixBar);
     this.footer = this.buildFooter();
@@ -93,10 +85,8 @@ export class PreviewPanel implements Panel, PreviewView {
         }
         this.animSelect.value = msg.animation;
         this.animSelect.disabled = msg.animations.length <= 1;
-        const from = this.mixFrom.value;
-        clear(this.mixFrom);
-        for (const name of msg.animations) this.mixFrom.appendChild(h("option", { value: name }, name));
-        if (msg.animations.includes(from)) this.mixFrom.value = from;
+        this.animations = [...msg.animations];
+        if (!this.mixBar.hidden) this.renderQueue();
       } else if (msg.type === "event") {
         this.showEvent(msg);
       } else if (msg.type === "error") {
@@ -150,11 +140,12 @@ export class PreviewPanel implements Panel, PreviewView {
       this.host.post({ type: "showStage", on: this.showStage });
     });
 
-    const mixBtn = h("button", { class: "iconbtn", title: "Mix two animations" });
+    const mixBtn = h("button", { class: "iconbtn", title: "Queue animations, each crossfaded into the next, as a game changes animation" });
     mixBtn.appendChild(icon("film", 13));
     on(mixBtn, "click", () => {
       this.mixBar.hidden = !this.mixBar.hidden;
       cls(mixBtn, "on", !this.mixBar.hidden);
+      if (!this.mixBar.hidden) this.renderQueue();
     });
 
     this.floatBtn.appendChild(icon("float", 13));
@@ -171,6 +162,44 @@ export class PreviewPanel implements Panel, PreviewView {
       h("div", { class: "spacer" }),
       this.floatBtn, refresh,
     );
+  }
+
+  /** The queue's rows: an animation each and the mix into it, then Add and Play. */
+  private renderQueue(): void {
+    clear(this.mixBar);
+    const names = this.animations;
+    if (!this.queue.length && names.length) {
+      this.queue = [{ name: names[0]!, mix: 0 }, { name: this.animSelect.value || names[0]!, mix: 0.2 }];
+    }
+    this.queue.forEach((entry, i) => {
+      const sel = h("select", { class: "preview-anim", title: i ? "Then this animation" : "First this animation" }) as HTMLSelectElement;
+      for (const n of names) sel.appendChild(h("option", { value: n }, n));
+      sel.value = entry.name;
+      on(sel, "change", () => { this.queue[i] = { ...this.queue[i]!, name: sel.value }; });
+      const row = h("div", { class: "preview-queue-row" }, h("span", { class: "preview-queue-n" }, `${i + 1}`), sel);
+      if (i > 0) {
+        const mix = h("input", { type: "number", min: "0", step: "0.05", value: String(entry.mix), class: "preview-mix-dur", title: "Crossfade into it from the one above, seconds" }) as HTMLInputElement;
+        on(mix, "change", () => { this.queue[i] = { ...this.queue[i]!, mix: Number(mix.value) || 0 }; });
+        row.append(h("span", null, "mix"), mix, h("span", null, "s"));
+      }
+      const del = h("button", { class: "iconbtn", title: "Take it out of the queue" }, "×") as HTMLButtonElement;
+      del.disabled = this.queue.length <= 1;
+      on(del, "click", () => { this.queue.splice(i, 1); this.renderQueue(); });
+      row.appendChild(del);
+      this.mixBar.appendChild(row);
+    });
+    const add = h("button", { class: "btn", title: "Queue another animation after the last" }, "+ Add");
+    on(add, "click", () => {
+      this.queue.push({ name: this.animSelect.value || names[0] || "", mix: 0.2 });
+      this.renderQueue();
+    });
+    const play = h("button", { class: "btn", title: "Play the queue from the start: each animation after the one above, crossfaded over its mix; the last loops while Loop is on" }, "Play Queue");
+    on(play, "click", () => {
+      if (!this.queue.length) return;
+      this.setPlaying(true);
+      this.host.post({ type: "playQueue", entries: this.queue.map((e) => ({ ...e })) });
+    });
+    this.mixBar.appendChild(h("div", { class: "preview-queue-row" }, add, play));
   }
 
   private setPlaying(on_: boolean): void {

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { sampleTransformRaw } from "@/core/doc/timeline";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { AtlasAttachmentLoader, MixFrom, Physics, Skeleton, SkeletonJson, TextureAtlas } from "@esotericsoftware/spine-core";
 import { reseed } from "@/core/doc/ids";
@@ -58,7 +59,7 @@ describe("the AI's tools", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
       "get_reference", "render_frame", "add_bones", "attach", "add_ik", "auto_rig", "list_motions", "apply_motion", "draw_order",
-      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "make_mesh", "bind_mesh", "add_skin", "set_skin_image", "add_attachment", "make_sequence", "key_sequence", "add_physics", "add_slider", "make_path", "set_skin_members", "set_cycle", "get_bone_path", "set_bone_path",
+      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "make_mesh", "bind_mesh", "add_skin", "set_skin_image", "add_attachment", "make_sequence", "key_sequence", "add_physics", "set_constraint_order", "add_slider", "make_path", "set_skin_members", "set_cycle", "key_properties", "offset_keys", "get_bone_path", "set_bone_path",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -792,6 +793,49 @@ describe("cycles and bone paths through the AI's tools", () => {
     expect(path).toMatchObject({ constraint: "chest_path", bones: ["chest", "head"], knots: 3 });
     expect(store.history.undoLabel).toBe("Make Path");
     expect(exportSpine(store.project).diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+  });
+
+  it("key properties: what changed, all, or groups; the pose stays; one undo step", async () => {
+    const { store, api } = await setup();
+    const run = store.currentSymbol.animations.find((a) => a.name === "run")!;
+    const chest = Object.values(store.currentSymbol.nodes).find((x) => x.name === "chest")!;
+    const before = sampleTransformRaw(run.tracks[chest.id]!, 3);
+    const out = await api.call("key_properties", { animation: "run", frame: 3, layers: ["chest"] }) as { keyed: Record<string, string[]> };
+    expect(out.keyed.chest!.length).toBeGreaterThan(0);
+    const after = store.currentSymbol.animations.find((a) => a.name === "run")!.tracks[chest.id]!;
+    expect(after.keys.some((k) => k.frame === 3)).toBe(true);
+    expect(sampleTransformRaw(after, 3)).toEqual(before);
+    expect(store.history.undoLabel).toBe("AI: Key at 4");
+    expect(await api.call("key_properties", { animation: "run", frame: 5, layers: ["chest"], properties: ["shear"] })).toMatchObject({ keyed: { chest: ["shear"] } });
+    await expect(api.call("key_properties", { animation: "run", frame: 3, layers: ["chest"], properties: ["spin"] })).rejects.toThrow(/properties is/);
+  });
+
+  it("offset keys: staggered down a chain, wrapped in a cycle, one undo step", async () => {
+    const { store, api } = await setup();
+    await api.call("set_cycle", { animation: "run", on: true });
+    const anim = store.currentSymbol.animations.find((a) => a.name === "run")!;
+    const id = (n: string) => Object.values(store.currentSymbol.nodes).find((x) => x.name === n)!.id;
+    const before = anim.tracks[id("chest")]!;
+    const out = await api.call("offset_keys", { animation: "run", layers: ["hips", "chest"], frames: 2, stagger: true });
+    expect(out).toMatchObject({ animation: "run", wrapped: true, moved: [{ layer: "chest", frames: 2 }] });
+    const after = store.currentSymbol.animations.find((a) => a.name === "run")!.tracks[id("chest")]!;
+    expect(after).not.toBe(before);
+    expect(after.keys[0]!.frame).toBe(0);
+    expect(store.history.undoLabel).toBe(`AI: Offset Keys in "run"`);
+    await expect(api.call("offset_keys", { animation: "run", layers: ["nobody"], frames: 2 })).rejects.toThrow(/no bone or slot "nobody"/);
+  });
+
+  it("set the constraint order: the ones named first, the rest after; one undo step", async () => {
+    const { store, api } = await setup();
+    await api.call("add_physics", { bone: "head" });
+    const rig = await api.call("get_rig", {}) as { constraintOrder: string[] };
+    const last = rig.constraintOrder[rig.constraintOrder.length - 1]!;
+    expect(last).toBe("head_physics");
+    const out = await api.call("set_constraint_order", { order: [last] }) as { constraintOrder: string[] };
+    expect(out.constraintOrder).toEqual([last, ...rig.constraintOrder.slice(0, -1)]);
+    expect(exportSpine(store.project).skeleton.constraints![0]!.name).toBe(last);
+    expect(store.history.undoLabel).toBe("AI: Constraint Order");
+    await expect(api.call("set_constraint_order", { order: ["nope"] })).rejects.toThrow(/no constraint called "nope"/);
   });
 
   it("add a bounding box and a point, make a sequence and key it, each one undo step", async () => {

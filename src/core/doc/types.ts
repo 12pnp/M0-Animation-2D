@@ -6,7 +6,7 @@ import type { AnimId, AssetId, CnId, FolderId, IkId, ItemId, LayerId, NodeId, Tc
 import type { TcChannel, TcFrom } from "@/core/math/transformConstraint";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 23;
+export const DOC_VERSION = 24;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -67,7 +67,7 @@ export interface SymbolItem {
    *  REVERSED order, because DragonBones draws later array entries in front. */
   layers: Layer[];
   ik: IkConstraint[];
-  /** Transform constraints, applied after the IK, in this order
+  /** Transform constraints, applied in the constraint order (after the IK by default), in this order
    *  (`core/math/transformConstraint.ts`, ARCHITECTURE ▸ Transform constraints). */
   transforms?: TransformConstraint[];
   animations: Animation[];
@@ -85,11 +85,16 @@ export interface SymbolItem {
   /** Skins made or opened here (ARCHITECTURE ▸ Skins), in order. */
   skins?: SkinDef[];
   /** Physics, slider and path constraints (ARCHITECTURE ▸ Physics, sliders
-   *  and paths), applied after the IK and transform constraints. The runtime
+   *  and paths), applied in the constraint order (by default after the IK and
+   *  transform constraints). The runtime
    *  poses a symbol that has any. */
   physics?: PhysicsConstraint[];
   sliders?: SliderConstraint[];
   paths?: PathConstraint[];
+  /** The order its constraints are applied in, by name (`core/doc/constraintOrder.ts`,
+   *  ARCHITECTURE ▸ Constraint order); one it does not name comes after, in
+   *  the default order. Absent: the default order. */
+  constraintOrder?: string[];
   /** The events its animations fire (`core/doc/events.ts`), names unique,
    *  as Spine's skeleton `events`. */
   events?: EventDef[];
@@ -133,9 +138,6 @@ export interface SpineCarry {
   header: Record<string, unknown>;
   /** Constraints kept as the file has them. */
   constraints: Array<Record<string, unknown>>;
-  /** Every constraint's name, the model's IK included, in the file's order:
-   *  the order Spine applies them in. */
-  constraintOrder: string[];
   /** What of the file's skins the model does not hold (`SymbolItem.skins`
    *  holds the rest), merged back by name on export. */
   skins: Array<Record<string, unknown>>;

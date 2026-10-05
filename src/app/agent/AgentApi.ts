@@ -1,8 +1,11 @@
+import { changedProps, KEY_GROUPS, type KeyGroup, keyProps } from "@/core/doc/keyButtons";
+import { offsetPlan, offsetTrack } from "@/core/doc/offset";
+import { constraintEntries, orderFrom } from "@/core/doc/constraintOrder";
 import type { Store } from "@/app/Store";
 import { drawingLayers, orderAt, reorderTargets, withDrawOrderKey, withFront } from "@/core/doc/drawOrder";
 import { type AnimId, type AssetId, type IkId, type ItemId, newIkId, newTcId, type NodeId, type TcId } from "@/core/doc/ids";
 import { displaysOf } from "@/core/doc/displays";
-import { type Animation, type EventDef, type EventKey, type IkConstraint, type IkKey, type ImageItem, isImage, type TcKey, type TransformConstraint, type Keyframe, type Node, type SymbolItem, type Track } from "@/core/doc/types";
+import { type Animation, type EventDef, type EventKey, type IkConstraint, type IkKey, type ImageItem, isImage, type TcKey, type TransformConstraint, type Keyframe, type Node, type SymbolItem, TIMELINE_PROPS, type TimelineProp, type Track } from "@/core/doc/types";
 import { entryBox, type FrameContext } from "@/core/doc/pose";
 import { type ImageFrame, imageFrame, referenceEnd, referenceFrameOf, referenceIndexAt, referenceRect } from "@/core/doc/reference";
 import { apply } from "@/core/math/Matrix2D";
@@ -36,7 +39,7 @@ import { withNewSkin } from "@/core/doc/skins";
 import { doAddAttachment, doAddPhysics, doAddSlider, doMakePath, doMakeSequence, doSetConstraints } from "@/app/AttachmentOps";
 import { PHYSICS_DEFAULTS, PHYSICS_SETTINGS, SLIDER_PROPERTIES } from "@/core/doc/constraints";
 import { SEQUENCE_MODES, withSequenceKey } from "@/core/doc/sequence";
-import { SetSequenceKeys } from "@/core/history/attachmentCommands";
+import { SetConstraintOrder, SetSequenceKeys } from "@/core/history/attachmentCommands";
 import type { SequenceKey } from "@/core/doc/types";
 import { posedSymbol, skinsOf, stageSkinOf } from "@/core/spine/spinePose";
 import { exportSpine } from "@/core/spine/exportSpine";
@@ -150,6 +153,8 @@ export class AgentApi {
       case "apply_motion": return this.applyMotion(str(args, "motion"), args);
       case "draw_order": return this.drawOrder(typeof args.parent === "string" ? args.parent : null, list<string>(args, "front"));
       case "set_cycle": return this.setCycle(str(args, "animation"), args.on);
+      case "key_properties": return this.keyProperties(str(args, "animation"), int(args, "frame", 0), list<string>(args, "layers"), args.properties);
+      case "offset_keys": return this.offsetKeys(str(args, "animation"), list<string>(args, "layers"), int(args, "frames", 0), args.stagger === true);
       case "key_draw_order": return this.keyDrawOrder(str(args, "animation"), int(args, "frame", 0), args);
       case "key_ik": return this.keyIk(str(args, "animation"), str(args, "ik"), int(args, "frame", 0), args);
       case "define_event": return this.defineEvent(str(args, "name"), args);
@@ -162,6 +167,7 @@ export class AgentApi {
       case "add_physics": return this.addPhysics(str(args, "bone"), args);
       case "add_slider": return this.addSlider(str(args, "animation"), args);
       case "make_path": return this.makePath(list<string>(args, "bones"));
+      case "set_constraint_order": return this.setConstraintOrder(list<string>(args, "order"));
       case "key_sequence": return this.keySequence(str(args, "animation"), str(args, "layer"), int(args, "frame", 0), args);
       case "set_skin_image": return this.setSkinImage(args);
       case "set_skin_members": return this.setSkinMembers(args);
@@ -245,6 +251,7 @@ export class AgentApi {
           ...(k.additive ? { relative: true } : {}), ...(k.clamp ? { clamp: true } : {}),
         })),
       } : {}),
+      ...(constraintEntries(s).length > 1 ? { constraintOrder: constraintEntries(s).map((e) => e.name) } : {}),
       animations: s.animations.map((a) => ({
         name: a.name, frames: this.frames(a), loops: a.playTimes === 0,
         ...(a.reference ? { reference: { images: a.reference.frames.length, frames: [referenceFrameOf(a.reference, 0), referenceEnd(a.reference)] } } : {}),
@@ -909,6 +916,15 @@ export class AgentApi {
     return { constraint: made.name, bone: bone.name, settings: Object.fromEntries(PHYSICS_SETTINGS.map((s) => [s, made[s] ?? PHYSICS_DEFAULTS[s]])) };
   }
 
+  private setConstraintOrder(names: string[]) {
+    const order = orderFrom(this.sym, names);
+    if (typeof order === "string") throw new AgentError(`${order} get_rig lists the constraints in constraintOrder.`);
+    this.store.apply(new SetConstraintOrder("AI: Constraint Order", this.store.currentSymbolId, order));
+    this.store.emit("stage");
+    this.store.emit("doc");
+    return { constraintOrder: constraintEntries(this.sym).map((e) => e.name) };
+  }
+
   private addSlider(animName: string, args: Args) {
     const anim = this.animation(animName);
     const bone = args.bone === undefined ? null : this.bone(str(args, "bone"));
@@ -1143,6 +1159,59 @@ export class AgentApi {
     this.store.apply(new SetEventKeys(`AI: Event "${eventName}" at ${frame + 1}`, this.store.currentSymbolId, anim.id, keys));
     this.store.emit("timeline");
     return { animation: anim.name, events: keys.map((k) => ({ ...k })) };
+  }
+
+  private keyProperties(animName: string, frame: number, layers: string[], which: unknown) {
+    const anim = this.animation(animName);
+    if (!layers.length) throw new AgentError("layers names at least one bone or slot.");
+    const groups = Object.keys(KEY_GROUPS);
+    let props: readonly TimelineProp[] | "changed";
+    if (which === undefined || which === "changed") props = "changed";
+    else if (which === "all") props = TIMELINE_PROPS;
+    else if (Array.isArray(which) && which.length && which.every((g) => groups.includes(g as string))) props = which.flatMap((g) => KEY_GROUPS[g as KeyGroup]);
+    else throw new AgentError(`properties is "changed", "all" or a list of ${groups.join(", ")}.`);
+    if (frame < 0 || frame >= anim.duration) throw new AgentError(`frame is 0 to ${anim.duration - 1}.`);
+    const tracks = new Map<NodeId, Track>();
+    const keyed: Record<string, TimelineProp[]> = {};
+    for (const node of layers.map((n) => this.node(n))) {
+      const list = props === "changed" ? changedProps(anim.tracks[node.id], node, frame) : props;
+      if (!list.length) continue;
+      const base = anim.tracks[node.id] ?? { nodeId: node.id, keys: [createKeyframe(0, node)], endFrame: Math.max(0, anim.duration - 1) };
+      const next = keyProps(base, node, list, frame);
+      if (next === anim.tracks[node.id]) continue;
+      tracks.set(node.id, next);
+      keyed[node.name] = [...list];
+    }
+    if (tracks.size) {
+      this.store.apply(new EditTracks(`AI: Key at ${frame + 1}`, this.store.currentSymbolId, anim.id, tracks));
+      this.store.emit("timeline");
+      this.store.emit("stage");
+    }
+    return { animation: anim.name, frame, keyed };
+  }
+
+  private offsetKeys(animName: string, layers: string[], frames: number, stagger: boolean) {
+    const anim = this.animation(animName);
+    if (!layers.length) throw new AgentError("layers names at least one bone or slot.");
+    const nodes = layers.map((n) => this.node(n));
+    const seam = seamFrame(anim);
+    const tracks = new Map<NodeId, Track>();
+    for (const [id, delta] of offsetPlan(nodes.map((n) => n.id), frames, stagger)) {
+      const track = anim.tracks[id];
+      if (!track) continue;
+      const next = offsetTrack(track, this.sym.nodes[id]!, delta, seam);
+      if (next !== track) tracks.set(id, next);
+    }
+    if (tracks.size) {
+      this.store.apply(new EditTracks(`AI: Offset Keys in "${anim.name}"`, this.store.currentSymbolId, anim.id, tracks));
+      this.store.emit("timeline");
+      this.store.emit("stage");
+    }
+    return {
+      animation: anim.name, wrapped: seam !== null,
+      moved: nodes.filter((n) => tracks.has(n.id)).map((n) => ({ layer: n.name, frames: offsetPlan(nodes.map((m) => m.id), frames, stagger).get(n.id) })),
+      ...(nodes.some((n) => !anim.tracks[n.id]) ? { unkeyed: nodes.filter((n) => !anim.tracks[n.id]).map((n) => n.name) } : {}),
+    };
   }
 
   private setCycle(animName: string, on: unknown) {

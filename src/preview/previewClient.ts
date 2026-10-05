@@ -1,4 +1,5 @@
 /// <reference path="../vendor/spine-pixi.d.ts" />
+import { queueSteps } from "./queue";
 import { type FrameToHost, type HostToFrame, tickFrame } from "./protocol";
 
 /**
@@ -336,15 +337,14 @@ window.addEventListener("message", (event: MessageEvent) => {
         seekTo(msg.frame);
         break;
 
-      case "playMix": {
-        const data = view?.skeleton.data;
-        if (!view || !data?.findAnimation(msg.from) || !data.findAnimation(msg.to)) break;
-        view.state.data.setMix(msg.from, msg.to, Math.max(0, msg.duration));
+      case "playQueue": {
+        const steps = view ? queueSteps(msg.entries, view.skeleton.data.animations.map((a) => a.name), loop) : [];
+        if (!view || !steps.length) break;
         view.skeleton.setupPose();
-        view.state.setAnimation(0, msg.from, false);
-        view.state.addAnimation(0, msg.to, loop, 0);
+        view.state.setAnimation(0, steps[0]!.name, steps[0]!.loop);
+        for (const step of steps.slice(1)) view.state.addAnimation(0, step.name, step.loop, 0).setMixDuration(step.mix, 0);
         view.update(0);
-        currentAnimation = msg.to;
+        currentAnimation = steps[steps.length - 1]!.name;
         playing = true;
         break;
       }

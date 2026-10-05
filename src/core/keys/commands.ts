@@ -146,6 +146,9 @@ export const COMMANDS: CommandDef[] = [
   c("Timeline", "timeline.goToFrame", "Go to Frame…"),
   c("Timeline", "timeline.cycle", "Cycle"),
   c("Timeline", "timeline.closeLoop", "Close Loop"),
+  c("Timeline", "timeline.offsetKeys", "Offset Keys…"),
+  c("Timeline", "timeline.keyChanged", "Key Changed"),
+  c("Timeline", "timeline.keyAll", "Key All"),
 
   c("Playback", "playback.toggle", "Play / Pause", ["Space"]),
   c("Playback", "playback.prev", "Previous Frame", [","]),

@@ -3,6 +3,7 @@ import type { IkConstraint, Project, SymbolItem } from "@/core/doc/types";
 import { isSymbol } from "@/core/doc/types";
 import type { ItemId, NodeId } from "@/core/doc/ids";
 import { invalidateBounds } from "@/core/doc/pose";
+import { orderAfterEdit } from "@/core/doc/constraintOrder";
 
 function symbolOf(p: Project, id: ItemId): SymbolItem {
   const s = p.items[id];
@@ -101,6 +102,8 @@ export class SetIkOptions implements Command {
   readonly touches: TouchSet;
   readonly label = "IK Options";
   private before: IkPatch | null = null;
+  /** The constraint order before a rename; null until one. */
+  private orderBefore: string[] | undefined | null = null;
 
   constructor(
     private readonly symbolId: ItemId,
@@ -127,7 +130,13 @@ export class SetIkOptions implements Command {
     // would overshoot the target it is meant to reach.
     if (this.patch.weight !== undefined) k.weight = clamp01(this.patch.weight);
     if (this.patch.softness !== undefined) setSoftness(k, this.patch.softness);
-    if (this.patch.name !== undefined && this.patch.name.trim()) k.name = this.patch.name.trim();
+    if (this.patch.name !== undefined && this.patch.name.trim()) {
+      const sym = symbolOf(p, this.symbolId);
+      if (this.orderBefore === null) this.orderBefore = sym.constraintOrder;
+      const order = orderAfterEdit(this.orderBefore, [{ id: k.id, name: this.before.name! }], [{ id: k.id, name: this.patch.name.trim() }]);
+      if (order && order !== sym.constraintOrder) sym.constraintOrder = [...order];
+      k.name = this.patch.name.trim();
+    }
     setScaling(k, this.patch);
     invalidateBounds([this.symbolId]);
   }
@@ -140,6 +149,10 @@ export class SetIkOptions implements Command {
     if (this.before.weight !== undefined) k.weight = this.before.weight;
     if (this.before.softness !== undefined) setSoftness(k, this.before.softness);
     if (this.before.name !== undefined) k.name = this.before.name;
+    if (this.orderBefore !== null) {
+      const sym = symbolOf(p, this.symbolId);
+      if (this.orderBefore) sym.constraintOrder = this.orderBefore; else delete sym.constraintOrder;
+    }
     setScaling(k, this.before);
     invalidateBounds([this.symbolId]);
   }

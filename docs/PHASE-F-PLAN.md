@@ -1,7 +1,7 @@
 # Other attachments and constraints (Spine parity, phase F)
 
 Done (2026-10-05): ARCHITECTURE ▸ Bones and IK (stretch), Boxes and points, Sequences, Physics,
-sliders and paths. The Unity check is still to run.
+sliders and paths. Checked in Unity in phase H (ARCHITECTURE ▸ Checked in Unity).
 
 docs/SPINE-PARITY-PLAN.md ▸ Phase F, in the order built:
 

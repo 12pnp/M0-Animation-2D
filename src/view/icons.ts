@@ -47,6 +47,7 @@ export const ICON = {
   // The onion range: frames between two markers.
   onionFrames: `<path d="M4.5 3H2.5v10h2M11.5 3h2v10h-2"/><circle cx="6" cy="8" r="0.9"/><circle cx="8" cy="8" r="0.9"/><circle cx="10" cy="8" r="0.9"/>`,
   // Animate's Edit Multiple Frames: stacked frames, all solid.
+  key:         `<circle cx="5" cy="8" r="2.8"/><path d="M7.8 8H14M11.6 8v2.6M13.6 8v2"/>`,
   multiFrames: `<rect x="2" y="5.5" width="7.5" height="7.5"/><path d="M4.5 5.5V3h7.5v7.5H9.5"/><path d="M7 3V1.5h7.5V9H12"/>`,
   eye:         `<path d="M1.6 8S4 4 8 4s6.4 4 6.4 4-2.4 4-6.4 4-6.4-4-6.4-4z"/><circle cx="8" cy="8" r="1.8"/>`,
   lock:        `<rect x="3.6" y="7" width="8.8" height="6.4" rx="1"/><path d="M5.6 7V5.2a2.4 2.4 0 0 1 4.8 0V7"/>`,

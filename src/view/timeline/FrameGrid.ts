@@ -37,6 +37,7 @@ import { uiFont, type UiFontSize, uiPx } from "@/core/prefs/fonts";
 import { dragMarkers, type MarkerDrag, type OnionSpan, wrapSpan } from "@/core/doc/onion";
 import { SEAM_TOLERANCE, type SeamGap, seamFrame, seamGap } from "@/core/doc/cycle";
 import { posedSymbol } from "@/core/spine/spinePose";
+import { eventSounds, peakBetween, type Waveform } from "@/core/doc/waveform";
 
 /** The unscaled row and ruler heights. The layer list is DOM and the grid is
  *  canvas, so the same two numbers have to reach both — see `TimelinePanel`. */
@@ -63,6 +64,8 @@ export interface FrameGridCallbacks {
   onEditEvents(keys: EventKey[], label: string, kind?: string): void;
   /** Right-click on the Events row. */
   onEventsMenu(frame: number, x: number, y: number): void;
+  /** An event sound's decoded waveform, or null while it is not ready. */
+  waveform?(path: string): Waveform | null;
   /** A Deform row's edit: the mesh's deform keys as they are to be. */
   onEditDeform(nodeId: NodeId, keys: DeformKey[], label: string, kind?: string): void;
   /** A Sequence row's edit: the node's sequence keys as they are to be. */
@@ -781,6 +784,7 @@ export class FrameGrid {
     ctx.fillStyle = "rgba(0,0,0,0.18)";
     ctx.fillRect(0, y, w, h);
     const keys = this.store.currentAnimation?.events ?? [];
+    this.waveStrip(ctx, keys, y, h, w);
     const frames = eventFrames(keys);
     const picked = new Set(this.store.ui.eventFrames);
     const half = this.frameWidth / 2;
@@ -824,6 +828,27 @@ export class FrameGrid {
     ctx.moveTo(0, y + h - 0.5);
     ctx.lineTo(w, y + h - 0.5);
     ctx.stroke();
+  }
+
+  /** Each keyed sound's waveform from where its event fires, scaled by its
+   *  volume, under the flags. */
+  private waveStrip(ctx: CanvasRenderingContext2D, keys: readonly EventKey[], y: number, h: number, w: number): void {
+    if (!this.cb.waveform) return;
+    const fps = this.store.project.frameRate;
+    const pxPerSecond = fps * this.frameWidth;
+    const mid = y + h / 2, room = (h - 4) / 2;
+    ctx.fillStyle = withAlpha(EVENT_COLOR, 0.45);
+    for (const sound of eventSounds(keys, this.store.currentSymbol.events)) {
+      const wave = this.cb.waveform(sound.path);
+      if (!wave) continue;
+      const x0 = this.xOfFrame(sound.frame) + this.frameWidth / 2;
+      const from = Math.max(0, Math.floor(x0)), to = Math.min(w, Math.ceil(x0 + wave.duration * pxPerSecond));
+      for (let px = from; px < to; px++) {
+        const t = (px - x0) / pxPerSecond;
+        const a = Math.min(1, peakBetween(wave, t, t + 1 / pxPerSecond) * sound.volume) * room;
+        if (a >= 0.25) ctx.fillRect(px, mid - a, 1, a * 2);
+      }
+    }
   }
 
   /** Pick the Events row's frames (the Events panel edits their keys). */

@@ -1,5 +1,7 @@
 /** postMessage contract between the editor and the preview iframe. */
 
+import type { QueueEntry } from "./queue";
+
 /** An atlas page image, by the file name the `.atlas` text gives it. */
 export interface PreviewPage {
   name: string;
@@ -41,7 +43,8 @@ export type HostToFrame =
   | { type: "setAnimation"; name: string }
   /** Play `from` once, then `to` crossfaded in over `duration` seconds
    *  (`AnimationStateData.setMix`), as a game changes animation. */
-  | { type: "playMix"; from: string; to: string; duration: number }
+  /** Play animations one after another, each crossfaded into (`queue.ts`). */
+  | { type: "playQueue"; entries: QueueEntry[] }
   | { type: "setDebug"; on: boolean }
   | { type: "setBackground"; color: string }
   | { type: "showStage"; on: boolean }

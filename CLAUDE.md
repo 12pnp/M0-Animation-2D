@@ -32,6 +32,9 @@ constraints of their own, by spine-core's rules (ARCHITECTURE ▸ Skins, `core/d
 Bounding boxes, points, paths and sequences are made and edited (ARCHITECTURE ▸ Boxes and
 points, Sequences); physics, slider and path constraints are solved by spine-core itself, which
 poses any symbol that has one (ARCHITECTURE ▸ Physics, sliders and paths).
+Constraints apply in the symbol's order (ARCHITECTURE ▸ Constraint order), keys can be offset
+and keyed by group from the timeline (ARCHITECTURE ▸ Offset keys, Key buttons), and the
+Unity check was rerun after phase H (ARCHITECTURE ▸ Checked in Unity).
 An exporter change must keep
 `tests/spineParity.test.ts` passing: it plays every fixture through spine-core
 and compares it with the stage frame by frame. An importer or exporter change

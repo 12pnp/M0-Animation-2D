@@ -7,7 +7,7 @@ import {
 import { eventValues } from "@/core/doc/events";
 import { stageSkinOf, withDescendantBones } from "@/core/doc/skins";
 import { boxOutline, makeMesh } from "@/core/mesh/makeMesh";
-import { newIkId, newTcId, reseed, type AssetId, type ItemId } from "@/core/doc/ids";
+import { newIkId, newTcId, reseed, type AssetId, type ItemId, type NodeId } from "@/core/doc/ids";
 import { identityProperties } from "@/core/doc/transformKeys";
 import { maskGroups } from "@/core/doc/layerTree";
 import { createAnimation, createImageItem, createLayer, createNode, createProject, createSymbol } from "@/core/doc/defaults";
@@ -21,6 +21,7 @@ import { exportSpine, spineJson } from "@/core/spine/exportSpine";
 import { loadFixture } from "./fixtures/realProject";
 import { loadStickman } from "./fixtures/stickman";
 import { cyclePlan } from "@/core/doc/cycle";
+import { offsetPlan, offsetTrack } from "@/core/doc/offset";
 import { splineAt, straightSpline, withSpline } from "@/core/doc/pathSpline";
 import { bakePlan, withBakedKeys } from "@/core/doc/pathEdit";
 
@@ -729,6 +730,30 @@ describe("the Spine runtime plays the export the way the stage draws it", () => 
     }
   });
 
+  it("constraint order: a transform constraint before or after the IK it moves, and an IK on a bone the constraint sets", () => {
+    let ordered = 0;
+    for (let seed = 1; seed <= 60; seed++) {
+      const project = randomTransformRig(seed * 7919);
+      const sym = project.items[project.rootSymbolId] as SymbolItem;
+      const bone1 = Object.values(sym.nodes).find((n) => n.name === "bone1")!;
+      const target = createNode("bone", "reachTarget");
+      target.bind = tf(320, 300);
+      sym.nodes[target.id] = target;
+      sym.layers.unshift(createLayer(target.id, target.name, sym.layers.length));
+      sym.ik.push({ id: newIkId(), name: "reach", boneId: bone1.id, targetId: target.id, chain: 0, bendPositive: false, weight: 0.7 });
+      for (const order of [["follow", "reach", "limb"], ["reach", "limb", "follow"], ["limb", "follow", "reach"]]) {
+        sym.constraintOrder = order;
+        try {
+          checkParity(project, project.rootSymbolId);
+        } catch (err) {
+          throw new Error(`seed ${seed * 7919}, order ${order.join(", ")}: ${(err as Error).message}`);
+        }
+        ordered++;
+      }
+    }
+    expect(ordered).toBe(180);
+  });
+
   it("the stickman rig, four two-bone IK chains included", async () => {
     const { project } = await loadStickman();
     expect(checkParity(project, project.rootSymbolId).checks).toBeGreaterThanOrEqual(500);
@@ -761,6 +786,24 @@ describe("the Spine runtime plays the export the way the stage draws it", () => 
       const start = worlds(0, anim.name).flat(), join = worlds(animation.duration - 1e-9, anim.name).flat();
       start.forEach((v, i) => expect(Math.abs(v - join[i]!), `${anim.name} value ${i}`).toBeLessThan(1e-3));
     }
+  });
+
+  it("keys offset: staggered round a cycle's join, and shifted in an animation that plays once", async () => {
+    const { project } = await loadStickman();
+    const sym = project.items[project.rootSymbolId] as SymbolItem;
+    sym.animations = sym.animations.map((anim, i) => {
+      const cycle = i === 0;
+      const base = cycle ? (() => {
+        const plan = cyclePlan(anim, sym.nodes);
+        return { ...anim, playTimes: 0, endsAtLastFrame: true as const, duration: plan.duration, tracks: { ...anim.tracks, ...Object.fromEntries(plan.tracks.map((t) => [t.nodeId, t])) } };
+      })() : anim;
+      const seam = cycle ? base.duration - 1 : null;
+      const rows = Object.keys(base.tracks) as NodeId[];
+      const tracks = { ...base.tracks };
+      for (const [id, delta] of offsetPlan(rows, cycle ? 3 : -2, true)) tracks[id] = offsetTrack(tracks[id]!, sym.nodes[id]!, delta, seam);
+      return { ...base, tracks };
+    });
+    expect(checkParity(project, project.rootSymbolId).checks).toBeGreaterThanOrEqual(500);
   });
 
   it("a bone bent with spline handles: two eases, and a key cut where an axis has to bend", () => {

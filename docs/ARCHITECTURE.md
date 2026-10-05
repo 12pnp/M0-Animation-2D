@@ -411,6 +411,39 @@ frame 0, so the two must be the same pose or the loop hitches.
 - `tests/cycle.test.ts`; `tests/spineParity.test.ts` turns the stickman's animations
   into cycles and checks the length in seconds and that the join plays as frame 0.
 
+### Offset keys
+
+Spine's Offset tool: layers' keys moved in time, each by a step, or with Stagger the first row
+by 0 and each next by one more step: overlapping action down a chain (`core/doc/offset.ts`).
+Timeline ▸ animation options or the layer menu ▸ Offset Keys… (`timeline.offsetKeys`) on the
+selected layers, top to bottom as the rows show, or every layer; one `EditTracks`.
+
+- **In a cycle** a track that runs from frame 0 to the join wraps (`offsetTrack` ▸ `wrapped`):
+  keys are cut in at the join and where the wrap falls (`cutKeepingEase`, so nothing moves),
+  each key goes to (frame + step) mod the loop, and the join is frame 0's pose again. A bone that
+  turns a whole number of times over the loop keeps turning the same way: the keys that come
+  round start that many turns back.
+- **Otherwise the track keeps its span**: moved later, its first pose holds (a stepped key)
+  until the moved keys start and what passes its end is cut there; moved earlier, what passes
+  its start is cut there and the last pose holds to the end. So an animation's length never
+  changes.
+- Only layer tracks move; IK, transform, deform, sequence and event keys stay.
+  `tests/offset.test.ts` samples every frame against the old track shifted;
+  `spineParity` ▸ "keys offset" plays a staggered cycle and a shifted one-shot through
+  spine-core. AI: `offset_keys`.
+
+### Key buttons
+
+The timeline's Key button (`doKeyProps`, `core/doc/keyButtons.ts`) keys the selected layers at
+the playhead without moving anything (`keyChannelAt` per property, the interval it cuts eased
+in two). A click keys **what changed**: each property (rotate, x, y, scale, shear) whose value
+there is not the setup pose's (`changedProps`), so a first pose is keyed without keying what
+was left alone. Hold or right-click for Key All and Key Rotate / Translate / Scale / Shear,
+Spine's groups (`KEY_GROUPS`). `timeline.keyChanged`, `timeline.keyAll`; Animate mode only.
+Auto key off still edits the governing key as Flash does, so "changed" is measured against
+the setup pose rather than pending edits, which this editor does not have. AI:
+`key_properties`.
+
 ### A selected bone narrows the timeline
 
 As Spine's dopesheet does: select a bone on the stage or in the Tree and the timeline shows
@@ -572,7 +605,11 @@ with the keys a rename or delete changed).
   played. Schema 19 moves an older document's carried `spine.events` to the list.
 - **The timeline** has an Events row under Draw order (`FrameGrid.eventStrip`,
   `stripHeight` is two rows): a flag on each frame that fires events, the event's name
-  beside it while it fits before the next flag, a count when several share the frame. A
+  beside it while it fits before the next flag, a count when several share the frame. Under
+  the flags, each keyed sound's waveform from its frame for its length, scaled by the key's
+  volume (`waveStrip`; `eventSounds`, `waveformPeaks` and `peakBetween` in
+  `core/doc/waveform.ts`). `view/timeline/waveforms.ts` decodes each sound once per blob in an
+  `OfflineAudioContext` and redraws when it is ready. A
   press picks the frame (⇧ adds; `ui.eventFrames`), a drag moves the picked frames' keys
   (kind `timeline.eventMove`), Delete removes them, and right-click offers Add Event Here ▸
   each event or New Event… (the event and its key in one undo step). Q / W stop on event
@@ -588,9 +625,12 @@ with the keys a rename or delete changed).
   `audio/` beside the skeleton, at that path. The Events panel's Sound list adds files.
 - **The Preview** lists the events the runtime fires while playing (an `AnimationState`
   listener; a seek does not fire), and plays their sounds at their volume and balance
-  (Web Audio, decoded once per file). Its mix bar plays "from" once and crossfades into the
-  chosen animation (`AnimationStateData.setMix`, `addAnimation`); ticks from the "from"
-  part are not sent, so the editor's playhead follows the second animation only.
+  (Web Audio, decoded once per file). Its queue (the film button) plays animations one after
+  another, each crossfaded into from the one above over its mix: `setAnimation` for the
+  first, `addAnimation` with `setMixDuration(mix, 0)` for each next, so it starts its mix
+  before the previous ends; only the last loops, while Loop is on (`preview/queue.ts`,
+  `queueSteps`; `tests/previewQueue.test.ts` plays one through spine-core). Ticks are sent
+  only while the last one's animation plays, so the editor's playhead follows it.
 - The AI's `define_event` adds, changes, renames or deletes an event; `key_event` fires one
   at a frame with overrides, or removes it. `get_rig` lists the events and `get_animation`
   the keys.
@@ -1187,6 +1227,15 @@ runtimes matter to the exporter:
   changed.
 - **Unity does not import `.atlas` as text.** Export Settings ▸ Files ▸ "Atlas as .atlas.txt
   (Unity)" names it the way spine-unity's importer looks for it.
+
+Rerun in phase H (docs/PHASE-H-PLAN.md) on the stickman and four rigs built from it with the
+AI tools, which hold every format change since: IK keys with softness, transform constraints
+and their keys, events with a sound, physics, a slider, a path, the constraint order and a bone
+colour (`H_Constraints`); weighted and unweighted meshes with deform keys (`H_Mesh`); skins
+with their own images, skin-only displays, skin bones and skin constraints (`H_Skins`);
+bounding boxes, a point and a keyed sequence (`H_Boxes`). spine-csharp 4.3.40 agrees within
+0.00014 px at every frame. The comparison covers bones, draw order, attachments and colours,
+not mesh vertices.
 
 ## The AI bridge
 
@@ -1866,19 +1915,21 @@ constraint round-trips unchanged.
 - **The solver** (`core/math/transformConstraint.ts`) is a transcription of spine-core's
   `TransformConstraint.update`, the `From*` / `To*` properties and
   `BonePose.updateLocalTransform` (normal inherit), in its space and with its pi. The stage
-  runs it in one constraint pass with the IK (`applyConstraints` in `core/doc/pose.ts`): IK
-  first, then transform constraints in their order, which is the exporter's order. They share
+  runs it in one constraint pass with the IK (`applyConstraints` in `core/doc/pose.ts`), in
+  the symbol's constraint order (ARCHITECTURE ▸ Constraint order; by default IK first, then
+  transform constraints in their order), which is the exporter's order. They share
   the solved locals, since a world change to a bone rebuilds its children from their solved
   locals (an IK chain under a constrained bone keeps its solve).
   - **Local values are the applied ones**, not ones derived from the world matrix, unless an
     earlier constraint set that bone's world (`worldSet`, the runtime's
     `validateLocalTransform`). Deriving them every time turned a rotation of 270 into −90,
-    which changes a partial mix.
+    which changes a partial mix. An IK applied after such a constraint reads the derived
+    local too.
 - **Checked**: `spineParity` ▸ "transform constraints: 60 random rigs" plays world and local,
   additive, clamp, remapped tables, keyed mixes and IK chains under constrained bones through
   spine-core frame by frame. A source whose keyed scale passes through 0 is left out: its axis
   is gone and `atan2` of signed zeros differs between the y-down stage and the y-up runtime.
-- **Export** writes the constraint after the IK constraints, every mapped mix explicitly
+- **Export** writes the constraint in the constraint order, every mapped mix explicitly
   (the runtime reads a missing `mixY` as `mixX` and `mixScaleY` as `mixScaleX`), and each
   animation's `transform` timeline (all six mixes per key; a tween is one cubic over each, 24
   numbers). **Import** turns a file's transform constraint into the model's when its bones
@@ -2086,13 +2137,40 @@ Spine's `lengths` (`pathLengths`).
   step) and, for a path's knots and handles, with the Mesh tool (`withKnotMoved`: a knot
   brings its handles; Delete removes a knot, two stay). Every edit is one `SetConstraintList`
   (the list as one value) or `EditNode`.
-- **Export** writes them after the IK and transform constraints, the exported symbol's only
+- **Export** writes them in the constraint order (by default after the IK and transform
+  constraints), the exported symbol's only
   (a nested one's warn); a constraint whose bone, path or animation is gone is skipped with a
   warning. **Import**: a file's physics and sliders become the model's when every field is
   one it holds (else carried, as a skin-listed one is); paths stay carried, since a path slot's
   attachment key need not be its name.
 - Keys of these constraints (mix, position, inertia, …) are not edited: an opened file's are
   carried. The AI's `add_physics`, `add_slider` and `make_path`.
+
+## Constraint order
+
+Spine applies a skeleton's constraints in the order of its one `constraints` list, so when two
+move the same bones the later one reads what the earlier did (a transform constraint before an
+IK makes the IK reach from the constrained pose). `SymbolItem.constraintOrder` (schema 24) holds
+names, Spine's identity for a constraint, first to last (`core/doc/constraintOrder.ts`).
+
+- **A name it does not hold comes after the named ones**, in the default order: IK,
+  transform, physics, path, slider, then the carried ones as the file had them (`byOrder`,
+  stable; `constraintEntries`). Absent is the default order, which is what the export wrote
+  before the field existed. A name of nothing is passed over.
+- **The stage** solves IK and transform constraints in this order (`applyConstraints`); a
+  runtime-posed symbol gets it from the export, and the rig is rebuilt when it changes
+  (`structureKey`). **The export** sorts each scope's constraints by its own symbol's order,
+  and the exported symbol's carried ones among its own; a nested symbol's go after.
+  **Import** sets the file's order; schema 24 moves an older document's
+  `spine.constraintOrder` here.
+- **Edited** in Properties ▸ Constraints, shown with nothing selected when the symbol has two
+  or more: ▲ / ▼ move one a place (`withConstraintMoved`, which writes every name so the list
+  says the whole order), one `SetConstraintOrder` each. A rename keeps the place: `SetIkOptions`,
+  `SetTransforms` and `SetConstraintList` rewrite the entry (`orderAfterEdit`), undo restores it.
+- **Checked**: `spineParity` ▸ "constraint order" plays 60 random transform rigs with two IKs,
+  one on a bone the transform constraint sets, in three orders through spine-core;
+  `tests/constraintOrder.test.ts` has the rules. AI: `set_constraint_order` (the names given
+  first, the rest after, `orderFrom`); `get_rig` lists `constraintOrder`.
 
 ## Bone paths
 

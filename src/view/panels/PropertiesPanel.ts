@@ -1,3 +1,4 @@
+import { type ConstraintKind, constraintEntries, withConstraintMoved } from "@/core/doc/constraintOrder";
 import { clear, cls, h, on } from "@/view/widgets/dom";
 import { icon } from "@/view/icons";
 import { NumberField } from "@/view/widgets/NumberField";
@@ -60,7 +61,7 @@ import { isImage } from "@/core/doc/types";
 import { doSetSkinImage, doSetSkinMembers, doSetSkinOnly } from "@/app/SkinOps";
 import { doAddPhysics, doAddSlider, doMakeSequence, doRemoveSequence, doSetConstraints, doSetSequenceKeys, doSetSequenceSetup } from "@/app/AttachmentOps";
 import { PHYSICS_DEFAULTS, type PhysicsSetting, SLIDER_PROPERTIES } from "@/core/doc/constraints";
-import { type ConstraintField, EditNode } from "@/core/history/attachmentCommands";
+import { type ConstraintField, EditNode, SetConstraintOrder } from "@/core/history/attachmentCommands";
 import type { CnId } from "@/core/doc/ids";
 import { SEQUENCE_MODE_LABELS, SEQUENCE_MODES, withSequenceKey } from "@/core/doc/sequence";
 import type { PathShape, SequenceKey, SymbolItem } from "@/core/doc/types";
@@ -91,6 +92,10 @@ type FieldKey =
  */
 /** One piece of a link row: a separator, or a name that selects nodes. */
 type LinkPart = string | { text: string; select: NodeId[]; title?: string };
+
+const CONSTRAINT_KIND_LABELS: Record<ConstraintKind, string> = {
+  ik: "IK", transform: "Transform", physics: "Physics", path: "Path", slider: "Slider", carried: "From file",
+};
 
 export class PropertiesPanel implements Panel {
   readonly id = "properties";
@@ -167,7 +172,10 @@ export class PropertiesPanel implements Panel {
 
   private signatureOf(): string {
     const nodes = this.store.selectedNodes;
-    if (nodes.length === 0) return `doc:${this.store.project.motionBlur?.enabled === true}`;
+    if (nodes.length === 0) {
+      const order = constraintEntries(this.store.currentSymbol).map((e) => e.name).join("\n");
+      return `doc:${this.store.project.motionBlur?.enabled === true}:${this.store.currentSymbolId}:${order}`;
+    }
     // The display shown decides the Instance and Colour sections, and
     // changes under the playhead on a layer that switches artwork.
     // Animate mode keys the IK section's mix and bend, Setup edits the constraint.
@@ -219,6 +227,8 @@ export class PropertiesPanel implements Panel {
 
     if (nodes.length === 0) {
       this.body.appendChild(this.documentSection());
+      const order = this.constraintOrderSection();
+      if (order) this.body.appendChild(order);
       return;
     }
 
@@ -1135,6 +1145,33 @@ export class PropertiesPanel implements Panel {
   }
 
   /** A paragraph inside a section, for the rule a row of fields cannot say. */
+  /** The symbol's constraints in the order they are applied (ARCHITECTURE ▸
+   *  Constraint order), each moved up or down a place. */
+  private constraintOrderSection(): HTMLElement | null {
+    const entries = constraintEntries(this.store.currentSymbol);
+    if (entries.length < 2) return null;
+    const move = (name: string, to: number) => {
+      const order = withConstraintMoved(this.store.currentSymbol, name, to);
+      if (!order) return;
+      this.store.apply(new SetConstraintOrder("Constraint Order", this.store.currentSymbolId, order));
+      this.store.emit("stage");
+      this.store.emit("doc");
+    };
+    const rows: HTMLElement[] = entries.map((e, i) => {
+      const up = h("button", { class: "iconbtn", title: `Apply “${e.name}” before “${entries[i - 1]?.name ?? ""}”` }, "▲") as HTMLButtonElement;
+      const down = h("button", { class: "iconbtn", title: `Apply “${e.name}” after “${entries[i + 1]?.name ?? ""}”` }, "▼") as HTMLButtonElement;
+      up.disabled = i === 0;
+      down.disabled = i === entries.length - 1;
+      on(up, "click", () => move(e.name, i - 1));
+      on(down, "click", () => move(e.name, i + 1));
+      return h("div", { class: "prow" },
+        h("label", null, CONSTRAINT_KIND_LABELS[e.kind]),
+        h("div", { class: "fields corder" }, h("span", { class: "corder-name", title: e.name }, e.name), up, down));
+    });
+    rows.push(this.noteRow("Applied from the top down: a constraint lower in the list reads what the ones above it did to the bones."));
+    return this.section("Constraints", true, rows);
+  }
+
   private noteRow(text: string): HTMLElement {
     return h("div", { class: "pnote" }, text);
   }

@@ -1,5 +1,9 @@
+import type { SoundStore } from "@/app/SoundStore";
+import { Waveforms } from "./waveforms";
+import { offsetPlan } from "@/core/doc/offset";
+import { KEY_GROUPS, type KeyGroup } from "@/core/doc/keyButtons";
 import { clear, cls, drag, h, on } from "@/view/widgets/dom";
-import { deleteChannelKeys, keyChannelAt, propertyKeys, type TimelineProp } from "@/core/doc/propertyKeys";
+import { deleteChannelKeys, keyChannelAt, propertyKeys, TIMELINE_PROPS, type TimelineProp } from "@/core/doc/propertyKeys";
 import { deleteDrawOrderKeys, drawingLayers, orderAt, type Reorder, withDrawOrderKey } from "@/core/doc/drawOrder";
 import { SPEED_SLIDER_MAX, sliderFromSpeed, speedFromSlider, speedLabel } from "./playSpeed";
 import { PLAY_RATES } from "./playStep";
@@ -45,7 +49,7 @@ import {
     doSetEndFrame,
     doSetRotation,
     doSetTween,
-    doCloseLoop,
+    doCloseLoop, doKeyProps, doOffsetKeys,
     doToggleCycle,
     easeTargets,
 } from "@/app/TimelineOps";
@@ -93,6 +97,8 @@ export class TimelinePanel implements Panel {
   readonly frames = new FrameClipboard();
 
   private animSelect: HTMLSelectElement;
+  private offsetStep = 2;
+  private offsetStagger = true;
   private frameLabel: HTMLElement;
   private elapsedLabel: HTMLElement;
   private tweenLabel: HTMLElement;
@@ -112,8 +118,12 @@ export class TimelinePanel implements Panel {
     private readonly clipboard: Clipboard,
     /** The onion skin's options, for press-and-hold on its buttons. */
     private readonly onionMenu: () => Array<MenuEntry | "-"> = () => [],
+    /** Event sounds, for their waveforms on the Events row. */
+    sounds?: SoundStore,
   ) {
+    const waveforms = sounds ? new Waveforms(sounds, () => this.grid.invalidate()) : null;
     this.grid = new FrameGrid(store, {
+      waveform: waveforms ? (path) => waveforms.get(path) : undefined,
       onScrub: (frame) => { this.playback.pause(); store.setFrame(frame); },
       onSelectCell: (row, frame, additive) => this.selectCell(row, frame, additive),
       onSelectRange: (rowFrom, rowTo, from, to) => this.selectRange(rowFrom, rowTo, from, to),
@@ -254,6 +264,17 @@ export class TimelinePanel implements Panel {
     const syncFocus = () => cls(focusBtn, "on", this.store.prefs.value.timeline.focusSelected);
     this.store.prefs.subscribe(syncFocus);
     syncFocus();
+    // Spine's key buttons: what changed, or (its menu) everything or one group.
+    const keyBtn = iconBtn("key", "", () => this.keySelected("changed"));
+    attachOptionsMenu(keyBtn, () => showMenu(keyBtn, this.keyMenu()));
+    const keyTitle = () => {
+      keyBtn.title = `${withAccel("Key what changed", "timeline.keyChanged")} on the selected layers: each property that is not at the setup pose (hold or right-click: key everything, or one group)`;
+    };
+    keyTitle();
+    onAccelChange(keyTitle);
+    const syncKey = () => { (keyBtn as HTMLButtonElement).disabled = this.store.ui.mode !== "animate" || !this.store.currentAnimation; };
+    this.store.subscribe((t) => { if (t === "ui" || t === "doc" || t === "stage") syncKey(); });
+    syncKey();
     const multiBtn = iconBtn("multiFrames", "Edit multiple frames: a change applies to every frame between the onion markers", () => {
       this.store.setUi({ editMultipleFrames: !this.store.ui.editMultipleFrames }, "stage");
     });
@@ -294,6 +315,8 @@ export class TimelinePanel implements Panel {
         "-",
         this.cycleItem(),
         this.closeLoopItem(),
+        "-",
+        this.offsetItem(),
       ]);
     });
 
@@ -347,7 +370,7 @@ export class TimelinePanel implements Panel {
       this.playBtn,
       iconBtn("next", "Next frame", () => this.playback.stepBy(1)),
       iconBtn("last", "Last frame", () => this.playback.toEnd()),
-      loopBtn, onionBtn, multiBtn, focusBtn,
+      loopBtn, onionBtn, multiBtn, focusBtn, keyBtn,
       h("div", { class: "sep-v" }),
       this.animSelect, animMenu,
       h("div", { class: "readout" },
@@ -640,6 +663,53 @@ export class TimelinePanel implements Panel {
       run: () => doCloseLoop(this.store, this.insertTargets()) };
   }
 
+  /** Key the selected layers at the playhead: what changed from the setup
+   *  pose, or `props` (`doKeyProps`). */
+  keySelected(props: readonly TimelineProp[] | "changed", label = "Key Changed"): void {
+    if (this.store.ui.mode !== "animate") return;
+    doKeyProps(this.store, this.store.selection.nodes, props, label);
+  }
+
+  private keyMenu() {
+    const can = this.store.ui.mode === "animate" && !!this.store.currentAnimation && this.store.selection.nodes.length > 0;
+    const group = (g: KeyGroup, label: string) => ({ label: `Key ${label}`, enabled: can, run: () => this.keySelected(KEY_GROUPS[g], `Key ${label}`) });
+    return [
+      { label: "Key Changed", command: "timeline.keyChanged", enabled: can, run: () => this.keySelected("changed") },
+      { label: "Key All", command: "timeline.keyAll", enabled: can, run: () => this.keySelected(TIMELINE_PROPS, "Key All") },
+      "-" as const,
+      group("rotate", "Rotate"), group("translate", "Translate"), group("scale", "Scale"), group("shear", "Shear"),
+    ];
+  }
+
+  private offsetItem() {
+    return { label: "Offset Keys…", command: "timeline.offsetKeys", enabled: this.store.ui.mode === "animate" && !!this.store.currentAnimation,
+      run: () => this.offsetKeys() };
+  }
+
+  /**
+   * Offset Keys (Spine's Offset): the selected layers' keys, or every
+   * layer's, moved in time; with Stagger each row by one more step than the
+   * row above it (`offsetPlan`, `offsetTrack`).
+   */
+  offsetKeys(): void {
+    const anim = this.store.currentAnimation;
+    if (!anim) return;
+    const targets = new Set(this.insertTargets());
+    // Top to bottom as the rows show, so a chain staggers from its root.
+    const rows = [...new Set(this.grid.visibleRows().filter((r) => !r.prop && r.layer && targets.has(r.layer.nodeId)).map((r) => r.layer!.nodeId))];
+    for (const id of targets) if (!rows.includes(id)) rows.push(id);
+    promptNumber({
+      title: "Offset Keys", label: "Frames", value: this.offsetStep, min: -10000, max: 10000,
+      toggle: { label: "Stagger: each row one step more", checked: this.offsetStagger, title: "The first row moves by 0, the next by the step, the next by twice the step…" },
+      onOk: (n, stagger) => {
+        if (this.store.currentAnimation?.id !== anim.id || !Number.isFinite(n)) return;
+        this.offsetStep = Math.round(n);
+        this.offsetStagger = stagger;
+        doOffsetKeys(this.store, offsetPlan(rows, this.offsetStep, stagger));
+      },
+    });
+  }
+
   /** A 0×0 fixed anchor at a screen point, for `showMenu`. */
   private menuAnchor(x: number, y: number): HTMLElement {
     const anchor = h("div");
@@ -677,6 +747,7 @@ export class TimelinePanel implements Panel {
       { label: `Delete ${plural}`, enabled: n > 0, run: () => this.deleteSelectedLayers() },
       "-",
       { label: "Select All Frames", command: "edit.selectAllFrames", enabled: n > 0, run: () => this.selectAllFrames() },
+      this.offsetItem(),
       "-",
       {
         // Keyed at the playhead, in Animate (Spine's draw order keys).

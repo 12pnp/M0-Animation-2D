@@ -131,7 +131,7 @@ describe("editing skins", () => {
     const { rig: sym } = await rig();
     sym.skins = [{ name: "red" }];
     sym.stageSkins = ["red"];
-    sym.spine = { header: {}, constraints: [], constraintOrder: [], skins: [{ name: "red", path: ["p"] }, { name: "carriedOnly" }] };
+    sym.spine = { header: {}, constraints: [], skins: [{ name: "red", path: ["p"] }, { name: "carriedOnly" }] };
     const st = withRenamedSkin(sym, "red", "crimson") as SkinState;
     expect(st.skins!.map((s) => s.name)).toEqual(["crimson"]);
     expect(st.stageSkins).toEqual(["crimson"]);

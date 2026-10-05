@@ -1,6 +1,6 @@
 import type { Store } from "./Store";
 import { type Reorder, reorderAt } from "@/core/doc/drawOrder";
-import type { DeformKey, DrawOrderKey, EventDef, EventKey, IkKey, TcKey, TransformConstraint } from "@/core/doc/types";
+import type { DeformKey, DrawOrderKey, EventDef, EventKey, IkKey, TcKey, TimelineProp, TransformConstraint } from "@/core/doc/types";
 import { SetDeformKeys } from "@/core/history/meshCommands";
 import { SetTcKeys, SetTransforms } from "@/core/history/transformCommands";
 import type {
@@ -41,7 +41,9 @@ import {
 } from "@/core/doc/timeline";
 import { applyFrameEdit, deriveEdit } from "@/core/math/multiEdit";
 import { EditTracks, SetAnimationDuration, SetCycle, SetDrawOrder, SetEventKeys, SetEvents, SetIkKeys, withEases, withKeyframe, withTween, } from "@/core/history/timelineCommands";
-import { cyclePlan, isCycle, seamKeys } from "@/core/doc/cycle";
+import { cyclePlan, isCycle, seamFrame, seamKeys } from "@/core/doc/cycle";
+import { offsetTrack } from "@/core/doc/offset";
+import { changedProps, keyProps } from "@/core/doc/keyButtons";
 import {
     SetBindColor,
     SetBindTransform,
@@ -367,6 +369,47 @@ export function doClearKeyframes(
 }
 
 /* ── Span and keyframe manipulation ──────────────────────────────────────*/
+
+/**
+ * The Key button (`core/doc/keyButtons.ts`): `props` of each layer keyed at
+ * the playhead, or with "changed" the ones that differ from its setup pose.
+ * One undo step; false when nothing was keyed.
+ */
+export function doKeyProps(store: Store, ids: readonly NodeId[], props: readonly TimelineProp[] | "changed", label: string): boolean {
+  const anim = store.currentAnimation;
+  if (!anim) return false;
+  const frame = store.ui.frame;
+  const tracks: TrackMap = new Map();
+  for (const id of ids) {
+    const node = store.currentSymbol.nodes[id];
+    if (!node || node.kind === "group") continue;
+    const keyed = props === "changed" ? changedProps(anim.tracks[id], node, frame) : props;
+    if (!keyed.length) continue;
+    const base = ensureTrack(store, node);
+    const next = keyProps(base, node, keyed, frame);
+    if (next !== anim.tracks[id]) tracks.set(id, next);
+  }
+  commit(store, label, tracks);
+  return tracks.size > 0;
+}
+
+/** Each layer's keys moved by its offset (`core/doc/offset.ts`), one undo
+ *  step. False when nothing moved. */
+export function doOffsetKeys(store: Store, offsets: ReadonlyMap<NodeId, number>): boolean {
+  const anim = store.currentAnimation;
+  if (!anim) return false;
+  const seam = seamFrame(anim);
+  const tracks: TrackMap = new Map();
+  for (const [id, delta] of offsets) {
+    const track = anim.tracks[id];
+    const node = store.currentSymbol.nodes[id];
+    if (!track || !node) continue;
+    const next = offsetTrack(track, node, delta, seam);
+    if (next !== track) tracks.set(id, next);
+  }
+  commit(store, "Offset Keys", tracks);
+  return tracks.size > 0;
+}
 
 export function doSetEndFrame(store: Store, nodeId: NodeId, endFrame: number): void {
   const anim = store.currentAnimation;
