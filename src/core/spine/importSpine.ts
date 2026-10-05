@@ -5,7 +5,7 @@ import { displaysOf } from "@/core/doc/displays";
 import { deformKeysFromSpine, meshFromSpine, type MeshContext } from "./importMesh";
 import { assignDeforms, type DeformTarget, withDeformKeysOf } from "@/core/mesh/deform";
 import { type Outline, outlineOf, sequenceDisplayOf } from "./importAttachments";
-import { SEQUENCE_MODES } from "@/core/doc/sequence";
+import { bakedSequenceKeys, SEQUENCE_MODES } from "@/core/doc/sequence";
 import type { AssetId, CnId, IkId, NodeId, TcId } from "@/core/doc/ids";
 import { fromOffsets } from "@/core/doc/drawOrder";
 import { eventDefsFromSpine, eventValues } from "@/core/doc/events";
@@ -325,7 +325,10 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
   for (const skin of skinsIn) {
     if (skin === defaultSkin) continue;
     const def: SkinDef = { name: String(skin.name) };
-    const rest: SpineRaw = pick(skin, (k) => k !== "attachments" && k !== "bones" && !(SKIN_CONSTRAINT_KINDS as readonly string[]).includes(k)) ?? {};
+    // Its colour in Spine's editor (`SkinDef.color`).
+    const color = str(skin.color) && /^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(skin.color) ? (skin.color.length === 6 ? skin.color + "ff" : skin.color).toLowerCase() : null;
+    if (color) def.color = color;
+    const rest: SpineRaw = pick(skin, (k) => k !== "attachments" && k !== "bones" && !(SKIN_CONSTRAINT_KINDS as readonly string[]).includes(k) && !(k === "color" && color)) ?? {};
     const atts: Record<string, Record<string, SpineRaw>> = {};
     for (const [slot, byKey] of Object.entries(obj(skin.attachments) ? skin.attachments : {})) {
       if (!obj(byKey)) continue;
@@ -735,16 +738,20 @@ function sequenceKeys(sym: SymbolItem, slotNode: Map<string, Node>, rate: number
       const atts = anim.spine?.attachments as Record<string, Record<string, Record<string, SpineRaw>>> | undefined;
       const raw = atts?.default?.[slotName]?.[node.key]?.sequence;
       if (!Array.isArray(raw)) continue;
-      const keys: SequenceKey[] = [];
+      const read: SequenceKey[] = [];
       for (const k of raw) {
         if (!obj(k)) break;
         const at = num(k.time, 0) * rate;
         const mode = k.mode ?? "hold";
-        if (Math.abs(at - Math.round(at)) > 1e-3 || !SEQUENCE_MODES.includes(mode as never)) break;
+        if (!SEQUENCE_MODES.includes(mode as never)) break;
         const delay = num(k.delay, 0) * rate;
-        keys.push({ frame: Math.round(at), mode: mode as SequenceKey["mode"], index: Math.max(0, Math.trunc(num(k.index, 0))), delay: delay > 0 ? delay : 1 });
+        const frame = Math.abs(at - Math.round(at)) <= 1e-3 ? Math.round(at) : at;
+        read.push({ frame, mode: mode as SequenceKey["mode"], index: Math.max(0, Math.trunc(num(k.index, 0))), delay: delay > 0 ? delay : 1 });
       }
-      if (keys.length !== raw.length) continue;
+      if (read.length !== raw.length) continue;
+      // A key between frames: the image Spine shows at every whole frame, held.
+      const keys = read.every((k) => Number.isInteger(k.frame)) ? read
+        : bakedSequenceKeys(read, anim.duration - 1, node.sequence.items.length, node.sequence.setup ?? 0);
       anim.sequences = { ...anim.sequences, [slot.id]: keys };
       const copy = structuredClone(atts!);
       const att = copy.default![slotName]![node.key]!;

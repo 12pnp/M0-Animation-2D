@@ -627,6 +627,19 @@
     }
   },
   {
+    "name": "set_skin_color",
+    "description": "Set a skin's colour in Spine's editor, in one undoable step: \"rrggbb\" or \"rrggbbaa\", null for Spine's default. Nonessential data: the runtimes do not read it.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "skin": { "type": "string" },
+        "color": { "type": ["string", "null"] }
+      },
+      "required": ["skin", "color"],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "set_constraint_order",
     "description": "Set the order the symbol's constraints are applied in (Spine's constraint order), in one undoable step: `order` names constraints first to last; the ones it leaves out follow, in the order they had. A constraint applied later reads what the earlier ones did to the bones, e.g. a transform constraint before an IK makes the IK reach from the constrained pose. get_rig lists the current order in constraintOrder.",
     "input_schema": {

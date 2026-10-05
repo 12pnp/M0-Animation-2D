@@ -43,7 +43,7 @@ export class SelectTool implements Tool {
       const { handle } = pick;
       this.handle = handle.bake
         ? new BakeDrag(ctx, { ...handle, bake: handle.bake }, this.startWorld)
-        : new HandleDrag(ctx, handle, this.startWorld);
+        : new HandleDrag(ctx, handle, this.startWorld, e.altKey);
       return;
     }
     if (pick) {

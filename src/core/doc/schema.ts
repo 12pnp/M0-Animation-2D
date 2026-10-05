@@ -877,6 +877,7 @@ function sanitizeSkin(
   const name = typeof r.name === "string" ? r.name.trim() : "";
   if (!name || name === "default") return null;
   const def: SkinDef = { name };
+  if (typeof r.color === "string" && /^[0-9a-fA-F]{8}$/.test(r.color)) def.color = r.color.toLowerCase();
   const displays: Record<string, Record<string, DisplayRef>> = {};
   for (const [nodeId, byIndex] of Object.entries(r.displays && typeof r.displays === "object" ? r.displays as Record<string, unknown> : {})) {
     const node = nodes[nodeId];

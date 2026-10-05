@@ -39,7 +39,7 @@ import { boneFromWorld, placeOnBone, siblingOrder, type SpinePoint } from "@/cor
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
 import { CURVE_Y_LIMIT, easeOf, sameEase } from "@/core/math/easing";
 import { applySkins, doSetSkinImage, doSetSkinMembers, doSetSkinOnly } from "@/app/SkinOps";
-import { withNewSkin } from "@/core/doc/skins";
+import { withNewSkin, withSkinColor } from "@/core/doc/skins";
 import { doAddAttachment, doAddPhysics, doAddSlider, doMakePath, doMakeSequence, doSetConstraints, editShownOutline } from "@/app/AttachmentOps";
 import { PHYSICS_DEFAULTS, PHYSICS_SETTINGS, SLIDER_PROPERTIES } from "@/core/doc/constraints";
 import { SEQUENCE_MODES, withSequenceKey } from "@/core/doc/sequence";
@@ -177,6 +177,7 @@ export class AgentApi {
       case "set_point": return this.setPoint(str(args, "point"), args);
       case "set_tint": return this.setTint(str(args, "layer"), args);
       case "map_transform": return this.mapTransform(str(args, "constraint"), args);
+      case "set_skin_color": return this.setSkinColor(str(args, "skin"), args.color);
       case "set_constraint_order": return this.setConstraintOrder(list<string>(args, "order"));
       case "key_sequence": return this.keySequence(str(args, "animation"), str(args, "layer"), int(args, "frame", 0), args);
       case "set_skin_image": return this.setSkinImage(args);
@@ -1130,6 +1131,16 @@ export class AgentApi {
     const refused = applySkins(this.store, "AI: New Skin", withNewSkin(this.sym, name));
     if (refused) throw new AgentError(refused);
     return { skins: skinsOf(this.sym).filter((n) => n !== "default"), showing: stageSkinOf(this.sym) };
+  }
+
+  /** A skin's colour in Spine's editor: "rrggbb" or "rrggbbaa", null for Spine's default. */
+  private setSkinColor(name: string, color: unknown) {
+    const skin = this.skinNamed(name);
+    if (color !== null && (typeof color !== "string" || !/^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(color))) throw new AgentError(`color is "rrggbb" or "rrggbbaa", or null for Spine's default.`);
+    const hex = typeof color === "string" ? color.replace("#", "") : null;
+    const refused = applySkins(this.store, `AI: Skin Colour "${skin}"`, withSkinColor(this.sym, skin, hex ? (hex.length === 6 ? `${hex}ff` : hex) : undefined));
+    if (refused) throw new AgentError(refused);
+    return { skin, color: this.sym.skins?.find((d) => d.name === skin)?.color ?? null };
   }
 
   private setSkinImage(args: Args) {

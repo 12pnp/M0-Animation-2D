@@ -8,7 +8,7 @@ import {
   shiftKeys, translateTo, withKeyTransform, withoutRedundantKeys,
 } from "@/core/doc/pathEdit";
 import { apply, invert, mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
-import { handleAt, type PathHandle, type Spline, splineAt, splineSegments, withSpline } from "@/core/doc/pathSpline";
+import { handleAt, handlePartner, handlePoint, handlesSmooth, type HandleEnd, mirroredHandle, type PathHandle, type Spline, splineAt, splineSegments, withSpline } from "@/core/doc/pathSpline";
 import { quantize, type Transform } from "@/core/math/Transform";
 import { type IkPathDrag, ikTargetFor, targetLocalAt, withBendFlippedAt, withTargetAt } from "@/core/doc/ikPathEdit";
 import type { Pose } from "@/core/doc/pose";
@@ -65,7 +65,7 @@ export class PathDrag {
 
   constructor(
     private readonly ctx: ToolContext,
-    id: NodeId,
+    private readonly id: NodeId,
     private readonly frame: number,
     private readonly dot: Point & { relativeAt?: number },
     private readonly startWorld: Point,
@@ -142,13 +142,15 @@ export class PathDrag {
       ctx.store.history.beginInteraction("path.drag");
     }
     if (!this.mode) return;
-    const shown = { x: this.dot.x + world.x - this.startWorld.x, y: this.dot.y + world.y - this.startWorld.y };
+    // The dot snaps (`snapDot`): onto another of the path's dots, a grid line, a guide or an object.
+    const shown = this.ctx.snapDot({ x: this.dot.x + world.x - this.startWorld.x, y: this.dot.y + world.y - this.startWorld.y }, this.id, this.frame, e.metaKey || e.ctrlKey);
     this.last = this.back ? apply({ x: 0, y: 0 }, this.back, shown.x, shown.y) : shown;
     this.apply(e.shiftKey, false);
   }
 
   up(e: PointerEvent): void {
     pathDragAnchor = null;
+    this.ctx.endSnap();
     if (!this.dragging || !this.mode) return;
     this.apply(e.shiftKey, true);
     this.ctx.store.history.endInteraction();
@@ -156,6 +158,7 @@ export class PathDrag {
 
   cancel(): void {
     pathDragAnchor = null;
+    this.ctx.endSnap();
     if (this.dragging && this.mode) this.ctx.store.history.abortInteraction();
   }
 
@@ -259,19 +262,32 @@ export class HandleDrag {
   /** The parent's linear part at the handle's key, inverted: world deltas
    *  into the parent's space, where the keys are. */
   private readonly toLocal: Matrix2D | null;
+  /** The handle across the same key, turned with this one while the key is
+   *  smooth (`handlesSmooth`; ⌥ flips that for the drag), and the key it is at. */
+  private readonly partner: (HandleEnd & { key: number }) | null = null;
 
   constructor(
     private readonly ctx: ToolContext,
     private readonly handle: PathHandle,
     private readonly startWorld: Point,
+    alt = false,
   ) {
     const store = ctx.store;
     const sym = store.currentSymbol;
     const anim = store.currentAnimation;
     this.id = pathBoneIds(sym.nodes, store.selection.nodes)[0]!;
     this.base = anim!.tracks[this.id]!;
-    const seg = splineSegments(this.base).find((s) => s.from === handle.from)!;
+    const segs = splineSegments(this.base);
+    const seg = segs.find((s) => s.from === handle.from)!;
     this.spline = seg.spline;
+    const partner = handlePartner(segs, handle, anim ? seamFrame(anim) : null);
+    const pseg = partner ? segs.find((s) => s.from === partner.from) : undefined;
+    if (partner && pseg) {
+      // Compared about one anchor: across a cycle's join the two keys are one.
+      const mine = handlePoint(this.spline, handle.end), theirs = handlePoint(pseg.spline, partner.end);
+      const other = { x: theirs.at.x - theirs.anchor.x + mine.anchor.x, y: theirs.at.y - theirs.anchor.y + mine.anchor.y };
+      if (handlesSmooth(mine.anchor, mine.at, other) !== alt) this.partner = { ...partner, key: partner.end === "out" ? pseg.from : pseg.to };
+    }
     // The matrix the handle was drawn through: its key's parent pose, or the
     // parent's pose the path is shown in.
     const l = handle.lin ?? { a: 1, b: 0, c: 0, d: 1 };
@@ -312,14 +328,32 @@ export class HandleDrag {
       return final ? { x: Math.round(q.x * 100) / 100, y: Math.round(q.y * 100) / 100 } : q;
     };
     const next: Spline = this.handle.end === "out" ? { ...s, p1: moved(s.p1) } : { ...s, p2: moved(s.p2) };
-    const edit = withSpline(this.base, node, this.handle.from, next);
+    let edit = withSpline(this.base, node, this.handle.from, next);
     if ("refused" in edit) {
       if (!this.told) this.ctx.notify(edit.refused);
       this.told = true;
       return;
     }
+    const splits = edit.split !== null ? [edit.split] : [];
+    // A smooth key stays smooth: the handle across it turns to point the other way.
+    if (this.partner) {
+      const p = this.partner;
+      const ps = splineSegments(edit.track).find((x) => (p.end === "out" ? x.from === p.key : x.to === p.key));
+      if (ps) {
+        const mine = handlePoint(next, this.handle.end), theirs = handlePoint(ps.spline, p.end);
+        const dir = { x: theirs.anchor.x + mine.at.x - mine.anchor.x, y: theirs.anchor.y + mine.at.y - mine.anchor.y };
+        const m = mirroredHandle(theirs.anchor, dir, theirs.at);
+        const turned = final ? { x: Math.round(m.x * 100) / 100, y: Math.round(m.y * 100) / 100 } : m;
+        const other: Spline = p.end === "out" ? { ...ps.spline, p1: turned } : { ...ps.spline, p2: turned };
+        const both = withSpline(edit.track, node, ps.from, other);
+        if (!("refused" in both)) {
+          if (both.split !== null) splits.push(both.split);
+          edit = { ...both, clamped: both.clamped || edit.clamped };
+        }
+      }
+    }
     if (edit.clamped && final) this.ctx.notify("The handle was pulled in: that axis moves too little for it to reach further.");
-    const track = final && edit.split !== null ? withoutRedundantKeys(edit.track, [edit.split]) : edit.track;
+    const track = final && splits.length ? withoutRedundantKeys(edit.track, splits) : edit.track;
     store.apply(new EditTracks("Bend Path", store.currentSymbolId, anim.id, new Map([[this.id, track]]), "path.handle"));
     store.emit("timeline");
     store.emit("stage");

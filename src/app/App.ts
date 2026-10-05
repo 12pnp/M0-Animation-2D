@@ -22,9 +22,9 @@ import { AnimationsPanel } from "@/view/panels/AnimationsPanel";
 import { SkinsPanel } from "@/view/panels/SkinsPanel";
 import { EventsPanel } from "@/view/panels/EventsPanel";
 import { GraphPanel } from "@/view/panels/GraphPanel";
-import { doBindMesh, doMakeMesh, doRemoveMesh, doUnbindMesh } from "./MeshOps";
+import { doBindMesh, doMakeMesh, doRemoveMesh, doUnbindMesh, shownOn } from "./MeshOps";
 import { doAddAttachment, doMakePath } from "./AttachmentOps";
-import { meshableNodes, meshNodes } from "@/core/mesh/meshPlan";
+import { meshableNodes, meshNodes, shownMeshes } from "@/core/mesh/meshPlan";
 import { SoundStore } from "./SoundStore";
 import { HistoryPanel } from "@/view/panels/HistoryPanel";
 import { ReferencePanel } from "@/view/panels/ReferencePanel";
@@ -1565,14 +1565,15 @@ export class App {
     reg("modify.group", () => tl.addGroup(), hasNodes);
     reg("modify.swapInstance", () => this.swapInstance(), () => this.canSwapInstance());
     reg("modify.bindToBone", () => this.bindToBone(), () => this.bindableToBone() !== null);
-    reg("modify.makeMesh", () => { doMakeMesh(s, this.assets); }, () => meshableNodes(s.currentSymbol, s.selection.nodes).length > 0);
-    reg("modify.removeMesh", () => { doRemoveMesh(s); }, () => meshNodes(s.currentSymbol, s.selection.nodes).length > 0);
+    const shown = () => shownOn(s);
+    reg("modify.makeMesh", () => { doMakeMesh(s, this.assets); }, () => meshableNodes(s.currentSymbol, s.selection.nodes, shown().skins, shown().indexOf).length > 0);
+    reg("modify.removeMesh", () => { doRemoveMesh(s); }, () => meshNodes(s.currentSymbol, s.selection.nodes, shown().skins, shown().indexOf).length > 0);
     reg("modify.bindMesh", () => {
       const refused = doBindMesh(s);
       if (refused) this.toast.show(refused, true);
-    }, () => meshNodes(s.currentSymbol, s.selection.nodes).length === 1);
+    }, () => meshNodes(s.currentSymbol, s.selection.nodes, shown().skins, shown().indexOf).length === 1);
     reg("modify.unbindMesh", () => { doUnbindMesh(s); },
-      () => meshNodes(s.currentSymbol, s.selection.nodes).some((id) => !!s.currentSymbol.nodes[id]!.mesh!.weights));
+      () => shownMeshes(s.currentSymbol, s.selection.nodes, shown().skins, shown().indexOf).some((m) => !!m.mesh.weights));
     reg("modify.addBox", () => doAddAttachment(s, this.assets, "box"), () => s.selection.nodes.length <= 1);
     reg("modify.addPoint", () => doAddAttachment(s, this.assets, "point"), () => s.selection.nodes.length <= 1);
     reg("modify.makePath", () => {

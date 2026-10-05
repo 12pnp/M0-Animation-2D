@@ -46,6 +46,13 @@ export interface ToolContext {
   snapDelta(dx: number, dy: number, free?: boolean): { dx: number; dy: number };
   /** End the session and clear the smart guides. */
   endSnap(): void;
+  /**
+   * Where a bone path's dot dragged to `world` lands (`snapPoint`): on another
+   * dot of the bone's path, else a grid line, a guide or another object; the
+   * smart guides recorded. `free` (⌘/Ctrl) leaves it where it is. `endSnap`
+   * ends it.
+   */
+  snapDot(world: { x: number; y: number }, boneId: string, frame: number, free?: boolean): { x: number; y: number };
   setCursor(cursor: string): void;
   /** The bone paths the last draw showed; empty when none are shown. */
   bonePaths(): BonePath[];

@@ -351,6 +351,9 @@ export interface SequenceKey {
 export interface SkinDef {
   /** Unique; never "default". */
   name: string;
+  /** Its colour in Spine's editor, "rrggbbaa" (nonessential; the runtimes do
+   *  not read it). Absent: Spine's default. */
+  color?: string;
   /** node → display index → what this skin shows there. */
   displays?: Record<NodeId, Record<string, DisplayRef>>;
   bones?: NodeId[];

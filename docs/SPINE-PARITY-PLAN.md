@@ -53,6 +53,7 @@ Legend:
 - ✅ Skin placeholders (skin-only displays) and a skin's own image in each slot
 - ✅ Skin bones and skin constraints, every kind
 - ✅ A skin's own box, point or path in a slot, drawn, exported and edited
+- ✅ Skin colours (Skins panel), and a mesh made for a skin's own image
 
 ### Constraints
 
@@ -113,7 +114,7 @@ Legend:
 - ✅ spine-core parity tests: the stage against the export, frame by frame
 - ✅ Preview mixing (Mix from … over … s, Play Mix) and the fired events listed
 - ✅ Preview animation queue of any length, each crossfaded into
-- ✅ Unity check rerun after phases A to K, attachment geometry and every skin included
+- ✅ Unity check rerun after phases A to L, attachment geometry and every skin included
   (ARCHITECTURE ▸ Checked in Unity)
 
 ## Plan
@@ -248,10 +249,19 @@ meshes.
 5. A skin's own box, point or path.
 6. The Unity check rerun, each skin played through every animation for a rig with a few.
 
+### Phase L: finishing touches (done, docs/PHASE-L-PLAN.md)
+
+1. Deform and sequence keys between frames, written frame by frame.
+2. Skin colours.
+3. A mesh for a skin's own image: Make Mesh and the rest on the image the stage shows.
+4. Bone paths: dots snap; smooth keys stay smooth, across a cycle's join too; the Ease panel's
+   note on a bend.
+5. ARCHITECTURE ▸ Not built yet brought up to date.
+6. The Unity check rerun.
+
 An opened file still carries only what no model field covers: an attachment field outside
-Spine's documented set, a timeline that does not land on frames and has no exact form (a deform
-or sequence key between frames), and a skin's own attachments under keys the default skin does
-not have in a box, point or path slot.
+Spine's documented set, and a skin's own attachments under keys the default skin does not have
+in a box, point or path slot.
 
 ## Not in scope
 

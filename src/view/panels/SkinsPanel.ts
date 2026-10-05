@@ -1,9 +1,10 @@
+import { SetSkins } from "@/core/history/skinCommands";
 import { clear, cls, h, on } from "@/view/widgets/dom";
 import type { Panel } from "@/view/widgets/Dock";
 import type { Store } from "@/app/Store";
 import { icon, type IconName } from "@/view/icons";
 import { SetStageSkins } from "@/core/history/commands";
-import { DEFAULT_SKIN, editedSkin, skinsOf, stageSkinOf, toggledSkins } from "@/core/doc/skins";
+import { DEFAULT_SKIN, editedSkin, SPINE_SKIN_COLOR, skinsOf, stageSkinOf, toggledSkins, withSkinColor } from "@/core/doc/skins";
 import { doDeleteSkin, doNewSkin, doRenameSkin } from "@/app/SkinOps";
 
 /**
@@ -82,12 +83,19 @@ export class SkinsPanel implements Panel {
       box.checked = shown.includes(name);
       on(box, "change", () => set(toggledSkins(named, stageSkinOf(this.store.currentSymbol), name)));
       const label = h("span", { class: "skins-name" }, slash < 0 ? name : name.slice(slash + 1));
-      const row = h("div", { class: `skins-row${group ? " nested" : ""}`, title: "Click to edit this skin in the Properties panel; double-click to rename it" }, box, label);
+      // Its colour in Spine's editor (`SkinDef.color`, nonessential), for a skin the model holds.
+      const def = sym.skins?.find((d) => d.name === name);
+      const swatch = def ? h("input", { type: "color", class: "skin-color", title: "This skin's colour in Spine's editor" }) as HTMLInputElement : null;
+      if (swatch) {
+        swatch.value = `#${(def!.color ?? SPINE_SKIN_COLOR).slice(0, 6)}`;
+        on(swatch, "change", () => this.store.apply(new SetSkins("Skin Colour", sym.id, withSkinColor(this.store.currentSymbol, name, `${swatch.value.slice(1)}ff`))));
+      }
+      const row = h("div", { class: `skins-row${group ? " nested" : ""}`, title: "Click to edit this skin in the Properties panel; double-click to rename it" }, box, ...(swatch ? [swatch] : []), label);
       cls(row, "on", name === edited);
       // pointerup on the row, not the switch: the row stays the same element
       // between the two clicks of a double-click (the DOM trap).
       on(row, "pointerup", (e) => {
-        if (e.target === box || name === this.store.ui.editSkin) return;
+        if (e.target === box || e.target === swatch || name === this.store.ui.editSkin) return;
         this.store.setUi({ editSkin: name }, "stage");
       });
       on(label, "dblclick", () => void doRenameSkin(this.store, name));

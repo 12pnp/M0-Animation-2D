@@ -174,6 +174,59 @@ export function splineSegments(track: Track | undefined): SplineSegment[] {
   return out;
 }
 
+/** Whether the tween leaving `k` is bent on the stage: its x and y eases each
+ *  one custom curve, as a handle drag writes them (`splineToEases`), which
+ *  replaced whatever ease the position had. */
+export function bentOnPath(k: Keyframe): boolean {
+  return k.tween.kind !== "none" && k.eases?.x?.kind === "curve" && k.eases?.y?.kind === "curve";
+}
+
+/** One end of an interval's spline: its out handle (P1) or its in handle (P2). */
+export interface HandleEnd { from: number; end: "out" | "in" }
+
+/**
+ * The handle on the other side of the same key: the in handle of the interval
+ * arriving at the key an out handle leaves, and back. On a cycle (`join` the
+ * frame of the key that is frame 0 again) the join is one key, so frame 0's
+ * out handle and the join's in handle are a pair. Null at a path's end or where
+ * the interval on the other side does not tween.
+ */
+export function handlePartner(segs: readonly SplineSegment[], h: HandleEnd, join: number | null): HandleEnd | null {
+  const seg = segs.find((x) => x.from === h.from);
+  if (!seg) return null;
+  const at = h.end === "out" ? seg.from : seg.to;
+  if (h.end === "out") {
+    const arriving = segs.find((x) => x.to === at) ?? (join !== null && at === 0 ? segs.find((x) => x.to === join) : undefined);
+    return arriving ? { from: arriving.from, end: "in" } : null;
+  }
+  const leaving = segs.find((x) => x.from === at) ?? (join !== null && at === join ? segs.find((x) => x.from === 0) : undefined);
+  return leaving ? { from: leaving.from, end: "out" } : null;
+}
+
+/** Whether two handles on either side of `anchor` point opposite ways (within
+ *  `deg`): a smooth key, which a drag keeps smooth. A handle on its anchor has
+ *  no direction and counts as smooth. */
+export function handlesSmooth(anchor: Pt, a: Pt, b: Pt, deg = 2): boolean {
+  const ax = a.x - anchor.x, ay = a.y - anchor.y, bx = b.x - anchor.x, by = b.y - anchor.y;
+  const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
+  if (la < 1e-9 || lb < 1e-9) return true;
+  return (ax * bx + ay * by) / (la * lb) <= -Math.cos((deg * Math.PI) / 180);
+}
+
+/** `other` turned to point away from `dragged` across `anchor`, its own
+ *  length kept: the partner of a smooth key's handle. */
+export function mirroredHandle(anchor: Pt, dragged: Pt, other: Pt): Pt {
+  const dx = dragged.x - anchor.x, dy = dragged.y - anchor.y, l = Math.hypot(dx, dy);
+  const len = Math.hypot(other.x - anchor.x, other.y - anchor.y);
+  if (l < 1e-9) return other;
+  return { x: anchor.x - (dx / l) * len, y: anchor.y - (dy / l) * len };
+}
+
+/** A handle's point and the key it hangs from, in the parent's space. */
+export function handlePoint(s: Spline, end: "out" | "in"): { at: Pt; anchor: Pt } {
+  return end === "out" ? { at: s.p1, anchor: s.p0 } : { at: s.p2, anchor: s.p3 };
+}
+
 /** A handle as the stage draws it, in the symbol's space: the out handle of
  *  the interval leaving `from` (P1) or its in handle (P2), and the dot it
  *  hangs from. */

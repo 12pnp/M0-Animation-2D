@@ -93,6 +93,23 @@ export function sequenceFor(project: Project, itemId: ItemId): SequenceData | st
 }
 
 /** `keys` with a key at `frame`; one there is replaced. */
+/**
+ * Keys some of which fall between frames, as hold keys on whole frames: the
+ * image `sequenceIndexAt` shows at every frame from the first key's next whole
+ * frame to `end`, a key wherever it changes. Exact at every frame.
+ */
+export function bakedSequenceKeys(keys: readonly SequenceKey[], end: number, count: number, setup = 0): SequenceKey[] {
+  if (!keys.length) return [];
+  const out: SequenceKey[] = [];
+  let shown = -1;
+  for (let f = Math.ceil(keys[0]!.frame - 1e-3) || 0; f <= end; f++) {
+    const index = sequenceIndexAt(keys, f, count, setup);
+    if (index !== shown) out.push({ frame: f, mode: "hold", index, delay: 1 });
+    shown = index;
+  }
+  return out;
+}
+
 export function withSequenceKey(keys: readonly SequenceKey[], key: SequenceKey): SequenceKey[] {
   return [...keys.filter((k) => k.frame !== key.frame), key].sort((a, b) => a.frame - b.frame);
 }

@@ -1264,6 +1264,10 @@ the model's, one moved and its spacing changed), `K_Doi` (Spineunitygirl's tints
 stickman with a remapped transform constraint, a box with a skin's own and a tint). A rig with up
 to four skins now plays every animation in each skin too. All nine agree within 0.0019 px.
 
+Rerun in phase L (docs/PHASE-L-PLAN.md) with `L_Authored`: the stickman with a skin colour (the
+skin's `color`, which spine-csharp's reader ignores as spine-core's does), a mesh made for a
+skin's own image and a bent, smooth path. All ten agree within 0.0019 px.
+
 ## The AI bridge
 
 An AI edits the open document through the same undoable commands as a person.
@@ -2015,7 +2019,10 @@ per mesh node, one offset pair per point in the node's space.
   (`traceContour`, stride 4, tolerance 2; a box for an image with no alpha), points along it
   and a grid inside kept half a spacing from the edge (`makeMesh`), triangulated within the
   outline (`core/mesh/triangulate.ts`: ear clipping, the inner points inserted, Lawson flips
-  that never flip an outline edge and only flip a convex quad).
+  that never flip an outline edge and only flip a convex quad). Make Mesh, Remove Mesh, Bind
+  and Unbind act on the image the stage shows (`meshTargets`, `shownMeshes`): the display at
+  the playhead, in the shown skin that fills it, so a skin's own image gets a mesh of its own.
+  A link, a sequence and an opened file's attachment are refused.
 - **Weights**: Bind Mesh to Bones (`bindPlan`, `autoWeights`: the two nearest bones by distance
   to each bone's segment, inverse fourth power); Unbind; a brush (`paintWeights`) in Properties
   ▸ Mesh: Paint, the bone, radius in screen pixels, strength. Painting an unweighted mesh starts
@@ -2063,9 +2070,10 @@ per mesh node, one offset pair per point in the node's space.
     offsets; new weights (bind, paint, unbind) drop every offset (`withWeights`).
   - The display keeps its attachment key (`Node.key`, `DisplayRef.key`), which attachment
     keys and linked meshes name. Each animation's deform timeline becomes the display's keys,
-    in its skin, when every key lands on a frame and a weighted point's entries move it the same
-    way; a mesh whose timeline does not convert, or with a field the model does not hold, stays
-    carried. Every one of the samples' meshes converts.
+    in its skin, when a weighted point's entries move it the same way; a timeline with a key
+    between frames is written frame by frame (Spine's offsets at every whole frame, straight
+    between). A mesh whose timeline does not convert, or with a field the model does not hold,
+    stays carried. Every one of the samples' meshes converts.
   - The attachment's own name, where a file sets it apart from its key (Spine's `name`, which
     the region path defaults to), is kept (`DisplayRef.name`, `Node.attachmentName`) and
     written back, with `path` only where the image differs from it.
@@ -2157,8 +2165,9 @@ editing.
   Point and `set_point` edit what the stage shows (`editShownOutline`: the skin's through
   `SetSkinOutline`, else the node's). An opened slot that skins fill with an outline of the
   same kind under the same key becomes the node and each skin's own. `tests/skinOutlines.test.ts`.
-- Not built: skin colours, a mesh made for a skin image here (a skin display is a region, an
-  opened file's mesh or link, or the opened attachment it came with).
+- **A skin's colour** (`SkinDef.color`), Spine's editor colour for it: a swatch in the Skins
+  panel (`withSkinColor`, one `SetSkins`), written as the skin's `color`, nonessential (the
+  runtimes' JSON readers ignore it), and read back. AI: `set_skin_color`.
 
 ## Boxes and points
 
@@ -2231,8 +2240,9 @@ Pure in `core/doc/sequence.ts`.
   display when its frames are library images named one after another, all one size, and the
   region is unrotated, unscaled and the image's size; its offset becomes the transform point
   (`regionCentre` inverted) and its key is kept. Display 0's `sequence` timelines become keys
-  (`sequenceKeys`: a missing mode is hold, the delay in frames) when every key lands on a
-  frame. A rotated or scaled region (the samples' dragon wings) keeps Spine's turn
+  (`sequenceKeys`: a missing mode is hold, the delay in frames); a timeline with a key between
+  frames becomes hold keys showing what Spine shows at every whole frame (`bakedSequenceKeys`).
+  A rotated or scaled region (the samples' dragon wings) keeps Spine's turn
   (`DisplayRef.region`, display 0's `Node.region`), written with the region; the pivot still
   places its centre as if unturned. The stage's own pose cannot turn a display, so a symbol
   with one is posed by spine-core (`runtimePosed`).
@@ -2515,8 +2525,18 @@ interval holding the playhead wins, `handleAt`):
   cases in `tests/spineParity.test.ts` play a bent bone (with a split) and a baked one
   through spine-core.
 
-Not built: snapping while dragging a dot, smooth (mirrored) handles, one curve across a
-cycle's join, and an Ease panel note when a bend replaced a preset.
+- **A dragged dot snaps** (`snapPoint` in `core/math/snap.ts`, `ToolContext.snapDot`): onto
+  another dot of the path within the snap tolerance, both axes at once, else onto grid lines,
+  guides, the stage and other objects as any stage drag does (the bone and what it carries are
+  not targets). Snapping must be on; ⌘/Ctrl drags free.
+- **Smooth keys stay smooth**: where a key's two handles point opposite ways (`handlesSmooth`),
+  dragging one turns the other to match, its own length kept (`mirroredHandle`), in the same
+  step; ⌥ at the press flips it, making a corner smooth or a smooth key a corner. The handle
+  across a key is `handlePartner`; on a cycle the join and frame 0 are one key, so the curve
+  runs smoothly across it.
+- **The Ease panel says when a bend replaced an ease**: a tween whose x and y eases are each a
+  custom curve (`bentOnPath`) shows a note that X and Y follow the path's handles and that an
+  ease chosen for All, Position, X or Y replaces the bend.
 
 ## PSD import
 
@@ -3134,8 +3154,7 @@ with the wheel does the other. The stage itself is an outline on the pasteboard 
 `stage.fillStage`, with the grid on and origin lines through (0,0) of what is being edited: an
 opened Spine rig has no stage.)
 
-Vector drawing tools, linked meshes. Meshes opened from a Spine file are drawn and
-written back, not edited (Opening Spine files, Meshes).
+Vector drawing tools; video and sprite-sheet export (desktop build).
 
 Vector shapes have no home in the format: `_getDisplayType` is `image`, `armature`, `mesh`,
 `boundingBox`, `path` — and `path` is `PathDisplayData` for `PathConstraint`, which nothing

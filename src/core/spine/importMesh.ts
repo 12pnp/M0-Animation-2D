@@ -1,4 +1,5 @@
 import { apply, applyInverse, invert, mat, type Matrix2D } from "@/core/math/Matrix2D";
+import { readPolyline, spinePolyline } from "@/core/math/easing";
 import type { NodeId } from "@/core/doc/ids";
 import type { DeformKey, MeshData } from "@/core/doc/types";
 
@@ -101,8 +102,9 @@ export function boundVertices(
 
 /**
  * A file's `deform` timeline for `mesh` as the editor's keys, or null when a
- * key falls between frames or a weighted point's entries do not move it the
- * same way (the model keeps one offset per point).
+ * weighted point's entries do not move it the same way (the model keeps one
+ * offset per point). A key between frames writes the timeline frame by frame:
+ * Spine's offsets at every whole frame, straight between (as bone keys are).
  */
 export function deformKeysFromSpine(raw: unknown, mesh: MeshData, ctx: MeshContext, fps: number): DeformKey[] | null {
   if (!Array.isArray(raw) || !raw.length) return null;
@@ -113,13 +115,11 @@ export function deformKeysFromSpine(raw: unknown, mesh: MeshData, ctx: MeshConte
   const lin = (m: Matrix2D) => ({ ...m, tx: 0, ty: 0 });
   const nodeInv = mat();
   if (!invert(nodeInv, lin(ctx.node))) return null;
-  const keys: DeformKey[] = [];
+  const parsed: Array<{ at: number; offsets: number[]; curve: null | "stepped" | number[] }> = [];
   for (let k = 0; k < raw.length; k++) {
     const r = raw[k] as Raw;
     if (!r || typeof r !== "object") return null;
     const time = finite(r.time) ? r.time : 0;
-    const frame = Math.round(time * fps);
-    if (Math.abs(frame - time * fps) > 1e-3) return null;
     const flat = new Array<number>(total).fill(0);
     const start = Number.isInteger(r.offset) ? r.offset as number : 0;
     if (Array.isArray(r.vertices)) {
@@ -143,16 +143,43 @@ export function deformKeysFromSpine(raw: unknown, mesh: MeshData, ctx: MeshConte
       }
       offsets.push(first?.x ?? 0, first?.y ?? 0);
     }
-    const key: DeformKey = { frame, offsets };
-    const next = raw[k + 1] as Raw | undefined;
-    if (r.curve === "stepped") key.tween = { kind: "none" };
-    else if (Array.isArray(r.curve) && next) {
-      const c = r.curve;
-      const t1 = finite(next.time) ? next.time : 0, span = t1 - time;
-      if (span <= 0 || c.length < 4 || !c.every(finite)) return null;
-      key.tween = { kind: "curve", curve: [(c[0] as number - time) / span, c[1] as number, (c[2] as number - time) / span, c[3] as number] };
+    let curve: null | "stepped" | number[] = null;
+    if (r.curve === "stepped") curve = "stepped";
+    else if (Array.isArray(r.curve)) {
+      if (r.curve.length < 4 || !r.curve.every(finite)) return null;
+      curve = r.curve as number[];
     }
-    keys.push(key);
+    if (parsed.length && time * fps <= parsed[parsed.length - 1]!.at) return null;
+    parsed.push({ at: time * fps, offsets, curve });
   }
-  return new Set(keys.map((x) => x.frame)).size === keys.length ? keys : null;
+  const onFrames = parsed.every((p) => Math.abs(p.at - Math.round(p.at)) <= 1e-3);
+  if (onFrames) {
+    return parsed.map((p, k) => {
+      const key: DeformKey = { frame: Math.round(p.at), offsets: p.offsets };
+      const next = parsed[k + 1];
+      if (p.curve === "stepped") key.tween = { kind: "none" };
+      else if (p.curve && next) {
+        const t0 = p.at / fps, span = (next.at - p.at) / fps;
+        key.tween = { kind: "curve", curve: [(p.curve[0]! - t0) / span, p.curve[1]!, (p.curve[2]! - t0) / span, p.curve[3]!] };
+      }
+      return key;
+    });
+  }
+  // Spine's offsets at a whole frame: the key before it, eased toward the next.
+  const at = (f: number): number[] => {
+    let i = 0;
+    while (i + 1 < parsed.length && parsed[i + 1]!.at <= f + 1e-6) i++;
+    const a = parsed[i]!, b = parsed[i + 1];
+    if (!b || a.curve === "stepped" || f <= a.at) return a.offsets;
+    let pct = (f - a.at) / (b.at - a.at);
+    if (a.curve) {
+      const c = a.curve as number[];
+      pct = readPolyline(spinePolyline({ x0: a.at, y0: 0, c1x: c[0]! * fps, c1y: c[1]!, c2x: c[2]! * fps, c2y: c[3]!, x1: b.at, y1: 1 }), f);
+    }
+    return a.offsets.map((v, k) => v + (b.offsets[k]! - v) * pct);
+  };
+  const first = Math.ceil(parsed[0]!.at - 1e-3) || 0, last = Math.ceil(parsed[parsed.length - 1]!.at - 1e-3) || 0;
+  const out: DeformKey[] = [];
+  for (let f = first; f <= last; f++) out.push({ frame: f, offsets: at(f) });
+  return out;
 }

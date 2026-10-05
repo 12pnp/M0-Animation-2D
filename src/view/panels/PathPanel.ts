@@ -414,7 +414,7 @@ export class PathPanel implements Panel, ZoomLinked {
       const pick = pathPick(this.toolCtx, world);
       if (pick && "handle" in pick) {
         const { handle } = pick;
-        this.drag = handle.bake ? new BakeDrag(this.toolCtx, { ...handle, bake: handle.bake }, world) : new HandleDrag(this.toolCtx, handle, world);
+        this.drag = handle.bake ? new BakeDrag(this.toolCtx, { ...handle, bake: handle.bake }, world) : new HandleDrag(this.toolCtx, handle, world, e.altKey);
         return;
       }
       if (pick) {
@@ -484,6 +484,7 @@ export class PathPanel implements Panel, ZoomLinked {
       setDraftBone: () => {},
       beginSnap: () => {},
       snapDelta: (dx, dy) => ({ dx, dy }),
+      snapDot: (world) => world,
       endSnap: () => {},
       setCursor: (cursor) => { this.canvas.style.cursor = cursor; },
       bonePaths: () => this.scene?.paths ?? [],

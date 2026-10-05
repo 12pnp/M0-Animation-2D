@@ -11,6 +11,7 @@ import type { SpineSkeletonFile } from "./types";
  *   slots      visible
  *   meshes     width, height, edges
  *   boxes, paths, points, clips   color
+ *   skins      color
  *
  * A region's or mesh's colour is a tint, not nonessential, and stays.
  */
@@ -21,6 +22,7 @@ export function withoutNonessential(file: SpineSkeletonFile): SpineSkeletonFile 
   for (const b of out.bones as unknown as Array<Record<string, unknown>>) for (const k of ["color", "icon", "visible"]) delete b[k];
   for (const s of (out.slots ?? []) as unknown as Array<Record<string, unknown>>) delete s.visible;
   for (const skin of out.skins ?? []) {
+    delete (skin as unknown as Record<string, unknown>).color;
     for (const byKey of Object.values(skin.attachments ?? {})) {
       for (const att of Object.values(byKey) as Array<Record<string, unknown>>) {
         const type = att.type ?? "region";

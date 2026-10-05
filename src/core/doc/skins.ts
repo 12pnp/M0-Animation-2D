@@ -249,6 +249,20 @@ export function withRenamedSkin(sym: SymbolItem, from: string, to: string): Skin
   return { skins, stageSkins, carried };
 }
 
+/** A skin's colour in Spine's editor when the file gives none (spine-core's `Skin.color`). */
+export const SPINE_SKIN_COLOR = "fe9e4fff";
+
+/** `name` with its colour set ("rrggbbaa"), or Spine's default (undefined). */
+export function withSkinColor(sym: SymbolItem, name: string, color: string | undefined): SkinState {
+  const skins = (sym.skins ?? []).map((s) => {
+    if (s.name !== name) return s;
+    const out = { ...s };
+    if (color) out.color = color.toLowerCase(); else delete out.color;
+    return out;
+  });
+  return { skins, stageSkins: sym.stageSkins, carried: sym.spine?.skins };
+}
+
 /** `name` gone, with its carried part; the stage stops showing it. */
 export function withoutSkin(sym: SymbolItem, name: string): SkinState {
   const skins = (sym.skins ?? []).filter((s) => s.name !== name);

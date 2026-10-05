@@ -1676,6 +1676,7 @@ function skinsOfModel(
     const tc = (def.transforms ?? []).map((id) => rootTc.get(id)).filter((c): c is SpineTransformConstraint => !!c);
     for (const c of [...ik, ...tc]) c.skin = true;
     const skin: SpineSkin = { name: def.name };
+    if (def.color) (skin as unknown as Record<string, unknown>).color = def.color;
     const atts = attachments.get(def.name);
     if (atts) skin.attachments = atts;
     if (own.length) skin.bones = own.map((b) => b.name);

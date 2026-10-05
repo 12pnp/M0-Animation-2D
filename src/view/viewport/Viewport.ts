@@ -12,7 +12,7 @@ import { inPolygon, nearPolyline } from "@/core/doc/boxes";
 import { pathPolyline } from "@/core/doc/constraints";
 import { posedSymbol, spineBounds } from "@/core/spine/spinePose";
 import type { NodeId } from "@/core/doc/ids";
-import { applyInverse, invert, mat, matOf, type Matrix2D, mul } from "@/core/math/Matrix2D";
+import { apply, applyInverse, invert, mat, matOf, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { polygonContains, type Rect, rectContains, transformCorners } from "@/core/math/geom";
 import { isImage, isSymbol, type MeshData, type Node as DocNode } from "@/core/doc/types";
 import { meshView, verticesOf } from "@/view/tools/MeshTool";
@@ -32,7 +32,7 @@ import { seamFrame } from "@/core/doc/cycle";
 import type { BonePathsDraw } from "./Overlay";
 import { drawReference } from "./reference";
 import { type OverlayColors, resolveColors } from "./overlayColors";
-import { type SnapLine, snapMove, type SnapTargets, snapValue } from "@/core/math/snap";
+import { type SnapLine, snapMove, snapPoint, type SnapTargets, snapValue } from "@/core/math/snap";
 import { collectSnapTargets, selectionRefs } from "./snapTargets";
 import { promptNumber } from "@/view/widgets/promptNumber";
 import { menuAnchor, showMenu } from "@/view/widgets/Dock";
@@ -150,7 +150,8 @@ export class Viewport {
       setDraftBone: (segment) => { this.draftBone = segment; },
       beginSnap: (moving) => this.beginSnap(moving),
       snapDelta: (dx, dy, free) => this.snapDelta(dx, dy, free),
-      endSnap: () => { this.snapSession = null; this.snapLines = []; },
+      endSnap: () => { this.snapSession = null; this.dotSnap = null; this.snapLines = []; },
+      snapDot: (world, boneId, frame, free) => this.snapDot(world, boneId as NodeId, frame, free),
       setCursor: (c) => { if (!this.spaceDown) this.host.style.cursor = c; },
       bonePaths: () => this.lastBonePaths?.paths ?? [],
       pathHandles: () => this.lastBonePaths?.handles ?? [],
@@ -1075,6 +1076,33 @@ export class Viewport {
       dx: inv.a * res.dx + inv.c * res.dy,
       dy: inv.b * res.dx + inv.d * res.dy,
     };
+  }
+
+  /** What a bone path's dot snaps to while it is dragged: built at its first step. */
+  private dotSnap: { key: string; targets: SnapTargets; points: Array<{ x: number; y: number }> } | null = null;
+
+  /** `ToolContext.snapDot`: in scene space, through `camera.base` and back. */
+  private snapDot(world: { x: number; y: number }, boneId: NodeId, frame: number, free = false): { x: number; y: number } {
+    const store = this.store;
+    const prefs = store.prefs.value;
+    const sp = prefs.snap;
+    const base = this.camera.base;
+    const inv = mat();
+    if (free || !store.ui.snap || !sp.enabled || !this.lastPose || !invert(inv, base)) { this.snapLines = []; return world; }
+    const key = `${boneId}#${frame}`;
+    if (this.dotSnap?.key !== key) {
+      // The bone and what it carries move with the drag: never targets.
+      const ids = new Set(withDescendants(store.currentSymbol, [boneId]));
+      const path = this.lastBonePaths?.paths.find((p) => p.id === boneId);
+      const points = (path?.points ?? []).filter((p) => p.frame !== frame).map((p) => apply({ x: 0, y: 0 }, base, p.x, p.y));
+      this.dotSnap = { key, targets: collectSnapTargets(store.project, store.currentSymbol, this.lastPose, base, this.guides, ids, this.frameContext, sp), points };
+    }
+    const at = apply({ x: 0, y: 0 }, base, world.x, world.y);
+    const r = snapPoint(at.x, at.y, this.dotSnap.points, this.dotSnap.targets, {
+      grid: sp.toGrid ? prefs.stage.gridSize : null, pixel: false, tolerance: sp.tolerancePx / this.camera.zoom,
+    });
+    this.snapLines = sp.showLines ? r.lines : [];
+    return apply({ x: 0, y: 0 }, inv, r.x, r.y);
   }
 
   /** A guide dragged out of a ruler snaps to the same lines everything else

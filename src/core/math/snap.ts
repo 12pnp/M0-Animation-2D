@@ -113,3 +113,22 @@ export function snapValue(
 ): number {
   return snapAxis([v], 0, targets, opts).d + v;
 }
+
+/**
+ * Where a dragged point lands (a bone path's dot, ARCHITECTURE ▸ Bone paths):
+ * on one of `points` within the tolerance, the nearest, both axes at once;
+ * else on the lines `snapMove` would take for a single reference point. In
+ * scene units; `lines` are the smart guides to draw.
+ */
+export function snapPoint(
+  x: number, y: number, points: ReadonlyArray<{ x: number; y: number }>, targets: SnapTargets, opts: SnapOptions,
+): { x: number; y: number; lines: SnapLine[] } {
+  let best: { x: number; y: number } | null = null, bestD = opts.tolerance;
+  for (const p of points) {
+    const d = Math.hypot(p.x - x, p.y - y);
+    if (d <= bestD) { best = p; bestD = d; }
+  }
+  if (best) return { x: best.x, y: best.y, lines: [{ axis: "x", at: best.x }, { axis: "y", at: best.y }] };
+  const r = snapMove([x], [y], 0, 0, targets, opts);
+  return { x: x + r.dx, y: y + r.dy, lines: r.lines };
+}

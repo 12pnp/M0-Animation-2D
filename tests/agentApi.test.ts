@@ -60,7 +60,7 @@ describe("the AI's tools", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
       "get_reference", "render_frame", "add_bones", "attach", "add_ik", "auto_rig", "list_motions", "apply_motion", "draw_order",
-      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "make_mesh", "bind_mesh", "add_skin", "set_skin_image", "add_attachment", "make_sequence", "key_sequence", "add_physics", "link_mesh", "key_constraint", "set_inherit", "set_point", "set_tint", "map_transform", "set_constraint_order", "add_slider", "make_path", "set_skin_members", "set_cycle", "key_properties", "offset_keys", "get_bone_path", "set_bone_path",
+      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "make_mesh", "bind_mesh", "add_skin", "set_skin_image", "add_attachment", "make_sequence", "key_sequence", "add_physics", "link_mesh", "key_constraint", "set_inherit", "set_point", "set_tint", "map_transform", "set_skin_color", "set_constraint_order", "add_slider", "make_path", "set_skin_members", "set_cycle", "key_properties", "offset_keys", "get_bone_path", "set_bone_path",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -906,6 +906,16 @@ describe("cycles and bone paths through the AI's tools", () => {
     expect(file.properties.rotate!.offset).toBe(10);
     await expect(api.call("map_transform", { constraint: "nope", from: "x", to: "x" })).rejects.toThrow(/no transform constraint/);
     await expect(api.call("map_transform", { constraint: "nod", from: "spin", to: "x" })).rejects.toThrow(/one of rotate/);
+  });
+
+  it("set a skin's colour: one undo step; null for Spine's default", async () => {
+    const { store, api } = await setup();
+    await api.call("add_skin", { name: "warm" });
+    expect(await api.call("set_skin_color", { skin: "warm", color: "#ff8800" })).toEqual({ skin: "warm", color: "ff8800ff" });
+    expect(store.history.undoLabel).toBe(`AI: Skin Colour "warm"`);
+    expect(await api.call("set_skin_color", { skin: "warm", color: null })).toEqual({ skin: "warm", color: null });
+    await expect(api.call("set_skin_color", { skin: "nope", color: null })).rejects.toThrow(/no skin "nope"/);
+    await expect(api.call("set_skin_color", { skin: "warm", color: "orange" })).rejects.toThrow(/rrggbb/);
   });
 
   it("set the constraint order: the ones named first, the rest after; one undo step", async () => {

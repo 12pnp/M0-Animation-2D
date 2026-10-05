@@ -30,6 +30,7 @@ import {
     toCorner,
 } from "@/core/math/easeCurve";
 import { Modal } from "@/view/widgets/Modal";
+import { bentOnPath } from "@/core/doc/pathSpline";
 import { NumberField, type NumberFieldOpts } from "@/view/widgets/NumberField";
 import { clear, h, on } from "@/view/widgets/dom";
 
@@ -118,6 +119,10 @@ export function openEaseDialog(store: Store, targets: EaseTarget[]): void {
   const amountBox = h("div", { class: "ease-amount" }, amountLabel, amount.el);
   const canvas = h("canvas", { class: "ease-graph" });
   const hint = h("div", { class: "ease-hint" });
+  // A bend made on the stage is the X and Y eases (ARCHITECTURE ▸ Bone paths).
+  const bent = bentOnPath(key)
+    ? h("div", { class: "ease-hint" }, "Bent on the stage: X and Y follow the path's handles, which replaced this tween's position ease. An ease chosen here for All, Position, X or Y replaces the bend.")
+    : null;
   const ctx = canvas.getContext("2d")!;
 
   modal.body.appendChild(h("div", { class: "ease-dlg" },
@@ -126,7 +131,7 @@ export function openEaseDialog(store: Store, targets: EaseTarget[]): void {
     h("div", { class: "ease-main" },
       h("div", { class: "ease-bar" }, dirBar, amountBox),
       canvas,
-      hint)));
+      hint, ...(bent ? [bent] : []))));
 
   const info = h("span", { class: "ease-info" });
   const cancel = h("button", { class: "btn" }, "Cancel");
