@@ -8,7 +8,7 @@ import { spinePolyline } from "@/core/math/easing";
  * spine-core by `tests/spineRuntime.test.ts`; nothing here is taken from
  * spine-core's source.
  *
- * P0 covers bones (normal inheritance), slots, region attachments, skins and
+ * P0 covers bones, slots, region attachments, skins and
  * the bone, attachment, colour and draw order timelines; P1 meshes (weighted
  * or not), linked meshes, deform keys, sequences and bones only some skins
  * enable. Whatever else a file holds is listed in `unsupported`, so the
@@ -45,6 +45,8 @@ export interface SlotData {
   name: string;
   bone: number;
   color: Rgba;
+  /** Two-colour tint's dark colour (r g b), or null for a single tint. */
+  dark: [number, number, number] | null;
   /** The attachment key shown in the setup pose. */
   attachment: string | null;
   blend: BlendMode;
@@ -91,7 +93,44 @@ export interface MeshData extends AttachmentBase {
   triangles: Uint32Array;
 }
 
-export type AttachmentData = RegionData | MeshData;
+/** A path: a bezier through its vertices (an in-handle, a point, an
+ *  out-handle each), weighted or not, drawn as nothing. */
+export interface PathData {
+  kind: "path";
+  name: string;
+  color: Rgba;
+  frames: Frame[];
+  sequence: null;
+  timeline: AttachmentData;
+  vertexCount: number;
+  weighted: boolean;
+  vertices: Float64Array;
+  deformLength: number;
+  closed: boolean;
+  constantSpeed: boolean;
+  /** Each curve's length, from the setup pose, used when not constant speed. */
+  lengths: number[];
+}
+
+/** A clipping polygon: the slots from its own to `end` draw only inside it
+ *  (outside, when `inverse`). Weighted or not, as a mesh. */
+export interface ClippingData {
+  kind: "clipping";
+  name: string;
+  color: Rgba;
+  frames: Frame[];
+  sequence: null;
+  timeline: AttachmentData;
+  vertexCount: number;
+  weighted: boolean;
+  vertices: Float64Array;
+  deformLength: number;
+  /** The last slot clipped, or -1 for every slot after it. */
+  end: number;
+  inverse: boolean;
+}
+
+export type AttachmentData = RegionData | MeshData | PathData | ClippingData;
 
 export interface SkinData {
   name: string;
@@ -99,6 +138,8 @@ export interface SkinData {
   attachments: Map<number, Map<string, AttachmentData>>;
   /** The skin-required bones it enables. */
   bones: number[];
+  /** The skin-required constraints it enables, by index in `RigData.constraints`. */
+  constraints: number[];
 }
 
 export type SequenceMode = "hold" | "once" | "loop" | "pingpong" | "onceReverse" | "loopReverse" | "pingpongReverse";
@@ -118,14 +159,25 @@ export type BoneProp = "rotate" | "x" | "y" | "scaleX" | "scaleY" | "shearX" | "
 
 export type Timeline =
   | { kind: "bone"; bone: number; prop: BoneProp; channel: Channel }
-  /** One colour channel of a slot: 0 r, 1 g, 2 b, 3 a. */
+  /** One colour channel of a slot: 0 r, 1 g, 2 b, 3 a; 4 5 6 the dark colour's r g b. */
   | { kind: "color"; slot: number; index: number; channel: Channel }
   | { kind: "attachment"; slot: number; times: number[]; names: Array<string | null> }
   /** Each key's draw order as slot indices back to front; null = the setup order. */
   | { kind: "drawOrder"; times: number[]; orders: Array<number[] | null> }
   /** A mesh's vertices per key: absolute positions when unweighted, offsets
    *  added to each bone influence when weighted. `curves` run 0..1 between keys. */
-  | { kind: "deform"; slot: number; attachment: MeshData; times: number[]; curves: Interval[]; vertices: Float64Array[] }
+  | { kind: "deform"; slot: number; attachment: MeshData | PathData | ClippingData; times: number[]; curves: Interval[]; vertices: Float64Array[] }
+  /** An IK constraint's values from each key on: mix and softness curved, the rest held. */
+  | { kind: "ik"; constraint: number; times: number[]; mix: Channel; softness: Channel; bendPositive: boolean[]; compress: boolean[]; stretch: boolean[] }
+  /** Events, fired as the track passes their keys (`Track`). */
+  | { kind: "event"; times: number[]; events: EventFire[] }
+  /** A path constraint's position, spacing, or mixes (rotate, x, y), curved. */
+  | { kind: "pathPosition" | "pathSpacing"; constraint: number; times: number[]; channel: Channel }
+  | { kind: "pathMix"; constraint: number; times: number[]; rotate: Channel; x: Channel; y: Channel }
+  /** A transform constraint's six mixes, curved. */
+  | { kind: "transform"; constraint: number; times: number[]; mixes: Record<TransformProp, Channel> }
+  /** A bone's inherit mode from each key on. */
+  | { kind: "inherit"; bone: number; times: number[]; modes: SpineInherit[] }
   /** Which sequence frame a slot shows, from each key on. */
   | { kind: "sequence"; slot: number; attachment: AttachmentData; times: number[]; modes: SequenceMode[]; indices: number[]; delays: number[] };
 
@@ -136,9 +188,113 @@ export interface AnimationData {
   timelines: Timeline[];
 }
 
+/** How an IK stretch or squash carries to the bone's y scale. */
+export type IkScaleY = "none" | "uniform" | "volume";
+
+export interface IkData {
+  kind: "ik";
+  name: string;
+  /** One bone, or a parent and its child. */
+  bones: number[];
+  target: number;
+  mix: number;
+  softness: number;
+  bendPositive: boolean;
+  compress: boolean;
+  stretch: boolean;
+  scaleY: IkScaleY;
+  /** Only active while a shown skin lists it. */
+  skinRequired: boolean;
+}
+
+/** The six bone properties a transform constraint reads and drives. */
+export type TransformProp = "rotate" | "x" | "y" | "scaleX" | "scaleY" | "shearY";
+export const TRANSFORM_PROPS: readonly TransformProp[] = ["rotate", "x", "y", "scaleX", "scaleY", "shearY"];
+
+/** The six mixes, one per driven property. */
+export type TransformMix = Record<TransformProp, number>;
+
+export interface TransformData {
+  kind: "transform";
+  name: string;
+  bones: number[];
+  source: number;
+  localSource: boolean;
+  localTarget: boolean;
+  additive: boolean;
+  clamp: boolean;
+  /** Added to the source's value of each property before it is read. */
+  offsets: Record<TransformProp, number>;
+  /** Each source property, less its offset, drives target properties: each
+   *  `offset + value × scale`, clamped toward `max` when `clamp`. */
+  properties: Array<{ from: TransformProp; offset: number; to: Array<{ prop: TransformProp; offset: number; max: number; scale: number }> }>;
+  mix: TransformMix;
+  skinRequired: boolean;
+}
+
+export interface PathConstraintData {
+  kind: "path";
+  name: string;
+  bones: number[];
+  /** The slot whose path attachment the bones follow. */
+  slot: number;
+  positionMode: "fixed" | "percent";
+  spacingMode: "length" | "fixed" | "percent" | "proportional";
+  rotateMode: "tangent" | "chain" | "chainScale";
+  /** Degrees added to each bone's turn. */
+  offsetRotation: number;
+  position: number;
+  spacing: number;
+  mixRotate: number;
+  mixX: number;
+  mixY: number;
+  skinRequired: boolean;
+}
+
+/** Every constraint, in the order they apply. */
+export type ConstraintData = IkData | TransformData | PathConstraintData;
+
+/**
+ * A transform constraint's mixes, as spine-core 4.3.13 reads them (measured):
+ * only for the properties its map drives, absent ones 1 — but y's mix is read
+ * only when x is driven (absent: x's), and scale y's only when scale x is
+ * (absent: scale x's), so a map that drives y and not x leaves y's mix 0.
+ */
+function constraintMixes(k: Json, driven: ReadonlySet<TransformProp>): TransformMix {
+  const m: TransformMix = { rotate: 0, x: 0, y: 0, scaleX: 0, scaleY: 0, shearY: 0 };
+  if (driven.has("rotate")) m.rotate = num(k.mixRotate, 1);
+  if (driven.has("x")) { m.x = num(k.mixX, 1); m.y = num(k.mixY, m.x); }
+  if (driven.has("scaleX")) { m.scaleX = num(k.mixScaleX, 1); m.scaleY = num(k.mixScaleY, m.scaleX); }
+  if (driven.has("shearY")) m.shearY = num(k.mixShearY, 1);
+  return m;
+}
+
+/** A transform key's mixes: absent ones 1, except y, which takes x's
+ *  (scale y does not take scale x's; measured). */
+function keyMixes(k: Json): TransformMix {
+  const x = num(k.mixX, 1);
+  return {
+    rotate: num(k.mixRotate, 1), x, y: num(k.mixY, x),
+    scaleX: num(k.mixScaleX, 1), scaleY: num(k.mixScaleY, 1), shearY: num(k.mixShearY, 1),
+  };
+}
+
+/** An event as a key fires it: the key's values over the event's own. */
+export interface EventFire {
+  name: string;
+  int: number;
+  float: number;
+  string: string;
+  audio: string | null;
+  volume: number;
+  balance: number;
+}
+
 export interface RigData {
   bones: BoneData[];
   slots: SlotData[];
+  /** In the order they apply: the file's. */
+  constraints: ConstraintData[];
   skins: SkinData[];
   animations: AnimationData[];
   /** The editor's frame rate, or 0 when the file has none. */
@@ -168,7 +324,6 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
   for (const b of list(file.bones)) {
     const name = String(b.name);
     const inherit = (typeof b.inherit === "string" ? b.inherit : "normal") as SpineInherit;
-    if (inherit !== "normal") unsupported.add(`inherit mode "${inherit}"`);
     const bone: BoneData = {
       index: bones.length, name, parent: typeof b.parent === "string" ? boneIndex.get(b.parent) ?? -1 : -1,
       length: num(b.length, 0),
@@ -185,9 +340,9 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
   for (const s of list(file.slots)) {
     const bone = boneIndex.get(String(s.bone));
     if (bone === undefined) throw new Error(`Slot "${String(s.name)}" names a bone "${String(s.bone)}" the skeleton lacks.`);
-    if (typeof s.dark === "string") unsupported.add("two-colour tint");
     const slot: SlotData = {
       index: slots.length, name: String(s.name), bone, color: parseColor(s.color),
+      dark: typeof s.dark === "string" ? parseColor(s.dark).slice(0, 3) as [number, number, number] : null,
       attachment: typeof s.attachment === "string" ? s.attachment : null,
       blend: (["additive", "multiply", "screen"].includes(s.blend as string) ? s.blend : "normal") as BlendMode,
     };
@@ -195,11 +350,76 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
     slots.push(slot);
   }
 
-  if (list(file.constraints).length) {
-    for (const k of list(file.constraints)) unsupported.add(`${String(k.type ?? "ik")} constraints`);
-  }
-  for (const kind of ["ik", "transform", "path", "physics", "slider"]) {
-    if (list(file[kind]).length) unsupported.add(`${kind} constraints`);
+  const constraints: ConstraintData[] = [];
+  const constraintIndex = new Map<string, number>();
+  // 4.3 lists every constraint in one array, in order; older files kept one
+  // list per kind.
+  const declared: Json[] = [
+    ...list(file.constraints),
+    ...["ik", "transform", "path", "physics", "slider"].flatMap((type) => list(file[type]).map((k): Json => ({ type, ...k }))),
+  ];
+  for (const k of declared) {
+    const type = typeof k.type === "string" ? k.type : "ik";
+    const name = String(k.name);
+    if (type === "ik") {
+      const bonesOf = (Array.isArray(k.bones) ? k.bones : []).map((n) => boneIndex.get(String(n)));
+      const target = boneIndex.get(String(k.target));
+      if (target === undefined || !bonesOf.length || bonesOf.some((b) => b === undefined)) { unsupported.add("IK with unknown bones"); continue; }
+      constraintIndex.set(name, constraints.length);
+      constraints.push({
+        kind: "ik", name, bones: bonesOf as number[], target,
+        mix: num(k.mix, 1), softness: num(k.softness, 0), bendPositive: k.bendPositive !== false,
+        compress: k.compress === true, stretch: k.stretch === true,
+        scaleY: (k.scaleY === "uniform" || k.scaleY === "volume" ? k.scaleY : k.uniform === true ? "uniform" : "none") as IkScaleY,
+        skinRequired: k.skin === true,
+      });
+    } else if (type === "transform") {
+      const bonesOf = (Array.isArray(k.bones) ? k.bones : []).map((n) => boneIndex.get(String(n)));
+      const source = boneIndex.get(String(k.source ?? k.target));
+      if (source === undefined || bonesOf.some((b) => b === undefined)) { unsupported.add("transform constraints with unknown bones"); continue; }
+      constraintIndex.set(name, constraints.length);
+      const props = obj(k.properties);
+      const driven = new Set<TransformProp>(Object.values(props).flatMap((f) => Object.keys(obj(obj(f).to)) as TransformProp[]));
+      constraints.push({
+        kind: "transform", name, bones: bonesOf as number[], source,
+        localSource: k.localSource === true, localTarget: k.localTarget === true,
+        additive: k.additive === true, clamp: k.clamp === true,
+        offsets: {
+          rotate: num(k.rotation, 0), x: num(k.x, 0), y: num(k.y, 0),
+          scaleX: num(k.scaleX, 0), scaleY: num(k.scaleY, 0), shearY: num(k.shearY, 0),
+        },
+        properties: TRANSFORM_PROPS.filter((from) => from in props).map((from) => {
+          const f = obj(props[from]);
+          const to = obj(f.to);
+          return {
+            from, offset: num(f.offset, 0),
+            to: TRANSFORM_PROPS.filter((p) => p in to).map((prop) => {
+              const t = obj(to[prop]);
+              return { prop, offset: num(t.offset, 0), max: num(t.max, 1), scale: num(t.scale, 1) };
+            }),
+          };
+        }),
+        mix: constraintMixes(k, driven),
+        skinRequired: k.skin === true,
+      });
+    } else if (type === "path") {
+      const bonesOf = (Array.isArray(k.bones) ? k.bones : []).map((n) => boneIndex.get(String(n)));
+      const slot = slotIndex.get(String(k.slot));
+      if (slot === undefined || bonesOf.some((b) => b === undefined)) { unsupported.add("path constraints with unknown bones"); continue; }
+      constraintIndex.set(name, constraints.length);
+      const mixX = num(k.mixX, 1);
+      constraints.push({
+        kind: "path", name, bones: bonesOf as number[], slot,
+        positionMode: k.positionMode === "fixed" ? "fixed" : "percent",
+        spacingMode: (["fixed", "percent", "proportional"].includes(k.spacingMode as string) ? k.spacingMode : "length") as PathConstraintData["spacingMode"],
+        rotateMode: (["chain", "chainScale"].includes(k.rotateMode as string) ? k.rotateMode : "tangent") as PathConstraintData["rotateMode"],
+        offsetRotation: num(k.rotation, 0), position: num(k.position, 0), spacing: num(k.spacing, 0),
+        mixRotate: num(k.mixRotate, 1), mixX, mixY: num(k.mixY, mixX),
+        skinRequired: k.skin === true,
+      });
+    } else {
+      unsupported.add(`${type} constraints`);
+    }
   }
 
   const regions = new Map<string, AtlasRegion>();
@@ -212,6 +432,9 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
     const skin: SkinData = {
       name: String(sk.name), attachments: new Map(),
       bones: (Array.isArray(sk.bones) ? sk.bones : []).map((n) => boneIndex.get(String(n))).filter((i): i is number => i !== undefined),
+      constraints: ["ik", "transform", "path", "physics", "slider"]
+        .flatMap((kind) => (Array.isArray(sk[kind]) ? sk[kind] as unknown[] : []))
+        .map((n) => constraintIndex.get(String(n))).filter((i): i is number => i !== undefined),
     };
     for (const [slotName, entries] of Object.entries(obj(sk.attachments))) {
       const slot = slotIndex.get(slotName);
@@ -222,6 +445,8 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
         const type = typeof a.type === "string" ? a.type : "region";
         if (type === "region") byKey.set(key, readRegion(key, a, regions));
         else if (type === "mesh") byKey.set(key, readMesh(key, a, regions));
+        else if (type === "path") byKey.set(key, readPath(key, a));
+        else if (type === "clipping") byKey.set(key, readClipping(key, a, slotIndex));
         else if (type === "linkedmesh") {
           const mesh = readMesh(key, { ...a, vertices: [], uvs: [], triangles: [] }, regions);
           linked.push({ mesh, a, skin: typeof a.skin === "string" ? a.skin : "default", slot });
@@ -238,13 +463,22 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
     linkMesh(mesh, source, a.timelines !== false);
   }
 
+  const eventData = new Map<string, EventFire>();
+  for (const [name, raw] of Object.entries(obj(file.events))) {
+    const e = obj(raw);
+    eventData.set(name, {
+      name, int: num(e.int, 0), float: num(e.float, 0), string: typeof e.string === "string" ? e.string : "",
+      audio: typeof e.audio === "string" ? e.audio : null, volume: num(e.volume, 1), balance: num(e.balance, 0),
+    });
+  }
+
   const animations: AnimationData[] = [];
   for (const [name, raw] of Object.entries(obj(file.animations))) {
-    animations.push(readAnimation(name, obj(raw), boneIndex, slotIndex, slots.length, skins, unsupported));
+    animations.push(readAnimation(name, obj(raw), boneIndex, slotIndex, constraintIndex, slots.length, skins, eventData, unsupported));
   }
 
   return {
-    bones, slots, skins, animations,
+    bones, slots, constraints, skins, animations,
     // Absent stays 0, as the runtime leaves it; the preview falls back to 24.
     fps: num(obj(file.skeleton).fps, 0),
     unsupported: [...unsupported].sort(),
@@ -368,6 +602,52 @@ function readMesh(key: string, a: Json, regions: Map<string, AtlasRegion>): Mesh
   return mesh;
 }
 
+/** A path attachment: `vertexCount` vertices, weighted when `vertices` is
+ *  longer than two numbers each. */
+function readPath(key: string, a: Json): PathData {
+  const name = typeof a.name === "string" ? a.name : key;
+  const raw = (a.vertices as number[] | undefined) ?? [];
+  const vertexCount = num(a.vertexCount, raw.length / 2);
+  const weighted = raw.length > vertexCount * 2;
+  let deformLength = vertexCount * 2;
+  if (weighted) {
+    deformLength = 0;
+    for (let i = 0; i < raw.length;) { const n = raw[i]!; deformLength += n * 2; i += 1 + n * 4; }
+  }
+  const path: PathData = {
+    kind: "path", name, color: parseColor(a.color), frames: [], sequence: null, timeline: null!,
+    vertexCount, weighted, vertices: weighted ? weightedStream(raw) : Float64Array.from(raw, Math.fround), deformLength,
+    closed: a.closed === true, constantSpeed: a.constantSpeed !== false,
+    lengths: ((a.lengths as number[] | undefined) ?? []).map(Math.fround),
+  };
+  path.timeline = path;
+  return path;
+}
+
+/** The vertex stream of a path or clipping polygon: weighted when longer
+ *  than two numbers per vertex. */
+function vertexStream(raw: number[], vertexCount: number) {
+  const weighted = raw.length > vertexCount * 2;
+  let deformLength = vertexCount * 2;
+  if (weighted) {
+    deformLength = 0;
+    for (let i = 0; i < raw.length;) { const n = raw[i]!; deformLength += n * 2; i += 1 + n * 4; }
+  }
+  return { weighted, deformLength, vertices: weighted ? weightedStream(raw) : Float64Array.from(raw, Math.fround) };
+}
+
+function readClipping(key: string, a: Json, slotIndex: Map<string, number>): ClippingData {
+  const raw = (a.vertices as number[] | undefined) ?? [];
+  const vertexCount = num(a.vertexCount, raw.length / 2);
+  const clip: ClippingData = {
+    kind: "clipping", name: typeof a.name === "string" ? a.name : key, color: parseColor(a.color),
+    frames: [], sequence: null, timeline: null!, vertexCount, ...vertexStream(raw, vertexCount),
+    end: typeof a.end === "string" ? slotIndex.get(a.end) ?? -1 : -1, inverse: a.inverse === true,
+  };
+  clip.timeline = clip;
+  return clip;
+}
+
 /** A weighted vertex stream with x, y and weight in 32-bit floats; the
  *  bone counts and indices stay whole. */
 function weightedStream(raw: number[]): Float64Array {
@@ -406,7 +686,8 @@ function lastTime(v: unknown): number {
   if (Array.isArray(v)) {
     let t = 0;
     for (const e of v) {
-      if (e && typeof e === "object" && !Array.isArray(e)) t = Math.max(t, num((e as Json).time, 0));
+      // As the runtime stores key times: 32-bit, so a loop wraps where it does.
+      if (e && typeof e === "object" && !Array.isArray(e)) t = Math.max(t, Math.fround(num((e as Json).time, 0)));
       t = Math.max(t, lastTime(e));
     }
     return t;
@@ -421,14 +702,14 @@ function lastTime(v: unknown): number {
 
 /** The scalar channels of a timeline's keys: `pick(key, i)` reads channel
  *  `i`; the key's curve holds four numbers per channel, in order. */
-function channels(keys: Json[], count: number, pick: (k: Json, i: number) => number): Channel[] {
+function channels(keys: Json[], count: number, pick: (k: Json, i: number, at: number) => number): Channel[] {
   const out: Channel[] = [];
   // The runtime keeps key times, values and its curve polylines in 32-bit
   // floats; matching that is what holds the pose to it within rounding.
   const f = Math.fround;
   for (let c = 0; c < count; c++) {
     const times = keys.map((k) => f(num(k.time, 0)));
-    const values = keys.map((k) => f(pick(k, c)));
+    const values = keys.map((k, at) => f(pick(k, c, at)));
     const curves = keys.map((k, i): Interval => {
       const next = i + 1 < keys.length;
       if (!next || k.curve === undefined) return null;
@@ -462,7 +743,8 @@ const BONE_TIMELINES: Record<string, { props: BoneProp[]; fields: string[]; neut
 
 function readAnimation(
   name: string, raw: Json, boneIndex: Map<string, number>, slotIndex: Map<string, number>,
-  slotCount: number, skins: SkinData[], unsupported: Set<string>,
+  constraintIndex: Map<string, number>, slotCount: number, skins: SkinData[],
+  eventData: Map<string, EventFire>, unsupported: Set<string>,
 ): AnimationData {
   const timelines: Timeline[] = [];
 
@@ -472,6 +754,13 @@ function readAnimation(
     for (const [kind, keysRaw] of Object.entries(obj(groups))) {
       const keys = list(keysRaw);
       if (!keys.length) continue;
+      if (kind === "inherit") {
+        timelines.push({
+          kind: "inherit", bone, times: keys.map((k) => Math.fround(num(k.time, 0))),
+          modes: keys.map((k) => (typeof k.inherit === "string" ? k.inherit : "normal") as SpineInherit),
+        });
+        continue;
+      }
       const spec = BONE_TIMELINES[kind];
       if (!spec) { unsupported.add(`${kind} keys`); continue; }
       const chans = channels(keys, spec.props.length, (k, i) => num(k[spec.fields[i]!], spec.neutral));
@@ -494,6 +783,11 @@ function readAnimation(
         const n = kind === "rgba" ? 4 : 3;
         const chans = channels(keys, n, (k, i) => parseColor(k.color)[i]!);
         chans.forEach((channel, index) => timelines.push({ kind: "color", slot, index, channel }));
+      } else if (kind === "rgba2" || kind === "rgb2") {
+        // The light colour's channels, then the dark's r g b.
+        const light = kind === "rgba2" ? 4 : 3;
+        const chans = channels(keys, light + 3, (k, i) => (i < light ? parseColor(k.light)[i]! : parseColor(k.dark)[i - light]!));
+        chans.forEach((channel, i) => timelines.push({ kind: "color", slot, index: i < light ? i : 4 + i - light, channel }));
       } else if (kind === "alpha") {
         const [channel] = channels(keys, 1, (k) => num(k.value, 1));
         timelines.push({ kind: "color", slot, index: 3, channel: channel! });
@@ -522,7 +816,7 @@ function readAnimation(
         for (const [kind, keysRaw] of Object.entries(obj(groups))) {
           const keys = list(keysRaw);
           if (!keys.length) continue;
-          if (kind === "deform" && attachment.kind === "mesh") timelines.push(readDeform(slot, attachment, keys));
+          if (kind === "deform" && attachment.kind !== "region") timelines.push(readDeform(slot, attachment, keys));
           else if (kind === "sequence") {
             // A key without a delay keeps the one before it; mode and index
             // do not carry (measured against spine-core).
@@ -540,8 +834,67 @@ function readAnimation(
     }
   }
 
-  if (list(raw.events).length) unsupported.add("events");
-  for (const group of ["ik", "transform", "path", "physics", "slider"]) {
+  for (const [constraintName, keysRaw] of Object.entries(obj(raw.ik))) {
+    const constraint = constraintIndex.get(constraintName);
+    const keys = list(keysRaw);
+    if (constraint === undefined || !keys.length) continue;
+    // Absolute values; a key without one takes the default, not the setup value.
+    const [mix, softness] = channels(keys, 2, (k, i) => (i === 0 ? num(k.mix, 1) : num(k.softness, 0)));
+    timelines.push({
+      kind: "ik", constraint, times: mix!.times, mix: mix!, softness: softness!,
+      bendPositive: keys.map((k) => k.bendPositive !== false),
+      compress: keys.map((k) => k.compress === true),
+      stretch: keys.map((k) => k.stretch === true),
+    });
+  }
+
+  for (const [constraintName, keysRaw] of Object.entries(obj(raw.transform))) {
+    const constraint = constraintIndex.get(constraintName);
+    const keys = list(keysRaw);
+    if (constraint === undefined || !keys.length) continue;
+    const mixes = keys.map(keyMixes);
+    const chans = channels(keys, 6, (_, i, at) => mixes[at]![TRANSFORM_PROPS[i]!]);
+    timelines.push({
+      kind: "transform", constraint, times: chans[0]!.times,
+      mixes: Object.fromEntries(TRANSFORM_PROPS.map((p, i) => [p, chans[i]!])) as Record<TransformProp, Channel>,
+    });
+  }
+
+  for (const [constraintName, groups] of Object.entries(obj(raw.path))) {
+    const constraint = constraintIndex.get(constraintName);
+    if (constraint === undefined) continue;
+    for (const [kind, keysRaw] of Object.entries(obj(groups))) {
+      const keys = list(keysRaw);
+      if (!keys.length) continue;
+      if (kind === "position" || kind === "spacing") {
+        const [channel] = channels(keys, 1, (k) => num(k.value, 0));
+        timelines.push({ kind: kind === "position" ? "pathPosition" : "pathSpacing", constraint, times: channel!.times, channel: channel! });
+      } else if (kind === "mix") {
+        const [rotate, x, y] = channels(keys, 3, (k, i) => {
+          const mx = num(k.mixX, 1);
+          return i === 0 ? num(k.mixRotate, 1) : i === 1 ? mx : num(k.mixY, mx);
+        });
+        timelines.push({ kind: "pathMix", constraint, times: rotate!.times, rotate: rotate!, x: x!, y: y! });
+      } else unsupported.add(`path ${kind} keys`);
+    }
+  }
+
+  const events = list(raw.events).filter((k) => eventData.has(String(k.name)));
+  if (events.length) {
+    timelines.push({
+      kind: "event", times: events.map((k) => Math.fround(num(k.time, 0))),
+      events: events.map((k): EventFire => {
+        const e = eventData.get(String(k.name))!;
+        return {
+          name: e.name, int: num(k.int, e.int), float: num(k.float, e.float),
+          string: typeof k.string === "string" ? k.string : e.string, audio: e.audio,
+          // Volume and balance only for an event with audio; 0 otherwise (measured).
+          volume: e.audio ? num(k.volume, e.volume) : 0, balance: e.audio ? num(k.balance, e.balance) : 0,
+        };
+      }),
+    });
+  }
+  for (const group of ["physics", "slider"]) {
     if (Object.keys(obj(raw[group])).length) unsupported.add(`${group} keys`);
   }
 
@@ -554,7 +907,7 @@ function readAnimation(
  * the pose reads it as positions), a weighted one's as the values alone. As
  * the runtime does, both in 32-bit floats.
  */
-function readDeform(slot: number, mesh: MeshData, keys: Json[]): Timeline {
+function readDeform(slot: number, mesh: MeshData | PathData | ClippingData, keys: Json[]): Timeline {
   const times = keys.map((k) => Math.fround(num(k.time, 0)));
   const vertices = keys.map((k) => {
     const out = new Float64Array(mesh.deformLength);

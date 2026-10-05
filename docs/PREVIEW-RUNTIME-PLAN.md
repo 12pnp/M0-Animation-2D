@@ -108,7 +108,15 @@ Some groundwork exists in this repo already, but not all of it is clean:
   skipped every region). Seen in the Preview against spine-pixi: Goblins
   (linked meshes, deform, a skin) to 5e-7, the Dragon's sequence wings.
 - **P2 — behaviour.** IK / transform / path / slider constraints, clipping,
-  two-colour tint, events, inherit timelines. IK and transform are written
+  two-colour tint, events, inherit timelines.
+  **In progress.** Done: inherit modes and keys, IK, transform and path
+  constraints (with their keys, skin-only ones, the file's order), events,
+  two-colour tint, clipping. `tests/runtimeConstraints.test.ts` sweeps each
+  solver's options on built rigs y up and y down; `tests/runtimeTrack.test.ts`
+  steps the track beside `AnimationState`; the samples run with every
+  constraint but physics and sliders. Left: crossfades (the AnimationState
+  mix: held properties, rotation direction, scale signs) and sliders, which
+  apply an animation with a mix and need the same machinery. IK and transform are written
   clean-room from the format's behaviour and the oracle tests, by someone
   working from the specs rather than from `ik.ts` / `transformConstraint.ts`;
   the new solvers then replace those two files on the stage too.
@@ -166,6 +174,14 @@ remain the user's own content.
   before P2 depends on them.
 - Clean-room discipline for IK and transform: whoever writes the new solvers
   should not work from the transcribed files they replace.
+- **The runtime's author is not clean-room (decided 2026-10-05).** P0–P2 are
+  written by Claude, whose training includes the open-source Spine runtimes;
+  it worked from the format's behaviour and spine-core as a black-box oracle,
+  without opening spine-core's source, but it knows those algorithms, and the
+  inherit modes and constraint solvers follow spine-core's structure closely
+  (exact parity hardly allows otherwise). Get legal review of this before P5
+  claims the app ships no Esoteric code; a human clean-room rewrite of the
+  solvers from a written spec is the fallback.
 - Preview fidelity becomes entirely our responsibility, per Spine version —
   the reader stays 4.3-gated exactly like the Unity side.
 - Physics and mesh-deform edge cases are the hardest parity targets; schedule

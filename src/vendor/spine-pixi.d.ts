@@ -16,6 +16,7 @@ declare namespace PIXI {
     destroy(destroySource?: boolean): void;
   }
   class Container {
+    setMask(options: { mask: Container; inverse?: boolean }): void;
     x: number;
     y: number;
     readonly scale: { x: number; y: number; set(x: number, y?: number): void };
@@ -28,8 +29,18 @@ declare namespace PIXI {
     constructor(options: { positions: Float32Array; uvs: Float32Array; indices: Uint32Array });
     getBuffer(id: "aPosition" | "aUV"): { update(): void };
   }
+  /** Uniforms for the two-colour tint shader (`src/preview/runtime/twoColor.ts`). */
+  class UniformGroup {
+    constructor(structures: Record<string, { value: Float32Array; type: string }>);
+    readonly uniforms: Record<string, Float32Array>;
+    update(): void;
+  }
+  class Shader {
+    static from(options: { gl: { vertex: string; fragment: string }; resources: Record<string, unknown> }): Shader;
+    readonly resources: Record<string, unknown>;
+  }
   class Mesh extends Container {
-    constructor(options: { geometry: MeshGeometry; texture: Texture });
+    constructor(options: { geometry: MeshGeometry; texture: Texture; shader?: Shader });
     texture: Texture;
     tint: number;
     alpha: number;
@@ -38,6 +49,7 @@ declare namespace PIXI {
   }
   class Graphics extends Container {
     clear(): this;
+    poly(points: number[]): this;
     moveTo(x: number, y: number): this;
     lineTo(x: number, y: number): this;
     circle(x: number, y: number, r: number): this;

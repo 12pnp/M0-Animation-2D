@@ -1561,9 +1561,11 @@ the surface `src/preview/` calls. Not obvious:
 
 Our own Spine 4.3 runtime, to replace spine-pixi-v8 and spine-core in the shipped app
 (docs/PREVIEW-RUNTIME-PLAN.md). Written from the format and held to spine-core by tests, never
-from spine-core's source. P0 and P1 are in: bones with the normal inherit mode, slots, region
-attachments, skins (and the bones only a skin enables), meshes weighted or not, linked meshes,
-sequences, and the bone, attachment, colour, draw order, deform and sequence timelines.
+from spine-core's source; its author is not clean-room (docs/PREVIEW-RUNTIME-PLAN.md ▸ Risks).
+In: bones in every inherit mode, slots, region attachments, skins (and the bones and constraints
+only a skin enables), meshes weighted or not, linked meshes, sequences, path and clipping
+attachments, two-colour tint, IK, transform and path constraints in the file's order, events,
+and every timeline of those. Not yet: crossfades (a queue cuts), slider and physics constraints.
 
 - **The pose is in `core/spine/runtime/`, DOM-free**: `readAtlas` (`atlasRead.ts`), `readRig`
   (`rigData.ts`, the file into our model) and `Rig` (`rig.ts`: setup pose, `apply` at a time,
@@ -1571,6 +1573,16 @@ sequences, and the bone, attachment, colour, draw order, deform and sequence tim
   pose through it too (P3b). Every attachment has `frames` (one, or one per sequence frame), each
   with its atlas region and page UVs; a linked mesh shares its source's geometry, and plays its
   source's deform and sequence keys (`timeline`) unless the file says `timelines: false`.
+- **Constraints** apply in the file's order inside `Rig.updateWorld`, each once the bones it
+  reads are up to date (`ensure`); a bone a constraint moves leaves its descendants out of date
+  until read. IK and local-target transform constraints set a bone's local pose
+  (`setBone`, `localChanged`); world-mode transform and path constraints set its world and
+  derive its local pose from it at once (`worldChanged`), while its parent is current, so a
+  later IK reads the constrained result and an untouched bone keeps its applied values. Solvers:
+  `ik.ts`, `transform.ts`, `path.ts`.
+- **The track** (`track.ts`, DOM-free): start, seek, queue, time, and the events a pose passes
+  (`firedBetween`); `tests/runtimeTrack.test.ts` steps it beside spine-core's `AnimationState`
+  with uneven frame times.
 - **The Preview drives a `PreviewRig`** (`src/preview/runtime/`): `spineRig` wraps
   spine-pixi-v8 and is the default; `boneburstRig` draws ours as one Pixi mesh per slot, rebuilt
   when the shape it draws changes (a region's quad, a mesh's own triangles), when
@@ -1592,6 +1604,18 @@ sequences, and the bone, attachment, colour, draw order, deform and sequence tim
   attachment and draw order key times (a key at 0.4 s is 0.40000000596, and a frame at 0.4 is
   still before it), deform key vertices (an unweighted mesh's key stored as setup plus offsets),
   and mesh vertices, UVs and weights.
+- **Measured against spine-core, not read** (each where it lives):
+  - IK "volume" y scale: 1 / s down to a squash of 0.7, then 28 / (7 + 18 s) (`carryY`).
+  - 4.3's two-bone IK keeps the parent's shear; a bone's local pose derived from its world
+    takes y scale as the y axis's length, signed by the mirror (not det / scale x).
+  - Transform constraints: a world rotation read with its offset, below 0, reads 360 up (once);
+    a constraint's mixes exist only for the properties its map drives, and y's mix is read only
+    when x is driven (scale y's only with scale x), so a map driving y alone never moves y; a
+    key's missing mixY takes mixX, its missing mixScaleY is 1 (`constraintMixes`, `keyMixes`).
+  - World-mode transform writes and reads work in the skeleton's unscaled space (y down
+    included); a mirrored source turns the rotation offset the other way.
+  - A queued animation takes over one frame late (judged on the time before the step); an
+    event without audio reports volume 0; durations are 32-bit like key times.
 - **Sequences, measured**: a frame count within 1e-5 of a frame short of a whole number rounds
   up (`floor(elapsed / delay + 1e-5)`), and a key without a `delay` keeps the previous key's
   (mode and index do not carry). A file without `skeleton.fps` has fps 0 in both runtimes, and the
@@ -1599,6 +1623,10 @@ sequences, and the bone, attachment, colour, draw order, deform and sequence tim
 - **Curve points can differ by one 32-bit step**: spine-core finds them by forward differencing,
   `spinePolyline` evaluates the cubic. The test compares positions at the rig's size for that
   reason; matrices stay strict.
+- **Drawing**: two-colour tint through a small shader (`twoColor.ts`, Spine's premultiplied
+  formula) for slots with a dark colour, Pixi's tint otherwise; a clipping attachment as a stencil
+  mask (inverse when the clip is) over a container holding the slots it clips, which covers what
+  Spine's triangle cutting covers. Both checked against spine-pixi's pixels in the Preview.
 - File ▸ Open Spine reads atlases with `readAtlas`; `spinePose.ts` is the last `src/` import of
   spine-core.
 
