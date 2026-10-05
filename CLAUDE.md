@@ -8,8 +8,8 @@ phases, the DragonBones→Spine mapping, and the checklist of export tests to
 rebuild. Phases 0–9 are done: DragonBones is gone, `src/core/spine/` holds the
 Spine 4.3 contract, the transform mapping and the exporter (ARCHITECTURE ▸ The
 Spine 4.3 contract, The Spine exporter), File ▸ Export writes Spine files, and
-the Preview panel runs spine-pixi-v8 (ARCHITECTURE ▸ The preview is
-ground truth, Vendored runtime), and the stage's eases and IK are Spine's own
+the Preview panel runs our own Spine runtime (ARCHITECTURE ▸ The preview is
+ground truth, The BoneBurst runtime; spine-pixi-v8 only under `npm run dev:oracle`), and the stage's eases and IK are Spine's own
 (ARCHITECTURE ▸ Easing, Bones and IK). Nested symbols are flattened into the one
 skeleton (ARCHITECTURE ▸ The Spine exporter ▸ Nested symbols are flattened), masks
 are clipping attachments and colour offsets two-colour tint (ARCHITECTURE ▸ Mask
@@ -47,7 +47,8 @@ and compares it with the stage frame by frame. An importer or exporter change
 must keep `tests/spineImport.test.ts` (every M0 sample round-trips) and
 `tests/spinePose.test.ts` (the stage equals the export) passing. A change to our own runtime
 (`core/spine/runtime/`, ARCHITECTURE ▸ The BoneBurst runtime) must keep
-`tests/spineRuntime.test.ts` and `tests/atlasRead.test.ts` passing. Phase 8 checked the
+`tests/spineRuntime.test.ts`, `tests/runtimeDraw.test.ts` (what the Preview draws) and
+`tests/atlasRead.test.ts` passing. Phase 8 checked the
 exports in Unity (ARCHITECTURE ▸ Checked in Unity, `scripts/unity-check/`): spine-csharp
 is stricter than spine-core (it requires `skeleton.hash`), so a header or format change
 should be rerun there. An AI edits the document through `src/app/agent/`
@@ -157,9 +158,12 @@ npx tsc --noEmit   # typecheck alone; faster than a build while iterating
 
 AGPL-3.0-or-later, inherited from Animo; keep `LICENSE`, `LICENSE-EXCEPTION.md`
 and `THIRD-PARTY-NOTICES.md`. What the exporter writes is the user's (the
-exception's second clause). `public/vendor/spine-pixi-v8.js` (the Preview's
-default) is under the Spine Runtimes License, not MIT: every user needs their own
-Spine Editor licence (THIRD-PARTY-NOTICES.md). `@esotericsoftware/spine-core` is a
-test oracle only: since docs/PREVIEW-RUNTIME-PLAN.md P3b nothing in `src/` imports
-it and the editor bundle holds none of it. `core/math/ik.ts` and
-`transformConstraint.ts` are still transcriptions of it (the plan's P2 note).
+exception's second clause). `public/vendor/spine-pixi-v8.js` is under the Spine
+Runtimes License, not MIT (THIRD-PARTY-NOTICES.md): since
+docs/PREVIEW-RUNTIME-PLAN.md P4 it is the Preview's oracle under `npm run dev:oracle`
+only, and a build leaves it out of `dist/`. `@esotericsoftware/spine-core` is a
+test oracle only: since P3b nothing in `src/` imports it and the editor bundle
+holds none of it. `core/math/ik.ts` and `transformConstraint.ts` are still
+transcriptions of it (the plan's P2 note), so until P5 and its legal review the
+app still ships Spine Runtimes code and every user still needs their own Spine
+Editor licence.

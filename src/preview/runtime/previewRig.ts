@@ -2,9 +2,9 @@
 import type { QueueStep } from "../queue";
 
 /**
- * What the Preview drives, whichever runtime plays the export: spine-pixi-v8
- * (`spineRig.ts`, the default) or the BoneBurst runtime (`boneburstRig.ts`,
- * behind `animo.previewRuntime` = "boneburst"; docs/PREVIEW-RUNTIME-PLAN.md).
+ * What the Preview drives, whichever runtime plays the export: the BoneBurst
+ * runtime (`boneburstRig.ts`), or spine-pixi-v8 (`spineRig.ts`) as the oracle
+ * in `npm run dev:oracle` (docs/PREVIEW-RUNTIME-PLAN.md, P4).
  * One track: an animation set or queued on it, advanced by `advance`.
  */
 export interface PreviewRig {

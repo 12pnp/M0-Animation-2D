@@ -1,6 +1,7 @@
-import { defineConfig } from "vite";
+import { defineConfig, type Plugin } from "vite";
 import { fileURLToPath, URL } from "node:url";
-import { readFileSync } from "node:fs";
+import { readFileSync, rmSync } from "node:fs";
+import { resolve } from "node:path";
 
 const pkg = JSON.parse(
   readFileSync(fileURLToPath(new URL("./package.json", import.meta.url)), "utf8"),
@@ -13,6 +14,7 @@ export default defineConfig(({ command }) => ({
   // document URL, and a host that strips the trailing slash would then look
   // for the assets one directory up.
   base: process.env.ANIMO_BASE ?? "/",
+  plugins: [noOracleInBuild()],
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
@@ -44,3 +46,15 @@ export default defineConfig(({ command }) => ({
     },
   },
 }));
+
+/** spine-pixi-v8 is the Preview's oracle, for `npm run dev:oracle` only
+ *  (docs/PREVIEW-RUNTIME-PLAN.md, P4): a build does not ship it. */
+function noOracleInBuild(): Plugin {
+  let outDir = "";
+  return {
+    name: "no-oracle-in-build",
+    apply: "build",
+    configResolved(config) { outDir = resolve(config.root, config.build.outDir); },
+    closeBundle() { rmSync(resolve(outDir, "vendor/spine-pixi-v8.js"), { force: true }); },
+  };
+}

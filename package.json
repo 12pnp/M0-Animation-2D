@@ -27,6 +27,7 @@
   ],
   "scripts": {
     "dev": "vite",
+    "dev:oracle": "vite --mode oracle",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "test": "vitest run",

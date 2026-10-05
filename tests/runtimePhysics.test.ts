@@ -53,6 +53,7 @@ export function simulate(name: string, json: Json, atlas: string, animation: str
 }
 
 describe("physics against spine-core", () => {
+  if (!sampleRigs().length) it.skip("spine-unity's samples (folder missing)", () => {});
   for (const rig of sampleRigs()) {
     const file = JSON.parse(rig.json) as Json;
     if (!((file.constraints as Json[]) ?? []).some((k) => k.type === "physics")) continue;

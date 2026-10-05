@@ -1,8 +1,7 @@
 /// <reference path="../vendor/spine-pixi.d.ts" />
 import { queueSteps } from "./queue";
 import { type FrameToHost, type HostToFrame, tickFrame } from "./protocol";
-import type { PreviewRig } from "./runtime/previewRig";
-import { spineRig } from "./runtime/spineRig";
+import type { PreviewRig, RigSource } from "./runtime/previewRig";
 import { boneburstRig } from "./runtime/boneburstRig";
 
 /**
@@ -12,14 +11,30 @@ import { boneburstRig } from "./runtime/boneburstRig";
  *
  * That is the whole point of this file: it is not a second renderer, it IS
  * the runtime. If what plays here matches the stage, the export is right.
- * The runtime is the official spine-pixi-v8 4.3.13, or, with
- * `localStorage["animo.previewRuntime"] = "boneburst"`, our own
- * (docs/PREVIEW-RUNTIME-PLAN.md), both behind `PreviewRig`.
+ * The runtime is our own (docs/PREVIEW-RUNTIME-PLAN.md), behind `PreviewRig`.
+ * The official spine-pixi-v8 4.3.13 is the oracle, reachable only in a dev
+ * server started with `npm run dev:oracle`; there it plays unless
+ * `localStorage["animo.previewRuntime"] = "boneburst"`.
  */
 
-const RUNTIME = (() => {
-  try { return localStorage.getItem("animo.previewRuntime") === "boneburst" ? "boneburst" : "spine"; } catch { return "spine"; }
-})();
+type MakeRig = (src: RigSource) => PreviewRig;
+
+/** spine-pixi-v8 and its adapter, fetched only when the oracle plays. A
+ *  production build folds the mode test away and holds neither. */
+async function oracle(): Promise<{ make: MakeRig; name: string } | null> {
+  try { if (localStorage.getItem("animo.previewRuntime") === "boneburst") return null; } catch { /* storage blocked: the oracle */ }
+  await new Promise<void>((done, failed) => {
+    const script = document.createElement("script");
+    script.src = "/vendor/spine-pixi-v8.js";
+    script.onload = () => done();
+    script.onerror = () => failed(new Error("The oracle runtime /vendor/spine-pixi-v8.js did not load."));
+    document.head.appendChild(script);
+  });
+  return { make: (await import("./runtime/spineRig")).spineRig, name: "spine-pixi-v8 4.3.13 (oracle)" };
+}
+
+const runtime = (import.meta.env.MODE === "oracle" ? oracle() : Promise.resolve(null))
+  .then((official) => official ?? { make: boneburstRig as MakeRig, name: "BoneBurst runtime" });
 
 const errEl = document.getElementById("err")!;
 /** What the BoneBurst runtime does not play in the loaded file, said on screen. */
@@ -133,7 +148,7 @@ async function load(msg: Extract<HostToFrame, { type: "load" }>): Promise<void> 
   const a = await ensureApp();
   // Decode while the old skeleton is still on screen: every await between
   // disposing it and adding the new one is a frame drawn empty.
-  const bitmaps = await Promise.all(msg.pages.map((p) => createImageBitmap(p.png)));
+  const [bitmaps, { make }] = await Promise.all([Promise.all(msg.pages.map((p) => createImageBitmap(p.png))), runtime]);
   if (seq !== loadSeq) {
     for (const b of bitmaps) b.close();
     return;
@@ -148,7 +163,7 @@ async function load(msg: Extract<HostToFrame, { type: "load" }>): Promise<void> 
   const pageTextures = new Map(msg.pages.map((p, i) => [p.name, PIXI.Texture.from(bitmaps[i]!)] as const));
   let next: PreviewRig;
   try {
-    next = (RUNTIME === "boneburst" ? boneburstRig : spineRig)({
+    next = make({
       skeleton: msg.skeleton, atlas: msg.atlas, textures: pageTextures, skins: msg.skins ?? [], debug: !!msg.debugDraw,
       // Events as the runtime fires them, while playing: a seek poses a
       // frame and must not fire (or sound) what it lands on.
@@ -381,7 +396,4 @@ window.addEventListener("message", (event: MessageEvent) => {
   fitToFrame,
 };
 
-post({
-  type: "ready",
-  version: RUNTIME === "boneburst" ? `BoneBurst runtime (P0), PixiJS ${PIXI.VERSION}` : `spine-pixi-v8 4.3.13, PixiJS ${PIXI.VERSION}`,
-});
+void runtime.then(({ name }) => post({ type: "ready", version: `${name}, PixiJS ${PIXI.VERSION}` }), fail);

@@ -18,10 +18,9 @@
       }
       #warn[hidden] { display: none; }
     </style>
-    <!-- Classic scripts, in this order: spine-pixi-v8's embedded require shim
-         maps require("pixi.js") to the global PIXI, which must exist first. -->
+    <!-- A classic script: the global PIXI. The oracle runtime (spine-pixi-v8,
+         `npm run dev:oracle` only) maps require("pixi.js") to it. -->
     <script src="/vendor/pixi.js"></script>
-    <script src="/vendor/spine-pixi-v8.js"></script>
   </head>
   <body>
     <div id="err"></div>

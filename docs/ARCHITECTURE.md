@@ -893,10 +893,12 @@ also gave Edit Multiple Frames a new base per step.
 
 ### The preview is ground truth
 
-`preview/PreviewSession.ts` exports the project in memory and feeds the **actual** Spine
-runtime (spine-pixi-v8 4.3.13 on PixiJS 8.21, vendored) the exact bytes that would go to disk:
-the skeleton JSON, the `.atlas` text and the page images. It is not a second renderer. If
-the stage and the preview disagree, the export is wrong. An excluded layer therefore disappears
+`preview/PreviewSession.ts` exports the project in memory and feeds a Spine runtime the exact
+bytes that would go to disk: the skeleton JSON, the `.atlas` text and the page images. It is not
+a second renderer. The runtime is our own (The BoneBurst runtime, on PixiJS 8.21), held to
+spine-core by tests down to the triangles it draws; spine-pixi-v8 4.3.13 plays instead in a dev
+server started with `npm run dev:oracle` (Vendored runtime). If the stage and the preview
+disagree, the export is wrong. An excluded layer therefore disappears
 from the preview too, which is the point rather than a side effect.
 
 The session owns the export and the 250 ms coalescing; its VIEWS own the iframes. There is one
@@ -1309,7 +1311,7 @@ flowchart LR
   that frame. A bone keyed for the first time starts from its setup pose at 0.
 - **`get_pose` is the runtime's pose** (`posedSymbol`, IK and constraints applied), so a
   model checks its own work against what a game will show. **`check_preview`** loads the
-  export into a hidden preview page of its own (`HiddenPreviewProbe`: the same spine-pixi,
+  export into a hidden preview page of its own (`HiddenPreviewProbe`: the Preview's runtime,
   without taking over the Preview panel), seeks frame by frame and compares every bone.
 - **The bridge** is one Node file with no dependencies. It serves MCP on stdio (newline-
   delimited JSON-RPC: `initialize`, `tools/list`, `tools/call`) and HTTP on 127.0.0.1 for the
@@ -1546,10 +1548,16 @@ guessed wrong. `core/export/dbTypes.ts` is the authority.
 `public/vendor/pixi.js` (PixiJS 8.21.0) and `public/vendor/spine-pixi-v8.js` (4.3.13, the
 package's IIFE build, which bundles spine-core) are **classic scripts, not npm packages**, served
 to `preview.html` so neither is in the editor bundle. `src/vendor/spine-pixi.d.ts` declares only
-the surface `src/preview/` calls. Not obvious:
+the surface `src/preview/` calls. Since docs/PREVIEW-RUNTIME-PLAN.md P4 spine-pixi-v8 is the
+**oracle only**: `preview.html` loads `pixi.js`, and `previewClient.ts` adds spine-pixi-v8 and
+imports its adapter (`spineRig.ts`) only when Vite runs in mode `oracle` (`npm run dev:oracle`;
+there `localStorage["animo.previewRuntime"] = "boneburst"` plays ours, for comparing the two in
+one origin). A build folds the mode test away, so neither is in `dist/`'s preview code, and
+`vite.config.ts` (`noOracleInBuild`) deletes the copied `dist/vendor/spine-pixi-v8.js`. Not obvious:
 
 - **Order matters.** The IIFE calls `require("pixi.js")`; its embedded shim maps that to the
-  global `PIXI`, and only when `PIXI` already exists. So `pixi.js` loads first.
+  global `PIXI`, and only when `PIXI` already exists. So `pixi.js` loads first (the oracle is
+  added after the page's scripts ran).
 - spine-pixi-v8 4.3.13 needs Pixi **8.16 or newer** (its peer range); Animo's 8.9.2 was too old.
 - Loading `spine-pixi-v8` sets `Skeleton.yDown = true`: data is y up, the preview y down, the
   editor's own numbers.
@@ -1558,7 +1566,8 @@ the surface `src/preview/` calls. Not obvious:
 - `PIXI.Assets.load()` cannot resolve a blob URL (no extension to pick a parser from) and returns
   an EMPTY texture without raising. Pages are built from `createImageBitmap` +
   `PIXI.Texture.from`, and handed to each atlas page as `spine.SpineTexture.from(texture.source)`.
-- The Spine Runtimes License applies to `spine-pixi-v8.js` (see THIRD-PARTY-NOTICES.md).
+- The Spine Runtimes License applies to `spine-pixi-v8.js` (see THIRD-PARTY-NOTICES.md); P5
+  deletes it from the repository.
 
 ## The BoneBurst runtime
 
@@ -1569,7 +1578,8 @@ In: bones in every inherit mode, slots, region attachments, skins (and the bones
 only a skin enables), meshes weighted or not, linked meshes, sequences, path and clipping
 attachments, bounding boxes and points, two-colour tint, IK, transform, path, slider and physics
 constraints in the file's order, events, crossfades, and every timeline of those: everything a
-4.3 file holds. Not yet the stage's posing (`spinePose.ts`, P3b) nor the Preview's default (P4).
+4.3 file holds. The stage poses opened files and rigs with physics, slider or path constraints
+through it (`spinePose.ts`, P3b), and it is the Preview's runtime (P4).
 
 - **The pose is in `core/spine/runtime/`, DOM-free**: `readAtlas` (`atlasRead.ts`), `readRig`
   (`rigData.ts`, the file into our model) and `Rig` (`rig.ts`: setup pose, `apply` at a time,
@@ -1616,12 +1626,11 @@ constraints in the file's order, events, crossfades, and every timeline of those
   current pose or added, at their time or `to + (property − from) × scale` (the property read as
   a transform constraint reads it); a time below 0 is 0, except that a bone-driven looping one
   wraps; `max` plays no part. The bones it keys rebuild after it.
-- **The Preview drives a `PreviewRig`** (`src/preview/runtime/`): `spineRig` wraps
-  spine-pixi-v8 and is the default; `boneburstRig` draws ours as one Pixi mesh per slot, rebuilt
-  when the shape it draws changes (a region's quad, a mesh's own triangles), when
-  `localStorage["animo.previewRuntime"] = "boneburst"`. Whatever the file holds beyond what ours
-  plays is listed in `RigData.unsupported` and shown on a chip over the preview, never dropped
-  silently.
+- **The Preview drives a `PreviewRig`** (`src/preview/runtime/`): `boneburstRig` draws ours as
+  one Pixi mesh per slot, rebuilt when the shape it draws changes (a region's quad, a mesh's own
+  triangles); `spineRig` wraps spine-pixi-v8 in `npm run dev:oracle` only (Vendored runtime).
+  Whatever the file holds beyond what ours plays is listed in `RigData.unsupported` and shown on
+  a chip over the preview, never dropped silently.
 - **Held to spine-core frame by frame**: `tests/spineRuntime.test.ts` plays our exports and
   spine-unity's samples through both, and each sample again under each of its skins, and compares
   every bone's world matrix and whether it is active, each slot's attachment and colour, the draw
@@ -1649,6 +1658,11 @@ constraints in the file's order, events, crossfades, and every timeline of those
     included); a mirrored source turns the rotation offset the other way.
   - A queued animation takes over one frame late (judged on the time before the step); an
     event without audio reports volume 0; durations are 32-bit like key times.
+- **Events with audio: where we differ from spine-core, on purpose.** spine-core 4.3.13's JSON
+  reader gives an event with audio and no `volume` volume 0, and a key without `balance` the
+  event's *volume* as its balance. Ours reads the format as written: volume 1 when absent, the
+  event's balance under the key. Only the Preview's sound plays differently; the track test's
+  audio key states both values for that reason.
 - **Sequences, measured**: a frame count within 1e-5 of a frame short of a whole number rounds
   up (`floor(elapsed / delay + 1e-5)`), and a key without a `delay` keeps the previous key's
   (mode and index do not carry). A file without `skeleton.fps` has fps 0 in both runtimes, and the
@@ -1658,12 +1672,20 @@ constraints in the file's order, events, crossfades, and every timeline of those
   reason; matrices stay strict.
 - **Bounding boxes and points** draw as nothing, as in Spine; `Rig.vertexWorld` and
   `Rig.pointWorld` give them, and the Preview's debug view outlines them with paths and clipping.
-- **Drawing**: two-colour tint through a small shader (`twoColor.ts`, Spine's premultiplied
-  formula) for slots with a dark colour, Pixi's tint otherwise; a clipping attachment as a stencil
-  mask (inverse when the clip is) over a container holding the slots it clips, which covers what
-  Spine's triangle cutting covers. Both checked against spine-pixi's pixels in the Preview.
-- File ▸ Open Spine reads atlases with `readAtlas`; `spinePose.ts` is the last `src/` import of
-  spine-core.
+- **Drawing**: what is drawn is `drawList` (`draw.ts`): each slot showing an image, in draw
+  order, with its triangles, colour (slot × attachment), dark colour, blend mode and the clip open
+  over it; `boneburstRig` only applies it. Two-colour tint goes through a small shader
+  (`twoColor.ts`, Spine's premultiplied formula) for slots with a dark colour, Pixi's tint
+  otherwise; a clipping attachment is a stencil mask (inverse when the clip is) over a container
+  holding the slots it clips, which covers what Spine's triangle cutting covers. Both checked
+  against spine-pixi's pixels in the Preview (the frog, 0 difference).
+- **The Preview's gate** is `tests/runtimeDraw.test.ts`: at every frame, y down, every triangle
+  `drawList` gives against what spine-core's `SkeletonRendererCore` draws (positions, UVs, 8-bit
+  colour and dark colour, blend, page). Spine cuts clipped triangles and we mask them, so a clip
+  is checked by what it covers: with that clip moved out of sight, spine-core draws exactly the
+  slots ours does not put under it. A region's quad is split along the same diagonal with its
+  triangles in Spine's order (`QUAD`). Our exports run in CI; the samples where they exist.
+- File ▸ Open Spine reads atlases with `readAtlas`; nothing in `src/` imports spine-core.
 
 ## Keyboard shortcuts
 

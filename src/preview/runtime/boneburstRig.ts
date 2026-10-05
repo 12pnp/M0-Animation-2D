@@ -4,13 +4,14 @@ import { readRig } from "@/core/spine/runtime/rigData";
 import { Rig } from "@/core/spine/runtime/rig";
 import type { ClippingData } from "@/core/spine/runtime/rigData";
 import { Track } from "@/core/spine/runtime/track";
+import { type DrawnSlot, drawList, drawnVertices } from "@/core/spine/runtime/draw";
 import type { PreviewRig, RigSource } from "./previewRig";
 import { type TwoColor, twoColorShader } from "./twoColor";
 
 /**
- * The BoneBurst runtime in the Preview (docs/PREVIEW-RUNTIME-PLAN.md, P0):
- * our own reader and pose (`core/spine/runtime/`), drawn as one Pixi mesh per
- * slot. Not the default yet; `animo.previewRuntime` = "boneburst" turns it on.
+ * The BoneBurst runtime in the Preview (docs/PREVIEW-RUNTIME-PLAN.md): our
+ * own reader and pose (`core/spine/runtime/`), drawn as one Pixi mesh per
+ * slot. The Preview's runtime since P4.
  *
  * The track (`core/spine/runtime/track.ts`) plays, queues and crossfades as
  * spine-core's `AnimationState`; what a file holds that it does not play yet
@@ -39,10 +40,10 @@ export function boneburstRig(src: RigSource): PreviewRig {
   let debug = src.debug;
 
   // One Pixi mesh per slot, rebuilt when the shape it draws changes: a
-  // region's quad, or a mesh attachment's own triangles.
+  // region's quad, or a mesh attachment's own triangles. What is drawn, in
+  // what order and under which clip, is `drawList`'s (core/spine/runtime/draw.ts).
   interface Drawn { mesh: PIXI.Mesh; geometry: PIXI.MeshGeometry; positions: Float32Array; uvs: Float32Array; shape: unknown; twoColor: TwoColor | null }
   const meshes: Array<Drawn | null> = rig.data.slots.map(() => null);
-  const QUAD = new Uint32Array([0, 1, 2, 2, 3, 0]);
   let drawnOrder = "";
 
   const track = new Track();
@@ -102,26 +103,19 @@ export function boneburstRig(src: RigSource): PreviewRig {
   }
 
   function draw(): void {
-    // What is drawn, in order: each slot's mesh, inside the clip group open
-    // at the time. A clip opens at its slot and closes after its end slot;
-    // another clipping attachment inside an open clip is ignored.
-    const layout: Array<{ slot: number; clip: number }> = [];
-    let open = -1, end = -1;
-    for (const slot of rig.drawOrder) {
-      const att = rig.attachmentOf(slot);
-      if (att?.kind === "clipping") {
-        if (open < 0) { open = slot; end = att.end; clipFor(slot, att); }
-      } else if (drawSlot(slot)) layout.push({ slot, clip: open });
-      if (open >= 0 && slot === end) open = -1;
-    }
+    const list = drawList(rig);
+    const drawn = new Set<number>();
+    for (const d of list.slots) { drawSlot(d); drawn.add(d.slot); }
+    meshes.forEach((m, slot) => { if (m && !drawn.has(slot)) m.mesh.visible = false; });
+    for (const [slot, att] of list.clips) clipFor(slot, att);
     // Restack only when what is drawn, or how it is grouped, changed.
-    const key = layout.map((e) => `${e.slot}:${e.clip}`).join(",");
+    const key = list.slots.map((e) => `${e.slot}:${e.clip}`).join(",");
     if (key !== drawnOrder) {
       drawnOrder = key;
       slotLayer.removeChildren();
       for (const c of clips) c?.group.removeChildren();
       let group = -1;
-      for (const { slot, clip } of layout) {
+      for (const { slot, clip } of list.slots) {
         const mesh = meshes[slot]!.mesh;
         if (clip < 0) { slotLayer.addChild(mesh); group = -1; continue; }
         const c = clips[clip]!;
@@ -132,36 +126,23 @@ export function boneburstRig(src: RigSource): PreviewRig {
     drawDebug();
   }
 
-  /** Pose one slot's mesh; false when it shows nothing. */
-  function drawSlot(slot: number): boolean {
-    const att = rig.attachmentOf(slot);
-    const frame = att && (att.kind === "region" || att.kind === "mesh") ? rig.frameOf(slot, att) : null;
-    if (!att || !frame?.region || (att.kind !== "region" && att.kind !== "mesh")) {
-      const m = meshes[slot];
-      if (m) m.mesh.visible = false;
-      return false;
-    }
-    const texture = textures.get(frame.region.page.name)!;
-    const m = att.kind === "mesh"
-      ? drawnFor(slot, att.triangles, att.vertexCount, texture)
-      : drawnFor(slot, QUAD, 4, texture);
+  /** Pose one drawn slot's Pixi mesh. */
+  function drawSlot(d: DrawnSlot): void {
+    const texture = textures.get(d.frame.region.page.name)!;
+    const m = drawnFor(d.slot, d.triangles, d.vertexCount, texture);
     m.mesh.visible = true;
     m.mesh.texture = texture;
-    if (att.kind === "mesh") rig.meshWorld(slot, att, m.positions);
-    else rig.regionWorld(slot, att, m.positions);
-    m.uvs.set(frame.uvs);
+    drawnVertices(rig, d, m.positions);
+    m.uvs.set(d.frame.uvs);
     m.geometry.getBuffer("aPosition").update();
     m.geometry.getBuffer("aUV").update();
-    const c = rig.color, k = slot * 7, a = att.color;
-    const r = c[k]! * a[0], g = c[k + 1]! * a[1], b = c[k + 2]! * a[2], alpha = c[k + 3]! * a[3];
-    if (m.twoColor) m.twoColor.set(texture, [r, g, b, alpha], c.subarray(k + 4, k + 7));
+    const [r, g, b, alpha] = d.color;
+    if (m.twoColor) m.twoColor.set(texture, d.color, d.dark ?? [0, 0, 0]);
     else {
       m.mesh.tint = (Math.round(r * 255) << 16) | (Math.round(g * 255) << 8) | Math.round(b * 255);
       m.mesh.alpha = alpha;
     }
-    const blend = rig.data.slots[slot]!.blend;
-    m.mesh.blendMode = blend === "additive" ? "add" : blend;
-    return true;
+    m.mesh.blendMode = d.blend === "additive" ? "add" : d.blend;
   }
 
   /** Bones as lines from their origin along their x axis, roots as dots;

@@ -6,13 +6,18 @@ import { readAtlas } from "@/core/spine/runtime/atlasRead";
 import { type EventFire, readRig } from "@/core/spine/runtime/rigData";
 import { Rig } from "@/core/spine/runtime/rig";
 import { Track } from "@/core/spine/runtime/track";
+import { atlasText } from "@/core/spine/atlas";
+import { exportSpine, spineJson } from "@/core/spine/exportSpine";
+import { loadStickman } from "./fixtures/stickman";
 import { sampleRigs } from "./fixtures/spineSamples";
-import { type Json, solvable } from "./fixtures/runtimeOracle";
+import { type Json, solvable, trimmedPage } from "./fixtures/runtimeOracle";
 
 /**
  * The BoneBurst runtime's track (`core/spine/runtime/track.ts`) against
  * spine-core's `AnimationState`, stepped with uneven frame times: the events
- * each step fires, with their values, and every bone's world matrix.
+ * each step fires, with their values, and every bone's world matrix. The
+ * stickman export runs everywhere (with events added to it); spine-unity's
+ * samples where their folder exists.
  */
 
 /** Frame times as a browser gives them: around 60 a second, never even. */
@@ -87,8 +92,38 @@ function play(name: string, file: Json, atlas: string, plan: Array<{ anim: strin
   return fired;
 }
 
+/** The stickman export, with events keyed on both its animations. */
+async function stickman(): Promise<{ file: Json; atlas: string }> {
+  const { project } = await loadStickman();
+  const exported = exportSpine(project, project.rootSymbolId);
+  const file = JSON.parse(spineJson(exported.skeleton)) as Json;
+  file.events = { step: { int: 1, float: 0.5, string: "left" }, land: { audio: "land.wav", volume: 0.8, balance: -0.2 } };
+  const animations = file.animations as Record<string, Json>;
+  for (const anim of Object.values(animations)) {
+    // The sound's key gives its volume and balance: without them spine-core
+    // 4.3.13 takes the event's volume as the balance (ARCHITECTURE ▸ The
+    // BoneBurst runtime ▸ Events with audio).
+    anim.events = [{ time: 0, name: "step" }, { time: 0.2, name: "land", float: 2, volume: 0.7, balance: 0.3 }, { time: 0.35, name: "step", int: 7, string: "right" }];
+  }
+  return { file, atlas: atlasText([trimmedPage(project, exported.usedImages)]) };
+}
+
+describe("the track on our export against spine-core's AnimationState", () => {
+  it("stickman: looping, once, queued and crossfaded, with events", async () => {
+    const { file, atlas } = await stickman();
+    const [a, b] = Object.keys(file.animations as Json) as [string, string];
+    let fired = play("stickman loop", file, atlas, [{ anim: a, loop: true }], 300);
+    fired += play("stickman once", file, atlas, [{ anim: b, loop: false }], 200);
+    fired += play("stickman queue", file, atlas, [{ anim: a, loop: false }, { anim: b, loop: false }, { anim: a, loop: true }], 400);
+    fired += play("stickman crossfade", file, atlas, [{ anim: a, loop: false }, { anim: b, loop: true, mix: 0.25 }], 200);
+    fired += play("stickman interrupted", file, atlas, [{ anim: a, loop: false }, { anim: b, loop: false, mix: 2 }, { anim: a, loop: true, mix: 3 }], 300);
+    expect(fired).toBeGreaterThan(10);
+  });
+});
+
 describe("the track against spine-core's AnimationState", () => {
   const rigs = sampleRigs();
+  if (!rigs.length) it.skip("spine-unity's samples (folder missing)", () => {});
   for (const rig of rigs) {
     const file = JSON.parse(rig.json) as Json;
     const animations = Object.entries((file.animations as Record<string, Json>) ?? {});
@@ -111,6 +146,7 @@ describe("the track against spine-core's AnimationState", () => {
 });
 
 describe("crossfades against spine-core's AnimationState", () => {
+  if (!sampleRigs().length) it.skip("spine-unity's samples (folder missing)", () => {});
   for (const rig of sampleRigs()) {
     const file = JSON.parse(rig.json) as Json;
     const names = Object.keys((file.animations as Record<string, Json>) ?? {});

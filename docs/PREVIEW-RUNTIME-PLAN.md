@@ -40,6 +40,8 @@ Some groundwork exists in this repo already, but not all of it is clean:
 
 ## What uses the official runtime today
 
+As the plan started; each phase's status below says what it moved off it.
+
 - **Preview panel / Play mode**: `preview.html` loads `/vendor/spine-pixi-v8.js`
   and plays the exported files frame by frame against the stage.
 - **The stage**: `src/core/spine/spinePose.ts` imports spine-core and hands it
@@ -147,6 +149,20 @@ Some groundwork exists in this repo already, but not all of it is clean:
 - **P4 — parity gates.** Golden-file suites vs the dev oracle in CI; the
   default Preview flips to our runtime; the official runtime is reachable only
   through `--dev-oracle`.
+  **Done.** What the Preview draws is decided in `core/spine/runtime/draw.ts`
+  (`drawList`) and the Pixi adapter only applies it; `tests/runtimeDraw.test.ts`
+  holds every triangle of it, every frame, to spine-core's `SkeletonRendererCore`
+  (positions, UVs, colours, blend, page; clips by what they cover). It found the
+  quad's triangles in the other order from Spine's. In CI the golden files are
+  our exports (stickman, frog with its clipped eyelids) — spine-unity's samples
+  are not in the repository and run where the folder exists — beside the oracle
+  suites (`spineRuntime`, `runtimeConstraints`, `runtimeTrack`,
+  `runtimePhysics`, `spinePose`, `spineParity`). The Preview plays ours by
+  default; spine-pixi-v8 loads only in `npm run dev:oracle` (`vite --mode
+  oracle`), and a build drops `dist/vendor/spine-pixi-v8.js`. In the app the
+  frog's Preview is pixel-identical between the two. Left for P5: the file in
+  the repository, the notices, and the transcribed `ik.ts` /
+  `transformConstraint.ts`.
 - **P5 — removal.** Delete `public/vendor/spine-pixi-v8.js` and the bundled
   spine-core from the shipped app; no file under `src/` imports
   `@esotericsoftware/*` and none is transcribed from it. spine-core stays a

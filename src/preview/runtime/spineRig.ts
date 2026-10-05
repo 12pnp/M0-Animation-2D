@@ -2,9 +2,9 @@
 import type { PreviewRig, RigSource } from "./previewRig";
 
 /**
- * The official runtime (spine-pixi-v8 4.3.13) behind `PreviewRig`: the
- * Preview's default until the BoneBurst runtime passes its parity gates
- * (docs/PREVIEW-RUNTIME-PLAN.md, P4).
+ * The official runtime (spine-pixi-v8 4.3.13) behind `PreviewRig`: the oracle
+ * the BoneBurst runtime is checked against in the app, loaded only by
+ * `npm run dev:oracle` (docs/PREVIEW-RUNTIME-PLAN.md, P4).
  */
 export function spineRig(src: RigSource): PreviewRig {
   const atlas = new spine.TextureAtlas(src.atlas);
