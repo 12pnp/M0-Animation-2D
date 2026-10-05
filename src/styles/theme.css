@@ -6,33 +6,33 @@
 
 :root {
   /* Surfaces, darkest → lightest */
-  --bg-app:        #1f1f1f;   /* window chrome behind everything          */
-  --bg-menubar:    #262626;
-  --bg-rail:       #2b2b2b;   /* icon rails (tools, collapsed docks)      */
-  --bg-panel:      #2e2e2e;   /* panel body — the dominant surface        */
-  --bg-panel-alt:  #343434;   /* alternating rows, sub-sections           */
-  --bg-header:     #3b3b3b;   /* panel tab strip / section headers        */
-  --bg-field:      #232323;   /* text & number inputs                     */
+  --bg-app:        #282828;   /* window chrome behind everything          */
+  --bg-menubar:    #2b2b2b;
+  --bg-rail:       #303030;   /* icon rails (tools, collapsed docks)      */
+  --bg-panel:      #2d2d2d;   /* panel body — the dominant surface        */
+  --bg-panel-alt:  #353535;   /* alternating rows, sub-sections           */
+  --bg-header:     #3c3c3c;   /* panel tab strip / section headers        */
+  --bg-field:      #1a1a1a;   /* text & number inputs                     */
   --bg-stage:      #535353;   /* pasteboard — the `stage.pasteboard` pref */
-  --bg-sunken:     #212121;   /* wells, frame-grid background             */
-  --bg-pop:        #404040;   /* popup menus, toasts, color swatch wells  */
+  --bg-sunken:     #292929;   /* wells, frame-grid background             */
+  --bg-pop:        #424242;   /* popup menus, toasts, color swatch wells  */
 
   /* Button chrome and the scrollbar */
-  --btn-top:       #4f4f4f;   /* the .btn gradient's two stops            */
-  --btn-bottom:    #424242;
-  --scrollbar:     #4f4f4f;
+  --btn-top:       #666666;   /* the .btn gradient's two stops            */
+  --btn-bottom:    #5e5e5e;
+  --scrollbar:     #5a5a5a;
 
   /* Lines */
-  --line:          #171717;   /* hard separators between regions          */
-  --line-soft:     #414141;   /* interior hairlines                       */
-  --line-grid:     #2d2d2d;   /* timeline frame grid                      */
+  --line:          #232323;   /* hard separators between regions          */
+  --line-soft:     #3e3e3e;   /* interior hairlines                       */
+  --line-grid:     #222222;   /* timeline frame grid                      */
 
   /* Text — near-white on the grey ramp; the vivid half of the design is
      this contrast floor (see tests/themes.test.ts), not saturation. */
-  --fg:            #e3e3e3;
+  --fg:            #efefef;
   --fg-strong:     #ffffff;
-  --fg-dim:        #a6a6a6;
-  --fg-disabled:   #6e6e6e;
+  --fg-dim:        #ababab;
+  --fg-disabled:   #727272;
 
   /* Accents. Every one of these is a preference: `view/prefs/theme.ts`
      rewrites them on the root element, and the literals here are the same
@@ -176,7 +176,9 @@ input[type="text"], input[type="number"], select {
   min-width: 0;
   color: var(--fg-strong);
   background: var(--bg-field);
-  border: 1px solid var(--line);
+  /* No edge line on a field, its darker fill marks it; transparent rather
+     than none so every field keeps its size. */
+  border: 1px solid transparent;
   border-radius: var(--radius);
   padding: 0 4px;
 }

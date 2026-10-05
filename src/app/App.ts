@@ -147,8 +147,8 @@ export class App {
     const toolbar = new StageToolbar(this.store, () => this.viewport.pose);
     this.shell.stageHost.appendChild(toolbar.el);
     this.shell.stageHost.appendChild(toolbar.corner);
-    // 8px: the gap the bar keeps from the stage's edge.
-    this.viewport.fitInset = () => (toolbar.el.hidden ? 0 : toolbar.el.offsetHeight + 8);
+    toolbar.observeHost(this.shell.stageHost);
+    this.viewport.fitInset = () => toolbar.coveredBottom();
     this.shell.stageHost.appendChild(this.fitButton());
 
 

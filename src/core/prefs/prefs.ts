@@ -145,6 +145,10 @@ export interface GizmoPrefs {
   worldPathOnionOutline: boolean;
   /** The toolbar at the foot of the stage (Spine's), and what it holds. */
   showToolbar: boolean;
+  /** Where its grip dragged it: pixels from its home at the stage's bottom
+   *  left (`view/viewport/toolbarPlace.ts`). */
+  toolbarX: number;
+  toolbarY: number;
   /** Which frame Rotate / Translate values are read in (`core/math/axes.ts`). */
   axes: Axes;
   /** Transforming a node leaves its child bones / images where they are. */
@@ -227,6 +231,10 @@ export interface Prefs {
 }
 
 export type PrefsCategory = keyof Prefs;
+
+/** Spine's playhead colour. */
+export const PLAYHEAD_DEFAULT = "#00e5ff";
+const OLD_PLAYHEAD_DEFAULT = "#e8483f";
 
 export const DEFAULT_PREFS: Prefs = {
   general: {
@@ -319,6 +327,8 @@ export const DEFAULT_PREFS: Prefs = {
     worldPathOnionFalloff: 0.25,
     worldPathOnionOutline: false,
     showToolbar: true,
+    toolbarX: 0,
+    toolbarY: 0,
     axes: "parent",
     compensateBones: false,
     compensateImages: false,
@@ -349,7 +359,7 @@ export const DEFAULT_PREFS: Prefs = {
   },
   timeline: {
     frameWidth: 12,
-    playhead: "#e8483f",
+    playhead: PLAYHEAD_DEFAULT,
     keyframe: "#161616",
     tween: "#7a7fb0",
     selected: "rgba(0,188,217,0.45)",
@@ -456,8 +466,12 @@ export function mergePrefs(stored: unknown): Prefs {
     }
   }
 
-  // Before the markers, the onion skin was one symmetric `onionRange`.
   const tl = src.timeline as Record<string, unknown> | undefined;
+  // The playhead was red by default. A stored copy of that default is not
+  // a choice the user made, so it takes the new one; any other colour stays.
+  if (tl?.playhead === OLD_PLAYHEAD_DEFAULT) out.timeline.playhead = PLAYHEAD_DEFAULT;
+
+  // Before the markers, the onion skin was one symmetric `onionRange`.
   const legacy = tl?.onionRange;
   if (typeof legacy === "number" && Number.isFinite(legacy)) {
     if (!("onionBefore" in tl!)) out.timeline.onionBefore = clampPref("timeline.onionBefore", legacy);

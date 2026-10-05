@@ -1,5 +1,5 @@
 import { h, on, raf } from "@/view/widgets/dom";
-import { FRAME_WIDTH_MAX, FRAME_WIDTH_MIN, anchoredScroll, fitFrameWidth, steppedFrameWidth } from "./zoom";
+import { FRAME_WIDTH_MAX, FRAME_WIDTH_MIN, anchoredScroll, fitFrameWidth, playheadLabel, steppedFrameWidth } from "./zoom";
 import type { Store } from "@/app/Store";
 import type { DeformKey, DrawOrderKey, EventKey, IkKey, Layer, Node, SequenceKey, TcKey, Track } from "@/core/doc/types";
 import { moveKeys } from "@/core/doc/sequence";
@@ -32,7 +32,7 @@ const PROP_COLORS: Record<TimelineProp, string> = {
   rotate: "#5fd35f", x: "#4fb3ff", y: "#4fb3ff", scale: "#ff6b6b", shear: "#f0c94a",
 };
 import { withAlpha } from "@/view/viewport/overlayColors";
-import { DEFAULT_PREFS } from "@/core/prefs/prefs";
+import { DEFAULT_PREFS, PLAYHEAD_DEFAULT } from "@/core/prefs/prefs";
 import { uiFont, type UiFontSize, uiPx } from "@/core/prefs/fonts";
 import { dragMarkers, type MarkerDrag, type OnionSpan, wrapSpan } from "@/core/doc/onion";
 import { SEAM_TOLERANCE, type SeamGap, seamFrame, seamGap } from "@/core/doc/cycle";
@@ -129,7 +129,7 @@ const DEFAULT_GRID_COLORS = {
   keyRing: "#161616",
   keyFill: "#ececec",
   endMark: "#161616",
-  playhead: "#e8483f",
+  playhead: PLAYHEAD_DEFAULT,
   /** A cycle's join, and the rows whose pose there is not frame 0's. */
   loop: "#5fb3d9",
   seamWarn: "#e8a33d",
@@ -344,7 +344,11 @@ export class FrameGrid {
     // 15900 a five-digit number is wide enough to land on top of the "662s"
     // one frame along. The seconds go down first and the numbers give way to
     // them: the second is the coarser mark and the one that orients you.
-    const taken: Array<[number, number]> = [];
+    // The playhead's number takes its place first: the ruler's own labels
+    // give way to it, as in Spine.
+    const mark = this.playheadMark(ctx);
+    const taken: Array<[number, number]> = [[mark.left, mark.left + mark.width]];
+    ctx.font = uiFont(9, this.fontSize);
     const label = (f: number, text: string, second: boolean): void => {
       const x = this.xOfFrame(f);
       const left = x + 3;
@@ -1343,40 +1347,51 @@ export class FrameGrid {
     void layer;
   }
 
-  private drawPlayhead(ctx: CanvasRenderingContext2D, h: number): void {
-    const H = this.headerHeight;
+  /** Where the playhead line runs, and the frame number above it (1-based,
+   *  as the ruler counts) with the room it takes in the ruler. */
+  private playheadMark(ctx: CanvasRenderingContext2D) {
     // Centred on the CELL, which starts at a rounded x and is `frameWidth - 1`
     // wide — half of `frameWidth` from the unrounded left edge put the line a
     // pixel to the right of centre, and that is visible against a grid.
     const cellX = Math.round(this.xOfFrame(this.store.ui.frame));
     const cellW = Math.max(1, this.frameWidth - 1);
     const x = cellX + Math.floor((cellW - 1) / 2) + 0.5;
-    if (x < -this.frameWidth || x > this.el.clientWidth + this.frameWidth) return;
+    const text = String(this.store.ui.frame + 1);
+    ctx.font = uiFont(11, this.fontSize);
+    const { left, width } = playheadLabel(x, ctx.measureText(text).width);
+    return { x, cellW, text, left, width };
+  }
 
-    // The marker is a WINDOW over the current frame's cell in the ruler, with
-    // the tip of its arrow on the line under the header. A plain triangle at
-    // the top of the header was easy to lose and sat on the frame number.
+  private drawPlayhead(ctx: CanvasRenderingContext2D, h: number): void {
+    const H = this.headerHeight;
+    const { x, cellW, text } = this.playheadMark(ctx);
+    if (x < -this.frameWidth - 40 || x > this.el.clientWidth + this.frameWidth + 40) return;
+
+    // Spine's marker: the frame number in the playhead's colour, a triangle
+    // under it whose tip is on the line under the header, then the line.
     const tip = H - 1;                       // the `headerLine` pixel row
-    const arrow = Math.max(3, Math.min(5, cellW / 2 + 1));
-    const boxBottom = Math.max(6, tip - arrow);
-
-    ctx.fillStyle = withAlpha(this.C.playhead, 0.2);
-    ctx.fillRect(cellX + 0.5, 0.5, cellW - 1, boxBottom - 0.5);
-    ctx.strokeStyle = this.C.playhead;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(cellX + 0.5, 0.5, cellW - 1, boxBottom - 0.5);
+    const arrow = 0.85 * Math.max(4, Math.min(6, cellW / 2 + 2));
+    const top = tip - arrow;
 
     ctx.fillStyle = this.C.playhead;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "alphabetic";
+    // Lifted clear of the triangle, as in Spine.
+    ctx.fillText(text, x, top - 3);
+    ctx.textAlign = "start";
+    ctx.textBaseline = "middle";
+
     ctx.beginPath();
-    ctx.moveTo(x - arrow, boxBottom);
-    ctx.lineTo(x + arrow, boxBottom);
+    ctx.moveTo(x - arrow, top);
+    ctx.lineTo(x + arrow, top);
     ctx.lineTo(x, tip);
     ctx.closePath();
     ctx.fill();
 
     ctx.strokeStyle = this.C.playhead;
+    ctx.lineWidth = 1;
     ctx.beginPath();
-    ctx.moveTo(x, boxBottom);
+    ctx.moveTo(x, tip);
     ctx.lineTo(x, h);
     ctx.stroke();
   }

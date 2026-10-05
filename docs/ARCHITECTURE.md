@@ -1298,7 +1298,12 @@ flowchart LR
   - Rotate / Translate / Scale / Shear: tools (`view/tools/AxisTool.ts`, R T S E) that act on
     the selection from a drag anywhere, about each node's own origin, and fields with the
     selection's values. Shear has one field: the Flash transform has one shear angle
-    (`skewX − skewY`), Spine's shear Y stays 0.
+    (`skewX − skewY`), Spine's shear Y stays 0. The fields are one grid whose 1px gaps
+    show its line colour (`.sbar-fields`), so neighbours share a line. The cell beside
+    Rotate is the bar's grip: a drag moves the whole bar, saved as an offset from its home
+    at the stage's bottom left (`gizmos.toolbarX/Y`) and kept on the stage as either
+    resizes (`clampToolbarOffset` in `toolbarPlace.ts`); a double-click sends it home.
+    Lifted off the bottom, it no longer shrinks Fit to Stage (`toolbarInset`).
   - Axes: Local / Parent / World, the frame Rotate and Translate are read and written in, and
     Translate's Shift lock (`core/math/axes.ts`). World is the edited symbol's root space.
   - Compensation: Bones / Images keep a transformed node's direct children where they are
@@ -1879,7 +1884,7 @@ ones; the DragonBones solver it replaced disagreed on three of the seven.
   sideways). Only the first was there originally, and it hid the very case that prompts
   the question.
 - The Properties panel says the same thing in words: `frameDirections` feeds a `↻ -90°`
-  badge on the **Position and Size** header, titled with the parent's name and which way
+  badge on the **Transform** header (position, size, scale, rotate, skew and pivot in one section), titled with the parent's name and which way
   its axes point. It is refreshed in `sync()` rather than built in `layout()`, because
   the RENDERED pose it reads does not exist yet when the panel is first laid out and
   changes under the playhead afterwards — and it reads the rendered pose, not a freshly

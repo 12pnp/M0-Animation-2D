@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  FRAME_WIDTH_MAX, FRAME_WIDTH_MIN, anchoredScroll, fitFrameWidth, steppedFrameWidth,
+  FRAME_WIDTH_MAX, FRAME_WIDTH_MIN, anchoredScroll, fitFrameWidth, playheadLabel, steppedFrameWidth,
 } from "@/view/timeline/zoom";
 
 describe("steppedFrameWidth", () => {
@@ -40,4 +40,15 @@ describe("fitFrameWidth", () => {
   for (const [name, frames, view, want] of cases) {
     it(name, () => expect(fitFrameWidth(frames, view)).toBe(want));
   }
+});
+
+describe("playheadLabel", () => {
+  it("is the number's width and the padding, centred on the line", () => {
+    const b = playheadLabel(100.5, 18.4);
+    expect(b.width).toBe(25);
+    expect(b.left + b.width / 2).toBeCloseTo(100.5, 0);
+  });
+  it("a one-digit number takes less room", () => {
+    expect(playheadLabel(50.5, 6).width).toBe(12);
+  });
 });

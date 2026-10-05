@@ -176,7 +176,7 @@ export class PropertiesPanel implements Panel {
       const order = constraintEntries(this.store.currentSymbol).map((e) => e.name).join("\n");
       return `doc:${this.store.project.motionBlur?.enabled === true}:${this.store.currentSymbolId}:${order}`;
     }
-    // The display shown decides the Instance and Colour sections, and
+    // The display shown decides the type line and the Colour section, and
     // changes under the playhead on a layer that switches artwork.
     // Animate mode keys the IK section's mix and bend, Setup edits the constraint.
     const anim = this.store.ui.mode === "animate" ? this.store.currentAnimation?.id ?? "" : "setup";
@@ -237,11 +237,10 @@ export class PropertiesPanel implements Panel {
     const bone = nodes.length === 1 && nodes[0]!.kind === "bone" ? nodes[0]! : null;
 
     this.body.appendChild(this.instanceSection(nodes.length));
-    this.body.appendChild(this.section("Position and Size", true, [
-      this.row("", [this.field("x", "X"), this.field("y", "Y")]),
-      ...(bone ? [] : [this.linkedRow("", "size", this.field("w", "W"), this.field("h", "H"))]),
-    ], this.makeFrameNote()));
+    // Position, size and the rest of the transform: one section.
     this.body.appendChild(this.section("Transform", true, [
+      this.row("Position", [this.field("x", "X"), this.field("y", "Y")]),
+      ...(bone ? [] : [this.linkedRow("Size", "size", this.field("w", "W"), this.field("h", "H"))]),
       this.linkedRow("Scale", "scale",
         this.field("scaleX", "X", { step: 0.01, decimals: 3, sensitivity: 60 }),
         this.field("scaleY", "Y", { step: 0.01, decimals: 3, sensitivity: 60 })),
@@ -254,7 +253,7 @@ export class PropertiesPanel implements Panel {
         this.field("skewY", "Y", { unit: "°" }),
       ]),
       ...(bone ? [] : [this.row("Pivot", [this.field("pivotX", "X"), this.field("pivotY", "Y")])]),
-    ]));
+    ], this.makeFrameNote()));
     // A bone produces no slot, so it has neither colour nor blend mode.
     if (!bone) this.body.appendChild(this.colorSection(nodes));
     if (!bone && nodes.length === 1 && nodes[0]!.kind === "image" && !nodes[0]!.attachment) this.body.appendChild(this.meshSection(nodes[0]!));
@@ -1334,13 +1333,15 @@ export class PropertiesPanel implements Panel {
       : isSymbol(item) ? "Symbol instance"
       : "Bitmap";
 
-    return this.section("Instance", true, [
-      this.row("Name", [name]),
-      ...(node.kind === "empty" || node.kind === "group" || node.kind === "bone" || node.kind === "box" || node.kind === "point" || node.kind === "path"
-        ? []
-        : [this.staticRow("Of", item ? item.name : "—")]),
-      this.staticRow("Type", kindLabel),
-    ]);
+    // One line, not a section: the type where a row's label goes, the name
+    // beside it. The library item it shows is the type's tooltip.
+    const showsItem = !(node.kind === "empty" || node.kind === "group" || node.kind === "bone"
+      || node.kind === "box" || node.kind === "point" || node.kind === "path");
+    const short = kindLabel === "Symbol instance" ? "Symbol" : kindLabel === "Bounding box" ? "Box"
+      : kindLabel === "Empty layer" ? "Empty" : kindLabel;
+    const type = h("label", { title: showsItem ? `${kindLabel} of “${item ? item.name : "—"}”` : kindLabel }, short);
+    name.title = "Name";
+    return h("div", { class: "prow pident" }, type, h("div", { class: "fields" }, name));
   }
 
   // ── Builders ───────────────────────────────────────────────────────────

@@ -148,7 +148,7 @@
   /* Every select is one field high (theme.css); a list box takes its rows. */
   height: auto;
   width: 100%; padding: 2px;
-  background: var(--bg-field); border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--bg-field); border: 1px solid transparent; border-radius: var(--radius);
   color: var(--fg-strong);
 }
 /* No option padding: a list box sizes itself from its row count, and padded
@@ -587,7 +587,7 @@
 .set-font-fields { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
 .set-font-name {
   width: 160px; height: var(--h-field); padding: 0 6px;
-  background: var(--bg-field); border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--bg-field); border: 1px solid transparent; border-radius: var(--radius);
   color: var(--fg-strong);
 }
 .set-font-name[hidden] { display: none; }

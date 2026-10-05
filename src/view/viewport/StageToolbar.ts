@@ -15,6 +15,7 @@ import {
 import { type EditBase, captureEditBase, finishEdit } from "@/view/tools/axisEdit";
 import { selectionSnapshots } from "@/view/tools/SelectTool";
 import type { NodeSnapshot } from "@/view/tools/transformOps";
+import { clampToolbarOffset, type Offset, toolbarInset } from "./toolbarPlace";
 
 interface ToolDef { id: ToolId; label: string; icon: IconName; hint?: string }
 
@@ -85,6 +86,9 @@ export class StageToolbar {
         on(el, ev, (e) => e.stopPropagation());
       }
     }
+    // The stage resizes, or the bar does (a mode hides tools, cards wrap):
+    // it stays on the stage.
+    new ResizeObserver(() => this.place()).observe(this.el);
     // After the stage's own render, which is also on the next frame: World
     // values come from the pose it draws.
     const later = raf(() => this.syncValues());
@@ -92,7 +96,7 @@ export class StageToolbar {
       if (t === "tool" || t === "doc" || t === "playback") this.syncTools();
       if (t !== "library") later();
     });
-    store.prefs.subscribe(() => { this.syncFlags(); later(); });
+    store.prefs.subscribe(() => { this.syncFlags(); this.place(); later(); });
     this.syncTools();
     this.syncFlags();
     this.syncValues();
@@ -128,19 +132,76 @@ export class StageToolbar {
       this.fields[key] = f;
       return f.el;
     };
-    const rows = ROWS.map((r) => {
+    const buttons = ROWS.map((r) => {
       const b = h("button", { class: "sbar-btn" }, icon(r.icon, 14), h("span", null, r.label));
       b.title = withAccel(`${r.label} tool: drag anywhere on the stage to ${r.label.toLowerCase()} the selection`, `tool.${r.id}`);
       on(b, "click", () => this.store.setTool(r.id));
       this.toolButtons.set(r.id, b);
-      const cells = r.id === "rotate" ? [field("rotate", "∠", "°"), h("div", { class: "sbar-gap" })]
-        : r.id === "translate" ? [field("tx", "x"), field("ty", "y")]
-        : r.id === "scale" ? [field("sx", "x", undefined, 3, 0.01), field("sy", "y", undefined, 3, 0.01)]
-        : [field("shear", "x", "°"), h("div", { class: "sbar-gap", title: "This editor's transform has one shear angle; Spine's shear Y stays 0." })];
-      return h("div", { class: "sbar-row" }, b, ...cells);
+      return b;
     });
-    const card = h("div", { class: "sbar-card sbar-transform" }, ...rows);
-    return card;
+    // One grid, its cells parted by single lines, rather than a box per field.
+    const fields = h("div", { class: "sbar-fields" },
+      field("rotate", "∠", "°"), this.buildGrip(),
+      field("tx", "x"), field("ty", "y"),
+      field("sx", "x", undefined, 3, 0.01), field("sy", "y", undefined, 3, 0.01),
+      field("shear", "x", "°"), h("div", { class: "sbar-gap", title: "This editor's transform has one shear angle; Spine's shear Y stays 0." }));
+    return h("div", { class: "sbar-card sbar-transform" }, h("div", { class: "sbar-col" }, ...buttons), fields);
+  }
+
+  /** Drags the whole bar about the stage; a double-click sends it home. */
+  private buildGrip(): HTMLElement {
+    const grip = h("div", { class: "sbar-grip", title: "Drag to move the toolbar. Double-click: back to the bottom left." }, icon("grip", 14));
+    let from: { x: number; y: number; off: Offset } | null = null;
+    on(grip, "pointerdown", (e: PointerEvent) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      grip.setPointerCapture(e.pointerId);
+      from = { x: e.clientX, y: e.clientY, off: this.offset() };
+      grip.classList.add("dragging");
+    });
+    on(grip, "pointermove", (e: PointerEvent) => {
+      if (!from) return;
+      this.place({ dx: from.off.dx + e.clientX - from.x, dy: from.off.dy + e.clientY - from.y });
+    });
+    const end = (e: PointerEvent) => {
+      if (!from) return;
+      from = null;
+      grip.classList.remove("dragging");
+      grip.releasePointerCapture?.(e.pointerId);
+      // Saved once, at the end: a preference write per pointer move is wasted.
+      const off = this.offset();
+      this.store.prefs.set("gizmos", { toolbarX: off.dx, toolbarY: off.dy });
+    };
+    on(grip, "pointerup", end);
+    on(grip, "pointercancel", end);
+    on(grip, "dblclick", () => this.store.prefs.set("gizmos", { toolbarX: 0, toolbarY: 0 }));
+    return grip;
+  }
+
+  /** Where the bar is drawn now: the saved offset, or the drag's. */
+  private shown: Offset = { dx: 0, dy: 0 };
+
+  private offset(): Offset { return { ...this.shown }; }
+
+  /** Put the bar at `want` (default: the saved offset), kept on the stage. */
+  private place(want?: Offset): void {
+    const host = this.el.parentElement;
+    if (!host) return;
+    const g = this.store.prefs.value.gizmos;
+    const off = clampToolbarOffset(want ?? { dx: g.toolbarX, dy: g.toolbarY },
+      { w: this.el.offsetWidth, h: this.el.offsetHeight }, { w: host.clientWidth, h: host.clientHeight });
+    this.shown = off;
+    this.el.style.transform = off.dx || off.dy ? `translate(${off.dx}px, ${off.dy}px)` : "";
+  }
+
+  /** Pixels the bar covers at the stage's foot, for Fit to Stage. */
+  coveredBottom(): number {
+    return this.el.hidden ? 0 : toolbarInset(this.shown, { w: this.el.offsetWidth, h: this.el.offsetHeight });
+  }
+
+  /** The stage it sits on, to keep it on as that resizes. */
+  observeHost(host: HTMLElement): void {
+    new ResizeObserver(() => this.place()).observe(host);
   }
 
   private buildAxes(): HTMLElement {

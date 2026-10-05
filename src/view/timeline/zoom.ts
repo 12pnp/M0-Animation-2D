@@ -35,3 +35,14 @@ export function fitFrameWidth(frames: number, viewWidth: number): number {
   if (frames <= 0 || viewWidth <= 0) return FRAME_WIDTH_MIN;
   return clamp(Math.floor(viewWidth / (frames + 0.5)));
 }
+
+/**
+ * The room the playhead's frame number takes in the ruler: centred on the
+ * playhead line at `x`, the number's width (`textWidth`) with `pad` either
+ * side. The ruler's own labels keep out of it. Left edge and width, in whole
+ * pixels.
+ */
+export function playheadLabel(x: number, textWidth: number, pad = 3): { left: number; width: number } {
+  const width = Math.ceil(textWidth) + 2 * pad;
+  return { left: Math.round(x - width / 2), width };
+}

@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
-  DEFAULT_PREFS, mergePrefs, resetCategory, clampPref,
+  DEFAULT_PREFS, PLAYHEAD_DEFAULT, mergePrefs, resetCategory, clampPref,
 } from "@/core/prefs/prefs";
 
 /**
@@ -120,4 +120,14 @@ describe("the IK re-parent guard preference", () => {
     expect(mergePrefs({ general: { guardIkReparent: false } }).general.guardIkReparent).toBe(false);
     expect(mergePrefs({ general: {} }).general.guardIkReparent).toBe(true);
   });
+});
+
+describe("the playhead colour", () => {
+  it("a stored old default (red) takes the new cyan", () => {
+    expect(mergePrefs({ timeline: { playhead: "#e8483f" } }).timeline.playhead).toBe(PLAYHEAD_DEFAULT);
+  });
+  it("a colour the user picked stays", () => {
+    expect(mergePrefs({ timeline: { playhead: "#ff00aa" } }).timeline.playhead).toBe("#ff00aa");
+  });
+  it("defaults to cyan", () => expect(DEFAULT_PREFS.timeline.playhead).toBe(PLAYHEAD_DEFAULT));
 });

@@ -144,6 +144,9 @@
 .prow input[type="text"], .prow input[type="number"], .prow select { width: 100%; }
 .prow .unit { color: var(--fg-dim); flex: none; }
 .prow.wide { grid-template-columns: 1fr; }
+/* The selection's type and name, one line above the sections. */
+.prow.pident { padding: 5px 6px; border-bottom: 1px solid var(--line); }
+.prow.pident > label { overflow: hidden; text-overflow: ellipsis; }
 .prow .fields.corder .corder-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .prow .fields.corder .iconbtn { flex: none; font-size: 9px; }
 
@@ -151,7 +154,7 @@
 .field {
   display: flex; align-items: center; gap: 4px;
   background: var(--bg-field);
-  border: 1px solid var(--line);
+  border: 1px solid transparent;
   border-radius: var(--radius);
   height: var(--h-field);
   padding: 0 4px;
@@ -252,7 +255,7 @@
 .otree-search {
   flex: 1 1 auto; min-width: 40px;
   height: var(--h-field); padding: 0 6px;
-  background: var(--bg-field); border: 1px solid var(--line); border-radius: var(--radius);
+  background: var(--bg-field); border: 1px solid transparent; border-radius: var(--radius);
   color: var(--fg-strong);
 }
 .otree-group { display: flex; gap: 1px; flex: none; }
