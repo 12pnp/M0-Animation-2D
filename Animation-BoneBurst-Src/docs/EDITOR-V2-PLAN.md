@@ -1,12 +1,12 @@
 # Editor v2 — from scratch, MIT, no Animo code — plan
 
-**Status:** E0, E1 and E2 done 2026-10-06. `../Editor-BoneBurst-Src/`: MIT licence, notices, spec,
-clean-room rules; the document model, Spine JSON, atlas and sidecar in and out, undo
-(`Editor-BoneBurst-Src/docs/E1-PLAN.md`); the runtime lifted as its engine after the provenance
-pass, held to spine-core on every sample, and a stage that shows and edits the stickman's setup
-pose (`Editor-BoneBurst-Src/docs/E2-PLAN.md`). The provenance pass opened the runtime and, to cut
-its two ties, the lines of this editor that used them (listed there); spine-core knowledge in the
-runtime's solvers stays an open legal question (its SPEC §6). Next: E3 (timeline and playback).
+**Status:** E0–E3 done 2026-10-06. `../Editor-BoneBurst-Src/`: MIT licence, notices, spec,
+clean-room rules; the document model, Spine JSON, atlas and sidecar in and out, undo (E1); the
+runtime lifted as its engine after the provenance pass, and a stage that edits the setup pose
+(E2); a timeline that keys, eases, moves and plays animations, a walk keyed on the stickman and
+read back alike by the engine and spine-core (E3, `Editor-BoneBurst-Src/docs/E3-PLAN.md`). The
+agent criterion moved from E3 to E5 (owner, 2026-10-06). spine-core knowledge in the runtime's
+solvers stays an open legal question (its SPEC §6). Next: E4 (authoring surfaces).
 
 **Owner decision 2026-10-05:** replace the Animo-fork editor with a new editor
 that contains **no Animo code**, licensed **MIT** from its first commit. The
@@ -118,9 +118,9 @@ undo, onion skins — these are ideas every editor shares. The rules:
 | E0 | **Charter**: v2 folder created (sibling of `Animation-BoneBurst-Src` in this repo), MIT `LICENSE` + fresh `THIRD-PARTY-NOTICES` (PixiJS, fonts, ag-psd…), the architecture spec above, the clean-code rules pinned in its CLAUDE.md | first commit is greenfield: licence, spec, empty app skeleton |
 | E1 | **Model + IO, headless**: document model over the Spine schema + `.bb.json` sidecar (per D4); command/undo stack; open/save round-trips every fixture identically after normalisation (key-time float32, nonessential fields, number formatting) | v2's check script (as `scripts/check.sh` is for v1; there is no CI in this repository) round-trips the parity fixtures with zero diffs |
 | E2 | **Stage**: canvas viewport rendering the model through our own runtime — setup pose, bone overlay, selection, transform gizmos, zoom/pan | the stickman fixture is inspectable and editable on screen |
-| E3 | **Timeline + playback**: keys, eases, scrub, playback through our runtime; every agent `set_keys`/`show`/`get_pose` works against the new model | an AI keys a walk on a fixture rig via MCP, unmodified tool contract |
+| E3 | **Timeline + playback**: keys, eases, scrub, playback through our runtime; the pure key edits the agent tools will call | a walk is keyed on a fixture rig, played, saved and read back by both runtimes. *(Owner, 2026-10-06: the agent criterion moved to E5, since D5 versions the contract.)* |
 | E4 | **Authoring surfaces**: bones/slots/attachments, draw order, skins, constraints (IK, transform, path, physics), mesh edit, PSD import (ag-psd bindings), panels/docking/prefs | the `auto_rig` → `apply_motion` → `check_preview` flow runs end to end |
-| E5 | **AI layer re-bind**: `tools.json` onto the new model per D5 (layer → slot names, sidecar-backed tools, or a versioned contract), Ask AI, bridge, AnimatedDrawings sidecar tools | every tool `tests/agentApi.test.ts` exercises passes against v2, or is listed as dropped in the contract's version note; the AD-0..AD-4 plans execute against v2 |
+| E5 | **AI layer re-bind**: `tools.json` onto the new model per D5 (layer → slot names, sidecar-backed tools, or a versioned contract), Ask AI, bridge, AnimatedDrawings sidecar tools | every tool `tests/agentApi.test.ts` exercises passes against v2, or is listed as dropped in the contract's version note; an AI keys a walk on a fixture rig via MCP (`set_keys`, `show`, `get_pose`, moved from E3); the AD-0..AD-4 plans execute against v2 |
 | E6 | **Parity + cutover**: side-by-side with the old editor as oracle; same rigs edited → same exports; docs migrated; the AGPL folder demoted to oracle-only, then archived | v2 is the daily driver; the fork takes no new features |
 
 ## Licence handling

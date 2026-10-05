@@ -4,6 +4,8 @@ import { Outline } from "./panels/outline";
 import { fileSource, Session, type Source } from "./session";
 import type { Tool } from "./stage/gizmo";
 import { isTyping, Stage } from "./stage/stage";
+import { Timeline } from "./timeline/timeline";
+import { animationDuration, timeFrame } from "@/model/timelines";
 
 /** The stickman the plan names for E2, served by the dev server from the test fixtures. */
 const STICKMAN = ["Stickman_IK.json", "Stickman_IK.atlas.txt", "Stickman_IK_tex.png"];
@@ -15,8 +17,8 @@ const TOOLS: ReadonlyArray<{ tool: Tool; label: string; key: string }> = [
 ];
 
 /**
- * One window (SPEC §7): toolbar, outline, stage, inspector, status line. E2 shows and edits the
- * setup pose; the timeline arrives in E3.
+ * One window (SPEC §7): toolbar, outline, stage, inspector, timeline, status line. With no
+ * animation chosen the stage edits the setup pose; with one, it keys at the playhead.
  */
 export function mountApp(root: HTMLElement): void {
   const session = new Session();
@@ -66,12 +68,23 @@ export function mountApp(root: HTMLElement): void {
   const issuesList = el("ul", "issue-list");
   issuesList.hidden = true;
   status.append(message, pointer, issuesBtn);
-  root.replaceChildren(bar, main, status, issuesList);
+  const timeline = new Timeline(session);
+  root.replaceChildren(bar, main, timeline.element, status, issuesList);
 
   const say = (m: string) => { message.textContent = m; };
   stage.onStatus = say;
+  timeline.onStatus = say;
   stage.onPointer = (t) => { pointer.textContent = t; };
   inspector.onStatus = say;
+
+  // Playback: the playhead moves by real time while playing.
+  let last = 0;
+  const tick = (now: number) => {
+    if (session.playing) session.advance(Math.min(0.1, last ? (now - last) / 1000 : 0));
+    last = now;
+    requestAnimationFrame(tick);
+  };
+  requestAnimationFrame(tick);
 
   function setTool(t: Tool): void {
     stage.tool = t;
@@ -174,10 +187,22 @@ export function mountApp(root: HTMLElement): void {
     if (mod && key === "y") { e.preventDefault(); redoBtn.click(); return; }
     if (mod || e.altKey) return;
     if (key === "escape") {
-      if (!stage.cancel() && session.selection !== null) { session.selection = null; session.changed(); }
+      if (!stage.cancel() && session.playing) session.pause();
+      else if (session.selection !== null) { session.selection = null; session.changed(); }
       return;
     }
     if (key === "f") { stage.fitView(); return; }
+    if (e.code === "Space") { e.preventDefault(); timeline.togglePlay(); return; }
+    if (key === "," || key === ".") { e.preventDefault(); session.seek(session.frame + (key === "," ? -1 : 1)); return; }
+    if (key === "home") { e.preventDefault(); session.seek(0); return; }
+    if (key === "end") {
+      e.preventDefault();
+      const a = session.animation;
+      if (a) session.seek(timeFrame(animationDuration(a), session.fps));
+      return;
+    }
+    if (key === "k") { timeline.keySelectedBone(); return; }
+    if ((key === "delete" || key === "backspace") && timeline.hasSelection) { e.preventDefault(); timeline.deleteSelected(); return; }
     const t = TOOLS.find((x) => x.key.toLowerCase() === key);
     if (t) setTool(t.tool);
   });

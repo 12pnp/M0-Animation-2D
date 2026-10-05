@@ -1,6 +1,6 @@
 # BoneBurst Editor — architecture spec
 
-**Status:** E2 done, 2026-10-06 (E1: model and IO; E2: engine and stage). Written before any implementation, from the v2 plan
+**Status:** E3 done, 2026-10-06 (E1: model and IO; E2: engine and stage; E3: timeline and playback). Written before any implementation, from the v2 plan
 (`../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md`, decisions D1–D5), the BoneBurst format
 specs (`../Packages/com.module.ta-creator-boneburst/Doc/Format/`, ours) and Spine 4.3's public
 JSON format. Not from the Animo-fork editor's code or its architecture document (CLAUDE.md ▸
@@ -54,7 +54,9 @@ check script enforces the import direction once there is code to enforce it on (
 - **Lossless for what it does not model.** Each object keeps the keys it does not know in a side
   field, written back in place, so a file with keys this editor ignores round-trips.
 - **Time is Spine's: seconds.** The timeline shows frames at `skeleton.fps` (nonessential;
-  default 30), and a key's time is the float32 value Spine writes for that frame.
+  default 30), and a key's time is the float32 value Spine writes for that frame (the shortest
+  decimal that reads back as it: `model/timelines.frameTime`). Keys within 1e-5 s are one key:
+  exports may store a frame a float32 step off. The playhead poses at a frame's float32 time.
 - **The BoneBurst profile holds.** A document is always a file
   `BoneBurst-Profile.md` §1 accepts; an edit that would break a rule there is refused, not
   written and reported later.
@@ -141,6 +143,11 @@ E2 (`src/ui/`): the stage draws the setup pose through the engine (`stage/posed.
 on every document revision), images with WebGL2 and bones and the gizmo on a 2D canvas over it.
 The gizmo's maths is DOM-free (`stage/gizmo.ts`, `stage/camera.ts`); a drag is one gesture and
 writes local setup values through `updateBone`, an untouched axis left as the file had it.
+
+E3 (`src/ui/timeline/`, `src/edit/keys.ts`): with an animation chosen the stage and the
+inspector key at the playhead (key values as offsets and factors of the setup pose, §11.4); the
+timeline moves, deletes and eases keys, a bezier's handles following its interval's ends
+(`edit/curves.ts`); playback poses through the same engine.
 
 One window: the **stage** (canvas, the setup pose or the pose at the playhead, gizmos), the
 **timeline** (one row per bone, slot and constraint with keys; frames at `skeleton.fps`), the

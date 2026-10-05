@@ -105,12 +105,19 @@ export function segmentDistance(s: ScreenBone, px: number, py: number): number {
   return Math.hypot(px - (s.x0 + t * dx), py - (s.y0 + t * dy));
 }
 
-/** The bone under the pointer within `radius` pixels: the nearest; on a tie the later one (drawn on top). */
-export function pickBone(bones: readonly ScreenBone[], px: number, py: number, radius = 6): string | null {
-  let best: string | null = null, bestD = radius;
-  for (const b of bones) {
-    const d = segmentDistance(b, px, py);
-    if (d <= bestD) { best = b.name; bestD = d; }
-  }
-  return best;
+/**
+ * The bone under the pointer within `radius` pixels: the selected one if it is in reach. Else a
+ * bone's origin wins over another bone's segment (an IK target sits on the tip of the bone it
+ * pulls); then the nearest; on a tie the later one (drawn on top).
+ */
+export function pickBone(bones: readonly ScreenBone[], px: number, py: number, radius = 6, selected: string | null = null): string | null {
+  // The selected bone in reach stays picked: bones often share an origin (hips and pelvis).
+  const sel = bones.find((b) => b.name === selected);
+  if (sel && Math.min(Math.hypot(px - sel.x0, py - sel.y0), segmentDistance(sel, px, py)) <= radius) return sel.name;
+  const nearest = (d: (b: ScreenBone) => number) => {
+    let best: string | null = null, bestD = radius;
+    for (const b of bones) { const x = d(b); if (x <= bestD) { best = b.name; bestD = x; } }
+    return best;
+  };
+  return nearest((b) => Math.hypot(px - b.x0, py - b.y0)) ?? nearest((b) => segmentDistance(b, px, py));
 }

@@ -272,7 +272,8 @@ export function readAnimation(
       const keys = list(keysRaw);
       if (!keys.length) continue;
       if (kind !== "time" && kind !== "mix") { unsupported.add(`slider ${kind} keys`); continue; }
-      const [channel] = channels(keys, 1, (k) => num(k.value, kind === "mix" ? 1 : 0));
+      // Both default to 1 (Format-Json-Atlas.md §11.9; spine-core reads a bare time key as 1).
+      const [channel] = channels(keys, 1, (k) => num(k.value, 1));
       push({ kind: kind === "time" ? "sliderTime" : "sliderMix", constraint, times: channel!.times, channel: channel! });
       seal([`slider ${kind} ${constraint}`]);
     }
@@ -288,8 +289,9 @@ export function readAnimation(
         push({ kind: "physicsReset", constraint, times: keys.map((k) => Math.fround(num(k.time, 0))) });
         seal([`physics reset ${constraint}`]);
       } else if ((PHYSICS_PROPS as readonly string[]).includes(kind)) {
-        // Mass keys hold the mass; the pose keeps 1 / mass (`Rig.applyTimeline`).
-        const [channel] = channels(keys, 1, (k) => num(k.value, 0));
+        // Mass keys hold the mass; the pose keeps 1 / mass (`Rig.applyTimeline`). Mix defaults
+        // to 1, the others to 0 (Format-Json-Atlas.md §11.8).
+        const [channel] = channels(keys, 1, (k) => num(k.value, kind === "mix" ? 1 : 0));
         push({ kind: "physics", constraint, prop: kind as PhysicsProp, times: channel!.times, channel: channel! });
         seal([`physics ${kind} ${constraint}`]);
       } else unsupported.add(`physics ${kind} keys`);

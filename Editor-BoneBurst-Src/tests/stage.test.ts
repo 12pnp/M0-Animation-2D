@@ -120,6 +120,20 @@ describe("gizmo helpers", () => {
     expect(pickBone(bones, 50, 30)).toBeNull();
     expect(pickBone(bones, 108, 0, 6)).toBeNull();
   });
+  it("prefers a bone's origin to another bone's segment: an IK target on a shin's tip", () => {
+    const bones = [
+      { name: "target", x0: 100, y0: 100, x1: 100, y1: 100 },
+      { name: "shin", x0: 40, y0: 60, x1: 101, y1: 101 },
+    ];
+    expect(pickBone(bones, 103, 102)).toBe("target");
+    expect(pickBone(bones, 70, 80)).toBe("shin");
+  });
+  it("keeps the selected bone when another shares its origin (hips and pelvis)", () => {
+    const bones = [{ name: "hips", x0: 0, y0: 0, x1: 0, y1: -30 }, { name: "pelvis", x0: 0, y0: 0, x1: 0, y1: 0 }];
+    expect(pickBone(bones, 1, 1)).toBe("pelvis");
+    expect(pickBone(bones, 1, 1, 6, "hips")).toBe("hips");
+    expect(pickBone(bones, 50, 50, 6, "hips")).toBeNull();
+  });
   it.each([
     ["an untouched axis stays absent", { scaleX: 2.2, scaleY: 1 }, { scaleX: 2.2, scaleY: undefined }],
     ["an untouched axis keeps the value written", { x: 5, y: 3 }, { x: 5, y: 3 }],

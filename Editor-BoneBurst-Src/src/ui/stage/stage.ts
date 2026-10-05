@@ -1,15 +1,18 @@
 import { updateBone } from "@/edit/bones";
+import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { EditRefused } from "@/edit/history";
 import { boneInherit, boneNumber } from "@/model/defaults";
 import type { Session } from "../session";
 import { type Camera, fit, pan, toScreen, toWorld, zoomAt } from "./camera";
 import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, scaleFactors, type ScreenBone, tidy, type Tool, turn, turnSign } from "./gizmo";
-import { boneMatrix, boneTip, bounds, parentMatrix } from "./posed";
+import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix } from "./posed";
 import { Renderer } from "./renderer";
 
 /** How far from the selected bone's origin a press still grabs it, in pixels (the gizmo's ring). */
 const GRAB = 56;
 const LABEL: Record<Tool, string> = { move: "Move", rotate: "Rotate", scale: "Scale" };
+/** The property each tool keys in Animate mode. */
+const KEYED: Record<Tool, BoneProperty> = { move: "translate", rotate: "rotate", scale: "scale" };
 
 interface Drag {
   bone: string;
@@ -26,6 +29,9 @@ interface Drag {
   sign: number;
   inherit: string;
   shearX: number;
+  shearY: number;
+  /** Animate mode: the animation and time the drag keys at. */
+  key: { animation: string; time: number } | null;
   /** The keys as the file had them (absent: undefined), for an axis that ends where it began. */
   written: Dragged;
 }
@@ -36,7 +42,7 @@ type Dragged = { [K in "x" | "y" | "rotation" | "scaleX" | "scaleY"]?: number | 
 /**
  * The canvas viewport: the skeleton's images (WebGL2) with the bones and the gizmo drawn over
  * them (2D canvas). A press on a bone selects it and drags it with the current tool, one undo
- * step per drag; a press elsewhere pans, as do the middle button and Space. The wheel zooms at
+ * step per drag; a press elsewhere pans, as do the middle and right buttons. The wheel zooms at
  * the pointer.
  */
 export class Stage {
@@ -56,7 +62,6 @@ export class Stage {
   private dpr = 1;
   private drag: Drag | null = null;
   private panning: { x: number; y: number } | null = null;
-  private space = false;
   private queued = false;
   private fitted = false;
 
@@ -77,8 +82,6 @@ export class Stage {
     this.overlay.addEventListener("pointerleave", () => { this.pointer = null; this.onPointer(""); });
     this.overlay.addEventListener("wheel", (e) => this.wheel(e), { passive: false });
     this.overlay.addEventListener("contextmenu", (e) => e.preventDefault());
-    window.addEventListener("keydown", (e) => { if (e.code === "Space" && !isTyping(e)) { this.space = true; e.preventDefault(); } });
-    window.addEventListener("keyup", (e) => { if (e.code === "Space") this.space = false; });
     session.onChange(() => this.redraw());
   }
 
@@ -196,11 +199,11 @@ export class Stage {
     this.overlay.focus();
     const [sx, sy] = this.local(e);
     this.overlay.setPointerCapture(e.pointerId);
-    if (e.button === 1 || e.button === 2 || this.space || !this.session.history) {
+    if (e.button === 1 || e.button === 2 || !this.session.history) {
       this.panning = { x: sx, y: sy };
       return;
     }
-    let name = pickBone(this.screenBones(), sx, sy);
+    let name = pickBone(this.screenBones(), sx, sy, 6, this.session.selection);
     if (name === null) {
       const sel = this.selectedIndex();
       if (sel >= 0) {
@@ -215,19 +218,28 @@ export class Stage {
       return;
     }
     if (name !== this.session.selection) { this.session.selection = name; this.session.changed(); }
+    this.session.pause();
     const p = this.session.pose()!, index = p.bones.get(name)!;
     const b = this.session.doc!.bones!.find((x) => x.name === name)!;
     const at = toWorld(this.camera, this.size, sx, sy), parent = parentMatrix(p, index);
-    this.drag = {
-      bone: name, tool: this.tool, start: at, last: at, turned: 0,
+    const anim = this.session.animation?.name ?? null;
+    // Animate mode starts from the pose at the playhead; setup mode from the setup values.
+    const from = anim !== null ? animatedLocal(p, index) : {
       x: boneNumber(b, "x"), y: boneNumber(b, "y"), rotation: boneNumber(b, "rotation"),
       scaleX: boneNumber(b, "scaleX"), scaleY: boneNumber(b, "scaleY"),
+      shearX: boneNumber(b, "shearX"), shearY: boneNumber(b, "shearY"),
+    };
+    this.drag = {
+      bone: name, tool: this.tool, start: at, last: at, turned: 0, ...from,
       matrix: boneMatrix(p, index), parent,
       sign: turnSign(parent, boneInherit(b), p.rig.scaleX * p.rig.scaleY < 0),
-      inherit: boneInherit(b), shearX: boneNumber(b, "shearX"),
+      inherit: boneInherit(b),
       written: { x: b.x, y: b.y, rotation: b.rotation, scaleX: b.scaleX, scaleY: b.scaleY },
+      key: anim !== null ? { animation: anim, time: this.session.keyTime } : null,
     };
-    this.session.history!.begin(`${LABEL[this.tool]} bone ${name}`);
+    this.session.history!.begin(anim !== null
+      ? `Key ${KEYED[this.tool]} of ${name} at frame ${this.session.frame}`
+      : `${LABEL[this.tool]} bone ${name}`);
   }
 
   private move(e: PointerEvent): void {
@@ -264,9 +276,14 @@ export class Stage {
       const [fx, fy] = scaleFactors(d.matrix, d.start, at, shift);
       patch = { scaleX: tidy(d.scaleX * fx, 3), scaleY: tidy(d.scaleY * fy, 3) };
     }
-    patch = asWritten(patch, { x: d.x, y: d.y, rotation: d.rotation, scaleX: d.scaleX, scaleY: d.scaleY }, d.written);
     try {
-      h.apply("step", updateBone(d.bone, patch));
+      if (d.key) {
+        const local = { x: d.x, y: d.y, rotation: d.rotation, scaleX: d.scaleX, scaleY: d.scaleY, shearX: d.shearX, shearY: d.shearY, ...patch };
+        h.apply("step", keyBone(d.key.animation, d.bone, [KEYED[d.tool]], local as LocalPose, d.key.time));
+      } else {
+        patch = asWritten(patch, { x: d.x, y: d.y, rotation: d.rotation, scaleX: d.scaleX, scaleY: d.scaleY }, d.written);
+        h.apply("step", updateBone(d.bone, patch));
+      }
     } catch (err) {
       if (!(err instanceof EditRefused)) throw err;
       this.onStatus(err.message);

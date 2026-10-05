@@ -2,7 +2,7 @@
 
 A Spine 4.3 animation editor whose document is the Spine JSON file itself: open an export,
 animate it, save it, and the file goes straight to any Spine 4.3 runtime, including BoneBurst in
-Unity. **MIT.** Early: it opens a skeleton and edits its bones' setup pose (E2); animation comes in E3.
+Unity. **MIT.** Early: it opens a skeleton, edits its bones' setup pose, and keys, eases and plays animations (E3).
 
 ```mermaid
 flowchart LR
