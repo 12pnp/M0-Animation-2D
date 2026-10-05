@@ -1254,6 +1254,9 @@ flowchart LR
     Translate's Shift lock (`core/math/axes.ts`). World is the edited symbol's root space.
   - Compensation: Bones / Images keep a transformed node's direct children where they are
     (`core/doc/compensate.ts`, `reexpress`); in Animate that keys them too. Pixels rounds x/y.
+    Every transform drag goes through it (`finishEdit` on the base taken at the drag's start):
+    the axis tools, the fields, and the Select and Free Transform drags. A child an IK turns is
+    held at its solved world, as the pose has it.
   - Visibility, its own card in the stage's top-left corner, over the rulers
     (`StageToolbar.corner`): Bones / Images / IK / Primary × pick, show, name
     (`SelectTool.hitAt` and `unpickable`, the renderer's `hiddenLayers`, the overlay). A bone
@@ -2720,6 +2723,21 @@ Read out of the vendored runtime, not assumed:
   up and clamping it to a limit that is not a power of two gave pages that were
   not one, silently; the dialog now says what the limit became.
 
+### Nonessential data
+
+`ExportSettings.nonessential` (default on, the output as before): Spine's nonessential data,
+what spine-core reads only for its editor and falls back from when absent. Off, the export
+writes the smaller file a game needs (`core/spine/nonessential.ts`, `withoutNonessential`):
+no frame rate, image or audio folder, bone colours, icons or visibility, slot visibility, mesh
+size or edges, box, path, point and clip colours. A region's or mesh's colour is a tint and
+stays. Applied after the skeleton is built and before its hash, never to the stage's rig.
+`spineImport` plays every sample exported without it against the original.
+
+**Bone colours** (`Node.boneColor`, "rrggbbaa", Spine's per-bone colour): Properties ▸ Bone ▸
+Colour, drawn on the stage and tinting the bone's icon in the Tree; written as `bones[].color`,
+nonessential. An opened file's bone colours become the field (a colour carried in `spine.bone`
+moves there on load).
+
 ### Future export formats
 
 A video export and a sprite-sheet export are planned for the desktop (Electron)
@@ -2830,15 +2848,14 @@ A mask not showing (blank key, outside its span, eye off) leaves them unclipped.
 
 ## Not built yet
 
-**Two toolbar buttons have no tool behind them.** `ToolManager` registers `select`,
-`freeTransform`, `pivot`, `bone` and `ik`; `setActive` falls back to `select` for anything else,
-so **Hand (H) and Zoom (Z)** highlight in the toolbar, set `ui.tool`, and then behave as the
-Selection tool — pressing H and dragging marquee-selects instead of panning. Both capabilities
-exist by another route: panning is space+drag or the middle button, zooming is the wheel and ⌘±.
-What is missing is the two tool classes, not the behaviour. (A plain wheel zooms at the cursor
-by default; `stage.wheel` makes it pan instead, and Shift or ⌘ with the wheel does the other.
-The stage itself is an outline on the pasteboard unless `stage.fillStage`, with the grid on and
-origin lines through (0,0) of what is being edited: an opened Spine rig has no stage.)
+**Hand (H) and Zoom (Z) are the viewport's own**, not tool classes: the viewport handles a
+press with either before any tool (`beginPan`, `beginZoom`) and sets their cursors on hover.
+Hand drags the view; Zoom clicks in ×1.4 at the pointer (Alt: out) and frames a rectangle it is
+dragged over. Panning is also space+drag or the middle button, zooming the wheel and ⌘±. (A
+plain wheel zooms at the cursor by default; `stage.wheel` makes it pan instead, and Shift or ⌘
+with the wheel does the other. The stage itself is an outline on the pasteboard unless
+`stage.fillStage`, with the grid on and origin lines through (0,0) of what is being edited: an
+opened Spine rig has no stage.)
 
 Vector drawing tools, linked meshes. Meshes opened from a Spine file are drawn and
 written back, not edited (Opening Spine files, Meshes).

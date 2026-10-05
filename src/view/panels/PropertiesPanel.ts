@@ -181,7 +181,7 @@ export class PropertiesPanel implements Panel {
     const skins = `${valueId(sym.skins)}:${stageSkinOf(sym).join(",")}:${editedSkin(sym, this.store.ui.editSkin) ?? ""}`
       // Physics, sliders and paths: which there are, not their values (synced).
       + [...(sym.physics ?? []), ...(sym.sliders ?? []), ...(sym.paths ?? [])].map((k) => `${k.id}:${k.name}:${"boneId" in k ? k.boneId : ""}:${"boneIds" in k ? k.boneIds.join(",") : ""}:${"animId" in k ? k.animId : ""}`).join(";");
-    return `${anim}|${tcs}|${skins}|` + nodes.map((n) => `${n.id}:${n.kind}:${displaysOf(n).map((d) => (d.skinOnly ? "s" : "d")).join("")}:${displayAtFrame(this.store, n).display?.itemId ?? ""}:${n.mesh ? `m${n.mesh.points.length}${n.mesh.weights ? "w" : ""}` : ""}${n.sequence ? `q${n.sequence.items.length}` : ""}`).join("|");
+    return `${anim}|${tcs}|${skins}|` + nodes.map((n) => `${n.id}:${n.kind}:${displaysOf(n).map((d) => (d.skinOnly ? "s" : "d")).join("")}${n.boneColor ?? ""}:${displayAtFrame(this.store, n).display?.itemId ?? ""}:${n.mesh ? `m${n.mesh.points.length}${n.mesh.weights ? "w" : ""}` : ""}${n.sequence ? `q${n.sequence.items.length}` : ""}`).join("|");
   }
 
   /**
@@ -434,8 +434,28 @@ export class PropertiesPanel implements Panel {
       this.store.apply(new SetBonePrimary(this.store.currentSymbolId, ids.length ? ids : [node.id], primary.checked));
       this.store.emit("doc");
     });
+    // Spine's bone colour: the stage and the Tree draw it; exported as nonessential data.
+    const color = h("input", { type: "color", class: "bone-color", title: "This bone's colour on the stage and in the Tree" }) as HTMLInputElement;
+    color.value = `#${(node.boneColor ?? "989898").slice(0, 6)}`;
+    const setColor = (value: string | undefined, label: string) => {
+      const ids = this.store.selection.nodes.filter((id) => this.store.currentSymbol.nodes[id]?.kind === "bone");
+      this.store.transaction(label, () => {
+        for (const id of ids.length ? ids : [node.id]) {
+          this.store.apply(new EditNode(label, this.store.currentSymbolId, id, (n) => {
+            const out = { ...n };
+            if (value) out.boneColor = value; else delete out.boneColor;
+            return out;
+          }));
+        }
+      });
+      this.store.emit("stage");
+    };
+    on(color, "change", () => setColor(`${color.value.slice(1)}ff`, "Bone Colour"));
+    const reset = h("button", { class: "btn", title: "Spine's default bone colour" }, "Default");
+    on(reset, "click", () => setColor(undefined, "Default Bone Colour"));
     return this.section("Bone", true, [
       this.row("Length", [length.el]), this.row("Path drag", [drag]), this.row("Primary", [primary]),
+      this.row("Colour", [color, ...(node.boneColor ? [reset] : [])]),
     ]);
   }
 

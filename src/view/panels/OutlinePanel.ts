@@ -196,7 +196,7 @@ export class OutlinePanel implements Panel {
       this.flagCell(layer, "visible"),
       this.flagCell(layer, "locked"),
       guides, tri,
-      h("span", { class: "ico" }, icon(kindIcon, 12)),
+      h("span", { class: "ico", ...(node.kind === "bone" && node.boneColor ? { style: { color: `#${node.boneColor.slice(0, 6)}` } } : {}) }, icon(kindIcon, 12)),
       name, badges,
     );
     if (layer && !layer.visible) row.classList.add("hidden-layer");

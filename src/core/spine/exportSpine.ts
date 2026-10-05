@@ -13,6 +13,8 @@ import { mat, type Matrix2D } from "@/core/math/Matrix2D";
 import { displaysOf } from "@/core/doc/displays";
 import { skinBoneSet } from "@/core/doc/skins";
 import { sequenceNaming } from "@/core/doc/sequence";
+import { withoutNonessential } from "./nonessential";
+import { sanitizeExportSettings } from "@/core/export/settings";
 import { pathLengths, pathToSpine, physicsToSpine, runtimeSolved, sliderToSpine } from "@/core/doc/constraints";
 import { childFrame, displayContext, evaluateSymbol, localAt } from "@/core/doc/pose";
 import { rotationDelta, sampleColorRaw, sampleTransformRaw } from "@/core/doc/timeline";
@@ -261,6 +263,7 @@ export function exportSpine(
       const bone: SpineBone = parent === undefined ? { name, ...withoutDefaults(setup) } : { name, parent, ...withoutDefaults(setup) };
       if (node.kind === "bone" && node.boneLength) bone.length = node.boneLength;
       if (node.inherit && node.inherit !== "normal") bone.inherit = node.inherit;
+      if (node.kind === "bone" && node.boneColor) bone.color = node.boneColor;
       if (node.spine?.bone) Object.assign(bone, node.spine.bone);
       bones.push(bone);
       boneNodes.push({ scope, node, name });
@@ -855,6 +858,7 @@ export function exportSpine(
   // spine-csharp refuses a file without one; it is how spine-unity tells a
   // re-exported skeleton changed. Written first, as Spine does.
   if (!options.setupOnly) {
+    if (!sanitizeExportSettings(project.exportSettings).nonessential) Object.assign(skeleton, withoutNonessential(skeleton));
     const { hash: _old, ...header } = skeleton.skeleton;
     skeleton.skeleton = { hash: contentHash(spineJson({ ...skeleton, skeleton: header })), ...header };
   }

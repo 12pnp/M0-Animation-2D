@@ -55,6 +55,10 @@ export interface ExportSettings {
    *  (Unity does not read `.atlas` as text). Spine's own exporter has the
    *  same switch. */
   atlasTxt: boolean;
+  /** Spine's nonessential data: bone colours, the image and audio folders,
+   *  the frame rate, mesh sizes. Off writes the smaller file a game needs
+   *  (`withoutNonessential`); it plays the same. */
+  nonessential: boolean;
 }
 
 export const DEFAULT_EXPORT_SETTINGS: Readonly<ExportSettings> = Object.freeze({
@@ -74,6 +78,7 @@ export const DEFAULT_EXPORT_SETTINGS: Readonly<ExportSettings> = Object.freeze({
   imageQuality: 0.9,
   minifyJson: false,
   atlasTxt: false,
+  nonessential: true,
 });
 
 /** Ranges for the numbers, shared by the sanitizer and the dialog's fields. */

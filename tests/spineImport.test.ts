@@ -6,6 +6,7 @@ import { reseed } from "@/core/doc/ids";
 import { importSpine } from "@/core/spine/importSpine";
 import { imagesOf, type SampleRig, sampleRigs } from "./fixtures/spineSamples";
 import { exportSpine, spineJson } from "@/core/spine/exportSpine";
+import { DEFAULT_EXPORT_SETTINGS } from "@/core/export/settings";
 
 /**
  * Opening a Spine file and exporting it again must play as the original
@@ -20,10 +21,11 @@ import { exportSpine, spineJson } from "@/core/spine/exportSpine";
 interface Worst { matrix: number; position: number; vertex: number; color: number; frames: number }
 
 /** `skin` shown on both (none: the default skin alone); every `step`th frame. */
-function compare(rig: SampleRig, skin?: string, step = 1): { worst: Worst; baked: number; warnings: string[] } {
+function compare(rig: SampleRig, skin?: string, step = 1, nonessential = true): { worst: Worst; baked: number; warnings: string[] } {
   const atlasText = rig.atlas;
   const original = JSON.parse(rig.json);
   const imported = importSpine(original, rig.name, imagesOf(atlasText));
+  if (!nonessential) imported.project.exportSettings = { ...DEFAULT_EXPORT_SETTINGS, nonessential: false };
   const exported = exportSpine(imported.project);
   const errors = exported.diagnostics.filter((d) => d.severity === "error");
   if (errors.length) throw new Error(`${rig.name}: export refused: ${errors.map((e) => e.message).join("; ")}`);
@@ -134,6 +136,9 @@ describe.skipIf(found.length === 0)("opening a Spine file and exporting it again
       console.log(rig.name, JSON.stringify(worst), "baked", baked, warnings.length ? `\n  ${warnings.join("\n  ")}` : "");
       expect(worst.frames).toBeGreaterThan(0);
       expect(baked).toBeLessThanOrEqual(BAKED[rig.name] ?? Infinity);
+    });
+    it(`plays ${rig.name} as the original does without nonessential data`, () => {
+      expect(compare(rig, undefined, 5, false).worst.frames).toBeGreaterThan(0);
     });
     const skins = ((JSON.parse(rig.json).skins ?? []) as Array<{ name: string }>).map((sk) => sk.name).filter((n) => n !== "default");
     if (skins.length) {

@@ -1,0 +1,80 @@
+import { beforeEach, describe, expect, it } from "vitest";
+import { reseed } from "@/core/doc/ids";
+import { withoutNonessential } from "@/core/spine/nonessential";
+import { exportSpine } from "@/core/spine/exportSpine";
+import { importSpine } from "@/core/spine/importSpine";
+import { migrate, validateProject } from "@/core/doc/schema";
+import { DEFAULT_EXPORT_SETTINGS } from "@/core/export/settings";
+import type { SymbolItem } from "@/core/doc/types";
+import type { SpineSkeletonFile } from "@/core/spine/types";
+import { loadStickman } from "./fixtures/stickman";
+
+beforeEach(() => reseed());
+
+describe("nonessential data", () => {
+  it("strips what spine-core reads only for the editor, keeps a region's tint", () => {
+    const file = {
+      skeleton: { hash: "h", spine: "4.3.74", fps: 30, images: "./img/", audio: "./a/" },
+      bones: [{ name: "root", color: "ff0000ff", icon: "ik", visible: false }],
+      slots: [{ name: "s", bone: "root", visible: false, attachment: "r" }],
+      skins: [{ name: "default", attachments: { s: {
+        r: { width: 4, height: 4, color: "ff0000ff" },
+        m: { type: "mesh", width: 4, height: 4, edges: [0, 2], uvs: [], triangles: [], vertices: [], hull: 3, color: "00ff00ff" },
+        b: { type: "boundingbox", vertexCount: 3, vertices: [0, 0, 1, 0, 0, 1], color: "60f000ff" },
+      } } }],
+    } as unknown as SpineSkeletonFile;
+    const out = withoutNonessential(file) as unknown as Record<string, any>;
+    expect(out.skeleton).toEqual({ hash: "h", spine: "4.3.74" });
+    expect(out.bones[0]).toEqual({ name: "root" });
+    expect(out.slots[0]).toEqual({ name: "s", bone: "root", attachment: "r" });
+    expect(out.skins[0].attachments.s).toEqual({
+      r: { width: 4, height: 4, color: "ff0000ff" },
+      m: { type: "mesh", uvs: [], triangles: [], vertices: [], hull: 3, color: "00ff00ff" },
+      b: { type: "boundingbox", vertexCount: 3, vertices: [0, 0, 1, 0, 0, 1] },
+    });
+    // The input is left alone.
+    expect((file as unknown as Record<string, any>).bones[0].color).toBe("ff0000ff");
+  });
+
+  it("the export writes it by default, and leaves it out when the setting is off", async () => {
+    const { project, rig, node } = await loadStickman();
+    rig.nodes[node("head")] = { ...rig.nodes[node("head")]!, boneColor: "ff8800ff" };
+    const on = exportSpine(project).skeleton;
+    expect(on.skeleton.fps).toBe(24);
+    expect(on.bones.find((b) => b.name === "head")!.color).toBe("ff8800ff");
+    project.exportSettings = { ...DEFAULT_EXPORT_SETTINGS, nonessential: false };
+    const off = exportSpine(project).skeleton;
+    expect(off.skeleton.fps).toBeUndefined();
+    expect(off.bones.find((b) => b.name === "head")!.color).toBeUndefined();
+    expect(off.skeleton.hash).not.toBe(on.skeleton.hash);
+  });
+});
+
+describe("bone colours", () => {
+  it("open a file's bone colour into the model, write it back", () => {
+    const file = { skeleton: { spine: "4.3.74" }, bones: [{ name: "root", color: "FF0000FF" }, { name: "a", parent: "root", color: "nope" }] };
+    const { project } = importSpine(file, "x", new Map());
+    const sym = project.items[project.rootSymbolId] as SymbolItem;
+    const root = Object.values(sym.nodes).find((n) => n.name === "root")!;
+    const a = Object.values(sym.nodes).find((n) => n.name === "a")!;
+    expect(root.boneColor).toBe("ff0000ff");
+    expect(root.spine?.bone?.color).toBeUndefined();
+    expect(a.boneColor).toBeUndefined();
+    expect(a.spine?.bone?.color).toBe("nope");
+    const out = exportSpine(project).skeleton.bones;
+    expect(out.find((b) => b.name === "root")!.color).toBe("ff0000ff");
+  });
+
+  it("load: a carried colour moves to the field; a bad one or a non-bone's goes", async () => {
+    const { project, rig, node } = await loadStickman();
+    rig.nodes[node("head")] = { ...rig.nodes[node("head")]!, spine: { bone: { color: "00ff00ff", skin: true } } };
+    rig.nodes[node("chest")] = { ...rig.nodes[node("chest")]!, boneColor: "red" };
+    rig.nodes[node("torso")] = { ...rig.nodes[node("torso")]!, boneColor: "ff0000ff" };
+    const out = validateProject(migrate(JSON.parse(JSON.stringify(project)))).project;
+    const s = out.items[out.rootSymbolId] as SymbolItem;
+    expect(s.nodes[node("head")]!.boneColor).toBe("00ff00ff");
+    expect(s.nodes[node("head")]!.spine).toEqual({ bone: { skin: true } });
+    expect(s.nodes[node("chest")]!.boneColor).toBeUndefined();
+    expect(s.nodes[node("torso")]!.boneColor).toBeUndefined();
+  });
+});

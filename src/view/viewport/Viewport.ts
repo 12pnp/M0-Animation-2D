@@ -616,6 +616,10 @@ export class Viewport {
         host.style.cursor = this.guides[g]!.axis === "x" ? "ew-resize" : "ns-resize";
         return;
       }
+      // Hand and Zoom are the viewport's own, not tools: their cursors here.
+      const tool = this.store.ui.tool;
+      if (tool === "hand") { host.style.cursor = "grab"; return; }
+      if (tool === "zoom") { host.style.cursor = e.altKey ? "zoom-out" : "zoom-in"; return; }
       this.tools.active?.onHover?.(e, this.toolCtx);
     });
 
@@ -705,19 +709,44 @@ export class Viewport {
         if (hit >= 0) { this.beginGuideMove(e, hit); return; }
       }
 
-      if (tool === "zoom") {
-        const c = this.toContent(e);
-        this.camera.zoomAt(c.x, c.y, e.altKey ? 1 / 1.4 : 1.4);
-        this.store.setUi({ zoom: this.camera.zoom }, "ui");
-        this.invalidate();
-        return;
-      }
+      if (tool === "zoom" && e.button === 0) { this.beginZoom(e); return; }
 
       if (e.button === 0) {
         this.store.clearFrameSelection();
         this.beginTool(e);
       }
     });
+  }
+
+  /** The Zoom tool: a click zooms in at the pointer (Alt: out); a drag
+   *  frames the rectangle it draws. */
+  private beginZoom(e: PointerEvent): void {
+    const start = this.toContent(e);
+    this.host.setPointerCapture(e.pointerId);
+    let rect: Rect | null = null;
+    const move = (m: PointerEvent) => {
+      const c = this.toContent(m);
+      if (!rect && Math.hypot(c.x - start.x, c.y - start.y) < 4) return;
+      rect = { x: Math.min(start.x, c.x), y: Math.min(start.y, c.y), w: Math.abs(c.x - start.x), h: Math.abs(c.y - start.y) };
+      this.marquee = rect;
+      this.invalidate();
+    };
+    const up = (m: PointerEvent) => {
+      offMove(); offUp(); offCancel();
+      this.host.releasePointerCapture?.(e.pointerId);
+      this.marquee = null;
+      if (rect && rect.w > 4 && rect.h > 4) {
+        const a = this.camera.screenToScene(rect.x, rect.y), b = this.camera.screenToScene(rect.x + rect.w, rect.y + rect.h);
+        this.camera.fit({ x: Math.min(a.x, b.x), y: Math.min(a.y, b.y), w: Math.abs(b.x - a.x), h: Math.abs(b.y - a.y) }, 0);
+      } else if (!rect) {
+        this.camera.zoomAt(start.x, start.y, m.altKey ? 1 / 1.4 : 1.4);
+      }
+      this.store.setUi({ zoom: this.camera.zoom }, "ui");
+      this.invalidate();
+    };
+    const offMove = on(this.host, "pointermove", move as (x: Event) => void);
+    const offUp = on(this.host, "pointerup", up as (x: Event) => void);
+    const offCancel = on(this.host, "pointercancel", (() => { offMove(); offUp(); offCancel(); this.marquee = null; this.invalidate(); }) as (x: Event) => void);
   }
 
   private beginPan(e: PointerEvent): void {
@@ -734,7 +763,7 @@ export class Viewport {
     const up = () => {
       offMove(); offUp(); offCancel();
       this.host.releasePointerCapture?.(e.pointerId);
-      this.host.style.cursor = this.spaceDown ? "grab" : "";
+      this.host.style.cursor = this.spaceDown || this.store.ui.tool === "hand" ? "grab" : "";
     };
     const offMove = on(this.host, "pointermove", move as (x: Event) => void);
     const offUp = on(this.host, "pointerup", up);

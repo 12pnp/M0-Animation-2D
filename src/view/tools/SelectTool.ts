@@ -1,4 +1,5 @@
 import type { Tool, ToolContext } from "./Tool";
+import { type EditBase, captureEditBase, finishEdit } from "./axisEdit";
 import { boneRow } from "@/core/doc/boneRow";
 import type { NodeId } from "@/core/doc/ids";
 import { shownDisplay } from "@/core/doc/pose";
@@ -17,6 +18,7 @@ import { BakeDrag, HandleDrag, PathDrag, pathPick } from "./pathDrag";
  * Flash.
  */
 export class SelectTool implements Tool {
+  private editBase: EditBase | null = null;
   readonly id = "select";
 
   private mode: "none" | "maybeDrag" | "dragging" | "marquee" = "none";
@@ -91,6 +93,8 @@ export class SelectTool implements Tool {
       if (moved < 3) return;
       this.mode = "dragging";
       ctx.beginSnap(this.snaps.map((s) => s.id));
+      // What Compensate holds still (the stage bar's Bones / Images).
+      this.editBase = captureEditBase(ctx);
       ctx.store.history.beginInteraction("node.transform");
     }
 
@@ -107,7 +111,7 @@ export class SelectTool implements Tool {
 
     const next = new Map<NodeId, Transform>();
     for (const s of this.snaps) next.set(s.id, moveBy(s, mx, my));
-    applyEdit(ctx.store, next, true);
+    applyEdit(ctx.store, this.editBase ? finishEdit(ctx.store, this.editBase, next) : next, true);
     ctx.invalidate();
   }
 
@@ -137,9 +141,10 @@ export class SelectTool implements Tool {
         const n = ctx.store.node(s.id);
         if (n) next.set(s.id, quantize(transformAtFrame(ctx.store, n)));
       }
-      applyEdit(ctx.store, next, true);
+      applyEdit(ctx.store, this.editBase ? finishEdit(ctx.store, this.editBase, next) : next, true);
       ctx.store.history.endInteraction();
     }
+    this.editBase = null;
     this.mode = "none";
     this.snaps = [];
     ctx.invalidate();

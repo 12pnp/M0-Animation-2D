@@ -75,6 +75,7 @@ const SECTIONS: Array<{ title: string; rows: Row[] }> = [
         enabled: (s) => s.image === "webp" },
       { kind: "check", key: "minifyJson", label: "Minify JSON" },
       { kind: "check", key: "atlasTxt", label: "Atlas as .atlas.txt (Unity)" },
+      { kind: "check", key: "nonessential", label: "Nonessential data (bone colours, frame rate, folders, mesh sizes)" },
     ],
   },
 ];

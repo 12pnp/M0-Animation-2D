@@ -58,7 +58,7 @@ const num = (v: unknown, fallback: number) => (typeof v === "number" && Number.i
 const str = (v: unknown): v is string => typeof v === "string";
 
 /** Only what the editor models is read off a bone; the rest rides along. */
-const BONE_FIELDS = new Set(["name", "parent", "length", "x", "y", "rotation", "scaleX", "scaleY", "shearX", "shearY", "inherit"]);
+const BONE_FIELDS = new Set(["name", "parent", "length", "x", "y", "rotation", "scaleX", "scaleY", "shearX", "shearY", "inherit", "color"]);
 const SLOT_FIELDS = new Set(["name", "bone", "color", "dark", "attachment", "blend"]);
 const IK_FIELDS = new Set(["type", "name", "bones", "target", "mix", "bendPositive", "softness", "stretch", "compress", "scaleY"]);
 const BLEND: Record<string, BlendMode> = { additive: "add", multiply: "multiply", screen: "screen" };
@@ -129,7 +129,8 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
       if (INHERIT.has(b.inherit as SpineInherit)) node.inherit = b.inherit as SpineInherit;
       else warn(`Bone "${boneName}": unknown inherit mode "${b.inherit}", read as normal.`);
     }
-    const rest = pick(b, (k) => !BONE_FIELDS.has(k)) ?? {};
+    if (str(b.color) && /^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(b.color)) node.boneColor = b.color.toLowerCase();
+    const rest = pick(b, (k) => !BONE_FIELDS.has(k) || (k === "color" && !node.boneColor)) ?? {};
     // The editor's transform folds shear x into the rotation, which leaves
     // the local matrix exactly as it was. Under an inherit mode other than
     // normal Spine builds the parent's frame from the rotation alone and

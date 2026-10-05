@@ -887,7 +887,7 @@ export class Overlay {
       ctx.lineTo(b.x, b.y);
       ctx.lineTo(a.x + dx * 0.22 - nx * w, a.y + dy * 0.22 - ny * w);
       ctx.closePath();
-      ctx.fillStyle = driven.has(e.nodeId) ? this.C.boneIk : this.C.bone;
+      ctx.fillStyle = driven.has(e.nodeId) ? this.C.boneIk : e.node.boneColor ? `#${e.node.boneColor.slice(0, 6)}` : this.C.bone;
       ctx.fill();
       // The far (or right) limbs darker, on top of what the fill means.
       if (boneSide(e.node.name) === "far") {

@@ -204,6 +204,9 @@ export interface Node {
   sequence?: SequenceData;
   /** A box node's polygon (Spine's bounding box), in its own space, y down. */
   box?: { points: number[] };
+  /** A bone's colour in the editor (Spine's, "rrggbbaa"): the stage and the
+   *  Tree draw it; the export writes it as nonessential data. */
+  boneColor?: string;
   /** A path node's curve (Spine's path attachment), in its own space, y down. */
   path?: PathShape;
   /** Bind-pose colour, exported as `slot.color`. Absent means neutral.

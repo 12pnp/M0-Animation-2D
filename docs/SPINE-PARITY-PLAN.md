@@ -21,11 +21,9 @@ Legend:
 - ✅ Clipping attachments (mask layers)
 - ✅ Nested symbols, flattened into one skeleton on export
 - ◐ Bone `inherit` modes: imported and exported (`Node.inherit`), not editable in Properties
-- ☐ Bone colours and icons in the tree (Spine's per-bone colour)
-- ☐ Compensate: move or turn a bone without moving its children (Spine's Compensate
-  toggles)
-- ☐ Hand (H) and Zoom (Z) tools: the toolbar buttons exist, the tools do not
-  (ARCHITECTURE ▸ Not built yet)
+- ✅ Bone colours: Properties ▸ Bone, on the stage and in the Tree (icons not built)
+- ✅ Compensate: the stage bar's Bones / Images, for every transform tool
+- ✅ Hand (H) and Zoom (Z): drag to pan; click to zoom (Alt out), drag a rectangle to frame
 
 ### Attachments
 
@@ -96,8 +94,7 @@ Legend:
 - ✅ Checked in Unity (spine-csharp), phase 8 (`scripts/unity-check/`)
 - ☐ Binary `.skel` export (smaller and faster to load; what most shipping games use)
 - ☐ Opening a binary `.skel`
-- ☐ Nonessential data choices (Spine writes bone colours, image paths and audio paths only
-  when asked)
+- ✅ Nonessential data: Export Settings ▸ Nonessential data (on by default)
 - ✅ Image sequences from numbered images (Properties ▸ Sequence ▸ Make Sequence)
 - ☐ Video and sprite-sheet export (planned for the desktop build, ARCHITECTURE ▸ Future
   export formats)
@@ -199,7 +196,7 @@ meshes.
 4. Slider constraint (4.3).
 5. IK stretch, compress and uniform: port the rest of `apply1`/`apply2`.
 
-### Phase G: export formats and tools
+### Phase G: export formats and tools (done but binary and video, by choice)
 
 1. Binary `.skel` export, checked by reading it with spine-core's `SkeletonBinary` and
    comparing with the JSON export frame by frame; opening `.skel` files.

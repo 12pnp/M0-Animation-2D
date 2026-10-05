@@ -1,4 +1,5 @@
 import type { Tool, ToolContext } from "./Tool";
+import { type EditBase, captureEditBase, finishEdit } from "./axisEdit";
 import type { NodeId } from "@/core/doc/ids";
 import { shownDisplay } from "@/core/doc/pose";
 import type { Transform } from "@/core/math/Transform";
@@ -50,6 +51,8 @@ export class FreeTransformTool implements Tool {
   /** Whether this drag changed anything; a bare click must not write. */
   private moved = false;
   private snaps: NodeSnapshot[] = [];
+  /** What Compensate holds still, from the drag's start. */
+  private editBase: EditBase | null = null;
   private gizmo: Gizmo | null = null;
   private anchorWorld: Point = { x: 0, y: 0 };
   private startWorld: Point = { x: 0, y: 0 };
@@ -145,6 +148,7 @@ export class FreeTransformTool implements Tool {
                       * 180 / Math.PI;
 
     if (handle.kind === "move") ctx.beginSnap(this.snaps.map((s) => s.id));
+    this.editBase = handle.kind === "pivot" ? null : captureEditBase(ctx);
     ctx.store.history.beginInteraction(handle.kind === "pivot" ? "node.pivot" : "node.transform");
   }
 
@@ -234,7 +238,7 @@ export class FreeTransformTool implements Tool {
 
     if (next.size > 0) {
       this.moved = true;
-      applyEdit(ctx.store, next, true);
+      applyEdit(ctx.store, this.editBase ? finishEdit(ctx.store, this.editBase, next) : next, true);
       ctx.invalidate();
     }
   }
@@ -271,8 +275,9 @@ export class FreeTransformTool implements Tool {
         const n = ctx.store.node(s.id);
         if (n) next.set(s.id, quantize(transformAtFrame(ctx.store, n)));
       }
-      if (next.size) applyEdit(ctx.store, next, true);
+      if (next.size) applyEdit(ctx.store, this.editBase ? finishEdit(ctx.store, this.editBase, next) : next, true);
     }
+    this.editBase = null;
     ctx.store.history.endInteraction();
     this.active = null;
     this.snaps = [];

@@ -500,6 +500,17 @@ export function validateProject(raw: unknown): ValidationResult {
     // the symbol has, of images that exist; members it has.
     for (const node of Object.values(item.nodes)) {
       if (node.skinOnly !== undefined && (node.skinOnly !== true || !node.itemId)) delete node.skinOnly;
+      // A bone's colour; one an opened file carried in `spine.bone` moves here.
+      const carriedColor = node.spine?.bone && typeof node.spine.bone === "object" ? (node.spine.bone as Record<string, unknown>).color : undefined;
+      if (node.boneColor === undefined && typeof carriedColor === "string") {
+        node.boneColor = carriedColor;
+        const { color: _c, ...bone } = node.spine!.bone as Record<string, unknown>;
+        if (Object.keys(bone).length) node.spine = { ...node.spine, bone }; else { const { bone: _b, ...rest } = node.spine!; if (Object.keys(rest).length) node.spine = rest; else delete node.spine; }
+      }
+      if (node.boneColor !== undefined) {
+        if (node.kind === "bone" && typeof node.boneColor === "string" && /^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(node.boneColor)) node.boneColor = node.boneColor.toLowerCase();
+        else delete node.boneColor;
+      }
       // Sequences: images that exist, a setup index among them.
       const cleanSeq = (raw: unknown) => {
         const r = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
