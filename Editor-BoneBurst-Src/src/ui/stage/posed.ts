@@ -127,3 +127,22 @@ export function localPoint(p: Posed, bone: number, x: number, y: number, places 
   const dx = x - wx, dy = y - wy;
   return { x: tidy((d * dx - b * dy) / det, places), y: tidy((a * dy - c * dx) / det, places) };
 }
+
+/**
+ * Constraint `index`'s animatable values in the pose, named as its keys name them (E4-PLAN step
+ * 11): what keying one of them keeps the others at. Null when the rig has no such constraint.
+ */
+export function constraintNow(p: Posed, index: number): Record<string, number | boolean> | null {
+  const r = p.rig;
+  const ik = r.ik[index];
+  if (ik) return { mix: ik.mix, softness: ik.softness, bendPositive: ik.bendPositive, compress: ik.compress, stretch: ik.stretch };
+  const t = r.transform[index];
+  if (t) return { mixRotate: t.rotate, mixX: t.x, mixY: t.y, mixScaleX: t.scaleX, mixScaleY: t.scaleY, mixShearY: t.shearY };
+  const path = r.path[index];
+  if (path) return { ...path };
+  const ph = r.physics[index];
+  if (ph) return { inertia: ph.inertia, strength: ph.strength, damping: ph.damping, mass: 1 / ph.massInverse, wind: ph.wind, gravity: ph.gravity, mix: ph.mix };
+  const sl = r.slider[index];
+  if (sl) return { time: sl.time, mix: sl.mix };
+  return null;
+}

@@ -15,8 +15,10 @@ done: a layered PSD dropped on the editor, shown, saved with its atlas and page,
 Step 8 (the sidecar in the app, guides) done: guides made on the stickman, saved with the view,
 opened again with everything back. Step 9 (the reference panel) done: a reference picture added to the stickman, placed and
 faded, saved, opened again missing and then with its file. Step 10 (preferences) done: each
-preference changed in the dialog and seen, kept through a reload, reset. Later steps not
-started. `npm run check`: 309 tests.
+preference changed in the dialog and seen, kept through a reload, reset. Step 11 (keying
+constraints and deforms) done: an IK mix keyed and the torso mesh deformed at two frames on
+the stickman, played, saved, posed alike by both runtimes. Later steps not started.
+`npm run check`: 317 tests.
 
 E4 makes the editor author a rig, not only animate one: panels and docking (D6), slots,
 attachments, draw order, skins, constraints, mesh editing, PSD import and preferences. It is
@@ -757,10 +759,94 @@ flowchart LR
    through the browser tool:** the ⌘, key itself (the tool sends that key with neither its
    character nor its code); a key event as a keyboard sends it opened the dialog.
 
-## Later steps (planned when step 11 starts)
+## Step 11 — keying constraints and deforms
 
-Re-importing a PSD; keying constraint values, deform keys, drawing constraints on the stage, a
-weight brush, snapping to guides, dragging references on the stage.
+What steps 4–6 made can now be animated: in Animate mode the properties panel keys a
+constraint's animatable values at the playhead, and the stage keys a mesh's vertices (a deform
+key) when one is dragged (Format-Json-Atlas.md §11.5–11.10). The timeline already shows, moves,
+deletes and eases these keys (E3); this step makes them.
+
+```mermaid
+flowchart LR
+    POSE["pose at the playhead<br/>rig.ik · transform · path · physics · slider<br/>rig.deform[slot]"] --> FORM["properties, Animate mode:<br/>animated values shown"]
+    FORM -->|"edit/constraintKeys keyConstraint"| KEYS["animation.ik / transform /<br/>path / physics / slider keys"]
+    POSE --> MESH["stage mesh mode, Animate mode:<br/>vertices where they are now"]
+    MESH -->|"drag: edit/deformKeys<br/>deformWithVertexAt + keyDeform"| DK["animation.attachments.skin.slot.mesh.deform"]
+    KEYS & DK --> TL["timeline rows (E3): move · delete · ease"]
+```
+
+### Decisions
+
+- **Which values key** (the format's timelines): IK mix, softness, bend, compress, stretch (one
+  key holds all five); transform's six mixes (one key holds all six); path position, spacing,
+  and its mixes (three timelines); physics inertia, strength, damping, mass, wind, gravity, mix
+  (one timeline each) and Reset (a key with only a time); slider time and mix. Everything else
+  about a constraint (its bones, target, modes, offsets) is the setup pose's, edited as before.
+- **A key holds the pose at the playhead**: changing one value keys that timeline with the
+  others in it at their animated values there, so nothing else moves. Values at their key
+  default are left out, as Spine writes them (a transform key's `mixY` defaults to its own
+  `mixX`, its `mixScaleY` to 1).
+- **Deform keys from the stage**: in Animate mode, a mesh the slot shows at the playhead is drawn
+  where its vertices are now; dragging a vertex keys the whole mesh's offsets at the playhead,
+  one undo step per drag. An unweighted vertex follows the pointer in its slot's bone space; a
+  weighted one moves by the same world offset through each of its bones. Vertices are added and
+  deleted on the setup pose only (said when tried); a linked mesh's deforms are keyed on its
+  source; a mesh its slot does not show at the playhead says so.
+- **Written as Spine writes them**: deform offsets from the first non-zero value to the last
+  (`offset`, `vertices`); a key with no offset at all has no `vertices`.
+
+### Steps
+
+1. `edit/constraintKeys.ts` (`keyConstraint`, `keyPhysicsReset`, `CONSTRAINT_KEYS`) and
+   `edit/deformKeys.ts` (`keyDeform`, `deformWithVertexAt`). Tests on spineboy-pro, hero-pro,
+   celestial-circus and a converted mesh: keying one value leaves the others where they were at
+   the playhead; defaults left out; deform keys put the dragged vertex where it was dragged and
+   leave the others; weighted and unweighted; both runtimes posing every keyed file alike.
+2. Properties in Animate mode: a constraint's keyable fields show and key the animated values;
+   the title says the frame; physics gets Reset here.
+3. Stage mesh mode in Animate mode: posed vertices, drag keys a deform; add and delete refused
+   with the reason.
+4. On screen: an IK mix and a transform mix keyed on the stickman, the torso mesh deformed over
+   a few frames; played; saved; both runtimes pose the saved file alike.
+
+### Step 11 results
+
+1. `edit/constraintKeys.ts` (`keyConstraint`, `keyPhysicsReset`, `CONSTRAINT_KEYS`),
+   `edit/deformKeys.ts` (`keyDeform`, `deformWithVertexAt`), `ui/stage/posed.ts`
+   `constraintNow` (a constraint's animated values off the posed rig, named as its keys name
+   them). `edit/keys.ts` `setKey` gained `clear` (fields an existing key loses first, so a value
+   keyed back to its default is left out instead of the old value staying) and compares arrays
+   by their numbers. `tests/animKeys.test.ts`, 8 tests: IK between two keys (raptor-pro or
+   Stretchyman: the first sample with one), one value keyed and the others where they were;
+   a default keyed back leaves the key; transform's six mixes with `mixY` and `mixScaleY` left
+   out only at their key defaults; path, physics (mass raw, Reset a key with only a time) and a
+   slider; refusals; deform keys on an unweighted (converted) and a weighted mesh: the dragged
+   vertex where it was dragged, the others unmoved, a second drag keyed over the first; offsets
+   trimmed, none left as a key without vertices; both runtimes posing every keyed file alike.
+   Three planted bugs fail them (other values not kept; `clear` ignored; the weighted offset not
+   turned through each bone).
+2. Properties in Animate mode: a constraint's animatable fields show the pose at the playhead
+   and key it ("Constraint · IK · keys at frame 10"); setup fields edit the setup pose as before;
+   physics has Reset physics here.
+3. Stage mesh mode in Animate mode (`animatedMeshView`): the mesh where its vertices are at the
+   playhead when its slot shows it; a drag keys the deform (one undo step); a press off a vertex
+   goes to the bones under it (keying bones is Animate mode's main job); Delete says vertices
+   are added and deleted on the setup pose; a linked mesh says to key its source.
+4. On screen (the stickman, `dance`): `arm_far_fore_ik` mix typed as 0.4 at frame 10 (keyed;
+   the arm stopped short of its target); the torso, converted on the setup pose, dragged at
+   frame 5 (one vertex) and frame 20 (another); at frame 12 the first held and the second was
+   on its way; played. Saved; the same keys built in Node give the identical file (SHA-256
+   equal), no profile issue as written, 26 poses alike in both runtimes. **Changed from the
+   plan:** the stickman has no transform constraint, so transform keys are checked in the tests
+   only. **Seen, not explained:** a browser-tool drag at frame 20 missed its vertex (it panned,
+   as a press off the mesh does), and the zoom was found changed afterwards; the same drag sent
+   as pointer events at the vertex keyed it with the camera untouched, and a plain tool drag
+   only pans. Nothing in the app zooms except the wheel and Fit.
+
+## Later steps (planned when step 12 starts)
+
+Re-importing a PSD; drawing constraints on the stage, a weight brush, snapping to guides,
+dragging references on the stage.
 
 ## Results
 

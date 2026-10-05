@@ -1,6 +1,8 @@
 import { updateBone } from "@/edit/bones";
 import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { EditRefused } from "@/edit/history";
+import { findAttachment } from "@/edit/attachments";
+import { deformWithVertexAt, keyDeform } from "@/edit/deformKeys";
 import { addHullVertex, addVertex, deleteVertex, moveVertex } from "@/edit/mesh";
 import { addGuide, moveGuide, removeGuide } from "@/edit/sidecar";
 import { axisOf, guideScreen, hitGuide, RULER, rulerAt, rulerOf, tickStep } from "./guides";
@@ -9,7 +11,7 @@ import type { Session } from "../session";
 import { type Camera, fit, pan, toScreen, toWorld, zoomAt } from "./camera";
 import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, scaleFactors, type ScreenBone, tidy, type Tool, turn, turnSign } from "./gizmo";
 import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix } from "./posed";
-import { hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
+import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
 import { type Backdrop, Renderer } from "./renderer";
 import { referenceQuad } from "./references";
 
@@ -71,7 +73,7 @@ export class Stage {
   /** Mesh mode: the vertex being dragged. The selected one is the session's. */
   /** A guide being dragged (out of a ruler, or moved), by its index in the sidecar. */
   private guideDrag: { index: number; overRuler: boolean } | null = null;
-  private vertexDrag: { view: MeshView; index: number } | null = null;
+  private vertexDrag: { view: MeshView; index: number; time?: number; animation?: string } | null = null;
   private panning: { x: number; y: number } | null = null;
   private queued = false;
   private fitted = false;
@@ -264,9 +266,12 @@ export class Stage {
    */
   private meshMode(): MeshView | null {
     const s = this.session, sel = s.selected, doc = s.doc;
-    if (sel?.kind !== "attachment" || !doc || s.animation) return null;
+    if (sel?.kind !== "attachment" || !doc) return null;
     const p = s.pose();
-    return p ? meshView(doc, p, sel) : null;
+    if (!p) return null;
+    // Animate mode: the mesh where its vertices are at the playhead, when its slot shows it (step 11).
+    if (s.animation) return animatedMeshView(doc, p, sel, s.skin).view;
+    return meshView(doc, p, sel);
   }
 
   /** The selected vertex of `view`, or -1. */
@@ -320,6 +325,7 @@ export class Stage {
     const view = this.meshMode(), h = this.session.history;
     const i = view ? this.selectedVertex(view) : -1;
     if (!view || i < 0 || !h) return false;
+    if (view.animated) { this.onStatus("Vertices are added and deleted on the setup pose."); return true; }
     try {
       if (h.apply(`Delete vertex ${i} of ${view.ref.key}`, deleteVertex(view.ref, i, this.session.setupBones() ?? undefined))) this.session.vertex = null;
     } catch (err) {
@@ -340,6 +346,15 @@ export class Stage {
     const h = this.session.history!, bones = this.session.setupBones() ?? undefined;
     if (hit.kind === "vertex") { this.session.vertex = hit.index; this.session.changed(); }
     if (view.locked) { this.onStatus(view.locked); return true; }
+    if (view.animated) {
+      // Animate mode keys deforms; the vertices themselves are the setup pose's.
+      // Off a vertex the press is the bones' (keying bones is what Animate mode is mostly for).
+      if (hit.kind !== "vertex") return false;
+      this.session.pause();
+      h.begin(`Key deform of ${view.ref.key} at frame ${this.session.frame}`);
+      this.vertexDrag = { view, index: hit.index, time: this.session.keyTime, animation: this.session.animation!.name };
+      return true;
+    }
     const n = view.world.length / 2;
     h.begin(hit.kind === "vertex" ? `Move vertex ${hit.index} of ${view.ref.key}` : `Add a vertex to ${view.ref.key}`);
     try {
@@ -366,6 +381,15 @@ export class Stage {
   private vertexTo(at: Point, stretch: boolean): void {
     const d = this.vertexDrag!, [x, y] = toBone(d.view, at);
     try {
+      const anim = d.view.animated;
+      if (anim && d.animation !== undefined && d.time !== undefined) {
+        // From the deform as it was when the drag began, the vertex where the pointer is now.
+        const a = findAttachment(this.session.doc!, d.view.ref)!;
+        const offsets = deformWithVertexAt(a, anim.deform, anim.bones, anim.slotBone, d.index, at[0], at[1]);
+        this.session.history!.apply("step", keyDeform(d.animation, d.view.ref, d.time, offsets));
+        this.session.changed();
+        return;
+      }
       this.session.history!.apply("step", moveVertex(d.view.ref, d.index, x, y, !stretch, this.session.setupBones() ?? undefined));
     } catch (err) {
       if (!(err instanceof EditRefused)) throw err;

@@ -24,14 +24,20 @@ export type KeyFields = { -readonly [K in Exclude<keyof Key, "time" | "curve" | 
  */
 export const sameTime = (a: number, b: number): boolean => Math.abs(a - b) <= 1e-5;
 
-/** Key `fields` at `time` in the list at `path`, creating the list, or setting a key already there. */
-export function setKey(animation: string, path: TimelinePath, time: number, fields: KeyFields): Edit<Skeleton> {
+/**
+ * Key `fields` at `time` in the list at `path`, creating the list, or setting a key already there.
+ * `clear` names fields a key already there loses first (values back at their default are left
+ * out, as Spine writes them).
+ */
+export function setKey(animation: string, path: TimelinePath, time: number, fields: KeyFields, clear: readonly (keyof KeyFields)[] = []): Edit<Skeleton> {
   return onAnimation(animation, (a) => withList(a, path, (keys) => {
     const at = keys.findIndex((k) => sameTime(keyTime(k), time));
     if (at >= 0) {
       const old = keys[at]! as unknown as Record<string, unknown>;
-      if (Object.entries(fields).every(([k, v]) => old[k] === v)) return null;
-      const next = { ...keys[at]!, ...fields } as Key;
+      const gone = clear.filter((k) => !(k in fields) && k in old);
+      if (!gone.length && Object.entries(fields).every(([k, v]) => sameValue(old[k], v))) return null;
+      const kept = Object.fromEntries(Object.entries(old).filter(([k]) => !gone.includes(k as keyof KeyFields)));
+      const next = { ...kept, ...fields } as unknown as Key;
       return { keys: keys.map((k, i) => (i === at ? next : k)), origin: keys.map((_, i) => i) };
     }
     if (time < 0) throw new EditRefused("A key cannot be before 0.");
@@ -224,4 +230,10 @@ function putList(a: Animation, p: TimelinePath, keys: readonly Key[] | null): An
     }
     default: return setSection(a, p.section, upsert<TimelineGroup>(a[p.section], p.owner, (g) => putTimeline(g, p.timeline, p.owner, keys)));
   }
+}
+
+/** Equal key values; arrays (a deform key's vertices) by their numbers. */
+function sameValue(a: unknown, b: unknown): boolean {
+  if (Array.isArray(a) && Array.isArray(b)) return a.length === b.length && a.every((v, i) => v === b[i]);
+  return a === b;
 }

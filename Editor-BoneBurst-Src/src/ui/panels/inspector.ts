@@ -3,6 +3,7 @@ import { type BoneProperty, keyBone } from "@/edit/boneKeys";
 import { type BonePatch, renameBone, reparentBone, subtree, updateBone } from "@/edit/bones";
 import { type ConstraintPatch, type ConstraintRef, findConstraint, IK_SCALE_Y, PHYSICS_SCALE_Y, POSITION_MODES, renameConstraint,
   ROTATE_MODES, SPACING_MODES, TRANSFORM_PROPERTIES, updateConstraint } from "@/edit/constraints";
+import { CONSTRAINT_KEYS, keyConstraint, keyPhysicsReset } from "@/edit/constraintKeys";
 import { type Edit, EditRefused } from "@/edit/history";
 import { regionToMesh, retriangulate, verticesOutside } from "@/edit/mesh";
 import { type BoneWorlds, decodeBinds, frameFor, isWeighted, positions } from "@/edit/meshLayout";
@@ -12,7 +13,7 @@ import { BLEND_MODES, renameSlot, updateSlot } from "@/edit/slots";
 import { BONE_DEFAULTS, boneInherit, boneNumber, type BoneNumber, CONSTRAINT_DEFAULTS, constraintValue, DEPENDENT_DEFAULTS, TRANSFORM_MIXES, transformTargets } from "@/model/defaults";
 import { type Attachment, attachmentType, type Constraint, type Skeleton, type TransformFrom } from "@/model/skeleton";
 import type { Selection, Session } from "../session";
-import { animatedLocal, localUnder, Poser } from "../stage/posed";
+import { animatedLocal, constraintNow, localUnder, Poser } from "../stage/posed";
 import { empty, heading } from "./outline";
 
 /** The timeline each value keys in Animate mode (length is setup only). */
@@ -80,7 +81,7 @@ export class Inspector {
     else if (sel.kind === "constraint") this.constraintForm(form, doc, sel);
     else this.attachmentForm(form, doc, sel);
     const title = sel.kind === "bone" ? (anim ? `Bone · keys at frame ${s.frame}` : "Bone") : sel.kind === "slot" ? "Slot" : sel.kind === "skin" ? "Skin"
-      : sel.kind === "constraint" ? `Constraint · ${KIND_TITLES[sel.type]}` : "Attachment";
+      : sel.kind === "constraint" ? `Constraint · ${KIND_TITLES[sel.type]}${anim ? ` · keys at frame ${s.frame}` : ""}` : "Attachment";
     this.element.replaceChildren(heading(title), form);
   }
 
@@ -157,12 +158,19 @@ export class Inspector {
     const s = this.session, c = findConstraint(doc, r)!, type = c.type, name = c.name;
     const set = (patch: Record<string, unknown>) => updateConstraint(r, patch as ConstraintPatch);
     const fixed = CONSTRAINT_DEFAULTS[type], dependent = DEPENDENT_DEFAULTS[type] ?? [];
-    const num = (key: string, label: string) => this.textField(key, label, format(constraintValue(c, key) as number), (v) => {
+    // Animate mode (E4 step 11): the values that animate show and key the pose at the playhead.
+    const anim = s.animation, posed = anim ? s.pose() : null;
+    const now = posed ? constraintNow(posed, (doc.constraints ?? []).indexOf(c)) : null;
+    const keyed = (key: string) => !!(anim && now && CONSTRAINT_KEYS[type][key] && now[key] !== undefined);
+    const frame = s.frame, time = s.keyTime;
+    const num = (key: string, label: string) => this.textField(key, label, format((keyed(key) ? now![key] : constraintValue(c, key)) as number), (v) => {
       const n = number(v, label);
+      if (keyed(key)) return keyConstraint(anim!.name, r, key, n, now!, time);
       return set({ [key]: !dependent.includes(key) && n === fixed[key] ? undefined : n });
-    }, () => `Set ${label.toLowerCase()} of ${name}`, undefined, "decimal");
-    const flag = (key: string, label: string) => this.checkField(key, label, constraintValue(c, key) === true,
-      (on) => set({ [key]: on === fixed[key] ? undefined : on }), (on) => `${on ? "Turn on" : "Turn off"} ${label.toLowerCase()} of ${name}`);
+    }, () => (keyed(key) ? `Key ${label.toLowerCase()} of ${name} at frame ${frame}` : `Set ${label.toLowerCase()} of ${name}`), undefined, "decimal");
+    const flag = (key: string, label: string) => this.checkField(key, label, (keyed(key) ? now![key] : constraintValue(c, key)) === true,
+      (on) => (keyed(key) ? keyConstraint(anim!.name, r, key, on, now!, time) : set({ [key]: on === fixed[key] ? undefined : on })),
+      (on) => (keyed(key) ? `Key ${label.toLowerCase()} of ${name} at frame ${frame}` : `${on ? "Turn on" : "Turn off"} ${label.toLowerCase()} of ${name}`));
     // Modes are case-insensitive in the file; the menu shows the canonical spelling.
     const mode = (key: string, label: string, options: readonly string[]) => {
       const v = String(constraintValue(c, key));
@@ -233,6 +241,7 @@ export class Inspector {
           form.append(num(key, label), flag(`${key}Global`, `${label}: global`));
         }
         form.append(num("limit", "Limit"), num("fps", "Steps per second"));
+        if (anim) form.append(this.action("Reset physics here", "Key a reset: the simulation starts over at this frame", () => keyPhysicsReset(anim.name, name, time), `Key a physics reset of ${name} at frame ${frame}`));
         break;
       }
       case "slider": {
@@ -345,7 +354,7 @@ export class Inspector {
     if (!weighted) this.bindFields(form, r, names, bones);
     else this.weightFields(form, r, a, names, bones);
     form.append(empty(this.session.animation
-      ? "Switch to the setup pose to shape the mesh on the stage."
+      ? "On the stage: drag a vertex to key the mesh's deform at this frame. Vertices are added and deleted on the setup pose."
       : "On the stage: drag a vertex (Alt stretches the image), click inside or on the outline to add one, Delete removes the selected one."));
   }
 

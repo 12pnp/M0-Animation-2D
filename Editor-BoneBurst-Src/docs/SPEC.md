@@ -173,6 +173,8 @@ when written, and a new constraint leaves the pose as it was (`edit/constraints`
 `ui/panels/newConstraint`). Meshes (step 5): a region converts to a mesh that draws the same;
 with a mesh selected on the setup pose the stage edits its vertices (`ui/stage/meshMode`,
 `edit/mesh`, triangulated by `edit/triangulate`), and deform keys keep meaning what they meant.
+In Animate mode (step 11) a constraint's animatable values key at the playhead
+(`edit/constraintKeys`) and a dragged mesh vertex keys a deform (`edit/deformKeys`).
 Weights (step 6): meshes bind to bones by distance and are reweighted on the setup pose
 (`edit/weights`, `edit/meshLayout`), whose bone matrices the session gives the edits as data. A
 Photoshop file (step 7) opens as a new rig: `io/psd` reads its layers with `ag-psd` (D7),

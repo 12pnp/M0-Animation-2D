@@ -1,7 +1,7 @@
 import { type AttachmentRef, findAttachment } from "@/edit/attachments";
 import { editableMesh } from "@/edit/mesh";
 import { EditRefused } from "@/edit/history";
-import { type Bind, decodeBinds, isWeighted } from "@/edit/meshLayout";
+import { type Bind, type BoneWorlds, decodeBinds, isWeighted } from "@/edit/meshLayout";
 import { attachmentType, type Skeleton } from "@/model/skeleton";
 import { boneMatrix, type Posed } from "./posed";
 import type { Point } from "./gizmo";
@@ -23,6 +23,32 @@ export interface MeshView {
   readonly locked: string | null;
   /** Each vertex's bones and weights, for a weighted mesh. */
   readonly binds: readonly (readonly Bind[])[] | null;
+  /** Animate mode (E4 step 11): the pose at the playhead the vertices are shown in, for keying deforms. */
+  readonly animated?: { readonly bones: BoneWorlds; readonly slotBone: number; readonly deform: readonly number[] | null };
+}
+
+/**
+ * The selected mesh in Animate mode: drawn where its vertices are at the playhead, when its slot
+ * shows it there; otherwise null with the reason.
+ */
+export function animatedMeshView(doc: Skeleton, p: Posed, ref: AttachmentRef, shownSkin: string | null): { view: MeshView | null; reason: string | null } {
+  const a = findAttachment(doc, ref);
+  if (!a || !["mesh", "linkedmesh"].includes(attachmentType(a))) return { view: null, reason: null };
+  const slot = p.rig.data.slots.findIndex((x) => x.name === ref.slot);
+  // What the slot shows: its key now, looked up in the shown skin, then the default one.
+  const fromSkin = shownSkin !== null && findAttachment(doc, { skin: shownSkin, slot: ref.slot, key: ref.key }) ? shownSkin : "default";
+  if (slot < 0 || p.rig.attachment[slot] !== ref.key || fromSkin !== ref.skin) return { view: null, reason: `"${ref.key}" is not shown in its slot at this frame; show it there to key its vertices.` };
+  const data = p.rig.attachmentOf(slot);
+  if (!data || data.kind !== "mesh") return { view: null, reason: null };
+  const base = meshView(doc, p, ref);
+  if (!base) return { view: null, reason: null };
+  const world = new Float64Array(base.world.length);
+  p.rig.vertexWorld(slot, data, 0, world.length, world, 0);
+  const bones: BoneWorlds = (doc.bones ?? []).map((b) => [...boneMatrix(p, p.bones.get(b.name)!)]);
+  const slotBone = (doc.bones ?? []).findIndex((b) => b.name === doc.slots!.find((x) => x.name === ref.slot)!.bone);
+  const d = p.rig.deform[slot];
+  const locked = a.source !== undefined ? `"${ref.key}" is linked to "${a.source}": key that mesh's deforms.` : null;
+  return { view: { ...base, world: [...world], locked, animated: { bones, slotBone, deform: d ? [...d] : null } }, reason: null };
 }
 
 /** Vertex `i`'s weight for bone index `bone` (0 when the bone does not hold it). */
