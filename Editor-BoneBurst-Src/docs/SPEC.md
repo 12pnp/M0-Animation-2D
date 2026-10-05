@@ -74,7 +74,9 @@ unknown is ignored with a warning, never guessed at.
 The app (E4 step 8) opens the sidecar named after the skeleton with it, puts back the view it
 keeps (camera, skin, animation), and saves it beside the skeleton when it holds guides,
 references or notes or was opened, and its text changed. Guides are dragged out of the stage's
-rulers. Sidecar changes are not undo steps.
+rulers. Reference images (step 9) draw behind the skeleton; their pictures are the image files
+opened with the skeleton, or dropped on it later, matched by file name. Sidecar changes are not
+undo steps.
 
 ## 4. Editing and history
 

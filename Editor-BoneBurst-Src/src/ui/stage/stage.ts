@@ -10,7 +10,8 @@ import { type Camera, fit, pan, toScreen, toWorld, zoomAt } from "./camera";
 import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, scaleFactors, type ScreenBone, tidy, type Tool, turn, turnSign } from "./gizmo";
 import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix } from "./posed";
 import { hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
-import { Renderer } from "./renderer";
+import { type Backdrop, Renderer } from "./renderer";
+import { referenceQuad } from "./references";
 
 /** How far from the selected bone's origin a press still grabs it, in pixels (the gizmo's ring). */
 const GRAB = 56;
@@ -109,7 +110,7 @@ export class Stage {
     this.session.openedCamera = null;
     this.fitted = !!cam;
     if (cam) this.camera = cam;
-    this.renderer.keepOnly(this.session.pages);
+    this.renderer.keepOnly(this.session.pages, this.session.referenceImages.values());
     this.redraw();
   }
 
@@ -152,7 +153,12 @@ export class Stage {
       this.camera = fit(this.size, bounds(p));
     }
     const css = this.view().getComputedStyle(this.element);
-    this.renderer.draw(p, this.session.pages, this.camera, this.size, this.dpr, rgb(css.getPropertyValue("--stage-bg")));
+    const refs: Backdrop[] = [];
+    for (const r of this.session.sidecar.references) {
+      const bitmap = this.session.referenceImages.get(r.path);
+      if (bitmap) refs.push({ bitmap, ...referenceQuad(r, bitmap.width, bitmap.height), opacity: r.opacity });
+    }
+    this.renderer.draw(p, this.session.pages, this.camera, this.size, this.dpr, rgb(css.getPropertyValue("--stage-bg")), refs);
     const g = this.overlay.getContext("2d")!;
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     g.clearRect(0, 0, this.size.width, this.size.height);

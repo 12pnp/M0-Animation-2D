@@ -1,11 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { addGuide, hasContent, moveGuide, removeGuide, viewOf, withView } from "@/edit/sidecar";
+import { addGuide, addReference, hasContent, moveGuide, moveReference, removeGuide, removeReference, updateReference, viewOf, withView } from "@/edit/sidecar";
 import { readSkeleton } from "@/io/skeletonRead";
 import { writeSkeleton } from "@/io/skeletonWrite";
 import { readSidecar, sidecarName, writeSidecar } from "@/io/sidecar";
 import { axisOf, guideScreen, hitGuide, rulerAt, rulerOf, tickStep } from "@/ui/stage/guides";
+import { matchReferences, referenceFile, referenceQuad } from "@/ui/stage/references";
 import { STICKMAN } from "./fixtures/rigs";
 import type { Json } from "@/model/json";
 import { EMPTY_SIDECAR, type Sidecar } from "@/model/sidecar";
@@ -98,5 +99,37 @@ describe("rulers and guides on the stage", () => {
     expect(tickStep(3)).toBe(20);
     expect(tickStep(0.1)).toBe(500);
     expect(tickStep(40)).toBe(2);
+  });
+});
+
+describe("reference images", () => {
+  const ref = { path: "refs/run.png", x: 10.456, y: -2, scale: 0.5, opacity: 0.4 };
+  it("add, update, order and remove; values checked, two decimals for the place", () => {
+    let s = addReference(EMPTY_SIDECAR, ref);
+    expect(s.references).toEqual([{ ...ref, x: 10.46 }]);
+    expect(hasContent(s)).toBe(true);
+    s = addReference(s, { path: "b.png", x: 0, y: 0, scale: 1, opacity: 1 });
+    expect(updateReference(s, 0, { opacity: 0.4 })).toBe(s);
+    s = updateReference(s, 0, { opacity: 0.25, scale: 2 });
+    expect(s.references[0]).toMatchObject({ opacity: 0.25, scale: 2 });
+    expect(() => updateReference(s, 0, { opacity: 1.5 })).toThrow(/from 0 to 1/);
+    expect(() => updateReference(s, 0, { scale: 0 })).toThrow(/above 0/);
+    expect(() => addReference(s, { ...ref, path: " " })).toThrow(/file name/);
+    expect(moveReference(s, 1, 0).references.map((r) => r.path)).toEqual(["b.png", "refs/run.png"]);
+    expect(moveReference(s, 0, 0)).toBe(s);
+    expect(removeReference(s, 0).references.map((r) => r.path)).toEqual(["b.png"]);
+    expect(readSidecar(writeSidecar(s)).sidecar.references).toEqual(s.references);
+  });
+  it("draw centred on their place, sized by their pixels times their scale, the image upright", () => {
+    const q = referenceQuad({ path: "a.png", x: 10, y: 20, scale: 0.5, opacity: 1 }, 200, 100);
+    // 100 × 50 units around (10, 20): top-left (-40, 45) shows the image's top-left (u 0, v 0).
+    expect(q.xy).toEqual([-40, 45, 60, 45, 60, -5, -40, -5]);
+    expect(q.uv).toEqual([0, 0, 1, 0, 1, 1, 0, 1]);
+    expect(referenceFile("refs/run.png")).toBe("run.png");
+  });
+  it("take their pictures from the opened images by file name, never an atlas page", () => {
+    const m = matchReferences(["refs/Run.png", "walk.png", "hero.png"], ["run.PNG", "hero.png", "extra.png"], ["hero.png"]);
+    expect([...m.found]).toEqual([["refs/Run.png", "run.PNG"]]);
+    expect(m.missing).toEqual(["walk.png", "hero.png"]);
   });
 });

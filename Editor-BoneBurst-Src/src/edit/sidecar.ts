@@ -1,5 +1,6 @@
 import type { Json } from "@/model/json";
-import type { Guide, Sidecar } from "@/model/sidecar";
+import type { Guide, Reference, Sidecar } from "@/model/sidecar";
+import { EditRefused } from "./history";
 
 /**
  * Sidecar edits (E4-PLAN step 8): guides and the view. Pure, like document edits, but not undo
@@ -54,3 +55,40 @@ export function viewOf(s: Sidecar): View {
 
 /** Whether a sidecar holds anything a person made (the view alone does not count). */
 export const hasContent = (s: Sidecar) => s.guides.length > 0 || s.references.length > 0 || s.notes.length > 0;
+
+/** The fields of a reference an edit may set. */
+export type ReferencePatch = { -readonly [K in Exclude<keyof Reference, "path">]?: Reference[K] };
+
+function checkReference(r: Reference): Reference {
+  if (!(r.scale > 0) || !Number.isFinite(r.scale)) throw new EditRefused("A reference's scale is above 0.");
+  if (!(r.opacity >= 0 && r.opacity <= 1)) throw new EditRefused("Opacity is from 0 to 1.");
+  if (!Number.isFinite(r.x) || !Number.isFinite(r.y)) throw new EditRefused("A reference's place is a number.");
+  return { ...r, x: at2(r.x), y: at2(r.y) };
+}
+
+/** Add a reference image, last (drawn last of the references, still behind the skeleton). */
+export function addReference(s: Sidecar, r: Reference): Sidecar {
+  if (!r.path.trim()) throw new EditRefused("A reference needs its image's file name.");
+  return { ...s, references: [...s.references, checkReference(r)] };
+}
+
+export function updateReference(s: Sidecar, i: number, patch: ReferencePatch): Sidecar {
+  const r = s.references[i];
+  if (!r) return s;
+  const next = checkReference({ ...r, ...patch });
+  if (next.x === r.x && next.y === r.y && next.scale === r.scale && next.opacity === r.opacity) return s;
+  return { ...s, references: s.references.map((x, n) => (n === i ? next : x)) };
+}
+
+export function removeReference(s: Sidecar, i: number): Sidecar {
+  if (!s.references[i]) return s;
+  return { ...s, references: s.references.filter((_, n) => n !== i) };
+}
+
+/** Move reference `i` to index `to` (drawn in list order). */
+export function moveReference(s: Sidecar, i: number, to: number): Sidecar {
+  const list = s.references, j = Math.max(0, Math.min(list.length - 1, to));
+  if (!list[i] || i === j) return s;
+  const rest = list.filter((_, n) => n !== i);
+  return { ...s, references: [...rest.slice(0, j), list[i]!, ...rest.slice(j)] };
+}

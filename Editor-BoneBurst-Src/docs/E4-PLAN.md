@@ -13,7 +13,9 @@ runtimes. Step 6 (weights) done: the torso mesh bound to three bones on screen, 
 reweighted, saved, posed alike by both runtimes through its animations. Step 7 (PSD import)
 done: a layered PSD dropped on the editor, shown, saved with its atlas and page, read back.
 Step 8 (the sidecar in the app, guides) done: guides made on the stickman, saved with the view,
-opened again with everything back. Later steps not started. `npm run check`: 298 tests.
+opened again with everything back. Step 9 (the reference panel) done: a reference picture added to the stickman, placed and
+faded, saved, opened again missing and then with its file. Later steps not started.
+`npm run check`: 301 tests.
 
 E4 makes the editor author a rig, not only animate one: panels and docking (D6), slots,
 attachments, draw order, skins, constraints, mesh editing, PSD import and preferences. It is
@@ -625,11 +627,76 @@ flowchart LR
    the untouched stickman. Dropped again with the atlas and page: the guides, the camera, the
    `alt` skin and `dance` back, nothing to save, no issue.
 
-## Later steps (planned when step 9 starts)
+## Step 9 — the reference panel
 
-The reference panel (reference images in the sidecar), preferences; re-importing a PSD; keying
-constraint values, deform keys, drawing constraints on the stage, a weight brush, snapping to
-guides.
+Reference images to rig and animate against: pictures placed in skeleton space behind the
+skeleton, kept in the sidecar (SPEC §3: path, x, y, scale, opacity). The `reference` panel
+(reserved in step 1) lists them and sets where and how strongly each shows.
+
+```mermaid
+flowchart LR
+    ADD["Reference panel: Add image…<br/>or drop images on an open document"] -->|"edit/sidecar addReference"| SC["session.sidecar.references<br/>path · x · y · scale · opacity"]
+    FILES["opened files: images the atlas<br/>does not use, named like a reference"] --> IMG["session.referenceImages<br/>path → ImageBitmap"]
+    SC & IMG -->|"referenceQuad"| R["Renderer: references first,<br/>behind the skeleton"]
+    PANEL["panel fields: x, y, scale, opacity,<br/>order, remove"] -->|"updateReference · moveReference · removeReference"| SC
+```
+
+### Decisions
+
+- **Placement**: a reference's x, y is its image's centre in skeleton units; its size is the
+  image's pixels times its scale. References draw before the skeleton, in list order, at their
+  opacity, whatever skin or animation is shown.
+- **Adding**: the panel's Add image… (any image the browser opens), or images dropped on an open
+  document with no skeleton among them. A new reference is placed at the stage's centre, scale 1,
+  opacity 0.5; its path is the file's name, and the panel says to keep the file beside the
+  skeleton. A dropped image whose name a missing reference has fills that one instead.
+- **Opening**: images among the opened files that the atlas does not use and that a reference
+  names are that reference's picture; a reference with no picture is kept, listed as missing,
+  and named in the notes. The sidecar never loses a reference because its file is not there.
+- **Editing**: x and y to two decimals; a scale above 0; opacity from 0 to 1 (anything else is
+  refused with the reason). Like guides, these change the sidecar, not the document: not undo
+  steps, but they make it need saving.
+- **Not in this step:** dragging a reference on the stage, references in front of the skeleton,
+  video.
+
+### Steps
+
+1. `edit/sidecar.ts`: `addReference`, `updateReference`, `removeReference`, `moveReference`;
+   `ui/stage/references.ts`: `referenceQuad` (pure). Tests: edits and refusals, the quad's
+   corners and UVs, which opened images are references.
+2. Session: `referenceImages`; opening matches them; dropping images on an open document adds or
+   fills references. Renderer: references drawn first.
+3. The Reference panel: the list (missing ones marked), fields, order, remove, Add image….
+4. On screen: a reference added to the stickman, placed and faded; saved; opened again with the
+   image: back where it was.
+
+### Step 9 results
+
+1. `edit/sidecar.ts`: `addReference`, `updateReference`, `removeReference`, `moveReference`
+   (scale above 0, opacity 0 to 1, place to two decimals; refusals with the reason);
+   `ui/stage/references.ts`: `referenceQuad`, `referenceFile`, `matchReferences` (pure). Tests:
+   the edits and refusals, the quad's corners and UVs, the round trip through the file, and which
+   opened images are references (by file name, any case, never an atlas page).
+2. Session: `referenceImages`; opening gives each reference its picture or lists it as missing
+   (a note); images alone dropped on an open document (`addReferenceImages`) fill a missing
+   reference of that name or are added at the stage's centre, scale 1, opacity 0.5, and the status
+   line says to keep the file beside the skeleton. The renderer draws references first, through
+   the stage's own shader (premultiplied, opacity as the vertex colour's alpha).
+3. The Reference panel (`ui/panels/references.ts`, panel id `reference`): Add image…, Remove,
+   ↑ ↓, the list (opacity, or "missing: drop the file to show it"), and X, Y, Scale and Opacity
+   % for the chosen one. **Added:** a panel that arrives tabbed with another (the reference
+   panel next to Properties, in the default and in a saved layout) no longer takes the front tab
+   (Dockview's `inactive`); Panels ▸ Reference brings it forward.
+4. On screen (the stickman): a sketch dropped on the window became a reference behind the
+   skeleton at 50%; through the panel it was put at (470, −400), scale 0.75, 35%, over the figure.
+   Saved (skeleton and sidecar, captured). Opened again without the picture: the reference kept,
+   marked missing, named in the notes; the picture dropped after: shown, nothing to save. Opened
+   with the picture among the files: shown, no note.
+
+## Later steps (planned when step 10 starts)
+
+Preferences; re-importing a PSD; keying constraint values, deform keys, drawing constraints on
+the stage, a weight brush, snapping to guides, dragging references on the stage.
 
 ## Results
 

@@ -2,7 +2,9 @@ import { EDITOR_NAME, SPINE_VERSION, titleFor } from "@/about";
 import { Inspector } from "./panels/inspector";
 import type { Page } from "@/io/pack";
 import { sidecarName } from "@/io/sidecar";
+import { pickFiles } from "./files";
 import { Outline } from "./panels/outline";
+import { References } from "./panels/references";
 import { fileSource, Session, type Source } from "./session";
 import type { Tool } from "./stage/gizmo";
 import { isTyping, Stage } from "./stage/stage";
@@ -72,6 +74,7 @@ export function mountApp(root: HTMLElement): void {
   issuesList.hidden = true;
   status.append(message, pointer, issuesBtn);
   const timeline = new Timeline(session);
+  const references = new References(session);
   root.replaceChildren(bar, main, status, issuesList);
 
   // The docking shell (D6): every panel is a Dockview panel.
@@ -80,6 +83,7 @@ export function mountApp(root: HTMLElement): void {
     ["timeline", { element: timeline.element, layout: () => timeline.redraw() }],
     ["rigTree", { element: outline.element }],
     ["properties", { element: inspector.element }],
+    ["reference", { element: references.element }],
   ]), (w) => w.addEventListener("keydown", onKey));
   const refreshPanels = () => {
     panelsMenu.replaceChildren(
@@ -104,6 +108,8 @@ export function mountApp(root: HTMLElement): void {
   stage.onPointer = (t) => { pointer.textContent = t; };
   inspector.onStatus = say;
   outline.onStatus = say;
+  references.onStatus = say;
+  references.centre = () => [stage.camera.x, stage.camera.y];
 
   // Playback: the playhead moves by real time while playing.
   let last = 0;
@@ -122,6 +128,12 @@ export function mountApp(root: HTMLElement): void {
   setTool("move");
 
   async function open(files: readonly Source[]): Promise<void> {
+    // Images alone, onto an open document: references (E4 step 9), not a new document.
+    const picked = pickFiles(files);
+    if (session.doc && picked.images.size && !picked.skeleton && !picked.atlas && !picked.psd && !picked.sidecar) {
+      say(await session.addReferenceImages([...picked.images.values()], [stage.camera.x, stage.camera.y]));
+      return;
+    }
     if (session.dirty && !confirm(`${session.name}.json has unsaved changes. Open another file and lose them?`)) return;
     try {
       await session.open(files);

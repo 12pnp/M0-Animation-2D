@@ -43,6 +43,12 @@ void main() {
 /** Floats per vertex: x y, u v, light r g b a, dark r g b. */
 const STRIDE = 11;
 
+/** A reference image as the renderer draws it: its corners and UVs (`referenceQuad`), at an opacity. */
+export interface Backdrop { readonly bitmap: ImageBitmap; readonly xy: readonly number[]; readonly uv: readonly number[]; readonly opacity: number }
+
+/** Two triangles over four corners in order. */
+const QUAD_FAN = new Uint32Array([0, 1, 2, 2, 3, 0]);
+
 export class Renderer {
   private readonly gl: WebGL2RenderingContext;
   private readonly program: WebGLProgram;
@@ -79,25 +85,42 @@ export class Renderer {
   }
 
   /** Drop the textures of pages no longer shown. */
-  keepOnly(pages: ReadonlyMap<string, ImageBitmap>): void {
-    const live = new Set(pages.values());
+  keepOnly(pages: ReadonlyMap<string, ImageBitmap>, also: Iterable<ImageBitmap> = []): void {
+    const live = new Set([...pages.values(), ...also]);
     for (const [bitmap, tex] of this.textures) {
       if (!live.has(bitmap)) { this.gl.deleteTexture(tex); this.textures.delete(bitmap); }
     }
   }
 
   /** `size` in CSS pixels; the canvas is `size × dpr` device pixels. */
-  draw(p: Posed | null, pages: ReadonlyMap<string, ImageBitmap>, cam: Camera, size: Size, dpr: number, background: [number, number, number]): void {
+  draw(p: Posed | null, pages: ReadonlyMap<string, ImageBitmap>, cam: Camera, size: Size, dpr: number, background: [number, number, number],
+    references: readonly Backdrop[] = []): void {
     const gl = this.gl;
     gl.viewport(0, 0, Math.round(size.width * dpr), Math.round(size.height * dpr));
     gl.clearColor(background[0], background[1], background[2], 1);
     gl.clearStencil(0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
-    if (!p) return;
+    if (!p && !references.length) return;
     gl.useProgram(this.program);
     gl.uniform4f(this.view, cam.x, cam.y, (cam.zoom * 2) / size.width, (cam.zoom * 2) / size.height);
     gl.enable(gl.BLEND);
     gl.activeTexture(gl.TEXTURE0);
+    // Reference images first: behind the skeleton (E4 step 9).
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    for (const r of references) {
+      const data = new Float32Array(4 * STRIDE);
+      for (let i = 0; i < 4; i++) {
+        const o = i * STRIDE;
+        data[o] = r.xy[i * 2]!; data[o + 1] = r.xy[i * 2 + 1]!;
+        data[o + 2] = r.uv[i * 2]!; data[o + 3] = r.uv[i * 2 + 1]!;
+        data[o + 4] = 1; data[o + 5] = 1; data[o + 6] = 1; data[o + 7] = r.opacity;
+      }
+      gl.bindTexture(gl.TEXTURE_2D, this.texture(r.bitmap));
+      gl.bufferData(gl.ARRAY_BUFFER, data, gl.STREAM_DRAW);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, QUAD_FAN, gl.STREAM_DRAW);
+      gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, 0);
+    }
+    if (!p) return;
     let clip = -1;
     for (const d of p.draw.slots) {
       if (d.clip !== clip) {

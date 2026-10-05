@@ -1,6 +1,6 @@
 import { readAtlas } from "@/io/atlas";
 import { readSidecar, writeSidecar } from "@/io/sidecar";
-import { hasContent, type View, viewOf, withView } from "@/edit/sidecar";
+import { addReference, hasContent, type View, viewOf, withView } from "@/edit/sidecar";
 import { EMPTY_SIDECAR, type Sidecar } from "@/model/sidecar";
 import type { Page } from "@/io/pack";
 import { readSkeleton } from "@/io/skeletonRead";
@@ -17,6 +17,7 @@ import type { PhysicsMode } from "@/engine/physics";
 import { atlasImages, NO_IMAGES, type AtlasImages } from "@/engine/regions";
 import { baseName, pickFiles } from "./files";
 import { importPsd } from "./psdImport";
+import { matchReferences, referenceFile } from "./stage/references";
 import { boneMatrix, Poser, type Posed } from "./stage/posed";
 
 /** A selection in the rig: what the rig tree, the stage and the properties panel show. */
@@ -61,6 +62,8 @@ export class Session {
   /** Whether the sidecar came from a file (then it is saved even when empty), and its text as last read or written. */
   private sidecarFromFile = false;
   private sidecarWritten = "";
+  /** Reference pictures by reference path; a reference without one is missing (its file not given). */
+  referenceImages = new Map<string, ImageBitmap>();
   /** The camera the opened sidecar asked for, for the stage to take once. */
   openedCamera: View["camera"] | null = null;
   /** An atlas and its pages the editor made (a PSD import), to be written with the next save. */
@@ -261,7 +264,37 @@ export class Session {
       all.push(...read.issues.map((i) => ({ where: `${picked.sidecar!.name}: ${i.where}`, message: i.message })));
     }
     this.replace(skeleton, picked.skeleton !== null, baseName(fileName), atlas, pages, all);
-    if (picked.sidecar) this.takeSidecar(sidecar);
+    if (picked.sidecar) {
+      this.takeSidecar(sidecar);
+      // The references' pictures: opened images the atlas does not use, by file name.
+      const { found, missing } = matchReferences(sidecar.references.map((r) => r.path), [...picked.images.keys()], atlas?.pages.map((p) => p.name) ?? []);
+      for (const [path, image] of found) this.referenceImages.set(path, await createImageBitmap(await picked.images.get(image)!.blob(), { premultiplyAlpha: "premultiply" }));
+      for (const path of missing) this.issues.push({ where: picked.sidecar.name, message: `reference "${path}" was not given; kept, not shown` });
+      this.changed();
+    }
+  }
+
+  /**
+   * Images dropped or chosen while a document is open become references (E4-PLAN step 9): one a
+   * missing reference names fills it; any other is added at `centre`, scale 1, opacity 0.5.
+   * Returns what happened, for the status line.
+   */
+  async addReferenceImages(files: readonly Source[], centre: readonly [number, number]): Promise<string> {
+    const filled: string[] = [], added: string[] = [];
+    for (const f of files) {
+      const bitmap = await createImageBitmap(await f.blob(), { premultiplyAlpha: "premultiply" });
+      const name = f.name.toLowerCase();
+      const missing = this.sidecar.references.find((r) => referenceFile(r.path).toLowerCase() === name && !this.referenceImages.has(r.path));
+      if (missing) { this.referenceImages.set(missing.path, bitmap); filled.push(f.name); continue; }
+      const path = f.name;
+      this.referenceImages.get(path)?.close();
+      this.sidecar = addReference(this.sidecar, { path, x: centre[0], y: centre[1], scale: 1, opacity: 0.5 });
+      this.referenceImages.set(path, bitmap);
+      added.push(f.name);
+    }
+    this.changed();
+    return [added.length ? `Added ${added.join(", ")} as reference${added.length > 1 ? "s" : ""}; keep ${added.length > 1 ? "them" : "it"} beside the skeleton.` : "",
+      filled.length ? `Showing ${filled.join(", ")}.` : ""].filter(Boolean).join(" ");
   }
 
   /** The opened sidecar, and the view it keeps: skin and animation now, the camera for the stage. */
@@ -300,6 +333,8 @@ export class Session {
     this.sidecarWritten = contentText(EMPTY_SIDECAR);
     this.lastSidecarText = "";
     this.openedCamera = null;
+    for (const b of this.referenceImages.values()) b.close();
+    this.referenceImages = new Map();
     this.history = new History(skeleton);
     // A skeleton started from an atlas or a PSD is new: unsaved until saved.
     this.saved = fromFile ? this.history.doc : null;

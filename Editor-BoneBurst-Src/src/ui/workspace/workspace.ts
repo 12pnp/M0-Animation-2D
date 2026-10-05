@@ -59,7 +59,7 @@ export class Workspace {
   show(id: PanelId): void {
     const open = this.api.getPanel(id);
     if (open) { open.api.setActive(); return; }
-    this.add(id, defaultPlacement(id, this.present()));
+    this.add(id, defaultPlacement(id, this.present()), true);
     this.sizeAlone(id);
   }
 
@@ -78,9 +78,10 @@ export class Workspace {
 
   private present(): Set<string> { return new Set(this.api.panels.map((p) => p.id)); }
 
-  private add(id: PanelId, place: Placement): void {
+  /** Add a panel at `place`; tabbed in with another, it stays behind that one's tab unless `front`. */
+  private add(id: PanelId, place: Placement, front = false): void {
     this.api.addPanel({
-      id, component: id, title: PANEL_TITLES[id],
+      id, component: id, title: PANEL_TITLES[id], inactive: !front && place.direction === "within",
       position: "referencePanel" in place ? { referencePanel: place.referencePanel, direction: place.direction } : { direction: place.direction },
     });
   }
