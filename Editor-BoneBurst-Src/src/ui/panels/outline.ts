@@ -251,7 +251,8 @@ export class Outline {
   private update(): void {
     const s = this.session, doc = s.doc;
     const sig = JSON.stringify([this.view, s.skin, [...this.closed], [...this.opened], s.selected?.kind === "attachment" ? s.selected.slot : null]);
-    const key = doc ? `${s.history!.revision}|${sig}` : "none";
+    // The document's own history, not only its revision: a newly opened one starts at 0 again.
+    const key = doc ? `${historyId(s.history!)}|${s.history!.revision}|${sig}` : "none";
     if (key !== this.rendered) {
       this.rendered = key;
       this.rows.clear();
@@ -334,6 +335,15 @@ export class Outline {
     this.rows.set(JSON.stringify(it.sel), row);
     return row;
   }
+}
+
+/** A number per history object: which document the rows were drawn for. */
+const historyIds = new WeakMap<object, number>();
+let nextHistoryId = 1;
+function historyId(h: object): number {
+  let id = historyIds.get(h);
+  if (id === undefined) historyIds.set(h, (id = nextHistoryId++));
+  return id;
 }
 
 /** `base`, or `base2`, `base3`… whichever is not taken. */

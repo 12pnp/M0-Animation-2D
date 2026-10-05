@@ -10,7 +10,8 @@ import { boneInherit, boneNumber } from "@/model/defaults";
 import type { Session } from "../session";
 import { type Camera, fit, pan, toScreen, toWorld, zoomAt } from "./camera";
 import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, scaleFactors, type ScreenBone, tidy, type Tool, turn, turnSign } from "./gizmo";
-import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix } from "./posed";
+import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix, type Posed } from "./posed";
+import { constraintShapes, hitConstraint } from "./constraintShapes";
 import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
 import { type Backdrop, Renderer } from "./renderer";
 import { referenceQuad } from "./references";
@@ -59,7 +60,7 @@ export class Stage {
   /** The pointer's world position, for the status line. */
   pointer: Point | null = null;
   /** Preferences (E4 step 10): rulers and bones drawn or not. Hidden bones are still picked. */
-  show = { rulers: true, bones: true };
+  show = { rulers: true, bones: true, constraints: true };
   /** A message for the status line (a refused edit). */
   onStatus: (message: string) => void = () => {};
   /** The pointer's world position or the zoom, for the status line's corner. */
@@ -174,6 +175,7 @@ export class Stage {
         drawBone(g, b, on ? selected : bone, on);
       }
     }
+    if (this.show.constraints) this.drawConstraints(g, p, css, selected);
     const sel = this.selectedIndex();
     if (sel >= 0) this.drawGizmo(g, sel, selected);
     const mesh = this.meshMode();
@@ -235,6 +237,14 @@ export class Stage {
     g.restore();
   }
 
+  /** A press on a drawn constraint selects it; false when on none (or constraints are hidden). */
+  private constraintDown(sx: number, sy: number): boolean {
+    const p = this.session.pose();
+    const hit = this.show.constraints && p ? hitConstraint(constraintShapes(p), (x, y) => toScreen(this.camera, this.size, x, y), sx, sy) : null;
+    if (hit) this.session.select({ kind: "constraint", type: hit.type, name: hit.name });
+    return !!hit;
+  }
+
   /** A press on a ruler (a new guide) or on a guide (move it); false when on neither. */
   private guideDown(sx: number, sy: number): boolean {
     const s = this.session, ruler = this.show.rulers ? rulerAt(sx, sy) : null;
@@ -258,6 +268,37 @@ export class Stage {
     d.overRuler = this.show.rulers && (rulerAt(sx, sy) === rulerOf(gd.axis) || (gd.axis === "y" ? sy < RULER : sx < RULER));
     s.setSidecar(moveGuide(s.sidecar, d.index, gd.axis === "x" ? wx : wy));
     this.redraw();
+  }
+
+  /** Each active constraint's shape (E4 step 12), coloured by kind; the selected one in the accent colour. */
+  private drawConstraints(g: CanvasRenderingContext2D, p: Posed, css: CSSStyleDeclaration, accent: string): void {
+    const sel = this.session.selected;
+    const at = (x: number, y: number) => toScreen(this.camera, this.size, x, y);
+    for (const s of constraintShapes(p)) {
+      const on = sel?.kind === "constraint" && sel.type === s.type && sel.name === s.name;
+      g.save();
+      g.strokeStyle = g.fillStyle = on ? accent : css.getPropertyValue(`--c-${s.type}`).trim() || "#d08a2b";
+      g.lineWidth = on ? 2.5 : 1.25;
+      g.globalAlpha = on ? 1 : 0.85;
+      g.setLineDash([5, 4]);
+      for (const [x0, y0, x1, y1] of s.links) {
+        const a = at(x0, y0), b = at(x1, y1);
+        g.beginPath(); g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.stroke();
+      }
+      g.setLineDash([]);
+      for (const c of s.curves) {
+        const a = at(c[0], c[1]), h1 = at(c[2], c[3]), h2 = at(c[4], c[5]), b = at(c[6], c[7]);
+        g.beginPath(); g.moveTo(a[0], a[1]); g.bezierCurveTo(h1[0], h1[1], h2[0], h2[1], b[0], b[1]); g.stroke();
+      }
+      for (const m of s.marks) {
+        const [x, y] = at(m.x, m.y);
+        g.beginPath();
+        if (m.mark === "ring") { g.arc(x, y, 6, 0, Math.PI * 2); g.stroke(); }
+        else if (m.mark === "dot") { g.arc(x, y, 3, 0, Math.PI * 2); g.fill(); }
+        else g.strokeRect(x - 4, y - 4, 8, 8);
+      }
+      g.restore();
+    }
   }
 
   /**
@@ -458,7 +499,14 @@ export class Stage {
     if (this.show.rulers && rulerAt(sx, sy) && this.guideDown(sx, sy)) return;
     const mesh = this.meshMode();
     if (mesh && this.meshDown(mesh, sx, sy)) return;
-    let name = pickBone(this.screenBones(), sx, sy, 6, this.session.selectedBone);
+    const screenBones = this.screenBones();
+    let name = pickBone(screenBones, sx, sy, 6, this.session.selectedBone);
+    // A drawn constraint (E4 step 12) comes before a bone picked only by its segment: path bones
+    // lie along their curve. The selected bone and a bone's origin (an IK target) keep the press.
+    if (name !== null && name !== this.session.selectedBone) {
+      const b = screenBones.find((x) => x.name === name)!;
+      if (Math.hypot(sx - b.x0, sy - b.y0) > 6 && this.constraintDown(sx, sy)) return;
+    }
     if (name === null) {
       const sel = this.selectedIndex();
       if (sel >= 0) {
@@ -468,6 +516,7 @@ export class Stage {
       }
     }
     if (name === null) {
+      if (this.constraintDown(sx, sy)) return;
       if (this.guideDown(sx, sy)) return;
       this.session.select(null);
       this.panning = { x: sx, y: sy };

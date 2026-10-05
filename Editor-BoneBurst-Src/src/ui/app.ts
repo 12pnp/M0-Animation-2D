@@ -118,7 +118,7 @@ export function mountApp(root: HTMLElement): void {
     if (p.theme === "system") delete document.documentElement.dataset.theme;
     else document.documentElement.dataset.theme = p.theme;
     workspace.refreshTheme();
-    stage.show = { rulers: p.rulers, bones: p.bones };
+    stage.show = { rulers: p.rulers, bones: p.bones, constraints: p.constraints };
     stage.redraw();
     session.undoSteps = p.undoSteps;
     session.referenceOpacity = p.referenceOpacity;

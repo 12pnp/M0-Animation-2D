@@ -30,6 +30,11 @@
   --hover: #ececea;
   --playhead: #e0442b;
   --guide: #0f9bb5;
+  --c-ik: #d0761c;
+  --c-transform: #2f9a4c;
+  --c-path: #8a55d1;
+  --c-physics: #188f87;
+  --c-slider: #c4407f;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -46,6 +51,16 @@
     --hover: #2d2f33;
     --playhead: #ff6a4d;
     --guide: #36c2d9;
+  --c-ik: #f0a04b;
+  --c-transform: #5cc977;
+  --c-path: #b48cf0;
+  --c-physics: #3fc6bd;
+  --c-slider: #ec74ad;
+    --c-ik: #f0a04b;
+    --c-transform: #5cc977;
+    --c-path: #b48cf0;
+    --c-physics: #3fc6bd;
+    --c-slider: #ec74ad;
     color-scheme: dark;
   }
 }

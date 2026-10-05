@@ -173,6 +173,8 @@ when written, and a new constraint leaves the pose as it was (`edit/constraints`
 `ui/panels/newConstraint`). Meshes (step 5): a region converts to a mesh that draws the same;
 with a mesh selected on the setup pose the stage edits its vertices (`ui/stage/meshMode`,
 `edit/mesh`, triangulated by `edit/triangulate`), and deform keys keep meaning what they meant.
+The stage draws each active constraint (step 12: IK links and targets, transform links, path
+curves, physics and slider marks; `ui/stage/constraintShapes`) and a press on one selects it.
 In Animate mode (step 11) a constraint's animatable values key at the playhead
 (`edit/constraintKeys`) and a dragged mesh vertex keys a deform (`edit/deformKeys`).
 Weights (step 6): meshes bind to bones by distance and are reweighted on the setup pose

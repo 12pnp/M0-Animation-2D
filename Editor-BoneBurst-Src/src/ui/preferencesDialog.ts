@@ -30,6 +30,7 @@ export class PreferencesDialog {
     const theme = select("Theme", [["system", "Follow the system"], ["light", "Light"], ["dark", "Dark"]], p.theme, (v) => this.prefs.set({ theme: v as Theme }));
     const rulers = check("Show rulers on the stage", p.rulers, (on) => this.prefs.set({ rulers: on }));
     const bones = check("Show bones on the stage", p.bones, (on) => this.prefs.set({ bones: on }));
+    const constraints = check("Show constraints on the stage", p.constraints, (on) => this.prefs.set({ constraints: on }));
     const undo = number(`Undo steps kept (${UNDO_RANGE[0]}–${UNDO_RANGE[1]})`, p.undoSteps, 1, (n) => this.prefs.set({ undoSteps: n }));
     const undoNote = document.createElement("p");
     undoNote.className = "note";
@@ -46,7 +47,7 @@ export class PreferencesDialog {
     close.textContent = "Close";
     close.value = "close";
     actions.append(reset, close);
-    this.form.replaceChildren(title, theme, rulers, bones, undo, undoNote, opacity, actions);
+    this.form.replaceChildren(title, theme, rulers, bones, constraints, undo, undoNote, opacity, actions);
   }
 }
 

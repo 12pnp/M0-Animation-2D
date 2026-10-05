@@ -18,8 +18,9 @@ faded, saved, opened again missing and then with its file. Step 10 (preferences)
 preference changed in the dialog and seen, kept through a reload, reset. Step 11 (keying
 constraints and deforms) done: an IK mix keyed and the torso mesh deformed at two frames on
 the stickman, played, saved, posed alike by both runtimes. Steps 12–15 planned (wrap-up, owner
-decisions 2026-10-06); weight brush and guide snapping parked for after E5. `npm run check`:
-317 tests.
+decisions 2026-10-06); step 12 (constraints drawn on the stage) done: Stretchyman's paths, IK
+and transforms drawn, a path picked on the stage; steps 13–15 to come; weight brush and guide
+snapping parked for after E5. `npm run check`: 322 tests.
 
 E4 makes the editor author a rig, not only animate one: panels and docking (D6), slots,
 attachments, draw order, skins, constraints, mesh editing, PSD import and preferences. It is
@@ -843,6 +844,69 @@ flowchart LR
    as a press off the mesh does), and the zoom was found changed afterwards; the same drag sent
    as pointer events at the vertex keyed it with the camera untouched, and a plain tool drag
    only pans. Nothing in the app zooms except the wheel and Fit.
+
+## Step 12 — constraints drawn on the stage
+
+The stage shows what each constraint does, in the pose shown: where an IK chain reaches for its
+target, which bone a transform follows, the curve a path constraint lays bones along, and which
+bones physics and sliders act on. A press on a drawn constraint selects it.
+
+```mermaid
+flowchart LR
+    POSE["posed rig<br/>world matrices · constraintActive<br/>path attachment's world points"] -->|"ui/stage/constraintShapes (pure)"| SH["shapes per constraint:<br/>links · bezier curves · markers"]
+    SH --> DRAW["stage overlay: dashed links,<br/>target rings, the path curve,<br/>spring and slider marks"]
+    SH -->|"hitConstraint"| SEL["press selects the constraint"]
+    PREF["preference: show constraints"] --> DRAW
+```
+
+### Decisions
+
+- **What each kind draws** (world space, in the pose shown):
+  IK: a dashed link from the chain's end (the last bone's tip) to the target bone, and a ring on
+  the target. Transform: a dashed link from the source bone to each bone it moves. Path: the
+  path attachment's curve (its bezier segments, closed when the path is) and a dot at each bone
+  it moves. Physics: a small ring around its bone's origin. Slider: a small square on the bone
+  that drives it (none for a slider driven by its own time).
+- **Colour by kind**, one colour each in both themes; a selected constraint in the accent colour
+  and thicker; an inactive one (its bones or skin not shown) left out.
+- **Picking**: a press within 6 pixels of a constraint's links, curve or marks selects it,
+  after the mesh, the selected bone and any bone's origin, but before a bone picked only by its
+  segment (and before guides and panning). The Constraints view and properties follow the
+  selection.
+- **A preference**, Show constraints (on by default), beside rulers and bones.
+
+### Steps
+
+1. `ui/stage/constraintShapes.ts` (pure): `constraintShapes(posed)` and `hitConstraint`. Tests
+   on spineboy-pro, hero-pro (path), celestial-circus (physics) and a slider: each kind's shape
+   where its bones are; inactive ones left out; picking by link, curve and mark.
+2. The overlay draws them; pressing selects; the preference and colour tokens.
+3. On screen: the stickman's IK links and targets, hero-pro's path curve, a constraint picked on
+   the stage.
+
+### Step 12 results
+
+1. `ui/stage/constraintShapes.ts` (`constraintShapes`, `pathCurves`, `hitConstraint`).
+   `tests/constraintShapes.test.ts`, 5 tests: an IK link from its chain's tip (an IK whose last
+   bone has length) to its target, with a ring there; a transform's links from its source; a
+   Stretchyman path at position 0 puts its first bone on the curve's start, and its segments
+   join; physics rings, a bone-driven slider squares its bone, a time-driven one draws nothing;
+   a skin-required constraint not shown is left out; picking by link, curve and mark. Two
+   planted bugs fail them (the path's points read in the wrong order; the IK link from the
+   chain's origin). **Changed while testing:** hero-pro's path is skin-required (not drawn on
+   the setup pose, correctly), so the path test uses Stretchyman's.
+2. The overlay draws each kind in its own colour (`--c-ik`, `--c-transform`, `--c-path`,
+   `--c-physics`, `--c-slider`, both themes), the selected one in the accent colour; a press
+   selects; Preferences ▸ Show constraints. **Changed on screen:** picked after the bones as
+   planned, a path's curve could never be pressed (its bones lie along it), so a constraint now
+   comes before a bone picked only by its segment; the selected bone and bone origins (an IK
+   target is dragged by its origin) still come first.
+3. On screen: the stickman's IK rings at its hands and feet; Stretchyman (from the samples, with
+   its atlas) with its four path curves along the limbs, IK rings and transform links; a press on
+   the front leg's curve selected `front-leg-path` (drawn in the accent colour, its properties
+   shown); with Show constraints off, the same press picked the bone. **Fixed on screen:** the
+   rig panel kept the previous document's rows when a newly opened one was at the same history
+   revision (both 0); it now keys on the document's own history.
 
 ## Wrap-up (owner decisions, 2026-10-06)
 

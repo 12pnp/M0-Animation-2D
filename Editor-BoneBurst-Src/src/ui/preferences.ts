@@ -10,13 +10,15 @@ export interface PreferenceValues {
   readonly theme: Theme;
   readonly rulers: boolean;
   readonly bones: boolean;
+  /** Constraints drawn on the stage (E4 step 12). */
+  readonly constraints: boolean;
   /** Undo steps kept; the next document opened takes it. */
   readonly undoSteps: number;
   /** New reference images' opacity, 0..1. */
   readonly referenceOpacity: number;
 }
 
-export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, bones: true, undoSteps: 500, referenceOpacity: 0.5 };
+export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5 };
 export const UNDO_RANGE = [50, 5000] as const;
 export const PREFERENCES_KEY = "boneburst.preferences";
 export const PREFERENCES_VERSION = 1;
@@ -37,6 +39,7 @@ export function readPreferences(text: string | null): PreferenceValues {
     theme: v.theme === "light" || v.theme === "dark" || v.theme === "system" ? v.theme : DEFAULTS.theme,
     rulers: bool("rulers", DEFAULTS.rulers),
     bones: bool("bones", DEFAULTS.bones),
+    constraints: bool("constraints", DEFAULTS.constraints),
     undoSteps: Math.round(num("undoSteps", UNDO_RANGE[0], UNDO_RANGE[1], DEFAULTS.undoSteps)),
     referenceOpacity: num("referenceOpacity", 0, 1, DEFAULTS.referenceOpacity),
   };
