@@ -154,3 +154,8 @@ export function updateAttachment(r: AttachmentRef, patch: AttachmentPatch): Edit
 function stripUndefined<T extends object>(o: T): T {
   return Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T;
 }
+
+/** `s` with the attachment at `r` replaced by `a` (it must exist). */
+export function replaceAttachment(s: Skeleton, r: AttachmentRef, a: Attachment): Skeleton {
+  return onSkinSlot(s, r.skin, r.slot, (entries) => entries.map((e) => (e.key === r.key ? { ...e, attachment: a } : e)));
+}

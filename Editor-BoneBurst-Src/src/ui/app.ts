@@ -236,6 +236,8 @@ export function mountApp(root: HTMLElement): void {
     }
     if (key === "k") { timeline.keySelectedBone(); return; }
     if ((key === "delete" || key === "backspace") && timeline.hasSelection) { e.preventDefault(); timeline.deleteSelected(); return; }
+    // On the stage in mesh mode, Delete deletes the selected vertex.
+    if ((key === "delete" || key === "backspace") && stage.element.contains(e.target as Node) && stage.deleteVertex()) { e.preventDefault(); return; }
     // In the rig panel, Delete deletes what is selected there (Undo brings it back).
     if ((key === "delete" || key === "backspace") && outline.element.contains(e.target as Node)) { e.preventDefault(); outline.deleteSelected(); return; }
     const t = TOOLS.find((x) => x.key.toLowerCase() === key);

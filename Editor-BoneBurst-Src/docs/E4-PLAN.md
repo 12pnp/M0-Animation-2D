@@ -7,8 +7,9 @@ place of the app; Claude in Chrome was not connected). Every other acceptance po
 skeleton on screen, saved and read back alike by both runtimes. Step 3 (skins) done: a
 mix-and-match outfit duplicated and changed on screen, posed alike by both runtimes. Step 4
 (constraints) done: a transform constraint added, raised, reordered and made skin-required on
-screen, the file saved and posed alike by both runtimes. Later steps not started.
-`npm run check`: 268 tests.
+screen, the file saved and posed alike by both runtimes. Step 5 (mesh geometry) done: the
+stickman's torso turned into a mesh and shaped on the stage, saved, posed alike by both
+runtimes. Later steps not started. `npm run check`: 276 tests.
 
 E4 makes the editor author a rig, not only animate one: panels and docking (D6), slots,
 attachments, draw order, skins, constraints, mesh editing, PSD import and preferences. It is
@@ -289,10 +290,99 @@ flowchart LR
    Node give the identical file (SHA-256 equal), no profile issue as written, 39 poses alike in
    both runtimes within 2.1e-9.
 
-## Later steps (planned when step 5 starts)
+## Step 5 — mesh geometry
 
-Mesh editing, PSD import, the sidecar's read and write (view state, guides, references), the
-reference panel, preferences; keying constraint values and drawing constraints on the stage.
+Meshes become something to make and shape: turn a region into a mesh, move its vertices (the
+image staying put, or stretching with them), add vertices inside it or on its outline, delete
+them, and triangulate again (Format-Json-Atlas.md §8.4, §8.9, §11.10). This step covers
+unweighted meshes; binding vertices to bones (weights) is step 6.
+
+```mermaid
+flowchart LR
+    REG["region attachment"] -->|"regionToMesh"| MESH["mesh: uvs · vertices<br/>triangles · hull"]
+    STAGE["stage, mesh mode<br/>(a mesh selected, setup pose)"] -->|"drag · click inside · click outline · Delete"| OPS["edit/mesh<br/>moveVertex · addVertex<br/>addHullVertex · deleteVertex"]
+    OPS --> TRI["edit/triangulate<br/>ear clipping + Delaunay flips"]
+    OPS --> MESH
+    OPS -->|"vertex count changes"| DEF["deform keys of the mesh<br/>and its linked meshes, remapped"]
+```
+
+### Decisions
+
+- **A region becomes a mesh that draws the same**: four outline vertices at the region's
+  corners in bone space (its offset, rotation, scale and size applied), UVs at the image's
+  corners, two triangles; path, colour, sequence and size kept. Its sequence timelines stay.
+- **Vertices are moved on the setup pose only**; in Animate mode the stage says to switch to the
+  setup pose (deform keys are a later step). A plain drag keeps the image where it was: the
+  vertex's UV follows it through the affine map of a triangle it belongs to. Alt-drag stretches
+  the image: the UV stays.
+- **Adding**: a click inside the mesh adds a vertex there, a click on the outline splits that
+  edge (the new vertex joins the hull); its UV comes from where it lands. A click outside pans.
+  **Deleting** a vertex (Delete on the stage) is refused when the outline would keep fewer than
+  three. Outline vertices are the first `hull` vertices, in order around it.
+- **Triangulation is ours and deterministic**: ear clipping of the outline, then each inner
+  vertex inserted into the triangle that holds it, then edge flips to Delaunay that never cross
+  the outline. Adding or deleting triangulates again; moving does not (a fold is the artist's
+  to see and undo). "Triangulate" in the properties redoes it on demand. Inner vertices outside
+  the outline are left out of triangles and reported.
+- **Deform keys keep meaning what they meant**: they store offsets from the setup vertices
+  (§11.10), so a move needs nothing; an added vertex takes the offsets interpolated from the
+  triangle or edge it landed in, a deleted one's are dropped — in the mesh's own deform
+  timelines and those of linked meshes that use them.
+- **`edges` (nonessential) are dropped** by any edit that changes the vertices' number or
+  order; Spine rebuilds them.
+- **Weighted meshes** draw their wireframe and refuse geometry edits with the reason until step 6.
+
+### Steps
+
+1. `edit/triangulate.ts` (pure); `edit/mesh.ts`: `regionToMesh`, `moveVertex`, `addVertex`,
+   `addHullVertex`, `deleteVertex`, `retriangulate`, the deform remapping. Tests: triangulation
+   (concave outlines, Delaunay on random points, determinism), every region of a sample turned
+   into a mesh drawing the same, deform keys of goblins, hero-pro and spineboy-pro keeping their
+   old vertices where they were after adds and deletes, refusals, both runtimes posing alike.
+2. Stage mesh mode: wireframe, outline and vertices over the selected mesh; drag, add, delete
+   (one undo step each); weighted meshes shown, not edited.
+3. Properties: Convert to mesh on a region; a mesh's counts, image, colour and Triangulate.
+4. On screen: a stickman region turned into a mesh, shaped, saved, read back.
+
+### Step 5 results
+
+1. `edit/triangulate.ts` (ear clipping, insertion, Delaunay flips that keep the outline);
+   `edit/mesh.ts`: `regionToMesh`, `moveVertex`, `addVertex`, `addHullVertex`, `deleteVertex`,
+   `retriangulate`, `verticesOutside`, with deform keys remapped. `tests/mesh.test.ts`, 8 tests:
+   concave outlines both ways round; Delaunay on 40 random points, deterministic, a point
+   outside left out; every region of spineboy-pro and raptor-pro turned into a mesh showing
+   each page pixel where the region showed it (within 0.05); a moved vertex's UV following its
+   triangle, or not; added and deleted vertices leaving the image in place; deform keys of
+   goblins, hero-pro and spineboy-pro moving the old vertices exactly as before after an inner
+   add, an outline split and a delete; refusals; both runtimes posing every result alike. Three
+   planted bugs fail them (deform keys not remapped; UVs not following; no flips).
+   **Changed from the plan:** a converted region keeps its corners unrounded (rounding to two
+   decimals moved a scaled image's pixels by up to 0.08), and is triangulated by the same code
+   as everything else.
+2. Stage mesh mode (`ui/stage/meshMode.ts`, in the stage): when a mesh attachment is selected
+   and the setup pose shown, its triangles, outline and vertices are drawn over it (a linked
+   mesh shows its source's; a weighted one is drawn and says why it cannot be edited). A press
+   on a vertex selects and drags it; on the outline splits that edge; inside adds a vertex; each
+   is one undo step with the drag that follows; Delete on the stage deletes the selected vertex.
+   Mesh mode takes the press before the bones under the mesh.
+3. Properties: Convert to mesh on a region; a mesh's image, colour, vertex, outline and
+   triangle counts, whether it is bound to bones, inner vertices outside the outline,
+   Triangulate, and how to shape it on the stage.
+4. On screen (the stickman): `torso` converted (four vertices, two triangles); a corner dragged
+   inward (the image stayed, cut by the new edge), an inner vertex added and dragged, the top
+   edge split and the new vertex deleted with Delete, Undo back through them; a corner dragged
+   with Alt (UV kept: the image stretches) and without (UV followed). Saved; the same geometry
+   built in Node gives the identical file (SHA-256 equal), no profile issue as written, 26
+   poses alike in both runtimes. **Seen:** a vertex dragged out past the image's edge with the
+   image kept takes UVs outside 0..1, so the atlas page around the image shows there; that is
+   what the UVs say, and the outline is the artist's to keep on the image. The browser tool's
+   Alt-drag did not hold Alt during the moves; Alt was checked with pointer events carrying it.
+
+## Later steps (planned when step 6 starts)
+
+Weights (step 6), PSD import, the sidecar's read and write (view state, guides, references),
+the reference panel, preferences; keying constraint values, deform keys, drawing constraints on
+the stage.
 
 ## Results
 

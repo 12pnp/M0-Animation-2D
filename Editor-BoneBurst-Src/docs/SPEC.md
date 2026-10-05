@@ -163,7 +163,9 @@ timelines and linked-mesh skin references follow every skin edit (`edit/skins`).
 (step 4) are authored in the Constraints view, listed in the order they apply; renames and
 deletes follow the name into skins' lists and animations' timelines, references are checked
 when written, and a new constraint leaves the pose as it was (`edit/constraints`,
-`ui/panels/newConstraint`).
+`ui/panels/newConstraint`). Meshes (step 5): a region converts to a mesh that draws the same;
+with a mesh selected on the setup pose the stage edits its vertices (`ui/stage/meshMode`,
+`edit/mesh`, triangulated by `edit/triangulate`), and deform keys keep meaning what they meant.
 
 **Docking (D6, E4):** the window is the toolbar and status line around a Dockview dock
 (`dockview-core`, the only npm runtime dependency). Every panel is a Dockview panel, under an id

@@ -293,3 +293,5 @@ html .dockview-theme-light {
 @media (max-width: 760px) {
   .timeline-body { grid-template-columns: 120px minmax(0, 1fr); }
 }
+
+.inspector .action { align-self: flex-start; margin: 6px 0 2px; padding: 3px 10px; font-size: 12px; }

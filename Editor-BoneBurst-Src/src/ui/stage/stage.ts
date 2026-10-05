@@ -1,11 +1,13 @@
 import { updateBone } from "@/edit/bones";
 import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { EditRefused } from "@/edit/history";
+import { addHullVertex, addVertex, deleteVertex, moveVertex } from "@/edit/mesh";
 import { boneInherit, boneNumber } from "@/model/defaults";
 import type { Session } from "../session";
 import { type Camera, fit, pan, toScreen, toWorld, zoomAt } from "./camera";
 import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, scaleFactors, type ScreenBone, tidy, type Tool, turn, turnSign } from "./gizmo";
 import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix } from "./posed";
+import { hitMesh, meshView, type MeshView, toBone } from "./meshMode";
 import { Renderer } from "./renderer";
 
 /** How far from the selected bone's origin a press still grabs it, in pixels (the gizmo's ring). */
@@ -61,6 +63,9 @@ export class Stage {
   private size = { width: 1, height: 1 };
   private dpr = 1;
   private drag: Drag | null = null;
+  /** Mesh mode: the vertex selected (by the mesh it is in), and the vertex being dragged. */
+  private vertex: { mesh: string; index: number } | null = null;
+  private vertexDrag: { view: MeshView; index: number } | null = null;
   private panning: { x: number; y: number } | null = null;
   private queued = false;
   private fitted = false;
@@ -103,8 +108,9 @@ export class Stage {
 
   /** Abandon a drag in progress (Escape): the bone goes back, nothing recorded. */
   cancel(): boolean {
-    if (!this.drag) return false;
+    if (!this.drag && !this.vertexDrag) return false;
     this.drag = null;
+    this.vertexDrag = null;
     this.session.history?.cancel();
     this.session.changed();
     return true;
@@ -151,6 +157,121 @@ export class Stage {
     }
     const sel = this.selectedIndex();
     if (sel >= 0) this.drawGizmo(g, sel, selected);
+    const mesh = this.meshMode();
+    if (mesh) this.drawMesh(g, mesh, selected, bone);
+  }
+
+  /**
+   * Mesh mode: the selected attachment is a mesh and the setup pose is shown. Its vertices are
+   * edited on the stage (E4-PLAN step 5); in Animate mode the bone tools stay.
+   */
+  private meshMode(): MeshView | null {
+    const s = this.session, sel = s.selected, doc = s.doc;
+    if (sel?.kind !== "attachment" || !doc || s.animation) return null;
+    const p = s.pose();
+    return p ? meshView(doc, p, sel) : null;
+  }
+
+  /** The selected vertex of `view`, or -1. */
+  private selectedVertex(view: MeshView): number {
+    const v = this.vertex;
+    return v && v.mesh === JSON.stringify(view.ref) && v.index < view.world.length / 2 ? v.index : -1;
+  }
+
+  private screenOf(view: MeshView): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < view.world.length; i += 2) out.push(...toScreen(this.camera, this.size, view.world[i]!, view.world[i + 1]!));
+    return out;
+  }
+
+  private drawMesh(g: CanvasRenderingContext2D, view: MeshView, accent: string, muted: string): void {
+    const sp = this.screenOf(view), at = (i: number) => [sp[i * 2]!, sp[i * 2 + 1]!] as const;
+    g.save();
+    g.lineWidth = 1;
+    g.strokeStyle = muted;
+    g.globalAlpha = 0.6;
+    g.beginPath();
+    for (let k = 0; k + 2 < view.triangles.length; k += 3) {
+      const [a, b, c] = [at(view.triangles[k]!), at(view.triangles[k + 1]!), at(view.triangles[k + 2]!)];
+      g.moveTo(a[0], a[1]); g.lineTo(b[0], b[1]); g.lineTo(c[0], c[1]); g.closePath();
+    }
+    g.stroke();
+    g.globalAlpha = 1;
+    g.strokeStyle = accent;
+    g.lineWidth = 1.5;
+    if (view.hull >= 2) {
+      g.beginPath();
+      for (let i = 0; i < view.hull; i++) { const [x, y] = at(i); if (i) g.lineTo(x, y); else g.moveTo(x, y); }
+      g.closePath();
+      g.stroke();
+    }
+    const chosen = this.selectedVertex(view);
+    for (let i = 0; i < sp.length / 2; i++) {
+      const [x, y] = at(i), r = i === chosen ? 4.5 : 3;
+      g.fillStyle = i === chosen ? accent : view.locked ? muted : "#ffffff";
+      g.strokeStyle = accent;
+      g.beginPath(); g.rect(x - r, y - r, r * 2, r * 2); g.fill(); g.stroke();
+    }
+    g.restore();
+  }
+
+  /** Delete the selected mesh vertex (Delete on the stage); false when none is selected. */
+  deleteVertex(): boolean {
+    const view = this.meshMode(), h = this.session.history;
+    const i = view ? this.selectedVertex(view) : -1;
+    if (!view || i < 0 || !h) return false;
+    try {
+      if (h.apply(`Delete vertex ${i} of ${view.ref.key}`, deleteVertex(view.ref, i))) this.vertex = null;
+    } catch (err) {
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+    }
+    this.session.changed();
+    return true;
+  }
+
+  /**
+   * A press in mesh mode: on a vertex selects and drags it; on the outline adds a vertex there,
+   * inside adds one, and drags the new one. False when the press is not on the mesh.
+   */
+  private meshDown(view: MeshView, sx: number, sy: number): boolean {
+    const hit = hitMesh(this.screenOf(view), view.triangles, view.hull, sx, sy);
+    if (!hit) return false;
+    const mesh = JSON.stringify(view.ref), h = this.session.history!;
+    if (hit.kind === "vertex") { this.vertex = { mesh, index: hit.index }; this.redraw(); }
+    if (view.locked) { this.onStatus(view.locked); return true; }
+    const n = view.world.length / 2;
+    h.begin(hit.kind === "vertex" ? `Move vertex ${hit.index} of ${view.ref.key}` : `Add a vertex to ${view.ref.key}`);
+    try {
+      if (hit.kind === "edge") {
+        h.apply("step", addHullVertex(view.ref, hit.after, hit.t));
+        this.vertex = { mesh, index: hit.after + 1 };
+      } else if (hit.kind === "inside") {
+        const [x, y] = toBone(view, toWorld(this.camera, this.size, sx, sy));
+        h.apply("step", addVertex(view.ref, x, y));
+        this.vertex = { mesh, index: n };
+      }
+    } catch (err) {
+      h.cancel();
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+      return true;
+    }
+    this.vertexDrag = { view, index: this.vertex!.index };
+    this.session.changed();
+    return true;
+  }
+
+  /** One step of a vertex drag: Alt stretches the image, otherwise it stays put. */
+  private vertexTo(at: Point, stretch: boolean): void {
+    const d = this.vertexDrag!, [x, y] = toBone(d.view, at);
+    try {
+      this.session.history!.apply("step", moveVertex(d.view.ref, d.index, x, y, !stretch));
+    } catch (err) {
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+    }
+    this.session.changed();
   }
 
   /** Every active bone, origin to tip, in screen pixels, in the skeleton's order. */
@@ -210,6 +331,8 @@ export class Stage {
       this.panning = { x: sx, y: sy };
       return;
     }
+    const mesh = this.meshMode();
+    if (mesh && this.meshDown(mesh, sx, sy)) return;
     let name = pickBone(this.screenBones(), sx, sy, 6, this.session.selectedBone);
     if (name === null) {
       const sel = this.selectedIndex();
@@ -258,6 +381,8 @@ export class Stage {
       this.redraw();
     } else if (this.drag) {
       this.dragTo(this.pointer, e.shiftKey);
+    } else if (this.vertexDrag) {
+      this.vertexTo(this.pointer, e.altKey);
     }
     this.onPointer(`${this.pointer[0].toFixed(1)}, ${this.pointer[1].toFixed(1)}`);
   }
@@ -301,8 +426,9 @@ export class Stage {
   private up(e: PointerEvent): void {
     if (this.overlay.hasPointerCapture(e.pointerId)) this.overlay.releasePointerCapture(e.pointerId);
     this.panning = null;
-    if (this.drag) {
+    if (this.drag || this.vertexDrag) {
       this.drag = null;
+      this.vertexDrag = null;
       this.session.history?.end();
       this.session.changed();
     }

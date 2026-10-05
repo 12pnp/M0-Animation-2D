@@ -4,6 +4,7 @@ import { type BonePatch, renameBone, reparentBone, subtree, updateBone } from "@
 import { type ConstraintPatch, type ConstraintRef, findConstraint, IK_SCALE_Y, PHYSICS_SCALE_Y, POSITION_MODES, renameConstraint,
   ROTATE_MODES, SPACING_MODES, TRANSFORM_PROPERTIES, updateConstraint } from "@/edit/constraints";
 import { type Edit, EditRefused } from "@/edit/history";
+import { regionToMesh, retriangulate, verticesOutside } from "@/edit/mesh";
 import { moveAttachment, renameSkin, setSkinMember } from "@/edit/skins";
 import { BLEND_MODES, renameSlot, updateSlot } from "@/edit/slots";
 import { BONE_DEFAULTS, boneInherit, boneNumber, type BoneNumber, CONSTRAINT_DEFAULTS, constraintValue, DEPENDENT_DEFAULTS, TRANSFORM_MIXES, transformTargets } from "@/model/defaults";
@@ -299,10 +300,12 @@ export class Inspector {
     form.append(this.selectField("skin", "Skin", (doc.skins ?? []).map((k) => [k.name, k.name]), r.skin, (v) => moveAttachment(r, v), (v) => `Move ${r.key} to skin ${v}`,
       (v) => s.select({ kind: "attachment", skin: v, slot: r.slot, key: r.key })));
     form.append(readOnly("Slot", r.slot));
+    if (type === "mesh" || type === "linkedmesh") { this.meshFields(form, r); return; }
     if (type !== "region") {
       form.append(empty("Editing this kind arrives in a later step; it is kept as it is."));
       return;
     }
+    form.append(this.action("Convert to mesh", "Make it a mesh with the same image in the same place; shape it on the stage", () => regionToMesh(r), `Convert ${r.key} to a mesh`));
     form.append(this.textField("path", "Image", a.path ?? a.name ?? r.key, (v) => updateAttachment(r, { path: v === (a.name ?? r.key) ? undefined : v }), () => `Set image of ${r.key}`));
     for (const f of REGION_FIELDS) {
       const value = a[f.key] ?? f.default ?? 0;
@@ -314,6 +317,40 @@ export class Inspector {
       }, () => `Set ${f.label.toLowerCase()} of ${r.key}`, undefined, "decimal"));
     }
     form.append(this.textField("color", "Colour", a.color ?? "ffffffff", (v) => updateAttachment(r, { color: v.toLowerCase() === "ffffffff" ? undefined : v }), () => `Set colour of ${r.key}`));
+  }
+
+  /** A mesh's image, colour and counts; Triangulate. Its vertices are edited on the stage. */
+  private meshFields(form: HTMLElement, r: AttachmentRef): void {
+    const a = findAttachment(this.session.doc!, r)!;
+    if (a.source !== undefined) {
+      form.append(readOnly("Linked to", `${a.source}${a.skin ? ` (${a.skin})` : ""}`));
+      form.append(empty("A linked mesh takes its vertices from its source; select that mesh to shape them."));
+      return;
+    }
+    const n = (a.uvs?.length ?? 0) / 2, weighted = a.vertices?.length !== a.uvs?.length;
+    form.append(this.textField("path", "Image", a.path ?? a.name ?? r.key, (v) => updateAttachment(r, { path: v === (a.name ?? r.key) ? undefined : v }), () => `Set image of ${r.key}`));
+    form.append(this.textField("color", "Colour", a.color ?? "ffffffff", (v) => updateAttachment(r, { color: v.toLowerCase() === "ffffffff" ? undefined : v }), () => `Set colour of ${r.key}`));
+    form.append(readOnly("Vertices", `${n} (${a.hull ?? 0} on the outline)`));
+    form.append(readOnly("Triangles", String((a.triangles?.length ?? 0) / 3)));
+    form.append(readOnly("Bound to bones", weighted ? "yes" : "no"));
+    if (weighted) { form.append(empty("Weighted meshes are shaped once weights arrive; shown as they are.")); return; }
+    const outside = verticesOutside(a);
+    if (outside.length) form.append(empty(`${outside.length} inner vertex${outside.length > 1 ? "es lie" : " lies"} outside the outline and in no triangle.`));
+    form.append(this.action("Triangulate", "Triangulate again from the outline and the inner vertices", () => retriangulate(r), `Triangulate ${r.key}`));
+    form.append(empty(this.session.animation
+      ? "Switch to the setup pose to shape the mesh on the stage."
+      : "On the stage: drag a vertex (Alt stretches the image), click inside or on the outline to add one, Delete removes the selected one."));
+  }
+
+  /** A button that applies one edit. */
+  private action(text: string, title: string, edit: () => Edit<Skeleton>, label: string): HTMLButtonElement {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "action";
+    b.textContent = text;
+    b.title = title;
+    b.addEventListener("click", () => this.commit(label, edit));
+    return b;
   }
 
   /** Apply an edit from a field; refusals go to the status line; the panel then shows the document. */
