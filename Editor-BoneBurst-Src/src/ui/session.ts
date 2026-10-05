@@ -62,6 +62,9 @@ export class Session {
   /** Whether the sidecar came from a file (then it is saved even when empty), and its text as last read or written. */
   private sidecarFromFile = false;
   private sidecarWritten = "";
+  /** Preferences the session takes (E4 step 10): undo steps for the next document, new references' opacity. */
+  undoSteps = 500;
+  referenceOpacity = 0.5;
   /** Reference pictures by reference path; a reference without one is missing (its file not given). */
   referenceImages = new Map<string, ImageBitmap>();
   /** The camera the opened sidecar asked for, for the stage to take once. */
@@ -276,7 +279,7 @@ export class Session {
 
   /**
    * Images dropped or chosen while a document is open become references (E4-PLAN step 9): one a
-   * missing reference names fills it; any other is added at `centre`, scale 1, opacity 0.5.
+   * missing reference names fills it; any other is added at `centre`, scale 1, the preferred opacity.
    * Returns what happened, for the status line.
    */
   async addReferenceImages(files: readonly Source[], centre: readonly [number, number]): Promise<string> {
@@ -288,7 +291,7 @@ export class Session {
       if (missing) { this.referenceImages.set(missing.path, bitmap); filled.push(f.name); continue; }
       const path = f.name;
       this.referenceImages.get(path)?.close();
-      this.sidecar = addReference(this.sidecar, { path, x: centre[0], y: centre[1], scale: 1, opacity: 0.5 });
+      this.sidecar = addReference(this.sidecar, { path, x: centre[0], y: centre[1], scale: 1, opacity: this.referenceOpacity });
       this.referenceImages.set(path, bitmap);
       added.push(f.name);
     }
@@ -335,7 +338,7 @@ export class Session {
     this.openedCamera = null;
     for (const b of this.referenceImages.values()) b.close();
     this.referenceImages = new Map();
-    this.history = new History(skeleton);
+    this.history = new History(skeleton, this.undoSteps);
     // A skeleton started from an atlas or a PSD is new: unsaved until saved.
     this.saved = fromFile ? this.history.doc : null;
     this.name = name;

@@ -4,6 +4,8 @@ import type { Page } from "@/io/pack";
 import { sidecarName } from "@/io/sidecar";
 import { pickFiles } from "./files";
 import { Outline } from "./panels/outline";
+import { type PreferenceValues, Preferences } from "./preferences";
+import { PreferencesDialog } from "./preferencesDialog";
 import { References } from "./panels/references";
 import { fileSource, Session, type Source } from "./session";
 import type { Tool } from "./stage/gizmo";
@@ -30,6 +32,13 @@ const TOOLS: ReadonlyArray<{ tool: Tool; label: string; key: string }> = [
 export function mountApp(root: HTMLElement): void {
   const session = new Session();
   const stage = new Stage(session);
+  // Preferences (E4 step 10): the browser's storage when it can be used.
+  let storage: Storage | null = null;
+  try { storage = window.localStorage; } catch { /* blocked: the defaults */ }
+  const prefs = new Preferences(storage);
+  const prefsDialog = new PreferencesDialog(prefs);
+  // The theme before the dock is built, so it starts in it.
+  if (prefs.values.theme !== "system") document.documentElement.dataset.theme = prefs.values.theme;
   const outline = new Outline(session);
   const inspector = new Inspector(session);
 
@@ -56,7 +65,9 @@ export function mountApp(root: HTMLElement): void {
   const title = el("span", "title");
   const panelsMenu = document.createElement("select");
   panelsMenu.title = "Show a panel, or put the panels back where they started";
-  bar.append(openBtn, saveBtn, sep(), undoBtn, redoBtn, sep(), ...toolBtns, sep(), fitBtn, skinLabel, sep(), panelsMenu, title, fileInput);
+  const prefsBtn = button("⚙", "Preferences: theme, rulers, bones, undo steps (⌘,)", () => prefsDialog.open());
+  prefsBtn.setAttribute("aria-label", "Preferences");
+  bar.append(openBtn, saveBtn, sep(), undoBtn, redoBtn, sep(), ...toolBtns, sep(), fitBtn, skinLabel, sep(), panelsMenu, prefsBtn, title, fileInput, prefsDialog.element);
 
   // The stage panel: the canvas, with the hint over it while nothing is open.
   const stagePanel = el("section", "stage-panel");
@@ -101,6 +112,19 @@ export function mountApp(root: HTMLElement): void {
     panelsMenu.value = "";
   });
   refreshPanels();
+
+  /** Each preference where it applies; on start, and whenever one changes. */
+  const applyPrefs = (p: PreferenceValues) => {
+    if (p.theme === "system") delete document.documentElement.dataset.theme;
+    else document.documentElement.dataset.theme = p.theme;
+    workspace.refreshTheme();
+    stage.show = { rulers: p.rulers, bones: p.bones };
+    stage.redraw();
+    session.undoSteps = p.undoSteps;
+    session.referenceOpacity = p.referenceOpacity;
+  };
+  applyPrefs(prefs.values);
+  prefs.onChange(applyPrefs);
 
   const say = (m: string) => { message.textContent = m; };
   stage.onStatus = say;
@@ -251,6 +275,7 @@ export function mountApp(root: HTMLElement): void {
     const mod = e.metaKey || e.ctrlKey, key = e.key.toLowerCase();
     if (mod && key === "o") { e.preventDefault(); fileInput.click(); return; }
     if (mod && key === "s") { e.preventDefault(); void save(); return; }
+    if (mod && (key === "," || e.code === "Comma")) { e.preventDefault(); prefsDialog.open(); return; }
     if (isTyping(e)) return;
     if (mod && key === "z") { e.preventDefault(); (e.shiftKey ? redoBtn : undoBtn).click(); return; }
     if (mod && key === "y") { e.preventDefault(); redoBtn.click(); return; }

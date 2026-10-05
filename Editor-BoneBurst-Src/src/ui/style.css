@@ -107,7 +107,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, .overlay:focus-
 .toolbar .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
 .toolbar .skin { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 .toolbar select { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; max-width: 180px; }
-.toolbar .title { margin-left: auto; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.toolbar .title { margin-left: auto; flex: 1 1 60px; min-width: 0; text-align: right; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* The dock (D6): Dockview's own dark and light themes, coloured through their variables. */
 .dock { position: relative; min-width: 0; min-height: 0; }
@@ -299,3 +299,14 @@ html .dockview-theme-light {
 
 .inspector .action { align-self: flex-start; margin: 6px 0 2px; padding: 3px 10px; font-size: 12px; }
 .references .row { padding-left: 10px; }
+
+dialog.preferences { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); color: var(--text); padding: 16px 18px; min-width: 340px; font: 13px var(--font-ui); }
+dialog.preferences::backdrop { background: rgb(0 0 0 / 0.35); }
+dialog.preferences h2 { margin: 0 0 12px; font-size: 14px; }
+dialog.preferences .field { display: grid; grid-template-columns: 1fr 170px; align-items: center; gap: 10px; margin: 6px 0; }
+dialog.preferences .field span { color: var(--muted); }
+dialog.preferences .field.check input { justify-self: start; }
+dialog.preferences select, dialog.preferences input[type="number"] { background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; font: inherit; }
+dialog.preferences input[type="number"] { font-family: var(--font-mono); }
+dialog.preferences .note { margin: -2px 0 8px; color: var(--muted); font-size: 11px; }
+dialog.preferences .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }

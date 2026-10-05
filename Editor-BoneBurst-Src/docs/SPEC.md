@@ -189,6 +189,10 @@ storage (view-only state of the app); a saved layout naming a panel the build la
 Themes are Dockview's dark and light, coloured through `--dv-*` variables; text is Inter and
 numbers JetBrains Mono, vendored woff2 files, so every machine renders the same text.
 
+**Preferences (E4 step 10)** are the person's, not the document's: theme, rulers, bones, undo
+steps, new references' opacity, kept in the browser's storage (`boneburst.preferences`,
+versioned, unreadable values taken as the defaults) like the dock layout (`ui/preferences`).
+
 ## 8. AI tools (E5)
 
 The tool contract gets a new version (D5): names stay where their meaning holds, `layer`

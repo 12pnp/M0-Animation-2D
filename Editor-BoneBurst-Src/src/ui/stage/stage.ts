@@ -56,6 +56,8 @@ export class Stage {
   camera: Camera = { x: 0, y: 0, zoom: 1 };
   /** The pointer's world position, for the status line. */
   pointer: Point | null = null;
+  /** Preferences (E4 step 10): rulers and bones drawn or not. Hidden bones are still picked. */
+  show = { rulers: true, bones: true };
   /** A message for the status line (a refused edit). */
   onStatus: (message: string) => void = () => {};
   /** The pointer's world position or the zoom, for the status line's corner. */
@@ -164,16 +166,18 @@ export class Stage {
     g.clearRect(0, 0, this.size.width, this.size.height);
     if (!p) return;
     const bone = css.getPropertyValue("--bone").trim(), selected = css.getPropertyValue("--accent").trim();
-    for (const b of this.screenBones()) {
-      const on = b.name === this.session.selectedBone;
-      drawBone(g, b, on ? selected : bone, on);
+    if (this.show.bones) {
+      for (const b of this.screenBones()) {
+        const on = b.name === this.session.selectedBone;
+        drawBone(g, b, on ? selected : bone, on);
+      }
     }
     const sel = this.selectedIndex();
     if (sel >= 0) this.drawGizmo(g, sel, selected);
     const mesh = this.meshMode();
     if (mesh) this.drawMesh(g, mesh, selected, bone);
     this.drawGuides(g, css.getPropertyValue("--guide").trim() || "#36c2d9");
-    this.drawRulers(g, css);
+    if (this.show.rulers) this.drawRulers(g, css);
   }
 
   private drawGuides(g: CanvasRenderingContext2D, color: string): void {
@@ -231,7 +235,7 @@ export class Stage {
 
   /** A press on a ruler (a new guide) or on a guide (move it); false when on neither. */
   private guideDown(sx: number, sy: number): boolean {
-    const s = this.session, ruler = rulerAt(sx, sy);
+    const s = this.session, ruler = this.show.rulers ? rulerAt(sx, sy) : null;
     if (ruler) {
       const [wx, wy] = toWorld(this.camera, this.size, sx, sy);
       s.setSidecar(addGuide(s.sidecar, axisOf(ruler), ruler === "top" ? wy : wx));
@@ -248,7 +252,8 @@ export class Stage {
     const d = this.guideDrag!, s = this.session, gd = s.sidecar.guides[d.index];
     if (!gd) return;
     const [wx, wy] = toWorld(this.camera, this.size, sx, sy);
-    d.overRuler = rulerAt(sx, sy) === rulerOf(gd.axis) || (gd.axis === "y" ? sy < RULER : sx < RULER);
+    // Back onto its ruler removes it; with the rulers hidden there is nowhere to drop it.
+    d.overRuler = this.show.rulers && (rulerAt(sx, sy) === rulerOf(gd.axis) || (gd.axis === "y" ? sy < RULER : sx < RULER));
     s.setSidecar(moveGuide(s.sidecar, d.index, gd.axis === "x" ? wx : wy));
     this.redraw();
   }
@@ -426,7 +431,7 @@ export class Stage {
       this.panning = { x: sx, y: sy };
       return;
     }
-    if (rulerAt(sx, sy) && this.guideDown(sx, sy)) return;
+    if (this.show.rulers && rulerAt(sx, sy) && this.guideDown(sx, sy)) return;
     const mesh = this.meshMode();
     if (mesh && this.meshDown(mesh, sx, sy)) return;
     let name = pickBone(this.screenBones(), sx, sy, 6, this.session.selectedBone);

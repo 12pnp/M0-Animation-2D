@@ -50,6 +50,9 @@ export class Workspace {
     this.api.onDidLayoutChange(() => this.scheduleSave());
   }
 
+  /** Take the page's theme again (a preference changed it). */
+  refreshTheme(): void { this.api.updateOptions({ theme: themeFor(prefersDark()) }); }
+
   /** The built panels, in the reserved order. */
   get built(): PanelId[] { return DEFAULT_ORDER.filter((id) => this.panels.has(id)); }
 

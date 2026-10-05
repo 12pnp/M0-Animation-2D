@@ -14,8 +14,9 @@ reweighted, saved, posed alike by both runtimes through its animations. Step 7 (
 done: a layered PSD dropped on the editor, shown, saved with its atlas and page, read back.
 Step 8 (the sidecar in the app, guides) done: guides made on the stickman, saved with the view,
 opened again with everything back. Step 9 (the reference panel) done: a reference picture added to the stickman, placed and
-faded, saved, opened again missing and then with its file. Later steps not started.
-`npm run check`: 301 tests.
+faded, saved, opened again missing and then with its file. Step 10 (preferences) done: each
+preference changed in the dialog and seen, kept through a reload, reset. Later steps not
+started. `npm run check`: 309 tests.
 
 E4 makes the editor author a rig, not only animate one: panels and docking (D6), slots,
 attachments, draw order, skins, constraints, mesh editing, PSD import and preferences. It is
@@ -693,10 +694,73 @@ flowchart LR
    marked missing, named in the notes; the picture dropped after: shown, nothing to save. Opened
    with the picture among the files: shown, no note.
 
-## Later steps (planned when step 10 starts)
+## Step 10 — preferences
 
-Preferences; re-importing a PSD; keying constraint values, deform keys, drawing constraints on
-the stage, a weight brush, snapping to guides, dragging references on the stage.
+The editor's own settings, the same for every document: kept in the browser's storage like the
+dock layout (view state of the app, D6), changed in a Preferences dialog, applied at once.
+
+```mermaid
+flowchart LR
+    LS[("localStorage<br/>boneburst.preferences v1")] -->|"readPreferences:<br/>unknown keys ignored,<br/>bad values → default"| P["Preferences<br/>theme · rulers · bones ·<br/>undo steps · reference opacity"]
+    DLG["Preferences dialog (⌘,)"] -->|"set"| P
+    P -->|"writePreferences"| LS
+    P --> THEME["data-theme + Dockview theme"]
+    P --> STAGE["stage: rulers, bones"]
+    P --> SES["session: undo steps (next document),<br/>new references' opacity"]
+```
+
+### Decisions
+
+- **What is a preference**: how the editor looks and behaves for this person, never what a
+  document means. First set: theme (follow the system, light, dark); show rulers; show bones;
+  undo steps kept (50–5000, default 500; takes effect for the next document opened, said so in
+  the dialog); new reference images' opacity (0–100 %, default 50).
+- **Storage**: `localStorage` key `boneburst.preferences`, `{"version": 1, …}`. A value that does
+  not read, or is out of range, is the default; an unknown key is ignored; another version is
+  ignored whole. Storage blocked or full: the editor runs on the defaults, nothing breaks.
+- **The dialog** is a native `<dialog>` from a toolbar button (and ⌘, / Ctrl+,): changes apply as
+  they are made, Reset puts every preference back to its default, Close or Escape closes it.
+- **Hiding bones** hides their drawing only; a press still picks the bone under it.
+
+### Steps
+
+1. `ui/preferences.ts` (pure: defaults, ranges, `readPreferences`, `writePreferences`, a
+   `Preferences` holder with listeners and storage passed in). Tests: defaults, every bad value,
+   ranges, unknown keys, another version, blocked storage.
+2. Applied: theme to the page and to Dockview (live), rulers and bones to the stage, undo steps
+   to the next document's history, reference opacity to new references.
+3. The dialog and its toolbar button and shortcut.
+4. On screen: each preference changed and seen; reload: kept; Reset: defaults back.
+
+### Step 10 results
+
+1. `ui/preferences.ts` (pure: `DEFAULTS`, `UNDO_RANGE`, `readPreferences`, `writePreferences`, the
+   `Preferences` holder with the storage passed in). `tests/preferences.test.ts`, 8 tests:
+   defaults; the round trip; JSON that does not read, another version, no version, not an
+   object, all ignored whole; each bad or out-of-range value its default, unknown keys ignored;
+   changes stored, heard once, numbers set out of range brought into it; Reset; blocked storage
+   (the defaults, changes kept for the visit).
+2. Applied: the theme to the page (`data-theme`, set before the dock is built so it starts in
+   it) and to Dockview (`Workspace.refreshTheme`); rulers and bones to the stage (hidden bones are
+   still picked; with the rulers hidden no guide is made or removed at the edges); undo steps to
+   the next document's history; the opacity to new references.
+3. The dialog (`ui/preferencesDialog.ts`, a native `<dialog>`): theme, rulers, bones, undo steps
+   (with "takes effect for the next document opened"), new references' opacity; Reset, Close,
+   Escape. Opened from a ⚙ button (labelled Preferences) and ⌘, / Ctrl+, (matched by the key or
+   its physical position, so other keyboard layouts work too). **Changed on screen:** the
+   toolbar's file name now shrinks with an ellipsis instead of wrapping onto a second row when
+   the bar is full; the dialog's value column was widened so "Follow the system" is not cut.
+4. On screen (the stickman): Light applied at once to the dock and panels; rulers and bones
+   hidden (the images alone); 99999 undo steps kept as 5000; new references at 30%. Reload: all
+   kept, the opened document's history holding 5000 steps; a press on the hidden head bone still
+   picked it; a reference added came in at 30%. Reset: all defaults back, stored. **Not tested
+   through the browser tool:** the ⌘, key itself (the tool sends that key with neither its
+   character nor its code); a key event as a keyboard sends it opened the dialog.
+
+## Later steps (planned when step 11 starts)
+
+Re-importing a PSD; keying constraint values, deform keys, drawing constraints on the stage, a
+weight brush, snapping to guides, dragging references on the stage.
 
 ## Results
 
