@@ -10,6 +10,8 @@ import { readAtlas } from "@/core/boneburst/runtime/atlasRead";
 import { readRig } from "@/core/boneburst/runtime/rigData";
 import { Rig } from "@/core/boneburst/runtime/rig";
 import { Track } from "@/core/boneburst/runtime/track";
+import { Store } from "@/app/Store";
+import { AgentApi } from "@/app/agent/AgentApi";
 import { loadFixture } from "./fixtures/realProject";
 import { loadStickman } from "./fixtures/stickman";
 import { imagesOf, sampleRigs } from "./fixtures/spineSamples";
@@ -23,9 +25,10 @@ import { type Json, trimmedPage } from "./fixtures/runtimeOracle";
  * Files go across, never code. Skipped, not passed, without the harness's .NET SDK
  * (the Unity version's) or the project's `Library/`.
  *
- * Inputs, closest to the pipeline first: spine-unity's samples opened in the editor
- * and exported again (an artist's file through the editor), the stickman and frog
- * exports (authored here), and the samples as they are (both runtimes reading one file).
+ * Inputs, closest to the pipeline first: an artist's rig (spine-unity's Goblins)
+ * opened in the editor, given AnimatedDrawings' zombie walk by `apply_motion` and
+ * exported (the whole pipeline, steps 1 to 3); every sample opened and exported again;
+ * the stickman and frog exports (authored here); and the samples as they are.
  */
 
 const ROOT = resolve(__dirname, "../..");
@@ -51,6 +54,16 @@ async function inputs(): Promise<Input[]> {
     const exported = exportBoneBurst(importBoneBurst(original, r.name, imagesOf(r.atlas)).project);
     out.push({ name: `reexport-${r.name}`, json: JSON.parse(boneburstJson(exported.skeleton)) as Json, atlas: r.atlas });
     out.push({ name: `sample-${r.name}`, json: original, atlas: r.atlas });
+  }
+  // The whole pipeline: an artist's rig opened, a mocap clip fitted by the AI's tool, exported.
+  // The roles are apply_motion's guesses, but for the hips: the legs hang from "hip", not "pelvis".
+  const goblins = sampleRigs().find((r) => r.name === "Goblins");
+  if (goblins) {
+    const store = new Store(importBoneBurst(JSON.parse(goblins.json), goblins.name, imagesOf(goblins.atlas)).project);
+    const applied = await new AgentApi(store).call("apply_motion", { motion: "zombie_walk", animation: "zombie_walk", map: { hips: "hip" } }) as { check: { matches: boolean } };
+    if (!applied.check.matches) throw new Error("apply_motion: the editor does not show what the retarget posed");
+    const exported = exportBoneBurst(store.project);
+    out.push({ name: "motion-goblins-zombie_walk", json: JSON.parse(boneburstJson(exported.skeleton)) as Json, atlas: goblins.atlas });
   }
   for (const [name, load] of [["stickman", loadStickman], ["frog", loadFixture]] as const) {
     const { project } = await load();
@@ -147,7 +160,10 @@ describe.skipIf(!harnessReady())("the editor's exports in BoneBurst's C# runtime
     }
   }, 600_000);
 
-  const cases = ["stickman", "frog", ...sampleRigs().flatMap((r) => [`reexport-${r.name}`, `sample-${r.name}`])];
+  const cases = [
+    ...(sampleRigs().some((r) => r.name === "Goblins") ? ["motion-goblins-zombie_walk"] : []),
+    "stickman", "frog", ...sampleRigs().flatMap((r) => [`reexport-${r.name}`, `sample-${r.name}`]),
+  ];
   it.each(cases)("%s", (name) => {
     const input = files.find((f) => f.name === name)!;
     const poses = join(out, `${name}.poses.json`);

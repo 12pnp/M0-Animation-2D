@@ -14,6 +14,7 @@ generated from `src/core/about.ts`.
 | [pako](https://github.com/nodeca/pako) | 2.x | MIT AND Zlib | yes, bundled, via ag-psd |
 | [base64-js](https://github.com/beatgammit/base64-js) | 1.x | MIT | yes, bundled, via ag-psd |
 | [fflate](https://github.com/101arrowz/fflate) | 0.8.x | MIT | yes, bundled |
+| [AnimatedDrawings](https://github.com/facebookresearch/AnimatedDrawings) example motion | 2025 (archived) | MIT | yes, five mocap takes converted to clips in `src/core/rig/motions-bvh.json` (not its code) |
 | [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono) | Fontsource 5.3.0 | SIL OFL 1.1 | yes, bundled (the default interface typeface, via `@fontsource-variable/jetbrains-mono`) |
 | [Inter](https://github.com/rsms/inter) | Fontsource 5.3.0 | SIL OFL 1.1 | yes, bundled (an interface typeface in Preferences, via `@fontsource-variable/inter`) |
 | [Vite](https://vite.dev) | 6.x | MIT | no, build only |
@@ -96,6 +97,38 @@ SOFTWARE.
 
 Any image or brush files included in this repository are not covered by this
 license and belong to their copyright holders.
+```
+
+---
+
+## AnimatedDrawings (example motion)
+
+The motion clips `wave_hello`, `dab`, `jumping`, `zombie_walk` and `dance` are converted from the
+example BVH takes of https://github.com/facebookresearch/AnimatedDrawings (`examples/bvh/fair1`,
+`examples/bvh/rokoko`) by `scripts/buildBvhMotions.ts`. Its CMU take is not included.
+
+```
+MIT License
+
+Copyright (c) Meta Platforms, Inc. and affiliates.
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
 ```
 
 ---

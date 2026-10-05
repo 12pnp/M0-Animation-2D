@@ -80,6 +80,12 @@ export const CREDITS: readonly Credit[] = Object.freeze([
     what: "Draws the Preview.",
   },
   {
+    name: "AnimatedDrawings",
+    license: "MIT",
+    url: "https://github.com/facebookresearch/AnimatedDrawings",
+    what: "Meta's example mocap, converted into five motion clips the AI can fit to a rig.",
+  },
+  {
     name: "ag-psd",
     license: "MIT",
     url: "https://github.com/Agamnentzar/ag-psd",

@@ -1717,6 +1717,27 @@ through it (`boneburstPose.ts`, P3b), and it is the Preview's runtime (P4).
   - an additive shear y in world space is not wrapped into ±180° before its mix: a source
     sheared past a half turn adds all of it (wrapped, half a mix turned the axis around).
 
+## Mocap clips
+
+`core/rig/bvh.ts` reads BVH (hierarchy, channels, frames) and poses every joint by forward
+kinematics, rotations in the file's channel order. `core/rig/bvhClip.ts` turns a take into a
+library clip (`MotionClip`, side or front view):
+
+- **Each frame is seen from where the character faces then**: its left from the shoulder and hip
+  lines, forward as left × up. A side clip faces right, so the character's *right* side is near; a
+  front clip faces the viewer, so its right side is screen left. Turning in the take is taken out.
+- **Limbs and torso are world angles** of their segments in that view; **feet, hands and head**
+  (the retarget's delta roles, added to the rig's setup world angle) are their limb's turn from
+  hanging (or the torso's from upright) plus their own bend from the take's first frame, so a hand
+  follows its forearm.
+- **In place**: the hips do not travel; they rise by how far the lowest foot leaves the take's
+  lowest point, in leg lengths, and `grounded` puts the feet down first.
+- `scripts/buildBvhMotions.ts` writes `motions-bvh.json` from AnimatedDrawings' example takes
+  (MIT; THIRD-PARTY-NOTICES), read with the hand-made `motions.json` by `MOTION_CLIPS`. Not the CMU
+  take: free to use, not to redistribute.
+- The retarget models IK, not transform constraints: on a rig whose limbs a transform constraint
+  drives (spineboy-pro's aim and hoverboard), `apply_motion`'s check reports the mismatch.
+
 ## Keyboard shortcuts
 
 One registry, `core/keys/commands.ts`: every command a key can reach, with its

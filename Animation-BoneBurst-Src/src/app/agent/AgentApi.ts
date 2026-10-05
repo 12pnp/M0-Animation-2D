@@ -18,6 +18,7 @@ import { createKeyframe, createLayer, createNode } from "@/core/doc/defaults";
 import { ikChain, ikRoles } from "@/core/doc/ikGraph";
 import { boneSide, guessRoles, type MotionClip, type RigBone, retarget } from "@/core/rig/motion";
 import MOTIONS from "@/core/rig/motions.json";
+import BVH_MOTIONS from "@/core/rig/motions-bvh.json";
 import { insertKeyframe, keyIndexAt, setEndFrame } from "@/core/doc/timeline";
 import { AddAnimation, EditTracks, SetCycle, SetDrawOrder, SetEventKeys, SetEvents, SetIkKeys } from "@/core/history/timelineCommands";
 import { renamedEvent, withEventDefValues, withEventKey, withEventKeyValues, withoutEvent } from "@/core/doc/events";
@@ -112,7 +113,9 @@ export type PoseStyle = "bones" | "artwork" | "both";
  *  enough to see a pose, few enough tokens to look at many. */
 const RENDER_SIDE = 768, REFERENCE_SIDE = 512, MAX_IMAGES = 6;
 
-export const MOTION_CLIPS = MOTIONS as unknown as MotionClip[];
+/** The hand-made clips (`scripts/buildMotions.ts`), then mocap converted from BVH
+ *  (`scripts/buildBvhMotions.ts`, AnimatedDrawings' example takes). */
+export const MOTION_CLIPS = [...MOTIONS, ...BVH_MOTIONS] as unknown as MotionClip[];
 
 type Args = Record<string, unknown>;
 type BoneIn = { name: string; parent?: string; from?: number[]; to?: number[]; x?: number; y?: number; rotation?: number; length?: number };

@@ -486,12 +486,13 @@ describe("the motion library through the AI's tools", () => {
   it("list the clips and the roles guessed for this rig", async () => {
     const { api } = await setup();
     const out = await api.call("list_motions") as { motions: Array<{ name: string; roles: string[] }>; guess: { side: Record<string, string> } };
-    expect(out.motions.map((m) => m.name)).toEqual(["walk", "run", "idle", "jump", "idle_front", "wave", "jump_front"]);
+    expect(out.motions.map((m) => m.name)).toEqual(["walk", "run", "idle", "jump", "idle_front", "wave", "jump_front", "wave_hello", "dab", "jumping", "zombie_walk", "dance"]);
     expect(out.guess.side).toMatchObject({ "thigh.near": "leg_near_thigh", "shin.far": "leg_far_shin", torso: "chest", hips: "hips" });
     expect(Object.values(out.guess.side)).not.toContain("foot_near_target");
   });
 
-  it.each(["walk", "run", "idle", "jump", "idle_front", "wave", "jump_front"])("fit %s onto the stickman in one undo step, as the runtime plays it", async (motion) => {
+  // The hand-made clips, then AnimatedDrawings' mocap converted from BVH (scripts/buildBvhMotions.ts).
+  it.each(["walk", "run", "idle", "jump", "idle_front", "wave", "jump_front", "wave_hello", "dab", "jumping", "zombie_walk", "dance"])("fit %s onto the stickman in one undo step, as the runtime plays it", async (motion) => {
     const { api, store } = await setup();
     const before = store.history.position;
     const out = await api.call("apply_motion", { motion, animation: `m_${motion}` }) as Applied;

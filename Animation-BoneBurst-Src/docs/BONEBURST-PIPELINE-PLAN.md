@@ -3,7 +3,8 @@
 **Status:** R0 done 2026-10-05 (below), **not verified** in Unity: opening this copy in
 the Editor without it importing the editor folder was not checked. R1 done 2026-10-05 on
 the editor's side (below); its C# side is not started. R2 done 2026-10-05 except the bake
-round trip (below). R3–R5 not started. Left
+round trip (below). R3 done 2026-10-05 for its motion half (AD-3, below); the detection
+sidecar (AD-0..2) waits for an install decision. R4, R5 not started. Left
 of R0: repointing the M2 projects' `file:` references and retiring the old folders (R0
 step 7), both owner calls.
 
@@ -257,6 +258,34 @@ runtime the game ships.
   `check_preview`, now playing BoneBurst's runtime (P4).
 - **Done when** AD-3: one BVH becomes a clip on an imported artist rig, and R2 passes on
   the result.
+
+**Result (2026-10-05), AD-3 only.**
+- **The detection half (AD-0..2) is not started**: AnimatedDrawings' joint detection runs on
+  TorchServe with mmcv-full, mmdet and mmpose (Python 3.8, Java), none installed; mmcv-full has
+  no Apple Silicon wheel. Owner's choice: the motion half first, no install. Its routes when
+  wanted: Docker (AnimatedDrawings' own image) or a native build.
+- **BVH → clips**: `core/rig/bvh.ts` (reader, forward kinematics) and `core/rig/bvhClip.ts`
+  (each frame seen from the character's facing, taken from its shoulder and hip lines; limbs and
+  torso as world angles, feet, hands and head as their limb's turn plus their own bend; in place,
+  the hips rising only off the take's ground), `tests/bvh.test.ts` on a take with known answers
+  and on AnimatedDrawings' own takes. Mixamo-style (FAIR, Rokoko) and CMU joint names.
+- `scripts/buildBvhMotions.ts` writes `src/core/rig/motions-bvh.json` from AnimatedDrawings'
+  takes (their motion configs give up axis and range): `wave_hello`, `dab`, `jumping` (front),
+  `zombie_walk` (side, cut to 6 s), `dance` (front); 87 KB. The CMU take is left out (not
+  redistributable). `list_motions` and `apply_motion` take them with the hand-made clips;
+  THIRD-PARTY-NOTICES and About credit AnimatedDrawings (MIT).
+- **Checked**: each clip fitted to the stickman by `apply_motion` in one undo step, the runtime
+  showing what the retarget posed, feet never below the ground, the export playing it
+  (`tests/agentApi.test.ts`); and the whole pipeline in R2's test: spine-unity's **Goblins**,
+  opened in the editor, given `zombie_walk` with the guessed roles (the hips mapped to `hip`, which
+  the legs hang from), exported, and posed the same by BoneBurst's C# runtime frame by frame.
+- **Changed from the plan**: the artist rig is Goblins, not spineboy-pro. On spineboy-pro even the
+  hand-made walk does not fit: its transform constraints (aim, hoverboard) override the keyed
+  limbs, and the retarget models IK only; `apply_motion`'s check says so (`matches: false`).
+  Retargeting through transform constraints is open work. Spineboy's front/rear names are also not
+  guessed as near/far; the AI gives a map.
+- The plan doc for this work, `docs/ANIMATED-DRAWINGS-PLAN.md`, is still uncommitted in the old
+  `Amino-Spine2D-Src` folder (another session's); it did not come across in R0.
 
 ### R4 — Export to Unity in one step (2–3 days)
 
