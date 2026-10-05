@@ -42,7 +42,7 @@ export interface PoseEntry {
   displaySince: number;
   /** False when the layer is hidden or the track does not reach this frame. */
   visible: boolean;
-  /** Back-to-front paint order; also the DragonBones slot index. */
+  /** Back-to-front paint order; also the exported slot index. */
   drawIndex: number;
   /** Posed by the Spine runtime (`core/boneburst/boneburstPose.ts`): what the slot
    *  draws, world geometry included. The renderer draws this instead of
@@ -83,9 +83,10 @@ export interface Pose {
 /**
  * Where in time a symbol is being looked at.
  *
- * A nested symbol is a CHILD ARMATURE with its own timeline: the runtime
- * starts it with `gotoAndPlay` and loops it on its own clock. So an instance
- * on the stage must be drawn from the child's animation at the playhead —
+ * A nested symbol has its own timeline and plays on its own clock; the export
+ * flattens it into the one skeleton, frame for frame (ARCHITECTURE ▸ Nested
+ * symbols are flattened). So an instance on the stage must be drawn from the
+ * child's animation at the playhead —
  * drawing its bind pose instead is how a symbol can look untouched on the
  * stage while the preview plays the edits you just made inside it.
  */
@@ -207,7 +208,7 @@ export function localAt(
  * Evaluate a whole symbol at a frame, in paint order.
  *
  * Paint order is the reverse of the layer list: `layers[0]` is the TOP layer
- * in the UI, and DragonBones draws later `slot[]` entries in front, so the
+ * in the UI, and Spine draws later `slots` entries in front, so the
  * bottom layer is painted first and exported first.
  *
  * `skins` are the skins shown (ARCHITECTURE ▸ Skins): what each slot shows
@@ -221,6 +222,7 @@ export function evaluateSymbol(
   frame: number,
   mode: "setup" | "animate" = "animate",
   skins: readonly string[] | null = stageSkinOf(symbol),
+  solve = true,
 ): Pose {
   const byNode = new Map<NodeId, PoseEntry>();
   const entries: PoseEntry[] = [];
@@ -301,29 +303,25 @@ export function evaluateSymbol(
 
   for (const e of entries) resolve(e);
 
-  applyConstraints(symbol, byNode, mode === "animate" ? animation : null, frame, activity);
-  applyMeshes(symbol, entries, byNode, mode === "animate" ? animation : null, frame, mode, skins);
-
-  return { entries, byNode };
+  const pose = { entries, byNode };
+  if (solve) solvePose(symbol, pose, animation, frame, mode, skins, activity);
+  return pose;
 }
 
 /**
- * Solve the symbol's IK constraints, in place, on the composed world matrices.
- *
- * The editor solves at DISPLAY time and never writes the result into the
- * document, because that is exactly what the runtime does: the file carries
- * the chain's own pose plus its constraints, and the solve happens on
- * playback. Baking solved rotations into keyframes would look identical in
- * the editor and fight the runtime the moment the file was played back.
- *
- * The solve is Spine's (`core/math/ik.ts`), run in Spine's space: each
- * chain bone's local transform through `toBoneBurstLocal`, parent worlds
- * flipped to y up, the result's local rotations back through
- * `fromBoneBurstLocal`. It mirrors the exporter: the bend written inverted (the
- * flip mirrors the chain), a bone length only on bone nodes, and a zero
- * weight skipping the solve, as the runtime does. The weight and bend are the
- * animation's IK keys at the frame (`ikPoseAt`), the constraint's own without.
+ * The constraints and meshes over a pose `evaluateSymbol` made with `solve`
+ * false. They write only `world`, `spine` and `outline`, never `local`: a
+ * caller that will overwrite those for every entry (`posedSymbol`, through
+ * the runtime) can skip them.
  */
+export function solvePose(
+  symbol: SymbolItem, pose: Pose, animation: Animation | null, frame: number, mode: "setup" | "animate",
+  skins: readonly string[] | null, activity: SkinActivity = skinActivity(symbol, skins),
+): void {
+  applyConstraints(symbol, pose.byNode, mode === "animate" ? animation : null, frame, activity);
+  applyMeshes(symbol, pose.entries, pose.byNode, mode === "animate" ? animation : null, frame, mode, skins);
+}
+
 /**
  * Meshes (ARCHITECTURE ▸ Meshes): each mesh display's world vertices by
  * `meshWorld`, after the constraints, so the renderer draws its triangles.
@@ -363,6 +361,33 @@ function applyMeshes(
   }
 }
 
+/** Whether `id` is `ancestorId` or hangs under it in `byNode`. */
+export function isDescendant(byNode: ReadonlyMap<NodeId, PoseEntry>, id: NodeId, ancestorId: NodeId): boolean {
+  let cursor: NodeId | null | undefined = id;
+  for (let guard = 0; cursor && guard < 64; guard++) {
+    if (cursor === ancestorId) return true;
+    cursor = byNode.get(cursor)?.node.parentId;
+  }
+  return false;
+}
+
+/**
+ * Solve the symbol's IK and transform constraints, in place, in the symbol's order, on the composed world matrices.
+ *
+ * The editor solves at DISPLAY time and never writes the result into the
+ * document, because that is exactly what the runtime does: the file carries
+ * the chain's own pose plus its constraints, and the solve happens on
+ * playback. Baking solved rotations into keyframes would look identical in
+ * the editor and fight the runtime the moment the file was played back.
+ *
+ * The solvers are our runtime's (`core/boneburst/runtime/ik.ts`, `transform.ts`), run in Spine's space: each
+ * chain bone's local transform through `toBoneBurstLocal`, parent worlds
+ * flipped to y up, the result's local rotations back through
+ * `fromBoneBurstLocal`. It mirrors the exporter: the bend written inverted (the
+ * flip mirrors the chain), a bone length only on bone nodes, and a zero
+ * weight skipping the solve, as the runtime does. The weight and bend are the
+ * animation's IK keys at the frame (`ikPoseAt`), the constraint's own without.
+ */
 function applyConstraints(
   symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>, animation: Animation | null, frame: number, activity: SkinActivity,
 ): void {
@@ -393,15 +418,6 @@ function applyConstraints(
       mul(child.world, parent.world, toMatrix(mat(), localOf(child)));
       recompose(child.nodeId);
     }
-  };
-
-  const isDescendantOf = (id: NodeId, ancestorId: NodeId): boolean => {
-    let cursor: NodeId | null | undefined = id;
-    for (let guard = 0; cursor && guard < 64; guard++) {
-      if (cursor === ancestorId) return true;
-      cursor = byNode.get(cursor)?.node.parentId;
-    }
-    return false;
   };
 
   // The runtime's solvers (`core/boneburst/runtime/`) on a few `LooseBones`,
@@ -440,7 +456,7 @@ function applyConstraints(
     const root = twoBone ? parent! : effector;
 
     // A target inside the chain would chase its own tail.
-    if (isDescendantOf(target.nodeId, root.nodeId)) return;
+    if (isDescendant(byNode, target.nodeId, root.nodeId)) return;
 
     const tx = target.world.tx, ty = -target.world.ty;
     const rootParentWorld = parentWorld(root);

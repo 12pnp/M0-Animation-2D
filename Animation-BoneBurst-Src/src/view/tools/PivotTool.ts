@@ -3,9 +3,9 @@ import type { NodeId } from "@/core/doc/ids";
 import { shownDisplay } from "@/core/doc/pose";
 import { mat } from "@/core/math/Matrix2D";
 import type { Point } from "@/core/math/geom";
-import { SetPivot } from "@/core/history/commands";
+import { SetPivot } from "@/core/history/hierarchyCommands";
 import { transformAtFrame } from "@/app/TimelineOps";
-import { type NodeSnapshot, pointerToImagePx, snapshotOf } from "./transformOps";
+import { type NodeSnapshot, pointerToImagePx, snapshotOf } from "@/core/doc/transformOps";
 import { hitAt } from "./SelectTool";
 
 /**

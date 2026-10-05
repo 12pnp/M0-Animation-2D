@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { reseed } from "@/core/doc/ids";
 import { withSkinColor } from "@/core/doc/skins";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
 import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import type { SymbolItem } from "@/core/doc/types";

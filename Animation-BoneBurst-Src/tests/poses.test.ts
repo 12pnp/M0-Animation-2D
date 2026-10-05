@@ -2,7 +2,8 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { reseed } from "@/core/doc/ids";
 import { createProject, createKeyframe, createNode } from "@/core/doc/defaults";
 import type { SymbolItem } from "@/core/doc/types";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import { Store } from "@/app/Store";
 import { PosesService } from "@/app/PosesService";
 import { posePrompt } from "@/app/agent/poseHandoff";
@@ -108,7 +109,6 @@ describe("referenceStarts", () => {
     expect(referenceStarts({ ...ref, at: [9, 0, 9, 4] })).toEqual([0, 4, 9]);
   });
 });
-
 
 describe("referencePlayFrame", () => {
   // Four pictures from frame 2, three frames each: frames 2–13.

@@ -5,8 +5,8 @@ import { transformAtFrame } from "@/app/TimelineOps";
 import { type ChildState, compensateChildren } from "@/core/doc/compensate";
 import { mat, mul } from "@/core/math/Matrix2D";
 import { type Transform, toMatrix } from "@/core/math/Transform";
-import type { NodeSnapshot } from "./transformOps";
-import { selectionSnapshots } from "./SelectTool";
+import type { NodeSnapshot } from "@/core/doc/transformOps";
+import { selectionSnapshots } from "./selection";
 
 /**
  * What an edit from the stage toolbar starts from: the selection, and the

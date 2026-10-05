@@ -5,7 +5,9 @@ import { DOC_VERSION, isImage, isSymbol, type SymbolItem, type Track } from "@/c
 import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
 import { sampleTransformRaw } from "@/core/doc/timeline";
 import { evaluateSymbol } from "@/core/doc/pose";
-import { AddNode, ReplaceImageAsset, SetLayerExcluded, SetNodeItem } from "@/core/history/commands";
+import { AddNode, SetNodeItem } from "@/core/history/commands";
+import { SetLayerExcluded } from "@/core/history/layerCommands";
+import { ReplaceImageAsset } from "@/core/history/libraryCommands";
 import { wouldCreateCycle } from "@/core/history/symbolCommands";
 import { serializeProject, deserializeProject } from "@/io/project/ProjectFile";
 import { Clipboard } from "@/app/Clipboard";
@@ -78,7 +80,7 @@ describe("the fixture itself", () => {
     // the "empty" node kind existed. Loading it must land on the current one, not be
     // refused and not stay at 2.
     expect(fx.project.version).toBe(DOC_VERSION);
-    expect(DOC_VERSION).toBe(27);
+    expect(DOC_VERSION).toBe(28);
     expect(fx.diagnostics.filter((d) => d.severity === "error")).toHaveLength(0);
   });
 

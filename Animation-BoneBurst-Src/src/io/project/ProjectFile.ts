@@ -6,7 +6,8 @@ import { referenceAssets } from "@/core/doc/reference";
 import type { AssetId } from "@/core/doc/ids";
 import type { SoundStore } from "@/app/SoundStore";
 import type { AssetStore } from "@/app/AssetStore";
-import { type Diagnostic, migrate, validateProject } from "@/core/doc/schema";
+import { type Diagnostic, validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 
 export const PROJECT_EXTENSION = "boneburst";
 /** What the document was saved as before: still opened, saved as the new one. */

@@ -1,4 +1,4 @@
-import type { SliderData } from "./rigData";
+import type { SliderData } from "./rigTypes";
 import type { Rig } from "./rig";
 import { boneProperty } from "./transform";
 

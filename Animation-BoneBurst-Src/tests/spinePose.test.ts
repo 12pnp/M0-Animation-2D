@@ -6,9 +6,10 @@ import {
 import { reseed } from "@/core/doc/ids";
 import type { Project, SymbolItem } from "@/core/doc/types";
 import { createProject } from "@/core/doc/defaults";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import { History } from "@/core/history/History";
-import { SetStageSkins } from "@/core/history/commands";
+import { SetStageSkins } from "@/core/history/settingsCommands";
 import { SetIkOptions } from "@/core/history/ikCommands";
 import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";

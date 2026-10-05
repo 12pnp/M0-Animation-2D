@@ -5,7 +5,8 @@ import {
 } from "@/core/doc/propertyKeys";
 import { sampleTransformRaw } from "@/core/doc/timeline";
 import { createLayer, createNode, createProject } from "@/core/doc/defaults";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import { withKeyframe } from "@/core/history/timelineCommands";
 import { tf, type Transform } from "@/core/math/Transform";
 import { applyTween, TWEEN_LINEAR, type TweenSpec } from "@/core/math/easing";

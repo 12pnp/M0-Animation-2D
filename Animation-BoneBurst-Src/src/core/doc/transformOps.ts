@@ -2,7 +2,8 @@ import { apply, applyInverse, clone, invert, mat, matOf, type Matrix2D, mul } fr
 import { clampScale, cloneTf, fromMatrix, toMatrix, type Transform } from "@/core/math/Transform";
 import { DEG_RAD, RAD_DEG } from "@/core/math/angle";
 import type { Point, Rect } from "@/core/math/geom";
-import type { NodeId } from "@/core/doc/ids";
+import type { NodeId } from "./ids";
+import type { SymbolItem } from "./types";
 
 /**
  * Per-node state captured once at pointer-down.
@@ -68,6 +69,17 @@ export function topmostSelected(
     }
     return true;
   });
+}
+
+/**
+ * What an edit of the selection moves: the topmost selected nodes that
+ * exist, minus locked layers unless `skipLocked` is false (a field typed in
+ * Properties edits a locked layer too). A node whose ancestor is selected
+ * moves with it.
+ */
+export function editTargets(sym: SymbolItem, ids: readonly NodeId[], skipLocked = true): NodeId[] {
+  const locked = skipLocked ? new Set(sym.layers.filter((l) => l.locked).map((l) => l.nodeId)) : null;
+  return topmostSelected(ids.filter((id) => sym.nodes[id] && !locked?.has(id)), (id) => sym.nodes[id]?.parentId);
 }
 
 /** Linear part only, translation dropped. */
@@ -319,4 +331,117 @@ export function pointerToImagePx(
   const local = { x: 0, y: 0 };
   if (!applyInverse(local, snap.world, world.x, world.y)) return null;
   return { x: local.x + snap.pivot.x, y: local.y + snap.pivot.y };
+}
+
+/* ── Properties fields ── */
+
+/** A transform field of the Properties panel. */
+export type FieldKey =
+  | "x" | "y" | "w" | "h"
+  | "scaleX" | "scaleY"
+  | "rotation" | "skewX" | "skewY"
+  | "pivotX" | "pivotY";
+
+/** Whether W and H, and Scale X and Y, move together. */
+export interface FieldLinks { size: boolean; scale: boolean }
+
+/**
+ * One node's transform with a typed field applied. `size` is its display's
+ * size in its own pixels. A linked partner follows by the ratio against the
+ * value being replaced, not to the same number; rotation moves both skews,
+ * so shear is kept.
+ */
+export function fieldTransform(
+  from: Transform, size: { w: number; h: number }, key: FieldKey, value: number, linked: FieldLinks,
+): Transform {
+  const t = cloneTf(from);
+  const ratio = (before: number) => (Math.abs(before) > 1e-6 ? value / before : 1);
+  switch (key) {
+    case "x": t.x = value; break;
+    case "y": t.y = value; break;
+    case "w":
+      if (size.w > 0) {
+        if (linked.size) t.scaleY *= ratio(size.w * t.scaleX);
+        t.scaleX = value / size.w;
+      }
+      break;
+    case "h":
+      if (size.h > 0) {
+        if (linked.size) t.scaleX *= ratio(size.h * t.scaleY);
+        t.scaleY = value / size.h;
+      }
+      break;
+    case "scaleX":
+      if (linked.scale) t.scaleY *= ratio(t.scaleX);
+      t.scaleX = value || 1e-4;
+      break;
+    case "scaleY":
+      if (linked.scale) t.scaleX *= ratio(t.scaleY);
+      t.scaleY = value || 1e-4;
+      break;
+    case "rotation": {
+      const shear = t.skewX - t.skewY;
+      t.skewY = value;
+      t.skewX = value + shear;
+      break;
+    }
+    case "skewX": t.skewX = value; break;
+    case "skewY": t.skewY = value; break;
+  }
+  return t;
+}
+
+/** Several nodes the fields edit as one: their bounds, snapshots, and the
+ *  first node's transform (typed Scale, Rotate and Skew are its values; the
+ *  rest follow rigidly). */
+export interface GroupSnapshot {
+  bounds: Rect;
+  snaps: NodeSnapshot[];
+  first: Transform;
+}
+
+/** Every node of the group moved as one by a typed field: X and Y move the
+ *  bounds, W and H scale about their corner, Scale about their centre,
+ *  Rotate about the centre; null for the pivot fields. */
+export function groupFieldWrite(g: GroupSnapshot, key: FieldKey, value: number, linked: FieldLinks): Map<NodeId, Transform> | null {
+  const b = g.bounds;
+  const centre = { x: b.x + b.w / 2, y: b.y + b.h / 2 };
+  const ratio = (before: number) => (Math.abs(before) > 1e-6 ? value / before : 1);
+  const next = new Map<NodeId, Transform>();
+  const each = (fn: (s: NodeSnapshot) => Transform) => {
+    for (const s of g.snaps) next.set(s.id, fn(s));
+  };
+
+  switch (key) {
+    case "x": each((s) => moveBy(s, value - b.x, 0)); break;
+    case "y": each((s) => moveBy(s, 0, value - b.y)); break;
+    case "w":
+    case "h": {
+      const sx = key === "w" ? ratio(b.w) : linked.size ? ratio(b.h) : 1;
+      const sy = key === "h" ? ratio(b.h) : linked.size ? ratio(b.w) : 1;
+      const m = worldScaleMatrix({ x: b.x, y: b.y }, sx || 1e-4, sy || 1e-4);
+      each((s) => applyWorldMatrix(s, m));
+      break;
+    }
+    case "scaleX":
+    case "scaleY": {
+      const sx = key === "scaleX" ? ratio(g.first.scaleX) : linked.scale ? ratio(g.first.scaleY) : 1;
+      const sy = key === "scaleY" ? ratio(g.first.scaleY) : linked.scale ? ratio(g.first.scaleX) : 1;
+      const m = worldScaleMatrix(centre, sx || 1e-4, sy || 1e-4);
+      each((s) => applyWorldMatrix(s, m));
+      break;
+    }
+    case "rotation":
+      each((s) => rotateAbout(s, centre, value - g.first.skewY));
+      break;
+    case "skewX":
+    case "skewY": {
+      const delta = value - (key === "skewX" ? g.first.skewX : g.first.skewY);
+      each((s) => ({ ...cloneTf(s.local), [key]: s.local[key] + delta }));
+      break;
+    }
+    default:
+      return null;
+  }
+  return next;
 }

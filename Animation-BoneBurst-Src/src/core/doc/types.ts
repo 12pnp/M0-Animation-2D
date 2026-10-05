@@ -4,8 +4,8 @@ import type { ChannelEases, TweenSpec } from "@/core/math/easing";
 import type { BoneBurstInherit } from "@/core/boneburst/types";
 import type { AnimId, AssetId, CnId, FolderId, IkId, ItemId, LayerId, NodeId, TcId } from "./ids";
 
-/** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 27;
+/** Bumped whenever the on-disk shape changes; `migrations.ts` bridges versions. */
+export const DOC_VERSION = 28;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -26,20 +26,16 @@ export function isDefaultColor(c: ColorTransform): boolean {
       && c.aO === 0 && c.rO === 0 && c.gO === 0 && c.bO === 0;
 }
 
-/**
- * Only the modes `PixiSlot._updateBlendMode` actually applies. The runtime's
- * parser knows 14 (`alpha`, `erase`, `invert`, `layer`, `subtract` too), but
- * those fall through its `default: break` and render as normal — exporting one
- * would fail silently, which is exactly what this list exists to prevent.
- */
-export type BlendMode =
-  | "normal" | "add" | "multiply" | "screen" | "overlay"
-  | "darken" | "lighten" | "difference" | "hardlight";
+/** Spine's four blend modes (`add` is Spine's `additive`). Animo's other five
+ *  were dropped at version 28: Spine cannot carry them, so the stage drew
+ *  what the Preview and the game never would. */
+export type BlendMode = "normal" | "add" | "multiply" | "screen";
+export const BLEND_MODES: ReadonlySet<BlendMode> = new Set<BlendMode>(["normal", "add", "multiply", "screen"]);
 
 /* ── Library ──────────────────────────────────────────────────────────────
-   Symbol === Armature. An ImageItem exports as an "image" display; a
-   SymbolItem exports as its own armature, and instances of it become slots
-   carrying an "armature" display.                                         */
+   An ImageItem exports as a region attachment. The exported SymbolItem is
+   the skeleton; an instance of another symbol is flattened into it
+   (ARCHITECTURE ▸ Nested symbols are flattened).                          */
 
 export interface ImageItem {
   kind: "image";
@@ -63,7 +59,7 @@ export interface SymbolItem {
   name: string;
   nodes: Record<NodeId, Node>;
   /** Index 0 is the TOP layer in the UI. The exporter emits slots in
-   *  REVERSED order, because DragonBones draws later array entries in front. */
+   *  REVERSED order, because Spine draws later `slots` entries in front. */
   layers: Layer[];
   ik: IkConstraint[];
   /** Transform constraints, applied in the constraint order (after the IK by default), in this order
@@ -223,9 +219,6 @@ export interface Node {
    *  Keyframe colour overrides it wholesale, as it does in the runtime. */
   color?: ColorTransform;
   blendMode?: BlendMode;
-  /** Motion blur multiplier, 0 (never blurred) to 2. Absent means 1. On a
-   *  symbol instance it scales everything inside it. */
-  motionBlur?: number;
   /** Bone length in px — display only, for the bone overlay. */
   boneLength?: number;
   /** Dragging this bone's path turns its parent too (`core/doc/pathEdit.ts`).
@@ -695,27 +688,11 @@ export interface StageSettings {
   background: string;
 }
 
-/**
- * Per-sprite motion blur. Animo drew it with a runtime extension; the Spine
- * export does not carry it and warns when it is on (`exportBoneBurst.ts`).
- */
-export interface MotionBlurSettings {
-  enabled: boolean;
-  /** Degrees, 0–360: how much of a frame the shutter stays open. */
-  shutter: number;
-  /** Longest trail, in armature pixels. */
-  maxLength: number;
-}
-
-export const DEFAULT_MOTION_BLUR: MotionBlurSettings = { enabled: false, shutter: 180, maxLength: 64 };
-
 export interface Project {
   version: number;
   name: string;
   frameRate: number;
   stage: StageSettings;
-  /** Absent means off, so older files stay byte-identical when saved. */
-  motionBlur?: MotionBlurSettings;
   /** What File ▸ Export writes (`core/export/settings.ts`). Absent means the
    *  defaults, which are what the exporter wrote before the setting existed. */
   exportSettings?: ExportSettings;
@@ -798,4 +775,3 @@ export interface PathShape extends OutlineWeights {
    *  measure need not be ours to the last digit. */
   fileLengths?: { points: number[]; closed?: boolean; lengths: number[] };
 }
-

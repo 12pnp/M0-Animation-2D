@@ -51,12 +51,6 @@ export function clear(el: globalThis.Node): void {
   while (el.firstChild) el.removeChild(el.firstChild);
 }
 
-export function frag(...children: Child[]): DocumentFragment {
-  const f = document.createDocumentFragment();
-  append(f, children);
-  return f;
-}
-
 /** Parse an inline SVG string into an element. */
 export function svg(markup: string): SVGElement {
   const doc = new DOMParser().parseFromString(

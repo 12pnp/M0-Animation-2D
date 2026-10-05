@@ -14,7 +14,8 @@ import { createLayer, createNode, createProject } from "@/core/doc/defaults";
 import { adjacentKeyFrame, keyFrames } from "@/core/doc/keyNav";
 import { Viewport } from "@/view/viewport/Viewport";
 import { contentMatrixOf } from "@/view/viewport/SceneRenderer";
-import { countUsages, LibraryPanel } from "@/view/panels/LibraryPanel";
+import { LibraryPanel } from "@/view/panels/LibraryPanel";
+import { countUsages } from "@/core/doc/libraryTree";
 import { PropertiesPanel } from "@/view/panels/PropertiesPanel";
 import { OutlinePanel } from "@/view/panels/OutlinePanel";
 import { StageToolbar } from "@/view/viewport/StageToolbar";
@@ -43,33 +44,22 @@ import { PageVision } from "@/view/agent/AgentVision";
 import { PreviewSession } from "@/preview/PreviewSession";
 import { APP_NAME } from "@/core/about";
 import { TimelinePanel } from "@/view/timeline/TimelinePanel";
-import { buildExport, bundleZip, exportFiles, exportSettingsOf, safeFileName } from "@/io/export/ExportBundle";
-import { mayWrite, rememberedUnityFolder, rememberUnityFolder, unityWriteOrder } from "@/io/export/UnityExport";
-import {
-    type FileRef,
-    hasDirectoryPicker,
-    hasNativeFiles,
-    pickDirectory,
-    pickSaveLocation,
-    PNG_TYPE,
-    writeFile,
-    writeIntoDirectory,
-    ZIP_TYPE,
-} from "@/io/project/FileSystem";
 import { ProjectService } from "./ProjectService";
 import { Toast } from "@/view/widgets/Toast";
 import { Clipboard } from "./Clipboard";
 import {
-    AddNode,
-    type MaskState,
-    RemoveNodes,
-    RenameLibraryItem,
-    ReplaceImageAsset,
-    SetLayerMasks,
-    SetNodeItem,
-    SetParent,
+  AddNode,
+  RemoveNodes,
+  SetNodeItem,
 } from "@/core/history/commands";
-import { maskCandidate, nearestMaskAbove } from "@/core/doc/layerTree";
+import { SetParent } from "@/core/history/hierarchyCommands";
+import { SetLayerMasks } from "@/core/history/layerCommands";
+import {
+  RenameLibraryItem,
+  ReplaceImageAsset
+} from "@/core/history/libraryCommands";
+import { toggleMaskedPlan, toggleMaskPlan } from "@/core/doc/layerTree";
+import { bindPlan, swapTargets } from "@/core/doc/nodePlans";
 import { AddSymbol, ConvertToSymbol, DuplicateLibraryItem, wouldCreateCycle, } from "@/core/history/symbolCommands";
 import { evaluateSymbol, pointInParent } from "@/core/doc/pose";
 import { isCycle, seamFrame } from "@/core/doc/cycle";
@@ -79,32 +69,31 @@ import type { Layer, Node } from "@/core/doc/types";
 import { isImage, isSymbol, TIMELINE_PROPS } from "@/core/doc/types";
 import { itemsOf } from "@/core/doc/displays";
 import {
-    applyEdit,
-    displayAtFrame,
-    doClearKeyframe,
-    doCloseLoop,
-    doInsertBlankKeyframe,
-    doInsertFrame,
-    doInsertKeyframe,
-    doRemoveFrame,
-    doReorder,
-    doToggleCycle,
-    fillEmptyNode,
-    transformAtFrame,
+  applyEdit,
+  displayAtFrame,
+  doClearKeyframe,
+  doCloseLoop,
+  doInsertBlankKeyframe,
+  doInsertFrame,
+  doInsertKeyframe,
+  doRemoveFrame,
+  doReorder,
+  doToggleCycle,
+  fillEmptyNode,
+  transformAtFrame,
 } from "./TimelineOps";
-import type { AssetId, ItemId, LayerId, NodeId } from "@/core/doc/ids";
+import type { AssetId, ItemId, NodeId } from "@/core/doc/ids";
 import { cloneTf, type Transform } from "@/core/math/Transform";
 import { applyVec, mat } from "@/core/math/Matrix2D";
-import { moveBy, snapshotOf, topmostSelected } from "@/view/tools/transformOps";
-import { alertDialog, chooseDialog, confirmDialog, promptText } from "@/view/widgets/dialogs";
+import { editTargets, moveBy, snapshotOf } from "@/core/doc/transformOps";
+import { chooseDialog, confirmDialog, promptText } from "@/view/widgets/dialogs";
 import {
   LAYOUT_PRESETS, SLOT_DEFAULTS, presetWorkspace, slotPreset, workspaceNameError,
 } from "@/view/widgets/workspaces";
 import { attachOptionsMenu } from "@/view/timeline/onionButton";
 import { Workspaces } from "./Workspaces";
-import { AtlasTooSmall, oversizeAdvice } from "@/core/atlas/oversize";
 import { busy } from "@/view/widgets/Busy";
-import { phase } from "./busy";
+import { ExportService } from "./ExportService";
 
 export class App {
   readonly store: Store;
@@ -113,6 +102,7 @@ export class App {
   readonly sounds = new SoundStore();
   readonly viewport: Viewport;
   private library: LibraryPanel;
+  private exports: ExportService;
   private previewSession: PreviewSession;
   private preview: PreviewPanel;
   readonly timeline: TimelinePanel;
@@ -156,7 +146,6 @@ export class App {
     this.viewport.fitInset = () => toolbar.coveredBottom();
     this.shell.stageHost.appendChild(this.fitButton());
 
-
     this.library = new LibraryPanel(
       this.store, this.assets,
       (itemId, x, y) => this.placeItem(itemId, x, y),
@@ -165,12 +154,13 @@ export class App {
       (itemId, x, y) => this.libraryMenu(itemId, x, y),
       (message, isError) => this.toast.show(message, isError),
     );
-    this.previewSession = new PreviewSession(this.store, this.assets, (err) => this.previewBuilt(err));
+    this.exports = new ExportService(this.store, this.assets, this.sounds, this.toast, (itemId) => this.library.renderItemPng(itemId));
+    this.previewSession = new PreviewSession(this.store, this.assets, (err) => this.exports.previewBuilt(err));
     this.references = new ReferenceService(this.store, this.assets);
     this.poses = new PosesService(this.store);
     this.agent = new AgentApi(this.store, new HiddenPreviewProbe(this.store, this.assets), new PageVision(this.store, this.assets), this.assets, {
       export: async () => {
-        const written = await this.exportToUnity(false);
+        const written = await this.exports.exportToUnity(false);
         if (!written) throw new Error("The export was refused: see the editor's message.");
         return written;
       },
@@ -424,7 +414,7 @@ export class App {
     const s = this.store;
     const item = s.project.items[itemId];
     if (!item) return;
-    const usage = countUsages(s).get(itemId) ?? 0;
+    const usage = countUsages(s.project).get(itemId) ?? 0;
 
     showMenu(menuAnchor(x, y), [
       {
@@ -446,7 +436,7 @@ export class App {
       "-",
       { label: "Rename…", run: () => this.renameLibraryItem(itemId) },
       { label: "Duplicate", run: () => this.duplicateLibraryItem(itemId) },
-      { label: "Export as .png…", run: () => void this.exportItemPng(itemId) },
+      { label: "Export as .png…", run: () => void this.exports.exportItemPng(itemId) },
       {
         label: "Replace Image…", enabled: isImage(item),
         run: () => void this.replaceImage(itemId),
@@ -682,13 +672,7 @@ export class App {
     const sym = s.currentSymbol;
     const kind = isImage(item) ? "image" as const : "symbol" as const;
     const next = new Map<NodeId, { itemId: ItemId; kind: "image" | "symbol"; display: number }>();
-    for (const id of s.selection.nodes) {
-      const n = sym.nodes[id];
-      // Bones and groups are not instances; an empty layer is a legitimate
-      // target, and swapping it is how it stops being empty.
-      if (!n || n.kind === "bone" || n.kind === "group") continue;
-      next.set(id, { itemId, kind, display: displayAtFrame(s, n).index });
-    }
+    for (const id of swapTargets(sym, s.selection.nodes)) next.set(id, { itemId, kind, display: displayAtFrame(s, sym.nodes[id]!).index });
     if (!next.size) return;
 
     s.apply(new SetNodeItem(s.currentSymbolId, next));
@@ -699,12 +683,7 @@ export class App {
   /** Whether Swap Instance has both halves of what it needs. */
   private canSwapInstance(): boolean {
     const s = this.store;
-    if (s.selection.items.length !== 1) return false;
-    const sym = s.currentSymbol;
-    return s.selection.nodes.some((id) => {
-      const k = sym.nodes[id]?.kind;
-      return k === "image" || k === "symbol" || k === "empty";
-    });
+    return s.selection.items.length === 1 && swapTargets(s.currentSymbol, s.selection.nodes).length > 0;
   }
 
   private wireStageDrops(): void {
@@ -744,11 +723,7 @@ export class App {
     const s = this.store;
     const sym = s.currentSymbol;
     const pose = this.viewport.pose;
-    const locked = new Set(sym.layers.filter((l) => l.locked).map((l) => l.nodeId));
-    const ids = topmostSelected(
-      s.selection.nodes.filter((id) => sym.nodes[id] && !locked.has(id)),
-      (id) => sym.nodes[id]?.parentId,
-    );
+    const ids = editTargets(sym, s.selection.nodes);
     // The edited symbol may sit rotated or scaled inside the scene.
     const d = applyVec({ x: 0, y: 0 }, s.sceneMatrix, dx, dy);
     const next = new Map<NodeId, Transform>();
@@ -760,53 +735,6 @@ export class App {
       next.set(id, moveBy(snapshotOf(id, transformAtFrame(s, n), mat(), parent), d.x, d.y));
     }
     if (next.size) applyEdit(s, next);
-  }
-
-  /**
-   * Build the DragonBones bundle and write it where the user says.
-   *
-   * The location is asked for BEFORE the build, not after. `showSaveFilePicker`
-   * needs transient user activation, and packing an atlas can easily outlive
-   * the few seconds that lasts — ask late and the export dies on a gesture
-   * error instead of saving. It also puts the question where the user expects
-   * it, right after choosing the command.
-   *
-   * The name defaults to the project's, which is also what the skeleton and
-   * the atlas pages are named after — one name for the whole export, so the
-   * pieces stay recognisably a set.
-   */
-  /**
-   * One library item as a PNG.
-   *
-   * The location is asked for BEFORE the raster, because `showSaveFilePicker`
-   * needs transient user activation and an `await` in front of it throws that
-   * away — the same rule the project export follows.
-   */
-  private async exportItemPng(itemId: ItemId): Promise<void> {
-    const item = this.store.project.items[itemId];
-    if (!item) return;
-
-    const suggested = `${safeFileName(item.name)}.png`;
-    let target: FileRef | null;
-    if (hasNativeFiles()) {
-      target = await pickSaveLocation(suggested, PNG_TYPE, "animo-png");
-    } else {
-      const name = await promptText({ title: "Export PNG", label: "File name", value: suggested, ok: "Export" });
-      target = name ? { name: name.endsWith(".png") ? name : `${name}.png` } : null;
-    }
-    if (!target) return;
-
-    try {
-      const blob = await busy(`Exporting ${target.name}`, () => this.library.renderItemPng(itemId));
-      if (!blob) {
-        this.toast.show(`"${item.name}" has nothing to draw`, true);
-        return;
-      }
-      await writeFile(target, blob);
-      this.toast.show(`Exported ${target.name}`);
-    } catch (err) {
-      this.toast.show(`Could not export the PNG: ${(err as Error).message}`, true);
-    }
   }
 
   /**
@@ -841,7 +769,7 @@ export class App {
     }
 
     const was = { width: item.width, height: item.height };
-    const usage = countUsages(s).get(itemId) ?? 0;
+    const usage = countUsages(s.project).get(itemId) ?? 0;
     s.apply(new ReplaceImageAsset(itemId, next, this.symbolsUsing(itemId)));
     this.viewport.clearCaches();
     s.emit("library");
@@ -867,162 +795,6 @@ export class App {
     return out;
   }
 
-  async exportProject(): Promise<void> {
-    const suggested = `${safeFileName(this.store.project.name)}_spine.zip`;
-    let target: FileRef | null;
-    if (hasNativeFiles()) {
-      target = await pickSaveLocation(suggested, ZIP_TYPE, "animo-export");
-    } else {
-      const name = await promptText({ title: "Export Spine", label: "File name", value: suggested, ok: "Export" });
-      target = name ? { name: name.endsWith(".zip") ? name : `${name}.zip` } : null;
-    }
-    if (!target) return;                        // cancelled
-    const file = target;
-
-    await busy(`Exporting ${file.name}`, async (report) => {
-      const result = await this.buildForExport(phase(report, 0, 0.8));
-      if (!result) return;
-      try {
-        await writeFile(file, await bundleZip(result));
-        report(1);
-        this.toast.show(
-          `Exported ${file.name} (${result.pages.length} atlas page(s))`,
-        );
-      } catch (err) {
-        this.reportExportFailure(err);
-      }
-    });
-  }
-
-  /**
-   * Write the same files loose into a folder instead of zipped.
-   *
-   * A runtime wants `_ske.json` next to its atlas pages; when the target is
-   * an assets folder in a game project, unzipping first is a step that exists
-   * only because the exporter insisted on a zip.
-   */
-  async exportToFolder(): Promise<void> {
-    if (!hasDirectoryPicker()) {
-      this.toast.show("This browser cannot choose a folder. Use Export Spine to get a zip instead.", true);
-      return;
-    }
-    const dir = await pickDirectory("animo-export");
-    if (!dir) return;                           // cancelled
-
-    await busy(`Exporting to ${dir.name}`, async (report) => {
-      const result = await this.buildForExport(phase(report, 0, 0.8));
-      if (!result) return;
-      try {
-        const files = await exportFiles(result);
-        const names = Object.keys(files);
-        for (const [n, name] of names.entries()) {
-          await writeIntoDirectory(dir, name, new Blob([files[name] as unknown as BlobPart]));
-          report(0.8 + 0.2 * (n + 1) / names.length);
-        }
-        this.toast.show(
-          `Exported ${names.length} file(s) to ${dir.name}`,
-        );
-      } catch (err) {
-        this.reportExportFailure(err);
-      }
-    });
-  }
-
-  /**
-   * Export into the document's Unity folder (docs/BONEBURST-PIPELINE-PLAN.md R4):
-   * the one remembered from last time, or one picked now. `ask` is a menu click,
-   * which may ask the browser again for a remembered folder or pick one; the AI's
-   * `export_to_unity` passes false and needs a folder granted already. The atlas
-   * is `.atlas.txt` and the skeleton is written last (`unityWriteOrder`), so Unity's
-   * rebake (the import package's BoneBurstRebakeOnChange) sees a whole export.
-   */
-  async exportToUnity(ask: boolean): Promise<{ folder: string; files: string[] } | null> {
-    const name = this.store.project.name;
-    let dir = await rememberedUnityFolder(name);
-    if (dir && !(await mayWrite(dir, ask))) dir = null;
-    if (!dir) {
-      if (!ask) throw new Error("No Unity folder is set for this document: use File › Export to Unity… once (the browser asks for the folder), then this can export again.");
-      if (!hasDirectoryPicker()) {
-        this.toast.show("This browser cannot choose a folder. Use Export Spine to get a zip instead.", true);
-        return null;
-      }
-      dir = await pickDirectory("boneburst-unity");
-      if (!dir) return null;
-      await rememberUnityFolder(name, dir);
-    }
-    const target = dir;
-    let written: string[] | null = null;
-    await busy(`Exporting to Unity: ${target.name}`, async (report) => {
-      const result = await this.buildForExport(phase(report, 0, 0.8));
-      if (!result) return;
-      result.atlasTxt = true;
-      const files = await exportFiles(result);
-      const names = unityWriteOrder(Object.keys(files));
-      for (const [n, file] of names.entries()) {
-        await writeIntoDirectory(target, file, new Blob([files[file] as unknown as BlobPart]));
-        report(0.8 + 0.2 * (n + 1) / names.length);
-      }
-      written = names;
-    });
-    if (!written) return null;
-    this.toast.show(`Exported to Unity: ${target.name}. Unity rebakes it when it next refreshes; the first time, right-click the folder › BoneBurst › Bake Folder….`);
-    return { folder: target.name, files: written };
-  }
-
-  /** Shared front half: build, report diagnostics, refuse on errors. */
-  private async buildForExport(
-    report: (fraction: number) => void,
-  ): Promise<Awaited<ReturnType<typeof buildExport>> | null> {
-    try {
-      const result = await buildExport(this.store.project, this.assets, undefined, report);
-      const root = this.store.project.items[this.store.project.rootSymbolId];
-      result.sounds = (isSymbol(root) ? root.events ?? [] : [])
-        .filter((d) => d.audio && this.sounds.has(d.audio))
-        .map((d) => ({ path: d.audio!, blob: this.sounds.get(d.audio!)! }));
-      for (const d of result.diagnostics) {
-        (d.severity === "error" ? console.error : console.warn)(`[Export] ${d.message}`);
-      }
-      const errors = result.diagnostics.filter((d) => d.severity === "error");
-      if (errors.length) {
-        this.toast.show(`Export aborted: ${errors[0]!.message}`, true);
-        return null;
-      }
-      return result;
-    } catch (err) {
-      this.reportExportFailure(err);
-      return null;
-    }
-  }
-
-  private reportExportFailure(err: unknown): void {
-    if (err instanceof AtlasTooSmall) { void this.explainAtlasTooSmall(err); return; }
-    const msg = err instanceof Error ? err.message : String(err);
-    console.error("[Export] Failed:", err);
-    this.toast.show(`Export failed: ${msg}`, true);
-  }
-
-  /** The problem the last explanation was about, so the preview, which
-   *  rebuilds after every edit, explains each problem once. */
-  private explainedAtlas: string | null = null;
-
-  private previewBuilt(err: unknown): void {
-    if (!(err instanceof AtlasTooSmall)) {
-      if (err === null) this.explainedAtlas = null;
-      return;
-    }
-    const key = JSON.stringify([err.offenders, err.page]);
-    if (key === this.explainedAtlas) return;
-    this.explainedAtlas = key;
-    void this.explainAtlasTooSmall(err);
-  }
-
-  private explainAtlasTooSmall(err: AtlasTooSmall): Promise<void> {
-    const advice = oversizeAdvice(err.offenders, exportSettingsOf(this.store.project));
-    return alertDialog({
-      title: advice.title, message: advice.message, width: 460,
-      extra: { label: "Export Settings…", run: () => openExportSettings(this.store) },
-    });
-  }
 
   /**
    * The recent-files section of the File menu.
@@ -1128,31 +900,13 @@ export class App {
 
   private canToggleMask(): boolean {
     const l = this.selectedLayer();
-    if (!l) return false;
-    // Turning it ON needs something below to clip; turning it OFF always works.
-    return l.isMask === true || maskCandidate(this.store.currentSymbol, l.id) !== null;
+    return !!l && toggleMaskPlan(this.store.currentSymbol, l.id) !== null;
   }
 
   private toggleMask(): void {
-    const sym = this.store.currentSymbol;
     const layer = this.selectedLayer();
-    if (!layer) return;
-    const next = new Map<LayerId, MaskState>();
-
-    if (layer.isMask) {
-      next.set(layer.id, {});
-      // Every link pointing at it has to go too, or normalizeMasks would drop
-      // them anyway and the undo would only restore half the relationship.
-      for (const l of sym.layers) {
-        if (l.maskedBy === layer.id) next.set(l.id, { isMask: l.isMask });
-      }
-    } else {
-      const below = maskCandidate(sym, layer.id);
-      if (!below) return;
-      next.set(layer.id, { isMask: true });
-      next.set(below.id, { maskedBy: layer.id });
-    }
-
+    const next = layer ? toggleMaskPlan(this.store.currentSymbol, layer.id) : null;
+    if (!next) return;
     this.store.apply(new SetLayerMasks(this.store.currentSymbolId, next));
     this.store.emit("stage");
     this.store.emit("timeline");
@@ -1160,30 +914,20 @@ export class App {
 
   private canToggleMasked(): boolean {
     const l = this.selectedLayer();
-    if (!l || l.isMask) return false;
-    return !!l.maskedBy || nearestMaskAbove(this.store.currentSymbol, l.id) !== null;
+    return !!l && toggleMaskedPlan(this.store.currentSymbol, l.id) !== null;
   }
 
   private toggleMasked(): void {
     const layer = this.selectedLayer();
-    if (!layer || layer.isMask) return;
-    const mask = layer.maskedBy ? null : nearestMaskAbove(this.store.currentSymbol, layer.id);
-    if (!layer.maskedBy && !mask) return;
-
-    this.store.apply(new SetLayerMasks(
-      this.store.currentSymbolId,
-      new Map([[layer.id, mask ? { maskedBy: mask.id } : {}]]),
-    ));
+    const next = layer ? toggleMaskedPlan(this.store.currentSymbol, layer.id) : null;
+    if (!next) return;
+    this.store.apply(new SetLayerMasks(this.store.currentSymbolId, next));
     this.store.emit("stage");
     this.store.emit("timeline");
   }
 
   private bindableToBone(): { boneId: NodeId; ids: NodeId[]; name: string } | null {
-    const nodes = this.store.selectedNodes;
-    const bones = nodes.filter((n) => n.kind === "bone");
-    const rest = nodes.filter((n) => n.kind !== "bone");
-    if (bones.length !== 1 || rest.length === 0) return null;
-    return { boneId: bones[0]!.id, ids: rest.map((n) => n.id), name: bones[0]!.name };
+    return bindPlan(this.store.selectedNodes);
   }
 
   private bindToBone(): void {
@@ -1561,9 +1305,9 @@ export class App {
     reg("ai.ask", () => { this.shell.showPanel(AI_PANEL); this.aiPanel.focus(); });
     reg("ai.panel", () => this.shell.togglePanel(AI_PANEL), undefined, () => this.shell.isPanelShown(AI_PANEL));
     reg("ai.help", () => openAiHelp(this.agentBridge, () => this.toggleAgent()));
-    reg("file.export", () => void this.exportProject());
-    reg("file.exportFolder", () => void this.exportToFolder());
-    reg("file.exportUnity", () => void this.exportToUnity(true).catch((err) => this.reportExportFailure(err)));
+    reg("file.export", () => void this.exports.exportProject());
+    reg("file.exportFolder", () => void this.exports.exportToFolder());
+    reg("file.exportUnity", () => void this.exports.exportToUnity(true).catch((err) => this.exports.reportExportFailure(err)));
     reg("file.exportSettings", () => openExportSettings(this.store));
 
     reg("edit.undo", () => s.undo(), () => s.history.canUndo);

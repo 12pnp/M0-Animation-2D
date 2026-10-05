@@ -1,14 +1,16 @@
+import { inFlatPolygon } from "@/core/math/geom";
 import { beforeEach, describe, expect, it } from "vitest";
 import { reseed } from "@/core/doc/ids";
 import {
-  attachmentPlan, boxFromOutline, roundMoved, boxNodeBounds, boxWeightsWithPoint, inPolygon, outlineWeightsKept, POINT_RADIUS, pointMatrix, pointToBoneBurst,
+  attachmentPlan, boxFromOutline, roundMoved, boxNodeBounds, boxWeightsWithPoint, outlineWeightsKept, POINT_RADIUS, pointMatrix, pointToBoneBurst,
   uniqueNodeName, withBoxPoint, withOutlinePoints, withoutBoxPoint,
 } from "@/core/doc/boxes";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { apply } from "@/core/math/Matrix2D";
 import type { NodeId } from "@/core/doc/ids";
 import { createNode } from "@/core/doc/defaults";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
 import { createLayer } from "@/core/doc/defaults";
 import type { SymbolItem } from "@/core/doc/types";
@@ -22,7 +24,7 @@ describe("box geometry", () => {
   it.each([
     { x: 5, y: 5, inside: true }, { x: 11, y: 5, inside: false }, { x: -1, y: 5, inside: false }, { x: 9.9, y: 0.1, inside: true },
   ])("($x, $y) inside the square: $inside", ({ x, y, inside }) => {
-    expect(inPolygon(square, x, y)).toBe(inside);
+    expect(inFlatPolygon(square, x, y)).toBe(inside);
   });
 
   it.each([

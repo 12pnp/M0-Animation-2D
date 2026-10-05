@@ -10,7 +10,8 @@ import {
   ConvertToSymbol, DuplicateLibraryItem, wouldCreateCycle, symbolDepth,
 } from "@/core/history/symbolCommands";
 import { History } from "@/core/history/History";
-import { RenameLibraryItem, SetBindTransform } from "@/core/history/commands";
+import { SetBindTransform } from "@/core/history/commands";
+import { RenameLibraryItem } from "@/core/history/libraryCommands";
 import type { AssetId } from "@/core/doc/ids";
 import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
 

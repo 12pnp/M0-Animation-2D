@@ -1,7 +1,6 @@
 import type { Tool, ToolContext } from "./Tool";
 import type { NodeId } from "@/core/doc/ids";
 import type { DeformKey, MeshData, Node, PathShape } from "@/core/doc/types";
-import { insidePolygon } from "@/core/mesh/makeMesh";
 import { deformsWithPoint, deformsWithoutPoint, paintWeights, withPoint, withPointMoved, withoutPoint, withPositions, withWeights } from "@/core/mesh/meshEdit";
 import { localDelta, type MeshBones, meshPositions } from "@/core/mesh/meshPose";
 import { deformAt, deformKeysOf, type DeformTarget, withDeformKey } from "@/core/mesh/deform";
@@ -12,8 +11,9 @@ import { editShownOutline } from "@/app/AttachmentOps";
 import { withKnotMoved } from "@/core/doc/constraints";
 import { editedMesh, type EditedMesh } from "@/core/mesh/meshPlan";
 import { stageSkinOf } from "@/core/doc/skins";
-import { boxWeightsWithPoint, entryOutline, roundMoved, inPolygon, outlineAsMesh, outlineWeighted, outlineWeightsKept, withBoxPoint, withOutlinePoints, withoutBoxPoint } from "@/core/doc/boxes";
+import { boxWeightsWithPoint, entryOutline, roundMoved, outlineAsMesh, outlineWeighted, outlineWeightsKept, withBoxPoint, withOutlinePoints, withoutBoxPoint } from "@/core/doc/boxes";
 import type { AnimId, ItemId } from "@/core/doc/ids";
+import { inFlatPolygon } from "@/core/math/geom";
 
 /** What the overlay draws for the Mesh tool: the mesh it edits and the picked points. */
 export const meshView: { node: NodeId | null; picked: Set<number> } = { node: null, picked: new Set() };
@@ -143,7 +143,7 @@ export class MeshTool implements Tool {
       if (!applyInverse(local, entry.world, world.x, world.y)) return;
       const px = local.x + target.pivot.x, py = local.y + target.pivot.y;
       const mesh = target.mesh;
-      if (insidePolygon([...meshPositions(mesh)], mesh.hull, px, py)) {
+      if (inFlatPolygon([...meshPositions(mesh)], px, py, mesh.hull)) {
         const next = withPoint(mesh, Math.round(px * 100) / 100, Math.round(py * 100) / 100);
         if (next) {
           store.apply(meshEdit("Add Mesh Point", store.currentSymbolId, node.id, target, next, this.fittedDeforms(ctx, node.id, target, deformsWithPoint)));
@@ -272,7 +272,7 @@ export class MeshTool implements Tool {
     const local = { x: 0, y: 0 };
     // Setup only for a weighted box: elsewhere its points are not where the node puts them.
     if (outlineWeighted(node) && ctx.store.ui.mode !== "setup") { ctx.invalidate(); return; }
-    if (applyInverse(local, entry.world, world.x, world.y) && inPolygon(node.box!.points, local.x, local.y)) {
+    if (applyInverse(local, entry.world, world.x, world.y) && inFlatPolygon(node.box!.points, local.x, local.y)) {
       const x = Math.round(local.x * 100) / 100, y = Math.round(local.y * 100) / 100;
       const points = withBoxPoint(node.box!.points, x, y);
       const at = points.findIndex((_, k) => k % 2 === 0 && points[k] === x && points[k + 1] === y) / 2;

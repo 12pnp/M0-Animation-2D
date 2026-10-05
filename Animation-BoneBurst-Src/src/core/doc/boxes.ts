@@ -3,6 +3,7 @@ import type { NodeId } from "./ids";
 import { cloneTf, IDENTITY, type Transform } from "@/core/math/Transform";
 import { apply, matOf, type Matrix2D } from "@/core/math/Matrix2D";
 import { meshWorld, type MeshBones } from "@/core/mesh/meshPose";
+import { segmentDistance } from "@/core/math/geom";
 
 /**
  * Bounding boxes and points (ARCHITECTURE ▸ Boxes and points), pure. A box
@@ -150,22 +151,9 @@ export function roundMoved(base: readonly number[], next: readonly number[]): { 
 /** Whether (x, y) is within `tolerance` of the polyline `line`. */
 export function nearPolyline(line: readonly number[], x: number, y: number, tolerance: number): boolean {
   for (let i = 0; i + 3 < line.length; i += 2) {
-    const ax = line[i]!, ay = line[i + 1]!, dx = line[i + 2]! - ax, dy = line[i + 3]! - ay, len2 = dx * dx + dy * dy;
-    const t = len2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len2)) : 0;
-    if (Math.hypot(x - ax - t * dx, y - ay - t * dy) <= tolerance) return true;
+    if (segmentDistance(line[i]!, line[i + 1]!, line[i + 2]!, line[i + 3]!, x, y) <= tolerance) return true;
   }
   return false;
-}
-
-/** Even-odd: whether (x, y) is inside the polygon `p`. */
-export function inPolygon(p: readonly number[], x: number, y: number): boolean {
-  let inside = false;
-  const n = p.length / 2;
-  for (let i = 0, j = n - 1; i < n; j = i++) {
-    const xi = p[i * 2]!, yi = p[i * 2 + 1]!, xj = p[j * 2]!, yj = p[j * 2 + 1]!;
-    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
 }
 
 /** A box polygon for an image's outline (pixels, y down) about its pivot:
@@ -179,10 +167,8 @@ export function withBoxPoint(p: readonly number[], x: number, y: number): number
   const n = p.length / 2;
   let best = 0, bestD = Infinity;
   for (let i = 0; i < n; i++) {
-    const ax = p[i * 2]!, ay = p[i * 2 + 1]!, bx = p[((i + 1) % n) * 2]!, by = p[((i + 1) % n) * 2 + 1]!;
-    const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
-    const t = len2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len2)) : 0;
-    const d = Math.hypot(x - ax - t * dx, y - ay - t * dy);
+    const j = (i + 1) % n;
+    const d = segmentDistance(p[i * 2]!, p[i * 2 + 1]!, p[j * 2]!, p[j * 2 + 1]!, x, y);
     if (d < bestD) { bestD = d; best = i; }
   }
   return [...p.slice(0, (best + 1) * 2), x, y, ...p.slice((best + 1) * 2)];

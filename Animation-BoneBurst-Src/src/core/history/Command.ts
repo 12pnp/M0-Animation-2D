@@ -85,32 +85,3 @@ export class CompositeCommand implements Command {
 
   get size(): number { return this.parts.length; }
 }
-
-/**
- * The generic escape hatch: snapshot a whole subtree. Correct for any
- * mutation, at the cost of memory, so it is for operations whose precise
- * inverse would be more code than it is worth (e.g. "distribute to layers").
- */
-export class SnapshotCommand implements Command {
-  readonly kind = "snapshot";
-  private before: string | null = null;
-
-  constructor(
-    readonly label: string,
-    readonly touches: TouchSet,
-    private readonly read: (p: Project) => unknown,
-    private readonly write: (p: Project, value: unknown) => void,
-    private readonly mutate: (p: Project) => void,
-  ) {}
-
-  apply(p: Project): void {
-    if (this.before === null) this.before = JSON.stringify(this.read(p));
-    this.mutate(p);
-  }
-
-  revert(p: Project): void {
-    if (this.before !== null) this.write(p, JSON.parse(this.before));
-  }
-
-  estimateSize(): number { return (this.before?.length ?? 0) * 2; }
-}

@@ -6,18 +6,8 @@ export interface Rect { x: number; y: number; w: number; h: number; }
 export function pt(x = 0, y = 0): Point { return { x, y }; }
 export function rect(x = 0, y = 0, w = 0, h = 0): Rect { return { x, y, w, h }; }
 
-export const EMPTY_RECT: Readonly<Rect> = Object.freeze({ x: 0, y: 0, w: 0, h: 0 });
-
-export function rectRight(r: Rect): number { return r.x + r.w; }
-export function rectBottom(r: Rect): number { return r.y + r.h; }
-export function rectCenter(r: Rect): Point { return { x: r.x + r.w / 2, y: r.y + r.h / 2 }; }
-
 export function rectContains(r: Rect, x: number, y: number): boolean {
   return x >= r.x && x <= r.x + r.w && y >= r.y && y <= r.y + r.h;
-}
-
-export function rectIntersects(a: Rect, b: Rect): boolean {
-  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 }
 
 export function rectUnion(a: Rect | null, b: Rect): Rect {
@@ -25,10 +15,6 @@ export function rectUnion(a: Rect | null, b: Rect): Rect {
   const x = Math.min(a.x, b.x);
   const y = Math.min(a.y, b.y);
   return { x, y, w: Math.max(a.x + a.w, b.x + b.w) - x, h: Math.max(a.y + a.h, b.y + b.h) - y };
-}
-
-export function rectInflate(r: Rect, by: number): Rect {
-  return { x: r.x - by, y: r.y - by, w: r.w + by * 2, h: r.h + by * 2 };
 }
 
 /** Normalise a rect built from two drag corners. */
@@ -67,8 +53,22 @@ export function transformCorners(m: Matrix2D, r: Rect): [Point, Point, Point, Po
   ];
 }
 
-export function dist(ax: number, ay: number, bx: number, by: number): number {
-  return Math.hypot(bx - ax, by - ay);
+/** Distance from (x, y) to the segment (ax, ay)–(bx, by). */
+export function segmentDistance(ax: number, ay: number, bx: number, by: number, x: number, y: number): number {
+  const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
+  const t = len2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len2)) : 0;
+  return Math.hypot(x - ax - t * dx, y - ay - t * dy);
+}
+
+/** Even-odd: whether (x, y) is inside the polygon of the first `n` points of
+ *  the flat list `pts` (x, y, x, y…). */
+export function inFlatPolygon(pts: readonly number[], x: number, y: number, n = pts.length / 2): boolean {
+  let inside = false;
+  for (let i = 0, j = n - 1; i < n; j = i++) {
+    const xi = pts[i * 2]!, yi = pts[i * 2 + 1]!, xj = pts[j * 2]!, yj = pts[j * 2 + 1]!;
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
 }
 
 /** Winding test — used for marquee selection against rotated bounds. */

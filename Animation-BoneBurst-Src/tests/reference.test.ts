@@ -3,7 +3,8 @@ import { reseed, type AssetId } from "@/core/doc/ids";
 import { createProject } from "@/core/doc/defaults";
 import type { AnimationReference, SymbolItem } from "@/core/doc/types";
 import { fitReference, imageFrame, referenceEnd, referenceFrameOf, referenceIndexAt, referenceSpacing, sheetCells } from "@/core/doc/reference";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import { History } from "@/core/history/History";
 import { SetAnimationReference } from "@/core/history/timelineCommands";
 

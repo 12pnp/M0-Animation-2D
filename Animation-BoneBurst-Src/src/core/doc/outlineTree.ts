@@ -6,7 +6,7 @@
 
 import type { NodeId } from "./ids";
 import type { SymbolItem } from "./types";
-import { createsCycle } from "@/core/history/commands";
+import { createsCycle } from "@/core/history/hierarchyCommands";
 
 export interface OutlineShow {
   bones: boolean;

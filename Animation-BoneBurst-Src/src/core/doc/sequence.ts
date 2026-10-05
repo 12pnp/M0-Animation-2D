@@ -113,12 +113,3 @@ export function bakedSequenceKeys(keys: readonly SequenceKey[], end: number, cou
 export function withSequenceKey(keys: readonly SequenceKey[], key: SequenceKey): SequenceKey[] {
   return [...keys.filter((k) => k.frame !== key.frame), key].sort((a, b) => a.frame - b.frame);
 }
-
-/** The keys at `frames` moved by `delta` frames (not before 0), replacing
- *  keys they land on. */
-export function moveKeys<K extends { frame: number }>(keys: readonly K[], frames: readonly number[], delta: number): K[] {
-  const moving = new Set(frames);
-  const moved = new Map<number, K>();
-  for (const k of keys) if (moving.has(k.frame)) moved.set(Math.max(0, k.frame + delta), { ...k, frame: Math.max(0, k.frame + delta) });
-  return [...keys.filter((k) => !moving.has(k.frame) && !moved.has(k.frame)), ...moved.values()].sort((a, b) => a.frame - b.frame);
-}

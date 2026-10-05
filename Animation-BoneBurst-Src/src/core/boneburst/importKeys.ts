@@ -1,5 +1,10 @@
 import type { ChannelEases, EaseSpec, TweenChannel, TweenSpec } from "@/core/math/easing";
 import { CHANNEL_PARENT, CURVE_Y_LIMIT, readPolyline, sameEase, boneburstPolyline } from "@/core/math/easing";
+import type { BoneBurstLocal } from "./transform";
+import type { ColorTransform } from "@/core/doc/types";
+import { colorOfLightDark } from "./color";
+import { obj, num, str } from "./importRead";
+import type { BoneBurstRaw } from "./types";
 
 /**
  * Spine's per-channel keys turned into the editor's keyframes.
@@ -238,4 +243,152 @@ export function mergeKeys(
     for (let f = a; f < b; f++) keys.push({ frame: f, tween: { kind: "linear" } });
   }
   return { keys, baked };
+}
+/* ── bone keys ───────────────────────────────────────────────────────────── */
+export type BoneValue = keyof BoneBurstLocal;
+/** Which timeline value feeds which pose value, and how its keys add to or
+ *  multiply the setup pose. */
+export const BONE_TIMELINES: Record<string, Array<{ value: BoneValue; field: string; }>> = {
+  rotate: [{ value: "rotation", field: "value" }],
+  translate: [{ value: "x", field: "x" }, { value: "y", field: "y" }],
+  translatex: [{ value: "x", field: "value" }],
+  translatey: [{ value: "y", field: "value" }],
+  scale: [{ value: "scaleX", field: "x" }, { value: "scaleY", field: "y" }],
+  scalex: [{ value: "scaleX", field: "value" }],
+  scaley: [{ value: "scaleY", field: "value" }],
+  shear: [{ value: "shearX", field: "x" }, { value: "shearY", field: "y" }],
+  shearx: [{ value: "shearX", field: "value" }],
+  sheary: [{ value: "shearY", field: "value" }],
+};
+export const SHEAR_TIMELINES = ["shear", "shearx", "sheary"];
+interface BoneGroups extends ChannelGroup { values: BoneValue[]; }
+/** A bone's keyed values, grouped by the editor's tween channels. */
+export function boneComps(timelines: BoneBurstRaw, setup: BoneBurstLocal, rate: number, keepShear: boolean): { groups: BoneGroups[]; rest: BoneBurstRaw | null; } {
+  const comps = new Map<BoneValue, Comp>();
+  const rest: BoneBurstRaw = {};
+  for (const [timeline, keys] of Object.entries(timelines)) {
+    const spec = keepShear && SHEAR_TIMELINES.includes(timeline) ? undefined : BONE_TIMELINES[timeline];
+    if (!spec || !Array.isArray(keys)) { rest[timeline] = keys; continue; }
+    spec.forEach(({ value, field }, i) => {
+      const scale = value === "scaleX" || value === "scaleY";
+      const base = setup[value];
+      const abs = (v: number) => (scale ? base * v : base + v);
+      comps.set(value, compOf(keys.filter(obj), rate, i, (k) => abs(num(k[field], scale ? 1 : 0)), abs, base));
+    });
+  }
+  const group = (
+    channel: ChannelGroup["channel"], values: BoneValue[], eps: number,
+    parts: Array<[ChannelGroup["channel"], BoneValue[]]> = []
+  ): BoneGroups | null => {
+    const cs = values.map((v) => comps.get(v)).filter((c): c is Comp => !!c);
+    if (!cs.length) return null;
+    const refined = parts.map(([ch, vs]) => group(ch, vs, eps)).filter((p): p is BoneGroups => !!p);
+    return { channel, comps: cs, eps, values: values.filter((v) => comps.has(v)), ...(refined.length ? { parts: refined } : {}) };
+  };
+  // The stage's rotation turns skewY, which is rotation + shearX; its shear
+  // is skewY − skewX, shearY − shearX (`fromBoneBurstLocal`).
+  const groups = [
+    group("position", ["x", "y"], 1e-6, [["x", ["x"]], ["y", ["y"]]]),
+    group("rotation", ["rotation", "shearX", "shearY"], 1e-6, [["rotation", ["rotation", "shearX"]], ["shear", ["shearX", "shearY"]]]),
+    group("scale", ["scaleX", "scaleY"], 1e-9, [["scaleX", ["scaleX"]], ["scaleY", ["scaleY"]]]),
+  ].filter((g): g is BoneGroups => !!g);
+  return { groups, rest: Object.keys(rest).length ? rest : null };
+}
+/** The bone's local pose at a frame: its keyed values, the setup pose for
+ *  the rest. */
+export function boneLocalAt(groups: BoneGroups[], setup: BoneBurstLocal, f: number): BoneBurstLocal {
+  const out = { ...setup };
+  for (const g of groups) g.values.forEach((v, i) => { out[v] = valueAt(g.comps[i]!, f); });
+  return out;
+}
+/**
+ * One value of a Spine timeline as a `Comp`: keys at whole frames, values
+ * and curve controls absolute. `index` picks the value's four numbers in
+ * each key's curve (x then y for two-value timelines).
+ */
+function compOf(
+  keys: BoneBurstRaw[], rate: number, index: number,
+  value: (k: BoneBurstRaw) => number, abs: (v: number) => number, setup: number
+): Comp {
+  const out: CompKey[] = [];
+  keys.forEach((k, i) => {
+    const t = num(k.time, 0), frame = frameOf(t, rate);
+    const next = keys[i + 1];
+    let curve: CompKey["curve"] = null;
+    if (k.curve === "stepped") curve = "stepped";
+    else if (Array.isArray(k.curve) && next) {
+      const c = k.curve.slice(index * 4, index * 4 + 4).map((x) => num(x, 0));
+      const t1 = num(next.time, 0), f1 = frameOf(t1, rate);
+      // Times into frames, keeping each control where it sat between the
+      // two keys (a key's time is read onto its whole frame).
+      const toF = (x: number) => (t1 === t ? frame : frame + ((x - t) / (t1 - t)) * (f1 - frame));
+      curve = [toF(c[0]!), abs(c[1]!), toF(c[2]!), abs(c[3]!)];
+    }
+    out.push({ frame, value: value(k), curve });
+  });
+  return { setup, keys: out };
+}
+/* ── slot keys ───────────────────────────────────────────────────────────── */
+interface Rgba2 { r: number; g: number; b: number; a: number; dr: number; dg: number; db: number; }
+const CHANNELS = ["r", "g", "b", "a", "dr", "dg", "db"] as const;
+function hexColor(v: unknown, fallback: number[]): number[] {
+  if (!str(v)) return fallback;
+  const out = fallback.slice();
+  for (let i = 0; i * 2 < v.length && i < out.length; i++) out[i] = parseInt(v.slice(i * 2, i * 2 + 2), 16) / 255;
+  return out;
+}
+export function slotSetup(s: BoneBurstRaw): Rgba2 {
+  const [r, g, b, a] = hexColor(s.color, [1, 1, 1, 1]) as [number, number, number, number];
+  const [dr, dg, db] = hexColor(s.dark, [0, 0, 0]) as [number, number, number];
+  return { r, g, b, a, dr, dg, db };
+}
+function toColor(c: Rgba2): ColorTransform {
+  return colorOfLightDark(c.r, c.g, c.b, c.a, c.dr, c.dg, c.db);
+}
+export function slotColor(color: unknown, dark: unknown): ColorTransform {
+  return toColor(slotSetup({ color, dark }));
+}
+/** Which colour values each colour timeline keys, in its curve order. */
+const COLOR_TIMELINES: Record<string, Array<{ ch: (typeof CHANNELS)[number]; read: (k: BoneBurstRaw) => number; }>> = {
+  rgba: (["r", "g", "b", "a"] as const).map((ch, i) => ({ ch, read: (k: BoneBurstRaw) => hexColor(k.color, [1, 1, 1, 1])[i]! })),
+  rgb: (["r", "g", "b"] as const).map((ch, i) => ({ ch, read: (k: BoneBurstRaw) => hexColor(k.color, [1, 1, 1])[i]! })),
+  alpha: [{ ch: "a", read: (k: BoneBurstRaw) => num(k.value, 1) }],
+  rgba2: [
+    ...(["r", "g", "b", "a"] as const).map((ch, i) => ({ ch, read: (k: BoneBurstRaw) => hexColor(k.light, [1, 1, 1, 1])[i]! })),
+    ...(["dr", "dg", "db"] as const).map((ch, i) => ({ ch, read: (k: BoneBurstRaw) => hexColor(k.dark, [0, 0, 0])[i]! })),
+  ],
+  rgb2: [
+    ...(["r", "g", "b"] as const).map((ch, i) => ({ ch, read: (k: BoneBurstRaw) => hexColor(k.light, [1, 1, 1])[i]! })),
+    ...(["dr", "dg", "db"] as const).map((ch, i) => ({ ch, read: (k: BoneBurstRaw) => hexColor(k.dark, [0, 0, 0])[i]! })),
+  ],
+};
+type ColorGroup = ChannelGroup & { chans: Array<(typeof CHANNELS)[number]>; setup: Rgba2; };
+export function colorComps(timelines: BoneBurstRaw, setup: Rgba2, rate: number): { group: ColorGroup | null; rest: BoneBurstRaw | null; } {
+  const comps = new Map<(typeof CHANNELS)[number], Comp>();
+  const rest: BoneBurstRaw = {};
+  for (const [timeline, keys] of Object.entries(timelines)) {
+    if (timeline === "attachment") continue;
+    const spec = COLOR_TIMELINES[timeline];
+    if (!spec || !Array.isArray(keys)) { rest[timeline] = keys; continue; }
+    spec.forEach(({ ch, read }, i) => comps.set(ch, compOf(keys.filter(obj), rate, i, read, (v) => v, setup[ch])));
+  }
+  const chans = CHANNELS.filter((c) => comps.has(c));
+  const group: ColorGroup | null = chans.length
+    ? { channel: "color", comps: chans.map((c) => comps.get(c)!), eps: 1e-7, chans, setup } : null;
+  return { group, rest: Object.keys(rest).length ? rest : null };
+}
+export function slotColorAt(g: ColorGroup, f: number): ColorTransform {
+  const c = { ...g.setup };
+  g.chans.forEach((ch, i) => { c[ch] = valueAt(g.comps[i]!, f); });
+  return toColor(c);
+}
+/**
+ * A key time in frames: the whole frame it was written for (the editor
+ * stores times to seven digits, so 1/3 s is 9.999999 frames at 30 fps), or
+ * where it truly falls between two.
+ */
+
+export function frameOf(t: number, rate: number): number {
+  const f = t * rate;
+  return Math.abs(f - Math.round(f)) <= 2e-3 ? Math.round(f) : f;
 }

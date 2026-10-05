@@ -37,7 +37,7 @@ export function withOrder(order: readonly NodeId[], setup: readonly NodeId[]): N
 }
 
 /** The key in force at `frame`: the last at or before it. */
-export function drawOrderKeyAt(anim: Animation | null | undefined, frame: number): DrawOrderKey | null {
+function drawOrderKeyAt(anim: Animation | null | undefined, frame: number): DrawOrderKey | null {
   let found: DrawOrderKey | null = null;
   for (const k of anim?.drawOrder ?? []) {
     if (k.frame <= frame) found = k;
@@ -100,7 +100,8 @@ export function toOffsets<T>(order: readonly T[], setup: readonly T[]): Array<{ 
   return out;
 }
 
-/** `SkeletonJson`'s reading of offsets over the setup order. Null when they
+/** `SkeletonJson`'s reading of offsets over the setup order, as the runtime's
+ *  `orderFromOffsets` plays them. Null when they
  *  do not make an order (two slots on one place, one off the end). */
 export function fromOffsets<T>(offsets: ReadonlyArray<{ item: T; offset: number }>, setup: readonly T[]): T[] | null {
   const n = setup.length;
@@ -157,7 +158,7 @@ export function withDrawOrderKey(
   return out;
 }
 
-export function sameOrder(a: readonly NodeId[], b: readonly NodeId[]): boolean {
+function sameOrder(a: readonly NodeId[], b: readonly NodeId[]): boolean {
   return a.length === b.length && a.every((id, i) => id === b[i]);
 }
 
@@ -167,11 +168,6 @@ export function moveDrawOrderKeys(keys: readonly DrawOrderKey[], frames: readonl
   const moved = keys.filter((k) => pick.has(k.frame)).map((k) => ({ ...k, frame: Math.max(0, k.frame + delta) }));
   const landed = new Set(moved.map((k) => k.frame));
   return [...keys.filter((k) => !pick.has(k.frame) && !landed.has(k.frame)), ...moved].sort((a, b) => a.frame - b.frame);
-}
-
-export function deleteDrawOrderKeys(keys: readonly DrawOrderKey[], frames: readonly number[]): DrawOrderKey[] {
-  const pick = new Set(frames);
-  return keys.filter((k) => !pick.has(k.frame));
 }
 
 /** What a reorder of the selection moves: its drawing layers, and for a

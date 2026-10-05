@@ -1,4 +1,5 @@
-import { AgentApi, AgentError } from "./AgentApi";
+import { AgentApi } from "./AgentApi";
+import { AgentError } from "./agentArgs";
 
 /**
  * The page's end of `mcp/boneburst-bridge.mjs`, the local process an AI talks

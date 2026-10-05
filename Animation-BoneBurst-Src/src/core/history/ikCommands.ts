@@ -1,15 +1,9 @@
 import { adoptBefore, type Command, type TouchSet } from "./Command";
-import type { IkConstraint, Project, SymbolItem } from "@/core/doc/types";
-import { isSymbol } from "@/core/doc/types";
+import type { IkConstraint, Project } from "@/core/doc/types";
 import type { ItemId, NodeId } from "@/core/doc/ids";
 import { invalidateBounds } from "@/core/doc/pose";
 import { orderAfterEdit } from "@/core/doc/constraintOrder";
-
-function symbolOf(p: Project, id: ItemId): SymbolItem {
-  const s = p.items[id];
-  if (!isSymbol(s)) throw new Error(`Not a symbol: ${id}`);
-  return s;
-}
+import { symbolOf } from "./lookup";
 
 /**
  * Bones and IK constraints.

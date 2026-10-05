@@ -1,6 +1,7 @@
 import { CURVE_Y_LIMIT, type EaseSpec, easeOf, easeSegments, type TweenSpec } from "@/core/math/easing";
 import type { Keyframe, Node, Track } from "./types";
 import { insertKeyframe, keyIndexAt } from "./timeline";
+import type { Point } from "@/core/math/geom";
 
 /**
  * Spline handles on a bone's path (docs/CYCLE-PATH-PLAN.md, B5 ▸ Spline
@@ -13,10 +14,8 @@ import { insertKeyframe, keyIndexAt } from "./timeline";
  * times only change the speed along the curve, never its shape, and are kept.
  */
 
-export interface Pt { x: number; y: number }
-
 export interface Spline {
-  p0: Pt; p1: Pt; p2: Pt; p3: Pt;
+  p0: Point; p1: Point; p2: Point; p3: Point;
   /** The control times both axes share. */
   cx: [number, number];
 }
@@ -40,7 +39,7 @@ export function easesToSpline(a: Keyframe, b: Keyframe): Spline | null {
   if (Math.abs(ex.c1x - ey.c1x) > 1e-9 || Math.abs(ex.c2x - ey.c2x) > 1e-9) return null;
   const p0 = { x: a.transform.x, y: a.transform.y };
   const p3 = { x: b.transform.x, y: b.transform.y };
-  const at = (u: number, v: number): Pt => ({ x: p0.x + (p3.x - p0.x) * u, y: p0.y + (p3.y - p0.y) * v });
+  const at = (u: number, v: number): Point => ({ x: p0.x + (p3.x - p0.x) * u, y: p0.y + (p3.y - p0.y) * v });
   return { p0, p1: at(ex.c1y, ey.c1y), p2: at(ex.c2y, ey.c2y), p3, cx: [ex.c1x, ex.c2x] };
 }
 
@@ -51,7 +50,7 @@ export function easesToSpline(a: Keyframe, b: Keyframe): Spline | null {
 export function straightSpline(a: Keyframe, b: Keyframe): Spline {
   const p0 = { x: a.transform.x, y: a.transform.y };
   const p3 = { x: b.transform.x, y: b.transform.y };
-  const at = (u: number): Pt => ({ x: p0.x + (p3.x - p0.x) * u, y: p0.y + (p3.y - p0.y) * u });
+  const at = (u: number): Point => ({ x: p0.x + (p3.x - p0.x) * u, y: p0.y + (p3.y - p0.y) * u });
   return { p0, p1: at(1 / 3), p2: at(2 / 3), p3, cx: [1 / 3, 2 / 3] };
 }
 
@@ -91,7 +90,7 @@ export function splineToEases(s: Spline): SplineEases {
 /** de Casteljau: the two halves of `s` at parameter `t`. Their control
  *  times start again at a third and two thirds. */
 export function splitSpline(s: Spline, t: number): [Spline, Spline] {
-  const mix = (a: Pt, b: Pt): Pt => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+  const mix = (a: Point, b: Point): Point => ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
   const a = mix(s.p0, s.p1), b = mix(s.p1, s.p2), c = mix(s.p2, s.p3);
   const d = mix(a, b), e = mix(b, c);
   const m = mix(d, e);
@@ -100,7 +99,7 @@ export function splitSpline(s: Spline, t: number): [Spline, Spline] {
 }
 
 /** The point of `s` at parameter `t`. */
-export function splineAt(s: Spline, t: number): Pt {
+export function splineAt(s: Spline, t: number): Point {
   const l = 1 - t;
   const w = [l * l * l, 3 * l * l * t, 3 * l * t * t, t * t * t] as const;
   return {
@@ -206,7 +205,7 @@ export function handlePartner(segs: readonly SplineSegment[], h: HandleEnd, join
 /** Whether two handles on either side of `anchor` point opposite ways (within
  *  `deg`): a smooth key, which a drag keeps smooth. A handle on its anchor has
  *  no direction and counts as smooth. */
-export function handlesSmooth(anchor: Pt, a: Pt, b: Pt, deg = 2): boolean {
+export function handlesSmooth(anchor: Point, a: Point, b: Point, deg = 2): boolean {
   const ax = a.x - anchor.x, ay = a.y - anchor.y, bx = b.x - anchor.x, by = b.y - anchor.y;
   const la = Math.hypot(ax, ay), lb = Math.hypot(bx, by);
   if (la < 1e-9 || lb < 1e-9) return true;
@@ -215,7 +214,7 @@ export function handlesSmooth(anchor: Pt, a: Pt, b: Pt, deg = 2): boolean {
 
 /** `other` turned to point away from `dragged` across `anchor`, its own
  *  length kept: the partner of a smooth key's handle. */
-export function mirroredHandle(anchor: Pt, dragged: Pt, other: Pt): Pt {
+export function mirroredHandle(anchor: Point, dragged: Point, other: Point): Point {
   const dx = dragged.x - anchor.x, dy = dragged.y - anchor.y, l = Math.hypot(dx, dy);
   const len = Math.hypot(other.x - anchor.x, other.y - anchor.y);
   if (l < 1e-9) return other;
@@ -223,7 +222,7 @@ export function mirroredHandle(anchor: Pt, dragged: Pt, other: Pt): Pt {
 }
 
 /** A handle's point and the key it hangs from, in the parent's space. */
-export function handlePoint(s: Spline, end: "out" | "in"): { at: Pt; anchor: Pt } {
+export function handlePoint(s: Spline, end: "out" | "in"): { at: Point; anchor: Point } {
   return end === "out" ? { at: s.p1, anchor: s.p0 } : { at: s.p2, anchor: s.p3 };
 }
 
@@ -275,7 +274,7 @@ export function handleAt(
  * drawn, such as the arc a turning bone's tip makes. With too few samples to
  * pin two handles, the straight ones.
  */
-export function fitCubic(p0: Pt, p3: Pt, samples: ReadonlyArray<{ t: number; p: Pt }>): Spline {
+export function fitCubic(p0: Point, p3: Point, samples: ReadonlyArray<{ t: number; p: Point }>): Spline {
   let a11 = 0, a12 = 0, a22 = 0;
   const r1 = { x: 0, y: 0 }, r2 = { x: 0, y: 0 };
   for (const { t, p } of samples) {
@@ -288,7 +287,7 @@ export function fitCubic(p0: Pt, p3: Pt, samples: ReadonlyArray<{ t: number; p: 
   const det = a11 * a22 - a12 * a12;
   const cx: [number, number] = [1 / 3, 2 / 3];
   if (samples.length < 2 || Math.abs(det) < 1e-12) {
-    const at = (u: number): Pt => ({ x: p0.x + (p3.x - p0.x) * u, y: p0.y + (p3.y - p0.y) * u });
+    const at = (u: number): Point => ({ x: p0.x + (p3.x - p0.x) * u, y: p0.y + (p3.y - p0.y) * u });
     return { p0, p1: at(1 / 3), p2: at(2 / 3), p3, cx };
   }
   return {

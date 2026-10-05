@@ -1,7 +1,7 @@
 import type { Project, SymbolItem } from "@/core/doc/types";
 import type { NodeId } from "@/core/doc/ids";
 import { entryBox, type FrameContext, type Pose } from "@/core/doc/pose";
-import { apply, mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
+import { mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { type Rect, rectUnion, transformRect } from "@/core/math/geom";
 import type { SnapTargets } from "@/core/math/snap";
 import type { Guide } from "./Overlay";
@@ -35,7 +35,7 @@ export function collectSnapTargets(
   symbol: SymbolItem,
   pose: Pose,
   base: Matrix2D,
-  guides: Guide[],
+  guides: readonly Guide[],
   exclude: Set<NodeId>,
   when: FrameContext,
   prefs: SnapPrefs,
@@ -86,10 +86,4 @@ export function selectionRefs(
     xs: [bounds.x, bounds.x + bounds.w / 2, bounds.x + bounds.w],
     ys: [bounds.y, bounds.y + bounds.h / 2, bounds.y + bounds.h],
   };
-}
-
-/** Scene-space point of a world-space one, for tools that snap a single
- *  handle rather than a box. */
-export function toScene(base: Matrix2D, x: number, y: number): { x: number; y: number } {
-  return apply({ x: 0, y: 0 }, base, x, y);
 }

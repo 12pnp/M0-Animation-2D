@@ -12,7 +12,7 @@ import type { BoneBurstRaw } from "./types";
  */
 
 /** How many vertices an attachment has, or 0 when it has none. */
-export function vertexCountOf(att: BoneBurstRaw): number {
+function vertexCountOf(att: BoneBurstRaw): number {
   const type = att.type ?? "region";
   if (type === "mesh") return Array.isArray(att.uvs) ? att.uvs.length / 2 : 0;
   if (type === "path" || type === "boundingbox" || type === "clipping") return Number(att.vertexCount) || 0;
@@ -21,7 +21,7 @@ export function vertexCountOf(att: BoneBurstRaw): number {
 
 /** Weighted: each vertex lists its bones, `[count, (bone, x, y, weight) × count]`,
  *  rather than one x, y. */
-export function isWeighted(att: BoneBurstRaw): boolean {
+function isWeighted(att: BoneBurstRaw): boolean {
   const n = vertexCountOf(att);
   return n > 0 && Array.isArray(att.vertices) && att.vertices.length !== n * 2;
 }

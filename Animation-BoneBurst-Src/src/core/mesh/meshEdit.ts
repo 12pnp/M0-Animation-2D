@@ -1,8 +1,8 @@
 import { meshPositions } from "./meshPose";
 import type { NodeId } from "@/core/doc/ids";
 import type { DeformKey, MeshData } from "@/core/doc/types";
-import { insidePolygon } from "./makeMesh";
 import { triangulate } from "./triangulate";
+import { inFlatPolygon, segmentDistance } from "@/core/math/geom";
 
 /**
  * Editing a mesh (ARCHITECTURE ▸ Meshes), pure: a point added, removed or
@@ -47,7 +47,7 @@ function weightsAt(m: MeshData, x: number, y: number): Array<[NodeId, number]> |
  *  outside. Where positions are not texture coordinates, its texture
  *  coordinate is blended from the triangle it falls in. */
 export function withPoint(m: MeshData, x: number, y: number): MeshData | null {
-  if (!insidePolygon([...meshPositions(m)], m.hull, x, y)) return null;
+  if (!inFlatPolygon([...meshPositions(m)], x, y, m.hull)) return null;
   let out: MeshData;
   if (m.vertices) {
     const corners = cornersAt(m, x, y);
@@ -116,12 +116,6 @@ export function deformsWithoutPoint(keys: readonly DeformKey[], i: number): Defo
 /** A bone as a segment, in the same space as the points it weighs. */
 export interface BoneSegment { id: NodeId; x0: number; y0: number; x1: number; y1: number }
 
-function segmentDistance(s: BoneSegment, x: number, y: number): number {
-  const dx = s.x1 - s.x0, dy = s.y1 - s.y0, len2 = dx * dx + dy * dy;
-  const t = len2 ? Math.max(0, Math.min(1, ((x - s.x0) * dx + (y - s.y0) * dy) / len2)) : 0;
-  return Math.hypot(x - s.x0 - t * dx, y - s.y0 - t * dy);
-}
-
 /**
  * Automatic weights: each point follows the `keep` bones nearest to it (by
  * distance to each bone's segment), weighted by the inverse fourth power of
@@ -131,7 +125,7 @@ export function autoWeights(points: readonly number[], bones: readonly BoneSegme
   const n = points.length / 2;
   return Array.from({ length: n }, (_, i) => {
     const x = points[i * 2]!, y = points[i * 2 + 1]!;
-    const near = bones.map((b) => ({ id: b.id, d: segmentDistance(b, x, y) })).sort((a, b) => a.d - b.d).slice(0, keep);
+    const near = bones.map((b) => ({ id: b.id, d: segmentDistance(b.x0, b.y0, b.x1, b.y1, x, y) })).sort((a, b) => a.d - b.d).slice(0, keep);
     if (!near.length) return [];
     if (near[0]!.d < 1e-6) return [[near[0]!.id, 1]] as Array<[NodeId, number]>;
     const raw = near.map((b) => [b.id, 1 / b.d ** 4] as [NodeId, number]);

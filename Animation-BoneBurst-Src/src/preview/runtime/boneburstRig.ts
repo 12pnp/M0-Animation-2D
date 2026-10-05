@@ -2,7 +2,7 @@
 import { readAtlas } from "@/core/boneburst/runtime/atlasRead";
 import { readRig } from "@/core/boneburst/runtime/rigData";
 import { Rig } from "@/core/boneburst/runtime/rig";
-import type { ClippingData } from "@/core/boneburst/runtime/rigData";
+import type { ClippingData } from "@/core/boneburst/runtime/rigTypes";
 import { Track } from "@/core/boneburst/runtime/track";
 import { type DrawnSlot, drawList, drawnVertices } from "@/core/boneburst/runtime/draw";
 import type { PreviewRig, RigSource } from "./previewRig";

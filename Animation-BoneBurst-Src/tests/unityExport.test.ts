@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { reseed } from "@/core/doc/ids";
 import { Store } from "@/app/Store";
-import { AgentApi, AgentError } from "@/app/agent/AgentApi";
+import { AgentApi } from "@/app/agent/AgentApi";
+import { AgentError } from "@/app/agent/agentArgs";
 import { unityWriteOrder } from "@/io/export/UnityExport";
 import { loadStickman } from "./fixtures/stickman";
 

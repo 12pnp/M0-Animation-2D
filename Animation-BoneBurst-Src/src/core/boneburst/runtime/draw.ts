@@ -1,4 +1,4 @@
-import type { BlendMode, ClippingData, Frame, MeshData, RegionData } from "./rigData";
+import type { BlendMode, ClippingData, Frame, MeshData, RegionData } from "./rigTypes";
 import type { Rig, Writable } from "./rig";
 
 /**

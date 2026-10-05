@@ -1,22 +1,13 @@
 import { type Command, mergeTouches, type TouchSet } from "./Command";
-import type { Animation, AnimationReference, DrawOrderKey, EventDef, EventKey, IkKey, Keyframe, Project, SymbolItem, Track } from "@/core/doc/types";
-import { isSymbol } from "@/core/doc/types";
+import type { Animation, AnimationReference, DrawOrderKey, EventDef, EventKey, IkKey, Keyframe, Project, Track } from "@/core/doc/types";
 import type { AnimId, IkId, ItemId, NodeId } from "@/core/doc/ids";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
 import { createAnimation } from "@/core/doc/defaults";
 import { endAfterResize } from "@/core/doc/timeline";
 import { invalidateBounds } from "@/core/doc/pose";
 import { withTransform } from "@/core/doc/keyed";
-
-function symbolOf(p: Project, id: ItemId): SymbolItem {
-  const s = p.items[id];
-  if (!isSymbol(s)) throw new Error(`Not a symbol: ${id}`);
-  return s;
-}
-
-function animOf(sym: SymbolItem, id: AnimId): Animation | undefined {
-  return sym.animations.find((a) => a.id === id);
-}
+import { symbolOf, animOf } from "./lookup";
+import { SetAnimKeys, withListAt } from "./animKeysCommand";
 
 /**
  * One primitive for every timeline edit.
@@ -180,31 +171,6 @@ export class SetAnimationDuration implements Command {
       if (!this.beforeTracks.has(id)) this.beforeTracks.set(id, track);
     }
     return true;
-  }
-}
-
-export class SetAnimationLoop implements Command {
-  readonly kind = "anim.loop";
-  readonly touches: TouchSet;
-  readonly label = "Change Loop";
-  private before = 0;
-
-  constructor(
-    private readonly symbolId: ItemId,
-    private readonly animId: AnimId,
-    private readonly playTimes: number,
-  ) {
-    this.touches = { symbols: [symbolId], timeline: true };
-  }
-  apply(p: Project): void {
-    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
-    if (!anim) return;
-    this.before = anim.playTimes;
-    anim.playTimes = Math.max(0, Math.round(this.playTimes));
-  }
-  revert(p: Project): void {
-    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
-    if (anim) anim.playTimes = this.before;
   }
 }
 
@@ -436,93 +402,29 @@ export class SetAnimationPoses implements Command {
 
 /** An animation's draw order keys replaced (`core/doc/drawOrder.ts`). Steps of
  *  one drag share a `kind` and merge into one undo. */
-export class SetDrawOrder implements Command {
-  readonly touches: TouchSet;
-  private before: DrawOrderKey[] | undefined;
-  private captured = false;
-
-  constructor(
-    readonly label: string,
-    private readonly symbolId: ItemId,
-    private readonly animId: AnimId,
-    private after: DrawOrderKey[],
-    readonly kind = "timeline.drawOrder",
-  ) {
-    this.touches = { symbols: [symbolId], timeline: true, stage: true };
+export class SetDrawOrder extends SetAnimKeys<DrawOrderKey[]> {
+  constructor(label: string, symbolId: ItemId, animId: AnimId, after: DrawOrderKey[], kind = "timeline.drawOrder") {
+    super(label, symbolId, animId, after, kind);
   }
-
-  apply(p: Project): void {
-    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
-    if (!anim) return;
-    if (!this.captured) { this.before = anim.drawOrder; this.captured = true; }
-    if (this.after.length) anim.drawOrder = this.after;
-    else delete anim.drawOrder;
-    invalidateBounds([this.symbolId]);
+  protected read(anim: Animation): DrawOrderKey[] | undefined { return anim.drawOrder; }
+  protected write(anim: Animation, keys: DrawOrderKey[] | undefined): void {
+    if (keys?.length) anim.drawOrder = keys; else delete anim.drawOrder;
   }
-
-  revert(p: Project): void {
-    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
-    if (!anim) return;
-    if (this.before) anim.drawOrder = this.before;
-    else delete anim.drawOrder;
-    invalidateBounds([this.symbolId]);
-  }
-
-  mergeWith(next: Command): boolean {
-    if (!(next instanceof SetDrawOrder) || next.kind !== this.kind) return false;
-    if (next.symbolId !== this.symbolId || next.animId !== this.animId) return false;
-    this.after = next.after;
-    return true;
-  }
+  protected sameList(): boolean { return true; }
 }
 
 /** One IK constraint's keys in an animation replaced (`core/doc/ikKeys.ts`).
  *  Steps of one drag share a `kind` and merge into one undo. */
-export class SetIkKeys implements Command {
-  readonly touches: TouchSet;
-  private before: IkKey[] | undefined;
-  private captured = false;
-
-  constructor(
-    readonly label: string,
-    private readonly symbolId: ItemId,
-    private readonly animId: AnimId,
-    private readonly ikId: IkId,
-    private after: IkKey[],
-    readonly kind = "timeline.ik",
-  ) {
-    this.touches = { symbols: [symbolId], timeline: true, stage: true };
+export class SetIkKeys extends SetAnimKeys<IkKey[]> {
+  constructor(label: string, symbolId: ItemId, animId: AnimId, private readonly ikId: IkId, after: IkKey[], kind = "timeline.ik") {
+    super(label, symbolId, animId, after, kind);
   }
-
-  private write(anim: Animation, keys: IkKey[] | undefined): void {
-    const out = { ...anim.ik };
-    if (keys?.length) out[this.ikId] = keys;
-    else delete out[this.ikId];
-    if (Object.keys(out).length) anim.ik = out;
-    else delete anim.ik;
+  protected read(anim: Animation): IkKey[] | undefined { return anim.ik?.[this.ikId]; }
+  protected write(anim: Animation, keys: IkKey[] | undefined): void {
+    const ik = withListAt(anim.ik, this.ikId, keys);
+    if (ik) anim.ik = ik; else delete anim.ik;
   }
-
-  apply(p: Project): void {
-    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
-    if (!anim) return;
-    if (!this.captured) { this.before = anim.ik?.[this.ikId]; this.captured = true; }
-    this.write(anim, this.after);
-    invalidateBounds([this.symbolId]);
-  }
-
-  revert(p: Project): void {
-    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
-    if (!anim) return;
-    this.write(anim, this.before);
-    invalidateBounds([this.symbolId]);
-  }
-
-  mergeWith(next: Command): boolean {
-    if (!(next instanceof SetIkKeys) || next.kind !== this.kind) return false;
-    if (next.symbolId !== this.symbolId || next.animId !== this.animId || next.ikId !== this.ikId) return false;
-    this.after = next.after;
-    return true;
-  }
+  protected sameList(next: this): boolean { return next.ikId === this.ikId; }
 }
 
 /** Tracks and one IK constraint's keys in one step, merging as a pair: a

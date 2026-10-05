@@ -7,11 +7,15 @@ import { createSymbol } from "@/core/doc/defaults";
 import { createImageItem, createLayer, createNode, createProject } from "@/core/doc/defaults";
 import { isSymbol, type Keyframe, type Node, type Project, type SymbolItem } from "@/core/doc/types";
 import { History } from "@/core/history/History";
-import { SetLayerExcluded, SetParent } from "@/core/history/commands";
+import { SetParent } from "@/core/history/hierarchyCommands";
+import { SetLayerExcluded } from "@/core/history/layerCommands";
 import { tf, type Transform } from "@/core/math/Transform";
 import type { PackedPage } from "@/core/atlas/packed";
 import { atlasText } from "@/core/boneburst/atlas";
-import { type Channel, colorHex, exportBoneBurst, ROOT_BONE, sliceRuns, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { type Channel, sliceRuns } from "@/core/boneburst/exportChannels";
+import { colorHex } from "@/core/boneburst/exportColor";
+import { ROOT_BONE } from "@/core/boneburst/exportTypes";
 import { keyTime } from "@/core/boneburst/transform";
 import { sampleTransformRaw } from "@/core/doc/timeline";
 import { BONEBURST_VERSION, type BoneBurstSkeletonFile } from "@/core/boneburst/types";
@@ -326,14 +330,16 @@ describe("colour and blend", () => {
     expect(warnings).toHaveLength(2);
   });
 
-  it("maps the blend modes Spine has, and warns for the rest", () => {
-    const { project, sym } = scene(["a", "b"]);
+  it("maps the blend modes to Spine's names, normal written as nothing", () => {
+    const { project, sym } = scene(["a", "b", "c"]);
     nodeNamed(sym, "a").blendMode = "add";
-    nodeNamed(sym, "b").blendMode = "overlay";
+    nodeNamed(sym, "b").blendMode = "screen";
+    nodeNamed(sym, "c").blendMode = "normal";
     const slots = file(project).slots!;
     expect(slots.find((s) => s.name === "a")!.blend).toBe("additive");
-    expect(slots.find((s) => s.name === "b")!.blend).toBeUndefined();
-    expect(messages(project).some((m) => m.includes('"overlay"'))).toBe(true);
+    expect(slots.find((s) => s.name === "b")!.blend).toBe("screen");
+    expect(slots.find((s) => s.name === "c")!.blend).toBeUndefined();
+    expect(messages(project)).toEqual([]);
   });
 });
 
@@ -479,14 +485,6 @@ describe("what does not reach the file", () => {
     expect(bones.map((b) => b.name).sort()).toEqual(["Layer 1", "art", ROOT_BONE].sort());
     expect(bones.find((b) => b.name === "art")!.parent).toBe("Layer 1");
     expect(file(project).slots!.map((s) => s.name)).toEqual(["art"]);
-  });
-
-  it("warns that motion blur is not carried", () => {
-    const { project } = scene(["a"]);
-    project.motionBlur = { enabled: true, shutter: 180, maxLength: 64 };
-    expect(messages(project).some((m) => m.includes("Motion blur"))).toBe(true);
-    project.motionBlur.enabled = false;
-    expect(messages(project)).toEqual([]);
   });
 
   it("clips a mask's layers with a clip slot right before them, through the last", () => {

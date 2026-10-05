@@ -8,7 +8,7 @@ import { createLayer, createNode } from "@/core/doc/defaults";
 import { AddNode } from "@/core/history/commands";
 import { AddIkConstraint } from "@/core/history/ikCommands";
 import { applyTransforms } from "@/app/TimelineOps";
-import { moveBy, type NodeSnapshot, snapshotOf } from "./transformOps";
+import { moveBy, type NodeSnapshot, snapshotOf } from "@/core/doc/transformOps";
 import { boneSegment, pickBone } from "./boneGeom";
 
 /**

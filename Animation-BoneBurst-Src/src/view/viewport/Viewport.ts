@@ -5,16 +5,14 @@ import { contentMatrixOf, SceneRenderer } from "./SceneRenderer";
 import { type Guide, Overlay, RULER } from "./Overlay";
 import type { Store } from "@/app/Store";
 import type { AssetStore } from "@/app/AssetStore";
-import { entryBox, type FrameContext, type Pose, type PoseEntry, boneburstPixelAt } from "@/core/doc/pose";
+import { entryBox, type FrameContext, type Pose, type PoseEntry } from "@/core/doc/pose";
 import { editedMesh } from "@/core/mesh/meshPlan";
 import { stageSkinOf } from "@/core/doc/skins";
-import { inPolygon, nearPolyline } from "@/core/doc/boxes";
-import { pathPolyline } from "@/core/doc/constraints";
 import { posedSymbol, boneburstBounds } from "@/core/boneburst/boneburstPose";
 import type { NodeId } from "@/core/doc/ids";
-import { apply, applyInverse, invert, mat, matOf, type Matrix2D, mul } from "@/core/math/Matrix2D";
+import { mat, matOf, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { polygonContains, type Rect, rectContains, transformCorners } from "@/core/math/geom";
-import { isImage, isSymbol, type MeshData, type Node as DocNode } from "@/core/doc/types";
+import { isSymbol, type MeshData, type Node as DocNode } from "@/core/doc/types";
 import { meshView, verticesOf } from "@/view/tools/MeshTool";
 import type { MeshDraw } from "./Overlay";
 import { ToolManager } from "@/view/tools/ToolManager";
@@ -22,7 +20,6 @@ import type { ToolContext } from "@/view/tools/Tool";
 import { buildGizmo, type Gizmo, type PoseAt, selectionBounds } from "@/view/tools/gizmo";
 import { onionFrames } from "@/core/doc/onion";
 import { keyIndexAt } from "@/core/doc/timeline";
-import { withDescendants } from "@/core/doc/layerTree";
 import { GhostPainter } from "./ghost";
 import { PathCache } from "./pathCache";
 import { pathBoneIds, pathFrames } from "@/core/doc/bonePath";
@@ -32,10 +29,10 @@ import { seamFrame } from "@/core/doc/cycle";
 import type { BonePathsDraw } from "./Overlay";
 import { drawReference } from "./reference";
 import { type OverlayColors, resolveColors } from "./overlayColors";
-import { type SnapLine, snapMove, snapPoint, type SnapTargets, snapValue } from "@/core/math/snap";
-import { collectSnapTargets, selectionRefs } from "./snapTargets";
 import { promptNumber } from "@/view/widgets/promptNumber";
 import { menuAnchor, showMenu } from "@/view/widgets/Dock";
+import { pickNode } from "@/core/doc/pick";
+import { SnapController } from "./SnapController";
 
 /**
  * The stage: two stacked canvases (artwork, then chrome), a camera, and all
@@ -103,22 +100,7 @@ export class Viewport {
   private draftBone: { ax: number; ay: number; bx: number; by: number } | null = null;
   /** Live coordinate readout while a guide is being placed or moved. */
   private guideTip: HTMLElement | null = null;
-  /** Smart guides for the snap the drag in progress is holding. */
-  private snapLines: SnapLine[] = [];
-  /**
-   * What the drag in progress snaps FROM and TO, captured when it started.
-   *
-   * A tool's delta is measured from the pointer-down position and applied to
-   * the snapshot it took there, so the reference points have to come from
-   * that same moment: taken from the live pose they would already include
-   * the move, and every frame would add the correction again. The targets are
-   * captured with them — nothing else moves during a drag, so this is also
-   * one bounds walk per drag instead of one per pointer event.
-   */
-  private snapSession: {
-    refs: { xs: number[]; ys: number[] };
-    targets: SnapTargets;
-  } | null = null;
+  private readonly snap: SnapController;
   private colors: OverlayColors;
 
   readonly invalidate: () => void;
@@ -129,6 +111,13 @@ export class Viewport {
     private readonly assets: AssetStore,
   ) {
     this.renderer = new SceneRenderer(() => this.store.project, assets);
+    this.snap = new SnapController({
+      store, camera: this.camera,
+      pose: () => this.lastPose,
+      guides: () => this.guides,
+      frameContext: () => this.frameContext,
+      bonePath: (id) => this.lastBonePaths?.paths.find((p) => p.id === id)?.points,
+    });
     this.colors = resolveColors(store.prefs.value);
     store.prefs.subscribe((p) => {
       this.colors = resolveColors(p);
@@ -148,10 +137,10 @@ export class Viewport {
       invalidate: () => this.invalidate(),
       setMarquee: (r) => { this.marquee = r; },
       setDraftBone: (segment) => { this.draftBone = segment; },
-      beginSnap: (moving) => this.beginSnap(moving),
-      snapDelta: (dx, dy, free) => this.snapDelta(dx, dy, free),
-      endSnap: () => { this.snapSession = null; this.dotSnap = null; this.snapLines = []; },
-      snapDot: (world, boneId, frame, free) => this.snapDot(world, boneId as NodeId, frame, free),
+      beginSnap: (moving) => this.snap.begin(moving),
+      snapDelta: (dx, dy, free) => this.snap.delta(dx, dy, free),
+      endSnap: () => this.snap.end(),
+      snapDot: (world, boneId, frame, free) => this.snap.snapDot(world, boneId as NodeId, frame, free),
       setCursor: (c) => { if (!this.spaceDown) this.host.style.cursor = c; },
       bonePaths: () => this.lastBonePaths?.paths ?? [],
       pathHandles: () => this.lastBonePaths?.handles ?? [],
@@ -338,7 +327,7 @@ export class Viewport {
       handleSize: store.prefs.value.gizmos.handleSize,
       colors: this.colors,
       fontSize: store.prefs.value.interface.fontSize,
-      snapLines: this.snapLines,
+      snapLines: this.snap.lines,
       selection: new Set(store.selection.nodes),
 
       when: this.frameContext,
@@ -492,58 +481,9 @@ export class Viewport {
 
   // ── Hit testing ────────────────────────────────────────────────────────
 
-  /**
-   * Topmost node under a world point. Walks front-to-back (the reverse of
-   * paint order) and probes alpha so transparent pixels do not swallow
-   * clicks meant for the artwork behind them.
-   */
+  /** Topmost node under a world point (`pickNode`), over every pose the stage edits. */
   hitTest(wx: number, wy: number, assets: AssetStore, exclude?: Set<string>): NodeId | null {
-    const project = this.store.project;
-    for (const { pose, when } of this.editPoses()) {
-      for (let i = pose.entries.length - 1; i >= 0; i--) {
-        const e = pose.entries[i]!;
-        if (!e.visible || e.node.kind === "bone") continue;
-        if (exclude?.has(e.nodeId)) continue;
-        if (e.spine) {
-          // Posed by the runtime: its triangles, and the pixel under them.
-          const px = boneburstPixelAt(e, wx, wy);
-          const item = project.items[e.spine.itemId];
-          if (!px || !isImage(item) || assets.alphaAt(item.assetId, px.x, px.y) < 8) continue;
-          // A slot has no transform of its own: the bone it rides is what
-          // moves it, as picking an attachment in Spine picks its bone.
-          return e.node.slotBone ?? e.nodeId;
-        }
-        const outline = e.node.kind === "box" || e.node.kind === "point" || e.node.kind === "path";
-        // Points that follow bones are tested where they are in the world.
-        if (e.outline && (e.node.box || e.node.path)) {
-          const hit = e.node.box ? inPolygon(e.outline, wx, wy) : nearPolyline(pathPolyline({ ...e.node.path!, points: e.outline }), wx, wy, 8 / this.camera.screenScale);
-          if (hit) return e.nodeId;
-          continue;
-        }
-        const box = entryBox(project, e, when);
-        if (!box || (!e.display && !outline)) continue;
-
-        const local = { x: 0, y: 0 };
-        if (!applyInverse(local, e.world, wx, wy)) continue;
-        if (!rectContains(box, local.x, local.y)) continue;
-        // A bounding box is picked inside its polygon, a point near it.
-        if (outline) {
-          if (e.node.kind === "box" && !inPolygon(e.node.box!.points, local.x, local.y)) continue;
-          if (e.node.kind === "path" && !nearPolyline(pathPolyline(e.node.path!), local.x, local.y, 8 / this.camera.screenScale)) continue;
-          return e.nodeId;
-        }
-
-        const display = e.display!;
-        const item = project.items[display.itemId];
-        if (isImage(item)) {
-          const px = local.x + display.pivot.x;
-          const py = local.y + display.pivot.y;
-          if (assets.alphaAt(item.assetId, px, py) < 8) continue;
-        }
-        return e.nodeId;
-      }
-    }
-    return null;
+    return pickNode(this.store.project, this.editPoses(), wx, wy, (id, x, y) => assets.alphaAt(id, x, y), 8 / this.camera.screenScale, exclude);
   }
 
   /** Nodes no pointer gesture may pick: hidden or locked layers. */
@@ -824,7 +764,7 @@ export class Viewport {
       // Guides live in scene space, where the rulers that spawn them do.
       const c = this.toContent(m);
       const w = this.camera.screenToScene(c.x, c.y);
-      this.draftGuide = { axis, at: this.snapGuide(axis, axis === "x" ? w.x : w.y) };
+      this.draftGuide = { axis, at: this.snap.snapGuide(axis, axis === "x" ? w.x : w.y) };
       this.showGuideTip(m, this.draftGuide, false);
       this.invalidate();
     };
@@ -896,7 +836,7 @@ export class Viewport {
     const update = (m: PointerEvent) => {
       const c = this.toContent(m);
       const w = this.camera.screenToScene(c.x, c.y);
-      guide.at = this.snapGuide(guide.axis, guide.axis === "x" ? w.x : w.y, index);
+      guide.at = this.snap.snapGuide(guide.axis, guide.axis === "x" ? w.x : w.y, index);
       const doomed = overRuler(m);
       this.host.style.cursor = doomed ? "not-allowed" : (guide.axis === "x" ? "ew-resize" : "ns-resize");
       this.showGuideTip(m, guide, doomed);
@@ -999,131 +939,6 @@ export class Viewport {
         g.at = Math.round(v);
         this.invalidate();
       },
-    });
-  }
-
-  /**
-   * Correct a tool's world-space drag delta so the selection lands on a grid
-   * line, a guide, the stage or another object.
-   *
-   * The arithmetic happens in SCENE space — that is the frame the grid, the
-   * guides and the stage rectangle live in — so the delta is converted in
-   * through `camera.base` and back out through its inverse. Inside an edited
-   * symbol that base carries the instance's own scale and rotation, and
-   * snapping without the round trip would quietly land on the wrong lines.
-   */
-  private beginSnap(moving: Iterable<string>): void {
-    const store = this.store;
-    const sp = store.prefs.value.snap;
-    const pose = this.lastPose;
-    this.snapLines = [];
-    this.snapSession = null;
-    if (!store.ui.snap || !sp.enabled || !pose) return;
-
-    const base = this.camera.base;
-    // What moves with the drag, children included: they are the selection's
-    // edges (a group or a bone has no artwork of its own) and must not be
-    // targets, or the drag catches on where its own contents started.
-    const ids = new Set(withDescendants(store.currentSymbol, [...moving] as NodeId[]));
-    const when = this.frameContext;
-    const refs = selectionRefs(store.project, pose, base, ids, when);
-    if (refs.xs.length === 0) return;
-
-    this.snapSession = {
-      refs,
-      targets: collectSnapTargets(
-        store.project, store.currentSymbol, pose, base, this.guides, ids, when, sp,
-      ),
-    };
-  }
-
-  /**
-   * Correct a tool's world-space drag delta so the selection lands on a grid
-   * line, a guide, the stage or another object.
-   *
-   * The arithmetic happens in SCENE space — that is the frame the grid, the
-   * guides and the stage rectangle live in — so the delta is converted in
-   * through `camera.base` and back out through its inverse. Inside an edited
-   * symbol that base carries the instance's own scale and rotation, and
-   * snapping without the round trip would quietly land on the wrong lines.
-   */
-  private snapDelta(dx: number, dy: number, free = false): { dx: number; dy: number } {
-    const session = this.snapSession;
-    if (free || !session) {
-      this.snapLines = [];
-      return { dx, dy };
-    }
-
-    const prefs = this.store.prefs.value;
-    const sp = prefs.snap;
-    const base = this.camera.base;
-    const inv = mat();
-    if (!invert(inv, base)) { this.snapLines = []; return { dx, dy }; }
-
-    const res = snapMove(
-      session.refs.xs, session.refs.ys,
-      base.a * dx + base.c * dy, base.b * dx + base.d * dy,
-      session.targets, {
-        grid: sp.toGrid ? prefs.stage.gridSize : null,
-        pixel: sp.toPixel,
-        // Screen pixels -> scene units: the tolerance must feel the same at
-        // every zoom, which is what makes it usable at 800%.
-        tolerance: sp.tolerancePx / this.camera.zoom,
-      });
-
-    this.snapLines = sp.showLines ? res.lines : [];
-    return {
-      dx: inv.a * res.dx + inv.c * res.dy,
-      dy: inv.b * res.dx + inv.d * res.dy,
-    };
-  }
-
-  /** What a bone path's dot snaps to while it is dragged: built at its first step. */
-  private dotSnap: { key: string; targets: SnapTargets; points: Array<{ x: number; y: number }> } | null = null;
-
-  /** `ToolContext.snapDot`: in scene space, through `camera.base` and back. */
-  private snapDot(world: { x: number; y: number }, boneId: NodeId, frame: number, free = false): { x: number; y: number } {
-    const store = this.store;
-    const prefs = store.prefs.value;
-    const sp = prefs.snap;
-    const base = this.camera.base;
-    const inv = mat();
-    if (free || !store.ui.snap || !sp.enabled || !this.lastPose || !invert(inv, base)) { this.snapLines = []; return world; }
-    const key = `${boneId}#${frame}`;
-    if (this.dotSnap?.key !== key) {
-      // The bone and what it carries move with the drag: never targets.
-      const ids = new Set(withDescendants(store.currentSymbol, [boneId]));
-      const path = this.lastBonePaths?.paths.find((p) => p.id === boneId);
-      const points = (path?.points ?? []).filter((p) => p.frame !== frame).map((p) => apply({ x: 0, y: 0 }, base, p.x, p.y));
-      this.dotSnap = { key, targets: collectSnapTargets(store.project, store.currentSymbol, this.lastPose, base, this.guides, ids, this.frameContext, sp), points };
-    }
-    const at = apply({ x: 0, y: 0 }, base, world.x, world.y);
-    const r = snapPoint(at.x, at.y, this.dotSnap.points, this.dotSnap.targets, {
-      grid: sp.toGrid ? prefs.stage.gridSize : null, pixel: false, tolerance: sp.tolerancePx / this.camera.zoom,
-    });
-    this.snapLines = sp.showLines ? r.lines : [];
-    return apply({ x: 0, y: 0 }, inv, r.x, r.y);
-  }
-
-  /** A guide dragged out of a ruler snaps to the same lines everything else
-   *  does — otherwise the one thing meant to be a precise reference is the
-   *  one thing placed by eye. */
-  private snapGuide(axis: "x" | "y", at: number, exclude = -1): number {
-    const store = this.store;
-    const prefs = store.prefs.value;
-    const sp = prefs.snap;
-    if (!store.ui.snap || !sp.enabled || !this.lastPose) return Math.round(at);
-
-    // A guide being moved must not snap to itself.
-    const others = exclude < 0 ? this.guides : this.guides.filter((_, i) => i !== exclude);
-    const targets = collectSnapTargets(
-      store.project, store.currentSymbol, this.lastPose, this.camera.base,
-      others, new Set(), this.frameContext, sp,
-    );
-    return snapValue(at, axis === "x" ? targets.xs : targets.ys, {
-      grid: sp.toGrid ? prefs.stage.gridSize : null,
-      pixel: true,
-      tolerance: sp.tolerancePx / this.camera.zoom,
     });
   }
 

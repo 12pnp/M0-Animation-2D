@@ -4,7 +4,9 @@ import { isDefaultColor } from "@/core/doc/types";
 import { type LayerId, newNodeId, type NodeId } from "@/core/doc/ids";
 import { createLayer } from "@/core/doc/defaults";
 import { clampScale, cloneTf, type Transform } from "@/core/math/Transform";
-import { AddNode, reexpress, RemoveNodes, SetLayerMasks, SetPivot } from "@/core/history/commands";
+import { AddNode, RemoveNodes } from "@/core/history/commands";
+import { reexpress, SetPivot } from "@/core/history/hierarchyCommands";
+import { SetLayerMasks } from "@/core/history/layerCommands";
 import { EditTracks } from "@/core/history/timelineCommands";
 import { applyTransforms, displayAtFrame, fillEmptyNode, transformAtFrame } from "./TimelineOps";
 import { wouldCreateCycle } from "@/core/history/symbolCommands";
@@ -266,7 +268,6 @@ export class Clipboard {
             transform: place(into.parentId),
             color: source.color,
             blendMode: source.blendMode,
-            motionBlur: source.motionBlur,
           });
           created.push(into.id);
           continue;
@@ -520,7 +521,6 @@ function destinationAnimation(
     ? store.currentAnimation ?? undefined
     : undefined;
 }
-
 
 /**
  * Each node as it looks at the playhead: its pose there as the bind pose,

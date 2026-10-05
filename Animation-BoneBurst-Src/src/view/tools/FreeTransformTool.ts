@@ -7,7 +7,7 @@ import { quantize } from "@/core/math/Transform";
 import { mat, matOf } from "@/core/math/Matrix2D";
 import type { Point } from "@/core/math/geom";
 import { shortestDelta } from "@/core/math/angle";
-import { SetPivot } from "@/core/history/commands";
+import { SetPivot } from "@/core/history/hierarchyCommands";
 import { applyEdit, transformAtFrame } from "@/app/TimelineOps";
 import {
     cornerFraction,
@@ -30,8 +30,8 @@ import {
     skewLocal,
     uniformFactor,
     snapshotOf,
-    topmostSelected,
-} from "./transformOps";
+    editTargets,
+} from "@/core/doc/transformOps";
 import { hitAt } from "./SelectTool";
 
 /**
@@ -114,12 +114,8 @@ export class FreeTransformTool implements Tool {
     this.startPivotWorld = { ...g.pivot };
 
     const sym = ctx.store.currentSymbol;
-    const locked = new Set(sym.layers.filter((l) => l.locked).map((l) => l.nodeId));
     this.snaps = [];
-    const ids = topmostSelected(
-      ctx.store.selection.nodes.filter((id) => !locked.has(id)),
-      (id) => sym.nodes[id]?.parentId,
-    );
+    const ids = editTargets(sym, ctx.store.selection.nodes);
     for (const id of ids) {
       const entry = pose.byNode.get(id);
       const node = sym.nodes[id];

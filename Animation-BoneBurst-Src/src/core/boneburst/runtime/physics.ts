@@ -1,4 +1,4 @@
-import { DEG_RAD, type PhysicsData } from "./rigData";
+import { DEG_RAD, type PhysicsData } from "./rigTypes";
 import type { Rig } from "./rig";
 
 /**

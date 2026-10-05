@@ -11,7 +11,7 @@
 import type { NodeId } from "./ids";
 import type { Matrix2D } from "@/core/math/Matrix2D";
 import type { Transform } from "@/core/math/Transform";
-import { reexpress } from "@/core/history/commands";
+import { reexpress } from "@/core/history/hierarchyCommands";
 
 export interface ChildState {
   id: NodeId;

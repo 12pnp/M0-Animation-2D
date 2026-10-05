@@ -11,7 +11,9 @@ import {
   childFrame, innerContext, symbolBounds, localBox, invalidateBounds, SETUP_CONTEXT,
   evaluateSymbol, pointInParent,
 } from "@/core/doc/pose";
-import { ReplaceImageAsset, SetBindTransform, SetPivot } from "@/core/history/commands";
+import { SetBindTransform } from "@/core/history/commands";
+import { SetPivot } from "@/core/history/hierarchyCommands";
+import { ReplaceImageAsset } from "@/core/history/libraryCommands";
 import { EditTracks } from "@/core/history/timelineCommands";
 import { History } from "@/core/history/History";
 

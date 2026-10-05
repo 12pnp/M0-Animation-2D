@@ -1,4 +1,5 @@
-import type { AnimationData, EventFire, Timeline } from "./rigData";
+import type { EventFire } from "./rigTypes";
+import type { AnimationData, Timeline } from "./rigTypes";
 import type { Blend, Rig } from "./rig";
 
 /** One step of a queue: an animation, crossfaded in over `mix` seconds. */
@@ -302,7 +303,7 @@ function computeHold(e: Entry, set: Set<string>): void {
  * `last` up to and including `time`, every key from the start when `last` is
  * -1, and across the end when `time` wrapped round below `last`.
  */
-export function firedBetween(anim: AnimationData, last: number, time: number): EventFire[] {
+function firedBetween(anim: AnimationData, last: number, time: number): EventFire[] {
   const out: EventFire[] = [];
   for (const t of anim.timelines) {
     if (t.kind !== "event") continue;

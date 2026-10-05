@@ -1,5 +1,6 @@
 import type { MeshData } from "@/core/doc/types";
 import { triangulate } from "./triangulate";
+import { inFlatPolygon, segmentDistance } from "@/core/math/geom";
 
 /**
  * A mesh for an image from its outline (ARCHITECTURE ▸ Meshes): points along
@@ -26,7 +27,7 @@ export function makeMesh(outline: readonly number[], spacing: number, width: num
     }
     for (let y = minY + spacing; y < maxY; y += spacing) {
       for (let x = minX + spacing; x < maxX; x += spacing) {
-        if (insidePolygon(hullPts, hull, x, y) && distanceToOutline(hullPts, hull, x, y) > spacing * 0.5) inner.push(x, y);
+        if (inFlatPolygon(hullPts, x, y, hull) && distanceToOutline(hullPts, hull, x, y) > spacing * 0.5) inner.push(x, y);
       }
     }
   }
@@ -34,25 +35,12 @@ export function makeMesh(outline: readonly number[], spacing: number, width: num
   return { width, height, points, triangles: triangulate(points, hull), hull };
 }
 
-/** Even-odd test against the first `hull` points. */
-export function insidePolygon(pts: readonly number[], hull: number, x: number, y: number): boolean {
-  let inside = false;
-  for (let i = 0, j = hull - 1; i < hull; j = i++) {
-    const xi = pts[i * 2]!, yi = pts[i * 2 + 1]!, xj = pts[j * 2]!, yj = pts[j * 2 + 1]!;
-    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
-  }
-  return inside;
-}
-
 /** The distance from (x, y) to the nearest outline edge. */
 export function distanceToOutline(pts: readonly number[], hull: number, x: number, y: number): number {
   let best = Infinity;
   for (let i = 0; i < hull; i++) {
-    const ax = pts[i * 2]!, ay = pts[i * 2 + 1]!;
-    const bx = pts[((i + 1) % hull) * 2]!, by = pts[((i + 1) % hull) * 2 + 1]!;
-    const dx = bx - ax, dy = by - ay, len2 = dx * dx + dy * dy;
-    const t = len2 ? Math.max(0, Math.min(1, ((x - ax) * dx + (y - ay) * dy) / len2)) : 0;
-    best = Math.min(best, Math.hypot(x - ax - t * dx, y - ay - t * dy));
+    const j = (i + 1) % hull;
+    best = Math.min(best, segmentDistance(pts[i * 2]!, pts[i * 2 + 1]!, pts[j * 2]!, pts[j * 2 + 1]!, x, y));
   }
   return best;
 }

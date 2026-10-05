@@ -11,7 +11,8 @@ import { reseed } from "@/core/doc/ids";
 import { tf } from "@/core/math/Transform";
 import type { Track } from "@/core/doc/types";
 import { sampleTransformRaw, insertKeyframe } from "@/core/doc/timeline";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import { createProject, createLayer, createNode } from "@/core/doc/defaults";
 
 beforeEach(() => reseed());

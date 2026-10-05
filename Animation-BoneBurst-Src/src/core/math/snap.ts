@@ -38,8 +38,6 @@ export interface SnapResult {
   lines: SnapLine[];
 }
 
-export const NO_TARGETS: SnapTargets = { xs: [], ys: [] };
-
 /**
  * Correct a proposed translation so one of the moving reference points lands
  * on a target.

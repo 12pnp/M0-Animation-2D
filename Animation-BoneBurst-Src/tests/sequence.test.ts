@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { reseed, type AssetId } from "@/core/doc/ids";
-import { moveKeys, sequenceFor, sequenceIndexAt, sequenceNaming, withSequenceKey } from "@/core/doc/sequence";
+import { sequenceFor, sequenceIndexAt, sequenceNaming, withSequenceKey } from "@/core/doc/sequence";
 import { createImageItem, createLayer, createNode, createProject } from "@/core/doc/defaults";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import type { Project, SequenceKey, SymbolItem } from "@/core/doc/types";
+import { moveKeys } from "@/core/doc/keyList";
 
 beforeEach(() => reseed());
 

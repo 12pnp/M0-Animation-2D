@@ -1,8 +1,7 @@
-import { applyTween, type TweenSpec } from "@/core/math/easing";
-import type { TransformData } from "@/core/boneburst/runtime/rigData";
+import type { TransformData } from "@/core/boneburst/runtime/rigTypes";
 import type { NodeId, TcId } from "./ids";
-import { SMOOTH_CURVE, type IkTween } from "./ikKeys";
 import { type Animation, type SymbolItem, TC_CHANNELS, type TcChannel, type TcFrom, type TcKey, type TcTo, type TransformConstraint } from "./types";
+import { keySpan, withKeyAt } from "./keyList";
 
 export type TcMix = Record<TcChannel, number>;
 
@@ -80,14 +79,10 @@ export function usedMixes(k: TransformConstraint): TcChannel[] {
 
 /** The mixes in force at `frame` (fractional between frames). */
 export function tcMixAt(k: TransformConstraint, anim: Animation | null | undefined, frame: number): TcMix {
-  const keys = anim?.transforms?.[k.id];
-  if (!keys?.length || frame < keys[0]!.frame) return { ...k.mix };
-  let i = 0;
-  while (i + 1 < keys.length && keys[i + 1]!.frame <= frame) i++;
-  const a = keys[i]!, b = keys[i + 1];
-  if (!b || a.tween?.kind === "none") return { ...a.mix };
-  const span = b.frame - a.frame;
-  const e = applyTween(a.tween ?? { kind: "linear" }, (frame - a.frame) / span, span);
+  const s = keySpan(anim?.transforms?.[k.id], frame);
+  if (!s) return { ...k.mix };
+  const { a, b, e } = s;
+  if (!b) return { ...a.mix };
   const out = { ...a.mix };
   for (const c of TC_CHANNELS) out[c] = a.mix[c] + (b.mix[c] - a.mix[c]) * e;
   return out;
@@ -95,48 +90,7 @@ export function tcMixAt(k: TransformConstraint, anim: Animation | null | undefin
 
 /** `keys` with a key at `frame` holding `mix`; a key already there keeps its tween. */
 export function withTcKey(keys: readonly TcKey[], frame: number, mix: TcMix): TcKey[] {
-  const at = keys.find((k) => k.frame === frame);
-  const key: TcKey = { ...at, frame, mix: { ...mix } };
-  return [...keys.filter((k) => k.frame !== frame), key].sort((a, b) => a.frame - b.frame);
-}
-
-/** The keys at `frames` moved by `delta` frames (not before 0), replacing
- *  keys they land on; keys pushed together keep the later. */
-export function moveTcKeys(keys: readonly TcKey[], frames: readonly number[], delta: number): TcKey[] {
-  const moving = new Set(frames);
-  const moved = new Map<number, TcKey>();
-  for (const k of keys) if (moving.has(k.frame)) moved.set(Math.max(0, k.frame + delta), { ...k, frame: Math.max(0, k.frame + delta) });
-  return [...keys.filter((k) => !moving.has(k.frame) && !moved.has(k.frame)), ...moved.values()].sort((a, b) => a.frame - b.frame);
-}
-
-export function deleteTcKeys(keys: readonly TcKey[], frames: readonly number[]): TcKey[] {
-  const gone = new Set(frames);
-  return keys.filter((k) => !gone.has(k.frame));
-}
-
-export function tcTweenOf(k: TcKey): IkTween {
-  return k.tween?.kind === "none" ? "stepped" : k.tween?.kind === "curve" ? "smooth" : "linear";
-}
-
-/** The keys at `frames` tweening to the next key by `tween`. */
-export function withTcTween(keys: readonly TcKey[], frames: readonly number[], tween: IkTween): TcKey[] {
-  const at = new Set(frames);
-  const spec: TweenSpec | undefined = tween === "stepped" ? { kind: "none" } : tween === "smooth" ? { kind: "curve", curve: SMOOTH_CURVE } : undefined;
-  return keys.map((k) => {
-    if (!at.has(k.frame)) return k;
-    const { tween: _, ...rest } = k;
-    return spec ? { ...rest, tween: spec } : rest;
-  });
-}
-
-/** The constraint's keys replaced in `anim.transforms`; an empty list drops it. */
-export function withTcKeys(
-  all: Readonly<Record<TcId, TcKey[]>> | undefined, id: TcId, keys: TcKey[],
-): Record<TcId, TcKey[]> | undefined {
-  const out = { ...all };
-  if (keys.length) out[id] = keys;
-  else delete out[id];
-  return Object.keys(out).length ? out : undefined;
+  return withKeyAt(keys, frame, (at): TcKey => ({ ...at, frame, mix: { ...mix } }));
 }
 
 /** A name not taken by a transform constraint of `sym`: `base`, `base 2`… */

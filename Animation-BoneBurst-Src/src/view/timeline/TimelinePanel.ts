@@ -1,12 +1,9 @@
-import { constraintKeyFrames, deleteConstraintKeys, withConstraintTween } from "@/core/doc/constraintKeys";
-import { INHERIT_LABELS, INHERIT_MODES, inheritAt, withInheritKey } from "@/core/doc/inherit";
+import { deleteConstraintKeys } from "@/core/doc/constraintKeys";
 import type { SoundStore } from "@/app/SoundStore";
 import { Waveforms } from "./waveforms";
 import { offsetPlan } from "@/core/doc/offset";
-import { KEY_GROUPS, type KeyGroup } from "@/core/doc/keyButtons";
 import { clear, cls, drag, h, on } from "@/view/widgets/dom";
-import { deleteChannelKeys, keyChannelAt, propertyKeys, TIMELINE_PROPS, type TimelineProp } from "@/core/doc/propertyKeys";
-import { deleteDrawOrderKeys, drawingLayers, orderAt, type Reorder, withDrawOrderKey } from "@/core/doc/drawOrder";
+import { deleteChannelKeys, type TimelineProp } from "@/core/doc/propertyKeys";
 import { SPEED_SLIDER_MAX, sliderFromSpeed, speedFromSlider, speedLabel } from "./playSpeed";
 import { PLAY_RATES } from "./playStep";
 import { uniqueAnimationName } from "@/core/doc/animationList";
@@ -17,76 +14,48 @@ import type { Panel } from "@/view/widgets/Dock";
 import { type MenuEntry, showMenu } from "@/view/widgets/Dock";
 import { attachOptionsMenu } from "./onionButton";
 import type { Store } from "@/app/Store";
-import type { CnId, IkId, NodeId, TcId } from "@/core/doc/ids";
-import { deleteTcKeys, tcMixAt, tcTweenOf, withTcKey, withTcTween } from "@/core/doc/transformKeys";
-import { deformAt, deformKeysOf, deformTweenOf, deleteDeformKeys, withDeformKey, withDeformTween } from "@/core/mesh/deform";
+import type { NodeId } from "@/core/doc/ids";
+import { deformKeysOf } from "@/core/mesh/deform";
 import { deformRow } from "@/core/mesh/meshPlan";
-import { SEQUENCE_MODE_LABELS, SEQUENCE_MODES, sequenceIndexAt, withSequenceKey } from "@/core/doc/sequence";
 import { doSetSequenceKeys } from "@/app/AttachmentOps";
-import { deleteEventKeys, uniqueEventName, withEventKey } from "@/core/doc/events";
-import { deleteIkKeys, ikPoseAt, type IkTween, ikTweenOf, withIkKey, withIkTween } from "@/core/doc/ikKeys";
-import type { DeformKey, Keyframe, Layer, RotateDir } from "@/core/doc/types";
+import { deleteEventKeys } from "@/core/doc/events";
+import type { DeformKey, Keyframe } from "@/core/doc/types";
 import { FrameGrid, ROW_HEIGHT } from "./FrameGrid";
 import { transportButtons } from "./transport";
 import { LayerList } from "./LayerList";
 import { Playback } from "./Playback";
 import {
-    doClearKeyframe,
-    doClearKeyframes,
-    doConvertToKeyframes,
-    doInsertBlankKeyframe,
-    doInsertFrame,
-    doInsertFrames,
-    doInsertKeyframe,
-    doMoveKeyframes,
-    doSetTrack,
-    doSetDrawOrder,
-    doSetIkKeys,
-    doSetEventKeys,
-    doSetTcKeys,
-    doSetDeformKeys,
-    doSetEvents,
-    doReorder,
-    ensureTrack,
-    doRemoveFrame,
-    doRemoveFrames,
-    doSetEndFrame,
-    doSetRotation,
-    doSetTween,
-    doCloseLoop, doKeyProps, doOffsetKeys, doSetConstraintKeys, doSetInheritKeys,
-    doToggleCycle,
-    easeTargets,
+  doClearKeyframes,
+  doConvertToKeyframes, doInsertFrames, doMoveKeyframes,
+  doSetTrack,
+  doSetDrawOrder,
+  doSetIkKeys,
+  doSetEventKeys,
+  doSetTcKeys,
+  doSetDeformKeys, doRemoveFrames,
+  doSetEndFrame, doSetTween,
+  doCloseLoop, doKeyProps, doOffsetKeys, doSetConstraintKeys, doSetInheritKeys,
+  doToggleCycle,
+  easeTargets
 } from "@/app/TimelineOps";
 import { isCycle, seamFrame } from "@/core/doc/cycle";
-import { EASE_PRESETS, easeLabel, sameEase, type TweenSpec } from "@/core/math/easing";
+import { easeLabel, type TweenSpec } from "@/core/math/easing";
 import { openEaseDialog } from "./EaseDialog";
 import { FrameClipboard, type PasteMode } from "@/app/FrameClipboard";
 import type { Clipboard } from "@/app/Clipboard";
-import { keyIndexAt, MAX_FRAMES, spanKeyAt } from "@/core/doc/timeline";
+import { MAX_FRAMES, spanKeyAt } from "@/core/doc/timeline";
 import { promptNumber } from "@/view/widgets/promptNumber";
 import { AddAnimation, RemoveAnimation, RenameAnimation, SetAnimationDuration } from "@/core/history/timelineCommands";
-import { AddNode, RemoveNodes, SetLayerExcluded, SetParent } from "@/core/history/commands";
+import { AddNode, RemoveNodes } from "@/core/history/commands";
+import { SetParent } from "@/core/history/hierarchyCommands";
 import { createLayer, createNode } from "@/core/doc/defaults";
 import { groupPlan, layerRows } from "@/core/doc/layerTree";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { mayReparent } from "@/view/widgets/ikReparentGuard";
 import { uiPx } from "@/core/prefs/fonts";
-
-/** Modify ▸ Draw Order's items: the selected layers moved in the draw order
- *  at the playhead, keyed there. */
-export function drawOrderItems(enabled: boolean, run: (how: Reorder) => void): MenuEntry[] {
-  return [
-    { label: "Bring Forward", command: "modify.orderForward", enabled, run: () => run("forward") },
-    { label: "Send Backward", command: "modify.orderBackward", enabled, run: () => run("backward") },
-    { label: "Bring to Front", command: "modify.orderFront", enabled, run: () => run("front") },
-    { label: "Send to Back", command: "modify.orderBack", enabled, run: () => run("back") },
-  ];
-}
-
-/** The property rows' names, as Spine writes them. */
-const PROP_NAMES: Record<TimelineProp, string> = {
-  rotate: "Rotate", x: "Translate X", y: "Translate Y", scale: "Scale", shear: "Shear",
-};
+import { deleteKeys } from "@/core/doc/keyList";
+import { frameCell, frameCellBounds } from "@/core/doc/frameCells";
+import { keyMenu, layerMenu, rulerMenu, eventsMenu, drawOrderMenu, frameMenu } from "./timelineMenus";
 
 /** The timeline: layer column, frame grid, transport. */
 export class TimelinePanel implements Panel {
@@ -113,12 +82,12 @@ export class TimelinePanel implements Panel {
   private fpsLabel: HTMLElement;
 
   constructor(
-    private readonly store: Store,
+    readonly store: Store,
     /** Shared with the stage: copying layers and copying objects are the same
      *  clipboard object, in two separate slots. */
-    private readonly clipboard: Clipboard,
+    readonly clipboard: Clipboard,
     /** The onion skin's options, for press-and-hold on its buttons. */
-    private readonly onionMenu: () => Array<MenuEntry | "-"> = () => [],
+    readonly onionMenu: () => Array<MenuEntry | "-"> = () => [],
     /** Event sounds, for their waveforms on the Events row. */
     sounds?: SoundStore,
   ) {
@@ -131,7 +100,7 @@ export class TimelinePanel implements Panel {
       onMoveKeyframes: (nodeId, from, to, delta, base) => doMoveKeyframes(store, nodeId, from, to, delta, base),
       onEditTrack: (nodeId, track, label, kind) => doSetTrack(store, nodeId, track, label, kind),
       onEditDrawOrder: (keys, label, kind) => doSetDrawOrder(store, keys, label, kind),
-      onDrawOrderMenu: (frame, x, y) => this.drawOrderMenu(frame, x, y),
+      onDrawOrderMenu: (frame, x, y) => drawOrderMenu(this, frame, x, y),
       onEditIk: (ik, keys, label, kind) => doSetIkKeys(store, ik, keys, label, kind),
       onEditTc: (tc, keys, label, kind) => doSetTcKeys(store, tc, keys, label, kind),
       onEditDeform: (node, keys, label, kind) => doSetDeformKeys(store, node, keys, label, kind),
@@ -139,13 +108,13 @@ export class TimelinePanel implements Panel {
       onEditInherit: (node, keys, label, kind) => doSetInheritKeys(store, node, keys, label, kind),
       onEditConstraintKeys: (keys, label, kind) => doSetConstraintKeys(store, keys, label, kind),
       onEditEvents: (keys, label, kind) => doSetEventKeys(store, keys, label, kind),
-      onEventsMenu: (frame, x, y) => this.eventsMenu(frame, x, y),
+      onEventsMenu: (frame, x, y) => eventsMenu(this, frame, x, y),
       onDragSpanEnd: (nodeId, endFrame) => doSetEndFrame(store, nodeId, endFrame),
       onDragFrames: (row, frame, copy) => this.dragFrames(row, frame, copy),
       onBeginInteraction: (kind) => store.history.beginInteraction(kind),
       onEndInteraction: () => store.history.endInteraction(),
-      onContextMenu: (row, frame, x, y) => this.frameMenu(row, frame, x, y),
-      onRulerContextMenu: (frame, x, y) => this.rulerMenu(frame, x, y),
+      onContextMenu: (row, frame, x, y) => frameMenu(this, row, frame, x, y),
+      onRulerContextMenu: (frame, x, y) => rulerMenu(this, frame, x, y),
       onWheelY: (dy) => this.layers.scrollByY(dy),
       onGeometry: () => this.syncHScroll(),
     });
@@ -157,7 +126,7 @@ export class TimelinePanel implements Panel {
       // with their frames.
       get rowHeight() { return uiPx(ROW_HEIGHT, store.prefs.value.interface.fontSize); },
       onScrollY: (y) => this.grid.setScrollY(y),
-      onContextMenu: (_nodeId, x, y) => this.layerMenu(x, y),
+      onContextMenu: (_nodeId, x, y) => layerMenu(this, x, y),
       onOnionOptions: (anchor) => showMenu(anchor, this.onionMenu()),
     });
 
@@ -259,7 +228,7 @@ export class TimelinePanel implements Panel {
     syncFocus();
     // Spine's key buttons: what changed, or (its menu) everything or one group.
     const keyBtn = iconBtn("key", "", () => this.keySelected("changed"));
-    attachOptionsMenu(keyBtn, () => showMenu(keyBtn, this.keyMenu()));
+    attachOptionsMenu(keyBtn, () => showMenu(keyBtn, keyMenu(this)));
     const keyTitle = () => {
       keyBtn.title = `${withAccel("Key what changed", "timeline.keyChanged")} on the selected layers: each property that is not at the setup pose (hold or right-click: key everything, or one group)`;
     };
@@ -441,7 +410,7 @@ export class TimelinePanel implements Panel {
     this.store.selectNodes([layer.nodeId], additive);
     this.store.selection = {
       ...this.store.selection,
-      frames: [`${layer.nodeId}:${frame}`],
+      frames: [frameCell(layer.nodeId, frame)],
     };
     this.store.setFrame(frame);
     this.store.emit("selection");
@@ -469,7 +438,7 @@ export class TimelinePanel implements Panel {
       const layer = rows[r]?.layer;
       if (!layer) continue;
       nodes.push(layer.nodeId);
-      for (let f = from; f <= to; f++) frames.push(`${layer.nodeId}:${f}`);
+      for (let f = from; f <= to; f++) frames.push(frameCell(layer.nodeId, f));
     }
     if (!frames.length) return;
     this.store.selection = { ...this.store.selection, nodes, frames };
@@ -481,22 +450,9 @@ export class TimelinePanel implements Panel {
    * but every producer writes a rectangle, so reading it back as bounds is
    * enough for the range operations.
    */
-  private frameSelection(): { ids: NodeId[]; from: number; to: number } | null {
+  frameSelection(): { ids: NodeId[]; from: number; to: number } | null {
     const cells = this.store.selection.frames;
-    if (cells.length < 2) return null;
-    const ids: NodeId[] = [];
-    let from = Infinity, to = -Infinity;
-    for (const cell of cells) {
-      const cut = cell.lastIndexOf(":");
-      const id = cell.slice(0, cut) as NodeId;
-      const f = Number(cell.slice(cut + 1));
-      if (!Number.isFinite(f)) continue;
-      if (!ids.includes(id)) ids.push(id);
-      from = Math.min(from, f);
-      to = Math.max(to, f);
-    }
-    if (!ids.length || to < from) return null;
-    return { ids, from, to };
+    return cells.length < 2 ? null : frameCellBounds(cells);
   }
 
   /**
@@ -504,7 +460,7 @@ export class TimelinePanel implements Panel {
    * including the ones folded away inside a collapsed group. Taking only the
    * visible rows shifted every other layer's keys and left those behind.
    */
-  private allLayerIds(): NodeId[] {
+  allLayerIds(): NodeId[] {
     return layerRows(this.store.currentSymbol, true).map((r) => r.layer.nodeId);
   }
 
@@ -582,7 +538,7 @@ export class TimelinePanel implements Panel {
     this.store.emit("doc");
   }
 
-  private deleteSelectedLayers(): void {
+  deleteSelectedLayers(): void {
     const ids = [...this.store.selection.nodes];
     if (!ids.length) return;
     this.store.apply(new RemoveNodes(this.store.currentSymbolId, ids));
@@ -610,7 +566,7 @@ export class TimelinePanel implements Panel {
     this.store.emit("timeline");
   }
 
-  private setDuration(): void {
+  setDuration(): void {
     const anim = this.store.currentAnimation;
     if (!anim) return;
     const symbolId = this.store.currentSymbolId;
@@ -624,14 +580,14 @@ export class TimelinePanel implements Panel {
     });
   }
 
-  private cycleItem() {
+  cycleItem() {
     const anim = this.store.currentAnimation;
     return { label: "Cycle", command: "timeline.cycle", enabled: !!anim, checked: !!anim && isCycle(anim),
       run: () => doToggleCycle(this.store) };
   }
 
   /** On the selected layers, or every layer when none is selected. */
-  private closeLoopItem() {
+  closeLoopItem() {
     const anim = this.store.currentAnimation;
     return { label: "Close Loop", command: "timeline.closeLoop", enabled: !!anim && seamFrame(anim) !== null,
       run: () => doCloseLoop(this.store, this.insertTargets()) };
@@ -644,18 +600,7 @@ export class TimelinePanel implements Panel {
     doKeyProps(this.store, this.store.selection.nodes, props, label);
   }
 
-  private keyMenu() {
-    const can = this.store.ui.mode === "animate" && !!this.store.currentAnimation && this.store.selection.nodes.length > 0;
-    const group = (g: KeyGroup, label: string) => ({ label: `Key ${label}`, enabled: can, run: () => this.keySelected(KEY_GROUPS[g], `Key ${label}`) });
-    return [
-      { label: "Key Changed", command: "timeline.keyChanged", enabled: can, run: () => this.keySelected("changed") },
-      { label: "Key All", command: "timeline.keyAll", enabled: can, run: () => this.keySelected(TIMELINE_PROPS, "Key All") },
-      "-" as const,
-      group("rotate", "Rotate"), group("translate", "Translate"), group("scale", "Scale"), group("shear", "Shear"),
-    ];
-  }
-
-  private offsetItem() {
+  offsetItem() {
     return { label: "Offset Keys…", command: "timeline.offsetKeys", enabled: this.store.ui.mode === "animate" && !!this.store.currentAnimation,
       run: () => this.offsetKeys() };
   }
@@ -685,57 +630,12 @@ export class TimelinePanel implements Panel {
   }
 
   /** A 0×0 fixed anchor at a screen point, for `showMenu`. */
-  private menuAnchor(x: number, y: number): HTMLElement {
+  menuAnchor(x: number, y: number): HTMLElement {
     const anchor = h("div");
     anchor.style.cssText = `position:fixed;left:${x}px;top:${y}px;width:0;height:0`;
     document.body.appendChild(anchor);
     setTimeout(() => anchor.remove(), 0);
     return anchor;
-  }
-
-  /**
-   * The menu on a layer row.
-   *
-   * The layer column had no context menu at all, which left New Layer buried
-   * in the footer, Select All Frames unreachable, and every layer-level
-   * operation split between the menubar and a drag. This is their home.
-   */
-  private layerMenu(x: number, y: number): void {
-    const sym = this.store.currentSymbol;
-    const selected = this.store.selection.nodes.filter((id) => sym.nodes[id]);
-    const layers = selected
-      .map((id) => sym.layers.find((l) => l.nodeId === id))
-      .filter((l): l is Layer => !!l);
-    const n = layers.length;
-    const plural = n > 1 ? `${n} Layers` : "Layer";
-    // A mixed selection reads as "not excluded", so the toggle turns it on.
-    const excluded = n > 0 && layers.every((l) => l.excludeFromExport);
-
-    showMenu(this.menuAnchor(x, y), [
-      { label: "New Layer", run: () => this.addEmptyLayer() },
-      { label: "New Group", command: "modify.group", run: () => this.addGroup() },
-      "-",
-      { label: `Copy ${plural}`, enabled: n > 0, run: () => this.copyLayers() },
-      { label: "Paste Layers", enabled: this.clipboard.hasLayers, run: () => this.pasteLayers() },
-      { label: `Duplicate ${plural}`, enabled: n > 0, run: () => this.duplicateLayers() },
-      { label: `Delete ${plural}`, enabled: n > 0, run: () => this.deleteSelectedLayers() },
-      "-",
-      { label: "Select All Frames", command: "edit.selectAllFrames", enabled: n > 0, run: () => this.selectAllFrames() },
-      this.offsetItem(),
-      "-",
-      {
-        // Keyed at the playhead, in Animate (Spine's draw order keys).
-        label: "Draw Order", items: drawOrderItems(this.store.ui.mode === "animate" && n > 0, (how) => doReorder(this.store, how)),
-      },
-      "-",
-      {
-        label: excluded ? "Include in Export" : "Exclude from Export",
-        enabled: n > 0,
-        checked: excluded,
-        run: () => this.store.apply(new SetLayerExcluded(
-          this.store.currentSymbolId, layers.map((l) => l.id), !excluded)),
-      },
-    ]);
   }
 
   /**
@@ -764,53 +664,6 @@ export class TimelinePanel implements Panel {
 
   pasteLayers(): number { return this.clipboard.pasteLayers(this.store); }
   duplicateLayers(): number { return this.clipboard.duplicateLayers(this.store); }
-
-  /**
-   * The menu on the frame ruler. There is no layer under the pointer up
-   * there, so everything in it works on EVERY layer, starting at the playhead
-   * — which the right-click moves, exactly as a left-click would.
-   */
-  private rulerMenu(frame: number, x: number, y: number): void {
-    this.playback.pause();
-    this.store.setFrame(frame);
-
-    // A selection the click lands inside says how many frames and from
-    // where; anywhere else the gesture itself is the answer, so the stale
-    // selection goes rather than silently governing the operation.
-    let range = this.frameSelection();
-    if (range && (frame < range.from || frame > range.to)) {
-      this.store.selection = { ...this.store.selection, frames: [] };
-      this.store.emit("selection");
-      range = null;
-    }
-    const from = range?.from ?? frame;
-    const count = range ? range.to - range.from + 1 : 1;
-    const ids = this.allLayerIds();
-    const label = count > 1 ? `${count} Frames` : "Frame";
-
-    showMenu(this.menuAnchor(x, y), [
-      { label: `Insert ${label} (All Layers)`, command: "timeline.insertFrameAll",
-        enabled: ids.length > 0,
-        run: () => doInsertFrames(this.store, ids, from, count) },
-      { label: `Remove ${label} (All Layers)`, command: "timeline.removeFrameAll",
-        enabled: ids.length > 0,
-        run: () => doRemoveFrames(this.store, ids, from, count) },
-      "-",
-      { label: "Convert to Keyframes (All Layers)",
-        enabled: ids.length > 0,
-        run: () => doConvertToKeyframes(this.store, ids, from, from + count - 1) },
-      "-",
-      { label: "Set Duration…", enabled: !!this.store.currentAnimation,
-        run: () => this.setDuration() },
-      { label: "Go to Frame…", command: "timeline.goToFrame", run: () => this.goToFrame() },
-      "-",
-      this.cycleItem(),
-      this.closeLoopItem(),
-      "-",
-      // The markers live on the ruler, so their options are here too.
-      { label: "Onion Skin", items: this.onionMenu() },
-    ]);
-  }
 
   /**
    * Park the playhead on a frame by number, past the end of the animation
@@ -856,51 +709,6 @@ export class TimelinePanel implements Panel {
     return true;
   }
 
-  /**
-   * The Events row's menu: fire an event here (each of the symbol's, or a new
-   * one, named first), or delete the picked frames' keys.
-   */
-  private eventsMenu(frame: number, x: number, y: number): void {
-    const anim = this.store.currentAnimation;
-    if (!anim) return;
-    this.store.setFrame(frame);
-    const sym = this.store.currentSymbol;
-    const defs = sym.events ?? [];
-    const keys = anim.events ?? [];
-    const picked = keys.filter((k) => this.store.ui.eventFrames.includes(k.frame)).length;
-    const add = (name: string) => {
-      doSetEventKeys(this.store, withEventKey(keys, frame, name), `Add Event "${name}"`);
-      this.store.ui.eventFrames = [frame];
-    };
-    showMenu(this.menuAnchor(x, y), [
-      {
-        label: "Add Event Here",
-        items: [
-          ...defs.map((d) => ({ label: d.name, run: () => add(d.name) })),
-          ...(defs.length ? ["-" as const] : []),
-          {
-            label: "New Event…",
-            run: async () => {
-              const name = await promptText({ title: "New Event", label: "Name", value: uniqueEventName(defs, "event") });
-              const now = this.store.currentSymbol;
-              const a = this.store.currentAnimation;
-              if (!name?.trim() || !a || now.id !== sym.id) return;
-              const fresh = uniqueEventName(now.events ?? [], name);
-              doSetEvents(this.store, [...(now.events ?? []), { name: fresh }],
-                new Map([[a.id, withEventKey(a.events ?? [], frame, fresh)]]), `New Event "${fresh}"`);
-              this.store.ui.eventFrames = [frame];
-            },
-          },
-        ],
-      },
-      "-",
-      {
-        label: picked > 1 ? `Delete ${picked} Event Keys` : "Delete Event Key",
-        enabled: picked > 0, run: () => { this.deleteEventKeys(); },
-      },
-    ]);
-  }
-
   /** The deform keys of the mesh `node`'s Deform row shows (`deformRow`). */
   private deformKeysOf(node: NodeId): DeformKey[] | undefined {
     const sym = this.store.currentSymbol, n = sym.nodes[node];
@@ -911,148 +719,27 @@ export class TimelinePanel implements Panel {
   /** The picked deform keys gone; false with none picked. */
   deleteDeformKeys(): boolean {
     const sel = this.grid.deformSel;
-    if (sel?.cn) {
-      const anim = this.store.currentAnimation;
-      if (!sel.frames.length || !anim) return false;
-      doSetConstraintKeys(this.store, deleteConstraintKeys(anim.constraintKeys, sel.cn, sel.frames), sel.frames.length > 1 ? "Delete Constraint Keys" : "Delete Constraint Key");
-      this.grid.deformSel = null;
-      return true;
+    if (!sel?.frames.length) return false;
+    const label = (what: string) => (sel.frames.length > 1 ? `Delete ${what} Keys` : `Delete ${what} Key`);
+    const anim = this.store.currentAnimation;
+    if (sel.cn) {
+      if (!anim) return false;
+      doSetConstraintKeys(this.store, deleteConstraintKeys(anim.constraintKeys, sel.cn, sel.frames), label("Constraint"));
+    } else if (sel.inherit) {
+      const keys = anim?.inherits?.[sel.node];
+      if (!keys) return false;
+      doSetInheritKeys(this.store, sel.node, deleteKeys(keys, sel.frames), label("Inherit"));
+    } else if (sel.sequence) {
+      const keys = anim?.sequences?.[sel.node];
+      if (!keys) return false;
+      doSetSequenceKeys(this.store, sel.node, deleteKeys(keys, sel.frames), label("Sequence"));
+    } else {
+      const keys = this.deformKeysOf(sel.node);
+      if (!keys) return false;
+      doSetDeformKeys(this.store, sel.node, deleteKeys(keys, sel.frames), label("Deform"));
     }
-    if (sel?.inherit) {
-      const keys = this.store.currentAnimation?.inherits?.[sel.node];
-      if (!sel.frames.length || !keys) return false;
-      doSetInheritKeys(this.store, sel.node, keys.filter((k) => !sel.frames.includes(k.frame)), sel.frames.length > 1 ? "Delete Inherit Keys" : "Delete Inherit Key");
-      this.grid.deformSel = null;
-      return true;
-    }
-    if (sel?.sequence) {
-      const keys = this.store.currentAnimation?.sequences?.[sel.node];
-      if (!sel.frames.length || !keys) return false;
-      doSetSequenceKeys(this.store, sel.node, keys.filter((k) => !sel.frames.includes(k.frame)), sel.frames.length > 1 ? "Delete Sequence Keys" : "Delete Sequence Key");
-      this.grid.deformSel = null;
-      return true;
-    }
-    const keys = sel && this.deformKeysOf(sel.node);
-    if (!sel?.frames.length || !keys) return false;
-    doSetDeformKeys(this.store, sel.node, deleteDeformKeys(keys, sel.frames), sel.frames.length > 1 ? "Delete Deform Keys" : "Delete Deform Key");
     this.grid.deformSel = null;
     return true;
-  }
-
-  /** A physics, slider or path row's menu: the picked keys' ease, or delete
-   *  them. Keys are made in Properties, a value at a time. */
-  private constraintKeyMenu(node: NodeId, cn: CnId, frame: number, x: number, y: number): void {
-    const anim = this.store.currentAnimation;
-    if (!anim) return;
-    const frames = constraintKeyFrames(anim, cn);
-    const at = frames.includes(frame);
-    const mine = this.grid.deformSel?.cn === cn ? this.grid.deformSel!.frames : [];
-    if (at && !mine.includes(frame)) this.grid.deformSel = { node, frames: [frame], cn };
-    if (!at && this.grid.deformSel?.cn !== cn) this.grid.deformSel = null;
-    this.store.setFrame(frame);
-    const sel = this.grid.deformSel?.cn === cn ? this.grid.deformSel!.frames : [];
-    const tween = (t: IkTween): MenuEntry => ({
-      label: t === "linear" ? "Linear" : t === "stepped" ? "Stepped" : "Smooth", enabled: sel.length > 0,
-      run: () => doSetConstraintKeys(this.store, withConstraintTween(anim.constraintKeys, cn, sel,
-        t === "stepped" ? { kind: "none" } : t === "smooth" ? { kind: "curve", curve: [0.42, 0, 0.58, 1] } : undefined), "Constraint Key Ease"),
-    });
-    showMenu(this.menuAnchor(x, y), [
-      tween("linear"), tween("stepped"), tween("smooth"),
-      "-",
-      { label: sel.length > 1 ? `Delete ${sel.length} Constraint Keys` : "Delete Constraint Key", enabled: sel.length > 0, run: () => { this.deleteDeformKeys(); } },
-    ]);
-  }
-
-  /** An Inherit row's menu: key a mode here, the picked keys' mode, or delete them. */
-  private inheritMenu(node: NodeId, frame: number, x: number, y: number): void {
-    const anim = this.store.currentAnimation;
-    const bone = this.store.currentSymbol.nodes[node];
-    if (!anim || !bone) return;
-    const keys = anim.inherits?.[node] ?? [];
-    const at = keys.find((k) => k.frame === frame);
-    const mine = this.grid.deformSel?.node === node && this.grid.deformSel.inherit ? this.grid.deformSel.frames : [];
-    if (at && !mine.includes(frame)) this.grid.deformSel = { node, frames: [frame], inherit: true };
-    if (!at && !(this.grid.deformSel?.node === node && this.grid.deformSel.inherit)) this.grid.deformSel = null;
-    this.store.setFrame(frame);
-    const sel = this.grid.deformSel?.inherit ? this.grid.deformSel.frames : [];
-    const now = inheritAt(bone, anim, frame);
-    showMenu(this.menuAnchor(x, y), [
-      ...INHERIT_MODES.map((mode): MenuEntry => ({
-        label: `Inherit ${INHERIT_LABELS[mode]}`, checked: now === mode,
-        run: () => {
-          // Picked keys take the mode; with none picked, a key goes in here.
-          const next = sel.length ? keys.map((k) => (sel.includes(k.frame) ? { ...k, inherit: mode } : k)) : withInheritKey(keys, frame, mode);
-          doSetInheritKeys(this.store, node, next, "Inherit Key");
-        },
-      })),
-      "-",
-      { label: sel.length > 1 ? `Delete ${sel.length} Inherit Keys` : "Delete Inherit Key", enabled: sel.length > 0, run: () => { this.deleteDeformKeys(); } },
-    ]);
-  }
-
-  /** A Sequence row's menu: key the sequence here (the image in force,
-   *  looping), the picked keys' mode, or delete them. */
-  private sequenceMenu(node: NodeId, frame: number, x: number, y: number): void {
-    const anim = this.store.currentAnimation;
-    const seq = this.store.currentSymbol.nodes[node]?.sequence;
-    if (!anim || !seq) return;
-    const keys = anim.sequences?.[node] ?? [];
-    const at = keys.find((k) => k.frame === frame);
-    const mine = this.grid.deformSel?.node === node && this.grid.deformSel.sequence ? this.grid.deformSel.frames : [];
-    if (at && !mine.includes(frame)) this.grid.deformSel = { node, frames: [frame], sequence: true };
-    if (!at && !(this.grid.deformSel?.node === node && this.grid.deformSel.sequence)) this.grid.deformSel = null;
-    this.store.setFrame(frame);
-    const sel = this.grid.deformSel?.sequence ? this.grid.deformSel.frames : [];
-    const picked = keys.filter((k) => sel.includes(k.frame));
-    showMenu(this.menuAnchor(x, y), [
-      {
-        label: "Key Sequence Here", enabled: !at,
-        run: () => doSetSequenceKeys(this.store, node, withSequenceKey(keys, {
-          frame, mode: "loop", index: sequenceIndexAt(keys, frame, seq.items.length, seq.setup), delay: 1,
-        }), "Key Sequence"),
-      },
-      "-",
-      ...SEQUENCE_MODES.map((mode): MenuEntry => ({
-        label: SEQUENCE_MODE_LABELS[mode], enabled: picked.length > 0,
-        checked: picked.length > 0 && picked.every((k) => k.mode === mode),
-        run: () => doSetSequenceKeys(this.store, node, keys.map((k) => (sel.includes(k.frame) ? { ...k, mode } : k)), "Sequence Mode"),
-      })),
-      "-",
-      { label: sel.length > 1 ? `Delete ${sel.length} Sequence Keys` : "Delete Sequence Key", enabled: sel.length > 0, run: () => { this.deleteDeformKeys(); } },
-    ]);
-  }
-
-  /** A Deform row's menu: key the deform in force here, the picked keys'
-   *  ease, or delete them. */
-  private deformMenu(node: NodeId, frame: number, x: number, y: number): void {
-    const anim = this.store.currentAnimation;
-    const n = this.store.currentSymbol.nodes[node];
-    const row = n ? deformRow(this.store.currentSymbol, n) : null;
-    if (!anim || !row) return;
-    const mesh = row.mesh;
-    const keys = deformKeysOf(anim, row.target) ?? [];
-    const at = keys.find((k) => k.frame === frame);
-    if (at && !(this.grid.deformSel?.node === node && this.grid.deformSel.frames.includes(frame))) this.grid.deformSel = { node, frames: [frame] };
-    if (!at && this.grid.deformSel?.node !== node) this.grid.deformSel = null;
-    this.store.setFrame(frame);
-    const sel = this.grid.deformSel?.frames ?? [];
-    const picked = keys.filter((k) => sel.includes(k.frame));
-    const tween = (t: IkTween): MenuEntry => ({
-      label: t === "linear" ? "Linear" : t === "stepped" ? "Stepped" : "Smooth",
-      enabled: picked.length > 0,
-      checked: picked.length > 0 && picked.every((k) => deformTweenOf(k) === t),
-      run: () => doSetDeformKeys(this.store, node, withDeformTween(keys, sel, t), "Deform Key Ease"),
-    });
-    showMenu(this.menuAnchor(x, y), [
-      {
-        label: "Key Deform Here", enabled: !at,
-        run: () => doSetDeformKeys(this.store, node, withDeformKey(keys, frame, deformAt(anim, row.target, frame) ?? new Array<number>(mesh.points.length).fill(0)), "Key Deform"),
-      },
-      "-",
-      tween("linear"), tween("stepped"), tween("smooth"),
-      "-",
-      { label: sel.length > 1 ? `Delete ${sel.length} Deform Keys` : "Delete Deform Key", enabled: sel.length > 0, run: () => { this.deleteDeformKeys(); } },
-    ]);
   }
 
   /** The picked transform keys gone; false with none picked. */
@@ -1060,37 +747,9 @@ export class TimelinePanel implements Panel {
     const sel = this.grid.tcSel;
     const keys = sel && this.store.currentAnimation?.transforms?.[sel.tc];
     if (!sel?.frames.length || !keys) return false;
-    doSetTcKeys(this.store, sel.tc, deleteTcKeys(keys, sel.frames), sel.frames.length > 1 ? "Delete Transform Keys" : "Delete Transform Key");
+    doSetTcKeys(this.store, sel.tc, deleteKeys(keys, sel.frames), sel.frames.length > 1 ? "Delete Transform Keys" : "Delete Transform Key");
     this.grid.tcSel = null;
     return true;
-  }
-
-  /** A transform constraint row's menu: key the mixes in force here, the
-   *  picked keys' ease, or delete them. */
-  private tcMenu(tc: TcId, frame: number, x: number, y: number): void {
-    const anim = this.store.currentAnimation;
-    const k = this.store.currentSymbol.transforms?.find((c) => c.id === tc);
-    if (!anim || !k) return;
-    const keys = anim.transforms?.[tc] ?? [];
-    const at = keys.find((key) => key.frame === frame);
-    if (at && !(this.grid.tcSel?.tc === tc && this.grid.tcSel.frames.includes(frame))) this.grid.tcSel = { tc, frames: [frame] };
-    if (!at && this.grid.tcSel?.tc !== tc) this.grid.tcSel = null;
-    this.store.setFrame(frame);
-    const sel = this.grid.tcSel?.frames ?? [];
-    const picked = keys.filter((key) => sel.includes(key.frame));
-    const tween = (t: IkTween): MenuEntry => ({
-      label: t === "linear" ? "Linear" : t === "stepped" ? "Stepped" : "Smooth",
-      enabled: picked.length > 0,
-      checked: picked.length > 0 && picked.every((key) => tcTweenOf(key) === t),
-      run: () => doSetTcKeys(this.store, tc, withTcTween(keys, sel, t), "Transform Key Ease"),
-    });
-    showMenu(this.menuAnchor(x, y), [
-      { label: "Key Transform Here", enabled: !at, run: () => doSetTcKeys(this.store, tc, withTcKey(keys, frame, tcMixAt(k, anim, frame)), "Key Transform") },
-      "-",
-      tween("linear"), tween("stepped"), tween("smooth"),
-      "-",
-      { label: sel.length > 1 ? `Delete ${sel.length} Transform Keys` : "Delete Transform Key", enabled: sel.length > 0, run: () => { this.deleteTcKeys(); } },
-    ]);
   }
 
   /** The picked IK keys gone; false with none picked. */
@@ -1098,42 +757,9 @@ export class TimelinePanel implements Panel {
     const sel = this.grid.ikSel;
     const keys = sel && this.store.currentAnimation?.ik?.[sel.ik];
     if (!sel?.frames.length || !keys) return false;
-    doSetIkKeys(this.store, sel.ik, deleteIkKeys(keys, sel.frames), sel.frames.length > 1 ? "Delete IK Keys" : "Delete IK Key");
+    doSetIkKeys(this.store, sel.ik, deleteKeys(keys, sel.frames), sel.frames.length > 1 ? "Delete IK Keys" : "Delete IK Key");
     this.grid.ikSel = null;
     return true;
-  }
-
-  /**
-   * An IK row's menu: key the mix and bend in force here, the picked keys'
-   * ease (linear, stepped, smooth), or delete them.
-   */
-  private ikMenu(ik: IkId, frame: number, x: number, y: number): void {
-    const anim = this.store.currentAnimation;
-    const k = this.store.currentSymbol.ik.find((c) => c.id === ik);
-    if (!anim || !k) return;
-    const keys = anim.ik?.[ik] ?? [];
-    const at = keys.find((key) => key.frame === frame);
-    if (at && !(this.grid.ikSel?.ik === ik && this.grid.ikSel.frames.includes(frame))) this.grid.ikSel = { ik, frames: [frame] };
-    if (!at && this.grid.ikSel?.ik !== ik) this.grid.ikSel = null;
-    this.store.setFrame(frame);
-    const sel = this.grid.ikSel?.frames ?? [];
-    const picked = keys.filter((key) => sel.includes(key.frame));
-    const tween = (t: IkTween): MenuEntry => ({
-      label: t === "linear" ? "Linear" : t === "stepped" ? "Stepped" : "Smooth",
-      enabled: picked.length > 0,
-      checked: picked.length > 0 && picked.every((key) => ikTweenOf(key) === t),
-      run: () => doSetIkKeys(this.store, ik, withIkTween(keys, sel, t), "IK Key Ease"),
-    });
-    showMenu(this.menuAnchor(x, y), [
-      { label: "Key IK Here", enabled: !at, run: () => doSetIkKeys(this.store, ik, withIkKey(keys, frame, ikPoseAt(k, anim, frame), k.softness), "Key IK") },
-      "-",
-      tween("linear"), tween("stepped"), tween("smooth"),
-      "-",
-      {
-        label: sel.length > 1 ? `Delete ${sel.length} IK Keys` : "Delete IK Key",
-        enabled: sel.length > 0, run: () => { this.deleteIkKeys(); },
-      },
-    ]);
   }
 
   /** The picked draw order keys gone; false with none picked. */
@@ -1141,211 +767,9 @@ export class TimelinePanel implements Panel {
     const sel = this.grid.orderSel;
     const keys = this.store.currentAnimation?.drawOrder;
     if (!sel?.length || !keys) return false;
-    doSetDrawOrder(this.store, deleteDrawOrderKeys(keys, sel), sel.length > 1 ? "Delete Draw Order Keys" : "Delete Draw Order Key");
+    doSetDrawOrder(this.store, deleteKeys(keys, sel), sel.length > 1 ? "Delete Draw Order Keys" : "Delete Draw Order Key");
     this.grid.orderSel = null;
     return true;
-  }
-
-  /**
-   * The Draw order row's menu: key the order in force here (to edit it with
-   * Modify ▸ Draw Order), back to the setup order from here, or delete the
-   * picked keys.
-   */
-  private drawOrderMenu(frame: number, x: number, y: number): void {
-    const anim = this.store.currentAnimation;
-    if (!anim) return;
-    this.store.setFrame(frame);
-    const keys = anim.drawOrder ?? [];
-    const sym = this.store.currentSymbol;
-    const keyed = keys.some((k) => k.frame === frame);
-    const sel = this.grid.orderSel ?? [];
-    showMenu(this.menuAnchor(x, y), [
-      {
-        label: "Key Draw Order Here", enabled: !keyed,
-        run: () => doSetDrawOrder(this.store, withDrawOrderKey(keys, frame, orderAt(sym, anim, frame), drawingLayers(sym)), "Key Draw Order"),
-      },
-      {
-        label: "Setup Draw Order From Here",
-        run: () => doSetDrawOrder(this.store, withDrawOrderKey(keys, frame, null, drawingLayers(sym)), "Setup Draw Order"),
-      },
-      "-",
-      {
-        label: sel.length > 1 ? `Delete ${sel.length} Draw Order Keys` : "Delete Draw Order Key",
-        enabled: sel.length > 0, run: () => { this.deleteDrawOrderKeys(); },
-      },
-    ]);
-  }
-
-  /** A property row's menu: key the property at the frame, or delete its
-   *  picked keys (or the one under the pointer). */
-  private propMenu(nodeId: NodeId, prop: TimelineProp, frame: number, x: number, y: number): void {
-    const track = this.store.currentAnimation?.tracks[nodeId];
-    const node = this.store.currentSymbol.nodes[nodeId];
-    if (!node) return;
-    const label = PROP_NAMES[prop];
-    const onKey = !!track && propertyKeys(track, prop).includes(frame);
-    const sel = this.grid.propSel;
-    if (onKey && !(sel?.nodeId === nodeId && sel.prop === prop && sel.frames.includes(frame))) {
-      this.grid.propSel = { nodeId, prop, frames: [frame] };
-    }
-    this.store.setFrame(frame);
-    showMenu(this.menuAnchor(x, y), [
-      {
-        label: `Key ${label} Here`, enabled: !onKey,
-        run: () => {
-          const base = track ?? ensureTrack(this.store, node);
-          doSetTrack(this.store, nodeId, keyChannelAt(base, node, prop, frame), `Key ${label}`);
-        },
-      },
-      {
-        label: this.grid.propSel && this.grid.propSel.frames.length > 1 ? `Delete ${this.grid.propSel.frames.length} ${label} Keys` : `Delete ${label} Key`,
-        enabled: onKey, run: () => { this.deletePropKeys(); },
-      },
-    ]);
-  }
-
-  private frameMenu(row: number, frame: number, x: number, y: number): void {
-    const layer = this.grid.visibleRows()[row]?.layer;
-    if (!layer) return;
-    const nodeId = layer.nodeId;
-    const prop = this.grid.visibleRows()[row]?.prop;
-    if (prop) { this.propMenu(nodeId, prop, frame, x, y); return; }
-    const ik = this.grid.visibleRows()[row]?.ik;
-    if (ik) { this.ikMenu(ik, frame, x, y); return; }
-    const tc = this.grid.visibleRows()[row]?.tc;
-    if (tc) { this.tcMenu(tc, frame, x, y); return; }
-    if (this.grid.visibleRows()[row]?.deform) { this.deformMenu(nodeId, frame, x, y); return; }
-    if (this.grid.visibleRows()[row]?.sequence) { this.sequenceMenu(nodeId, frame, x, y); return; }
-    if (this.grid.visibleRows()[row]?.inherit) { this.inheritMenu(nodeId, frame, x, y); return; }
-    const cnRow = this.grid.visibleRows()[row]?.cn;
-    if (cnRow) { this.constraintKeyMenu(nodeId, cnRow, frame, x, y); return; }
-    // Right-clicking outside the selection moves it, as in Flash; inside it,
-    // the selection is what the menu acts on.
-    if (!this.store.selection.frames.includes(`${nodeId}:${frame}`)) {
-      this.store.selectNodes([nodeId]);
-      this.store.selection = { ...this.store.selection, frames: [`${nodeId}:${frame}`] };
-      this.store.emit("selection");
-    }
-    this.store.setFrame(frame);
-
-    const track = this.store.currentAnimation?.tracks[nodeId];
-    const onKey = !!track && keyIndexAt(track, frame) >= 0;
-    const range = this.frameSelection();
-    const count = range ? range.to - range.from + 1 : 1;
-
-    const anchor = this.menuAnchor(x, y);
-
-    // A radio group, like the Rotate submenu below: the preset the key
-    // already carries is ticked.
-    const keyHere = onKey ? track!.keys[keyIndexAt(track!, frame)]! : null;
-    const tweenItems = [
-      ...EASE_PRESETS.map((p) => ({
-        label: p.label,
-        enabled: onKey,
-        checked: !!keyHere && sameEase(keyHere.tween, p.spec),
-        run: () => this.applyTween(nodeId, frame, p.spec),
-      })),
-      { label: "Ease…", enabled: easeTargets(this.store).length > 0, run: () => this.openEase() },
-    ];
-
-    const sel = FrameClipboard.selectionOf(this.store);
-    const runLabel = sel && sel.to > sel.from ? `${sel.to - sel.from + 1} Frames` : "Frame";
-
-    // With a range selected the frame operations work on it; otherwise they
-    // keep their single-cell meaning.
-    const frameItems = range
-      ? [
-        { label: `Insert ${count} Frames`, command: "timeline.insertFrame",
-          run: () => doInsertFrames(this.store, range.ids, range.from, count) },
-        { label: `Remove ${count} Frames`, command: "timeline.removeFrame",
-          run: () => doRemoveFrames(this.store, range.ids, range.from, count) },
-        "-" as const,
-        { label: "Convert to Keyframes", command: "timeline.insertKeyframe",
-          run: () => doConvertToKeyframes(this.store, range.ids, range.from, range.to) },
-        { label: "Insert Blank Keyframe", command: "timeline.insertBlankKeyframe",
-          run: () => doInsertBlankKeyframe(this.store, frame) },
-        { label: "Clear Keyframes", command: "timeline.clearKeyframe",
-          run: () => doClearKeyframes(this.store, range.ids, range.from, range.to) },
-      ]
-      : [
-        { label: "Insert Frame", command: "timeline.insertFrame", run: () => doInsertFrame(this.store, frame) },
-        { label: "Remove Frame", command: "timeline.removeFrame", run: () => doRemoveFrame(this.store, frame) },
-        "-" as const,
-        { label: "Insert Keyframe", command: "timeline.insertKeyframe", run: () => doInsertKeyframe(this.store, frame) },
-        { label: "Insert Blank Keyframe", command: "timeline.insertBlankKeyframe", run: () => doInsertBlankKeyframe(this.store, frame) },
-        { label: "Clear Keyframe", command: "timeline.clearKeyframe", enabled: onKey, run: () => doClearKeyframe(this.store, frame) },
-      ];
-
-    // The "all layers" pair only earns its place when it would reach layers
-    // the items above do not: with every layer already in the selection the
-    // two would do exactly the same thing, which just reads as a puzzle.
-    const allIds = this.allLayerIds();
-    const targetCount = range ? range.ids.length : this.store.selection.nodes.length || 1;
-    const allLayerItems = allIds.length > targetCount
-      ? [
-        { label: count > 1 ? `Insert ${count} Frames (All Layers)` : "Insert Frame (All Layers)",
-          run: () => doInsertFrames(this.store, allIds, range?.from ?? frame, count) },
-        { label: count > 1 ? `Remove ${count} Frames (All Layers)` : "Remove Frame (All Layers)",
-          run: () => doRemoveFrames(this.store, allIds, range?.from ?? frame, count) },
-        "-" as const,
-      ]
-      : [];
-
-    showMenu(anchor, [
-      ...frameItems,
-      "-",
-      ...allLayerItems,
-      { label: `Copy ${runLabel}`, command: "edit.copy", run: () => this.copyFrames() },
-      { label: `Cut ${runLabel}`, command: "edit.cut", run: () => this.frames.cut(this.store) },
-      {
-        label: this.frames.hasContent ? `Paste ${this.frames.span} Frame(s)` : "Paste Frames",
-        command: "edit.paste",
-        enabled: this.frames.hasContent,
-        run: () => this.frames.paste(this.store, nodeId, frame),
-      },
-      {
-        label: "Paste and Overwrite Frames",
-        command: "edit.pasteOverwriteFrames",
-        enabled: this.frames.hasContent,
-        run: () => this.frames.paste(this.store, nodeId, frame, "overwrite"),
-      },
-      "-",
-      ...tweenItems,
-      "-",
-      this.rotationMenu(nodeId, frame, keyHere),
-    ]);
-  }
-
-  /**
-   * Which way the tween leaving this keyframe turns — Flash's Rotate: Auto /
-   * CW / CCW ×N. Without it the only way to reverse a spin was to retype the
-   * angle 360° away, and the Properties panel shows the angle, not the path.
-   */
-  private rotationMenu(nodeId: NodeId, frame: number, key: Keyframe | null) {
-    const dir = key?.rotateDir ?? null;
-    const turns = Math.abs(key?.rotateTurns ?? 0);
-    const set = (d: RotateDir | null, t: number) => doSetRotation(this.store, nodeId, frame, d, t);
-    return {
-      label: "Rotate",
-      enabled: !!key,
-      items: [
-        { label: "As Keyed", checked: !dir && !turns, run: () => set(null, 0) },
-        { label: "Clockwise", checked: dir === "cw", run: () => set("cw", turns) },
-        { label: "Counter-clockwise", checked: dir === "ccw", run: () => set("ccw", turns) },
-        "-" as const,
-        {
-          label: turns ? `Extra Turns: ${turns}…` : "Extra Turns…",
-          run: () => promptNumber({
-            title: "Extra Turns",
-            label: "Turns",
-            value: turns,
-            min: 0,
-            max: 100,
-            onOk: (v) => set(dir, v),
-          }),
-        },
-      ],
-    };
   }
 
   /**
@@ -1374,7 +798,7 @@ export class TimelinePanel implements Panel {
     else doRemoveFrames(this.store, ids, from, count);
   }
 
-  private applyTween(nodeId: NodeId, frame: number, spec: TweenSpec): void {
+  applyTween(nodeId: NodeId, frame: number, spec: TweenSpec): void {
     doSetTween(this.store, nodeId, frame, spec);
   }
 

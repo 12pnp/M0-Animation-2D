@@ -48,17 +48,12 @@ export interface PsdDocument {
   warnings: string[];
 }
 
-/** Photoshop blend modes we can represent; everything else imports as normal. */
+/** Photoshop blend modes Spine has; everything else imports as normal. */
 const BLEND: Record<string, BlendMode> = {
   normal: "normal",
   multiply: "multiply",
   screen: "screen",
-  overlay: "overlay",
-  darken: "darken",
-  lighten: "lighten",
-  difference: "difference",
   "linear dodge": "add",
-  "hard light": "hardlight",
 };
 
 /** Encodes a layer's final pixels; the worker and the page each bring theirs. */

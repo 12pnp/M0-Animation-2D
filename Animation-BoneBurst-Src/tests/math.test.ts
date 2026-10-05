@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { mat, mul, invert, apply, equalsEps, matOf } from "@/core/math/Matrix2D";
 import { tf, toMatrix, fromMatrix, rotateBy, matrixOf, shearOf } from "@/core/math/Transform";
-import { wrapTo180, turnsOf, shortestDelta, DEG_RAD } from "@/core/math/angle";
+import { wrapTo180, shortestDelta, DEG_RAD } from "@/core/math/angle";
 import { applyTween } from "@/core/math/easing";
 
 /** Deterministic PRNG so failures are reproducible. */
@@ -117,16 +117,6 @@ describe("angles", () => {
     expect(wrapTo180(-180)).toBe(180);
     expect(wrapTo180(190)).toBe(-170);
     expect(wrapTo180(720)).toBe(0);
-  });
-
-  it("derives clockwise turns the way rotateFrame needs", () => {
-    expect(turnsOf(0)).toBe(0);
-    expect(turnsOf(90)).toBe(0);
-    expect(turnsOf(360)).toBe(1);
-    expect(turnsOf(450)).toBe(1);
-    expect(turnsOf(720 + 90)).toBe(2);
-    expect(turnsOf(-360)).toBe(-1);
-    expect(turnsOf(-810)).toBe(-2);
   });
 
   it("shortestDelta never exceeds a half turn", () => {

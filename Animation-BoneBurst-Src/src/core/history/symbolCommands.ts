@@ -1,5 +1,5 @@
 import type { Command, TouchSet } from "./Command";
-import type { Animation, IkConstraint, Layer, LibraryItem, Node, Project, SymbolItem, Track, } from "@/core/doc/types";
+import type { Animation, IkConstraint, Layer, LibraryItem, Node, Project, SymbolItem, Track } from "@/core/doc/types";
 import { isSymbol } from "@/core/doc/types";
 import { itemsOf } from "@/core/doc/displays";
 import type { ItemId, LayerId, NodeId } from "@/core/doc/ids";
@@ -15,7 +15,7 @@ import {
 } from "@/core/doc/layerTree";
 import { apply, applyInverse } from "@/core/math/Matrix2D";
 import type { Transform } from "@/core/math/Transform";
-import { reexpress } from "./commands";
+import { reexpress } from "./hierarchyCommands";
 
 /**
  * Would placing `inserted` inside `host` close a loop?
@@ -185,8 +185,9 @@ function registrationPoint(
 /**
  * Convert a selection into a reusable Symbol, leaving one instance behind.
  *
- * A Symbol IS a DragonBones armature, so this is the operation that turns a
- * pile of layers into something the runtime can instance more than once.
+ * This is the operation that turns a pile of layers into something the
+ * document can instance more than once (each instance is flattened into the
+ * skeleton on export).
  *
  * The transform bookkeeping is kept deliberately simple: the instance is
  * created under the selection's common parent with a pure translation and an
@@ -405,7 +406,6 @@ export class AddSymbol implements Command {
 }
 
 export type { Animation };
-
 
 /**
  * Duplicate a library item.

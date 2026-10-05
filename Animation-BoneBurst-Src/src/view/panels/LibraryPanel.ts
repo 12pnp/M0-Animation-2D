@@ -7,14 +7,13 @@ import type { AssetStore } from "@/app/AssetStore";
 import { isImage, isSymbol, type LibraryItem } from "@/core/doc/types";
 import { type AssetId, type FolderId, type ItemId, newFolderId } from "@/core/doc/ids";
 import {
-  deletePlan, folderNameTaken, type LibraryRow, libraryRows, parentFolder, rowKey, stepRow, uniqueFolderName,
-  canMoveFolder,
+  canMoveFolder, countUsages, deletePlan, folderNameTaken, type LibraryRow, libraryRows, parentFolder, rowKey, stepRow,
+  uniqueFolderName,
 } from "@/core/doc/libraryTree";
 import { AddFolder, MoveToFolder, RemoveFolder, RenameFolder } from "@/core/history/libraryCommands";
 import { alertDialog, confirmDialog } from "@/view/widgets/dialogs";
 import { menuAnchor, showMenu } from "@/view/widgets/Dock";
-import { itemsOf } from "@/core/doc/displays";
-import { AddLibraryItem, RemoveLibraryItem, RenameLibraryItem } from "@/core/history/commands";
+import { AddLibraryItem, RemoveLibraryItem, RenameLibraryItem } from "@/core/history/libraryCommands";
 import { createImageItem } from "@/core/doc/defaults";
 import { importPsd } from "@/app/PsdImport";
 import { SceneRenderer } from "@/view/viewport/SceneRenderer";
@@ -342,7 +341,7 @@ export class LibraryPanel implements Panel {
       return;
     }
 
-    const usage = countUsages(this.store);
+    const usage = countUsages(this.store.project);
     const current = this.currentKey();
     for (const row of this.rows) this.list.appendChild(this.buildRow(row, usage, rowKey(row) === current));
 
@@ -787,7 +786,7 @@ export class LibraryPanel implements Panel {
     if (!items.length && !folders.length) return;
 
     try {
-      const usage = countUsages(this.store);
+      const usage = countUsages(this.store.project);
       const plan = deletePlan(p, items, folders, usage);
       const name = (id: ItemId) => `"${p.items[id]?.name ?? id}"`;
       const times = (id: ItemId) => { const n = usage.get(id) ?? 0; return n === 1 ? "once" : `${n} times`; };
@@ -831,7 +830,7 @@ export class LibraryPanel implements Panel {
       }
 
       // The dialog did not stop the document: plan again from what is there now.
-      const now = deletePlan(this.store.project, items, folders, countUsages(this.store));
+      const now = deletePlan(this.store.project, items, folders, countUsages(this.store.project));
       if (now.inUse.length || (!now.items.length && !now.folders.length)) return;
       const at = this.rows.findIndex((r) => rowKey(r) === this.currentKey());
       this.store.transaction(folders.length ? "Delete Folder" : "Delete Library Items", () => {
@@ -859,18 +858,6 @@ function wrapIcon(name: "imageItem" | "symbolItem" | "folderItem"): HTMLElement 
   const span = h("span", { class: "ico" });
   span.appendChild(icon(name, 13));
   return span;
-}
-
-/** How many nodes across every symbol reference each library item. */
-export function countUsages(store: Store): Map<ItemId, number> {
-  const counts = new Map<ItemId, number>();
-  for (const item of Object.values(store.project.items)) {
-    if (!isSymbol(item)) continue;
-    for (const node of Object.values(item.nodes)) {
-      for (const id of new Set(itemsOf(node))) counts.set(id, (counts.get(id) ?? 0) + 1);
-    }
-  }
-  return counts;
 }
 
 /** Photoshop files arrive with an empty MIME type as often as not. */

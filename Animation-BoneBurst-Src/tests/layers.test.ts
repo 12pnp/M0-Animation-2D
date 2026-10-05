@@ -6,8 +6,10 @@ import {
 import { isSymbol, type Project, type SymbolItem, type Node } from "@/core/doc/types";
 import { History } from "@/core/history/History";
 import {
-  ReorderLayer, RemoveNodes, SetLayerExcluded, SetNodeItem, SetParent,
+  RemoveNodes, SetNodeItem,
 } from "@/core/history/commands";
+import { SetParent } from "@/core/history/hierarchyCommands";
+import { ReorderLayer, SetLayerExcluded } from "@/core/history/layerCommands";
 import { indexAbove } from "@/core/doc/layerTree";
 import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
 
@@ -38,7 +40,6 @@ function add(sym: SymbolItem, node: Node, at = 0): Node {
   sym.layers.splice(at, 0, createLayer(node.id, node.name, sym.layers.length));
   return node;
 }
-
 
 describe("exclude from export", () => {
 
@@ -122,7 +123,8 @@ describe("New Group", () => {
     const { loadStickman } = await import("./fixtures/stickman");
     const { groupPlan } = await import("@/core/doc/layerTree");
     const { evaluateSymbol } = await import("@/core/doc/pose");
-    const { SetParent, AddNode } = await import("@/core/history/commands");
+    const { AddNode } = await import("@/core/history/commands");
+    const { SetParent } = await import("@/core/history/hierarchyCommands");
     const { createNode: node, createLayer: layer } = await import("@/core/doc/defaults");
     const { History } = await import("@/core/history/History");
     const f = await loadStickman();

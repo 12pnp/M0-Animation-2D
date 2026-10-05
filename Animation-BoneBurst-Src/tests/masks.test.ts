@@ -6,7 +6,8 @@ import {
   normalizeMasks, maskRepairs, maskGroups, maskCandidate, nearestMaskAbove,
 } from "@/core/doc/layerTree";
 import { History } from "@/core/history/History";
-import { AddNode, RemoveNodes, ReorderLayer, SetLayerMasks } from "@/core/history/commands";
+import { AddNode, RemoveNodes } from "@/core/history/commands";
+import { ReorderLayer, SetLayerMasks } from "@/core/history/layerCommands";
 import { Store } from "@/app/Store";
 import { Clipboard } from "@/app/Clipboard";
 

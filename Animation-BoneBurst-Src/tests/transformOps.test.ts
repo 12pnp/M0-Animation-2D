@@ -4,7 +4,7 @@ import { mat, matOf, mul, apply, clone } from "@/core/math/Matrix2D";
 import {
   snapshotOf, moveBy, rotateAbout, scaleLocal, skewLocal, applyWorldMatrix, uniformFactor,
   movePivotKeepingArtwork, topmostSelected,
-} from "@/view/tools/transformOps";
+} from "@/core/doc/transformOps";
 import type { NodeId } from "@/core/doc/ids";
 
 const ID = "n1" as NodeId;
@@ -319,7 +319,7 @@ describe("movePivotKeepingArtwork", () => {
 describe("SetParent preserves the world transform", () => {
   it("keeps a node visually in place when it gains a parent", async () => {
     const { createProject, createNode, createLayer } = await import("@/core/doc/defaults");
-    const { SetParent } = await import("@/core/history/commands");
+    const { SetParent } = await import("@/core/history/hierarchyCommands");
     const { evaluateSymbol } = await import("@/core/doc/pose");
     const { reseed } = await import("@/core/doc/ids");
     const { isSymbol } = await import("@/core/doc/types");
@@ -360,7 +360,7 @@ describe("SetParent preserves the world transform", () => {
 
   it("re-expresses existing keyframes too, not just the bind pose", async () => {
     const { createProject, createNode, createLayer } = await import("@/core/doc/defaults");
-    const { SetParent } = await import("@/core/history/commands");
+    const { SetParent } = await import("@/core/history/hierarchyCommands");
     const { evaluateSymbol } = await import("@/core/doc/pose");
     const { reseed } = await import("@/core/doc/ids");
     const { isSymbol } = await import("@/core/doc/types");

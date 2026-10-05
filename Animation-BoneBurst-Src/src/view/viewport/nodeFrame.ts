@@ -1,6 +1,6 @@
 import { apply, invert, mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { type Rect, rectFromPoints } from "@/core/math/geom";
-import { entryBox, type FrameContext, type Pose, SETUP_CONTEXT } from "@/core/doc/pose";
+import { entryBox, type FrameContext, isDescendant, type Pose, SETUP_CONTEXT } from "@/core/doc/pose";
 import type { Project } from "@/core/doc/types";
 import type { NodeId } from "@/core/doc/ids";
 
@@ -27,9 +27,6 @@ import type { NodeId } from "@/core/doc/ids";
 /** How long the local axes are drawn, in the node's own units. */
 export const AXIS_LENGTH = 34;
 
-/** Depth guard: a corrupt parent chain must not hang the overlay. */
-const MAX_DEPTH = 64;
-
 /**
  * The bounds of every piece of artwork under `rootId`, in `rootId`'s local
  * space, or null when the node drives no artwork at all (a lone IK target).
@@ -49,7 +46,7 @@ export function drivenBox(
   const p = { x: 0, y: 0 };
 
   for (const e of pose.entries) {
-    if (!isDescendant(pose, e.nodeId, rootId)) continue;
+    if (!isDescendant(pose.byNode, e.nodeId, rootId)) continue;
     const box = entryBox(project, e, when);
     if (!box) continue;
 
@@ -68,16 +65,6 @@ export function drivenBox(
     }
   }
   return Number.isFinite(minX) ? rectFromPoints(minX, minY, maxX, maxY) : null;
-}
-
-/** `id` is `ancestorId` or sits under it. */
-export function isDescendant(pose: Pose, id: NodeId, ancestorId: NodeId): boolean {
-  let cursor: NodeId | null | undefined = id;
-  for (let guard = 0; cursor && guard < MAX_DEPTH; guard++) {
-    if (cursor === ancestorId) return true;
-    cursor = pose.byNode.get(cursor)?.node.parentId;
-  }
-  return false;
 }
 
 /**

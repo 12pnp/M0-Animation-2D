@@ -1,4 +1,4 @@
-import { DEG_RAD, type IkData, type IkScaleY } from "./rigData";
+import { DEG_RAD, type IkData, type IkScaleY } from "./rigTypes";
 import type { Bones } from "./bones";
 
 /**

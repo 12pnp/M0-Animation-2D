@@ -5,7 +5,8 @@ import { evaluateSymbol } from "@/core/doc/pose";
 import { AtlasAttachmentLoader, MixFrom, Physics, Skeleton, SkeletonJson, TextureAtlas } from "@esotericsoftware/spine-core";
 import { reseed } from "@/core/doc/ids";
 import { Store } from "@/app/Store";
-import { AGENT_TOOLS, AgentApi, AgentError, type AgentVision, type BoneMark, IMAGES_KEY } from "@/app/agent/AgentApi";
+import { AGENT_TOOLS, AgentApi, type AgentVision, type BoneMark } from "@/app/agent/AgentApi";
+import { AgentError } from "@/app/agent/agentArgs";
 import type { AssetId } from "@/core/doc/ids";
 import { SetAnimationReference } from "@/core/history/timelineCommands";
 import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
@@ -15,13 +16,15 @@ import type { NodeId } from "@/core/doc/ids";
 import { createAnimation, createImageItem, createLayer, createNode } from "@/core/doc/defaults";
 import { fromMatrix, tf } from "@/core/math/Transform";
 import { buildFlatPsdImport } from "@/core/doc/psdImport";
-import { AddLibraryItem, AddNode } from "@/core/history/commands";
+import { AddNode } from "@/core/history/commands";
+import { AddLibraryItem } from "@/core/history/libraryCommands";
 import { posedSymbol } from "@/core/boneburst/boneburstPose";
 import { apply } from "@/core/math/Matrix2D";
 import { pt } from "@/core/math/geom";
 import { loadStickman } from "./fixtures/stickman";
 import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import { imagesOf, sampleRigs } from "./fixtures/spineSamples";
+import { IMAGES_KEY, renderPoses } from "@/app/agent/agentLook";
 
 /**
  * The AI's tools on the real stickman rig: values go in and come out in
@@ -270,10 +273,10 @@ describe("the AI's tools", () => {
     // A tall reference far to the right of the rig, from frame 4 to 11.
     store.apply(new SetAnimationReference(store.currentSymbolId, anim.id,
       { frames: ["r1", "r2"] as AssetId[], width: 100, height: 400, at: [4, 8], hold: 4, start: 4, x: 900, y: -100, scale: 2 }));
-    await api.renderPoses("run", [0, 4, 8], "both");
+    await renderPoses(api, "run", [0, 4, 8], "both");
     const plain = fake.renders.splice(0);
     expect(plain.map((r) => r.reference)).toEqual([false, false, false]);
-    await api.renderPoses("run", [0, 4, 8], "both", undefined, true);
+    await renderPoses(api, "run", [0, 4, 8], "both", undefined, true);
     const over = fake.renders.splice(0);
     expect(over.map((r) => r.reference)).toEqual([false, true, true]);
     // Framed on the rig and the 200 × 800 reference together: the picture got

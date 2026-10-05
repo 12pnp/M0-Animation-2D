@@ -7,9 +7,11 @@ import { TWEEN_LINEAR } from "@/core/math/easing";
 import { displaysOf, displayAt, findOrAddDisplay, itemsOf } from "@/core/doc/displays";
 import { evaluateSymbol, childFrame, displayContext } from "@/core/doc/pose";
 import { History } from "@/core/history/History";
-import { SetPivot, SetNodeDisplays, SetNodeItem } from "@/core/history/commands";
+import { SetNodeDisplays, SetNodeItem } from "@/core/history/commands";
+import { SetPivot } from "@/core/history/hierarchyCommands";
 import { wouldCreateCycle } from "@/core/history/symbolCommands";
-import { validateProject, migrate } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 
 beforeEach(() => reseed());
 
@@ -164,6 +166,6 @@ describe("loading", () => {
     const { project } = scene();
     const raw = JSON.parse(JSON.stringify({ ...project, version: 5 }));
     expect(validateProject(migrate(raw)).project.version).toBe(DOC_VERSION);
-    expect(DOC_VERSION).toBe(27);
+    expect(DOC_VERSION).toBe(28);
   });
 });

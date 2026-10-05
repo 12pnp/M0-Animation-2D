@@ -1,5 +1,5 @@
 import type { BoneBurstInherit } from "../types";
-import { DEG_RAD } from "./rigData";
+import { DEG_RAD } from "./rigTypes";
 
 /**
  * What the IK and transform solvers (`ik.ts`, `transform.ts`) read and write:

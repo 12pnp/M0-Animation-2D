@@ -4,7 +4,8 @@ import {
   skinActivity, skinBoneSet, skinLookup, skinnedDisplay, skinsOf, stageSkinOf, withDescendantBones, withNewSkin,
   withoutSkin, withRenamedSkin, withSkinDisplay, withSkinMembers, type SkinState,
 } from "@/core/doc/skins";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import { History } from "@/core/history/History";
 import { SetSkinOnly, SetSkins } from "@/core/history/skinCommands";
 import { evaluateSymbol } from "@/core/doc/pose";

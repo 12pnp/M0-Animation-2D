@@ -1,7 +1,7 @@
 import type { Matrix2D } from "@/core/math/Matrix2D";
 import { apply } from "@/core/math/Matrix2D";
 import type { Point, Rect } from "@/core/math/geom";
-import { polygonContains } from "@/core/math/geom";
+import { polygonContains, segmentDistance } from "@/core/math/geom";
 import type { Pose } from "@/core/doc/pose";
 import { entryBox, type FrameContext } from "@/core/doc/pose";
 import type { Project } from "@/core/doc/types";
@@ -202,7 +202,7 @@ export function hitGizmo(g: Gizmo, sx: number, sy: number, opts: HitOptions): Ha
     { edge: "w", a: screenCorners[3], b: screenCorners[0] },
   ];
   for (const s of segs) {
-    if (distToSegment(sx, sy, s.a, s.b) <= EDGE) return { kind: "skew", edge: s.edge };
+    if (segmentDistance(s.a.x, s.a.y, s.b.x, s.b.y, sx, sy) <= EDGE) return { kind: "skew", edge: s.edge };
   }
 
   if (inside) return { kind: "move" };
@@ -321,15 +321,6 @@ function cornerAngle(g: Gizmo | null, c: Corner): number {
   const opp = corners[oppositeCorner(c)];
   const p = corners[c];
   return (Math.atan2(p.y - opp.y, p.x - opp.x) * 180) / Math.PI;
-}
-
-function distToSegment(px: number, py: number, a: Point, b: Point): number {
-  const dx = b.x - a.x, dy = b.y - a.y;
-  const len2 = dx * dx + dy * dy;
-  if (len2 === 0) return Math.hypot(px - a.x, py - a.y);
-  let t = ((px - a.x) * dx + (py - a.y) * dy) / len2;
-  t = Math.max(0, Math.min(1, t));
-  return Math.hypot(px - (a.x + t * dx), py - (a.y + t * dy));
 }
 
 /** Which local-box corner a named corner maps to, as 0..1 fractions. */

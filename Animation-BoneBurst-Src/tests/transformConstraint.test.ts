@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
-  deleteTcKeys, FULL_MIX, identityProperties, isIdentityMap, moveTcKeys, NEW_MAPPING, tcMixAt, tcSolveOf, tcTweenOf, transformPlan, usedMixes,
-  withMapping, withoutMapping, withSourceOffset, withTcKey, withTcTween,
+    FULL_MIX, identityProperties, isIdentityMap, NEW_MAPPING, tcMixAt, tcSolveOf, transformPlan, usedMixes, withMapping, withoutMapping, withSourceOffset, withTcKey,
 } from "@/core/doc/transformKeys";
 import { LooseBones } from "@/core/boneburst/runtime/bones";
 import { solveTransform } from "@/core/boneburst/runtime/transform";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
 import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import { History } from "@/core/history/History";
@@ -13,6 +13,7 @@ import { RemoveNodes } from "@/core/history/commands";
 import { DOC_VERSION, type Animation, type SymbolItem, type TcKey, type TransformConstraint } from "@/core/doc/types";
 import type { TcId } from "@/core/doc/ids";
 import { loadStickman } from "./fixtures/stickman";
+import { deleteKeys, keyTweenOf, moveKeys, withKeyTween } from "@/core/doc/keyList";
 
 const k: TransformConstraint = {
   id: "t1" as TcId, name: "follow", boneIds: ["b" as never], sourceId: "s" as never,
@@ -37,10 +38,10 @@ describe("transform constraint keys", () => {
   });
   it("key, move (replacing, not before 0), delete, ease", () => {
     expect(withTcKey(keys, 8, FULL_MIX)[1]).toEqual({ frame: 8, mix: FULL_MIX, tween: { kind: "none" } });
-    expect(moveTcKeys(keys, [8], 4).map((x) => x.frame)).toEqual([4, 12]);
-    expect(moveTcKeys(keys, [4, 8], -10).map((x) => x.frame)).toEqual([0, 12]);
-    expect(deleteTcKeys(keys, [4]).map((x) => x.frame)).toEqual([8, 12]);
-    expect(withTcTween(keys, [4], "smooth").map(tcTweenOf)).toEqual(["smooth", "stepped", "linear"]);
+    expect(moveKeys(keys, [8], 4).map((x) => x.frame)).toEqual([4, 12]);
+    expect(moveKeys(keys, [4, 8], -10).map((x) => x.frame)).toEqual([0, 12]);
+    expect(deleteKeys(keys, [4]).map((x) => x.frame)).toEqual([8, 12]);
+    expect(withKeyTween(keys, [4], "smooth").map(keyTweenOf)).toEqual(["smooth", "stepped", "linear"]);
   });
 });
 

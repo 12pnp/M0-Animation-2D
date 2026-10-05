@@ -21,7 +21,6 @@ import type { AnimId, IkId, ItemId, NodeId, TcId } from "@/core/doc/ids";
 import type { Transform } from "@/core/math/Transform";
 import { cloneTf } from "@/core/math/Transform";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
-import { TWEEN_LINEAR } from "@/core/math/easing";
 import { createKeyframe } from "@/core/doc/defaults";
 import { localAt } from "@/core/doc/pose";
 import { displayAt } from "@/core/doc/displays";
@@ -52,9 +51,9 @@ import {
     SetBindTransform,
     SetNodeBlendMode,
     SetNodeItem,
-    SetNodeMotionBlur,
-    SetPivot,
 } from "@/core/history/commands";
+import { SetPivot } from "@/core/history/hierarchyCommands";
+import { parseFrameCell } from "@/core/doc/frameCells";
 
 /**
  * The bridge between the UI and the pure frame algebra.
@@ -485,10 +484,7 @@ export function easeTargets(store: Store): EaseTarget[] {
   const anim = store.currentAnimation;
   if (!anim) return [];
   const cells: Array<[NodeId, number]> = store.selection.frames.length
-    ? store.selection.frames.map((c) => {
-      const cut = c.lastIndexOf(":");
-      return [c.slice(0, cut) as NodeId, Number(c.slice(cut + 1))];
-    })
+    ? store.selection.frames.map(parseFrameCell).filter((c) => c !== null).map((c) => [c.id, c.frame])
     : store.selection.nodes.map((id) => [id, store.ui.frame]);
 
   const out: EaseTarget[] = [];
@@ -771,7 +767,7 @@ export function fillEmptyNode(
   store: Store, id: NodeId,
   fill: {
     itemId: ItemId; kind: NodeKind; pivot: { x: number; y: number }; transform: Transform;
-    color?: ColorTransform; blendMode?: BlendMode; motionBlur?: number;
+    color?: ColorTransform; blendMode?: BlendMode;
   },
 ): void {
   const sym = store.currentSymbolId;
@@ -782,7 +778,6 @@ export function fillEmptyNode(
   else store.apply(new SetBindTransform(sym, new Map([[id, fill.transform]])));
   if (fill.color) store.apply(new SetBindColor(sym, new Map([[id, fill.color]])));
   if (fill.blendMode && fill.blendMode !== "normal") store.apply(new SetNodeBlendMode(sym, [id], fill.blendMode));
-  if (fill.motionBlur !== undefined) store.apply(new SetNodeMotionBlur(sym, [id], fill.motionBlur));
 }
 
 /**
@@ -797,36 +792,3 @@ export function displayAtFrame(store: Store, node: Node): { index: number; displ
   return shown ? { index: displayIndex, display: shown } : { index: 0, display: displayAt(node, 0) };
 }
 
-/* ── Queries for the frame grid ──────────────────────────────────────────*/
-
-export interface FrameCell {
-  hasKey: boolean;
-  blank: boolean;
-  occupied: boolean;
-  tweening: boolean;
-  spanStart: boolean;
-  spanEnd: boolean;
-}
-
-export function describeFrame(track: Track | undefined, frame: number): FrameCell {
-  if (!track) {
-    return { hasKey: false, blank: false, occupied: false, tweening: false, spanStart: false, spanEnd: false };
-  }
-  const keyIndex = keyIndexAt(track, frame);
-  const spanIndex = spanIndexAt(track, frame);
-  const key: Keyframe | undefined = keyIndex >= 0 ? track.keys[keyIndex] : undefined;
-  const governing = spanIndex >= 0 ? track.keys[spanIndex] : undefined;
-  const occupied = spanIndex >= 0 && frame <= track.endFrame;
-  const nextKey = spanIndex >= 0 ? track.keys[spanIndex + 1] : undefined;
-
-  return {
-    hasKey: keyIndex >= 0,
-    blank: (key ?? governing)?.displayIndex === -1,
-    occupied,
-    tweening: occupied && !!governing && !!nextKey && governing.tween.kind !== "none",
-    spanStart: keyIndex >= 0,
-    spanEnd: occupied && frame === track.endFrame,
-  };
-}
-
-export { TWEEN_LINEAR };

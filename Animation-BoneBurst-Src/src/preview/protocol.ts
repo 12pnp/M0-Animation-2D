@@ -63,8 +63,6 @@ export type FrameToHost =
   | { type: "matrices"; bones: Record<string, number[]>; attachments: Record<string, string | null> }
   | { type: "error"; message: string };
 
-export const PREVIEW_ORIGIN_SAME = true;
-
 /**
  * The frame a `tick` reports: the one on screen, which is the frame the
  * animation time has reached, never the next one. Rounding reported the next

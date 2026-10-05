@@ -6,8 +6,9 @@ import {
   canMoveFolder, deletePlan, libraryRows, rowKey, stepRow, uniqueFolderName, type RowOptions,
 } from "@/core/doc/libraryTree";
 import { AddFolder, MoveToFolder, RemoveFolder, RenameFolder } from "@/core/history/libraryCommands";
-import { RemoveLibraryItem } from "@/core/history/commands";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { RemoveLibraryItem } from "@/core/history/libraryCommands";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import { Store } from "@/app/Store";
 
 beforeEach(() => reseed());

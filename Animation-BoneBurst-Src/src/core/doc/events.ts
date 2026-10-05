@@ -34,11 +34,6 @@ export function eventValues(def: EventDef, key?: EventKey): EventValues {
   };
 }
 
-/** The keys at `frame`, in firing order. */
-export function eventsAt(anim: Animation | null | undefined, frame: number): EventKey[] {
-  return (anim?.events ?? []).filter((k) => k.frame === frame);
-}
-
 /** The frames that have keys, sorted. */
 export function eventFrames(keys: readonly EventKey[]): number[] {
   return [...new Set(keys.map((k) => k.frame))].sort((a, b) => a - b);

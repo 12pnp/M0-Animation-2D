@@ -23,21 +23,6 @@ export function shortestDelta(from: number, to: number): number {
   return wrapTo180(to - from);
 }
 
-/**
- * Whole extra turns embedded in `delta` beyond the shortest path — exactly
- * DragonBones' `rotateFrame.clockwise`.
- *
- *   +2  →  two extra clockwise turns
- *   -1  →  one extra counter-clockwise turn
- */
-export function turnsOf(delta: number): number {
-  return Math.round((delta - wrapTo180(delta)) / 360);
-}
-
-export function lerpAngle(from: number, to: number, t: number): number {
-  return from + (to - from) * t;
-}
-
 /** Kills `-0`, which would otherwise churn golden-file diffs. */
 export function nz(v: number): number {
   return v === 0 ? 0 : v;
@@ -45,8 +30,4 @@ export function nz(v: number): number {
 
 export function clamp(v: number, lo: number, hi: number): number {
   return v < lo ? lo : v > hi ? hi : v;
-}
-
-export function approx(a: number, b: number, eps = 1e-6): boolean {
-  return Math.abs(a - b) <= eps;
 }

@@ -1,15 +1,10 @@
 import type { Command, TouchSet } from "./Command";
 import type { Node, Project, SkinOutline, SymbolItem } from "@/core/doc/types";
-import { isSymbol } from "@/core/doc/types";
 import type { ItemId, NodeId } from "@/core/doc/ids";
 import { invalidateBounds } from "@/core/doc/pose";
 import { skinStateOf, type SkinState } from "@/core/doc/skins";
-
-function symbolOf(p: Project, id: ItemId): SymbolItem {
-  const s = p.items[id];
-  if (!isSymbol(s)) throw new Error(`Not a symbol: ${id}`);
-  return s;
-}
+import { symbolOf } from "./lookup";
+import { EditNode } from "./attachmentCommands";
 
 function write(sym: SymbolItem, state: SkinState): void {
   if (state.skins?.length) sym.skins = state.skins; else delete sym.skins;
@@ -61,34 +56,13 @@ function withSkinOnly(node: Node, index: number, on: boolean): Node {
 }
 
 /** A display left to skins (Spine's skin placeholder), or given back to the
- *  default skin. */
-export class SetSkinOnly implements Command {
-  readonly kind = "node.skinOnly";
-  readonly touches: TouchSet;
-  private before: Node | null = null;
-
-  constructor(
-    readonly label: string, private readonly symbolId: ItemId, private readonly nodeId: NodeId,
-    private readonly index: number, private readonly on: boolean,
-  ) {
-    this.touches = { symbols: [symbolId], nodes: [nodeId], stage: true };
+ *  default skin. Each toggle is its own undo step. */
+export class SetSkinOnly extends EditNode {
+  constructor(label: string, symbolId: ItemId, nodeId: NodeId, index: number, on: boolean) {
+    super(label, symbolId, nodeId, (node) => withSkinOnly(node, index, on), "node.skinOnly");
   }
 
-  apply(p: Project): void {
-    const sym = symbolOf(p, this.symbolId);
-    const node = sym.nodes[this.nodeId];
-    if (!node) return;
-    this.before ??= node;
-    sym.nodes[this.nodeId] = withSkinOnly(node, this.index, this.on);
-    invalidateBounds([this.symbolId]);
-  }
-
-  revert(p: Project): void {
-    const sym = symbolOf(p, this.symbolId);
-    if (!this.before || !sym.nodes[this.nodeId]) return;
-    sym.nodes[this.nodeId] = this.before;
-    invalidateBounds([this.symbolId]);
-  }
+  override mergeWith(): boolean { return false; }
 }
 
 /**

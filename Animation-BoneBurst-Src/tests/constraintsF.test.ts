@@ -6,7 +6,8 @@ import {
 } from "@/core/doc/constraints";
 import { createImageItem, createLayer, createNode } from "@/core/doc/defaults";
 import { evaluateSymbol } from "@/core/doc/pose";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
 import { posedSymbol } from "@/core/boneburst/boneburstPose";
 import type { SymbolItem } from "@/core/doc/types";

@@ -1,8 +1,8 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { loadStickman, type Stickman } from "./fixtures/stickman";
-import { evaluateSymbol, type Pose } from "@/core/doc/pose";
+import { evaluateSymbol, isDescendant, type Pose } from "@/core/doc/pose";
 import {
-  drivenBox, isDescendant, axisTips, positionAxisTips, framesAlign,
+  drivenBox, axisTips, positionAxisTips, framesAlign,
   showsPositionAxes, frameDirections, SCENE_FRAME,
 } from "@/view/viewport/nodeFrame";
 import { matrixOf, tf } from "@/core/math/Transform";
@@ -65,12 +65,12 @@ describe("drivenBox", () => {
 describe("isDescendant", () => {
   it("walks up the parent chain, and counts the node itself", () => {
     const hips = f.node("hips");
-    expect(isDescendant(pose, hips, hips)).toBe(true);
-    expect(isDescendant(pose, f.node("shin_near"), hips)).toBe(true);
-    expect(isDescendant(pose, f.node("head_art"), f.node("chest"))).toBe(true);
-    expect(isDescendant(pose, f.node("chest"), f.node("head"))).toBe(false);
+    expect(isDescendant(pose.byNode, hips, hips)).toBe(true);
+    expect(isDescendant(pose.byNode, f.node("shin_near"), hips)).toBe(true);
+    expect(isDescendant(pose.byNode, f.node("head_art"), f.node("chest"))).toBe(true);
+    expect(isDescendant(pose.byNode, f.node("chest"), f.node("head"))).toBe(false);
     // A scene-space IK target hangs off nothing.
-    expect(isDescendant(pose, f.node("foot_far_target"), hips)).toBe(false);
+    expect(isDescendant(pose.byNode, f.node("foot_far_target"), hips)).toBe(false);
   });
 });
 

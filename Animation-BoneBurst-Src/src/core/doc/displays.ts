@@ -2,7 +2,7 @@ import type { ItemId } from "./ids";
 import type { DisplayRef, LinkedMesh, MeshData, Node, NodeKind, Project } from "./types";
 
 /**
- * A node's display list, the way a DragonBones slot has one: index 0 is the
+ * A node's display list, the attachments a slot can switch between: index 0 is the
  * node's own `itemId` and `pivot`, the rest are `extraDisplays`. A keyframe's
  * `displayIndex` picks one; -1 shows nothing. Bones, groups and empty layers
  * have no display at all.

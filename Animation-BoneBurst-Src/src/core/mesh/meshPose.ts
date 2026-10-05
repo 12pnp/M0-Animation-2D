@@ -149,12 +149,6 @@ export function boneSpaceDelta(setup: Matrix2D, node: Matrix2D, dx: number, dy: 
   return apply({ x: 0, y: 0 }, inv, w.x, w.y);
 }
 
-/** `S⁻¹ · N`, for tests and tools that need a bone's setup space. */
-export function setupSpace(setup: Matrix2D, node: Matrix2D): Matrix2D | null {
-  const inv = mat();
-  return invert(inv, setup) ? mul(mat(), inv, node) : null;
-}
-
 /**
  * How far point `i` must move in its node's space (a deform offset) for its
  * world position to move by (dx, dy): the world motion through the inverse of

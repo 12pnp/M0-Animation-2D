@@ -17,10 +17,11 @@ import { valuesOf } from "@/core/doc/keyed";
 import {
   GRAPH_CHANNELS, type GraphPick, graphSamples, handlesOf, moveGraphKeys, valueRange, withHandle,
 } from "@/core/doc/graphEdit";
-import { deleteIkKeys, ikPoseAt, withIkKey } from "@/core/doc/ikKeys";
+import { ikPoseAt, withIkKey } from "@/core/doc/ikKeys";
 import { ikRelations } from "@/core/doc/ikGraph";
 import type { IkKey, Node, Track } from "@/core/doc/types";
 import type { IkId } from "@/core/doc/ids";
+import { deleteKeys } from "@/core/doc/keyList";
 
 /** What a curve writes back to: a bone property's channel, or an IK mix. */
 type Target = { kind: "prop"; prop: TimelineProp } | { kind: "ik"; ik: IkId };
@@ -625,7 +626,7 @@ export class GraphPanel implements Panel {
         const track = anim.tracks[node.id];
         if (track) doSetTrack(this.store, node.id, deleteChannelKeys(track, node, target.prop, frames), "Delete Keys");
       } else {
-        doSetIkKeys(this.store, target.ik, deleteIkKeys(anim.ik?.[target.ik] ?? [], frames), "Delete IK Keys");
+        doSetIkKeys(this.store, target.ik, deleteKeys(anim.ik?.[target.ik] ?? [], frames), "Delete IK Keys");
       }
     }
     this.picks.clear();

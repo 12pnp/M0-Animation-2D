@@ -1,5 +1,6 @@
+import type { Point } from "./geom";
 /**
- * 2D affine matrix in the same layout DragonBones (and Flash) use.
+ * 2D affine matrix in Flash's layout (not Spine's, whose `b` and `c` are swapped).
  *
  *   | a  c  tx |
  *   | b  d  ty |
@@ -50,10 +51,6 @@ export function mul(out: Matrix2D, l: Matrix2D, r: Matrix2D): Matrix2D {
   return out;
 }
 
-export function determinant(m: Matrix2D): number {
-  return m.a * m.d - m.b * m.c;
-}
-
 /** Returns false (leaving `out` untouched) when `m` is singular. */
 export function invert(out: Matrix2D, m: Matrix2D): boolean {
   const det = m.a * m.d - m.b * m.c;
@@ -69,24 +66,22 @@ export function invert(out: Matrix2D, m: Matrix2D): boolean {
   return true;
 }
 
-export interface Pt { x: number; y: number; }
-
 /** Full transform, translation included. */
-export function apply(out: Pt, m: Matrix2D, x: number, y: number): Pt {
+export function apply(out: Point, m: Matrix2D, x: number, y: number): Point {
   out.x = m.a * x + m.c * y + m.tx;
   out.y = m.b * x + m.d * y + m.ty;
   return out;
 }
 
 /** Linear part only — for directions and deltas. */
-export function applyVec(out: Pt, m: Matrix2D, x: number, y: number): Pt {
+export function applyVec(out: Point, m: Matrix2D, x: number, y: number): Point {
   out.x = m.a * x + m.c * y;
   out.y = m.b * x + m.d * y;
   return out;
 }
 
 /** Inverse-transform a point without materialising the inverse matrix. */
-export function applyInverse(out: Pt, m: Matrix2D, x: number, y: number): boolean {
+export function applyInverse(out: Point, m: Matrix2D, x: number, y: number): boolean {
   const det = m.a * m.d - m.b * m.c;
   if (det === 0 || !Number.isFinite(det)) return false;
   const k = 1 / det;
@@ -113,9 +108,4 @@ export function equalsEps(l: Matrix2D, r: Matrix2D, eps = 1e-6): boolean {
   return Math.abs(l.a - r.a) <= eps && Math.abs(l.b - r.b) <= eps &&
          Math.abs(l.c - r.c) <= eps && Math.abs(l.d - r.d) <= eps &&
          Math.abs(l.tx - r.tx) <= eps && Math.abs(l.ty - r.ty) <= eps;
-}
-
-/** For `ctx.setTransform(...)`. */
-export function toCanvas(m: Matrix2D): [number, number, number, number, number, number] {
-  return [m.a, m.b, m.c, m.d, m.tx, m.ty];
 }

@@ -1,4 +1,5 @@
-import { applyTween, readPolyline, boneburstPolyline, type TweenSpec } from "@/core/math/easing";
+import { readPolyline, boneburstPolyline, type TweenSpec } from "@/core/math/easing";
+import { deleteKeys, keySpan, moveKeys, withKeyAt, withKeyTween } from "./keyList";
 import type { CnId, NodeId } from "./ids";
 import { PATH_DEFAULTS, PHYSICS_DEFAULTS } from "./constraints";
 import type { Animation, PathConstraint, PhysicsConstraint, SliderConstraint, SymbolItem, ValueKey } from "./types";
@@ -20,13 +21,6 @@ export const CONSTRAINT_CHANNELS = {
   // A path's "mix" is its three mixes keyed together (Spine's one `mix` timeline).
   path: ["position", "spacing", "mix"],
 } as const satisfies Record<ConstraintKeyKind, readonly string[]>;
-
-export type ConstraintChannel<K extends ConstraintKeyKind = ConstraintKeyKind> = (typeof CONSTRAINT_CHANNELS)[K][number];
-
-export const CHANNEL_LABELS: Record<string, string> = {
-  mix: "Mix", inertia: "Inertia", strength: "Strength", damping: "Damping", mass: "Mass", wind: "Wind", gravity: "Gravity",
-  time: "Time", position: "Position", spacing: "Spacing",
-};
 
 export type KeyedConstraint =
   | { kind: "physics"; k: PhysicsConstraint }
@@ -71,13 +65,10 @@ export function setupValue(c: KeyedConstraint, channel: string): number {
 
 /** A channel's value at `frame` (fractional between frames). */
 export function valueAt(keys: readonly ValueKey[] | undefined, frame: number, setup: number): number {
-  if (!keys?.length || frame < keys[0]!.frame) return setup;
-  let i = 0;
-  while (i + 1 < keys.length && keys[i + 1]!.frame <= frame) i++;
-  const a = keys[i]!, b = keys[i + 1];
-  if (!b || a.tween?.kind === "none") return a.value;
-  const span = b.frame - a.frame;
-  return a.value + (b.value - a.value) * applyTween(a.tween ?? { kind: "linear" }, (frame - a.frame) / span, span);
+  const s = keySpan(keys, frame);
+  if (!s) return setup;
+  const { a, b, e } = s;
+  return b ? a.value + (b.value - a.value) * e : a.value;
 }
 
 /** The channel's keys in `anim`. */
@@ -87,8 +78,7 @@ export function channelKeysOf(anim: Animation | null | undefined, id: CnId, chan
 
 /** `keys` with `value` keyed at `frame`; a key there keeps its tween. */
 export function withValueKey(keys: readonly ValueKey[], frame: number, value: number): ValueKey[] {
-  const at = keys.find((k) => k.frame === frame);
-  return [...keys.filter((k) => k.frame !== frame), { ...at, frame, value }].sort((a, b) => a.frame - b.frame);
+  return withKeyAt(keys, frame, (at): ValueKey => ({ ...at, frame, value }));
 }
 
 /** `anim.constraintKeys` with one channel's keys replaced; empty lists drop out. */
@@ -113,34 +103,21 @@ export function constraintKeyFrames(anim: Animation | null | undefined, id: CnId
  *  (not before 0), replacing keys they land on. */
 export function moveConstraintKeys(all: Animation["constraintKeys"], id: CnId, frames: readonly number[], delta: number): Animation["constraintKeys"] {
   let out = all;
-  for (const [channel, keys] of Object.entries(all?.[id] ?? {})) {
-    const moving = new Set(frames);
-    const moved = new Map<number, ValueKey>();
-    for (const k of keys) if (moving.has(k.frame)) moved.set(Math.max(0, k.frame + delta), { ...k, frame: Math.max(0, k.frame + delta) });
-    out = withChannelKeys(out, id, channel, [...keys.filter((k) => !moving.has(k.frame) && !moved.has(k.frame)), ...moved.values()].sort((a, b) => a.frame - b.frame));
-  }
+  for (const [channel, keys] of Object.entries(all?.[id] ?? {})) out = withChannelKeys(out, id, channel, moveKeys(keys, frames, delta));
   return out;
 }
 
 /** Every channel of the constraint without its keys at `frames`. */
 export function deleteConstraintKeys(all: Animation["constraintKeys"], id: CnId, frames: readonly number[]): Animation["constraintKeys"] {
   let out = all;
-  const gone = new Set(frames);
-  for (const [channel, keys] of Object.entries(all?.[id] ?? {})) out = withChannelKeys(out, id, channel, keys.filter((k) => !gone.has(k.frame)));
+  for (const [channel, keys] of Object.entries(all?.[id] ?? {})) out = withChannelKeys(out, id, channel, deleteKeys(keys, frames));
   return out;
 }
 
 /** Every channel's key at each of `frames` tweening by `tween` (none: linear). */
 export function withConstraintTween(all: Animation["constraintKeys"], id: CnId, frames: readonly number[], tween: TweenSpec | undefined): Animation["constraintKeys"] {
   let out = all;
-  const at = new Set(frames);
-  for (const [channel, keys] of Object.entries(all?.[id] ?? {})) {
-    out = withChannelKeys(out, id, channel, keys.map((k) => {
-      if (!at.has(k.frame)) return k;
-      const { tween: _t, ...rest } = k;
-      return tween ? { ...rest, tween } : rest;
-    }));
-  }
+  for (const [channel, keys] of Object.entries(all?.[id] ?? {})) out = withChannelKeys(out, id, channel, withKeyTween(keys, frames, tween));
   return out;
 }
 

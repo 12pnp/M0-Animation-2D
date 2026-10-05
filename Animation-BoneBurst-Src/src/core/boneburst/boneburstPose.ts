@@ -10,14 +10,16 @@ import { displaysOf } from "@/core/doc/displays";
 import { stageSkinOf } from "@/core/doc/skins";
 import { docEpoch } from "@/core/doc/revision";
 import { inheritAt, runtimePosed } from "@/core/doc/inherit";
-import { evaluateSymbol, type Pose, type PoseEntry } from "@/core/doc/pose";
+import { evaluateSymbol, type Pose, type PoseEntry, solvePose } from "@/core/doc/pose";
 import { matOf } from "@/core/math/Matrix2D";
 import type { PackedPage } from "@/core/atlas/packed";
 import { atlasText } from "./atlas";
 import { exportBoneBurst } from "./exportBoneBurst";
 import { toBoneBurstLocal } from "./transform";
 import { readAtlas } from "./runtime/atlasRead";
-import { type AttachmentData, readRig } from "./runtime/rigData";
+import { colorOfLightDark, lightDarkOf } from "./color";
+import { readRig } from "./runtime/rigData";
+import type { AttachmentData } from "./runtime/rigTypes";
 import { Rig as Runtime } from "./runtime/rig";
 import type { PhysicsMode } from "./runtime/physics";
 
@@ -196,9 +198,14 @@ export function posedSymbol(
   project: Project, sym: SymbolItem, animation: Animation | null, frame: number, mode: "setup" | "animate",
   skins: readonly string[] = stageSkinOf(sym),
 ): Pose {
-  const pose = evaluateSymbol(sym, animation, frame, mode, skins);
-  if (!sym.spine && !runtimePosed(sym)) return pose;
+  if (!sym.spine && !runtimePosed(sym)) return evaluateSymbol(sym, animation, frame, mode, skins);
   const { rig } = rigFor(project, sym, skins);
+  const pose = evaluateSymbol(sym, animation, frame, mode, skins, false);
+  // The runtime replaces every world, mesh and outline it has a bone or slot
+  // for; anything it lacks (a layer kept out of the export) needs the editor's.
+  if (!rig || !pose.entries.every((e) => rig.bones.has(e.nodeId) || rig.slots.has(e.nodeId))) {
+    solvePose(sym, pose, animation, frame, mode, skins);
+  }
   if (rig) applyRig(rig, sym, pose, animation, frame, mode, project.frameRate);
   return pose;
 }
@@ -377,13 +384,12 @@ function physicsStep(rig: Rig, animation: Animation | null, frame: number, mode:
   return "update";
 }
 
-/** The editor's colour as the slot's light and dark: light M + O, dark O
- *  (`lightHex` / `darkHex`, unrounded), each channel clamped to 0..1. */
+/** The editor's colour as the slot's light and dark (`lightDarkOf`), each
+ *  channel clamped to 0..1; dark only on a slot that has it. */
 function setColor(rt: Runtime, slot: number, c: ColorTransform): void {
-  const k = slot * 7, C = rt.color, cl = (v: number) => Math.min(1, Math.max(0, v));
-  C[k] = cl(c.rM / 100 + c.rO / 255); C[k + 1] = cl(c.gM / 100 + c.gO / 255);
-  C[k + 2] = cl(c.bM / 100 + c.bO / 255); C[k + 3] = cl(c.aM / 100);
-  if (rt.data.slots[slot]!.dark) { C[k + 4] = cl(c.rO / 255); C[k + 5] = cl(c.gO / 255); C[k + 6] = cl(c.bO / 255); }
+  const k = slot * 7, C = rt.color, l = lightDarkOf(c);
+  const n = rt.data.slots[slot]!.dark ? 7 : 4;
+  for (let i = 0; i < n; i++) C[k + i] = Math.min(1, Math.max(0, l[i]!));
 }
 
 /** What the runtime draws with, back as the editor's colour: light times the
@@ -393,8 +399,7 @@ function colorOf(rt: Runtime, slot: number, att: AttachmentData | null): ColorTr
   const tint = att?.kind === "region" || att?.kind === "mesh" ? att.color : null;
   const r = C[k]! * (tint?.[0] ?? 1), g = C[k + 1]! * (tint?.[1] ?? 1), b = C[k + 2]! * (tint?.[2] ?? 1), a = C[k + 3]! * (tint?.[3] ?? 1);
   const dark = !!rt.data.slots[slot]!.dark;
-  const dr = dark ? C[k + 4]! : 0, dg = dark ? C[k + 5]! : 0, db = dark ? C[k + 6]! : 0;
-  return { rM: (r - dr) * 100, gM: (g - dg) * 100, bM: (b - db) * 100, aM: a * 100, rO: dr * 255, gO: dg * 255, bO: db * 255, aO: 0 };
+  return dark ? colorOfLightDark(r, g, b, a, C[k + 4]!, C[k + 5]!, C[k + 6]!) : colorOfLightDark(r, g, b, a, 0, 0, 0);
 }
 
 function drawOf(rig: Rig, slot: number, att: AttachmentData | null): PoseEntry["spine"] | null {

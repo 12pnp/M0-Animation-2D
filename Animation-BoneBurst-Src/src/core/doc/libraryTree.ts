@@ -1,5 +1,6 @@
+import { itemsOf } from "./displays";
 import type { FolderId, ItemId } from "./ids";
-import type { LibraryFolder, LibraryItem, Project } from "./types";
+import { isSymbol, type LibraryFolder, type LibraryItem, type Project } from "./types";
 
 /**
  * The library as a tree of folders, flattened into the rows the panel shows.
@@ -162,4 +163,16 @@ export function deletePlan(
 function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   const list = map.get(key);
   if (list) list.push(value); else map.set(key, [value]);
+}
+/** How many nodes across every symbol reference each library item. */
+
+export function countUsages(project: Project): Map<ItemId, number> {
+  const counts = new Map<ItemId, number>();
+  for (const item of Object.values(project.items)) {
+    if (!isSymbol(item)) continue;
+    for (const node of Object.values(item.nodes)) {
+      for (const id of new Set(itemsOf(node))) counts.set(id, (counts.get(id) ?? 0) + 1);
+    }
+  }
+  return counts;
 }

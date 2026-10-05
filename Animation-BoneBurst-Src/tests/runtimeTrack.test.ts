@@ -3,7 +3,8 @@ import {
   AnimationState, AnimationStateData, AtlasAttachmentLoader, BoundingBoxAttachment, Physics, PointAttachment, Skeleton, SkeletonJson, TextureAtlas,
 } from "@esotericsoftware/spine-core";
 import { readAtlas } from "@/core/boneburst/runtime/atlasRead";
-import { type EventFire, readRig } from "@/core/boneburst/runtime/rigData";
+import { readRig } from "@/core/boneburst/runtime/rigData";
+import type { EventFire } from "@/core/boneburst/runtime/rigTypes";
 import { Rig } from "@/core/boneburst/runtime/rig";
 import { Track } from "@/core/boneburst/runtime/track";
 import { atlasText } from "@/core/boneburst/atlas";

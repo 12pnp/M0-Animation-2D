@@ -6,7 +6,7 @@ import {
   exportNotes,
   sanitizeExportSettings,
 } from "@/core/export/settings";
-import { SetExportSettings } from "@/core/history/commands";
+import { SetExportSettings } from "@/core/history/settingsCommands";
 import { exportSettingsOf } from "@/io/export/ExportBundle";
 import { Modal } from "@/view/widgets/Modal";
 import { NumberField } from "@/view/widgets/NumberField";

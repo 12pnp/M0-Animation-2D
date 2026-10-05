@@ -1,15 +1,10 @@
 import type { Command, TouchSet } from "./Command";
 import type { Animation, InheritKey, Node, Project, SequenceKey, SymbolItem } from "@/core/doc/types";
-import { isSymbol } from "@/core/doc/types";
 import type { AnimId, ItemId, NodeId } from "@/core/doc/ids";
 import { invalidateBounds } from "@/core/doc/pose";
 import { orderAfterEdit } from "@/core/doc/constraintOrder";
-
-function symbolOf(p: Project, id: ItemId): SymbolItem {
-  const s = p.items[id];
-  if (!isSymbol(s)) throw new Error(`Not a symbol: ${id}`);
-  return s;
-}
+import { symbolOf, animOf } from "./lookup";
+import { SetAnimKeys, withListAt } from "./animKeysCommand";
 
 /**
  * A node replaced by `edit` of itself: one undo step for a change the plans
@@ -59,44 +54,22 @@ export type NodeKeyField = "sequences" | "inherits";
 type NodeKeys<F extends NodeKeyField> = NonNullable<Animation[F]>[NodeId];
 
 /** One node's keys of `field` in an animation replaced. Steps of one drag merge. */
-export class SetNodeKeys<F extends NodeKeyField> implements Command {
-  readonly touches: TouchSet;
-  private before: NodeKeys<F> | undefined;
-  private captured = false;
+export class SetNodeKeys<F extends NodeKeyField> extends SetAnimKeys<NodeKeys<F>> {
+  protected override readonly discreteKind: string;
 
   constructor(
-    readonly label: string, private readonly symbolId: ItemId, private readonly animId: AnimId,
-    private readonly nodeId: NodeId, private after: NodeKeys<F>, readonly kind: string, private readonly field: F,
+    label: string, symbolId: ItemId, animId: AnimId,
+    private readonly nodeId: NodeId, after: NodeKeys<F>, kind: string, private readonly field: F,
   ) {
-    this.touches = { symbols: [symbolId], nodes: [nodeId], timeline: true, stage: true };
+    super(label, symbolId, animId, after, kind, [nodeId]);
+    this.discreteKind = `timeline.${field}`;
   }
-
-  private write(p: Project, keys: NodeKeys<F> | undefined): void {
-    const anim = symbolOf(p, this.symbolId).animations.find((a) => a.id === this.animId);
-    if (!anim) return;
-    const out = { ...anim[this.field] } as Record<NodeId, NodeKeys<F>>;
-    if (keys?.length) out[this.nodeId] = keys; else delete out[this.nodeId];
-    if (Object.keys(out).length) (anim as unknown as Record<string, unknown>)[this.field] = out;
-    else delete anim[this.field];
-    invalidateBounds([this.symbolId]);
+  protected read(anim: Animation): NodeKeys<F> | undefined { return anim[this.field]?.[this.nodeId] as NodeKeys<F> | undefined; }
+  protected write(anim: Animation, keys: NodeKeys<F> | undefined): void {
+    const out = withListAt(anim[this.field] as Record<NodeId, NodeKeys<F>> | undefined, this.nodeId, keys);
+    if (out) (anim as unknown as Record<string, unknown>)[this.field] = out; else delete anim[this.field];
   }
-
-  apply(p: Project): void {
-    if (!this.captured) {
-      this.before = symbolOf(p, this.symbolId).animations.find((a) => a.id === this.animId)?.[this.field]?.[this.nodeId] as NodeKeys<F> | undefined;
-      this.captured = true;
-    }
-    this.write(p, this.after);
-  }
-
-  revert(p: Project): void { this.write(p, this.before); }
-
-  mergeWith(next: Command): boolean {
-    if (!(next instanceof SetNodeKeys) || next.kind !== this.kind || next.field !== this.field || this.kind === `timeline.${this.field}`) return false;
-    if (next.symbolId !== this.symbolId || next.animId !== this.animId || next.nodeId !== this.nodeId) return false;
-    this.after = next.after as NodeKeys<F>;
-    return true;
-  }
+  protected sameList(next: this): boolean { return next.field === this.field && next.nodeId === this.nodeId; }
 }
 
 /** One node's sequence keys in an animation replaced. */
@@ -205,7 +178,7 @@ export class SetConstraintKeys implements Command {
   }
 
   private write(p: Project, keys: Animation["constraintKeys"]): void {
-    const anim = symbolOf(p, this.symbolId).animations.find((a) => a.id === this.animId);
+    const anim = animOf(symbolOf(p, this.symbolId), this.animId);
     if (!anim) return;
     if (keys && Object.keys(keys).length) anim.constraintKeys = keys; else delete anim.constraintKeys;
     invalidateBounds([this.symbolId]);
@@ -213,7 +186,7 @@ export class SetConstraintKeys implements Command {
 
   apply(p: Project): void {
     if (!this.captured) {
-      this.before = symbolOf(p, this.symbolId).animations.find((a) => a.id === this.animId)?.constraintKeys;
+      this.before = animOf(symbolOf(p, this.symbolId), this.animId)?.constraintKeys;
       this.captured = true;
     }
     this.write(p, this.after);

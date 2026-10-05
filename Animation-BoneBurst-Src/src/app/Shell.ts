@@ -11,7 +11,7 @@ import { APP_NAME, documentTitle } from "@/core/about";
 // dark bar, and the app icon's own panel inside it reads as a second one.
 import markSvg from "@/assets/boneburst-mark.svg?raw";
 import type { Store } from "./Store";
-import { SetStageSkins } from "@/core/history/commands";
+import { SetStageSkins } from "@/core/history/settingsCommands";
 import { skinsOf, stageSkinOf, toggledSkins } from "@/core/boneburst/boneburstPose";
 
 export interface MenuItemDef {

@@ -258,16 +258,6 @@ export function endAfterResize(track: Track, from: number, to: number): number {
   return track.endFrame >= from - 1 ? end : Math.min(track.endFrame, end);
 }
 
-/** Move one keyframe, refusing collisions and never moving frame 0's anchor. */
-export function moveKeyframe(track: Track, from: number, to: number): Track | null {
-  if (from === to || to < 0) return null;
-  const i = keyIndexAt(track, from);
-  if (i < 0) return null;
-  if (keyIndexAt(track, to) >= 0) return null;
-  const keys = track.keys.map((k, n) => (n === i ? { ...k, frame: to } : k));
-  return withKeys(track, keys, Math.max(track.endFrame, to));
-}
-
 /** Shift a whole run of keyframes — used by keyframe drags in the frame grid. */
 export function moveRange(track: Track, from: number, to: number, delta: number): Track | null {
   if (delta === 0) return null;

@@ -6,10 +6,11 @@ import { solveTransform } from "./transform";
 import { type PathPose, solvePath } from "./path";
 import { type SliderPose, solveSlider } from "./slider";
 import { type PhysicsMode, type PhysicsPose, type PhysicsState, physicsState, resetPhysics, solvePhysics } from "./physics";
+import type { RigData } from "./rigTypes";
 import {
   type AnimationData, type AttachmentData, type Channel, DEG_RAD, type Frame, type Interval, type MeshData,
-  type BoxData, type ClippingData, type PathData, type PointData, type RegionData, type RigData, type SequenceMode, type SkinData, type Timeline, TRANSFORM_PROPS, type TransformMix,
-} from "./rigData";
+  type BoxData, type ClippingData, type PathData, type PointData, type RegionData, type SequenceMode, type SkinData, type Timeline, TRANSFORM_PROPS, type TransformMix
+} from "./rigTypes";
 
 /**
  * One posed instance of a `RigData`: the BoneBurst runtime's skeleton
@@ -756,7 +757,7 @@ function sample(c: Channel, time: number): number | null {
  * stepped on every `delay` seconds — once to the end, looping, or back and
  * forth — and the reverse modes the same counted from the last frame.
  */
-export function sequenceFrame(mode: SequenceMode, index: number, delay: number, elapsed: number, count: number): number {
+function sequenceFrame(mode: SequenceMode, index: number, delay: number, elapsed: number, count: number): number {
   if (mode === "hold" || delay <= 0) return Math.min(index, count - 1);
   // A count within 1e-5 of a frame short of a whole number rounds up, as the
   // runtime does (measured against spine-core at several delays).

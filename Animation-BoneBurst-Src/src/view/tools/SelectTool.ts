@@ -1,14 +1,13 @@
 import type { Tool, ToolContext } from "./Tool";
+import { selectionSnapshots } from "./selection";
 import { type EditBase, captureEditBase, finishEdit } from "./axisEdit";
 import { boneRow } from "@/core/doc/boneRow";
 import type { NodeId } from "@/core/doc/ids";
-import { shownDisplay } from "@/core/doc/pose";
 import { rectFromPoints } from "@/core/math/geom";
 import { applyEdit, transformAtFrame } from "@/app/TimelineOps";
-import { moveBy, type NodeSnapshot, snapshotOf, topmostSelected } from "./transformOps";
+import { moveBy, type NodeSnapshot } from "@/core/doc/transformOps";
 import type { Transform } from "@/core/math/Transform";
 import { quantize } from "@/core/math/Transform";
-import { mat } from "@/core/math/Matrix2D";
 import { pickBone } from "./boneGeom";
 import { BakeDrag, HandleDrag, PathDrag, pathPick } from "./pathDrag";
 
@@ -173,34 +172,6 @@ export class SelectTool implements Tool {
     this.snaps = selectionSnapshots(ctx);
     return this.snaps.length > 0;
   }
-}
-
-/**
- * A snapshot of every node a drag on the selection moves: the topmost
- * selected ones, minus locked layers. Every transform tool starts from these.
- */
-export function selectionSnapshots(ctx: Pick<ToolContext, "store" | "pose">): NodeSnapshot[] {
-  const pose = ctx.pose();
-  if (!pose) return [];
-  const sym = ctx.store.currentSymbol;
-  const lockedNodes = new Set(sym.layers.filter((l) => l.locked).map((l) => l.nodeId));
-  const snaps: NodeSnapshot[] = [];
-  const ids = topmostSelected(
-    ctx.store.selection.nodes.filter((id) => !lockedNodes.has(id)),
-    (id) => sym.nodes[id]?.parentId,
-  );
-  for (const id of ids) {
-    const entry = pose.byNode.get(id);
-    const node = sym.nodes[id];
-    if (!entry || !node) continue;
-    const parentEntry = node.parentId ? pose.byNode.get(node.parentId) : undefined;
-    const shown = shownDisplay(entry);
-    snaps.push(snapshotOf(
-      id, transformAtFrame(ctx.store, node), entry.world, parentEntry?.world ?? mat(),
-      shown.pivot, shown.index,
-    ));
-  }
-  return snaps;
 }
 
 /**

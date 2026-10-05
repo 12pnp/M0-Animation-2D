@@ -3,7 +3,8 @@ import {
   deleteEventKeys, eventDefsFromBoneBurst, eventFrames, eventValues, moveEventKeys, renamedEvent, uniqueEventName,
   withEventDefValues, withEventKey, withEventKeyValues, withoutEvent,
 } from "@/core/doc/events";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
 import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import { DOC_VERSION, type Animation, type EventDef, type EventKey, type SymbolItem } from "@/core/doc/types";

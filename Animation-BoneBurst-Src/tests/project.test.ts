@@ -6,7 +6,8 @@ import { tf } from "@/core/math/Transform";
 import { TWEEN_LINEAR } from "@/core/math/easing";
 import { serializeProject, deserializeProject } from "@/io/project/ProjectFile";
 import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
-import { validateProject, migrate } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import type { AssetStore } from "@/app/AssetStore";
 
 beforeEach(() => reseed());
@@ -300,7 +301,7 @@ describe("schema validation", () => {
 
 describe("document settings", () => {
   it("changes frame rate and stage, and undoes as one step", async () => {
-    const { SetDocumentSettings } = await import("@/core/history/commands");
+    const { SetDocumentSettings } = await import("@/core/history/settingsCommands");
     const project = createProject("Doc");
     const before = { fps: project.frameRate, stage: { ...project.stage } };
 
@@ -315,7 +316,7 @@ describe("document settings", () => {
   });
 
   it("renames the project, and refuses a blank name", async () => {
-    const { SetDocumentSettings } = await import("@/core/history/commands");
+    const { SetDocumentSettings } = await import("@/core/history/settingsCommands");
     const project = createProject("Doc");
 
     const rename = new SetDocumentSettings({ name: "  Walker  " });
@@ -338,7 +339,7 @@ describe("document settings", () => {
   });
 
   it("clamps values that would break the document", async () => {
-    const { SetDocumentSettings } = await import("@/core/history/commands");
+    const { SetDocumentSettings } = await import("@/core/history/settingsCommands");
     const project = createProject("Doc");
 
     new SetDocumentSettings({ frameRate: 0, width: -5, height: 999999 }).apply(project);
@@ -348,7 +349,7 @@ describe("document settings", () => {
   });
 
   it("survives a save and reload", async () => {
-    const { SetDocumentSettings } = await import("@/core/history/commands");
+    const { SetDocumentSettings } = await import("@/core/history/settingsCommands");
     const assets = fakeAssets();
     const project = richProject(assets);
     new SetDocumentSettings({ frameRate: 30, width: 1280, height: 720, background: "#101820" })

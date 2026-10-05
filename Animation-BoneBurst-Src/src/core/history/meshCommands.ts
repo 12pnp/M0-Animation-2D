@@ -1,15 +1,10 @@
 import type { Command, TouchSet } from "./Command";
-import type { DeformKey, MeshData, Node, Project, SymbolItem } from "@/core/doc/types";
-import { isSymbol } from "@/core/doc/types";
+import type { Animation, DeformKey, MeshData, Node, Project, SymbolItem } from "@/core/doc/types";
 import type { AnimId, ItemId, NodeId } from "@/core/doc/ids";
 import { invalidateBounds } from "@/core/doc/pose";
 import { assignDeforms, deformKeysOf, type DeformTarget, withDeformKeysOf } from "@/core/mesh/deform";
-
-function symbolOf(p: Project, id: ItemId): SymbolItem {
-  const s = p.items[id];
-  if (!isSymbol(s)) throw new Error(`Not a symbol: ${id}`);
-  return s;
-}
+import { symbolOf } from "./lookup";
+import { SetAnimKeys } from "./animKeysCommand";
 
 /** `node` with display `index`'s mesh replaced (none: back to an image). */
 function withMesh(node: Node, index: number, mesh: MeshData | undefined): Node {
@@ -118,46 +113,18 @@ export class SetMesh implements Command {
 
 /** One mesh display's deform keys in an animation replaced (`DeformTarget`; a
  *  node id alone is its default skin's display 0). Steps of one drag merge. */
-export class SetDeformKeys implements Command {
-  readonly touches: TouchSet;
-  private before: DeformKey[] | undefined;
-  private captured = false;
+export class SetDeformKeys extends SetAnimKeys<DeformKey[]> {
   private readonly target: DeformTarget;
 
-  constructor(
-    readonly label: string,
-    private readonly symbolId: ItemId,
-    private readonly animId: AnimId,
-    target: NodeId | DeformTarget,
-    private after: DeformKey[],
-    readonly kind = "timeline.deform",
-  ) {
-    this.target = typeof target === "string" ? { nodeId: target, skin: null, index: 0 } : target;
-    this.touches = { symbols: [symbolId], nodes: [this.target.nodeId], timeline: true, stage: true };
+  constructor(label: string, symbolId: ItemId, animId: AnimId, target: NodeId | DeformTarget, after: DeformKey[], kind = "timeline.deform") {
+    const t = typeof target === "string" ? { nodeId: target, skin: null, index: 0 } : target;
+    super(label, symbolId, animId, after, kind, [t.nodeId]);
+    this.target = t;
   }
-
-  private write(p: Project, keys: DeformKey[] | undefined): void {
-    const anim = symbolOf(p, this.symbolId).animations.find((a) => a.id === this.animId);
-    if (!anim) return;
-    assignDeforms(anim, withDeformKeysOf(anim, this.target, keys));
-    invalidateBounds([this.symbolId]);
-  }
-
-  apply(p: Project): void {
-    if (!this.captured) {
-      this.before = deformKeysOf(symbolOf(p, this.symbolId).animations.find((a) => a.id === this.animId), this.target);
-      this.captured = true;
-    }
-    this.write(p, this.after);
-  }
-
-  revert(p: Project): void { this.write(p, this.before); }
-
-  mergeWith(next: Command): boolean {
-    if (!(next instanceof SetDeformKeys) || next.kind !== this.kind) return false;
+  protected read(anim: Animation): DeformKey[] | undefined { return deformKeysOf(anim, this.target); }
+  protected write(anim: Animation, keys: DeformKey[] | undefined): void { assignDeforms(anim, withDeformKeysOf(anim, this.target, keys)); }
+  protected sameList(next: this): boolean {
     const a = this.target, b = next.target;
-    if (next.symbolId !== this.symbolId || next.animId !== this.animId || a.nodeId !== b.nodeId || a.skin !== b.skin || a.index !== b.index) return false;
-    this.after = next.after;
-    return true;
+    return a.nodeId === b.nodeId && a.skin === b.skin && a.index === b.index;
   }
 }

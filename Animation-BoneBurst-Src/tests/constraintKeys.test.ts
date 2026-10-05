@@ -6,7 +6,8 @@ import {
 } from "@/core/doc/constraintKeys";
 import { newPathConstraint, newPhysics, newSlider, pathThrough } from "@/core/doc/constraints";
 import { createLayer, createNode } from "@/core/doc/defaults";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import { exportBoneBurst } from "@/core/boneburst/exportBoneBurst";
 import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import type { SymbolItem, ValueKey } from "@/core/doc/types";

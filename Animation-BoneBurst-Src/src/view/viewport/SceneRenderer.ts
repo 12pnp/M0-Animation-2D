@@ -433,11 +433,6 @@ const COMPOSITE: Record<BlendMode, GlobalCompositeOperation> = {
   add: "lighter",
   multiply: "multiply",
   screen: "screen",
-  overlay: "overlay",
-  darken: "darken",
-  lighten: "lighten",
-  difference: "difference",
-  hardlight: "hard-light",
 };
 
 function clamp255(v: number): number {

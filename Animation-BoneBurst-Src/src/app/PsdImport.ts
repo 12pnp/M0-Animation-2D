@@ -5,7 +5,9 @@ import type { AssetStore } from "./AssetStore";
 import { phase, type ReportProgress } from "./busy";
 import { type PsdRaw, readPsdFile } from "@/io/import/psdReader";
 import { buildFlatPsdImport, buildPsdImport, type PsdPlan } from "@/core/doc/psdImport";
-import { AddLibraryItem, AddNode, SetDocumentSettings } from "@/core/history/commands";
+import { AddNode } from "@/core/history/commands";
+import { SetDocumentSettings } from "@/core/history/settingsCommands";
+import { AddLibraryItem } from "@/core/history/libraryCommands";
 import { createLayer, createNode } from "@/core/doc/defaults";
 
 export interface PsdImportOutcome {

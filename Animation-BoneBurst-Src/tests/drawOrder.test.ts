@@ -1,17 +1,20 @@
+import { orderFromOffsets } from "@/core/boneburst/runtime/rigAnimation";
 import { beforeEach, describe, expect, it } from "vitest";
 import { AtlasAttachmentLoader, MixFrom, Skeleton, SkeletonJson, TextureAtlas } from "@esotericsoftware/spine-core";
 import { type NodeId, reseed } from "@/core/doc/ids";
 import { createLayer, createNode, createProject } from "@/core/doc/defaults";
 import type { SymbolItem } from "@/core/doc/types";
 import {
-  drawingLayers, fromOffsets, orderAt, reordered, toOffsets, withDrawOrderKey, withOrder,
+    drawingLayers, fromOffsets, orderAt, reordered, toOffsets, withDrawOrderKey, withOrder,
 } from "@/core/doc/drawOrder";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import {
-  deleteDrawOrderKeys, dropOrderAt, drawUnits, moveDrawOrderKeys, placedInFront, reorderAt, withFront,
+    dropOrderAt, drawUnits, moveDrawOrderKeys, placedInFront, reorderAt, withFront,
 } from "@/core/doc/drawOrder";
+import { deleteKeys } from "@/core/doc/keyList";
 
 beforeEach(() => reseed());
 
@@ -201,7 +204,7 @@ describe("Modify ▸ Draw Order", () => {
     expect(orderAt(s, anim, 6)).toEqual([bottom, top, hand]);
     expect(reorderAt(s, anim, 6, [hand], "front")).toBeNull();
     expect(moveDrawOrderKeys(keys, [6], 3)).toEqual([{ frame: 9, order: [bottom, top, hand] }]);
-    expect(deleteDrawOrderKeys(keys, [6])).toEqual([]);
+    expect(deleteKeys(keys, [6])).toEqual([]);
   });
 });
 
@@ -247,5 +250,19 @@ describe("a layer dropped on a row in Animate", () => {
     // Already in front of it: nothing to key.
     expect(dropOrderAt(s, anim, 4, bottom, top)).toBeNull();
     expect(dropOrderAt(s, anim, 4, top, bottom)).toEqual([{ frame: 4, order: [mid, bottom, top] }]);
+  });
+});
+
+describe("the importer's reading and the runtime's agree", () => {
+  // Every order of five slots, as offsets: both decoders must give it back.
+  const setup = ["a", "b", "c", "d", "e"];
+  const perms = (xs: string[]): string[][] => xs.length <= 1 ? [xs] : xs.flatMap((x, i) => perms([...xs.slice(0, i), ...xs.slice(i + 1)]).map((p) => [x, ...p]));
+  const slotIndex = new Map(setup.map((s, i) => [s, i]));
+  it.each(perms(setup).map((p) => [p.join("")]))("%s", (joined) => {
+    const order = joined.split("");
+    const offsets = toOffsets(order, setup);
+    expect(fromOffsets(offsets, setup)).toEqual(order);
+    const runtime = orderFromOffsets(offsets.map((o) => ({ slot: o.item, offset: o.offset })), slotIndex, setup.length);
+    expect(runtime.map((i) => setup[i])).toEqual(order);
   });
 });

@@ -5,8 +5,10 @@ import { isSymbol, type Project, type SymbolItem } from "@/core/doc/types";
 import { History } from "@/core/history/History";
 import type { Command } from "@/core/history/Command";
 import {
-  AddNode, RemoveNodes, ReorderLayer, SetParent, SetLayerMasks,
+  AddNode, RemoveNodes,
 } from "@/core/history/commands";
+import { SetParent } from "@/core/history/hierarchyCommands";
+import { ReorderLayer, SetLayerMasks } from "@/core/history/layerCommands";
 import { ConvertToSymbol } from "@/core/history/symbolCommands";
 
 beforeEach(() => reseed());

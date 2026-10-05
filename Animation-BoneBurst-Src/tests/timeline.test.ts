@@ -7,7 +7,7 @@ import type { Track, Keyframe, Node } from "@/core/doc/types";
 import {
   endAfterResize, resizedEmptyLength,
   insertFrame, insertKeyframe, insertBlankKeyframe, removeFrame, clearKeyframe,
-  keyIndexAt, spanIndexAt, occupiesFrame, isTweened, moveKeyframe, moveRange, setEndFrame,
+  keyIndexAt, spanIndexAt, occupiesFrame, isTweened, moveRange, setEndFrame,
   sampleTransformRaw, sampleColorRaw, spanRange, rotationDelta,
   isolateRange, mapKeyTransforms, editableSpan,
   pasteRun,
@@ -178,12 +178,6 @@ describe("queries", () => {
 });
 
 describe("keyframe moves", () => {
-  it("moves a keyframe and refuses collisions", () => {
-    expect(at(moveKeyframe(track([0, 10, 20], 24), 10, 14)!)).toEqual([0, 14, 20]);
-    expect(moveKeyframe(track([0, 10, 20], 24), 10, 20)).toBeNull();
-    expect(moveKeyframe(track([0, 10], 24), 10, -1)).toBeNull();
-  });
-
   it("moveRange overwrites the key it lands on instead of doubling up", () => {
     const t = moveRange(track([0, 10, 20], 24), 10, 10, 10)!;
     expect(at(t)).toEqual([0, 20]);

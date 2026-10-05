@@ -10,14 +10,14 @@ import {
     SetBindColor,
     SetNodeBlendMode,
     SetNodeDisplays,
-    SetNodeItem,
-    SetPivot
-} from "@/core/history/commands";
+    SetNodeItem} from "@/core/history/commands";
+import { SetPivot } from "@/core/history/hierarchyCommands";
 import { ensureTrack } from "./TimelineOps";
 import { emptyRange, insertKeyframe, keyIndexAt, pasteRun, removeFrame, spanIndexAt } from "@/core/doc/timeline";
 import { layerRows } from "@/core/doc/layerTree";
 import { displaysOf, findOrAddDisplay, itemsOf, kindOfItem } from "@/core/doc/displays";
 import { wouldCreateCycle } from "@/core/history/symbolCommands";
+import { frameCell, frameCellBounds } from "@/core/doc/frameCells";
 
 /** A rectangle of frames: rows top to bottom, `from..to` on each. */
 export interface FrameSelection {
@@ -74,19 +74,11 @@ export class FrameClipboard {
   static selectionOf(store: Store): FrameSelection | null {
     const frames = store.selection.frames;
     if (frames.length === 0) return null;
-    const ids = new Set<NodeId>();
-    let from = Infinity, to = -Infinity;
-    for (const cell of frames) {
-      const cut = cell.lastIndexOf(":");
-      const frame = Number(cell.slice(cut + 1));
-      if (!Number.isFinite(frame)) continue;
-      ids.add(cell.slice(0, cut) as NodeId);
-      from = Math.min(from, frame);
-      to = Math.max(to, frame);
-    }
-    if (ids.size === 0) return null;
+    const bounds = frameCellBounds(frames);
+    if (!bounds) return null;
+    const { from, to } = bounds;
     const order = layerRows(store.currentSymbol, true).map((r) => r.layer.nodeId);
-    const nodeIds = [...ids].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+    const nodeIds = [...bounds.ids].sort((a, b) => order.indexOf(a) - order.indexOf(b));
     return { nodeIds, from, to };
   }
 
@@ -207,7 +199,7 @@ export class FrameClipboard {
     store.selectNodes(pastedIds);
     store.selection = {
       ...store.selection,
-      frames: pastedIds.flatMap((id) => range(at, end).map((f) => `${id}:${f}`)),
+      frames: pastedIds.flatMap((id) => range(at, end).map((f) => frameCell(id, f))),
     };
     store.emit("timeline");
     store.emit("stage");

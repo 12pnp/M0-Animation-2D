@@ -4,7 +4,7 @@ import type { Point } from "@/core/math/geom";
 import { type Transform, quantize } from "@/core/math/Transform";
 import { applyEdit, transformAtFrame } from "@/app/TimelineOps";
 import { axisDirections, constrainToAxis, scaleFactors, sweptAngle } from "@/core/math/axes";
-import { moveBy, rotateAbout } from "./transformOps";
+import { moveBy, rotateAbout } from "@/core/doc/transformOps";
 import { hitAt } from "./SelectTool";
 import { type EditBase, captureEditBase, finishEdit } from "./axisEdit";
 

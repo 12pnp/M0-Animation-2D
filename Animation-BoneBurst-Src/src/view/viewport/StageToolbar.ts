@@ -13,8 +13,8 @@ import {
   type Axes, rotationFromShown, shownRotation, shownTranslation, translationFromShown,
 } from "@/core/math/axes";
 import { type EditBase, captureEditBase, finishEdit } from "@/view/tools/axisEdit";
-import { selectionSnapshots } from "@/view/tools/SelectTool";
-import type { NodeSnapshot } from "@/view/tools/transformOps";
+import { selectionSnapshots } from "@/view/tools/selection";
+import type { NodeSnapshot } from "@/core/doc/transformOps";
 import { clampToolbarOffset, type Offset, toolbarInset } from "./toolbarPlace";
 
 interface ToolDef { id: ToolId; label: string; icon: IconName; hint?: string }

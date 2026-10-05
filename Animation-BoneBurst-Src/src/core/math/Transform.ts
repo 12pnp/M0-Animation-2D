@@ -36,19 +36,6 @@ export function cloneTf(t: Transform): Transform {
   return { x: t.x, y: t.y, skewX: t.skewX, skewY: t.skewY, scaleX: t.scaleX, scaleY: t.scaleY };
 }
 
-export function copyTf(out: Transform, t: Transform): Transform {
-  out.x = t.x; out.y = t.y;
-  out.skewX = t.skewX; out.skewY = t.skewY;
-  out.scaleX = t.scaleX; out.scaleY = t.scaleY;
-  return out;
-}
-
-export function equalsTf(a: Transform, b: Transform, eps = 1e-6): boolean {
-  return Math.abs(a.x - b.x) <= eps && Math.abs(a.y - b.y) <= eps &&
-         Math.abs(a.skewX - b.skewX) <= eps && Math.abs(a.skewY - b.skewY) <= eps &&
-         Math.abs(a.scaleX - b.scaleX) <= eps && Math.abs(a.scaleY - b.scaleY) <= eps;
-}
-
 /**
  * Transform -> matrix. Byte-for-byte the runtime's composition:
  *   a =  cos(skewY) * scaleX      c = -sin(skewX) * scaleY
@@ -167,11 +154,6 @@ export function translateLocal(out: Transform, t: Transform, dx: number, dy: num
   out.scaleX = t.scaleX;
   out.scaleY = t.scaleY;
   return out;
-}
-
-/** True rotation only when there is no shear. */
-export function isPureRotation(t: Transform, eps = 1e-6): boolean {
-  return Math.abs(t.skewX - t.skewY) <= eps;
 }
 
 /** Shear amount in degrees; 0 for a pure rotation. */

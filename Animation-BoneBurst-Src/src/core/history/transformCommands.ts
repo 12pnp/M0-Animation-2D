@@ -1,15 +1,10 @@
 import type { Command, TouchSet } from "./Command";
-import type { Project, SymbolItem, TcKey, TransformConstraint } from "@/core/doc/types";
-import { isSymbol } from "@/core/doc/types";
+import type { Animation, Project, TcKey, TransformConstraint } from "@/core/doc/types";
 import type { AnimId, ItemId, TcId } from "@/core/doc/ids";
 import { invalidateBounds } from "@/core/doc/pose";
 import { orderAfterEdit } from "@/core/doc/constraintOrder";
-
-function symbolOf(p: Project, id: ItemId): SymbolItem {
-  const s = p.items[id];
-  if (!isSymbol(s)) throw new Error(`Not a symbol: ${id}`);
-  return s;
-}
+import { symbolOf } from "./lookup";
+import { SetAnimKeys, withListAt } from "./animKeysCommand";
 
 /**
  * A symbol's transform constraints replaced, the list as a whole: adding,
@@ -59,47 +54,14 @@ export class SetTransforms implements Command {
 
 /** One transform constraint's keys in an animation replaced
  *  (`core/doc/transformKeys.ts`). Steps of one drag merge. */
-export class SetTcKeys implements Command {
-  readonly touches: TouchSet;
-  private before: TcKey[] | undefined;
-  private captured = false;
-
-  constructor(
-    readonly label: string,
-    private readonly symbolId: ItemId,
-    private readonly animId: AnimId,
-    private readonly tcId: TcId,
-    private after: TcKey[],
-    readonly kind = "timeline.transform",
-  ) {
-    this.touches = { symbols: [symbolId], timeline: true, stage: true };
+export class SetTcKeys extends SetAnimKeys<TcKey[]> {
+  constructor(label: string, symbolId: ItemId, animId: AnimId, private readonly tcId: TcId, after: TcKey[], kind = "timeline.transform") {
+    super(label, symbolId, animId, after, kind);
   }
-
-  private write(p: Project, keys: TcKey[] | undefined): void {
-    const anim = symbolOf(p, this.symbolId).animations.find((a) => a.id === this.animId);
-    if (!anim) return;
-    const out = { ...anim.transforms };
-    if (keys?.length) out[this.tcId] = keys;
-    else delete out[this.tcId];
-    if (Object.keys(out).length) anim.transforms = out;
-    else delete anim.transforms;
-    invalidateBounds([this.symbolId]);
+  protected read(anim: Animation): TcKey[] | undefined { return anim.transforms?.[this.tcId]; }
+  protected write(anim: Animation, keys: TcKey[] | undefined): void {
+    const transforms = withListAt(anim.transforms, this.tcId, keys);
+    if (transforms) anim.transforms = transforms; else delete anim.transforms;
   }
-
-  apply(p: Project): void {
-    if (!this.captured) {
-      this.before = symbolOf(p, this.symbolId).animations.find((a) => a.id === this.animId)?.transforms?.[this.tcId];
-      this.captured = true;
-    }
-    this.write(p, this.after);
-  }
-
-  revert(p: Project): void { this.write(p, this.before); }
-
-  mergeWith(next: Command): boolean {
-    if (!(next instanceof SetTcKeys) || next.kind !== this.kind) return false;
-    if (next.symbolId !== this.symbolId || next.animId !== this.animId || next.tcId !== this.tcId) return false;
-    this.after = next.after;
-    return true;
-  }
+  protected sameList(next: this): boolean { return next.tcId === this.tcId; }
 }

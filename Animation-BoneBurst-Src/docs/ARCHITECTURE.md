@@ -115,7 +115,7 @@ A pure rotation is `skX == skY`; shear is the difference. Two consequences the c
 - **Rotation never round-trips through a decomposition.** Adding θ to *both* skew angles rotates the
   linear part and leaves both scales untouched — the parameterisation is closed under rotation, so
   shear survives exactly and multi-turn angles keep accumulating. See `rotateAbout` in
-  `view/tools/transformOps.ts`.
+  `core/doc/transformOps.ts`.
 - **Decomposition is per column**, not a candidate search: `scaleX = hypot(a,b)`, `skewY = atan2(b,a)`,
   `scaleY = hypot(c,d)`, `skewX = atan2(-c,d)`. Exact, and well-conditioned at ±90°. The only
   ambiguity is the two scale signs, resolved by continuity with the previous value.
@@ -144,9 +144,9 @@ while the bone origin silently changes. `NodeSnapshot.local` is named that, not 
 reason. The Bone tool's ⌥-drag (re-aim) did exactly that until it went through `applyTransforms`;
 in Animate mode it keys the aim, except on a bone the IK solver drives, which only gets its length.
 
-A transform writes only the TOPMOST selected nodes (`topmostSelected` in
-`view/tools/transformOps.ts`): the Selection and Free Transform tools and the arrow-key nudge all
-filter through it. A node whose ancestor is also selected already moves with it, and writing it
+A transform writes only the TOPMOST selected nodes (`editTargets`, over `topmostSelected`, in
+`core/doc/transformOps.ts`): the Selection and Free Transform tools, the arrow-key nudge and the
+Properties fields all filter through it (the fields keep locked layers). A node whose ancestor is also selected already moves with it, and writing it
 too applied every drag twice — ⌘A then a drag threw every child off by the full distance. The
 nudge moves one SCENE pixel in the arrow's direction on screen (`store.sceneMatrix`, then
 `moveBy` into the parent's frame), like a drag; adding to the local x/y moved a node along its
@@ -215,12 +215,12 @@ Command objects capturing a minimal typed inverse (`core/history/`), not snapsho
 - **`mergeWith` must carry the follow-up's payload.** History applies the new command and then
   folds it in; redo later replays only the merged one. `SetDocumentSettings` and
   `SetAnimationDuration` returned `true` without updating their value, so undo + redo after a
-  scrub restored the FIRST step of the scrub. A command with no `mergeWith` (as
-  `SetNodeMotionBlur` was) leaves one undo step per pointermove. `EditTracks.mergeWith` also
+  scrub restored the FIRST step of the scrub. A command with no `mergeWith` leaves
+  one undo step per pointermove. `EditTracks.mergeWith` also
   takes the follow-up's `before` for a track only that step touched, or undo left it edited.
 - **A NumberField scrub opens its interaction on the FIRST step only**
   (`PropertiesPanel.scrubStep`). The field reports no start, and `beginInteraction` resets the
-  open entry, so calling it on every step — what the colour, motion blur, bone length, IK,
+  open entry, so calling it on every step — what the colour, bone length, IK,
   document and pivot fields did — left one undo step per pointermove whatever `mergeWith` said.
   The history tests call `beginInteraction` once, which is why they never caught it.
 - `History.markDirty()` marks the document unsaved with no step behind it — a recovered
@@ -1075,8 +1075,7 @@ flowchart LR
   attachment and colour, and the four corners of each image with `evaluateSymbol`.
   Worst differences: matrices 1.5e-6, positions and corners 1.5e-4 px, IK chains
   included.
-- **Not carried, said out loud:** blend modes other than normal, add, multiply and
-  screen; motion blur. Masks and colour offsets: see Mask layers and Colour.
+- Masks and colour offsets: see Mask layers and Colour.
 
 ### Nested symbols are flattened
 
@@ -1305,7 +1304,10 @@ flowchart LR
   `attach`, `add_ik`, `draw_order`, `auto_rig`, the motion library `list_motions`,
   `apply_motion`, and for cycles and paths `set_cycle`, `get_bone_path`, `set_bone_path`. Values are Spine's: y up, degrees counter-clockwise, local to
   the parent bone, absolute. A model knows them better than the editor's Flash
-  conventions, and `toBoneBurstLocal` / `fromBoneBurstLocal` convert exactly.
+  conventions, and `toBoneBurstLocal` / `fromBoneBurstLocal` convert exactly. `AgentApi.call`
+  dispatches each tool to a function in a topic module beside it (`agentRead`, `agentKeys`,
+  `agentRig`, `agentMotion`, `agentAttach`, `agentSkins`, `agentPaths`, `agentLook`; argument
+  parsing in `agentArgs`), which takes the API as its first argument.
 - **Every call that edits is one history step** labelled "AI: …". `set_keys` for many
   bones is one `EditTracks` in one transaction, so Undo takes back an AI edit exactly as it
   takes back a drag. What a key leaves out keeps the value the animation already shows at
@@ -1457,7 +1459,7 @@ flowchart LR
   the stage does, see-through over the reference, every bone a magenta line with its name
   (names that would overlap are left off; the text lists every bone and its pixels), framed
   on what is drawn so helper bones far from the art do not shrink the body. The geometry
-  (framing: `imageFrame`, bone pixels) is worked out in `AgentApi`, testable without a
+  (framing: `imageFrame`, bone pixels) is worked out in `agentLook.ts`, testable without a
   canvas; `PageVision` only paints and encodes. The AI panel's 📎 attaches pictures to a
   message, and it shows the pictures the AI looked at after each answer.
 
@@ -1846,8 +1848,8 @@ must leave the DOM alone:
 
 - With nothing selected it used to REBUILD the Document section on every frame, destroying the
   field under the cursor — the flicker, the lost focus, the second click to reach the next field.
-  `docSync` now updates values in place, and `signatureOf` includes the one flag that changes the
-  section's structure (`motionBlur.enabled`).
+  `docSync` now updates values in place, and `signatureOf` holds only what changes the
+  section's structure.
 - Values pushed into a field skip it while it has focus (`NumberField.show`, `focused`), or
   playback overwrites what is being typed.
 - `NumberField.commitText` does not report an unchanged value. Committing on every blur emitted a
@@ -3028,7 +3030,8 @@ already has it.
   a box already on a round coordinate has a zero-distance pixel snap that would otherwise
   beat every guide near it.
 - Everything is computed in **scene space**, the frame the grid, the guides and the stage
-  rectangle live in. `Viewport.snapDelta` converts the tool's world delta in through
+  rectangle live in. `SnapController.delta` (`view/viewport/SnapController.ts`, which owns
+  the drag's snap state) converts the tool's world delta in through
   `camera.base` and back out through its inverse, so snapping stays correct inside an
   edit-in-place chain where the base carries scale and rotation. The tolerance is screen
   pixels over `camera.zoom`, so it feels the same at 25% and at 800%.
@@ -3198,7 +3201,10 @@ alpha as `globalAlpha` from `aM` alone; the alpha offset is drawn by nothing.
   multiplies it in. An opened file's attachment colours become tints, a carried attachment's
   too (written back onto its data). AI: `set_tint`. `tests/tint.test.ts`.
 - **Blend mode cannot be keyed** (Spine has no blend timeline), and Spine has four:
-  normal, additive, multiply, screen. The rest export as normal, with a warning.
+  normal, additive, multiply, screen, and so does the document (`BlendMode`). Animo's other
+  five (overlay, darken, lighten, difference, hard light) were dropped at version 28: the stage
+  drew them while the export wrote normal. A PSD layer in one of them imports as normal, with a
+  warning.
 - **Neither tint nor blend reaches inside a symbol instance** on the stage; its alpha does,
   and the flattening multiplies it down (ARCHITECTURE ▸ The Spine exporter).
 
@@ -3323,9 +3329,8 @@ Measured before moving anything; what blocked the page and where it went:
 
 Animo shipped masks and motion blur beside the DragonBones skeleton as runtime extensions
 (`animo-pixi.js`, `<name>_ext.json`). Spine carries masks itself (Mask layers), so the
-extension file is gone. Motion blur has no Spine counterpart and nothing draws it: the
-document keeps `Project.motionBlur` and `Node.motionBlur`, the Properties panel still edits
-them, and the export warns while it is on.
+extension file is gone. Motion blur has no Spine counterpart; version 28 removed it from the
+document (the 27 → 28 step drops `Project.motionBlur` and `Node.motionBlur` from older files).
 
 ## Mask layers
 

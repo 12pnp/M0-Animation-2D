@@ -1,4 +1,6 @@
-import type { Layer, SymbolItem } from "@/core/doc/types";
+import type { IkConstraint, Layer, SymbolItem } from "@/core/doc/types";
+import { ikChain } from "@/core/doc/ikGraph";
+import { evaluateSymbol } from "@/core/doc/pose";
 import type { NodeId } from "@/core/doc/ids";
 import { layerRows } from "@/core/doc/layerTree";
 import { invert, type Matrix2D, mat, mul } from "@/core/math/Matrix2D";
@@ -73,4 +75,38 @@ export function siblingOrder(sym: SymbolItem, parentId: NodeId | null, front: re
   const layers = [...sym.layers];
   front.forEach((id, k) => { layers[slots[k]!] = sym.layers.find((l) => l.nodeId === id)!; });
   return layerRows({ ...sym, layers }, true).map((r) => r.layer);
+}
+
+/**
+ * Which way an IK chain should bend: as drawn when the joint is visibly
+ * bent, otherwise a knee forward and an elbow back for a side view facing
+ * `facing`. Probed by pulling the target in on a copy of the symbol and
+ * solving: the solver's choice is not guessable from `bendPositive` alone
+ * (ARCHITECTURE ▸ Bones and IK). The constraint whose bend must flip, or
+ * null when it already bends that way or nothing decides.
+ */
+export function bendFlipNeeded(
+  s: SymbolItem, effectorName: string, chain: ReadonlyArray<{ name: string; from: BoneBurstPoint; to: BoneBurstPoint }>,
+  facing: "right" | "left" | null,
+): IkConstraint | null {
+  const k = s.ik.find((x) => s.nodes[x.boneId]?.name === effectorName);
+  const ids = k ? ikChain(s, k) : [];
+  if (!k || ids.length !== 2 || chain.length !== 2) return null;
+  const angle = (b: { from: BoneBurstPoint; to: BoneBurstPoint }) => Math.atan2(b.to[1] - b.from[1], b.to[0] - b.from[0]);
+  const [root, eff] = ids.map((id) => chain.find((c) => c.name === s.nodes[id]!.name)!);
+  const drawn = Math.sin(angle(eff!) - angle(root!));
+  // Turn sign root → effector, y up: a knee forward bends a right-facing leg clockwise.
+  const leg = /^shin_/.test(effectorName);
+  const want = Math.abs(drawn) > 0.05 ? Math.sign(drawn) : facing ? (leg ? -1 : 1) * (facing === "right" ? 1 : -1) : 0;
+  if (!want) return null;
+  const pose = evaluateSymbol(s, null, 0, "setup");
+  const target = s.nodes[k.targetId]!, tw = pose.byNode.get(target.id)?.world, rw = pose.byNode.get(ids[0]!)?.world;
+  if (!tw || !rw) return null;
+  const parentWorld = target.parentId ? pose.byNode.get(target.parentId)?.world : undefined;
+  const pulled = placeOnBone(parentWorld, [tw.tx + 0.25 * (rw.tx - tw.tx), -(tw.ty + 0.25 * (rw.ty - tw.ty))]);
+  if (!pulled) return null;
+  const probe = evaluateSymbol({ ...s, nodes: { ...s.nodes, [target.id]: { ...target, bind: pulled } } }, null, 0, "setup");
+  const [a, b] = ids.map((id) => probe.byNode.get(id)!.world);
+  const got = Math.sign(Math.sin(Math.atan2(-b!.b, b!.a) - Math.atan2(-a!.b, a!.a)));
+  return got !== want ? k : null;
 }

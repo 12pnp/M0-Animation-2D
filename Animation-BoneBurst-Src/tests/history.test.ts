@@ -9,8 +9,10 @@ import { TWEEN_LINEAR } from "@/core/math/easing";
 import { SetBoneLength } from "@/core/history/ikCommands";
 import {
   SetBindTransform, SetBindColor,
-  SetPivot, SetDocumentSettings, SetNodeMotionBlur, SetParent, AddNode,
+  AddNode,
 } from "@/core/history/commands";
+import { SetDocumentSettings } from "@/core/history/settingsCommands";
+import { SetPivot, SetParent } from "@/core/history/hierarchyCommands";
 import { SetAnimationDuration, EditTracks } from "@/core/history/timelineCommands";
 
 beforeEach(() => reseed());
@@ -214,18 +216,6 @@ describe("a scrubbed field is one undo step that redoes to where it ended", () =
     expect(store.project.frameRate).toBe(24);
     store.redo();
     expect(store.project.frameRate).toBe(30);
-  });
-
-  it("motion blur strength", () => {
-    const { store, n } = scene();
-    store.history.beginInteraction("node.motionBlur");
-    for (const v of [0.5, 0.25, 0]) store.apply(new SetNodeMotionBlur(store.currentSymbolId, [n.id], v));
-    store.history.endInteraction();
-    expect(store.history.entries).toHaveLength(1);
-    store.undo();
-    expect(store.currentSymbol.nodes[n.id]!.motionBlur).toBeUndefined();
-    store.redo();
-    expect(store.currentSymbol.nodes[n.id]!.motionBlur).toBe(0);
   });
 
   it("animation duration", () => {

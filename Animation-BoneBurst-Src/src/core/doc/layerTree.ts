@@ -280,6 +280,35 @@ export function nearestMaskAbove(sym: SymbolItem, layerId: LayerId): Layer | nul
 }
 
 /**
+ * What toggling Mask on `layerId` changes. Off clears it and every link to
+ * it (`normalizeMasks` would drop those anyway, and undo would then restore
+ * only half the relationship); on makes it a mask over the layer below.
+ * Null when on has nothing below to clip.
+ */
+export function toggleMaskPlan(sym: SymbolItem, layerId: LayerId): Map<LayerId, MaskState> | null {
+  const layer = sym.layers.find((l) => l.id === layerId);
+  if (!layer) return null;
+  if (layer.isMask) {
+    const next = new Map<LayerId, MaskState>([[layer.id, {}]]);
+    for (const l of sym.layers) if (l.maskedBy === layer.id) next.set(l.id, { isMask: l.isMask });
+    return next;
+  }
+  const below = maskCandidate(sym, layer.id);
+  return below ? new Map<LayerId, MaskState>([[layer.id, { isMask: true }], [below.id, { maskedBy: layer.id }]]) : null;
+}
+
+/** What toggling Masked on `layerId` changes: a linked layer leaves its
+ *  mask, an unlinked one joins the nearest mask above. Null for a mask, or
+ *  with no mask above. */
+export function toggleMaskedPlan(sym: SymbolItem, layerId: LayerId): Map<LayerId, MaskState> | null {
+  const layer = sym.layers.find((l) => l.id === layerId);
+  if (!layer || layer.isMask) return null;
+  if (layer.maskedBy) return new Map([[layer.id, {}]]);
+  const mask = nearestMaskAbove(sym, layer.id);
+  return mask ? new Map([[layer.id, { maskedBy: mask.id }]]) : null;
+}
+
+/**
  * What New Group does with a selection: which nodes it adopts, where the
  * group goes and where its origin sits. Pure.
  *

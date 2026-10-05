@@ -47,12 +47,6 @@ export class PreviewPanel implements Panel, PreviewView {
   private eventLog: HTMLElement;
   private audio: AudioContext | null = null;
   private decoded = new Map<Blob, Promise<AudioBuffer | null>>();
-  /**
-   * "This rig needs the extension runtime." Masks and motion blur are not
-   * part of the DragonBones format; a stock player would ignore them, and
-   * nothing else in the UI would say so.
-   */
-
   constructor(
     private readonly session: PreviewSession,
     /** Tear the panel out into a window of its own, or put it back. */

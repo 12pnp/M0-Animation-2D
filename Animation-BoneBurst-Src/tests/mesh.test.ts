@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { earClip, triangulate } from "@/core/mesh/triangulate";
-import { insidePolygon, makeMesh } from "@/core/mesh/makeMesh";
+import { makeMesh } from "@/core/mesh/makeMesh";
+import { inFlatPolygon } from "@/core/math/geom";
 
 /** Total area of the triangles, and whether every one is wound like the outline. */
 function check(pts: number[], tris: number[]) {
@@ -46,7 +47,7 @@ describe("triangulation within an outline", () => {
     for (let t = 0; t < tris.length; t += 3) {
       const cx = (pts[tris[t]! * 2]! + pts[tris[t + 1]! * 2]! + pts[tris[t + 2]! * 2]!) / 3;
       const cy = (pts[tris[t]! * 2 + 1]! + pts[tris[t + 1]! * 2 + 1]! + pts[tris[t + 2]! * 2 + 1]!) / 3;
-      expect(insidePolygon(L, 6, cx, cy)).toBe(true);
+      expect(inFlatPolygon(L, cx, cy, 6)).toBe(true);
     }
   });
 
@@ -61,13 +62,15 @@ describe("triangulation within an outline", () => {
 
 import { autoWeights, paintWeights, withPoint, withPointMoved, withoutPoint, deformsWithoutPoint } from "@/core/mesh/meshEdit";
 import { localDelta, meshWorld } from "@/core/mesh/meshPose";
-import { deformAt, moveDeformKeys, withDeformKey } from "@/core/mesh/deform";
+import { deformAt, withDeformKey } from "@/core/mesh/deform";
 import { bindPlan, meshableNodes } from "@/core/mesh/meshPlan";
 import { matOf } from "@/core/math/Matrix2D";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import { DOC_VERSION, type Animation, type MeshData, type SymbolItem } from "@/core/doc/types";
 import type { NodeId } from "@/core/doc/ids";
 import { loadStickman } from "./fixtures/stickman";
+import { moveKeys } from "@/core/doc/keyList";
 
 const A = "a" as NodeId, B = "b" as NodeId;
 const square: MeshData = { width: 10, height: 10, points: [0, 0, 10, 0, 10, 10, 0, 10], triangles: [0, 1, 2, 0, 2, 3], hull: 4 };
@@ -154,7 +157,7 @@ describe("deform keys", () => {
   });
   it("key, move", () => {
     expect(withDeformKey([], 3, [1.23456, 0]).map((k) => k.offsets)).toEqual([[1.235, 0]]);
-    expect(moveDeformKeys([{ frame: 1, offsets: [] }, { frame: 5, offsets: [] }], [1], 4).map((k) => k.frame)).toEqual([5]);
+    expect(moveKeys([{ frame: 1, offsets: [] }, { frame: 5, offsets: [] }], [1], 4).map((k) => k.frame)).toEqual([5]);
   });
 });
 

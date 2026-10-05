@@ -3,7 +3,7 @@ import { clear, cls, h, on } from "@/view/widgets/dom";
 import type { Panel } from "@/view/widgets/Dock";
 import type { Store } from "@/app/Store";
 import { icon, type IconName } from "@/view/icons";
-import { SetStageSkins } from "@/core/history/commands";
+import { SetStageSkins } from "@/core/history/settingsCommands";
 import { DEFAULT_SKIN, editedSkin, BONEBURST_SKIN_COLOR, skinsOf, stageSkinOf, toggledSkins, withSkinColor } from "@/core/doc/skins";
 import { doDeleteSkin, doNewSkin, doRenameSkin } from "@/app/SkinOps";
 

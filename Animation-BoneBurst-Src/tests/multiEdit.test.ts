@@ -8,7 +8,7 @@ import { selectionBounds, buildGizmo, type PoseAt } from "@/view/tools/gizmo";
 import { tf, toMatrix, type Transform } from "@/core/math/Transform";
 import { mat, apply } from "@/core/math/Matrix2D";
 import { deriveEdit, applyFrameEdit } from "@/core/math/multiEdit";
-import { rotateAbout, snapshotOf, applyWorldMatrix, worldScaleMatrix } from "@/view/tools/transformOps";
+import { rotateAbout, snapshotOf, applyWorldMatrix, worldScaleMatrix } from "@/core/doc/transformOps";
 
 const snap = (t: Transform) => snapshotOf("n" as never, t, toMatrix(mat(), t));
 

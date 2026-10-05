@@ -2,6 +2,7 @@ import type { Pose, PoseEntry } from "@/core/doc/pose";
 import type { NodeId } from "@/core/doc/ids";
 import type { Point } from "@/core/math/geom";
 import type { Matrix2D } from "@/core/math/Matrix2D";
+import { segmentDistance } from "@/core/math/geom";
 
 /** Default drawn length for a bone that has none. Matches the overlay. */
 export const DEFAULT_BONE_LENGTH = 40;
@@ -21,13 +22,7 @@ export function boneSegment(entry: PoseEntry): BoneSegment {
 }
 
 export function distanceToSegment(p: Point, s: BoneSegment): number {
-  const dx = s.bx - s.ax;
-  const dy = s.by - s.ay;
-  const lenSq = dx * dx + dy * dy;
-  const t = lenSq > 0
-    ? Math.max(0, Math.min(1, ((p.x - s.ax) * dx + (p.y - s.ay) * dy) / lenSq))
-    : 0;
-  return Math.hypot(p.x - (s.ax + dx * t), p.y - (s.ay + dy * t));
+  return segmentDistance(s.ax, s.ay, s.bx, s.by, p.x, p.y);
 }
 
 /** The nearest bone within `tolerance` world units, or null. */

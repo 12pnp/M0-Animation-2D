@@ -9,6 +9,7 @@ import { posePrompt } from "@/app/agent/poseHandoff";
 import { NumberField } from "@/view/widgets/NumberField";
 import { clear, h, on } from "@/view/widgets/dom";
 import { referenceStarts } from "@/core/doc/reference";
+import { renderPoses } from "@/app/agent/agentLook";
 
 /** How many poses ride along as pictures: the bridge's per-message budget. */
 const HANDOFF_PICTURES = 6;
@@ -146,7 +147,7 @@ export class PosesPanel implements Panel {
     const token = ++this.renderToken;
     try {
       const imgs = [...strip.querySelectorAll(".pose-thumb-img")] as HTMLImageElement[];
-      await this.agent.renderPoses(anim.name, frames, this.style, (image, i) => {
+      await renderPoses(this.agent, anim.name, frames, this.style, (image, i) => {
         if (token === this.renderToken && imgs[i]) imgs[i]!.src = `data:${image.mimeType};base64,${image.data}`;
       }, this.overReference());
     } catch (err) {
@@ -175,7 +176,7 @@ export class PosesPanel implements Panel {
     const frames = anim?.poses ?? [];
     if (!anim || frames.length === 0) return;
     try {
-      const images = await this.agent.renderPoses(anim.name, frames.slice(0, HANDOFF_PICTURES), this.style, undefined, this.overReference());
+      const images = await renderPoses(this.agent, anim.name, frames.slice(0, HANDOFF_PICTURES), this.style, undefined, this.overReference());
       const text = posePrompt(anim.name, this.store.project.frameRate, frames, images.length, {
         withBones: this.style !== "artwork", overReference: this.overReference(), keyed: PosesService.keyedFrames(anim),
       });
@@ -192,7 +193,7 @@ export class PosesPanel implements Panel {
     const frames = anim?.poses ?? [];
     if (!anim || frames.length === 0) return;
     try {
-      const images = await this.agent.renderPoses(anim.name, frames, this.style, undefined, this.overReference());
+      const images = await renderPoses(this.agent, anim.name, frames, this.style, undefined, this.overReference());
       const files: Record<string, Uint8Array> = {};
       images.forEach((im, i) => { files[`${anim.name}-pose-f${frames[i]!}.png`] = bytesOf(im); });
       files["poses.json"] = new TextEncoder().encode(JSON.stringify({ animation: anim.name, fps: this.store.project.frameRate, frames }, null, 2));

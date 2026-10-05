@@ -2,16 +2,14 @@ import { h, on, raf } from "@/view/widgets/dom";
 import { FRAME_WIDTH_MAX, FRAME_WIDTH_MIN, anchoredScroll, fitFrameWidth, playheadLabel, steppedFrameWidth } from "./zoom";
 import type { Store } from "@/app/Store";
 import type { Animation, DeformKey, DrawOrderKey, EventKey, IkKey, InheritKey, Layer, Node, SequenceKey, TcKey, Track } from "@/core/doc/types";
-import { moveKeys } from "@/core/doc/sequence";
-import { moveTcKeys } from "@/core/doc/transformKeys";
-import { deformKeysOf, moveDeformKeys } from "@/core/mesh/deform";
+import { deformKeysOf } from "@/core/mesh/deform";
 import { deformRow } from "@/core/mesh/meshPlan";
-import { ikDragAxis, ikPoseAt, moveIkKeys, withIkKey, withIkMixDragged } from "@/core/doc/ikKeys";
+import { ikDragAxis, ikPoseAt, withIkKey, withIkMixDragged } from "@/core/doc/ikKeys";
 import { moveDrawOrderKeys } from "@/core/doc/drawOrder";
 import { eventFrames, moveEventKeys } from "@/core/doc/events";
 import type { CnId, IkId, NodeId, TcId } from "@/core/doc/ids";
-import { describeFrame, ensureTrack } from "@/app/TimelineOps";
-import { keyIndexAt, MAX_FRAMES, spanIndexAt } from "@/core/doc/timeline";
+import { ensureTrack } from "@/app/TimelineOps";
+import { keyIndexAt, MAX_FRAMES } from "@/core/doc/timeline";
 import { easeTag } from "@/core/math/easing";
 import type { LayerRow } from "@/core/doc/layerTree";
 import { timelineRows } from "./rows";
@@ -67,6 +65,8 @@ import { SEAM_TOLERANCE, type SeamGap, seamFrame, seamGap } from "@/core/doc/cyc
 import { posedSymbol } from "@/core/boneburst/boneburstPose";
 import { eventSounds, peakBetween, type Waveform } from "@/core/doc/waveform";
 import { constraintKeyFrames, moveConstraintKeys } from "@/core/doc/constraintKeys";
+import { moveKeys } from "@/core/doc/keyList";
+import { frameCell, parseFrameCell } from "@/core/doc/frameCells";
 
 /** The unscaled row and ruler heights. The layer list is DOM and the grid is
  *  canvas, so the same two numbers have to reach both — see `TimelinePanel`. */
@@ -567,28 +567,13 @@ export class FrameGrid {
   }
 
   private beginMarkerDrag(e: PointerEvent, which: MarkerDrag): void {
-    this.el.setPointerCapture(e.pointerId);
     const base = this.store.onionSpan;
-    const startX = e.clientX;
     const maxFrame = this.store.maxFrame;
     // A following range must keep the playhead inside it: what it stores is
     // two distances from it.
     const playhead = this.store.ui.onionAnchor ? undefined : this.store.ui.frame;
     const period = this.store.onionPeriod;
-    let last = 0;
-    const move = (m: PointerEvent) => {
-      const delta = Math.round((m.clientX - startX) / this.frameWidth);
-      if (delta === last) return;
-      last = delta;
-      this.store.setOnionSpan(dragMarkers(base, which, delta, maxFrame, playhead, period));
-    };
-    const up = () => {
-      offMove(); offUp(); offCancel();
-      this.el.releasePointerCapture?.(e.pointerId);
-    };
-    const offMove = on(this.el, "pointermove", move as (x: Event) => void);
-    const offUp = on(this.el, "pointerup", up);
-    const offCancel = on(this.el, "pointercancel", up);
+    this.dragFrames(e, {}, (delta) => this.store.setOnionSpan(dragMarkers(base, which, delta, maxFrame, playhead, period)));
   }
 
   private drawBody(
@@ -670,7 +655,7 @@ export class FrameGrid {
       // track, so a layer with no track of its own still shows what is
       // selected on it.
       for (let f = first; f <= last; f++) {
-        if (!selectedFrames.has(`${layer.nodeId}:${f}`)) continue;
+        if (!selectedFrames.has(frameCell(layer.nodeId, f))) continue;
         ctx.fillStyle = this.C.selected;
         ctx.fillRect(this.xOfFrame(f), y + 1, this.frameWidth - 1, rowH - 3);
       }
@@ -901,55 +886,21 @@ export class FrameGrid {
   /** Move the keys of the picked event frames by whole frames, from the keys
    *  as they were at pointerdown. */
   private beginEventDrag(e: PointerEvent, frames: number[], base: EventKey[]): void {
-    this.el.setPointerCapture(e.pointerId);
-    const startX = e.clientX;
-    const first = Math.min(...frames);
-    let lastDelta = 0;
-    let started = false;
-    const move = (m: PointerEvent) => {
-      const delta = Math.max(-first, Math.round((m.clientX - startX) / this.frameWidth));
-      if (delta === lastDelta) return;
-      if (!started) { started = true; this.cb.onBeginInteraction("timeline.eventMove"); }
+    this.dragFrames(e, { kind: "timeline.eventMove", min: -Math.min(...frames) }, (delta) => {
       this.cb.onEditEvents(moveEventKeys(base, frames, delta), "Move Event Keys", "timeline.eventMove");
       this.pickEventFrames(frames.map((f) => f + delta));
-      lastDelta = delta;
       this.invalidate();
-    };
-    const up = () => {
-      offMove(); offUp(); offCancel();
-      this.el.releasePointerCapture?.(e.pointerId);
-      if (started) this.cb.onEndInteraction();
-    };
-    const offMove = on(this.el, "pointermove", move as (x: Event) => void);
-    const offUp = on(this.el, "pointerup", up);
-    const offCancel = on(this.el, "pointercancel", up);
+    });
   }
 
   /** Move the picked draw order keys by whole frames, from the keys as they
    *  were at pointerdown. */
   private beginOrderDrag(e: PointerEvent, frames: number[], base: DrawOrderKey[]): void {
-    this.el.setPointerCapture(e.pointerId);
-    const startX = e.clientX;
-    const first = Math.min(...frames);
-    let lastDelta = 0;
-    let started = false;
-    const move = (m: PointerEvent) => {
-      const delta = Math.max(-first, Math.round((m.clientX - startX) / this.frameWidth));
-      if (delta === lastDelta) return;
-      if (!started) { started = true; this.cb.onBeginInteraction("timeline.drawOrderMove"); }
+    this.dragFrames(e, { kind: "timeline.drawOrderMove", min: -Math.min(...frames) }, (delta) => {
       this.cb.onEditDrawOrder(moveDrawOrderKeys(base, frames, delta), "Move Draw Order Keys", "timeline.drawOrderMove");
       this.orderSel = frames.map((f) => f + delta);
-      lastDelta = delta;
       this.invalidate();
-    };
-    const up = () => {
-      offMove(); offUp(); offCancel();
-      this.el.releasePointerCapture?.(e.pointerId);
-      if (started) this.cb.onEndInteraction();
-    };
-    const offMove = on(this.el, "pointermove", move as (x: Event) => void);
-    const offUp = on(this.el, "pointerup", up);
-    const offCancel = on(this.el, "pointercancel", up);
+    });
   }
 
   /** The keys picked on a Deform row, a Sequence row (`sequence`) or an Inherit row (`inherit`). */
@@ -1000,31 +951,14 @@ export class FrameGrid {
   /** Move the picked deform or sequence keys by whole frames, from the keys at pointerdown. */
   private beginDeformDrag(e: PointerEvent, node: NodeId, frames: number[], base: ReadonlyArray<unknown>, kind: KeyRowKind, cn?: CnId): void {
     const baseAll = this.store.currentAnimation?.constraintKeys;
-    this.el.setPointerCapture(e.pointerId);
-    const startX = e.clientX;
-    const first = Math.min(...frames);
-    let lastDelta = 0;
-    let started = false;
-    const move = (m: PointerEvent) => {
-      const delta = Math.max(-first, Math.round((m.clientX - startX) / this.frameWidth));
-      if (delta === lastDelta) return;
-      if (!started) { started = true; this.cb.onBeginInteraction(`timeline.${kind}Move`); }
+    this.dragFrames(e, { kind: `timeline.${kind}Move`, min: -Math.min(...frames) }, (delta) => {
       if (kind === "sequence") this.cb.onEditSequence(node, moveKeys(base as SequenceKey[], frames, delta), "Move Sequence Keys", "timeline.sequenceMove");
       else if (kind === "inherit") this.cb.onEditInherit(node, moveKeys(base as InheritKey[], frames, delta), "Move Inherit Keys", "timeline.inheritMove");
       else if (kind === "constraint") this.cb.onEditConstraintKeys(moveConstraintKeys(baseAll, cn!, frames, delta), "Move Constraint Keys", "timeline.constraintMove");
-      else this.cb.onEditDeform(node, moveDeformKeys(base as DeformKey[], frames, delta), "Move Deform Keys", "timeline.deformMove");
+      else this.cb.onEditDeform(node, moveKeys(base as DeformKey[], frames, delta), "Move Deform Keys", "timeline.deformMove");
       this.deformSel = { node, frames: frames.map((f) => f + delta), ...selFlag(kind, cn) };
-      lastDelta = delta;
       this.invalidate();
-    };
-    const up = () => {
-      offMove(); offUp(); offCancel();
-      this.el.releasePointerCapture?.(e.pointerId);
-      if (started) this.cb.onEndInteraction();
-    };
-    const offMove = on(this.el, "pointermove", move as (x: Event) => void);
-    const offUp = on(this.el, "pointerup", up);
-    const offCancel = on(this.el, "pointercancel", up);
+    });
   }
 
   /** The keys picked on a transform constraint row. */
@@ -1033,61 +967,16 @@ export class FrameGrid {
   /** A transform constraint row: a diamond per key, joined where the mixes
    *  tween (none after a stepped key), the picked ones ringed. */
   private drawTcRow(ctx: CanvasRenderingContext2D, tc: TcId, y: number): void {
-    ctx.fillStyle = "rgba(0,0,0,0.12)";
-    ctx.fillRect(0, y, this.el.clientWidth, this.rowHeight);
-    const keys = this.store.currentAnimation?.transforms?.[tc] ?? [];
-    if (!keys.length) return;
-    const sel = this.tcSel?.tc === tc ? this.tcSel.frames : [];
-    const color = TC_COLOR;
-    const mid = Math.round(y + this.rowHeight / 2 - 0.5) + 0.5;
-    const half = this.frameWidth / 2;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    for (let i = 1; i < keys.length; i++) {
-      if (keys[i - 1]!.tween?.kind === "none") continue;
-      ctx.moveTo(this.xOfFrame(keys[i - 1]!.frame) + half, mid);
-      ctx.lineTo(this.xOfFrame(keys[i]!.frame) + half, mid);
-    }
-    ctx.stroke();
-    const r = Math.max(3, Math.min(5.5, half, this.rowHeight / 2 - 2.5));
-    for (const k of keys) {
-      const cx = Math.round(this.xOfFrame(k.frame) + half - 0.5) + 0.5;
-      ctx.beginPath();
-      ctx.moveTo(cx, mid - r); ctx.lineTo(cx + r, mid); ctx.lineTo(cx, mid + r); ctx.lineTo(cx - r, mid); ctx.closePath();
-      ctx.fillStyle = color;
-      ctx.fill();
-      const picked = sel.includes(k.frame);
-      ctx.lineWidth = picked ? 2 : 1;
-      ctx.strokeStyle = picked ? "#ffffff" : this.C.keyDot;
-      ctx.stroke();
-    }
+    this.drawKeyRow(ctx, this.store.currentAnimation?.transforms?.[tc] ?? [], this.tcSel?.tc === tc ? this.tcSel.frames : [], TC_COLOR, y);
   }
 
   /** Move the picked transform keys by whole frames, from the keys at pointerdown. */
   private beginTcDrag(e: PointerEvent, tc: TcId, frames: number[], base: TcKey[]): void {
-    this.el.setPointerCapture(e.pointerId);
-    const startX = e.clientX;
-    const first = Math.min(...frames);
-    let lastDelta = 0;
-    let started = false;
-    const move = (m: PointerEvent) => {
-      const delta = Math.max(-first, Math.round((m.clientX - startX) / this.frameWidth));
-      if (delta === lastDelta) return;
-      if (!started) { started = true; this.cb.onBeginInteraction("timeline.tcMove"); }
-      this.cb.onEditTc(tc, moveTcKeys(base, frames, delta), "Move Transform Keys", "timeline.tcMove");
+    this.dragFrames(e, { kind: "timeline.tcMove", min: -Math.min(...frames) }, (delta) => {
+      this.cb.onEditTc(tc, moveKeys(base, frames, delta), "Move Transform Keys", "timeline.tcMove");
       this.tcSel = { tc, frames: frames.map((f) => f + delta) };
-      lastDelta = delta;
       this.invalidate();
-    };
-    const up = () => {
-      offMove(); offUp(); offCancel();
-      this.el.releasePointerCapture?.(e.pointerId);
-      if (started) this.cb.onEndInteraction();
-    };
-    const offMove = on(this.el, "pointermove", move as (x: Event) => void);
-    const offUp = on(this.el, "pointerup", up);
-    const offCancel = on(this.el, "pointercancel", up);
+    });
   }
 
   /** The keys picked on an IK row. */
@@ -1180,7 +1069,7 @@ export class FrameGrid {
       const delta = Math.max(-first, Math.round((m.clientX - startX) / this.frameWidth));
       if (delta === lastDelta) return;
       if (!started) { started = true; this.cb.onBeginInteraction("timeline.ikMove"); }
-      this.cb.onEditIk(ik, moveIkKeys(base, frames, delta), "Move IK Keys", "timeline.ikMove");
+      this.cb.onEditIk(ik, moveKeys(base, frames, delta), "Move IK Keys", "timeline.ikMove");
       this.ikSel = { ik, frames: frames.map((f) => f + delta) };
       lastDelta = delta;
       this.invalidate();
@@ -1756,10 +1645,10 @@ export class FrameGrid {
     const index = new Map(rows.map((r, i) => [r.layer.nodeId, i] as const));
     let top = Infinity, bottom = -Infinity, from = Infinity, to = -Infinity;
     for (const cell of frames) {
-      const cut = cell.lastIndexOf(":");
-      const row = index.get(cell.slice(0, cut) as NodeId);
-      const frame = Number(cell.slice(cut + 1));
-      if (row === undefined || !Number.isFinite(frame)) continue;
+      const c = parseFrameCell(cell);
+      const row = c ? index.get(c.id) : undefined;
+      if (!c || row === undefined) continue;
+      const frame = c.frame;
       top = Math.min(top, row); bottom = Math.max(bottom, row);
       from = Math.min(from, frame); to = Math.max(to, frame);
     }
@@ -1893,77 +1782,48 @@ export class FrameGrid {
   }
 
   private beginKeyDrag(e: PointerEvent, nodeId: NodeId, frame: number, virtual?: Track): void {
-    this.el.setPointerCapture(e.pointerId);
-    const startX = e.clientX;
-    let lastDelta = 0;
-    let started = false;
     // Every step is computed from the track as it was at pointerdown, so a
     // key the drag merely passes over is still there when it moves on.
     const base = this.store.currentAnimation?.tracks[nodeId] ?? virtual;
-
-    const move = (m: PointerEvent) => {
-      const delta = Math.round((m.clientX - startX) / this.frameWidth);
-      if (delta === lastDelta) return;
-      if (!started && delta !== 0) {
-        started = true;
-        this.cb.onBeginInteraction("timeline.move");
-      }
-      if (started) {
-        this.cb.onMoveKeyframes(nodeId, frame, frame, delta, base);
-        lastDelta = delta;
-      }
-    };
-    const up = () => {
-      offMove(); offUp(); offCancel();
-      this.el.releasePointerCapture?.(e.pointerId);
-      if (started) this.cb.onEndInteraction();
-    };
-    const offMove = on(this.el, "pointermove", move as (x: Event) => void);
-    const offUp = on(this.el, "pointerup", up);
-    const offCancel = on(this.el, "pointercancel", up);
+    this.dragFrames(e, { kind: "timeline.move" }, (delta) => this.cb.onMoveKeyframes(nodeId, frame, frame, delta, base));
   }
 
   /** Move the picked keys of one property by whole frames; every step is
    *  computed from the track as it was at pointerdown. */
   private beginPropDrag(e: PointerEvent, node: Node, prop: TimelineProp, frames: number[], base: Track): void {
-    this.el.setPointerCapture(e.pointerId);
-    const startX = e.clientX;
-    const first = Math.min(...frames);
-    let lastDelta = 0;
-    let started = false;
-    const move = (m: PointerEvent) => {
-      const delta = Math.max(-first, Math.round((m.clientX - startX) / this.frameWidth));
-      if (delta === lastDelta) return;
-      if (!started) { started = true; this.cb.onBeginInteraction("timeline.propMove"); }
+    this.dragFrames(e, { kind: "timeline.propMove", min: -Math.min(...frames) }, (delta) => {
       this.cb.onEditTrack(node.id, moveChannelKeys(base, node, prop, frames, delta), "Move Keys", "timeline.propMove");
       this.propSel = { nodeId: node.id, prop, frames: frames.map((f) => f + delta) };
-      lastDelta = delta;
       this.invalidate();
-    };
-    const up = () => {
-      offMove(); offUp(); offCancel();
-      this.el.releasePointerCapture?.(e.pointerId);
-      if (started) this.cb.onEndInteraction();
-    };
-    const offMove = on(this.el, "pointermove", move as (x: Event) => void);
-    const offUp = on(this.el, "pointerup", up);
-    const offCancel = on(this.el, "pointercancel", up);
+    });
   }
 
   private beginSpanDrag(e: PointerEvent, nodeId: NodeId, endFrame: number): void {
+    this.dragFrames(e, { kind: "timeline.span" }, (delta) => this.cb.onDragSpanEnd(nodeId, Math.max(0, endFrame + delta)));
+  }
+
+  /**
+   * A horizontal drag in whole frames: `step(delta)` runs each time the
+   * offset from pointerdown changes, never below `min`. The first step opens
+   * the interaction `kind`, which the release closes, so the steps merge into
+   * one undo; without a kind (the onion markers, view state) there is none.
+   */
+  private dragFrames(e: PointerEvent, opts: { kind?: string; min?: number }, step: (delta: number) => void): void {
     this.el.setPointerCapture(e.pointerId);
     const startX = e.clientX;
+    let last = 0;
     let started = false;
     const move = (m: PointerEvent) => {
-      const delta = Math.round((m.clientX - startX) / this.frameWidth);
-      if (!started && delta === 0) return;
-      if (!started) { started = true; this.cb.onBeginInteraction("timeline.span"); }
-      this.cb.onDragSpanEnd(nodeId, Math.max(0, endFrame + delta));
+      const delta = Math.max(opts.min ?? -Infinity, Math.round((m.clientX - startX) / this.frameWidth));
+      if (delta === last) return;
+      if (!started) { started = true; if (opts.kind) this.cb.onBeginInteraction(opts.kind); }
+      step(delta);
+      last = delta;
     };
     const up = () => {
       offMove(); offUp(); offCancel();
       this.el.releasePointerCapture?.(e.pointerId);
-      if (started) this.cb.onEndInteraction();
+      if (started && opts.kind) this.cb.onEndInteraction();
     };
     const offMove = on(this.el, "pointermove", move as (x: Event) => void);
     const offUp = on(this.el, "pointerup", up);
@@ -1990,5 +1850,3 @@ export class FrameGrid {
   }
 }
 
-
-export { spanIndexAt, describeFrame };

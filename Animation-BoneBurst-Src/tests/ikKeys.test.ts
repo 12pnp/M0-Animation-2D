@@ -1,16 +1,17 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import {
-  deleteIkKeys, ikDragAxis, ikPoseAt, ikTweenOf, IK_MIX_DRAG_PX, moveIkKeys, SMOOTH_CURVE, withIkKey, withIkKeys,
-  withIkMixDragged, withIkTween,
+    ikDragAxis, ikPoseAt, IK_MIX_DRAG_PX, withIkKey, withIkMixDragged,
 } from "@/core/doc/ikKeys";
 import { focusRows } from "@/core/doc/layerTree";
-import { migrate, validateProject } from "@/core/doc/schema";
+import { validateProject } from "@/core/doc/schema";
+import { migrate } from "@/core/doc/migrations";
 import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
 import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import { applyTween } from "@/core/math/easing";
 import { DOC_VERSION, type Animation, type IkConstraint, type IkKey, type SymbolItem } from "@/core/doc/types";
 import type { IkId, NodeId } from "@/core/doc/ids";
 import { loadStickman, type Stickman } from "./fixtures/stickman";
+import { SMOOTH_CURVE, deleteKeys, keyTweenOf, moveKeys, withKeyTween } from "@/core/doc/keyList";
 
 const k: IkConstraint = {
   id: "k" as IkId, name: "leg", boneId: "b" as NodeId, targetId: "t" as NodeId, chain: 1, bendPositive: false, weight: 0.8,
@@ -59,15 +60,14 @@ describe("editing IK keys", () => {
     expect(withIkKey(keys, 6, { mix: 0.3, bendPositive: false }).map((x) => x.frame)).toEqual([0, 4, 6, 8]);
   });
   it("moving keys replaces the ones they land on and stops at frame 0", () => {
-    expect(moveIkKeys(keys, [4], 4).map((x) => [x.frame, x.mix])).toEqual([[0, 1], [8, 0.5]]);
-    expect(moveIkKeys(keys, [4, 8], -10).map((x) => [x.frame, x.mix])).toEqual([[0, 0]]);
+    expect(moveKeys(keys, [4], 4).map((x) => [x.frame, x.mix])).toEqual([[0, 1], [8, 0.5]]);
+    expect(moveKeys(keys, [4, 8], -10).map((x) => [x.frame, x.mix])).toEqual([[0, 0]]);
   });
   it("deleting, tweens, and the animation's map", () => {
-    expect(deleteIkKeys(keys, [0, 8]).map((x) => x.frame)).toEqual([4]);
-    const smooth = withIkTween(keys, [0, 4], "smooth");
-    expect(smooth.map(ikTweenOf)).toEqual(["smooth", "smooth", "linear"]);
-    expect(withIkTween(smooth, [0], "linear")[0]).not.toHaveProperty("tween");
-    expect(withIkKeys({ [k.id]: keys }, k.id, [])).toBeUndefined();
+    expect(deleteKeys(keys, [0, 8]).map((x) => x.frame)).toEqual([4]);
+    const smooth = withKeyTween(keys, [0, 4], "smooth");
+    expect(smooth.map(keyTweenOf)).toEqual(["smooth", "smooth", "linear"]);
+    expect(withKeyTween(smooth, [0], "linear")[0]).not.toHaveProperty("tween");
   });
 });
 

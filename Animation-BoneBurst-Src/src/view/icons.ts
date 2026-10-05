@@ -61,8 +61,6 @@ export const ICON = {
   outlineSq:   `<rect x="3.5" y="3.5" width="9" height="9"/>`,
   // A mask layer: a filled disc clipping a square, which is what it does.
   mask:        `<rect x="2.5" y="2.5" width="11" height="11"/><circle cx="8" cy="8" r="3.4" fill="currentColor"/>`,
-  // Motion blur: a disc trailing speed lines.
-  motionBlur:  `<circle cx="10.5" cy="8" r="3" fill="currentColor"/><path d="M1.5 5.5h5M2.5 8h4.5M1.5 10.5h5"/>`,
   masked:      `<circle cx="8" cy="8" r="3.4" fill="currentColor"/>`,
   // An IK target reads as the handle the stage draws for it — a dashed ring
   // with a crosshair — so the row and the thing on the stage are one object.

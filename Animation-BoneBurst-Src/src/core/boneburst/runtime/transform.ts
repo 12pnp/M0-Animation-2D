@@ -1,4 +1,4 @@
-import { DEG_RAD, type TransformData, type TransformMix, type TransformProp } from "./rigData";
+import { DEG_RAD, type TransformData, type TransformMix, type TransformProp } from "./rigTypes";
 import type { Bones } from "./bones";
 
 /**

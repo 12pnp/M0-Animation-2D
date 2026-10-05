@@ -1,4 +1,4 @@
-import { DEG_RAD, type PathConstraintData, type PathData } from "./rigData";
+import { DEG_RAD, type PathConstraintData, type PathData } from "./rigTypes";
 import type { Rig } from "./rig";
 
 /**
