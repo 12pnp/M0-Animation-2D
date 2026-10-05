@@ -4,7 +4,8 @@
 the Editor without it importing the editor folder was not checked. R1 done 2026-10-05 on
 the editor's side (below); its C# side is not started. R2 done 2026-10-05 except the bake
 round trip (below). R3 done 2026-10-05 for its motion half (AD-3, below); the detection
-sidecar (AD-0..2) waits for an install decision. R4, R5 not started. Left
+sidecar (AD-0..2) waits for an install decision. R4 done 2026-10-06 but for the first-hand
+check in the browser (below). R5 not started. Left
 of R0: repointing the M2 projects' `file:` references and retiring the old folders (R0
 step 7), both owner calls.
 
@@ -302,6 +303,34 @@ runtime the game ships.
   so step 2's AI can finish the loop.
 - **Done when** an edit in the editor shows up baked in Unity's Play mode without
   touching Unity's menus.
+
+**Result (2026-10-06).**
+- **Unity (R4a)**: `BoneBurstRebakeOnChange`, an `AssetPostprocessor` in the import package's
+  Editor assembly: when an export's file (`.json`, `.skel.bytes`, `.atlas.txt`, `.png`) is
+  imported, its folder is rebaked after the import, with its previous settings, as the asset's
+  Rebake command does, but only a folder baked before (`BoneBurstBake.WasBaked`, new). The first
+  bake stays the popup: where the asset goes, scale, shader. A broken export is a warning, a
+  refused bake an error; the bake's own output starts nothing.
+  `BoneBurstRebakeOnChangeTests` (4, EditMode): never-baked is left alone; a changed export is
+  rebaked keeping every GUID; a broken one is said, not baked; the output starts nothing. With
+  the watcher switched off, two of them fail. Import Editor suite 22 of 22 through the live
+  Editor (`run_tests`).
+- **Editor**: File › Export to Unity… (`App.exportToUnity`, `io/export/UnityExport.ts`) writes
+  the export into the document's remembered folder (IndexedDB store `unityExport`, database
+  version 3), asking for one the first time; the atlas is `.atlas.txt`, and the skeleton is
+  written last (`unityWriteOrder`) so the import that triggers the rebake sees a whole export.
+  The AI's `export_to_unity` does the same through the page (`UnityExporter`), and refuses
+  without a folder already granted (only a click can ask the browser again).
+- **Not verified**: the loop by hand — pick a folder under `Assets/` in the browser, bake it
+  once, edit, export again, see the rebake in Unity. The folder picker is the user's; the parts
+  are each tested. Unity also imports only when it refreshes (its window focused, or Assets ›
+  Refresh), so "without touching Unity" means without its menus, not without focusing it.
+- Found on the way: the new repository has no `.claude/` (the old one tracked
+  `.claude/skills/`: `parity-harness`, `unity-playtest`, `assembly-tier-check`,
+  `managed-reference-check`, which the root CLAUDE.md names); another gap in R0's copy.
+- Between the twin-export test's runs (`FindSource_WithJsonAndItsBinaryTwin_TakesTheJson`) the
+  time swung from 13 s to a 185 s timeout, with and without the watcher: stock spine-unity's own
+  importer reacting to a mismatched skeleton and atlas, not this change.
 
 ### R5 — Optional: desktop shell
 

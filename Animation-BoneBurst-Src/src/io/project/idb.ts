@@ -9,8 +9,9 @@
 // Renaming it does not migrate the database: it opens an empty new one, and
 // the autosave record in the old one is somebody's unsaved work.
 const DB_NAME = "animo";
-const DB_VERSION = 2;
-const STORES = ["autosave", "recents"] as const;
+const DB_VERSION = 3;
+// 3: unityExport, each document's Export to Unity folder (io/export/UnityExport.ts).
+const STORES = ["autosave", "recents", "unityExport"] as const;
 
 export type StoreName = (typeof STORES)[number];
 

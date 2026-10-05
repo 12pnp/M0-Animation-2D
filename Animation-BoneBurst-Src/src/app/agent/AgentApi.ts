@@ -129,11 +129,18 @@ type SpineKeyIn = {
 // + 0: no -0 in what the model reads.
 const round = (v: number, digits = 4) => Math.round(v * 10 ** digits) / 10 ** digits + 0;
 
+/** The page's File › Export to Unity, for `export_to_unity` (docs/BONEBURST-PIPELINE-PLAN.md R4). */
+export interface UnityExporter {
+  /** Writes the export into the document's Unity folder; throws when none is granted yet. */
+  export(): Promise<{ folder: string; files: string[] }>;
+}
+
 export class AgentApi {
   constructor(
     private readonly store: Store, private readonly preview?: PreviewProbe, private readonly vision?: AgentVision,
     /** The images' pixels, for a mesh's outline; without, a mesh is the image's rectangle. */
     private readonly assets?: AssetStore,
+    private readonly unity?: UnityExporter,
   ) {}
 
   get tools(): AgentTool[] { return AGENT_TOOLS; }
@@ -150,6 +157,7 @@ export class AgentApi {
       case "undo": return this.step("undo", typeof args.steps === "number" ? args.steps : 1);
       case "redo": return this.step("redo", typeof args.steps === "number" ? args.steps : 1);
       case "check_preview": return this.checkPreview(str(args, "animation"), args.frames);
+      case "export_to_unity": return this.exportToUnity();
       case "get_reference": return this.getReference(str(args, "animation"), args.frames);
       case "render_frame": return this.renderFrame(typeof args.animation === "string" ? args.animation : null, args.frame === undefined ? 0 : int(args, "frame", 0), args.reference !== false, args.bones !== false, args.paths);
       case "add_bones": return this.addBones(list<BoneIn>(args, "bones"));
@@ -700,6 +708,22 @@ export class AgentApi {
     const [a, b] = ids.map((id) => probe.byNode.get(id)!.world);
     const got = Math.sign(Math.sin(Math.atan2(-b!.b, b!.a) - Math.atan2(-a!.b, a!.a)));
     if (got !== want) this.store.apply(new SetIkOptions(this.store.currentSymbolId, k.id, { bendPositive: !k.bendPositive }));
+  }
+
+  /* ── Unity ── */
+
+  private async exportToUnity() {
+    if (!this.unity) throw new AgentError("Exporting to Unity needs the editor page; this host cannot write files.");
+    try {
+      const { folder, files } = await this.unity.export();
+      return {
+        folder, files,
+        note: "Unity rebakes the folder on its next refresh (when its window is focused, or Assets › Refresh) if it was baked before; " +
+          "the first time, the user right-clicks the folder › BoneBurst › Bake Folder… to choose where the baked asset goes.",
+      };
+    } catch (err) {
+      throw new AgentError(err instanceof Error ? err.message : String(err));
+    }
   }
 
   /* ── motions ── */

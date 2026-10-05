@@ -215,6 +215,16 @@ namespace BoneBurst.Editor
         }
 
         /// <summary>
+        ///     Whether a bake was ever made from the export folder at <paramref name="folder" /> (a data file it wrote
+        ///     still records it as the source). <see cref="BoneBurstRebakeOnChange" /> rebakes only such folders.
+        /// </summary>
+        public static bool WasBaked(string folder)
+        {
+            string guid = AssetDatabase.AssetPathToGUID(folder);
+            return !string.IsNullOrEmpty(guid) && FindPreviousData(guid) != null;
+        }
+
+        /// <summary>
         ///     The data file an earlier bake of the source folder with this GUID wrote, or null. Only labelled data
         ///     files are searched (<see cref="DataLabel" />); the asset's Rebake command passes its own data instead.
         /// </summary>

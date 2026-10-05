@@ -44,6 +44,7 @@ import { PreviewSession } from "@/preview/PreviewSession";
 import { APP_NAME } from "@/core/about";
 import { TimelinePanel } from "@/view/timeline/TimelinePanel";
 import { buildExport, bundleZip, exportFiles, exportSettingsOf, safeFileName } from "@/io/export/ExportBundle";
+import { mayWrite, rememberedUnityFolder, rememberUnityFolder, unityWriteOrder } from "@/io/export/UnityExport";
 import {
     type FileRef,
     hasDirectoryPicker,
@@ -167,7 +168,13 @@ export class App {
     this.previewSession = new PreviewSession(this.store, this.assets, (err) => this.previewBuilt(err));
     this.references = new ReferenceService(this.store, this.assets);
     this.poses = new PosesService(this.store);
-    this.agent = new AgentApi(this.store, new HiddenPreviewProbe(this.store, this.assets), new PageVision(this.store, this.assets), this.assets);
+    this.agent = new AgentApi(this.store, new HiddenPreviewProbe(this.store, this.assets), new PageVision(this.store, this.assets), this.assets, {
+      export: async () => {
+        const written = await this.exportToUnity(false);
+        if (!written) throw new Error("The export was refused: see the editor's message.");
+        return written;
+      },
+    });
     // `?agent=5191` talks to a bridge on another port (BONEBURST_BRIDGE_PORT),
     // e.g. beside one another tool already runs.
     const port = Number(new URLSearchParams(location.search).get("agent"));
@@ -921,6 +928,47 @@ export class App {
     });
   }
 
+  /**
+   * Export into the document's Unity folder (docs/BONEBURST-PIPELINE-PLAN.md R4):
+   * the one remembered from last time, or one picked now. `ask` is a menu click,
+   * which may ask the browser again for a remembered folder or pick one; the AI's
+   * `export_to_unity` passes false and needs a folder granted already. The atlas
+   * is `.atlas.txt` and the skeleton is written last (`unityWriteOrder`), so Unity's
+   * rebake (the import package's BoneBurstRebakeOnChange) sees a whole export.
+   */
+  async exportToUnity(ask: boolean): Promise<{ folder: string; files: string[] } | null> {
+    const name = this.store.project.name;
+    let dir = await rememberedUnityFolder(name);
+    if (dir && !(await mayWrite(dir, ask))) dir = null;
+    if (!dir) {
+      if (!ask) throw new Error("No Unity folder is set for this document: use File › Export to Unity… once (the browser asks for the folder), then this can export again.");
+      if (!hasDirectoryPicker()) {
+        this.toast.show("This browser cannot choose a folder. Use Export Spine to get a zip instead.", true);
+        return null;
+      }
+      dir = await pickDirectory("boneburst-unity");
+      if (!dir) return null;
+      await rememberUnityFolder(name, dir);
+    }
+    const target = dir;
+    let written: string[] | null = null;
+    await busy(`Exporting to Unity: ${target.name}`, async (report) => {
+      const result = await this.buildForExport(phase(report, 0, 0.8));
+      if (!result) return;
+      result.atlasTxt = true;
+      const files = await exportFiles(result);
+      const names = unityWriteOrder(Object.keys(files));
+      for (const [n, file] of names.entries()) {
+        await writeIntoDirectory(target, file, new Blob([files[file] as unknown as BlobPart]));
+        report(0.8 + 0.2 * (n + 1) / names.length);
+      }
+      written = names;
+    });
+    if (!written) return null;
+    this.toast.show(`Exported to Unity: ${target.name}. Unity rebakes it when it next refreshes; the first time, right-click the folder › BoneBurst › Bake Folder….`);
+    return { folder: target.name, files: written };
+  }
+
   /** Shared front half: build, report diagnostics, refuse on errors. */
   private async buildForExport(
     report: (fraction: number) => void,
@@ -1187,6 +1235,7 @@ export class App {
           it("file.importPsdLayers"),
           it("file.export"),
           it("file.exportFolder"),
+          it("file.exportUnity"),
           it("file.exportSettings"),
         ],
       },
@@ -1517,6 +1566,7 @@ export class App {
     reg("ai.help", () => openAiHelp(this.agentBridge, () => this.toggleAgent()));
     reg("file.export", () => void this.exportProject());
     reg("file.exportFolder", () => void this.exportToFolder());
+    reg("file.exportUnity", () => void this.exportToUnity(true).catch((err) => this.reportExportFailure(err)));
     reg("file.exportSettings", () => openExportSettings(this.store));
 
     reg("edit.undo", () => s.undo(), () => s.history.canUndo);

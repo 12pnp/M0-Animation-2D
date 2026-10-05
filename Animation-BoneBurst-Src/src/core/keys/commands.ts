@@ -62,6 +62,7 @@ export const COMMANDS: CommandDef[] = [
   c("File", "file.importPsdLayers", "Import PSD as Layers…"),
   c("File", "file.export", "Export Spine…", ["Mod+Alt+E"]),
   c("File", "file.exportFolder", "Export to Folder…"),
+  c("File", "file.exportUnity", "Export to Unity…"),
   c("File", "file.exportSettings", "Export Settings…"),
 
   c("Edit", "edit.undo", "Undo", ["Mod+Z"], true),

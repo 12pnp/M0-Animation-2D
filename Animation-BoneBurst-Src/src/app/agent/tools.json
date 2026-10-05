@@ -155,6 +155,11 @@
     }
   },
   {
+    "name": "export_to_unity",
+    "description": "Export the document into its Unity folder (the one File › Export to Unity… chose; the user must have done that once in this browser): the skeleton JSON, the .atlas.txt and the page images, the skeleton written last. Unity's BoneBurst import package rebakes a folder it has baked before on its next refresh, so a change made here reaches the game's baked asset. Returns the folder and the files written.",
+    "input_schema": { "type": "object", "properties": {}, "additionalProperties": false }
+  },
+  {
     "name": "get_reference",
     "description": "The animation's reference: pictures the user added to animate against, frame by frame (get_rig lists which animations have one). Returns how its images sit in time (which frames each shows) and in the skeleton's space (where an image pixel lands), and the images at the frames you ask for, at most 6 at a time. Look at the reference's key poses before keying.",
     "input_schema": {

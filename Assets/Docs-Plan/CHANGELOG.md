@@ -11,6 +11,10 @@ flowchart LR
     BEN --> MS["mix-and-match-pro_SkeletonData<br/>(stock side)"]
 ```
 
+## 2026-10-06
+
+- **The BoneBurst editor exports straight into Unity: File › Export to Unity…** (`Animation-BoneBurst-Src/`, editor). The document's folder is remembered (IndexedDB `unityExport`, database version 3); the atlas is `.atlas.txt`; the skeleton is written last so the import package's new `BoneBurstRebakeOnChange` rebakes a whole export. The AI's `export_to_unity` does the same once a folder is granted. Plan: [BONEBURST-PIPELINE-PLAN.md](../../Animation-BoneBurst-Src/docs/BONEBURST-PIPELINE-PLAN.md) R4. Guard: `tests/unityExport.test.ts`, the menu item seen in the app; editor suite 2,245 passed. **Not verified:** the loop by hand (the folder picker is the user's).
+
 ## 2026-10-05
 
 - **The BoneBurst editor fits mocap: five AnimatedDrawings takes as motion clips** (`Animation-BoneBurst-Src/`, editor only). `core/rig/bvh.ts` reads BVH and poses its joints, `bvhClip.ts` reads each frame from the character's facing into the library's clip format, and `scripts/buildBvhMotions.ts` writes `wave_hello`, `dab`, `jumping`, `zombie_walk` and `dance` from AnimatedDrawings' MIT example takes (not the CMU one) for `apply_motion`. Why: step 2 of the pipeline, the AI animating a rig from real motion. Plan: [BONEBURST-PIPELINE-PLAN.md](../../Animation-BoneBurst-Src/docs/BONEBURST-PIPELINE-PLAN.md) R3 (AD-3). Guard: every clip fits the stickman in one undo step with the feet on or above the ground; spine-unity's Goblins, opened, given `zombie_walk` and exported, is posed the same by this project's BoneBurst C# runtime (editor suite 2,239 passed). **Not verified:** AnimatedDrawings' joint detection (AD-0..2, not installed); spineboy-pro, whose transform constraints the retarget does not model.

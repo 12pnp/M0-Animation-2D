@@ -11,6 +11,9 @@ flowchart LR
 
 ## 0.1.0 (2026-10-05)
 
+### 2026-10-06 — **a baked export folder rebakes itself when its export changes: `BoneBurstRebakeOnChange`**
+- **`Editor/BoneBurstRebakeOnChange.cs`**, an `AssetPostprocessor`: when a `.json`, `.skel.bytes`, `.atlas.txt` or `.png` is imported, its folder is rebaked after the import with its previous settings (as the asset's Rebake command), but only a folder baked before (`BoneBurstBake.WasBaked`, new); the first bake stays the popup. A broken export is a warning, a refused bake an error; the bake's own output starts nothing. Why: the BoneBurst editor's File › Export to Unity (`Animation-BoneBurst-Src/`) writes into an export folder, and its edits should reach the baked asset without the menus. Plan: `Animation-BoneBurst-Src/docs/BONEBURST-PIPELINE-PLAN.md` R4. Guard: `BoneBurstRebakeOnChangeTests` (4; with the watcher off, 2 fail); import Editor suite 22 of 22 through the live Editor. **Not verified:** the loop by hand from the editor (its folder picker is the user's). `FindSource_WithJsonAndItsBinaryTwin_TakesTheJson` swung from 13 s to a 185 s timeout across runs, with and without the watcher (stock spine-unity's importer).
+
 ### 2026-10-05 — **the bake writes the shader as a direct reference**
 - `WriteAsset` takes a `Shader` and calls `BoneBurstAsset.SetShader(Shader)`; `ShaderReference(…)` and `ShaderOf` are deleted (callers read `asset.Shader`). The report names the shader on its own line instead of counting it among the AssetSystem references. Why and guards: `com.module.ta-creator-boneburst`'s changelog the same day ([BoneBurst-PlayerShader-Plan.md](../../com.module.ta-creator-boneburst/Doc/Review/BoneBurst-PlayerShader-Plan.md)). Import 18 of 18.
 

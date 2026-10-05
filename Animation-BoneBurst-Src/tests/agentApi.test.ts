@@ -58,7 +58,7 @@ function played(store: Store, animation: string, frame: number) {
 describe("the AI's tools", () => {
   it("are described once, with a schema each", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
-      "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
+      "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview", "export_to_unity",
       "get_reference", "render_frame", "add_bones", "attach", "add_ik", "auto_rig", "list_motions", "apply_motion", "draw_order",
       "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "make_mesh", "bind_mesh", "add_skin", "set_skin_image", "add_attachment", "make_sequence", "key_sequence", "add_physics", "link_mesh", "key_constraint", "set_inherit", "set_point", "set_tint", "map_transform", "set_skin_color", "set_constraint_order", "add_slider", "make_path", "set_skin_members", "set_cycle", "key_properties", "offset_keys", "get_bone_path", "set_bone_path",
     ]);

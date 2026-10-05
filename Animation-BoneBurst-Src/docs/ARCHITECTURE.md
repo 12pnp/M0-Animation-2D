@@ -1717,6 +1717,16 @@ through it (`boneburstPose.ts`, P3b), and it is the Preview's runtime (P4).
   - an additive shear y in world space is not wrapped into ±180° before its mix: a source
     sheared past a half turn adds all of it (wrapped, half a mix turned the axis around).
 
+## Export to Unity
+
+File › Export to Unity… (`App.exportToUnity`, `io/export/UnityExport.ts`) writes the export into
+the document's Unity folder: remembered per document name in IndexedDB (store `unityExport`), asked
+for the first time. A grant does not outlive the visit, and asking again needs a user gesture, so
+the menu may ask and the AI's `export_to_unity` (through `UnityExporter`) may not. The atlas is
+always `.atlas.txt` (Unity reads only that), and the files go pages and sounds first, atlas, then
+the skeleton (`unityWriteOrder`): the Unity import package's `BoneBurstRebakeOnChange` rebakes a
+folder baked before when its files are imported, and must not see a half-written export.
+
 ## Mocap clips
 
 `core/rig/bvh.ts` reads BVH (hierarchy, channels, frames) and poses every joint by forward
