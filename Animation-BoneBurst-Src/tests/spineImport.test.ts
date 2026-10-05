@@ -6,6 +6,7 @@ import { reseed } from "@/core/doc/ids";
 import { importBoneBurst } from "@/core/boneburst/importBoneBurst";
 import { imagesOf, type SampleRig, sampleRigs } from "./fixtures/spineSamples";
 import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { profileIssues } from "@/core/boneburst/profile";
 import { DEFAULT_EXPORT_SETTINGS } from "@/core/export/settings";
 
 /**
@@ -32,7 +33,11 @@ function compare(rig: SampleRig, skin?: string, step = 1, nonessential = true): 
 
   const read = (json: unknown) => new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(atlasText))).readSkeletonData(json));
   const a = read(original);
-  const b = read(JSON.parse(boneburstJson(exported.skeleton)));
+  const written = JSON.parse(boneburstJson(exported.skeleton));
+  // What the editor writes back keeps to the BoneBurst profile (fps and hash included).
+  const issues = profileIssues(written, { written: true });
+  if (issues.length) throw new Error(`${rig.name}: export breaks the BoneBurst profile: ${issues.join("; ")}`);
+  const b = read(written);
   if (skin) { a.setSkin(skin); b.setSkin(skin); }
   const rate = imported.project.frameRate;
   const worst: Worst = { matrix: 0, position: 0, vertex: 0, color: 0, frames: 0 };

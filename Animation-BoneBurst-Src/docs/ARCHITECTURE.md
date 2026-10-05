@@ -1689,6 +1689,20 @@ through it (`boneburstPose.ts`, P3b), and it is the Preview's runtime (P4).
   since P5 the stage's own IK and transform constraints are solved by `ik.ts` and
   `transform.ts` too, through `LooseBones` (`bones.ts`: the `Bones` the solvers take, which
   `Rig` also is, and the shared `normalWorld` / `localFromWorld`).
+- **The BoneBurst profile** (`core/boneburst/profile.ts`, spec in the Unity package's
+  `Doc/Format/BoneBurst-Profile.md`): what both BoneBurst sides require of a Spine 4.3 file.
+  `profileIssues(json, { written })` lists what the Unity `SkeletonJsonReader` would throw on,
+  in its words, plus the timeline names every reader skips silently, plus (for the editor's
+  own exports) `skeleton.hash`. spineParity and spineImport hold every export they make to it.
+  Writing it found two runtime gaps, both against Format-Json-Atlas.md: a mesh is linked when
+  it names a `source` (not by its `type`), its source sits in `slot` (default its own), and the
+  source's deform and sequence keys play in the linked mesh's slot too (`timelineSlots`);
+  and 4.3's `drawOrderFolder` is not played, so any animation section the reader does not
+  play is now listed in `unsupported` instead of dropped silently.
+- **Unity's specs are the behaviour.** The Unity package's `Doc/Format/` (Timelines,
+  AnimationState, Constraints, Constraints-Path-Physics, Pose-and-Mesh, Clipping,
+  Skins-TintBlack-Culling) specify what BoneBurst's C# runtime does, written clean-room against
+  spine-csharp. This runtime follows them; the P5 bugs below were already answered there.
 - **Two runtime bugs the stage's switch found** (P5, spineParity's random transform rigs),
   both now held to spine-core in `tests/runtimeConstraints.test.ts`:
   - a local pose derived from a MIRRORED world had its shear y 180° out, so rebuilding the

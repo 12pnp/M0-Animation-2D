@@ -317,14 +317,16 @@ export class Rig implements Bones {
         else this.drawOrder = t.orders[i] ?? setup();
         break;
       }
-      case "deform": this.applyDeform(t, time, alpha, blend); break;
+      case "deform": for (const slot of timelineSlots(t)) this.applyDeform(t, slot, time, alpha, blend); break;
       case "sequence": {
-        if (out) { if (blend === "setup") this.sequenceIndex[t.slot] = -1; break; }
-        const att = this.attachmentOf(t.slot);
-        if (!att || att.timeline !== t.attachment || !att.sequence) break;
-        const i = keyAt(t.times, time);
-        if (i < 0) { if (blend === "setup" || blend === "first") this.sequenceIndex[t.slot] = -1; break; }
-        this.sequenceIndex[t.slot] = sequenceFrame(t.modes[i]!, t.indices[i]!, t.delays[i]!, time - t.times[i]!, att.sequence.count);
+        for (const slot of timelineSlots(t)) {
+          if (out) { if (blend === "setup") this.sequenceIndex[slot] = -1; continue; }
+          const att = this.attachmentOf(slot);
+          if (!att || att.timeline !== t.attachment || !att.sequence) continue;
+          const i = keyAt(t.times, time);
+          if (i < 0) { if (blend === "setup" || blend === "first") this.sequenceIndex[slot] = -1; continue; }
+          this.sequenceIndex[slot] = sequenceFrame(t.modes[i]!, t.indices[i]!, t.delays[i]!, time - t.times[i]!, att.sequence.count);
+        }
         break;
       }
     }
@@ -333,16 +335,16 @@ export class Rig implements Bones {
   /** A deform timeline mixed in by `alpha`. Its vertices are positions for an
    *  unweighted mesh (the setup ones when it has none) and offsets for a
    *  weighted one (none: zero). */
-  private applyDeform(t: Extract<Timeline, { kind: "deform" }>, time: number, alpha: number, blend: Blend): void {
-    const att = this.attachmentOf(t.slot);
+  private applyDeform(t: Extract<Timeline, { kind: "deform" }>, slot: number, time: number, alpha: number, blend: Blend): void {
+    const att = this.attachmentOf(slot);
     if (!att || att.kind === "region" || att.kind === "point" || att.timeline !== t.attachment) return;
-    let d = this.deform[t.slot];
+    let d = this.deform[slot];
     if (!d) blend = "setup";
     const n = t.vertices[0]!.length, setup = att.weighted ? null : att.vertices;
     if (time < t.times[0]!) {
-      if (blend === "setup" || (blend === "first" && alpha === 1)) { this.deform[t.slot] = null; return; }
+      if (blend === "setup" || (blend === "first" && alpha === 1)) { this.deform[slot] = null; return; }
       if (blend !== "first") return;
-      d = this.deform[t.slot] = Float64Array.from(d!);
+      d = this.deform[slot] = Float64Array.from(d!);
       for (let i = 0; i < n; i++) d[i] = setup ? d[i]! + (setup[i]! - d[i]!) * alpha : d[i]! * (1 - alpha);
       return;
     }
@@ -360,7 +362,7 @@ export class Rig implements Bones {
       else if (blend === "add") out[k] = out[k]! + (v - base) * alpha;
       else out[k] = out[k]! + (v - out[k]!) * alpha;
     }
-    this.deform[t.slot] = out;
+    this.deform[slot] = out;
   }
 
   /**
@@ -788,6 +790,13 @@ function weightedBones(att: MeshData | PathData): Set<number> {
 
 /** Where vertices are written: a typed array or a plain one. */
 export type Writable = { [index: number]: number };
+
+/** The slots a deform or sequence timeline plays in: its own, and those of
+ *  meshes linked to its attachment from other slots. */
+function timelineSlots(t: { slot: number; attachment: AttachmentData }): number[] {
+  const extra = "timelineSlots" in t.attachment ? t.attachment.timelineSlots : undefined;
+  return extra?.length ? [t.slot, ...extra] : [t.slot];
+}
 
 /** How a timeline mixes: from the setup pose, from the current value
  *  ("first" fading back to the setup pose before its first key), or added. */

@@ -2,6 +2,8 @@
 
 This spec describes the Spine **4.3 JSON skeleton format** (`*.json`) and the **libGDX-style `.atlas` text format** as the reference reader interprets them. That reader is spine-csharp **4.3.40**, vendored in `Packages/com.esotericsoftware.spine.spine-csharp` at upstream `4.3` commit `7ce5d0da`. The upstream files are `SkeletonJson.cs`, `Json.cs`, `Atlas.cs`, `Animation.cs`, `Attachments/*.cs` and `*Data.cs`. It is written so that someone can build a new reader **from this document alone**. For each key it gives the JSON type, the default when the key is absent, whether the loader's `scale` multiplies it, and any behavior the reader derives from it. It also covers how Bezier curves are baked, how atlas regions become UVs, and where the JSON path differs from the binary (`.skel`) path. The spec contains no reference source. Tables, prose and pseudocode are written from scratch.
 
+What BoneBurst requires of these files on top of this spec, where Spine's runtimes disagree with each other, and what the BoneBurst editor and runtime each do with every part: [BoneBurst-Profile.md](BoneBurst-Profile.md).
+
 ```mermaid
 flowchart TD
     ROOT["JSON root object"] --> SK["skeleton<br/>(header)"]

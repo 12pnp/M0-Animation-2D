@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { atlasText } from "@/core/boneburst/atlas";
+import { readAtlas } from "@/core/boneburst/runtime/atlasRead";
+import { readRig } from "@/core/boneburst/runtime/rigData";
 import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
 import { loadFixture } from "./fixtures/realProject";
 import { loadStickman } from "./fixtures/stickman";
@@ -63,5 +65,37 @@ describe("BoneBurst runtime vs spine-core", () => {
     expect(total.clips).toBeGreaterThan(10);
     expect(total.points).toBeGreaterThan(10);
     expect(total.sequences).toBeGreaterThan(10);
+  });
+});
+
+describe("linked meshes, as Format-Json-Atlas.md §8.4 and §9 read them", () => {
+  const ATLAS = "p.png\nsize: 64,64\nfilter: Linear,Linear\nimg\nbounds: 0,0,32,32\n";
+  const mesh = { type: "mesh", path: "img", uvs: [0, 0, 1, 0, 1, 1, 0, 1], triangles: [0, 1, 2, 2, 3, 0], vertices: [-10, -10, 10, -10, 10, 10, -10, 10], hull: 4 };
+  /** A mesh in slot "a" with deform keys, and `linked` in slot "c" on another bone. */
+  const rig = (linked: Json): Json => ({
+    skeleton: { spine: "4.3.0", hash: "x", fps: 30 },
+    bones: [{ name: "root" }, { name: "b", parent: "root", x: 20 }],
+    slots: [{ name: "a", bone: "root", attachment: "m" }, { name: "c", bone: "b", attachment: "l" }],
+    skins: [{ name: "default", attachments: { a: { m: mesh }, c: { l: linked } } }],
+    animations: { anim: { attachments: { default: { a: { m: { deform: [{ time: 0 }, { time: 1, vertices: [5, 0, 5, 0, 5, 0, 5, 0] }] } } } } } },
+  });
+  it.each([
+    ["its source in another slot, the source's deform keys playing in both", { type: "linkedmesh", path: "img", source: "m", slot: "a" }, 62],
+    ["typed mesh, linked by naming a source", { type: "mesh", path: "img", source: "m", slot: "a" }, 62],
+    ["not taking its source's keys", { type: "linkedmesh", path: "img", source: "m", slot: "a", timelines: false }, 31],
+  ] as const)("%s", (_name, linked, deformed) => {
+    const r = compare("linked", rig(linked), ATLAS);
+    expect(r.meshes).toBe(62);
+    expect(r.deformed).toBe(deformed);
+  });
+});
+
+describe("what the runtime does not play, it says", () => {
+  it("4.3 draw order folders are listed as unsupported, not dropped silently", () => {
+    const rig = readRig({
+      skeleton: { spine: "4.3.0" }, bones: [{ name: "root" }], slots: [{ name: "a", bone: "root" }, { name: "b", bone: "root" }],
+      animations: { walk: { drawOrderFolder: [{ slots: ["a", "b"], keys: [{ offsets: [{ slot: "a", offset: 1 }] }] }] } },
+    }, readAtlas(""));
+    expect(rig.unsupported).toEqual(["drawOrderFolder keys"]);
   });
 });

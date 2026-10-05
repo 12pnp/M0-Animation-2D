@@ -48,7 +48,11 @@ must keep `tests/spineImport.test.ts` (every M0 sample round-trips) and
 `tests/spinePose.test.ts` (the stage equals the export) passing. A change to our own runtime
 (`core/boneburst/runtime/`, ARCHITECTURE ▸ The BoneBurst runtime) must keep
 `tests/spineRuntime.test.ts`, `tests/runtimeDraw.test.ts` (what the Preview draws) and
-`tests/atlasRead.test.ts` passing. Phase 8 checked the
+`tests/atlasRead.test.ts` passing. The format both BoneBurst sides agree on is the profile in
+`../Packages/com.module.ta-creator-boneburst/Doc/Format/BoneBurst-Profile.md`, and the runtime
+behaviour is that folder's specs (`Timelines.md`, `Constraints.md`, …): read them before
+changing the runtime, and keep `tests/boneburstProfile.test.ts` passing (every export the
+parity and import suites make is held to the profile). Phase 8 checked the
 exports in Unity (ARCHITECTURE ▸ Checked in Unity, `scripts/unity-check/`): spine-csharp
 is stricter than spine-core (it requires `skeleton.hash`), so a header or format change
 should be rerun there. An AI edits the document through `src/app/agent/`

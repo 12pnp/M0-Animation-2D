@@ -1,7 +1,8 @@
 # BoneBurst pipeline — plan
 
 **Status:** R0 done 2026-10-05 (below), **not verified** in Unity: opening this copy in
-the Editor without it importing the editor folder was not checked. R1–R5 not started. Left
+the Editor without it importing the editor folder was not checked. R1 done 2026-10-05 on
+the editor's side (below); its C# side is not started. R2–R5 not started. Left
 of R0: repointing the M2 projects' `file:` references and retiring the old folders (R0
 step 7), both owner calls.
 
@@ -167,6 +168,33 @@ Players load only `.sbdata`. Unity's readers accept only stock Spine 4.3 exports
   (P4), 32-bit key times, π as 3.1415927.
 - **Done when** each runtime's test suite cites the profile, and a field outside it
   fails loudly on both sides.
+
+**Result (2026-10-05).**
+- **D1** is `Packages/com.module.ta-creator-boneburst/Doc/Format/BoneBurst-Profile.md`, an
+  overlay on `Format-Json-Atlas.md` (which already specifies every key as spine-csharp reads
+  it, so a second copy would only drift): rules for every file, quoting the C# reader's
+  errors; rules for files BoneBurst writes (`skeleton.hash` — `fps` is nonessential, and
+  Unity stores it but never plays from it); where spine-csharp and spine-core disagree and
+  which side BoneBurst takes (spine-csharp's, every time); what each side does with each part.
+- **The editor checks it**: `core/boneburst/profile.ts` (`profileIssues`), table-tested in
+  `tests/boneburstProfile.test.ts` (15 broken files, each caught; every spine-unity sample
+  passes), and spineParity and spineImport hold every export they make to it.
+- **D2 changed from the plan**: the behaviours were mostly already in Unity's specs. Of the
+  editor's measured fixes, the mirrored decomposition and the unwrapped additive shear are in
+  `Constraints.md` §5 and §7.4, π is in `Constraints-Path-Physics.md`; the profile's §5 lists
+  them, and the editor's CLAUDE.md now sends runtime work to those specs first. What was
+  missing was the two stock runtimes' disagreements (`fps`, event volume and balance, hash),
+  now in the profile's §3.
+- **Found on the way**, both checked against spine-core: a linked mesh is linked by naming a
+  `source` (not by its `type`), its source can sit in another `slot`, and the source's deform
+  and sequence keys play there too; the editor runtime had all three wrong (a cross-slot
+  linked mesh drew nothing). Fixed, `tests/spineRuntime.test.ts` (fails on the old code). And
+  4.3's `drawOrderFolder` was dropped silently by the editor runtime: now any animation section
+  it does not play is on the Preview's chip. Playing it (Timelines.md §3.7 and its mixing
+  rules in AnimationState.md) is new runtime work, not done.
+- **Left (C# side)**: a C# test citing the profile, and the C# reader skipping unknown timeline
+  names silently (stock behaviour; the editor's check reports them before export). Both need
+  a Unity run; the samples path could also move to the vendored `Tests/Editor/Data~/samples/`.
 
 ### R2 — Close the loop: editor export → BoneBurst Unity runtime (3–5 days)
 

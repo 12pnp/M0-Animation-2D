@@ -75,6 +75,9 @@ interface AttachmentBase {
   /** Whose deform and sequence keys this attachment plays: itself, or a
    *  linked mesh's source. */
   timeline: AttachmentData;
+  /** Slots besides its own where its deform and sequence keys also play:
+   *  those of meshes linked to it from another slot. */
+  timelineSlots: number[];
 }
 
 export interface RegionData extends AttachmentBase { kind: "region" }
@@ -562,7 +565,7 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
 
   const skins: SkinData[] = [];
   // A linked mesh takes its source's geometry, which may be in a skin read later.
-  const linked: Array<{ mesh: MeshData; a: Json; skin: string; slot: number }> = [];
+  const linked: Array<{ mesh: MeshData; a: Json; skin: string; slot: number; sourceSlot: number | undefined }> = [];
   for (const sk of list(file.skins)) {
     const skin: SkinData = {
       name: String(sk.name), attachments: new Map(),
@@ -578,26 +581,33 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
       for (const [key, raw] of Object.entries(obj(entries))) {
         const a = obj(raw);
         const type = typeof a.type === "string" ? a.type : "region";
-        if (type === "region") byKey.set(key, readRegion(key, a, regions));
+        // A mesh is linked when it names a `source`, whatever its type says
+        // (Format-Json-Atlas.md §8.4); the source may sit in another `slot`.
+        const isLinked = (type === "mesh" || type === "linkedmesh") && typeof a.source === "string";
+        if (isLinked) {
+          const mesh = readMesh(key, { ...a, vertices: [], uvs: [], triangles: [] }, regions);
+          const sourceSlot = typeof a.slot === "string" ? slotIndex.get(a.slot) : slot;
+          linked.push({ mesh, a, skin: typeof a.skin === "string" ? a.skin : "default", slot, sourceSlot });
+          byKey.set(key, mesh);
+        } else if (type === "region") byKey.set(key, readRegion(key, a, regions));
         else if (type === "mesh") byKey.set(key, readMesh(key, a, regions));
         else if (type === "path") byKey.set(key, readPath(key, a));
         else if (type === "clipping") byKey.set(key, readClipping(key, a, slotIndex));
         else if (type === "boundingbox") byKey.set(key, readBox(key, a));
         else if (type === "point") byKey.set(key, readPoint(key, a));
-        else if (type === "linkedmesh") {
-          const mesh = readMesh(key, { ...a, vertices: [], uvs: [], triangles: [] }, regions);
-          linked.push({ mesh, a, skin: typeof a.skin === "string" ? a.skin : "default", slot });
-          byKey.set(key, mesh);
-        } else unsupported.add(`${type} attachments`);
+        else if (type === "linkedmesh") unsupported.add("linked meshes without a source");
+        else unsupported.add(`${type} attachments`);
       }
       skin.attachments.set(slot, byKey);
     }
     skins.push(skin);
   }
-  for (const { mesh, a, skin, slot } of linked) {
-    const source = skins.find((s) => s.name === skin)?.attachments.get(slot)?.get(String(a.source ?? a.parent));
+  for (const { mesh, a, skin, slot, sourceSlot } of linked) {
+    const source = sourceSlot === undefined ? undefined : skins.find((s) => s.name === skin)?.attachments.get(sourceSlot)?.get(String(a.source));
     if (source?.kind !== "mesh") { unsupported.add("linked meshes without their source"); continue; }
     linkMesh(mesh, source, a.timelines !== false);
+    // Its source's keys play in this slot too (§9 step 6).
+    if (a.timelines !== false && slot !== sourceSlot && !source.timelineSlots.includes(slot)) source.timelineSlots.push(slot);
   }
 
   const eventData = new Map<string, EventFire>();
@@ -687,7 +697,7 @@ function readRegion(key: string, a: Json, regions: Map<string, AtlasRegion>): Re
     }
     return { region, corners, uvs };
   });
-  const out: RegionData = { kind: "region", name, color: parseColor(a.color), frames, sequence, timeline: null! };
+  const out: RegionData = { kind: "region", name, color: parseColor(a.color), frames, sequence, timeline: null!, timelineSlots: [] };
   out.timeline = out;
   return out;
 }
@@ -735,7 +745,7 @@ function readMesh(key: string, a: Json, regions: Map<string, AtlasRegion>): Mesh
     for (let i = 0; i < raw.length;) { const n = raw[i]!; deformLength += n * 2; i += 1 + n * 4; }
   }
   const mesh: MeshData = {
-    kind: "mesh", name, color: parseColor(a.color), sequence, timeline: null!,
+    kind: "mesh", name, color: parseColor(a.color), sequence, timeline: null!, timelineSlots: [],
     frames: framePaths(path, sequence).map((p) => ({ region: regions.get(p) ?? null, corners: new Float64Array(0), uvs: new Float32Array(regionUVs.length) })),
     vertexCount, weighted,
     // Weighted streams keep their bone counts and indices exact.
@@ -921,6 +931,9 @@ const BONE_IDS: Record<string, string[]> = {
   scale: ["sx", "sy"], scalex: ["sx"], scaley: ["sy"], shear: ["hx", "hy"], shearx: ["hx"], sheary: ["hy"],
 };
 
+/** The animation sections `readAnimation` plays. */
+const PLAYED_SECTIONS = new Set(["bones", "slots", "ik", "transform", "path", "physics", "slider", "attachments", "drawOrder", "draworder", "events"]);
+
 function readAnimation(
   name: string, raw: Json, boneIndex: Map<string, number>, slotIndex: Map<string, number>,
   constraintIndex: Map<string, number>, slotCount: number, skins: SkinData[],
@@ -1073,6 +1086,10 @@ function readAnimation(
       }
     }
   }
+
+  // Sections this runtime does not play are said, never dropped silently:
+  // 4.3's draw order folders (Timelines.md §3.7) are not played yet.
+  for (const section of Object.keys(raw)) if (!PLAYED_SECTIONS.has(section)) unsupported.add(`${section} keys`);
 
   const drawOrder = list(raw.drawOrder ?? raw.draworder);
   if (drawOrder.length) {

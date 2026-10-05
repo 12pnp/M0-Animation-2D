@@ -20,6 +20,7 @@ import { tf, toMatrix, type Transform } from "@/core/math/Transform";
 import type { PackedPage } from "@/core/atlas/packed";
 import { atlasText } from "@/core/boneburst/atlas";
 import { exportBoneBurst, boneburstJson } from "@/core/boneburst/exportBoneBurst";
+import { profileIssues } from "@/core/boneburst/profile";
 import { loadFixture } from "./fixtures/realProject";
 import { loadStickman } from "./fixtures/stickman";
 import { cyclePlan } from "@/core/doc/cycle";
@@ -64,6 +65,9 @@ function runtimeFor(project: Project, symbolId: ItemId) {
   const exported = exportBoneBurst(project, symbolId);
   // Through the text, as a file would go.
   const json = JSON.parse(boneburstJson(exported.skeleton));
+  // Every export here also keeps to the BoneBurst profile, so Unity's reader takes it.
+  const issues = profileIssues(json, { written: true });
+  if (issues.length) throw new Error(`export breaks the BoneBurst profile: ${issues.join("; ")}`);
   const atlas = new TextureAtlas(atlasText([pageFor(project, exported.usedImages)]));
   const data = new SkeletonJson(new AtlasAttachmentLoader(atlas)).readSkeletonData(json);
   return { exported, skeleton: new Skeleton(data) };
