@@ -464,9 +464,8 @@ export function sampleTransformRaw(track: Track, frame: number) {
  * Raw sample of a track's colour at `frame`, honouring the same tween as the
  * transform.
  *
- * The exporter emits `colorFrame` WITH `tweenEasing` (see
- * `core/export/frameSplit.ts`), so taking the governing keyframe's colour
- * stepwise here would show a hard cut on the stage where the runtime plays a
+ * The exporter writes colour keys WITH their curve (`exportBoneBurst.ts`), so
+ * taking the governing keyframe's colour stepwise here would show a hard cut on the stage where the runtime plays a
  * fade — the one divergence the preview-is-ground-truth rule exists to catch.
  *
  * An absent `color` means DEFAULT_COLOR, matching `colorToJson`'s omissions.

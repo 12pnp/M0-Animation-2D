@@ -122,11 +122,9 @@ export function denormalize(sym: SymbolItem, n: Normalization): void {
 
 /* ── Masks ───────────────────────────────────────────────────────────────
    A mask layer clips the layers linked to it, which sit directly beneath it.
-   DragonBones has no mask concept at all, so this is an editor + Pixi-host
-   feature: `core/export/masks.ts` writes the relationships to a sidecar and
-   the `ANIMO_masks` extension assigns `display.mask` at runtime. Nothing here can be
-   expressed in `_ske.json`, which is why the invariants are enforced in the
-   document rather than discovered at export time.                         */
+   The export writes each mask as a Spine clipping attachment (ARCHITECTURE ▸
+   Mask layers). The invariants are enforced in the document rather than
+   discovered at export time.                                              */
 
 /**
  * The mask fields that have to change for every link to mean something: a

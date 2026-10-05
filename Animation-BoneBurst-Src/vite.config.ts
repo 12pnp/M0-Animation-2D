@@ -7,9 +7,8 @@ const pkg = JSON.parse(
 ) as { version: string };
 
 export default defineConfig(({ command }) => ({
-  // Served from a subdirectory when it is embedded in a site (morenoise.it
-  // puts it under /apps/animo/app/); "/" everywhere else, including `npm run
-  // dev`. An absolute base and not "./": a relative one resolves against the
+  // ANIMO_BASE serves a build from a subdirectory of a site; "/" everywhere
+  // else, including `npm run dev`. An absolute base and not "./": a relative one resolves against the
   // document URL, and a host that strips the trailing slash would then look
   // for the assets one directory up.
   base: process.env.ANIMO_BASE ?? "/",

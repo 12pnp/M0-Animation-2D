@@ -1,5 +1,8 @@
 # Cycles and bone paths — plan
 
+**Status:** done (ARCHITECTURE ▸ Cycles, Bone paths) except two items marked "Not done" below:
+`seamVelocity` (A2) and snapping while dragging a dot (B4). Kept because source comments cite it.
+
 Two features that go together:
 
 1. **Every animation can be a cycle.** Mark it as a cycle and the editor keeps its

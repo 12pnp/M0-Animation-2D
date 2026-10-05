@@ -1,5 +1,7 @@
 # AI rigging — plan
 
+**Status:** phases A–C done; D (image split) and E (local models) not started (▸ Phases).
+
 Goal: from one character picture to a rigged, animated Spine 4.3 skeleton, the way
 godmodeai.co/ai-spine-animation does it, but inside the editor, with every step a normal
 undoable edit the user can correct, and the export checked by the existing parity tests.

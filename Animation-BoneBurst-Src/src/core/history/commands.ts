@@ -1265,7 +1265,7 @@ export class SetDocumentSettings implements Command {
       };
     }
     // The project name is also the export file name, so an empty one is
-    // refused rather than propagated into `_ske.json`.
+    // refused rather than propagated into the export.
     if (this.patch.name !== undefined && this.patch.name.trim()) p.name = this.patch.name.trim();
     if (this.patch.frameRate !== undefined) {
       p.frameRate = clampInt(this.patch.frameRate, 1, 120);

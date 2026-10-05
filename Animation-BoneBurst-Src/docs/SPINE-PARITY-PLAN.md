@@ -119,14 +119,14 @@ Legend:
 
 ## Plan
 
-Each phase is one plan file when it starts (like docs/DRAW-ORDER-PLAN.md), and follows the
+Each phase is one plan file while it is built (deleted once ARCHITECTURE holds it), and follows the
 project's rules: the decision in a pure function with a table test, the command replacing
 values, a spine-core parity case for anything exported, real mouse checks in the app, the
 Unity check after a format change, and the AI bridge getting a tool for each new ability.
 The order puts what animators use every day first, and what later phases build on before
 them.
 
-### Phase A: events and animation mixing (done, docs/EVENTS-PLAN.md)
+### Phase A: events and animation mixing (done)
 
 Why first: every game uses events (footsteps, hits, sounds), and they are small. Mixing lets
 an animator see transitions, which today needs the game.
@@ -144,7 +144,7 @@ an animator see transitions, which today needs the game.
    (`AnimationState.setMix`); the stage stays one animation.
 6. **AI.** `key_event`, `define_event`; `get_animation` lists events.
 
-### Phase B: graph editor (done, docs/GRAPH-PLAN.md)
+### Phase B: graph editor (done)
 
 Why: the property rows already key one value at a time; a graph view is how Spine animators
 shape those values, and it reuses the easing code.
@@ -156,7 +156,7 @@ shape those values, and it reuses the easing code.
    `graphPoints`, `easeFromHandles`.
 3. Tested against `applyTween` and spine-core's curve sampling; real mouse checks in the app.
 
-### Phase C: transform constraint (done, docs/TRANSFORM-CONSTRAINT-PLAN.md)
+### Phase C: transform constraint (done)
 
 Why: the most used constraint after IK (a bone copying another's rotation, scale or
 position, or following it with an offset). It is a pure solve, like IK.
@@ -170,7 +170,7 @@ position, or following it with an offset). It is a pure solve, like IK.
 4. Parity: random rigs, as `IK: 60 random rigs` does.
 5. AI: `add_transform_constraint`.
 
-### Phase D: meshes (done but linked meshes and opened meshes, docs/MESH-PLAN.md)
+### Phase D: meshes (done but linked meshes and opened meshes)
 
 Why: deformation (squash and stretch, faces, cloth) is what moves a Spine rig past cut-out
 animation. It is the largest phase, so it comes after the cheaper wins.
@@ -186,7 +186,7 @@ animation. It is the largest phase, so it comes after the cheaper wins.
    them.
 4. **Linked meshes** (one mesh's shape for another image), after weights.
 
-### Phase E: skins (done, docs/SKINS-PLAN.md)
+### Phase E: skins (done)
 
 Why: one skeleton for many characters or outfits. Needs attachments to be editable, so after
 meshes.
@@ -196,7 +196,7 @@ meshes.
 2. Skin bones and constraints (a bone only some skins have).
 3. Export and import skins fully (today the non-default skins are carried whole).
 
-### Phase F: other attachments and constraints (done, docs/PHASE-F-PLAN.md)
+### Phase F: other attachments and constraints (done)
 
 1. Bounding box (hit areas), point (spawn points) and sequence (frame-by-frame) attachments:
    create and edit; sequence import from numbered images.
@@ -211,7 +211,7 @@ meshes.
 2. Hand and Zoom tools; Compensate; bone colours in the tree.
 3. Video and sprite-sheet export (desktop build).
 
-### Phase H: animation tools and the rest (done, docs/PHASE-H-PLAN.md)
+### Phase H: animation tools and the rest (done)
 
 1. Constraint order, edited and solved in order on the stage.
 2. Offset keys (Spine's Offset tool), staggered and wrapped round a cycle.
@@ -220,7 +220,7 @@ meshes.
 5. A Preview queue of any length.
 6. The Unity check rerun on rigs holding every format change since phase 8.
 
-### Phase I: carried things made editable (done, docs/PHASE-I-PLAN.md)
+### Phase I: carried things made editable (done)
 
 1. Inherit modes and inherit keys.
 2. Physics, slider and path constraint keys.
@@ -229,7 +229,7 @@ meshes.
 5. Skin membership of physics, sliders and paths; bone icons.
 6. The Unity check rerun, with a sample re-exported through the editor.
 
-### Phase J: the rest of the carried attachments (done, docs/PHASE-J-PLAN.md)
+### Phase J: the rest of the carried attachments (done)
 
 1. Points with an offset, edited in Properties ▸ Point.
 2. Rotated or scaled sequence regions, posed by the runtime.
@@ -240,7 +240,7 @@ meshes.
 6. The Properties panel laid out for a narrow column.
 7. The Unity check rerun, now comparing attachment geometry and every skin.
 
-### Phase K: the last carried things (done, docs/PHASE-K-PLAN.md)
+### Phase K: the last carried things (done)
 
 1. Opened path constraints become the model's, with their keys and skins.
 2. An attachment's own colour (tint), edited in Properties.
@@ -249,7 +249,7 @@ meshes.
 5. A skin's own box, point or path.
 6. The Unity check rerun, each skin played through every animation for a rig with a few.
 
-### Phase L: finishing touches (done, docs/PHASE-L-PLAN.md)
+### Phase L: finishing touches (done)
 
 1. Deform and sequence keys between frames, written frame by frame.
 2. Skin colours.

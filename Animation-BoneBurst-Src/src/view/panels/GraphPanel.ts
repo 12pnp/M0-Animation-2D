@@ -59,7 +59,7 @@ const PAD = { left: 44, right: 10, top: 30, bottom: 10 };
 const HIT = 6;
 
 /**
- * The graph editor (ARCHITECTURE ▸ Graph editor, docs/GRAPH-PLAN.md): the
+ * The graph editor (ARCHITECTURE ▸ Graph editor): the
  * selected node's property values over time, and its IK constraint's mix, as
  * the curves the runtime plays. A point is a key: drag it in time and value;
  * a picked key shows the handles of the intervals beside it, which bend

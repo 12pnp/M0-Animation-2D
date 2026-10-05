@@ -440,8 +440,8 @@ export interface Layer {
   /** The mask layer clipping this one. Must sit ABOVE it (a lower index). */
   maskedBy?: LayerId;
   /** Keep this layer out of the export entirely — reference art, or a test
-   *  rig. It still draws on the stage; it does not reach `_ske.json`, the
-   *  atlas, the mask sidecar or the Preview. Absent rather than false, so a
+   *  rig. It still draws on the stage; it does not reach the export,
+   *  the atlas or the Preview. Absent rather than false, so a
    *  saved file stays clean. */
   excludeFromExport?: boolean;
 }
@@ -696,8 +696,8 @@ export interface StageSettings {
 }
 
 /**
- * Per-sprite motion blur, applied at runtime by the `ANIMO_motion_blur`
- * extension. DragonBones cannot carry it, so it ships in `<name>_ext.json`.
+ * Per-sprite motion blur. Animo drew it with a runtime extension; the Spine
+ * export does not carry it and warns when it is on (`exportBoneBurst.ts`).
  */
 export interface MotionBlurSettings {
   enabled: boolean;

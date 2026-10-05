@@ -1116,11 +1116,8 @@ export class App {
    * artwork does not move when it becomes a child.
    */
   /* ── Mask layers ───────────────────────────────────────────────────────
-     DragonBones has no mask concept, so this is an editor + Pixi-host
-     feature: the stage clips, the export writes a sidecar, and
-     the `ANIMO_masks` extension assigns `display.mask` in the game. A stock
-     DragonBones player ignores it, which the export diagnostics say out
-     loud.                                                                */
+     The stage clips, and the export writes the mask as a Spine clipping
+     attachment (ARCHITECTURE ▸ Mask layers).                             */
 
   /** The layer of the single selected node, or null. */
   private selectedLayer(): Layer | null {

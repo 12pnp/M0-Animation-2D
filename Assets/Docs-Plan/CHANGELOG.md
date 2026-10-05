@@ -13,6 +13,8 @@ flowchart LR
 
 ## 2026-10-06
 
+- **The BoneBurst editor folder cleaned up** (`Animation-BoneBurst-Src/`, no behaviour change). Removed the ZCode session plans and `.zcodeignore`, and `.github/`, whose CI never ran from a subfolder; its two checks (no spine-pixi in `dist/`, `core/` imports nothing above it) moved into `scripts/check.sh` with the build and tests. Fourteen finished plans deleted after an audit moved the five decisions only they held into ARCHITECTURE; links repointed. README brought up to date (own runtime, Export to Unity, M0); comments that were no longer true rewritten. Plan: [CLEANUP-PLAN.md](../../Animation-BoneBurst-Src/docs/CLEANUP-PLAN.md). Guard: `scripts/check.sh` equal to the baseline (2,245 passed, 3 skipped, build clean).
+
 - **`.claude/skills/` in this repository**: the four gates the root CLAUDE.md names (`parity-harness`, `unity-playtest`, `assembly-tier-check`, `managed-reference-check`), copied from M0-Animation2D's last commit (not another session's uncommitted edit there) with the project name updated; the first commit had left `.claude/` out. Guard: each runs here and passes (parity 215 of 215 bit-exact; compile 0 errors; tiers; managed references).
 
 - **Pipeline plan R5 (a desktop shell for the BoneBurst editor) skipped**, owner's decision (docs only): the editor stays a browser app. Plan: [BONEBURST-PIPELINE-PLAN.md](../../Animation-BoneBurst-Src/docs/BONEBURST-PIPELINE-PLAN.md).

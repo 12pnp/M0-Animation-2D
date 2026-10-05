@@ -81,6 +81,7 @@ decisions.
 npm run dev        # Vite on :5181 — open in Chrome or Edge
 npm test           # vitest run
 npm run build      # tsc --noEmit && vite build
+scripts/check.sh   # build, test, and the two checks below (no spine-pixi in dist/, core/ imports)
 npx tsc --noEmit   # typecheck alone; faster than a build while iterating
 ```
 
@@ -169,6 +170,6 @@ stage pose Spine files with our own runtime (`core/boneburst/runtime/`,
 docs/PREVIEW-RUNTIME-PLAN.md). `@esotericsoftware/spine-core` (the test oracle) and
 `spine-pixi-v8` (the Preview's oracle under `npm run dev:oracle`) are dev
 dependencies under the Spine Runtimes License: nothing in `src/` imports them, a
-build holds none of them, and CI checks `dist/`. Whether users then need no Spine
+build holds none of them, and `scripts/check.sh` checks `dist/`. Whether users then need no Spine
 Editor licence is the plan's open legal question (▸ Licence effect, Risks): do
 not state it as settled.

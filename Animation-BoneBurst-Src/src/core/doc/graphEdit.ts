@@ -4,7 +4,7 @@ import { type ChannelKey, sampleChannel } from "./propertyKeys";
 import type { TimelineProp } from "./types";
 
 /**
- * The graph editor's rules (docs/GRAPH-PLAN.md, ARCHITECTURE ▸ Graph editor):
+ * The graph editor's rules (ARCHITECTURE ▸ Graph editor):
  * a channel's keys (`channelKeys`) as curves over time, a key moved in time
  * and value, an interval bent by its handles. The panel only draws and
  * applies them; `setChannel` writes the result back.

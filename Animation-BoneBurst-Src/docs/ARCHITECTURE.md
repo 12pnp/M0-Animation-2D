@@ -579,7 +579,7 @@ The pure rules are in `core/doc/ikKeys.ts`: `ikPoseAt`, `withIkKey`, `moveIkKeys
 ### Events
 
 A symbol's events and the frames its animations fire them at, as Spine's skeleton `events`
-and animation `events` timeline (docs/EVENTS-PLAN.md). `SymbolItem.events: EventDef[]`
+and animation `events` timeline. `SymbolItem.events: EventDef[]`
 (name, int, float, string, audio, volume, balance; names unique) and `Animation.events:
 EventKey[]` (frame, name, and the values it overrides), schema 19. Several keys may share a
 frame and fire in list order. The pure rules are `core/doc/events.ts` (`eventValues`,
@@ -625,7 +625,8 @@ with the keys a rename or delete changed).
   `audio/` beside the skeleton, at that path. The Events panel's Sound list adds files.
 - **The Preview** lists the events the runtime fires while playing (an `AnimationState`
   listener; a seek does not fire), and plays their sounds at their volume and balance
-  (Web Audio, decoded once per file). Its queue (the film button) plays animations one after
+  (Web Audio, decoded once per file). Only the Preview plays sounds: it runs the runtime,
+  which is ground truth, and the stage's own playback stays silent. Its queue (the film button) plays animations one after
   another, each crossfaded into from the one above over its mix: `setAnimation` for the
   first, `addAnimation` with `setMixDuration(mix, 0)` for each next, so it starts its mix
   before the previous ends; only the last loops, while Loop is on (`preview/queue.ts`,
@@ -637,7 +638,7 @@ with the keys a rename or delete changed).
 
 ### Graph editor
 
-The Graph panel (`view/panels/GraphPanel.ts`, a tab beside Timeline; docs/GRAPH-PLAN.md) shows
+The Graph panel (`view/panels/GraphPanel.ts`, a tab beside Timeline) shows
 the first selected node's property values over time, and the mix of each IK constraint it takes
 part in, as Spine's Graph view does. It edits the same channels as the timeline's property
 rows: `channelKeys` reads a property as `{ frame, values, eases }` per key, one value and ease
@@ -1244,7 +1245,7 @@ runtimes matter to the exporter:
 - **Unity does not import `.atlas` as text.** Export Settings ▸ Files ▸ "Atlas as .atlas.txt
   (Unity)" names it the way spine-unity's importer looks for it.
 
-Rerun in phase H (docs/PHASE-H-PLAN.md) on the stickman and four rigs built from it with the
+Rerun in phase H on the stickman and four rigs built from it with the
 AI tools, which hold every format change since: IK keys with softness, transform constraints
 and their keys, events with a sound, physics, a slider, a path, the constraint order and a bone
 colour (`H_Constraints`); weighted and unweighted meshes with deform keys (`H_Mesh`); skins
@@ -1253,14 +1254,14 @@ bounding boxes, a point and a keyed sequence (`H_Boxes`). spine-csharp 4.3.40 ag
 0.00014 px at every frame. The comparison covers bones, draw order, attachments and colours,
 not mesh vertices.
 
-Rerun in phase I (docs/PHASE-I-PLAN.md) with three more: `I_Keys` (inherit modes and keys,
+Rerun in phase I with three more: `I_Keys` (inherit modes and keys,
 physics, slider and path keys, a box colour, a bone icon), `I_Linked` (a weighted mesh with two
 linked images, one following its deform keys and one not, switched in by keys) and `I_Raptor`
 (spine-unity's raptor opened and exported by the editor, its weighted meshes through the model
 with their per-bone offsets, beside the sample's own atlas). All eight rigs agree within
 0.00043 px.
 
-Rerun in phase J (docs/PHASE-J-PLAN.md). The folder had been emptied since, so it holds five
+Rerun in phase J. The folder had been emptied since, so it holds five
 new rigs: four of spine-unity's samples opened and exported by the editor, each with a phase J
 format held by the model and edited (`J_Spineboy`: the point moved and turned with `set_point`;
 `J_Stretchyman`: weighted paths, a knot dragged; `J_MixMatch`: 33 skins with their meshes and
@@ -1271,13 +1272,13 @@ rotated atlas region at another corner, so up to a shift round them), every mesh
 path's and clip's world vertices, and a point's position and rotation, at every frame and in
 each skin at the setup pose. All five agree within 0.0019 px.
 
-Rerun in phase K (docs/PHASE-K-PLAN.md) with four more: `K_Stretchyman` (its path constraints
+Rerun in phase K with four more: `K_Stretchyman` (its path constraints
 the model's, one moved and its spacing changed), `K_Doi` (Spineunitygirl's tints, one set with
 `set_tint`), `K_Goblins` (deform keys in the goblin skins, one added) and `K_Authored` (the
 stickman with a remapped transform constraint, a box with a skin's own and a tint). A rig with up
 to four skins now plays every animation in each skin too. All nine agree within 0.0019 px.
 
-Rerun in phase L (docs/PHASE-L-PLAN.md) with `L_Authored`: the stickman with a skin colour (the
+Rerun in phase L with `L_Authored`: the stickman with a skin colour (the
 skin's `color`, which spine-csharp's reader ignores as spine-core's does), a mesh made for a
 skin's own image and a bent, smooth path. All ten agree within 0.0019 px.
 
@@ -1553,7 +1554,7 @@ docs/PREVIEW-RUNTIME-PLAN.md P5, served from `node_modules` at `/vendor/spine-pi
 `vite.config.ts` (`oracleRuntime`) when Vite runs in mode `oracle` (`npm run dev:oracle`), and
 added by `previewClient.ts` with its adapter (`spineRig.ts`) only then; there
 `localStorage["animo.previewRuntime"] = "boneburst"` plays ours, for comparing the two in one
-origin. A build folds the mode test away and has no copy of it; CI fails if one appears. Not obvious:
+origin. A build folds the mode test away and has no copy of it; `scripts/check.sh` fails if one appears. Not obvious:
 
 - **Order matters.** The IIFE calls `require("pixi.js")`; its embedded shim maps that to the
   global `PIXI`, and only when `PIXI` already exists. So `pixi.js` loads first (the oracle is
@@ -1684,7 +1685,7 @@ through it (`boneburstPose.ts`, P3b), and it is the Preview's runtime (P4).
   colour and dark colour, blend, page). Spine cuts clipped triangles and we mask them, so a clip
   is checked by what it covers: with that clip moved out of sight, spine-core draws exactly the
   slots ours does not put under it. A region's quad is split along the same diagonal with its
-  triangles in Spine's order (`QUAD`). Our exports run in CI; the samples where they exist.
+  triangles in Spine's order (`QUAD`). Our exports run in `npm test`; the samples where they exist.
 - File ▸ Open Spine reads atlases with `readAtlas`; nothing in `src/` imports spine-core, and
   since P5 the stage's own IK and transform constraints are solved by `ik.ts` and
   `transform.ts` too, through `LooseBones` (`bones.ts`: the `Bones` the solvers take, which
@@ -2137,14 +2138,16 @@ ones; the DragonBones solver it replaced disagreed on three of the seven.
 ## Transform constraints
 
 Bones that follow another bone's rotation, position, scale or shear, as Spine 4.3's transform
-constraint (docs/TRANSFORM-CONSTRAINT-PLAN.md). `SymbolItem.transforms` (schema 20):
+constraint. `SymbolItem.transforms` (schema 20):
 `{ id, name, boneIds, sourceId, localSource?, localTarget?, additive?, clamp?, offsets, mix,
 properties }`, every value as Spine writes it (y up, angles counter-clockwise), so a file's
 constraint round-trips unchanged.
 
 - **4.3's shape**: `properties` maps a source property to target properties, each with an
   offset, a scale and a max (`clamp`). A new constraint maps each property to itself at full
-  mix with no offsets, so the bones take the source's world transform. A file's remapped table
+  mix with no offsets, so the bones take the source's world transform. A file's constraint
+  with no `properties` maps nothing (spine-core 4.3.13 reads none), and the importer keeps
+  it an empty map, not the identity map. A file's remapped table
   is read, solved, exported and kept. One mix per target property; spine-core reads only the
   mixes a property maps to, and the solver does the same (`usedMixes`).
 - **The map is edited** in Properties ▸ Transform (Setup mode): Drive picks a source property
@@ -2194,8 +2197,8 @@ constraint round-trips unchanged.
 
 ## Meshes
 
-An image whose points bend, as Spine's mesh attachment, weights and `deform` timeline
-(docs/MESH-PLAN.md). `Node.mesh` for display 0, `DisplayRef.mesh` for the others (schema 21):
+An image whose points bend, as Spine's mesh attachment, weights and `deform` timeline.
+`Node.mesh` for display 0, `DisplayRef.mesh` for the others (schema 21):
 `{ width, height, points, triangles, hull, weights? }`, points in the image's pixels (y down,
 origin top-left), so a point is also its texture coordinate (`meshUvs`). The first `hull`
 points, in order, are the outline. `Animation.deforms[nodeId]` holds `{ frame, offsets, tween? }`
@@ -2305,7 +2308,7 @@ per mesh node, one offset pair per point in the node's space.
 
 ## Skins
 
-One skeleton, several characters or outfits, as Spine's skins (docs/SKINS-PLAN.md).
+One skeleton, several characters or outfits, as Spine's skins.
 `SymbolItem.skins` (schema 22): `{ name, displays?, bones?, ik?, transforms? }`, where
 `displays[nodeId][index]` is what the skin shows in place of that node's display. The default
 skin is the nodes' own displays. `DisplayRef.skinOnly` (display 0: `Node.skinOnly`) leaves a
@@ -2353,7 +2356,8 @@ editing.
   sample against the original (369 overrides and 130 skin bones in mix-and-match).
 - **Editing**: the Skins panel makes, renames (also double-click) and deletes skins, its
   switches choose what the stage and Preview show, and a click picks the skin the Properties
-  panel edits (`ui.editSkin`, `editedSkin`). Properties ▸ Skins on an image: the skin's image for
+  panel edits (`ui.editSkin`, `editedSkin`). Skins named `folder/name` are grouped under
+  their folder in the panel; there is no other folder UI. Properties ▸ Skins on an image: the skin's image for
   each display and Only in skins; on a bone: which skins have it and the constraints it drives.
   Every edit is one `SetSkins` (the skins, the stage's choice and the carried skins as one
   value) or `SetSkinOnly`; both invalidate the symbol's bounds, as `SetStageSkins` now does.
@@ -2675,7 +2679,7 @@ step, "Drag Path", built from the tracks as they were at pointer-down):
 - `rotateTo` is exact under any affine parent (mirrored, unevenly scaled): it aims in the
   parent's space, where the parent maps the ray to the pointer onto a ray. A parent the
   IK solves is never turned along.
-- **A chain bone's path keys its target** (`ikPathDrag`, `ikTargetFor`; docs/IK-PATH-PLAN.md).
+- **A chain bone's path keys its target** (`ikPathDrag`, `ikTargetFor`).
   The effector's tip: the target moves by what the solved tip misses until it lands (the
   real pose, so a partial weight or an opened Spine rig lands too); out of reach the target
   goes on the pointer and the chain points at it. The knee (the root's tip or the
@@ -2689,7 +2693,9 @@ step, "Drag Path", built from the tracks as they were at pointer-down):
   look-at chain: the target goes on the ray from the bone through the pointer, at its
   distance. The root's origin is refused (the IK only turns it), as are a locked or hidden
   target and a target inside its chain; weight 0 is the plain rules. Such a bone shows no
-  handles: its own keys do not shape its path. One undo step, "Drag Path (IK)".
+  handles: its own keys do not shape its path. ⇧ shifts every key of the target by the same
+  world offset (the translate rule); ⌥ does nothing here, since `pathDragMode` picks the IK
+  rule before it reads the parent option. One undo step, "Drag Path (IK)".
 - **Path drag** is a per-bone option (`Node.pathDrag?: "parent"`, schema 13, Properties ▸
   Bone, `SetPathDrag`), never exported; ⌥ flips it for one drag, ⇧ moves every key of the
   bone by what the dragged frame moved (`shiftKeys`).
@@ -2989,7 +2995,10 @@ already has it.
   are deliberately outside the table, so switching a theme never clobbers a hand-tuned
   palette. The `:root` literals in `theme.css` mirror the default theme so the first paint
   is right before the script runs — `tests/themes.test.ts` holds that, the token
-  completeness and every theme's text-contrast floor.
+  completeness and every theme's text-contrast floor. Hover and active states use
+  `filter: brightness()` so they follow whichever background a theme gives; semantic
+  colours (error reds, the recovery bar, IK colours, checkerboards, the AI status dots) are
+  not themed. A light theme would need `color-scheme` work and a second ink set.
 - **Interface ▸ Text is Photoshop's four steps** (`interface.fontSize`, `small` = scale
   1 exactly, so the default moves nothing). It is a TEXT size, not a UI zoom: the font
   tokens and the heights of the rows built to hold text scale, icons and `--w-rail` do

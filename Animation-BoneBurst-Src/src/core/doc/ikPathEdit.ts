@@ -11,7 +11,7 @@ import { insertKeyframe, keyIndexAt } from "./timeline";
 import type { Animation, IkConstraint, SymbolItem, Track } from "./types";
 
 /**
- * Dragging the path of a bone the IK solves (docs/IK-PATH-PLAN.md). A chain
+ * Dragging the path of a bone the IK solves (ARCHITECTURE ▸ Bone paths). A chain
  * bone is never keyed, so the drag keys the constraint's target instead, at
  * the place that puts the dragged dot under the pointer:
  *
