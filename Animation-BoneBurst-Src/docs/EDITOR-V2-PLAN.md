@@ -1,7 +1,10 @@
 # Editor v2 — from scratch, MIT, no Animo code — plan
 
-**Status:** not started (plan; reviewed against the code 2026-10-06). Owner decisions D1–D5 taken
-2026-10-06 (end of this file); next is E0.
+**Status:** E0 done 2026-10-06: `../Editor-BoneBurst-Src/` holds the MIT
+`LICENSE`, fresh `THIRD-PARTY-NOTICES.md`, the architecture spec (`docs/SPEC.md`), the clean-room
+rules (`CLAUDE.md`) and an empty Vite + TypeScript app whose `scripts/check.sh` passes (build,
+3 tests, licence guards). Written from this plan, the Doc/Format specs and Spine's public format;
+the fork's sources were not opened. Next: E1 (model and IO, headless).
 
 **Owner decision 2026-10-05:** replace the Animo-fork editor with a new editor
 that contains **no Animo code**, licensed **MIT** from its first commit. The

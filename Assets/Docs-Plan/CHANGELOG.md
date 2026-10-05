@@ -13,6 +13,8 @@ flowchart LR
 
 ## 2026-10-06
 
+- **BoneBurst Editor v2 started (E0): `Editor-BoneBurst-Src/`, MIT, no Animo code.** MIT `LICENSE`, fresh `THIRD-PARTY-NOTICES.md`, the architecture spec (`docs/SPEC.md`: Spine JSON as the document, immutable model, a versioned sidecar, undo over whole documents), the clean-room rules in its `CLAUDE.md`, and an empty Vite + TypeScript app on port 5185. Written from the v2 plan, the Doc/Format specs and Spine's public format; the fork's sources were not opened. Root `.gitignore`, `.gitattributes` and `CLAUDE.md` list the folder. Plan: [EDITOR-V2-PLAN.md](../../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md). Guard: its `scripts/check.sh` (build, 3 tests, no Spine runtime import, fork-name tripwire). Next: E1.
+
 - **The BoneBurst editor is version 0.2.0** (`Animation-BoneBurst-Src/package.json`, shown in About): the refactor removed motion blur and moved saved documents to version 28, which an older editor refuses, so the minor version moves.
 
 - **BoneBurst editor v2: owner decisions D1–D5 taken** (docs only): the Animo-fork editor takes bug fixes and data-format work only; v2 lives in `Editor-BoneBurst-Src/`; the Morenoise email goes out as a hedge (owner); v2 is Spine-native (no nested symbols, sidecar for view state only); the tool contract gets a new version. Plan: [EDITOR-V2-PLAN.md](../../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md). Next: E0.

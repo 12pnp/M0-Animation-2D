@@ -172,3 +172,4 @@ LightingData.asset     binary
 
 # The BoneBurst editor keeps its own history, binaries stored plainly: not in LFS.
 /Animation-BoneBurst-Src/** !filter !diff !merge
+/Editor-BoneBurst-Src/** !filter !diff !merge

@@ -1,0 +1,20 @@
+{
+  "name": "boneburst-editor",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "A Spine 4.3 animation editor whose document is Spine JSON",
+  "license": "MIT",
+  "author": "Panupun Dev",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "test": "vitest run",
+    "check": "scripts/check.sh"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vite": "^6.3.5",
+    "vitest": "^3.1.4"
+  }
+}
