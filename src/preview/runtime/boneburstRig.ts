@@ -11,8 +11,8 @@ import type { PreviewRig, RigSource } from "./previewRig";
  * our own reader and pose (`core/spine/runtime/`), drawn as one Pixi mesh per
  * slot. Not the default yet; `animo.previewRuntime` = "boneburst" turns it on.
  *
- * P0 cuts between queued animations instead of crossfading, and fires no
- * events; what the file holds beyond P0 is in `unsupported`.
+ * It cuts between queued animations instead of crossfading, and fires no
+ * events yet; what else a file holds that it does not play is in `unsupported`.
  */
 export function boneburstRig(src: RigSource): PreviewRig {
   const atlas = readAtlas(src.atlas);
@@ -35,11 +35,12 @@ export function boneburstRig(src: RigSource): PreviewRig {
   display.addChild(debugLayer);
   let debug = src.debug;
 
-  // One mesh per slot, made when the slot first shows a region.
-  const meshes: Array<{ mesh: PIXI.Mesh; geometry: PIXI.MeshGeometry; positions: Float32Array; uvs: Float32Array } | null> =
-    rig.data.slots.map(() => null);
+  // One Pixi mesh per slot, rebuilt when the shape it draws changes: a
+  // region's quad, or a mesh attachment's own triangles.
+  interface Drawn { mesh: PIXI.Mesh; geometry: PIXI.MeshGeometry; positions: Float32Array; uvs: Float32Array; shape: unknown }
+  const meshes: Array<Drawn | null> = rig.data.slots.map(() => null);
+  const QUAD = new Uint32Array([0, 1, 2, 2, 3, 0]);
   let drawnOrder = "";
-  const corners = new Float64Array(8);
 
   // The track: what plays now, and what the queue holds after it.
   let entry: { anim: AnimationData; loop: boolean; trackTime: number } | null = null;
@@ -58,25 +59,36 @@ export function boneburstRig(src: RigSource): PreviewRig {
     draw();
   }
 
+  /** The slot's Pixi mesh for `shape` (a region's `QUAD` or a mesh
+   *  attachment's triangles), made anew when the shape changes. */
+  function drawnFor(slot: number, shape: Uint32Array, vertexCount: number, texture: PIXI.Texture): Drawn {
+    const old = meshes[slot];
+    if (old && old.shape === shape) return old;
+    old?.mesh.destroy();
+    const positions = new Float32Array(vertexCount * 2), uvs = new Float32Array(vertexCount * 2);
+    const geometry = new PIXI.MeshGeometry({ positions, uvs, indices: shape });
+    const made: Drawn = { mesh: new PIXI.Mesh({ geometry, texture }), geometry, positions, uvs, shape };
+    meshes[slot] = made;
+    drawnOrder = "";
+    return made;
+  }
+
   function draw(): void {
     rig.drawOrder.forEach((slot) => {
       const att = rig.attachmentOf(slot);
-      let m = meshes[slot];
-      if (!att || !att.region) { if (m) m.mesh.visible = false; return; }
-      const texture = textures.get(att.region.page.name)!;
-      if (!m) {
-        const positions = new Float32Array(8), uvs = new Float32Array(8);
-        const geometry = new PIXI.MeshGeometry({ positions, uvs, indices: new Uint32Array([0, 1, 2, 2, 3, 0]) });
-        m = { mesh: new PIXI.Mesh({ geometry, texture }), geometry, positions, uvs };
-        meshes[slot] = m;
-        drawnOrder = "";
-      }
+      const frame = att && rig.frameOf(slot, att);
+      if (!att || !frame?.region) { const m = meshes[slot]; if (m) m.mesh.visible = false; return; }
+      const texture = textures.get(frame.region.page.name)!;
+      const m = att.kind === "mesh"
+        ? drawnFor(slot, att.triangles, att.vertexCount, texture)
+        : drawnFor(slot, QUAD, 4, texture);
       m.mesh.visible = true;
       m.mesh.texture = texture;
-      rig.regionWorld(slot, att, corners);
+      if (att.kind === "mesh") rig.meshWorld(slot, att, m.positions);
+      else rig.regionWorld(slot, att, m.positions);
       // The format is y up, the screen y down.
-      for (let i = 0; i < 8; i += 2) { m.positions[i] = corners[i]!; m.positions[i + 1] = -corners[i + 1]!; }
-      m.uvs.set(att.uvs);
+      for (let i = 1; i < m.positions.length; i += 2) m.positions[i] = -m.positions[i]!;
+      m.uvs.set(frame.uvs);
       m.geometry.getBuffer("aPosition").update();
       m.geometry.getBuffer("aUV").update();
       const c = rig.color, k = slot * 4, a = att.color;

@@ -1561,25 +1561,41 @@ the surface `src/preview/` calls. Not obvious:
 
 Our own Spine 4.3 runtime, to replace spine-pixi-v8 and spine-core in the shipped app
 (docs/PREVIEW-RUNTIME-PLAN.md). Written from the format and held to spine-core by tests, never
-from spine-core's source. P0 is in: bones with the normal inherit mode, slots, region
-attachments, skins, and the bone, attachment, colour and draw order timelines.
+from spine-core's source. P0 and P1 are in: bones with the normal inherit mode, slots, region
+attachments, skins (and the bones only a skin enables), meshes weighted or not, linked meshes,
+sequences, and the bone, attachment, colour, draw order, deform and sequence timelines.
 
 - **The pose is in `core/spine/runtime/`, DOM-free**: `readAtlas` (`atlasRead.ts`), `readRig`
   (`rigData.ts`, the file into our model) and `Rig` (`rig.ts`: setup pose, `apply` at a time,
-  `updateWorld`, region corners). The stage will pose through it too (P3b).
+  `updateWorld`, `regionWorld`, `meshWorld`, `frameOf` for a sequence's image). The stage will
+  pose through it too (P3b). Every attachment has `frames` (one, or one per sequence frame), each
+  with its atlas region and page UVs; a linked mesh shares its source's geometry, and plays its
+  source's deform and sequence keys (`timeline`) unless the file says `timelines: false`.
 - **The Preview drives a `PreviewRig`** (`src/preview/runtime/`): `spineRig` wraps
-  spine-pixi-v8 and is the default; `boneburstRig` draws ours as one Pixi mesh per slot when
+  spine-pixi-v8 and is the default; `boneburstRig` draws ours as one Pixi mesh per slot, rebuilt
+  when the shape it draws changes (a region's quad, a mesh's own triangles), when
   `localStorage["animo.previewRuntime"] = "boneburst"`. Whatever the file holds beyond what ours
   plays is listed in `RigData.unsupported` and shown on a chip over the preview, never dropped
   silently.
 - **Held to spine-core frame by frame**: `tests/spineRuntime.test.ts` plays our exports and
-  spine-unity's samples through both and compares every bone's world matrix, each slot's
-  attachment and colour, the draw order, and each region's corners and UVs;
+  spine-unity's samples through both, and each sample again under each of its skins, and compares
+  every bone's world matrix and whether it is active, each slot's attachment and colour, the draw
+  order, each region's corners and UVs, each mesh's world vertices, UVs and triangles, and each
+  sequence's frame. It counts what it compared and fails on a zero: in 4.3 every attachment has a
+  `Sequence` object (`hasPathSuffix()` marks a real one), and P0's test skipped every region for
+  that reason without saying so;
   `tests/atlasRead.test.ts` compares the atlas reader. Both runtimes are given the file without
   what P0 does not solve (constraints, inherit modes), so everything else in it is compared.
 - **Two things the runtime does that the exact maths does not**, measured, not read: degrees go
   to radians with π as `3.1415927` (`DEG_RAD`: cos 90° is -2.3e-8), and key times, values and
-  curve polylines are 32-bit floats. Without either, every matrix is off by about 1e-7.
+  curve polylines are 32-bit floats. Without either, every matrix is off by about 1e-7. So are
+  attachment and draw order key times (a key at 0.4 s is 0.40000000596, and a frame at 0.4 is
+  still before it), deform key vertices (an unweighted mesh's key stored as setup plus offsets),
+  and mesh vertices, UVs and weights.
+- **Sequences, measured**: a frame count within 1e-5 of a frame short of a whole number rounds
+  up (`floor(elapsed / delay + 1e-5)`), and a key without a `delay` keeps the previous key's
+  (mode and index do not carry). A file without `skeleton.fps` has fps 0 in both runtimes, and the
+  Preview falls back to 24; our reader once defaulted to 30 and seeked every frame elsewhere.
 - **Curve points can differ by one 32-bit step**: spine-core finds them by forward differencing,
   `spinePolyline` evaluates the cubic. The test compares positions at the rig's size for that
   reason; matrices stay strict.

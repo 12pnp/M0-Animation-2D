@@ -36,7 +36,7 @@ export function spineRig(src: RigSource): PreviewRig {
   return {
     display: view,
     animations: data.animations.map((a) => a.name),
-    fps: data.fps,
+    fps: data.fps || 0,
     unsupported: [],
     durationOf: (name) => data.findAnimation(name)?.duration ?? 0,
     start(name, loop) {

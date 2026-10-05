@@ -101,6 +101,12 @@ Some groundwork exists in this repo already, but not all of it is clean:
   animations cut), events, debug draw beyond bones.
 - **P1 — surfaces.** Meshes and deform timelines, linked meshes, skins, draw
   order, sequence sprites.
+  **Done**: meshes weighted or not, linked meshes (their source's deform and
+  sequence keys), deform keys, sequences and their keys in every mode, the
+  bones a skin enables. `tests/spineRuntime.test.ts` also runs each sample
+  under each skin, and fails on a check that compared nothing (P0's test had
+  skipped every region). Seen in the Preview against spine-pixi: Goblins
+  (linked meshes, deform, a skin) to 5e-7, the Dragon's sequence wings.
 - **P2 — behaviour.** IK / transform / path / slider constraints, clipping,
   two-colour tint, events, inherit timelines. IK and transform are written
   clean-room from the format's behaviour and the oracle tests, by someone
