@@ -2,6 +2,8 @@ import { updateBone } from "@/edit/bones";
 import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { EditRefused } from "@/edit/history";
 import { addHullVertex, addVertex, deleteVertex, moveVertex } from "@/edit/mesh";
+import { addGuide, moveGuide, removeGuide } from "@/edit/sidecar";
+import { axisOf, guideScreen, hitGuide, RULER, rulerAt, rulerOf, tickStep } from "./guides";
 import { boneInherit, boneNumber } from "@/model/defaults";
 import type { Session } from "../session";
 import { type Camera, fit, pan, toScreen, toWorld, zoomAt } from "./camera";
@@ -64,6 +66,8 @@ export class Stage {
   private dpr = 1;
   private drag: Drag | null = null;
   /** Mesh mode: the vertex being dragged. The selected one is the session's. */
+  /** A guide being dragged (out of a ruler, or moved), by its index in the sidecar. */
+  private guideDrag: { index: number; overRuler: boolean } | null = null;
   private vertexDrag: { view: MeshView; index: number } | null = null;
   private panning: { x: number; y: number } | null = null;
   private queued = false;
@@ -100,7 +104,11 @@ export class Stage {
 
   /** A new document: fit it once the stage has a size. */
   opened(): void {
-    this.fitted = false;
+    // The camera the opened sidecar kept, else fit the skeleton once the stage has a size.
+    const cam = this.session.openedCamera;
+    this.session.openedCamera = null;
+    this.fitted = !!cam;
+    if (cam) this.camera = cam;
     this.renderer.keepOnly(this.session.pages);
     this.redraw();
   }
@@ -158,6 +166,85 @@ export class Stage {
     if (sel >= 0) this.drawGizmo(g, sel, selected);
     const mesh = this.meshMode();
     if (mesh) this.drawMesh(g, mesh, selected, bone);
+    this.drawGuides(g, css.getPropertyValue("--guide").trim() || "#36c2d9");
+    this.drawRulers(g, css);
+  }
+
+  private drawGuides(g: CanvasRenderingContext2D, color: string): void {
+    const guides = this.session.sidecar.guides, { width, height } = this.size;
+    g.save();
+    g.strokeStyle = color;
+    g.lineWidth = 1;
+    guides.forEach((gd, i) => {
+      const at = Math.round(guideScreen(gd, this.camera, this.size)) + 0.5;
+      // A guide dragged back onto its ruler is about to go.
+      g.globalAlpha = this.guideDrag?.index === i && this.guideDrag.overRuler ? 0.3 : 0.9;
+      g.beginPath();
+      if (gd.axis === "x") { g.moveTo(at, 0); g.lineTo(at, height); } else { g.moveTo(0, at); g.lineTo(width, at); }
+      g.stroke();
+    });
+    g.restore();
+  }
+
+  /** Rulers along the top and left edges, in skeleton units: where guides are dragged out of. */
+  private drawRulers(g: CanvasRenderingContext2D, css: CSSStyleDeclaration): void {
+    const { width, height } = this.size, c = this.camera;
+    const bg = css.getPropertyValue("--panel").trim() || "#222", line = css.getPropertyValue("--line").trim() || "#444", text = css.getPropertyValue("--muted").trim() || "#999";
+    g.save();
+    g.fillStyle = bg;
+    g.fillRect(0, 0, width, RULER);
+    g.fillRect(0, 0, RULER, height);
+    g.strokeStyle = line;
+    g.fillStyle = text;
+    g.font = `9px "JetBrains Mono", monospace`;
+    g.lineWidth = 1;
+    const step = tickStep(c.zoom);
+    const label = (v: number) => String(Math.round(v * 1000) / 1000);
+    g.beginPath();
+    // Top ruler: x.
+    for (let v = Math.ceil((c.x - width / 2 / c.zoom) / step) * step; ; v += step) {
+      const x = Math.round(toScreen(c, this.size, v, 0)[0]) + 0.5;
+      if (x > width) break;
+      if (x < RULER) continue;
+      g.moveTo(x, RULER - 6); g.lineTo(x, RULER);
+      g.fillText(label(v), x + 2, 9);
+    }
+    // Left ruler: y, labels turned to read upwards.
+    for (let v = Math.floor((c.y + height / 2 / c.zoom) / step) * step; ; v -= step) {
+      const y = Math.round(toScreen(c, this.size, 0, v)[1]) + 0.5;
+      if (y > height) break;
+      if (y < RULER) continue;
+      g.moveTo(RULER - 6, y); g.lineTo(RULER, y);
+      g.save(); g.translate(9, y - 2); g.rotate(-Math.PI / 2); g.fillText(label(v), 0, 0); g.restore();
+    }
+    g.moveTo(0, RULER + 0.5); g.lineTo(width, RULER + 0.5);
+    g.moveTo(RULER + 0.5, 0); g.lineTo(RULER + 0.5, height);
+    g.stroke();
+    g.restore();
+  }
+
+  /** A press on a ruler (a new guide) or on a guide (move it); false when on neither. */
+  private guideDown(sx: number, sy: number): boolean {
+    const s = this.session, ruler = rulerAt(sx, sy);
+    if (ruler) {
+      const [wx, wy] = toWorld(this.camera, this.size, sx, sy);
+      s.setSidecar(addGuide(s.sidecar, axisOf(ruler), ruler === "top" ? wy : wx));
+      this.guideDrag = { index: s.sidecar.guides.length - 1, overRuler: true };
+      return true;
+    }
+    const i = hitGuide(s.sidecar.guides, this.camera, this.size, sx, sy);
+    if (i < 0) return false;
+    this.guideDrag = { index: i, overRuler: false };
+    return true;
+  }
+
+  private guideTo(sx: number, sy: number): void {
+    const d = this.guideDrag!, s = this.session, gd = s.sidecar.guides[d.index];
+    if (!gd) return;
+    const [wx, wy] = toWorld(this.camera, this.size, sx, sy);
+    d.overRuler = rulerAt(sx, sy) === rulerOf(gd.axis) || (gd.axis === "y" ? sy < RULER : sx < RULER);
+    s.setSidecar(moveGuide(s.sidecar, d.index, gd.axis === "x" ? wx : wy));
+    this.redraw();
   }
 
   /**
@@ -333,6 +420,7 @@ export class Stage {
       this.panning = { x: sx, y: sy };
       return;
     }
+    if (rulerAt(sx, sy) && this.guideDown(sx, sy)) return;
     const mesh = this.meshMode();
     if (mesh && this.meshDown(mesh, sx, sy)) return;
     let name = pickBone(this.screenBones(), sx, sy, 6, this.session.selectedBone);
@@ -345,6 +433,7 @@ export class Stage {
       }
     }
     if (name === null) {
+      if (this.guideDown(sx, sy)) return;
       this.session.select(null);
       this.panning = { x: sx, y: sy };
       return;
@@ -385,6 +474,8 @@ export class Stage {
       this.dragTo(this.pointer, e.shiftKey);
     } else if (this.vertexDrag) {
       this.vertexTo(this.pointer, e.altKey);
+    } else if (this.guideDrag) {
+      this.guideTo(sx, sy);
     }
     this.onPointer(`${this.pointer[0].toFixed(1)}, ${this.pointer[1].toFixed(1)}`);
   }
@@ -428,6 +519,13 @@ export class Stage {
   private up(e: PointerEvent): void {
     if (this.overlay.hasPointerCapture(e.pointerId)) this.overlay.releasePointerCapture(e.pointerId);
     this.panning = null;
+    const gd = this.guideDrag;
+    if (gd) {
+      this.guideDrag = null;
+      // Let go over its ruler: the guide is removed.
+      if (gd.overRuler) this.session.setSidecar(removeGuide(this.session.sidecar, gd.index));
+      this.redraw();
+    }
     if (this.drag || this.vertexDrag) {
       this.drag = null;
       this.vertexDrag = null;

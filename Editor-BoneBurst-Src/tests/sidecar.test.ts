@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { addGuide, hasContent, moveGuide, removeGuide, viewOf, withView } from "@/edit/sidecar";
+import { readSkeleton } from "@/io/skeletonRead";
+import { writeSkeleton } from "@/io/skeletonWrite";
 import { readSidecar, sidecarName, writeSidecar } from "@/io/sidecar";
+import { axisOf, guideScreen, hitGuide, rulerAt, rulerOf, tickStep } from "@/ui/stage/guides";
+import { STICKMAN } from "./fixtures/rigs";
+import type { Json } from "@/model/json";
 import { EMPTY_SIDECAR, type Sidecar } from "@/model/sidecar";
 
 const FULL: Sidecar = {
@@ -32,5 +40,63 @@ describe("sidecar", () => {
   });
   it.each([["hero.json", "hero.bb.json"], ["a.b.JSON", "a.b.bb.json"], ["noext", "noext.bb.json"]])("names %s → %s", (a, b) => {
     expect(sidecarName(a)).toBe(b);
+  });
+});
+
+describe("sidecar edits", () => {
+  it("add, move and remove guides, to two decimals; no change is the same sidecar", () => {
+    let s = addGuide(EMPTY_SIDECAR, "y", 10.456);
+    s = addGuide(s, "x", -3);
+    expect(s.guides).toEqual([{ axis: "y", at: 10.46 }, { axis: "x", at: -3 }]);
+    expect(hasContent(s)).toBe(true);
+    expect(moveGuide(s, 0, 10.4601)).toBe(s);
+    s = moveGuide(s, 1, 7.25);
+    expect(s.guides[1]).toEqual({ axis: "x", at: 7.25 });
+    expect(removeGuide(s, 5)).toBe(s);
+    expect(removeGuide(s, 0).guides).toEqual([{ axis: "x", at: 7.25 }]);
+    expect(hasContent(EMPTY_SIDECAR)).toBe(false);
+  });
+  it("keeps the view through the file, a newer editor's view keys too, and leaves out what does not read", () => {
+    const s = withView({ ...EMPTY_SIDECAR, view: new Map<string, Json>([["later", 1], ["skin", "old"]]) }, { camera: { x: 1.234, y: -5, zoom: 2.123456 }, skin: "alt", animation: "run" });
+    const back = readSidecar(writeSidecar(s)).sidecar;
+    expect(viewOf(back)).toEqual({ camera: { x: 1.23, y: -5, zoom: 2.1235 }, skin: "alt", animation: "run" });
+    expect(back.view.get("later")).toBe(1);
+    expect(viewOf(withView(back, {}))).toEqual({});
+    expect(viewOf({ ...EMPTY_SIDECAR, view: new Map<string, Json>([["camera", new Map<string, Json>([["x", 1], ["y", 2], ["zoom", 0]])], ["skin", 3]]) })).toEqual({});
+  });
+  it("never changes the skeleton: its text is the same with any sidecar beside it", () => {
+    const text = readFileSync(join(STICKMAN, "Stickman_IK.json"), "utf8");
+    const doc = readSkeleton(text).skeleton;
+    const before = writeSkeleton(doc);
+    writeSidecar(withView(addGuide(FULL, "x", 4), { skin: "x" }));
+    expect(writeSkeleton(doc)).toBe(before);
+  });
+});
+
+describe("rulers and guides on the stage", () => {
+  const cam = { x: 0, y: 0, zoom: 2 }, size = { width: 400, height: 300 };
+  it("the top ruler makes horizontal guides, the left one vertical; the corner neither", () => {
+    expect(rulerAt(200, 5)).toBe("top");
+    expect(rulerAt(5, 200)).toBe("left");
+    expect(rulerAt(5, 5)).toBeNull();
+    expect(rulerAt(200, 200)).toBeNull();
+    expect(axisOf("top")).toBe("y");
+    expect(rulerOf("x")).toBe("left");
+  });
+  it("finds the guide under the pointer, on screen where its value is", () => {
+    const guides = [{ axis: "x" as const, at: 10 }, { axis: "y" as const, at: -20 }];
+    // x = 10 at zoom 2 → 220 px; y = -20 → 150 + 40 = 190 px.
+    expect(guideScreen(guides[0]!, cam, size)).toBe(220);
+    expect(guideScreen(guides[1]!, cam, size)).toBe(190);
+    expect(hitGuide(guides, cam, size, 223, 50)).toBe(0);
+    expect(hitGuide(guides, cam, size, 50, 187)).toBe(1);
+    expect(hitGuide(guides, cam, size, 300, 50)).toBe(-1);
+  });
+  it("spaces ticks 1, 2 or 5 × 10ⁿ, at least 50 pixels apart", () => {
+    expect(tickStep(1)).toBe(50);
+    expect(tickStep(2)).toBe(50);
+    expect(tickStep(3)).toBe(20);
+    expect(tickStep(0.1)).toBe(500);
+    expect(tickStep(40)).toBe(2);
   });
 });

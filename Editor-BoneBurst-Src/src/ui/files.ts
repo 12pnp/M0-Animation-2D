@@ -1,3 +1,5 @@
+import { sidecarName } from "@/io/sidecar";
+
 /**
  * Which of the files a person picked or dropped are the skeleton, its atlas and the atlas's page
  * images. The choice is pure (`pickFiles`, tested); reading them is the browser's.
@@ -6,6 +8,8 @@
 export interface Picked<F> {
   skeleton: F | null;
   atlas: F | null;
+  /** The skeleton's sidecar: the `.bb.json` named after it (`hero.bb.json` for `hero.json`). */
+  sidecar: F | null;
   /** A Photoshop file to import (E4 step 7); it takes the place of a skeleton and atlas. */
   psd: F | null;
   /** Images by file name, for the atlas's pages to find. */
@@ -17,15 +21,22 @@ export interface Picked<F> {
 const IMAGE = /\.(png|jpe?g|webp)$/i;
 
 export function pickFiles<F extends { name: string }>(files: readonly F[]): Picked<F> {
-  const out: Picked<F> = { skeleton: null, atlas: null, psd: null, images: new Map(), ignored: [] };
+  const out: Picked<F> = { skeleton: null, atlas: null, sidecar: null, psd: null, images: new Map(), ignored: [] };
+  const sidecars: F[] = [];
   const lower = (f: F) => f.name.toLowerCase();
   for (const f of files) {
     const n = lower(f);
-    if (n.endsWith(".bb.json")) out.ignored.push(f); // the sidecar (E4)
+    if (n.endsWith(".bb.json")) sidecars.push(f);
     else if (n.endsWith(".json") && !out.skeleton) out.skeleton = f;
     else if ((n.endsWith(".atlas") || n.endsWith(".atlas.txt")) && !out.atlas) out.atlas = f;
     else if (n.endsWith(".psd") && !out.psd) out.psd = f;
     else if (IMAGE.test(n)) out.images.set(f.name, f);
+    else out.ignored.push(f);
+  }
+  // Only the skeleton's own sidecar; any other is ignored.
+  const own = out.skeleton ? sidecarName(out.skeleton.name.replace(/^.*[\\/]/, "")).toLowerCase() : null;
+  for (const f of sidecars) {
+    if (!out.sidecar && own !== null && f.name.replace(/^.*[\\/]/, "").toLowerCase() === own) out.sidecar = f;
     else out.ignored.push(f);
   }
   return out;

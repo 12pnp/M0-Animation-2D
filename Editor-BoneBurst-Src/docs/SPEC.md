@@ -71,6 +71,11 @@ Versioned from its first field. It never changes what the skeleton means: deleti
 view state, guides, reference images and notes. A sidecar whose `format` or `version` is
 unknown is ignored with a warning, never guessed at.
 
+The app (E4 step 8) opens the sidecar named after the skeleton with it, puts back the view it
+keeps (camera, skin, animation), and saves it beside the skeleton when it holds guides,
+references or notes or was opened, and its text changed. Guides are dragged out of the stage's
+rulers. Sidecar changes are not undo steps.
+
 ## 4. Editing and history
 
 - An **edit** is a pure function from document to document with a label ("Move bone hip").

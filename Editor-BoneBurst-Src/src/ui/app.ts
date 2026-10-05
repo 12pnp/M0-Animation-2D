@@ -1,6 +1,7 @@
 import { EDITOR_NAME, SPINE_VERSION, titleFor } from "@/about";
 import { Inspector } from "./panels/inspector";
 import type { Page } from "@/io/pack";
+import { sidecarName } from "@/io/sidecar";
 import { Outline } from "./panels/outline";
 import { fileSource, Session, type Source } from "./session";
 import type { Tool } from "./stage/gizmo";
@@ -144,11 +145,15 @@ export function mountApp(root: HTMLElement): void {
     if (!session.history) return;
     const made = session.generated;
     download(`${session.name}.json`, new Blob([session.save()], { type: "application/json" }));
-    if (!made) { say(`Saved ${session.name}.json.`); return; }
+    // The sidecar beside it, when it holds something and changed (E4 step 8).
+    const side = session.sidecarToSave({ camera: stage.camera, ...(session.skin ? { skin: session.skin } : {}), ...(session.animation ? { animation: session.animation.name } : {}) });
+    if (side !== null) download(sidecarName(`${session.name}.json`), new Blob([side], { type: "application/json" }));
+    const also = side !== null ? `, ${sidecarName(`${session.name}.json`)}` : "";
+    if (!made) { say(`Saved ${session.name}.json${also}.`); return; }
     download(`${session.name}.atlas.txt`, new Blob([made.atlasText], { type: "text/plain" }));
     for (const p of made.pages) download(p.name, await png(p));
     session.generated = null;
-    say(`Saved ${session.name}.json, ${session.name}.atlas.txt and ${made.pages.map((p) => p.name).join(", ")}.`);
+    say(`Saved ${session.name}.json${also}, ${session.name}.atlas.txt and ${made.pages.map((p) => p.name).join(", ")}.`);
   }
 
   /** An atlas page as a PNG file. */

@@ -29,6 +29,7 @@
   --bone: #505050;
   --hover: #ececea;
   --playhead: #e0442b;
+  --guide: #0f9bb5;
   color-scheme: light;
 }
 @media (prefers-color-scheme: dark) {
@@ -44,6 +45,7 @@
     --bone: #c8c8c4;
     --hover: #2d2f33;
     --playhead: #ff6a4d;
+    --guide: #36c2d9;
     color-scheme: dark;
   }
 }
@@ -59,6 +61,7 @@
   --bone: #c8c8c4;
   --hover: #2d2f33;
   --playhead: #ff6a4d;
+  --guide: #36c2d9;
   color-scheme: dark;
 }
 

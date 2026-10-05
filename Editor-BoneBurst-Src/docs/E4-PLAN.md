@@ -12,7 +12,8 @@ stickman's torso turned into a mesh and shaped on the stage, saved, posed alike 
 runtimes. Step 6 (weights) done: the torso mesh bound to three bones on screen, reshaped and
 reweighted, saved, posed alike by both runtimes through its animations. Step 7 (PSD import)
 done: a layered PSD dropped on the editor, shown, saved with its atlas and page, read back.
-Later steps not started. `npm run check`: 292 tests.
+Step 8 (the sidecar in the app, guides) done: guides made on the stickman, saved with the view,
+opened again with everything back. Later steps not started. `npm run check`: 298 tests.
 
 E4 makes the editor author a rig, not only animate one: panels and docking (D6), slots,
 attachments, draw order, skins, constraints, mesh editing, PSD import and preferences. It is
@@ -557,11 +558,78 @@ flowchart LR
    again byte for byte the same. The same import in Node gives the identical JSON and atlas
    (SHA-256 equal), no profile issue as written, spine-core posing it alike.
 
-## Later steps (planned when step 8 starts)
+## Step 8 — the sidecar in the app, and guides
 
-The sidecar's read and write (view state, guides, references), the reference panel, preferences;
-re-importing a PSD; keying constraint values, deform keys, drawing constraints on the stage, a
-weight brush.
+The `<name>.bb.json` sidecar (SPEC §3; read and written since E1, used by nothing yet) opens and
+saves with its skeleton, restores the view, and holds guides: lines dragged out of rulers on the
+stage. Reference images are step 9; notes stay for the AI (E5).
+
+```mermaid
+flowchart LR
+    OPEN["Open / drop<br/>hero.json + hero.bb.json"] -->|"pickFiles: sidecar"| RS["io/sidecar readSidecar"]
+    RS --> SES["session.sidecar"]
+    SES -->|"view: camera, skin, animation"| STAGE["stage · toolbar · timeline"]
+    RULER["stage rulers<br/>drag out · move · drag back"] -->|"edit/sidecar<br/>addGuide · moveGuide · removeGuide"| SES
+    SES -->|"Save: when it holds something<br/>and changed since written"| WS["writeSidecar → hero.bb.json"]
+```
+
+### Decisions
+
+- **Opening**: a `.bb.json` among the opened files is the sidecar of the skeleton whose name it
+  carries (`hero.bb.json` for `hero.json`); another one is ignored with a note. One that does not
+  read, or has an unknown format or version, leaves the empty sidecar and a note (as E1 reads it).
+- **The view** the sidecar keeps: the camera (centre, zoom), the skin shown and the animation
+  shown. It is taken when saving and put back when opening; it never marks the document unsaved.
+  The dock layout stays the window's (D6), not the document's.
+- **Guides**: the stage gets rulers along its top and left edges; dragging out of the top ruler
+  makes a horizontal guide, out of the left a vertical one; a guide is dragged to move it and
+  back onto its ruler to remove it. Positions are in skeleton units, to two decimals. Guide
+  changes are not undo steps (they are not the document) but do make the sidecar need saving.
+- **Saving**: Save writes the skeleton and, beside it, the sidecar, when the sidecar holds
+  guides, references or notes, or was opened from a file; and only when its text differs from
+  what was last written. Saving never changes the skeleton's text.
+
+### Steps
+
+1. `edit/sidecar.ts` (`addGuide`, `moveGuide`, `removeGuide`, `withView`); `pickFiles` takes the
+   sidecar; tests: guide edits, which sidecar belongs to which skeleton, the view round trip, the
+   skeleton's text the same with and without a sidecar.
+2. Session: the sidecar, opened and saved with the skeleton; the view taken and restored.
+3. Stage: rulers, guides drawn, dragged out, moved, removed (`ui/stage/guides.ts`, pure hit
+   tests).
+4. On screen: guides made on the stickman, saved, opened again with the sidecar: guides, camera,
+   skin and animation back.
+
+### Step 8 results
+
+1. `edit/sidecar.ts` (`addGuide`, `moveGuide`, `removeGuide`, `withView`, `viewOf`,
+   `hasContent`); `pickFiles` takes the skeleton's own sidecar (named after it, any case) and
+   ignores another's. Tests in `tests/sidecar.test.ts` and `tests/stage.test.ts`: guide edits to
+   two decimals (no change is the same sidecar); the view through the file, with a newer
+   editor's view keys kept and what does not read left out; the skeleton's text the same with
+   any sidecar; which sidecar is whose.
+2. Session: the sidecar opened with its skeleton (its notes in the issues), the skin and
+   animation it kept shown, its camera handed to the stage once; guides make the document need
+   saving (the view does not); Save writes `<name>.bb.json` beside the skeleton when the sidecar
+   holds something or was opened, and only when its text changed.
+3. Stage: rulers along the top and left edges, labelled in skeleton units (ticks 1, 2 or 5 ×
+   10ⁿ, at least 50 pixels apart); a drag out of a ruler makes a guide, a drag on a guide moves
+   it, a drag back onto its ruler removes it (shown faint while over it). Guides are found after
+   the mesh and the bones, so they never take a press meant for those. `ui/stage/guides.ts`
+   (pure), with tests; a `--guide` colour in both themes.
+4. On screen (the stickman): two guides dragged out (one at the feet, one through the body), a
+   third dragged out and back onto its ruler (removed), one moved 30 pixels (44.8 units at that
+   zoom, the camera untouched); the `alt` skin and `dance` shown, the view zoomed. Save handed
+   over the skeleton and `Stickman_IK.bb.json` (captured, not downloaded); a second Save, with
+   nothing changed, only the skeleton. The saved skeleton is exactly what the editor writes for
+   the untouched stickman. Dropped again with the atlas and page: the guides, the camera, the
+   `alt` skin and `dance` back, nothing to save, no issue.
+
+## Later steps (planned when step 9 starts)
+
+The reference panel (reference images in the sidecar), preferences; re-importing a PSD; keying
+constraint values, deform keys, drawing constraints on the stage, a weight brush, snapping to
+guides.
 
 ## Results
 

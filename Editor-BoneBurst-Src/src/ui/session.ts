@@ -1,4 +1,7 @@
 import { readAtlas } from "@/io/atlas";
+import { readSidecar, writeSidecar } from "@/io/sidecar";
+import { hasContent, type View, viewOf, withView } from "@/edit/sidecar";
+import { EMPTY_SIDECAR, type Sidecar } from "@/model/sidecar";
 import type { Page } from "@/io/pack";
 import { readSkeleton } from "@/io/skeletonRead";
 import { writeSkeleton } from "@/io/skeletonWrite";
@@ -53,6 +56,13 @@ export class Session {
   /** Mesh mode: the selected vertex of the selected mesh, and the bone whose weights the stage colours. */
   vertex: number | null = null;
   weightBone: string | null = null;
+  /** The skeleton's sidecar (SPEC §3): view, guides, references, notes. Not the document, not undone. */
+  sidecar: Sidecar = EMPTY_SIDECAR;
+  /** Whether the sidecar came from a file (then it is saved even when empty), and its text as last read or written. */
+  private sidecarFromFile = false;
+  private sidecarWritten = "";
+  /** The camera the opened sidecar asked for, for the stage to take once. */
+  openedCamera: View["camera"] | null = null;
   /** An atlas and its pages the editor made (a PSD import), to be written with the next save. */
   generated: { atlasText: string; pages: readonly Page[] } | null = null;
   /** What reading found, and pages the atlas names that were not given. */
@@ -90,7 +100,34 @@ export class Session {
 
   /** Select a bone by name (null: nothing). */
   selectBone(name: string | null): void { this.select(name === null ? null : { kind: "bone", name }); }
-  get dirty(): boolean { return !!this.history && this.history.doc !== this.saved; }
+  get dirty(): boolean { return !!this.history && (this.history.doc !== this.saved || this.sidecarChanged); }
+
+  /** Guides, references or notes changed since the sidecar was read or written (the view does not count). */
+  get sidecarChanged(): boolean { return contentText(this.sidecar) !== this.sidecarWritten; }
+
+  /** Replace the sidecar (a guide edit) and tell the listeners. */
+  setSidecar(next: Sidecar): void {
+    if (next === this.sidecar) return;
+    this.sidecar = next;
+    this.changed();
+  }
+
+  /**
+   * The sidecar's text to save beside the skeleton, with `view` taken now; null when there is
+   * nothing to save (no content and none was opened) or it is what was last written.
+   */
+  sidecarToSave(view: View): string | null {
+    if (!hasContent(this.sidecar) && !this.sidecarFromFile) return null;
+    const next = withView(this.sidecar, view);
+    const text = writeSidecar(next);
+    if (text === this.lastSidecarText) return null;
+    this.sidecar = next;
+    this.lastSidecarText = text;
+    this.sidecarWritten = contentText(next);
+    this.changed();
+    return text;
+  }
+  private lastSidecarText = "";
 
   onChange(f: () => void): () => void {
     this.listeners.add(f);
@@ -217,7 +254,27 @@ export class Session {
     } else {
       all.push({ where: fileName, message: "no atlas was given; the bones are shown without images" });
     }
+    let sidecar: Sidecar = EMPTY_SIDECAR;
+    if (picked.sidecar) {
+      const read = readSidecar(await picked.sidecar.text());
+      sidecar = read.sidecar;
+      all.push(...read.issues.map((i) => ({ where: `${picked.sidecar!.name}: ${i.where}`, message: i.message })));
+    }
     this.replace(skeleton, picked.skeleton !== null, baseName(fileName), atlas, pages, all);
+    if (picked.sidecar) this.takeSidecar(sidecar);
+  }
+
+  /** The opened sidecar, and the view it keeps: skin and animation now, the camera for the stage. */
+  private takeSidecar(s: Sidecar): void {
+    this.sidecar = s;
+    this.sidecarFromFile = true;
+    this.sidecarWritten = contentText(s);
+    this.lastSidecarText = writeSidecar(s);
+    const v = viewOf(s), doc = this.doc!;
+    if (v.skin !== undefined && doc.skins?.some((k) => k.name === v.skin)) this.skin = v.skin === "default" ? null : v.skin;
+    if (v.animation !== undefined && doc.animations?.some((a) => a.name === v.animation)) this.shown = v.animation;
+    this.openedCamera = v.camera ?? null;
+    this.changed();
   }
 
   /**
@@ -238,6 +295,11 @@ export class Session {
   private replace(skeleton: Skeleton, fromFile: boolean, name: string, atlas: Atlas | null, pages: Map<string, ImageBitmap>, all: Issue[]): void {
     for (const b of this.pages.values()) b.close();
     this.generated = null;
+    this.sidecar = EMPTY_SIDECAR;
+    this.sidecarFromFile = false;
+    this.sidecarWritten = contentText(EMPTY_SIDECAR);
+    this.lastSidecarText = "";
+    this.openedCamera = null;
     this.history = new History(skeleton);
     // A skeleton started from an atlas or a PSD is new: unsaved until saved.
     this.saved = fromFile ? this.history.doc : null;
@@ -273,4 +335,9 @@ export class Session {
 function randomHash(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(8));
   return btoa(String.fromCharCode(...bytes)).slice(0, 11);
+}
+
+/** A sidecar's text without its view: what makes it need saving. */
+function contentText(s: Sidecar): string {
+  return writeSidecar({ ...s, view: new Map() });
 }

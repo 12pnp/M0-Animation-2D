@@ -160,11 +160,14 @@ describe("posing the document", () => {
 describe("picking files", () => {
   it("finds the skeleton, its atlas and the images, and ignores the rest", () => {
     const f = (name: string) => ({ name });
-    const p = pickFiles([f("a.png"), f("hero.json"), f("hero.atlas.txt"), f("hero.bb.json"), f("notes.md"), f("other.json")]);
+    const p = pickFiles([f("a.png"), f("raptor.bb.json"), f("hero.json"), f("hero.atlas.txt"), f("Hero.bb.json"), f("notes.md"), f("other.json")]);
     expect(p.skeleton?.name).toBe("hero.json");
     expect(p.atlas?.name).toBe("hero.atlas.txt");
+    // Its own sidecar (named after it, any case); another skeleton's is ignored.
+    expect(p.sidecar?.name).toBe("Hero.bb.json");
     expect([...p.images.keys()]).toEqual(["a.png"]);
-    expect(p.ignored.map((x) => x.name)).toEqual(["hero.bb.json", "notes.md", "other.json"]);
+    expect(p.ignored.map((x) => x.name)).toEqual(["notes.md", "other.json", "raptor.bb.json"]);
+    expect(pickFiles([f("hero.bb.json")]).sidecar).toBeNull();
   });
   it("names the document after its file", () => {
     expect(baseName("/x/y/Stickman_IK.json")).toBe("Stickman_IK");
