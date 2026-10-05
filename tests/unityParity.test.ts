@@ -15,7 +15,9 @@ import {
  * with spine-core 4.3.13, the preview's runtime, and compares: every bone's
  * world matrix, the draw order, each slot's attachment and colour, and where the
  * attachment is: a region's corners, a mesh's, box's, path's or clip's world
- * vertices, a point's position and rotation (`v`, absent in a dump from before). Skipped,
+ * vertices, a point's position and rotation (`v`, absent in a dump from before), in
+ * each skin at the setup pose, and for a rig with up to four skins every frame
+ * in each skin. Skipped,
  * not passed, without the folder or the dump.
  */
 
@@ -24,7 +26,7 @@ const RIGS = `${M0}/Assets/AnimoTest/Spine`;
 const DUMP = `${M0}/Library/AnimoSpineCheck/dump.json`;
 
 type Frame = { b: number[]; s: Array<[string, string | null, number, number, number, number, number[]?]> };
-type Dump = Record<string, { fps: number; scale: number; animations: Record<string, Frame[]>; skins?: Record<string, Frame["s"]> } | null>;
+type Dump = Record<string, { fps: number; scale: number; animations: Record<string, Frame[]>; skins?: Record<string, Frame["s"]>; skinAnimations?: Record<string, Record<string, Frame[]>> } | null>;
 
 const ready = existsSync(RIGS) && existsSync(DUMP);
 
@@ -93,25 +95,35 @@ describe.skipIf(!ready)("spine-unity plays the exports as the preview's runtime 
           if (d > 0.01) throw new Error(`${where}: slot "${name}" ${point ? "point" : "vertices"} off by ${d}`);
         });
       };
-      for (const anim of data.animations) {
-        const theirs = unity.animations[anim.name];
-        expect(theirs, `${rig} "${anim.name}"`).toBeTruthy();
-        theirs!.forEach((u, f) => {
-          const where = `${rig} "${anim.name}" frame ${f}`;
-          sk.setupPose();
-          anim.apply(sk, 0, f / unity.fps + 1e-5, false, null, 1, MixFrom.setup, false, false, false);
-          sk.updateWorldTransform(Physics.reset);
-          frames++;
-          sk.bones.forEach((bone, i) => {
-            const p = bone.appliedPose, q = u.b.slice(i * 6, i * 6 + 6);
-            const m = Math.max(Math.abs(p.a - q[0]!), Math.abs(p.b - q[1]!), Math.abs(p.c - q[2]!), Math.abs(p.d - q[3]!));
-            // spine-unity reads the file at the asset's import scale.
-            const d = Math.max(Math.abs(p.worldX - q[4]! / unity.scale), Math.abs(p.worldY - q[5]! / unity.scale));
-            worst = Math.max(worst, d);
-            if (m > 1e-3 || d > 0.01) throw new Error(`${where}: bone "${bone.data.name}" matrix off by ${m}, position by ${d}`);
+      /** Every animation at every frame against Unity's, `label` naming the skin played. */
+      const animationsMatch = (sk2: Skeleton, played: Record<string, Frame[]>, label: string) => {
+        for (const anim of data.animations) {
+          const theirs = played[anim.name];
+          expect(theirs, `${label} "${anim.name}"`).toBeTruthy();
+          theirs!.forEach((u, f) => {
+            const where = `${label} "${anim.name}" frame ${f}`;
+            sk2.setupPose();
+            anim.apply(sk2, 0, f / unity.fps + 1e-5, false, null, 1, MixFrom.setup, false, false, false);
+            sk2.updateWorldTransform(Physics.reset);
+            frames++;
+            sk2.bones.forEach((bone, i) => {
+              const p = bone.appliedPose, q = u.b.slice(i * 6, i * 6 + 6);
+              const m = Math.max(Math.abs(p.a - q[0]!), Math.abs(p.b - q[1]!), Math.abs(p.c - q[2]!), Math.abs(p.d - q[3]!));
+              // spine-unity reads the file at the asset's import scale.
+              const d = Math.max(Math.abs(p.worldX - q[4]! / unity.scale), Math.abs(p.worldY - q[5]! / unity.scale));
+              worst = Math.max(worst, d);
+              if (m > 1e-3 || d > 0.01) throw new Error(`${where}: bone "${bone.data.name}" matrix off by ${m}, position by ${d}`);
+            });
+            slotsMatch(sk2, u.s, where);
           });
-          slotsMatch(sk, u.s, where);
-        });
+        }
+      };
+      animationsMatch(sk, unity.animations, rig);
+      // A rig with a few skins plays every animation in each (a dump from before has none).
+      for (const [name, played] of Object.entries(unity.skinAnimations ?? {})) {
+        const one = new Skeleton(data);
+        one.setSkin(name);
+        animationsMatch(one, played, `${rig} skin "${name}"`);
       }
       // Each skin alone over the default one, at the setup pose (a dump from before has none).
       let skins = 0;

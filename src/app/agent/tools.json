@@ -594,6 +594,39 @@
     }
   },
   {
+    "name": "set_tint",
+    "description": "Tint a layer's image, in one undoable step: Spine's attachment colour, multiplied into the layer's colour (it can only darken). color is \"rrggbb\" or \"rrggbbaa\", null for none. display picks one of the layer's images (0 first, the default).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "layer": { "type": "string" },
+        "color": { "type": ["string", "null"] },
+        "display": { "type": "integer", "minimum": 0 }
+      },
+      "required": ["layer", "color"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "map_transform",
+    "description": "Edit a transform constraint's property map (Spine 4.3's properties), in one undoable step: make the source's `from` property drive the bones' `to` property (rotate, x, y, scaleX, scaleY, shearY), with `scale` (multiplies, default 1), `offset` (added after) and `max` (the limit Clamp keeps it within), in Spine's units. `sourceOffset` is added to the source's `from` value first. `remove: true` stops `from` driving `to`. Returns the whole map.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "constraint": { "type": "string" },
+        "from": { "type": "string" },
+        "to": { "type": "string" },
+        "scale": { "type": "number" },
+        "offset": { "type": "number" },
+        "max": { "type": "number" },
+        "sourceOffset": { "type": "number" },
+        "remove": { "type": "boolean" }
+      },
+      "required": ["constraint", "from", "to"],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "set_constraint_order",
     "description": "Set the order the symbol's constraints are applied in (Spine's constraint order), in one undoable step: `order` names constraints first to last; the ones it leaves out follow, in the order they had. A constraint applied later reads what the earlier ones did to the bones, e.g. a transform constraint before an IK makes the IK reach from the constrained pose. get_rig lists the current order in constraintOrder.",
     "input_schema": {

@@ -32,8 +32,8 @@ import {
     transformAtFrame,
 } from "@/app/TimelineOps";
 import { type IkPose, ikPoseAt, withIkKey } from "@/core/doc/ikKeys";
-import { tcMixAt, transformPlan, usedMixes, withTcKey } from "@/core/doc/transformKeys";
-import { TC_CHANNELS, type TcChannel } from "@/core/math/transformConstraint";
+import { isIdentityMap, tcMixAt, transformPlan, usedMixes, withMapping, withoutMapping, withSourceOffset, withTcKey } from "@/core/doc/transformKeys";
+import { TC_CHANNELS, type TcChannel, type TcFrom } from "@/core/math/transformConstraint";
 import { newTcId } from "@/core/doc/ids";
 import { alertDialog, chooseDialog } from "@/view/widgets/dialogs";
 import { cloneTf, type Transform } from "@/core/math/Transform";
@@ -63,8 +63,9 @@ import {
 } from "@/core/doc/types";
 import { ikRelations } from "@/core/doc/ikGraph";
 import { DEFAULT_SKIN, editedSkin, skinsOf, stageSkinOf } from "@/core/doc/skins";
-import { withPointOffset } from "@/core/doc/boxes";
-import { displayAt, displaysOf, linkableDisplays, withLink } from "@/core/doc/displays";
+import { skinnedOutline, withPointOffset } from "@/core/doc/boxes";
+import { editShownOutline } from "@/app/AttachmentOps";
+import { displayAt, displaysOf, linkableDisplays, withDisplayTint, withLink } from "@/core/doc/displays";
 import { isImage } from "@/core/doc/types";
 import { doSetSkinImage, doSetSkinMembers, doSetSkinOnly } from "@/app/SkinOps";
 import { doAddPhysics, doAddSlider, doMakeSequence, doRemoveSequence, doSetConstraints, doSetSequenceKeys, doSetSequenceSetup } from "@/app/AttachmentOps";
@@ -191,13 +192,14 @@ export class PropertiesPanel implements Panel {
     // Which transform constraints exist and what they connect: the section's
     // structure. Their values are synced, not rebuilt.
     const tcs = (this.store.currentSymbol.transforms ?? [])
-      .map((k) => [k.id, k.name, k.sourceId, k.boneIds.join(","), !!k.localSource, !!k.localTarget, !!k.additive, !!k.clamp, usedMixes(k).join("")].join(":")).join(";");
+      .map((k) => [k.id, k.name, k.sourceId, k.boneIds.join(","), !!k.localSource, !!k.localTarget, !!k.additive, !!k.clamp, usedMixes(k).join(""),
+        k.properties.map((p) => `${p.from}>${p.to.map((t) => t.to).join("+")}`).join(",")].join(":")).join(";");
     // Skins are replaced as values: their identity says when they changed.
     const sym = this.store.currentSymbol;
     const skins = `${valueId(sym.skins)}:${stageSkinOf(sym).join(",")}:${editedSkin(sym, this.store.ui.editSkin) ?? ""}`
       // Physics, sliders and paths: which there are, not their values (synced).
       + [...(sym.physics ?? []), ...(sym.sliders ?? []), ...(sym.paths ?? [])].map((k) => `${k.id}:${k.name}:${"boneId" in k ? k.boneId : ""}:${"boneIds" in k ? k.boneIds.join(",") : ""}:${"animId" in k ? k.animId : ""}`).join(";");
-    return `${anim}|${tcs}|${skins}|` + nodes.map((n) => `${n.id}:${n.kind}:${displaysOf(n).map((d) => (d.skinOnly ? "s" : "d") + (d.linked ? `l${d.linked.to}${d.linked.deform === false ? "n" : ""}` : "")).join("")}${n.boneColor ?? ""}:${displayAtFrame(this.store, n).display?.itemId ?? ""}:${n.mesh ? `m${n.mesh.points.length}${n.mesh.weights ? "w" : ""}` : ""}${n.sequence ? `q${n.sequence.items.length}` : ""}`).join("|");
+    return `${anim}|${tcs}|${skins}|` + nodes.map((n) => `${n.id}:${n.kind}:${displaysOf(n).map((d) => (d.skinOnly ? "s" : "d") + (d.linked ? `l${d.linked.to}${d.linked.deform === false ? "n" : ""}` : "")).join("")}${n.boneColor ?? ""}:${displayAtFrame(this.store, n).display?.itemId ?? ""}${displayAtFrame(this.store, n).display?.tint ? "t" : ""}:${n.mesh ? `m${n.mesh.points.length}${n.mesh.weights ? "w" : ""}` : ""}${n.sequence ? `q${n.sequence.items.length}` : ""}`).join("|");
   }
 
   /**
@@ -285,17 +287,19 @@ export class PropertiesPanel implements Panel {
   /** A point's offset from its node's origin and its turn (ARCHITECTURE ▸
    *  Boxes and points), Spine's point `x`, `y`, `rotation`. A scrub is one undo step. */
   private pointSection(node: Node): HTMLElement {
+    // The point as the stage shows it: a shown skin's own, else the node's.
+    const shown = skinnedOutline(this.store.currentSymbol, node, stageSkinOf(this.store.currentSymbol));
     const field = (key: "x" | "y" | "rotation", glyph: string, unit?: string) => {
       const nf = new NumberField({
         glyph, unit, step: key === "rotation" ? 1 : 0.5, decimals: 2,
         onInput: (v, committing) => {
           this.scrubStep("point.edit", committing);
-          this.store.apply(new EditNode("Move Point", this.store.currentSymbolId, node.id, (n) => withPointOffset(n, { [key]: v }), "point.edit"));
+          editShownOutline(this.store, node.id, (n) => withPointOffset(n, { [key]: v }), "Move Point", "point.edit");
           this.store.emit("stage");
           if (committing) this.store.history.endInteraction();
         },
       });
-      nf.set(node.point?.[key] ?? 0);
+      nf.set(shown.point?.[key] ?? 0);
       return nf.el;
     };
     return this.section("Point", true, [
@@ -416,6 +420,34 @@ export class PropertiesPanel implements Panel {
       this.store.emit("doc");
     });
     rows.push(this.row("Blend", [blend]));
+
+    // The shown image's own colour (Spine's attachment `color`, ARCHITECTURE ▸
+    // Colour, alpha and blend mode), multiplied into the slot's.
+    if (nodes.length === 1 && shown && !isInstance) {
+      const index = displayAtFrame(this.store, node).index;
+      const tint = shown.tint ?? "ffffffff";
+      const swatch = h("input", { type: "color", class: "bone-color", title: "The image's own colour, multiplied into the layer's: Spine's attachment colour" }) as HTMLInputElement;
+      swatch.value = `#${tint.slice(0, 6)}`;
+      const setTint = (value: string | undefined, label: string, kind?: string) => {
+        this.store.apply(new EditNode(label, this.store.currentSymbolId, node.id, (n) => withDisplayTint(n, index, value), kind));
+        this.store.emit("stage");
+      };
+      const alphaHex = () => (displayAt(this.store.currentSymbol.nodes[node.id]!, index)?.tint ?? "ffffffff").slice(6);
+      on(swatch, "change", () => setTint(`${swatch.value.slice(1)}${alphaHex()}`, "Image Tint"));
+      const alpha = new NumberField({
+        glyph: "A", min: 0, max: 100, step: 1, decimals: 0, unit: "%",
+        onInput: (v, committing) => {
+          this.scrubStep("node.tint", committing);
+          const rgb = (displayAt(this.store.currentSymbol.nodes[node.id]!, index)?.tint ?? "ffffffff").slice(0, 6);
+          setTint(`${rgb}${Math.round((Math.min(100, Math.max(0, v)) / 100) * 255).toString(16).padStart(2, "0")}`, "Image Tint", "node.tint");
+          if (committing) this.store.history.endInteraction();
+        },
+      });
+      alpha.set(Math.round((parseInt(tint.slice(6), 16) / 255) * 100));
+      const white = h("button", { class: "btn", title: "No tint: the image's own colours" }, "None");
+      on(white, "click", () => setTint(undefined, "No Image Tint"));
+      rows.push(this.row("Image tint", [swatch, alpha.el, ...(shown.tint ? [white] : [])]));
+    }
 
     const blurStrength = new NumberField({
       glyph: "", min: 0, max: 200, step: 1, decimals: 0, unit: "%",
@@ -745,6 +777,53 @@ export class PropertiesPanel implements Panel {
   }
 
   /**
+   * A transform constraint's property map (Spine 4.3's `properties`): which
+   * source property drives which bone property, with its scale, offset and
+   * max, and what is added to the source first. Shown once it is more than
+   * each property driving itself; Add maps one more. Spine's units.
+   */
+  private transformMapRows(
+    k: TransformConstraint, current: () => TransformConstraint,
+    replace: (k: TransformConstraint, label: string, kind?: string) => void, label: Record<TcChannel, string>,
+  ): HTMLElement[] {
+    const rows: HTMLElement[] = [];
+    const num = (glyph: string, value: number, kind: string, write: (v: number) => TcFrom[], unit?: string) => {
+      const field = new NumberField({
+        glyph, unit, step: 0.1, decimals: 3, sensitivity: 20,
+        onInput: (v, committing) => {
+          this.scrubStep(kind, committing);
+          replace({ ...current(), properties: write(v) }, "Transform Map", kind);
+          if (committing) this.store.history.endInteraction();
+        },
+      });
+      field.set(value);
+      return field.el;
+    };
+    if (!isIdentityMap(k.properties)) {
+      for (const p of k.properties) {
+        rows.push(this.row(`${label[p.from]} +`, [num("+", p.offset, `tc.map.${k.id}.${p.from}`, (v) => withSourceOffset(current().properties, p.from, v))]));
+        for (const t of p.to) {
+          const kind = `tc.map.${k.id}.${p.from}.${t.to}`;
+          const remove = h("button", { class: "iconbtn", title: `Stop ${label[p.from]} driving ${label[t.to]}` }, "×");
+          on(remove, "click", () => replace({ ...current(), properties: withoutMapping(current().properties, p.from, t.to) }, "Remove Transform Mapping"));
+          rows.push(this.row(`${label[p.from]} → ${label[t.to]}`, [
+            num("×", t.scale, `${kind}.scale`, (v) => withMapping(current().properties, p.from, t.to, { scale: v })),
+            num("+", t.offset, `${kind}.offset`, (v) => withMapping(current().properties, p.from, t.to, { offset: v })),
+          ]));
+          rows.push(this.row("", [num("≤", t.max, `${kind}.max`, (v) => withMapping(current().properties, p.from, t.to, { max: v })), remove]));
+        }
+      }
+    }
+    const pick = () => h("select", { class: "preview-anim" }, ...TC_CHANNELS.map((c) => h("option", { value: c }, label[c]))) as HTMLSelectElement;
+    const from = pick(), to = pick();
+    to.value = "x";
+    const add = h("button", { class: "btn", title: "Make the source property on the left drive the bones' property on the right" }, "Map");
+    on(add, "click", () => replace({ ...current(), properties: withMapping(current().properties, from.value as TcChannel, to.value as TcChannel) }, "Add Transform Mapping"));
+    rows.push(this.row("Drive", [from, to]), this.row("", [add]));
+    return rows;
+  }
+
+  /**
    * The transform constraints this bone takes part in, as the source or as one
    * of the bones that follow it, and a button that makes the selected bones
    * follow another (ARCHITECTURE ▸ Transform constraints). In Animate mode the
@@ -846,8 +925,7 @@ export class PropertiesPanel implements Panel {
       const remove = h("button", { class: "btn" }, "Remove");
       on(remove, "click", () => doSetTransforms(this.store, list().filter((c) => c.id !== k.id), `Remove "${k.name}"`));
       rows.push(this.row("", [remove]));
-      const identity = k.properties.every((p) => p.to.length === 1 && p.to[0]!.to === p.from && p.to[0]!.scale === 1 && !p.to[0]!.offset && !p.offset);
-      if (!identity) rows.push(this.noteRow("This constraint maps one property to another (from the file it was opened from); the map is kept and exported as it is."));
+      if (!animate) rows.push(...this.transformMapRows(k, current, replace, MIX_LABEL));
     }
 
     const add = h("button", { class: "btn", title: "Make the selected bones follow a bone you choose next" }, "Follow a Bone…");

@@ -13,6 +13,31 @@ import { meshWorld, type MeshBones } from "@/core/mesh/meshPose";
  * rule (`meshWorld`). Neither draws: the stage outlines them.
  */
 
+/** The skin whose own outline the stage shows for a box, point or path
+ *  node: the last of `skins` that has one; null, the node's own. */
+export function outlineSkin(sym: SymbolItem, node: Node, skins: readonly string[]): string | null {
+  for (const name of [...skins].reverse()) if (sym.skins?.find((d) => d.name === name)?.outlines?.[node.id]) return name;
+  return null;
+}
+
+/** `node` as the shown skins outline it: a skin's box, path or point in
+ *  place of its own (Spine's skin attachment under the node's key). */
+export function skinnedOutline(sym: SymbolItem, node: Node, skins: readonly string[]): Node {
+  const skin = outlineSkin(sym, node, skins);
+  const o = skin ? sym.skins!.find((d) => d.name === skin)!.outlines![node.id]! : null;
+  if (!o) return node;
+  const out = { ...node };
+  if (node.kind === "box" && o.box) out.box = o.box;
+  if (node.kind === "path" && o.path) out.path = o.path;
+  if (node.kind === "point") { if (o.point) out.point = o.point; else delete out.point; }
+  return out;
+}
+
+/** The outline field of `o` a node of `kind` holds. */
+export function outlineField(kind: Node["kind"]): "box" | "path" | "point" | null {
+  return kind === "box" || kind === "path" || kind === "point" ? kind : null;
+}
+
 /** A point's pick and outline radius, in its own units. */
 export const POINT_RADIUS = 6;
 

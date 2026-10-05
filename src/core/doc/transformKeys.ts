@@ -1,5 +1,5 @@
 import { applyTween, type TweenSpec } from "@/core/math/easing";
-import { TC_CHANNELS, type TcChannel, type TcFrom, type TcMix, type TcSolve } from "@/core/math/transformConstraint";
+import { TC_CHANNELS, type TcChannel, type TcFrom, type TcMix, type TcSolve, type TcTo } from "@/core/math/transformConstraint";
 import type { NodeId, TcId } from "./ids";
 import { SMOOTH_CURVE, type IkTween } from "./ikKeys";
 import type { Animation, SymbolItem, TcKey, TransformConstraint } from "./types";
@@ -29,6 +29,42 @@ export function tcSolveOf(k: TransformConstraint): TcSolve {
     offsets: { rotate: o.rotate ?? 0, x: o.x ?? 0, y: o.y ?? 0, scaleX: o.scaleX ?? 0, scaleY: o.scaleY ?? 0, shearY: o.shearY ?? 0 },
     properties: k.properties,
   };
+}
+
+/* ── the property map (Spine 4.3's `properties`) ── */
+
+/** A new mapping's values: the source's value straight across, no limit to speak of. */
+export const NEW_MAPPING = { offset: 0, max: 100, scale: 1 } as const;
+
+/** `props` with `from` driving `to` (added at `NEW_MAPPING` when new), `patch`
+ *  applied to that mapping. Sources keep their order; a new one goes last. */
+export function withMapping(props: readonly TcFrom[], from: TcChannel, to: TcChannel, patch: Partial<Omit<TcTo, "to">> = {}): TcFrom[] {
+  const has = props.some((p) => p.from === from);
+  const list = has ? [...props] : [...props, { from, offset: 0, to: [] }];
+  return list.map((p) => {
+    if (p.from !== from) return p;
+    const at = p.to.find((t) => t.to === to);
+    const next: TcTo = { ...(at ?? { to, ...NEW_MAPPING }), ...patch, to };
+    return { ...p, to: at ? p.to.map((t) => (t.to === to ? next : t)) : [...p.to, next] };
+  });
+}
+
+/** `props` without `from` driving `to`; a source left driving nothing goes. */
+export function withoutMapping(props: readonly TcFrom[], from: TcChannel, to: TcChannel): TcFrom[] {
+  return props
+    .map((p) => (p.from === from ? { ...p, to: p.to.filter((t) => t.to !== to) } : p))
+    .filter((p) => p.to.length > 0);
+}
+
+/** `props` with what is added to source property `from` before it is mapped. */
+export function withSourceOffset(props: readonly TcFrom[], from: TcChannel, offset: number): TcFrom[] {
+  return props.map((p) => (p.from === from ? { ...p, offset } : p));
+}
+
+/** Whether every property drives itself, unscaled and unshifted: the map a
+ *  constraint made here has, which Properties need not show. */
+export function isIdentityMap(props: readonly TcFrom[]): boolean {
+  return props.every((p) => p.to.length === 1 && p.to[0]!.to === p.from && p.to[0]!.scale === 1 && !p.to[0]!.offset && !p.offset);
 }
 
 /** The target properties some source property maps to: the mixes that matter. */

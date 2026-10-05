@@ -23,6 +23,7 @@ function displayZero(node: Node, itemId: ItemId): DisplayRef {
   if (node.attachment) d.attachment = node.attachment;
   if (node.key) d.key = node.key;
   if (node.attachmentName) d.name = node.attachmentName;
+  if (node.tint) d.tint = node.tint;
   if (node.linked) d.linked = node.linked;
   if (node.mesh) d.mesh = node.mesh;
   if (node.skinOnly) d.skinOnly = true;
@@ -102,4 +103,23 @@ export function withLink(node: Node, index: number, link: LinkedMesh | undefined
  *  what can draw display `to`'s mesh. */
 export function linkableDisplays(node: Node, to: number): number[] {
   return displaysOf(node).flatMap((d, i) => (i !== to && !d.mesh && !d.sequence && !d.attachment ? [i] : []));
+}
+
+/** `node` with display `index`'s tint set ("rrggbbaa"), or cleared by
+ *  undefined or white; `node` itself for a display it does not have. */
+export function withDisplayTint(node: Node, index: number, tint: string | undefined): Node {
+  if (!displayAt(node, index)) return node;
+  const t = tint && tint.toLowerCase() !== "ffffffff" ? tint.toLowerCase() : undefined;
+  if (index === 0) {
+    const out = { ...node };
+    if (t) out.tint = t; else delete out.tint;
+    return out;
+  }
+  const extras = node.extraDisplays!.map((d, i) => {
+    if (i !== index - 1) return d;
+    const out = { ...d };
+    if (t) out.tint = t; else delete out.tint;
+    return out;
+  });
+  return { ...node, extraDisplays: extras };
 }

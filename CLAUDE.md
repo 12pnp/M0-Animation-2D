@@ -37,8 +37,10 @@ and keyed by group from the timeline (ARCHITECTURE ▸ Offset keys, Key buttons)
 and physics, slider and path constraints are keyed (ARCHITECTURE ▸ Inherit modes, Physics,
 sliders and paths); an opened file's meshes and linked meshes in every skin, weighted boxes
 and paths, points with an offset and turned sequences become editable (ARCHITECTURE ▸ Meshes,
-Boxes and points, Sequences), and the Unity check, which compares attachment geometry and
-every skin, was rerun after phase J (ARCHITECTURE ▸ Checked in Unity).
+Boxes and points, Sequences); path constraints, attachment tints, deform keys in any skin, skins'
+own boxes, points and paths and a transform constraint's property map are the model's too, and
+the Unity check, which compares attachment geometry and every skin, was rerun after phase K
+(ARCHITECTURE ▸ Checked in Unity).
 An exporter change must keep
 `tests/spineParity.test.ts` passing: it plays every fixture through spine-core
 and compares it with the stage frame by frame. An importer or exporter change

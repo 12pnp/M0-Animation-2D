@@ -1,4 +1,5 @@
 import { SetConstraintKeys, SetInheritKeys } from "@/core/history/attachmentCommands";
+import { deformRow } from "@/core/mesh/meshPlan";
 import type { Animation, InheritKey } from "@/core/doc/types";
 import type { Store } from "./Store";
 import { type Reorder, reorderAt } from "@/core/doc/drawOrder";
@@ -128,10 +129,13 @@ export function doSetTransforms(store: Store, list: TransformConstraint[], label
 }
 
 /** One mesh node's deform keys in the current animation replaced. */
+/** The keys of the mesh `nodeId`'s Deform row shows (`deformRow`) replaced. */
 export function doSetDeformKeys(store: Store, nodeId: NodeId, keys: DeformKey[], label: string, kind?: string): void {
   const anim = store.currentAnimation;
-  if (!anim) return;
-  store.apply(new SetDeformKeys(label, store.currentSymbolId, anim.id, nodeId, keys, kind));
+  const node = store.currentSymbol.nodes[nodeId];
+  const row = node ? deformRow(store.currentSymbol, node) : null;
+  if (!anim || !row) return;
+  store.apply(new SetDeformKeys(label, store.currentSymbolId, anim.id, row.target, keys, kind));
   store.emit("timeline");
   store.emit("stage");
 }

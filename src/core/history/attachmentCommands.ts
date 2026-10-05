@@ -54,11 +54,6 @@ export class EditNode implements Command {
   }
 }
 
-/** A box node with `points`. */
-export function boxEdit(label: string, symbolId: ItemId, nodeId: NodeId, box: NonNullable<Node["box"]>, kind = "node.edit"): EditNode {
-  return new EditNode(label, symbolId, nodeId, (n) => ({ ...n, box }), kind);
-}
-
 /** An animation's per-node key lists: sequence keys and inherit keys. */
 export type NodeKeyField = "sequences" | "inherits";
 type NodeKeys<F extends NodeKeyField> = NonNullable<Animation[F]>[NodeId];

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  deleteTcKeys, FULL_MIX, identityProperties, moveTcKeys, tcMixAt, tcSolveOf, tcTweenOf, transformPlan, usedMixes,
-  withTcKey, withTcTween,
+  deleteTcKeys, FULL_MIX, identityProperties, isIdentityMap, moveTcKeys, NEW_MAPPING, tcMixAt, tcSolveOf, tcTweenOf, transformPlan, usedMixes,
+  withMapping, withoutMapping, withSourceOffset, withTcKey, withTcTween,
 } from "@/core/doc/transformKeys";
 import { tcLocalOf, tcSolveWorld } from "@/core/math/transformConstraint";
 import { migrate, validateProject } from "@/core/doc/schema";
@@ -40,6 +40,26 @@ describe("transform constraint keys", () => {
     expect(moveTcKeys(keys, [4, 8], -10).map((x) => x.frame)).toEqual([0, 12]);
     expect(deleteTcKeys(keys, [4]).map((x) => x.frame)).toEqual([8, 12]);
     expect(withTcTween(keys, [4], "smooth").map(tcTweenOf)).toEqual(["smooth", "stepped", "linear"]);
+  });
+});
+
+describe("the property map, edited", () => {
+  const id = identityProperties(["rotate", "x"]);
+  it.each([
+    { name: "a new mapping from a source already mapped: added after its own", props: withMapping(id, "rotate", "y"), want: [["rotate", ["rotate", "y"]], ["x", ["x"]]] },
+    { name: "from a new source: the source goes last", props: withMapping(id, "scaleX", "shearY"), want: [["rotate", ["rotate"]], ["x", ["x"]], ["scaleX", ["shearY"]]] },
+    { name: "removing one leaves the source's others", props: withoutMapping(withMapping(id, "rotate", "y"), "rotate", "rotate"), want: [["rotate", ["y"]], ["x", ["x"]]] },
+    { name: "a source driving nothing goes", props: withoutMapping(id, "x", "x"), want: [["rotate", ["rotate"]]] },
+  ])("$name", ({ props, want }) => {
+    expect(props.map((p) => [p.from, p.to.map((t) => t.to)])).toEqual(want);
+  });
+  it("a new mapping starts at its defaults; a patch changes only what it names; the source's offset is its own", () => {
+    expect(withMapping(id, "rotate", "y")[0]!.to[1]).toEqual({ to: "y", ...NEW_MAPPING });
+    const scaled = withMapping(id, "rotate", "rotate", { scale: 0.5 });
+    expect(scaled[0]!.to[0]).toEqual({ to: "rotate", offset: 0, max: 1, scale: 0.5 });
+    expect(withSourceOffset(scaled, "rotate", 15)[0]!.offset).toBe(15);
+    expect([isIdentityMap(id), isIdentityMap(scaled), isIdentityMap(withMapping(id, "x", "y"))]).toEqual([true, false, false]);
+    expect(usedMixes({ ...k, properties: withMapping(id, "rotate", "shearY") })).toEqual(["rotate", "x", "shearY"]);
   });
 });
 

@@ -1258,6 +1258,12 @@ rotated atlas region at another corner, so up to a shift round them), every mesh
 path's and clip's world vertices, and a point's position and rotation, at every frame and in
 each skin at the setup pose. All five agree within 0.0019 px.
 
+Rerun in phase K (docs/PHASE-K-PLAN.md) with four more: `K_Stretchyman` (its path constraints
+the model's, one moved and its spacing changed), `K_Doi` (Spineunitygirl's tints, one set with
+`set_tint`), `K_Goblins` (deform keys in the goblin skins, one added) and `K_Authored` (the
+stickman with a remapped transform constraint, a box with a skin's own and a tint). A rig with up
+to four skins now plays every animation in each skin too. All nine agree within 0.0019 px.
+
 ## The AI bridge
 
 An AI edits the open document through the same undoable commands as a person.
@@ -1935,9 +1941,14 @@ constraint round-trips unchanged.
 - **4.3's shape**: `properties` maps a source property to target properties, each with an
   offset, a scale and a max (`clamp`). A new constraint maps each property to itself at full
   mix with no offsets, so the bones take the source's world transform. A file's remapped table
-  is read, solved, exported and kept; the Properties panel edits the identity map's mixes and
-  offsets and says when a map is not the identity. One mix per target property; spine-core
-  reads only the mixes a property maps to, and the solver does the same (`usedMixes`).
+  is read, solved, exported and kept. One mix per target property; spine-core reads only the
+  mixes a property maps to, and the solver does the same (`usedMixes`).
+- **The map is edited** in Properties ▸ Transform (Setup mode): Drive picks a source property
+  and a bone property and Map adds it; each mapping shows its scale, offset and max and a ×
+  that removes it, and each source what is added to it first, in Spine's units. The rows show
+  once the map is more than each property driving itself (`isIdentityMap`). Pure in
+  `core/doc/transformKeys.ts` (`withMapping`, `withoutMapping`, `withSourceOffset`); one
+  `SetTransforms` per edit, a scrub one step. AI: `map_transform`.
 - **The solver** (`core/math/transformConstraint.ts`) is a transcription of spine-core's
   `TransformConstraint.update`, the `From*` / `To*` properties and
   `BonePose.updateLocalTransform` (normal inherit), in its space and with its pi. The stage
@@ -2018,9 +2029,18 @@ per mesh node, one offset pair per point in the node's space.
   becomes a node-space offset through the exact inverse of the point's own linear map
   (`localDelta`), so a weighted point follows the pointer.
 - **Deform keys** (`core/mesh/deform.ts`): before the first key no deform; linear, stepped or
-  smooth to the next. A Deform row (`LayerRow.deform`) under a keyed mesh, and in the focused
+  smooth to the next. Every mesh display has its own: the default skin's display 0 in
+  `Animation.deforms`, every other display, a skin's included, in `Animation.displayDeforms`
+  (by skin, "default" for a node's own past 0, then node and display; schema 27). A
+  `DeformTarget` names one and `deformKeysOf` / `withDeformKeysOf` read and write it; the
+  pose draws a display with its own keys or, linked, its source's (`drawnDeformTarget`), and
+  the export writes each skin's `deform` timelines. Before, a node's other mesh displays drew
+  display 0's keys, on the stage and in the file alike. A Deform row (`LayerRow.deform`) under a keyed mesh, and in the focused
   view, which a selected mesh now opens as a bone does: drag, Delete, right-click for Key
-  Deform Here and the ease. Q / W stop on them.
+  Deform Here and the ease. Q / W stop on them. The row shows and edits the keys of the mesh
+  the stage shows (`deformRow`: the first of the node's displays that is a mesh of its own, in
+  the shown skin that fills it), and the Mesh tool in Animate keys the mesh it edits, so a
+  skin's mesh is keyed with that skin shown.
 - **Export** writes `type: "mesh"` (uvs, triangles, vertices, hull, width, height, and
   edges when an opened file had them) and each animation's
   `attachments.<skin>.<slot>.<attachment>.deform` timeline.
@@ -2042,18 +2062,17 @@ per mesh node, one offset pair per point in the node's space.
     point added gets a texture coordinate and weights blended from its triangle and no
     offsets; new weights (bind, paint, unbind) drop every offset (`withWeights`).
   - The display keeps its attachment key (`Node.key`, `DisplayRef.key`), which attachment
-    keys and linked meshes name. Each animation's deform timeline becomes keys when every key
-    lands on a frame and a weighted point's entries move it the same way; only display 0 takes
-    deform keys. A mesh whose timeline does not convert and one with a field the model does not
-    hold (a tint) stay carried. 126 of the samples' 136 default-skin meshes convert.
+    keys and linked meshes name. Each animation's deform timeline becomes the display's keys,
+    in its skin, when every key lands on a frame and a weighted point's entries move it the same
+    way; a mesh whose timeline does not convert, or with a field the model does not hold, stays
+    carried. Every one of the samples' meshes converts.
   - The attachment's own name, where a file sets it apart from its key (Spine's `name`, which
     the region path defaults to), is kept (`DisplayRef.name`, `Node.attachmentName`) and
     written back, with `path` only where the image differs from it.
-  - **Other skins' meshes** become the skin's display with a `mesh` (220 of the samples' 239;
-    the rest are deformed by an animation, which only display 0 of the default skin can be, or
-    tinted). In Setup mode the Mesh tool edits the mesh the stage shows (`editedMesh`,
-    `shownDisplay`: the last shown skin that fills the display, else the node's own), and
-    `SetMesh` writes it there (`skin`); deform keys stay display 0's.
+  - **Other skins' meshes** become the skin's display with a `mesh`, their deform timelines the
+    skin's keys (all 239 of the samples'; Goblins' are deformed in their skin). The Mesh tool
+    edits the mesh the stage shows (`editedMesh`, `shownDisplay`: the last shown skin that fills
+    the display, else the node's own), and `SetMesh` writes it, and its deform keys, there.
   - `tests/importMesh.test.ts`: the conversion both ways, deform keys, the editor's own pose of
     a mesh whose offsets disagree against spine-core, and the editing rules.
 - **Linked meshes** (Spine's `linkedmesh`): another image of the same node draws a mesh
@@ -2131,8 +2150,15 @@ editing.
   Every edit is one `SetSkins` (the skins, the stage's choice and the carried skins as one
   value) or `SetSkinOnly`; both invalidate the symbol's bounds, as `SetStageSkins` now does.
 - The AI's `add_skin`, `set_skin_image` and `set_skin_members`; `show` takes skins for any rig.
-- Not built: skin colours, per-skin deform keys, a mesh made for a skin image here (a skin
-  display is a region, an opened file's mesh or link, or the opened attachment it came with).
+- **A skin's own box, point or path** (`SkinDef.outlines`): Spine's skin attachment under a box,
+  point or path node's key. The pose shows the node as the shown skins outline it
+  (`skinnedOutline`, the last shown skin with one winning), so the overlay, picking and the
+  runtime rig see the skin's; the export writes it in the skin. The Mesh tool, Properties ▸
+  Point and `set_point` edit what the stage shows (`editShownOutline`: the skin's through
+  `SetSkinOutline`, else the node's). An opened slot that skins fill with an outline of the
+  same kind under the same key becomes the node and each skin's own. `tests/skinOutlines.test.ts`.
+- Not built: skin colours, a mesh made for a skin image here (a skin display is a region, an
+  opened file's mesh or link, or the opened attachment it came with).
 
 ## Boxes and points
 
@@ -2250,9 +2276,10 @@ Spine's `lengths` (`pathLengths`).
 - **Export** writes them in the constraint order (by default after the IK and transform
   constraints), the exported symbol's only
   (a nested one's warn); a constraint whose bone, path or animation is gone is skipped with a
-  warning. **Import**: a file's physics and sliders become the model's when every field is
-  one it holds (else carried, as a skin-listed one is); paths stay carried, since a path slot's
-  attachment key need not be its name.
+  warning. **Import**: a file's physics, sliders and paths become the model's when every field is
+  one it holds and, for a path, its slot is a path node (which keeps its attachment key,
+  `Node.key`); a skin's are its members. All 10 of the samples' paths do, their `path`
+  timelines as keys. The rest stay carried.
 - **Keys** (`Animation.constraintKeys`, schema 25, `core/doc/constraintKeys.ts`): per
   constraint, per channel, one-number keys with a tween, as Spine's `physics`, `slider` and
   `path` timelines. Physics keys mix, inertia, strength, damping, mass, wind and gravity; a
@@ -2926,6 +2953,13 @@ alpha as `globalAlpha` from `aM` alone; the alpha offset is drawn by nothing.
 - **An authored colour anywhere means the timeline governs**, even a neutral one
   (`sampleColorRaw`'s rule): with a non-default bind colour, a key returning to neutral
   must still be written.
+- **An image's own colour** (Spine's attachment `color` on a region, mesh, linked mesh or
+  sequence) is `DisplayRef.tint` (display 0's `Node.tint`), "rrggbbaa", multiplied into the
+  slot's. Properties ▸ Color Effect ▸ Image tint sets it for the display the layer shows
+  (`withDisplayTint`; None clears it). The stage's own drawing has no per-attachment colour,
+  so a symbol with a tint is posed by spine-core (`runtimePosed`), whose slot colour already
+  multiplies it in. An opened file's attachment colours become tints, a carried attachment's
+  too (written back onto its data). AI: `set_tint`. `tests/tint.test.ts`.
 - **Blend mode cannot be keyed** (Spine has no blend timeline), and Spine has four:
   normal, additive, multiply, screen. The rest export as normal, with a warning.
 - **Neither tint nor blend reaches inside a symbol instance** on the stage; its alpha does,

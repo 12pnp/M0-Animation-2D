@@ -1,6 +1,8 @@
 import type { NodeId } from "@/core/doc/ids";
 import type { MeshData, Node, SymbolItem } from "@/core/doc/types";
-import { shownDisplay } from "@/core/doc/skins";
+import { shownDisplay, stageSkinOf } from "@/core/doc/skins";
+import { displaysOf } from "@/core/doc/displays";
+import type { DeformTarget } from "./deform";
 
 /**
  * Which nodes the mesh commands act on (ARCHITECTURE ▸ Meshes), pure.
@@ -32,18 +34,31 @@ export function bindPlan(sym: SymbolItem, selection: readonly NodeId[]): { mesh:
 
 /** The mesh the Mesh tool edits on a node (ARCHITECTURE ▸ Meshes ▸ Skins'
  *  meshes): the one the stage shows at display `index` with `skins`, in the
- *  skin that fills it or the node's own. Only the default skin's display 0
- *  takes deform keys. Null when the shown display is not a mesh of its own. */
+ *  skin that fills it or the node's own, with its own deform keys
+ *  (`deformKeysOf`). Null when the shown display is not a mesh of its own. */
 export interface EditedMesh {
   mesh: MeshData;
   pivot: { x: number; y: number };
   index: number;
   skin: string | null;
-  deforms: boolean;
 }
 
 export function editedMesh(sym: SymbolItem, node: Node, index: number, skins: readonly string[]): EditedMesh | null {
   const shown = index >= 0 ? shownDisplay(sym, node, index, skins) : null;
   if (!shown?.display.mesh) return null;
-  return { mesh: shown.display.mesh, pivot: shown.display.pivot, index, skin: shown.skin, deforms: index === 0 && shown.skin === null };
+  return { mesh: shown.display.mesh, pivot: shown.display.pivot, index, skin: shown.skin };
+}
+
+/**
+ * The mesh a node's Deform row shows and keys: the first of its displays the
+ * stage shows with `skins` (display 0 first) that is a mesh of its own, in the
+ * skin that fills it. Null for a node with none.
+ */
+export function deformRow(sym: SymbolItem, node: Node, skins: readonly string[] = stageSkinOf(sym)): { target: DeformTarget; mesh: MeshData } | null {
+  const count = displaysOf(node).length;
+  for (let i = 0; i < count; i++) {
+    const shown = shownDisplay(sym, node, i, skins);
+    if (shown?.display.mesh) return { target: { nodeId: node.id, skin: shown.skin, index: i }, mesh: shown.display.mesh };
+  }
+  return null;
 }

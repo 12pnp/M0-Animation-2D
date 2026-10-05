@@ -14,7 +14,7 @@ import type { DeformKey, MeshData } from "@/core/doc/types";
 type Raw = Record<string, unknown>;
 
 /** The fields of a mesh attachment the model holds. */
-const MESH_FIELDS = new Set(["type", "name", "path", "uvs", "triangles", "vertices", "hull", "width", "height", "edges"]);
+const MESH_FIELDS = new Set(["type", "name", "path", "uvs", "triangles", "vertices", "hull", "width", "height", "edges", "color"]);
 
 export interface MeshContext {
   /** The image the mesh draws: its size in pixels. */

@@ -7,8 +7,8 @@ import { constraintEntries, orderFrom } from "@/core/doc/constraintOrder";
 import type { Store } from "@/app/Store";
 import { drawingLayers, orderAt, reorderTargets, withDrawOrderKey, withFront } from "@/core/doc/drawOrder";
 import { type AnimId, type AssetId, type CnId, type IkId, type ItemId, newIkId, newTcId, type NodeId, type TcId } from "@/core/doc/ids";
-import { displaysOf, linkableDisplays, withLink } from "@/core/doc/displays";
-import { withPointOffset } from "@/core/doc/boxes";
+import { displayAt, displaysOf, linkableDisplays, withDisplayTint, withLink } from "@/core/doc/displays";
+import { skinnedOutline, withPointOffset } from "@/core/doc/boxes";
 import { type Animation, type EventDef, type EventKey, type IkConstraint, type IkKey, type ImageItem, type InheritKey, type ValueKey, isImage, type TcKey, type TransformConstraint, type Keyframe, type Node, type SymbolItem, TIMELINE_PROPS, type TimelineProp, type Track } from "@/core/doc/types";
 import { entryBox, type FrameContext } from "@/core/doc/pose";
 import { type ImageFrame, imageFrame, referenceEnd, referenceFrameOf, referenceIndexAt, referenceRect } from "@/core/doc/reference";
@@ -21,7 +21,7 @@ import MOTIONS from "@/core/rig/motions.json";
 import { insertKeyframe, keyIndexAt, setEndFrame } from "@/core/doc/timeline";
 import { AddAnimation, EditTracks, SetCycle, SetDrawOrder, SetEventKeys, SetEvents, SetIkKeys } from "@/core/history/timelineCommands";
 import { renamedEvent, withEventDefValues, withEventKey, withEventKeyValues, withoutEvent } from "@/core/doc/events";
-import { deleteTcKeys, tcMixAt, tcTweenOf, transformPlan, usedMixes, withTcKey, withTcTween } from "@/core/doc/transformKeys";
+import { deleteTcKeys, tcMixAt, tcTweenOf, transformPlan, usedMixes, withMapping, withoutMapping, withSourceOffset, withTcKey, withTcTween } from "@/core/doc/transformKeys";
 import { SetTcKeys, SetTransforms } from "@/core/history/transformCommands";
 import { doBindMesh, doMakeMesh } from "@/app/MeshOps";
 import type { AssetStore } from "@/app/AssetStore";
@@ -40,7 +40,7 @@ import type { ChannelEases, TweenSpec } from "@/core/math/easing";
 import { CURVE_Y_LIMIT, easeOf, sameEase } from "@/core/math/easing";
 import { applySkins, doSetSkinImage, doSetSkinMembers, doSetSkinOnly } from "@/app/SkinOps";
 import { withNewSkin } from "@/core/doc/skins";
-import { doAddAttachment, doAddPhysics, doAddSlider, doMakePath, doMakeSequence, doSetConstraints } from "@/app/AttachmentOps";
+import { doAddAttachment, doAddPhysics, doAddSlider, doMakePath, doMakeSequence, doSetConstraints, editShownOutline } from "@/app/AttachmentOps";
 import { PHYSICS_DEFAULTS, PHYSICS_SETTINGS, SLIDER_PROPERTIES } from "@/core/doc/constraints";
 import { SEQUENCE_MODES, withSequenceKey } from "@/core/doc/sequence";
 import { EditNode, SetConstraintKeys, SetConstraintOrder, SetInheritKeys, SetSequenceKeys } from "@/core/history/attachmentCommands";
@@ -175,6 +175,8 @@ export class AgentApi {
       case "key_constraint": return this.keyConstraint(str(args, "animation"), str(args, "constraint"), str(args, "channel"), int(args, "frame", 0), args);
       case "set_inherit": return this.setInherit(str(args, "bone"), args);
       case "set_point": return this.setPoint(str(args, "point"), args);
+      case "set_tint": return this.setTint(str(args, "layer"), args);
+      case "map_transform": return this.mapTransform(str(args, "constraint"), args);
       case "set_constraint_order": return this.setConstraintOrder(list<string>(args, "order"));
       case "key_sequence": return this.keySequence(str(args, "animation"), str(args, "layer"), int(args, "frame", 0), args);
       case "set_skin_image": return this.setSkinImage(args);
@@ -969,7 +971,7 @@ export class AgentApi {
 
   /** A point's offset and turn (Spine's point `x`, `y`, `rotation`), y down and clockwise as the stage. */
   private setPoint(name: string, args: Args) {
-    const node = this.node(name);
+    const node = Object.values(this.sym.nodes).find((n) => n.name === name && n.kind === "point") ?? this.node(name);
     if (node.kind !== "point") throw new AgentError(`"${node.name}" is not a point (add_attachment makes one).`);
     const patch: Partial<NonNullable<Node["point"]>> = {};
     for (const k of ["x", "y", "rotation"] as const) {
@@ -978,10 +980,49 @@ export class AgentApi {
       patch[k] = args[k] as number;
     }
     if (!Object.keys(patch).length) throw new AgentError("Give x, y or rotation.");
-    this.store.apply(new EditNode(`AI: Move Point "${node.name}"`, this.store.currentSymbolId, node.id, (n) => withPointOffset(n, patch)));
+    editShownOutline(this.store, node.id, (n) => withPointOffset(n, patch), `AI: Move Point "${node.name}"`);
     this.store.emit("stage");
-    const p = this.sym.nodes[node.id]!.point;
+    const p = skinnedOutline(this.sym, this.sym.nodes[node.id]!, stageSkinOf(this.sym)).point;
     return { point: node.name, x: p?.x ?? 0, y: p?.y ?? 0, rotation: p?.rotation ?? 0 };
+  }
+
+  /** A display's own colour (Spine's attachment `color`): "rrggbb" or "rrggbbaa", null for none. */
+  private setTint(name: string, args: Args) {
+    // An opened file's slot shares its name with its bone: the one with images.
+    const node = Object.values(this.sym.nodes).find((n) => n.name === name && n.itemId) ?? this.node(name);
+    const index = args.display === undefined ? 0 : int(args, "display", 0);
+    if (!displayAt(node, index)) throw new AgentError(`"${node.name}" has no display ${index}.`);
+    const c = args.color;
+    if (c !== null && (typeof c !== "string" || !/^#?[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(c))) throw new AgentError(`color is "rrggbb" or "rrggbbaa", or null for none.`);
+    const hex = typeof c === "string" ? c.replace("#", "") : null;
+    const tint = hex ? (hex.length === 6 ? `${hex}ff` : hex) : undefined;
+    this.store.apply(new EditNode(`AI: Tint "${node.name}"`, this.store.currentSymbolId, node.id, (n) => withDisplayTint(n, index, tint)));
+    this.store.emit("stage");
+    return { layer: node.name, display: index, tint: displayAt(this.sym.nodes[node.id]!, index)?.tint ?? null };
+  }
+
+  /** One mapping of a transform constraint's property map, in Spine's units. */
+  private mapTransform(name: string, args: Args) {
+    const k = (this.sym.transforms ?? []).find((c) => c.name === name);
+    if (!k) throw new AgentError(`There is no transform constraint "${name}"; get_rig lists them.`);
+    const from = args.from, to = args.to;
+    if (!TC_CHANNELS.includes(from as TcChannel) || !TC_CHANNELS.includes(to as TcChannel)) throw new AgentError(`from and to are each one of ${TC_CHANNELS.join(", ")}.`);
+    const patch: { scale?: number; offset?: number; max?: number } = {};
+    for (const f of ["scale", "offset", "max"] as const) {
+      if (args[f] === undefined) continue;
+      if (typeof args[f] !== "number" || !Number.isFinite(args[f])) throw new AgentError(`${f} is a number.`);
+      patch[f] = args[f] as number;
+    }
+    let properties = args.remove === true ? withoutMapping(k.properties, from as TcChannel, to as TcChannel) : withMapping(k.properties, from as TcChannel, to as TcChannel, patch);
+    if (args.sourceOffset !== undefined) {
+      if (typeof args.sourceOffset !== "number" || !Number.isFinite(args.sourceOffset)) throw new AgentError("sourceOffset is a number.");
+      properties = withSourceOffset(properties, from as TcChannel, args.sourceOffset);
+    }
+    if (!properties.length) throw new AgentError(`That would leave "${k.name}" driving nothing; remove the constraint instead.`);
+    const next = (this.sym.transforms ?? []).map((c) => (c.id === k.id ? { ...c, properties } : c));
+    this.store.apply(new SetTransforms(`AI: Transform Map "${k.name}"`, this.store.currentSymbolId, next));
+    this.store.emit("stage");
+    return { constraint: k.name, properties };
   }
 
   private setInherit(boneName: string, args: Args) {

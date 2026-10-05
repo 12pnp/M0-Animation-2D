@@ -19,12 +19,13 @@ import { attachOptionsMenu } from "./onionButton";
 import type { Store } from "@/app/Store";
 import type { CnId, IkId, NodeId, TcId } from "@/core/doc/ids";
 import { deleteTcKeys, tcMixAt, tcTweenOf, withTcKey, withTcTween } from "@/core/doc/transformKeys";
-import { deformAt, deformTweenOf, deleteDeformKeys, withDeformKey, withDeformTween } from "@/core/mesh/deform";
+import { deformAt, deformKeysOf, deformTweenOf, deleteDeformKeys, withDeformKey, withDeformTween } from "@/core/mesh/deform";
+import { deformRow } from "@/core/mesh/meshPlan";
 import { SEQUENCE_MODE_LABELS, SEQUENCE_MODES, sequenceIndexAt, withSequenceKey } from "@/core/doc/sequence";
 import { doSetSequenceKeys } from "@/app/AttachmentOps";
 import { deleteEventKeys, uniqueEventName, withEventKey } from "@/core/doc/events";
 import { deleteIkKeys, ikPoseAt, type IkTween, ikTweenOf, withIkKey, withIkTween } from "@/core/doc/ikKeys";
-import type { Keyframe, Layer, RotateDir } from "@/core/doc/types";
+import type { DeformKey, Keyframe, Layer, RotateDir } from "@/core/doc/types";
 import { FrameGrid, ROW_HEIGHT } from "./FrameGrid";
 import { LayerList } from "./LayerList";
 import { Playback } from "./Playback";
@@ -931,6 +932,13 @@ export class TimelinePanel implements Panel {
     ]);
   }
 
+  /** The deform keys of the mesh `node`'s Deform row shows (`deformRow`). */
+  private deformKeysOf(node: NodeId): DeformKey[] | undefined {
+    const sym = this.store.currentSymbol, n = sym.nodes[node];
+    const row = n ? deformRow(sym, n) : null;
+    return row ? deformKeysOf(this.store.currentAnimation, row.target) : undefined;
+  }
+
   /** The picked deform keys gone; false with none picked. */
   deleteDeformKeys(): boolean {
     const sel = this.grid.deformSel;
@@ -955,7 +963,7 @@ export class TimelinePanel implements Panel {
       this.grid.deformSel = null;
       return true;
     }
-    const keys = sel && this.store.currentAnimation?.deforms?.[sel.node];
+    const keys = sel && this.deformKeysOf(sel.node);
     if (!sel?.frames.length || !keys) return false;
     doSetDeformKeys(this.store, sel.node, deleteDeformKeys(keys, sel.frames), sel.frames.length > 1 ? "Delete Deform Keys" : "Delete Deform Key");
     this.grid.deformSel = null;
@@ -1049,9 +1057,11 @@ export class TimelinePanel implements Panel {
    *  ease, or delete them. */
   private deformMenu(node: NodeId, frame: number, x: number, y: number): void {
     const anim = this.store.currentAnimation;
-    const mesh = this.store.currentSymbol.nodes[node]?.mesh;
-    if (!anim || !mesh) return;
-    const keys = anim.deforms?.[node] ?? [];
+    const n = this.store.currentSymbol.nodes[node];
+    const row = n ? deformRow(this.store.currentSymbol, n) : null;
+    if (!anim || !row) return;
+    const mesh = row.mesh;
+    const keys = deformKeysOf(anim, row.target) ?? [];
     const at = keys.find((k) => k.frame === frame);
     if (at && !(this.grid.deformSel?.node === node && this.grid.deformSel.frames.includes(frame))) this.grid.deformSel = { node, frames: [frame] };
     if (!at && this.grid.deformSel?.node !== node) this.grid.deformSel = null;
@@ -1067,7 +1077,7 @@ export class TimelinePanel implements Panel {
     showMenu(this.menuAnchor(x, y), [
       {
         label: "Key Deform Here", enabled: !at,
-        run: () => doSetDeformKeys(this.store, node, withDeformKey(keys, frame, deformAt(anim, node, frame) ?? new Array<number>(mesh.points.length).fill(0)), "Key Deform"),
+        run: () => doSetDeformKeys(this.store, node, withDeformKey(keys, frame, deformAt(anim, row.target, frame) ?? new Array<number>(mesh.points.length).fill(0)), "Key Deform"),
       },
       "-",
       tween("linear"), tween("stepped"), tween("smooth"),

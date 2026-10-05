@@ -20,8 +20,9 @@ flowchart LR
    own folder under M0 `Assets/AnimoTest/Spine/`. Unity imports it: an atlas asset, a
    material, a SkeletonData asset.
 2. `python3 .claude/skills/unity-playtest/playtest.py eval "@<this folder>/dump.cs" --budget 300000`
-   (from M0) poses every rig with spine-csharp at every frame of every animation, and in each
-   skin at the setup pose, into `Library/AnimoSpineCheck/dump.json`.
+   (from M0) poses every rig with spine-csharp at every frame of every animation, in each skin
+   at the setup pose, and for a rig with up to four skins at every frame in each skin, into
+   `Library/AnimoSpineCheck/dump.json`.
 3. `npx vitest run tests/unityParity.test.ts` (here) poses the same files with spine-core and
    compares every bone's world matrix, the draw order, each slot's attachment and colour, and
    where the attachment is: a region's corners, a mesh's, box's, path's or clip's world

@@ -1,5 +1,5 @@
 import type { Command, TouchSet } from "./Command";
-import type { Node, Project, SymbolItem } from "@/core/doc/types";
+import type { Node, Project, SkinOutline, SymbolItem } from "@/core/doc/types";
 import { isSymbol } from "@/core/doc/types";
 import type { ItemId, NodeId } from "@/core/doc/ids";
 import { invalidateBounds } from "@/core/doc/pose";
@@ -88,5 +88,60 @@ export class SetSkinOnly implements Command {
     if (!this.before || !sym.nodes[this.nodeId]) return;
     sym.nodes[this.nodeId] = this.before;
     invalidateBounds([this.symbolId]);
+  }
+}
+
+/**
+ * One skin's own box, point or path for a node replaced (`SkinDef.outlines`);
+ * undefined removes it, the node's own showing again. Steps of one drag share
+ * a `kind` and merge.
+ */
+export class SetSkinOutline implements Command {
+  readonly touches: TouchSet;
+  private before: SkinOutline | undefined;
+  private captured = false;
+
+  constructor(
+    readonly label: string,
+    private readonly symbolId: ItemId,
+    private readonly skin: string,
+    private readonly nodeId: NodeId,
+    private after: SkinOutline | undefined,
+    readonly kind = "skin.outline",
+  ) {
+    this.touches = { symbols: [symbolId], nodes: [nodeId], stage: true };
+  }
+
+  private write(sym: SymbolItem, outline: SkinOutline | undefined): void {
+    sym.skins = sym.skins?.map((def) => {
+      if (def.name !== this.skin) return def;
+      const outlines = { ...def.outlines };
+      if (outline) outlines[this.nodeId] = outline; else delete outlines[this.nodeId];
+      const out = { ...def };
+      if (Object.keys(outlines).length) out.outlines = outlines; else delete out.outlines;
+      return out;
+    });
+  }
+
+  apply(p: Project): void {
+    const sym = symbolOf(p, this.symbolId);
+    if (!this.captured) {
+      this.before = sym.skins?.find((d) => d.name === this.skin)?.outlines?.[this.nodeId];
+      this.captured = true;
+    }
+    this.write(sym, this.after);
+    invalidateBounds([this.symbolId]);
+  }
+
+  revert(p: Project): void {
+    this.write(symbolOf(p, this.symbolId), this.before);
+    invalidateBounds([this.symbolId]);
+  }
+
+  mergeWith(next: Command): boolean {
+    if (!(next instanceof SetSkinOutline) || next.kind !== this.kind) return false;
+    if (next.symbolId !== this.symbolId || next.skin !== this.skin || next.nodeId !== this.nodeId) return false;
+    this.after = next.after;
+    return true;
   }
 }

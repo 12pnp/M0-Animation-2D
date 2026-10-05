@@ -32,7 +32,7 @@ describe("focusRows", () => {
     { name: "a mesh: its row and its Deform row", focus: ["art"], on: true, want: ["art", "art.deform"], flat: true, mesh: true },
   ])("$name", ({ focus, on, want, flat, mesh }) => {
     const { sym, nodes } = rig();
-    if (mesh) nodes.art.mesh = { width: 2, height: 2, points: [0, 0, 2, 0, 0, 2], triangles: [0, 1, 2], hull: 3 };
+    if (mesh) Object.assign(nodes.art, { itemId: "img", mesh: { width: 2, height: 2, points: [0, 0, 2, 0, 0, 2], triangles: [0, 1, 2], hull: 3 } });
     const ids = focus.map((k) => nodes[k as keyof typeof nodes].id);
     const rows = focusRows(sym, ids, on);
     expect(rows.map((r) => (r.prop ? `${r.node.name}.${r.prop}` : r.deform ? `${r.node.name}.deform` : r.node.name))).toEqual(want);

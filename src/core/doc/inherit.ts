@@ -32,11 +32,12 @@ export function inheritAt(node: Node, anim: Animation | null | undefined, frame:
 }
 
 /** A symbol the stage cannot compose itself: some bone takes less than its
- *  whole parent, now or in a key, a constraint only the runtime solves, or a
- *  turned region (`DisplayRef.region`). */
+ *  whole parent, now or in a key, a constraint only the runtime solves, a
+ *  turned region (`DisplayRef.region`) or a tinted attachment (`DisplayRef.tint`). */
 export function runtimePosed(sym: SymbolItem): boolean {
   if (runtimeSolved(sym)) return true;
-  if (Object.values(sym.nodes).some((n) => n.region || n.extraDisplays?.some((d) => d.region))) return true;
+  if (Object.values(sym.nodes).some((n) => n.region || n.tint || n.extraDisplays?.some((d) => d.region || d.tint))) return true;
+  if (sym.skins?.some((def) => Object.values(def.displays ?? {}).some((by) => Object.values(by).some((d) => d.tint || d.region)))) return true;
   if (Object.values(sym.nodes).some((n) => n.inherit && n.inherit !== "normal")) return true;
   return sym.animations.some((a) => Object.values(a.inherits ?? {}).some((keys) => keys.length > 0));
 }

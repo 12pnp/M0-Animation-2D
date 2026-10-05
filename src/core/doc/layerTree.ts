@@ -2,6 +2,8 @@ import { constraintHost, type KeyedConstraint, keyedConstraint } from "./constra
 import type { Animation, Layer, Node, SymbolItem } from "./types";
 import type { CnId, IkId, LayerId, NodeId, TcId } from "./ids";
 import { ikChain } from "./ikGraph";
+import { deformRow } from "@/core/mesh/meshPlan";
+import { deformKeysOf } from "@/core/mesh/deform";
 import { TIMELINE_PROPS, type TimelineProp } from "./propertyKeys";
 
 export interface LayerRow {
@@ -330,10 +332,14 @@ export function groupPlan(
  */
 export function focusRows(sym: SymbolItem, focus: readonly NodeId[], on: boolean, anim?: Animation | null): LayerRow[] {
   const rows = layerRows(sym);
-  if (!on || !focus.some((id) => sym.nodes[id]?.kind === "bone" || sym.nodes[id]?.mesh || sym.nodes[id]?.sequence)) {
+  if (!on || !focus.some((id) => sym.nodes[id]?.kind === "bone" || (sym.nodes[id] && deformRow(sym, sym.nodes[id]!)) || sym.nodes[id]?.sequence)) {
     const keyed = sym.ik.filter((k) => anim?.ik?.[k.id]?.length);
     const keyedTc = (sym.transforms ?? []).filter((k) => anim?.transforms?.[k.id]?.length);
-    const deformed = new Set(Object.keys(anim?.deforms ?? {}).filter((id) => anim!.deforms![id as NodeId]!.length));
+    // The keys of the mesh each node's Deform row shows (`deformRow`).
+    const deformed = new Set(Object.values(sym.nodes).filter((n) => {
+      const row = anim ? deformRow(sym, n) : null;
+      return !!row && !!deformKeysOf(anim, row.target)?.length;
+    }).map((n) => n.id));
     const sequenced = new Set(Object.keys(anim?.sequences ?? {}).filter((id) => anim!.sequences![id as NodeId]!.length));
     const inherited = new Set(Object.keys(anim?.inherits ?? {}).filter((id) => anim!.inherits![id as NodeId]!.length));
     const keyedCn = Object.keys(anim?.constraintKeys ?? {}).map((id) => keyedConstraint(sym, id as CnId)).filter((c): c is KeyedConstraint => !!c);
@@ -370,7 +376,7 @@ export function focusRows(sym: SymbolItem, focus: readonly NodeId[], on: boolean
         ...(sym.transforms ?? []).filter((k) => tcHost.get(k.id) === r.node.id).map((k) => ({ ...row, depth: 1, tc: k.id })),
       ];
       const deform = [
-        ...(r.node.mesh ? [{ ...row, depth: 1, deform: true as const }] : []),
+        ...(deformRow(sym, r.node) ? [{ ...row, depth: 1, deform: true as const }] : []),
         ...(r.node.sequence ? [{ ...row, depth: 1, sequence: true as const }] : []),
       ];
       return r.node.kind === "bone"

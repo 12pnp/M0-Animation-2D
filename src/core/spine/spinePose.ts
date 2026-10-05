@@ -85,7 +85,7 @@ function idOf(o: object | undefined): number {
 function structureKey(project: Project, sym: SymbolItem): string {
   const nodes = Object.values(sym.nodes).map((n) => [
     n.id, n.name, n.kind, n.parentId, n.slotBone, n.inherit, n.setupDisplay, n.blendMode, n.boneLength,
-    displaysOf(n).map((d) => [d.itemId, project.items[d.itemId]?.name, idOf(d.attachment?.data), d.attachment?.name ?? d.key, idOf(d.mesh), idOf(d.sequence), idOf(d.linked), idOf(d.region), d.name, !!d.skinOnly]),
+    displaysOf(n).map((d) => [d.itemId, project.items[d.itemId]?.name, idOf(d.attachment?.data), d.attachment?.name ?? d.key, idOf(d.mesh), idOf(d.sequence), idOf(d.linked), idOf(d.region), d.name, d.tint, !!d.skinOnly]),
     idOf(n.spine?.bone), idOf(n.spine?.slot), idOf(n.box), idOf(n.path), idOf(n.point),
   ]);
   const layers = sym.layers.map((l) => [l.nodeId, l.excludeFromExport, l.isMask, l.maskedBy]);
@@ -93,7 +93,7 @@ function structureKey(project: Project, sym: SymbolItem): string {
   const tcs = (sym.transforms ?? []).map((k) => JSON.stringify(k));
   // A slider's animation is in the rig whole (`setupOnly`): its keys are structure.
   // Deform and sequence keys are in the rig too.
-  const anims = sym.animations.map((a) => [a.name, idOf(a.spine), sym.sliders?.some((k) => k.animId === a.id) ? JSON.stringify(a) : 0, JSON.stringify([a.deforms, a.sequences])]);
+  const anims = sym.animations.map((a) => [a.name, idOf(a.spine), sym.sliders?.some((k) => k.animId === a.id) ? JSON.stringify(a) : 0, JSON.stringify([a.deforms, a.displayDeforms, a.sequences])]);
   const others = [idOf(sym.physics), idOf(sym.sliders), idOf(sym.paths), sym.constraintOrder ?? null];
   return JSON.stringify([idOf(sym.spine), idOf(sym.skins), project.frameRate, nodes, layers, ik, tcs, anims, others]);
 }

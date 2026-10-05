@@ -157,6 +157,29 @@ describe("the stage plays the keys as spine-core plays the export", () => {
     }
   });
 
+  it("export then open: a path constraint comes back as the model's, its keys as keys, a skin's still the skin's", async () => {
+    const { project, rig, node } = await loadStickman();
+    const path = createNode("path", "rail", { parentId: node("hips") });
+    path.path = pathThrough([0, -60, 40, -120, 0, -180, -30, -220]);
+    rig.nodes[path.id] = path;
+    rig.layers.unshift(createLayer(path.id, path.name, 0));
+    const pc = { ...newPathConstraint(rig, [node("chest"), node("head")], path.id, newCnId()), position: 0.1, spacingMode: "fixed" as const };
+    rig.paths = [pc];
+    rig.skins = [{ name: "rails", constraints: [pc.id] }];
+    rig.animations[0]!.constraintKeys = { [pc.id]: { position: [k(0, 0.1), k(12, 0.6)], mix: [k(4, 1, { kind: "none" }), k(9, 0.4)] } };
+    const opened = importSpine(exportSpine(project).skeleton as never, "stickman", new Map()).project;
+    const sym = opened.items[opened.rootSymbolId] as SymbolItem;
+    expect(sym.spine!.constraints.filter((c) => c.type === "path")).toEqual([]);
+    const back = sym.paths![0]!;
+    expect(back).toMatchObject({ name: pc.name, position: 0.1, spacingMode: "fixed", rotateMode: "chain" });
+    expect(sym.nodes[back.pathId]!.kind).toBe("path");
+    expect(back.boneIds.map((id) => sym.nodes[id]!.name)).toEqual(["chest", "head"]);
+    expect(sym.skins![0]!.constraints).toEqual([back.id]);
+    const anim = sym.animations.find((a) => a.name === rig.animations[0]!.name)!;
+    expect(anim.constraintKeys?.[back.id]).toEqual({ position: [k(0, 0.1), k(12, 0.6)], mix: [k(4, 1, { kind: "none" }), k(9, 0.4)] });
+    expect(anim.spine?.path).toBeUndefined();
+  });
+
   it("export then open: physics and slider keys come back as keys; a channel the model lacks stays carried", async () => {
     const { project, rig, node } = await loadStickman();
     rig.physics = [newPhysics(rig, node("head"), newCnId())];

@@ -1,6 +1,7 @@
 import { fileLengthsOf } from "./importAttachments";
 import type { Animation, ColorTransform, DisplayRef, IkKey, MeshData, OutlineWeights, TransformConstraint, ImageItem, Layer, Node, Project, SymbolItem, Track } from "@/core/doc/types";
-import { outlineAsMesh, pointToSpine } from "@/core/doc/boxes";
+import { outlineAsMesh, pointToSpine, skinnedOutline } from "@/core/doc/boxes";
+import { deformKeysOf, type DeformTarget } from "@/core/mesh/deform";
 import { byOrder } from "@/core/doc/constraintOrder";
 import { inheritTimeline } from "@/core/doc/inherit";
 import { channelTimeline, keyedConstraint } from "@/core/doc/constraintKeys";
@@ -211,7 +212,7 @@ export function exportSpine(
   /** The exported symbol's mesh displays, for their deform keys. */
   /** The exported symbol's sequence displays, for their sequence keys. */
   const rootSequences: Array<{ nodeId: NodeId; slot: string; key: string }> = [];
-  const rootMeshes: Array<{ nodeId: NodeId; slot: string; key: string; mesh: MeshData; pivot: { x: number; y: number }; bones: MeshBones | null }> = [];
+  const rootMeshes: Array<{ target: DeformTarget; slot: string; key: string; mesh: MeshData; pivot: { x: number; y: number }; bones: MeshBones | null }> = [];
   const setupPoses = new Map<ItemId, Map<NodeId, { world: Matrix2D }>>();
   const setupOf = (sym: SymbolItem) => setupPoses.get(sym.id) ?? setupPoses.set(sym.id, evaluateSymbol(sym, null, 0, "setup", null).byNode).get(sym.id)!;
   const eventKeysWarned = new Set<ItemId>();
@@ -366,7 +367,15 @@ export function exportSpine(
       const symbolDisplays: Array<[number, DisplayRef]> = [];
       /** The attachment a display writes under `key`: as an opened file had
        *  it, a mesh, or a region. Only the default skin's meshes take deform keys. */
-      const attachmentOf = (ref: DisplayRef, item: ImageItem, key: string, own: boolean): SpineAttachment => {
+      /** `skin` null: the node's own display `index`. */
+      const attachmentOf = (ref: DisplayRef, item: ImageItem, key: string, index: number, skin: string | null): SpineAttachment => {
+        const att = attachmentBody(ref, item, key, index, skin);
+        // The attachment's own colour (`DisplayRef.tint`).
+        if (ref.tint) (att as unknown as Record<string, unknown>).color = ref.tint;
+        return att;
+      };
+      const attachmentBody = (ref: DisplayRef, item: ImageItem, key: string, index: number, skin: string | null): SpineAttachment => {
+        const own = skin === null;
         if (ref.attachment) {
           // As the file had it, drawing the image the display names now.
           const data = { ...ref.attachment.data };
@@ -405,7 +414,8 @@ export function exportSpine(
           // The path defaults to the name, which defaults to the key.
           if (ref.name) mesh.name = ref.name;
           if ((ref.name ?? key) !== item.name) mesh.path = item.name;
-          if (own && scope.depth === 0) rootMeshes.push({ nodeId: node.id, slot: name, key, mesh: ref.mesh, pivot: ref.pivot, bones });
+          // Its deform keys, in its skin at its display (`deformKeysOf`).
+          if (scope.depth === 0) rootMeshes.push({ target: { nodeId: node.id, skin, index }, slot: name, key, mesh: ref.mesh, pivot: ref.pivot, bones });
           return mesh as unknown as SpineAttachment;
         }
         const centre = regionCentre(item.width, item.height, ref.pivot);
@@ -453,31 +463,42 @@ export function exportSpine(
           };
           return spineVertices(outlineAsMesh(o), { x: 0, y: 0 }, bones, (id) => nameOf(id), node.slotBone ?? node.id);
         };
-        if (node.kind === "path") {
-          const shape = node.path;
-          if (shape && shape.points.length >= 12) {
-            keys.set(0, key);
+        /** The attachment of `n` (the node, or as a skin outlines it); null, left out. */
+        const outlineAttachment = (n: Node, where: string): SpineAttachment | null => {
+          if (n.kind === "path") {
+            const shape = n.path;
+            if (!shape || shape.points.length < 12) { diagnostics.push({ severity: "warning", message: `Path "${node.name}"${where} has fewer than two knots; it is left out.` }); return null; }
             const att: Record<string, unknown> = { type: "path" };
             if (shape.closed) att.closed = true;
             if (shape.constantSpeed === false) att.constantSpeed = false;
             att.vertexCount = shape.points.length / 2;
             att.vertices = outlineVertices(shape);
             att.lengths = fileLengthsOf(shape) ?? pathLengths(shape);
-            slotAttachments[key] = colored(att);
-          } else diagnostics.push({ severity: "warning", message: `Path "${node.name}" has fewer than two knots; it is left out.` });
-        } else if (node.kind === "point") {
-          keys.set(0, key);
-          slotAttachments[key] = colored({ type: "point", ...pointToSpine(node) });
-        } else if ((node.box?.points.length ?? 0) >= 6) {
-          const p = node.box!.points;
-          keys.set(0, key);
-          slotAttachments[key] = colored({ type: "boundingbox", vertexCount: p.length / 2, vertices: outlineVertices(node.box!) });
-        } else diagnostics.push({ severity: "warning", message: `Bounding box "${node.name}" has fewer than three points; it is left out.` });
+            return colored(att);
+          }
+          if (n.kind === "point") return colored({ type: "point", ...pointToSpine(n) });
+          if ((n.box?.points.length ?? 0) < 6) { diagnostics.push({ severity: "warning", message: `Bounding box "${node.name}"${where} has fewer than three points; it is left out.` }); return null; }
+          return colored({ type: "boundingbox", vertexCount: n.box!.points.length / 2, vertices: outlineVertices(n.box!) });
+        };
+        const own = outlineAttachment(node, "");
+        if (own) { keys.set(0, key); slotAttachments[key] = own; }
+        // Each skin's own outline under the same key (`SkinDef.outlines`), at the top only.
+        if (scope.depth === 0) {
+          for (const def of s.skins ?? []) {
+            if (!def.outlines?.[node.id]) continue;
+            const att = outlineAttachment(skinnedOutline(s, node, [def.name]), ` in skin "${def.name}"`);
+            if (!att) continue;
+            keys.set(0, key);
+            let bySlot = skinAttachments.get(def.name);
+            if (!bySlot) skinAttachments.set(def.name, bySlot = {});
+            (bySlot[name] ??= {})[key] = att;
+          }
+        }
       }
       // Skins (ARCHITECTURE ▸ Skins) only at the top: a nested symbol's are not written.
       const skinned = scope.depth === 0;
       // Every key first: a linked mesh names its parent's.
-      const written: Array<[DisplayRef, ImageItem, string]> = [];
+      const written: Array<[DisplayRef, ImageItem, string, number]> = [];
       for (const [index, ref] of exportedDisplays(s, node, skinned)) {
         const item = project.items[ref.itemId];
         if (isSymbol(item)) { symbolDisplays.push([index, ref]); continue; }
@@ -493,9 +514,9 @@ export function exportSpine(
         // A display only skins fill keeps its key out of the default skin.
         if (skinned && ref.skinOnly) continue;
         usedImages.add(item.id);
-        written.push([ref, item, key]);
+        written.push([ref, item, key, index]);
       }
-      for (const [ref, item, key] of written) slotAttachments[key] = attachmentOf(ref, item, key, true);
+      for (const [ref, item, key, index] of written) slotAttachments[key] = attachmentOf(ref, item, key, index, null);
       if (skinned) {
         for (const def of s.skins ?? []) {
           for (const [index, ref] of Object.entries(def.displays?.[node.id] ?? {})) {
@@ -505,7 +526,7 @@ export function exportSpine(
             usedImages.add(item.id);
             let bySlot = skinAttachments.get(def.name);
             if (!bySlot) skinAttachments.set(def.name, bySlot = {});
-            (bySlot[name] ??= {})[key] = attachmentOf(ref, item, key, false);
+            (bySlot[name] ??= {})[key] = attachmentOf(ref, item, key, Number(index), def.name);
           }
         }
       } else if (s.skins?.length && !skinsWarned.has(s.id)) {
@@ -761,7 +782,7 @@ export function exportSpine(
     if (options.setupOnly && !sym.sliders?.some((k) => k.animId === anim.id)) {
       const own: SpineAnimation = {};
       const deforms = deformTimelines(anim, rootMeshes, fps);
-      if (deforms) own.attachments = { default: deforms };
+      if (deforms) own.attachments = deforms.timelines;
       sequenceTimelines(anim, own);
       animations[anim.name] = mergeAttachmentTimelines(own, anim.spine ?? {});
       continue;
@@ -798,8 +819,8 @@ export function exportSpine(
     }
     const deforms = deformTimelines(anim, rootMeshes, fps);
     if (deforms) {
-      out.attachments = { default: deforms };
-      for (const keys of Object.values(anim.deforms ?? {})) lastFrame = Math.max(lastFrame, keys[keys.length - 1]?.frame ?? 0);
+      out.attachments = deforms.timelines;
+      lastFrame = Math.max(lastFrame, deforms.lastFrame);
     }
     lastFrame = Math.max(lastFrame, sequenceTimelines(anim, out));
     const tcKeys = transformTimelines(sym, anim, rootTc, fps);
@@ -1279,14 +1300,16 @@ function constraintKeyTimelines(sym: SymbolItem, anim: Animation, fps: number): 
  */
 function deformTimelines(
   anim: Animation,
-  meshes: ReadonlyArray<{ nodeId: NodeId; slot: string; key: string; mesh: MeshData; bones: MeshBones | null }>,
+  meshes: ReadonlyArray<{ target: DeformTarget; slot: string; key: string; mesh: MeshData; bones: MeshBones | null }>,
   fps: number,
-): Record<string, Record<string, { deform: Array<{ time?: number; vertices?: number[]; curve?: SpineCurve }> }>> | null {
-  const out: Record<string, Record<string, { deform: Array<{ time?: number; vertices?: number[]; curve?: SpineCurve }> }>> = {};
+): { timelines: Record<string, Record<string, Record<string, { deform: Array<{ time?: number; vertices?: number[]; curve?: SpineCurve }> }>>>; lastFrame: number } | null {
+  const out: Record<string, Record<string, Record<string, { deform: Array<{ time?: number; vertices?: number[]; curve?: SpineCurve }> }>>> = {};
+  let lastFrame = 0;
   for (const m of meshes) {
-    const keys = anim.deforms?.[m.nodeId];
+    const keys = deformKeysOf(anim, m.target);
     if (!keys?.length || keys.some((k) => k.offsets.length !== m.mesh.points.length)) continue;
-    (out[m.slot] ??= {})[m.key] = {
+    lastFrame = Math.max(lastFrame, keys[keys.length - 1]!.frame);
+    ((out[m.target.skin ?? "default"] ??= {})[m.slot] ??= {})[m.key] = {
       deform: keys.map((key, i) => {
         const o: { time?: number; vertices?: number[]; curve?: SpineCurve } = {};
         const time = keyTime(key.frame, fps);
@@ -1303,7 +1326,7 @@ function deformTimelines(
       }),
     };
   }
-  return Object.keys(out).length ? out : null;
+  return Object.keys(out).length ? { timelines: out, lastFrame } : null;
 }
 
 /* ── transform constraints ───────────────────────────────────────────────── */

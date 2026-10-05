@@ -42,12 +42,12 @@ describe("what the stage shows, and where it lives", () => {
     expect(got && { item: got.display.itemId, skin: got.skin }).toEqual(want);
   });
 
-  it("the Mesh tool edits a skin's mesh there, and only the default skin's display 0 takes deform keys", () => {
+  it("the Mesh tool edits a skin's mesh there", () => {
     const { sym, id } = rig();
-    expect(editedMesh(sym, sym.nodes[id]!, 1, ["a"])).toMatchObject({ index: 1, skin: "a", deforms: false, pivot: { x: 1, y: 1 } });
+    expect(editedMesh(sym, sym.nodes[id]!, 1, ["a"])).toMatchObject({ index: 1, skin: "a", pivot: { x: 1, y: 1 } });
     expect(editedMesh(sym, sym.nodes[id]!, 1, ["a", "b"])).toBeNull();
     sym.nodes[id] = { ...sym.nodes[id]!, mesh: mesh(5) };
-    expect(editedMesh(sym, sym.nodes[id]!, 0, [])).toMatchObject({ index: 0, skin: null, deforms: true });
+    expect(editedMesh(sym, sym.nodes[id]!, 0, [])).toMatchObject({ index: 0, skin: null });
   });
 
   it("a link naming a skin draws that skin's mesh, about that display's transform point", () => {

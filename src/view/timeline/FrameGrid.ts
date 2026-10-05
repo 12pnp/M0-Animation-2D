@@ -4,7 +4,8 @@ import type { Store } from "@/app/Store";
 import type { Animation, DeformKey, DrawOrderKey, EventKey, IkKey, InheritKey, Layer, Node, SequenceKey, TcKey, Track } from "@/core/doc/types";
 import { moveKeys } from "@/core/doc/sequence";
 import { moveTcKeys } from "@/core/doc/transformKeys";
-import { moveDeformKeys } from "@/core/mesh/deform";
+import { deformKeysOf, moveDeformKeys } from "@/core/mesh/deform";
+import { deformRow } from "@/core/mesh/meshPlan";
 import { ikDragAxis, ikPoseAt, moveIkKeys, withIkKey, withIkMixDragged } from "@/core/doc/ikKeys";
 import { moveDrawOrderKeys } from "@/core/doc/drawOrder";
 import { eventFrames, moveEventKeys } from "@/core/doc/events";
@@ -957,7 +958,12 @@ export class FrameGrid {
   private keyRowKeys(kind: KeyRowKind, node: NodeId, cn?: CnId): ReadonlyArray<{ frame: number; tween?: { kind: string } }> {
     const a = this.store.currentAnimation;
     if (kind === "constraint") return constraintRowKeys(a, cn!);
-    return (kind === "deform" ? a?.deforms : kind === "sequence" ? a?.sequences : a?.inherits)?.[node] ?? [];
+    if (kind === "deform") {
+      const sym = this.store.currentSymbol, n = sym.nodes[node];
+      const row = n ? deformRow(sym, n) : null;
+      return (row && deformKeysOf(a, row.target)) ?? [];
+    }
+    return (kind === "sequence" ? a?.sequences : a?.inherits)?.[node] ?? [];
   }
 
   /** A row of keys: a diamond per key, joined where they tween (none after

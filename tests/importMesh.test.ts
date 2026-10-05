@@ -63,10 +63,13 @@ describe("an opened mesh becomes the document's", () => {
     stageAgainstRuntime(project, sym, "arm");
   });
 
-  it("a field the model does not hold leaves it carried", () => {
-    const { slot } = opened(meshFile({ color: "ff0000ff" }));
+  it("a field the model does not hold leaves it carried; its colour is held as the tint", () => {
+    const { slot } = opened(meshFile({ blend: 3 }));
     expect(slot.attachment?.name).toBe("body");
     expect(slot.mesh).toBeUndefined();
+    const tinted = opened(meshFile({ color: "ff0000ff" })).slot;
+    expect(tinted.mesh).toBeDefined();
+    expect(tinted.tint).toBe("ff0000ff");
   });
 
   it("a weighted point keeps each bone's offset as the file has it, though they disagree; written back the same", () => {

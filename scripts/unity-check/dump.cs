@@ -1,6 +1,7 @@
 // Evaluated in the M0-Animation2D Editor by `playtest.py eval @dump.cs`: every
 // SkeletonDataAsset under Assets/AnimoTest/Spine, posed by spine-csharp at every
-// frame of every animation and in each skin at the setup pose, written to
+// frame of every animation, in each skin at the setup pose (and, for a rig
+// with up to four skins, at every frame), written to
 // Library/AnimoSpineCheck/dump.json for
 // tests/unityParity.test.ts to compare with spine-core.
 System.Func<float, string> N = (v) => float.IsNaN(v) ? "null" : v.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
@@ -37,6 +38,35 @@ System.Action<Spine.Skeleton> slots = (sk2) => {
     sb.Append("]]");
   }
 };
+// Every animation at every frame: each bone's world matrix and the slots.
+System.Action<Spine.Skeleton, float> animations = (sk3, fps3) => {
+  sb.Append("{");
+  bool firstAnim = true;
+  foreach (Spine.Animation anim in sk3.Data.Animations) {
+    if (!firstAnim) sb.Append(",");
+    firstAnim = false;
+    sb.Append("\"").Append(anim.Name).Append("\":[");
+    int frames = (int)System.Math.Round(anim.Duration * fps3);
+    for (int f = 0; f <= frames; f++) {
+      float t = f / fps3 + 0.00001f;
+      sk3.SetupPose();
+      anim.Apply(sk3, 0, t, false, null, 1, Spine.MixFrom.Setup, false, false, false);
+      sk3.UpdateWorldTransform(Spine.Physics.Reset);
+      if (f > 0) sb.Append(",");
+      sb.Append("{\"b\":[");
+      for (int i = 0; i < sk3.Bones.Count; i++) {
+        Spine.BonePose p = sk3.Bones.Items[i].AppliedPose;
+        if (i > 0) sb.Append(",");
+        sb.Append(N(p.A)).Append(",").Append(N(p.B)).Append(",").Append(N(p.C)).Append(",").Append(N(p.D)).Append(",").Append(N(p.WorldX)).Append(",").Append(N(p.WorldY));
+      }
+      sb.Append("],\"s\":[");
+      slots(sk3);
+      sb.Append("]}");
+    }
+    sb.Append("]");
+  }
+  sb.Append("}");
+};
 
 sb.Append("{");
 bool firstRig = true;
@@ -61,33 +91,10 @@ foreach (string guid in guids) {
   }
   float fps = data.Fps > 0 ? data.Fps : 30;
   // Positions come out in Unity units: the asset's import scale (0.01 by default) times the file's.
-  sb.Append("{\"fps\":").Append(N(fps)).Append(",\"scale\":").Append(N(asset.scale)).Append(",\"animations\":{");
-  bool firstAnim = true;
-  foreach (Spine.Animation anim in data.Animations) {
-    if (!firstAnim) sb.Append(",");
-    firstAnim = false;
-    sb.Append("\"").Append(anim.Name).Append("\":[");
-    int frames = (int)System.Math.Round(anim.Duration * fps);
-    for (int f = 0; f <= frames; f++) {
-      float t = f / fps + 0.00001f;
-      sk.SetupPose();
-      anim.Apply(sk, 0, t, false, null, 1, Spine.MixFrom.Setup, false, false, false);
-      sk.UpdateWorldTransform(Spine.Physics.Reset);
-      if (f > 0) sb.Append(",");
-      sb.Append("{\"b\":[");
-      for (int i = 0; i < sk.Bones.Count; i++) {
-        Spine.BonePose p = sk.Bones.Items[i].AppliedPose;
-        if (i > 0) sb.Append(",");
-        sb.Append(N(p.A)).Append(",").Append(N(p.B)).Append(",").Append(N(p.C)).Append(",").Append(N(p.D)).Append(",").Append(N(p.WorldX)).Append(",").Append(N(p.WorldY));
-      }
-      sb.Append("],\"s\":[");
-      slots(sk);
-      sb.Append("]}");
-    }
-    sb.Append("]");
-  }
+  sb.Append("{\"fps\":").Append(N(fps)).Append(",\"scale\":").Append(N(asset.scale)).Append(",\"animations\":");
+  animations(sk, fps);
   // Every skin alone over the default one, at the setup pose.
-  sb.Append("},\"skins\":{");
+  sb.Append(",\"skins\":{");
   bool firstSkin = true;
   foreach (Spine.Skin skin in data.Skins) {
     if (skin.Name == "default") continue;
@@ -101,7 +108,25 @@ foreach (string guid in guids) {
     slots(one);
     sb.Append("]");
   }
-  sb.Append("}}");
+  sb.Append("}");
+  // A rig with a few skins plays every animation in each of them too.
+  int skinCount = 0;
+  foreach (Spine.Skin skin in data.Skins) if (skin.Name != "default") skinCount++;
+  if (skinCount > 0 && skinCount <= 4) {
+    sb.Append(",\"skinAnimations\":{");
+    bool firstPlayed = true;
+    foreach (Spine.Skin skin in data.Skins) {
+      if (skin.Name == "default") continue;
+      Spine.Skeleton one = new Spine.Skeleton(data);
+      one.SetSkin(skin);
+      if (!firstPlayed) sb.Append(",");
+      firstPlayed = false;
+      sb.Append("\"").Append(skin.Name).Append("\":");
+      animations(one, fps);
+    }
+    sb.Append("}");
+  }
+  sb.Append("}");
 }
 sb.Append("}");
 string outDir = System.IO.Path.Combine(System.IO.Directory.GetCurrentDirectory(), "Library/AnimoSpineCheck");

@@ -4,11 +4,11 @@ import type { DeformKey, MeshData, Node, PathShape } from "@/core/doc/types";
 import { insidePolygon } from "@/core/mesh/makeMesh";
 import { deformsWithPoint, deformsWithoutPoint, paintWeights, withPoint, withPointMoved, withoutPoint, withPositions, withWeights } from "@/core/mesh/meshEdit";
 import { localDelta, type MeshBones, meshPositions } from "@/core/mesh/meshPose";
-import { deformAt, withDeformKey } from "@/core/mesh/deform";
+import { deformAt, deformKeysOf, type DeformTarget, withDeformKey } from "@/core/mesh/deform";
 import { evaluateSymbol, type PoseEntry } from "@/core/doc/pose";
 import { applyInverse, type Matrix2D } from "@/core/math/Matrix2D";
 import { SetDeformKeys, SetMesh } from "@/core/history/meshCommands";
-import { boxEdit, EditNode } from "@/core/history/attachmentCommands";
+import { editShownOutline } from "@/app/AttachmentOps";
 import { withKnotMoved } from "@/core/doc/constraints";
 import { editedMesh, type EditedMesh } from "@/core/mesh/meshPlan";
 import { stageSkinOf } from "@/core/doc/skins";
@@ -25,7 +25,7 @@ type Drag =
   | { kind: "box"; start: { x: number; y: number }; base: NonNullable<Node["box"]>; world: Matrix2D; bones?: MeshBones; started: boolean }
   | { kind: "path"; start: { x: number; y: number }; base: PathShape; world: Matrix2D; bones?: MeshBones; started: boolean }
   | { kind: "move"; start: { x: number; y: number }; base: MeshData; world: Matrix2D; bones?: MeshBones; started: boolean; target: EditedMesh }
-  | { kind: "deform"; start: { x: number; y: number }; base: DeformKey[]; offsets: number[]; world: Matrix2D; bones?: MeshBones; started: boolean }
+  | { kind: "deform"; start: { x: number; y: number }; base: DeformKey[]; offsets: number[]; world: Matrix2D; bones?: MeshBones; started: boolean; target: DeformTarget }
   | { kind: "paint"; started: boolean };
 
 /**
@@ -49,7 +49,8 @@ export class MeshTool implements Tool {
     for (const node of ctx.store.selectedNodes) {
       const entry = pose?.byNode.get(node.id);
       if (!entry) continue;
-      if (node.box || node.path) { found = { node, entry, target: null }; break; }
+      // A box or path as the stage shows it: a shown skin's own, else the node's.
+      if (node.box || node.path) { found = { node: entry.node, entry, target: null }; break; }
       const target = editedMesh(sym, node, entry.displayIndex, stageSkinOf(sym));
       if (target && entry.spine) { found = { node, entry, target }; break; }
     }
@@ -125,11 +126,11 @@ export class MeshTool implements Tool {
       if (e.shiftKey) return;
       const bones = this.bones(ctx, node, entry, target.mesh);
       if (animate) {
-        // Deform keys are the default skin's display 0's (ARCHITECTURE ▸ Meshes).
-        if (!target.deforms) { ctx.notify("Only the image's first display in the default skin takes deform keys; reshape this one in Setup mode."); return; }
+        // The keys of this display, in its skin (`deformKeysOf`).
         const anim = store.currentAnimation!;
-        const offsets = deformAt(anim, node.id, store.ui.frame) ?? new Array<number>(target.mesh.points.length).fill(0);
-        this.drag = { kind: "deform", start: world, base: anim.deforms?.[node.id] ?? [], offsets, world: entry.world, bones, started: false };
+        const keysOf: DeformTarget = { nodeId: node.id, skin: target.skin, index: target.index };
+        const offsets = deformAt(anim, keysOf, store.ui.frame) ?? new Array<number>(target.mesh.points.length).fill(0);
+        this.drag = { kind: "deform", start: world, base: deformKeysOf(anim, keysOf) ?? [], offsets, world: entry.world, bones, started: false, target: keysOf };
       } else {
         this.drag = { kind: "move", start: world, base: target.mesh, world: entry.world, bones, started: false, target };
       }
@@ -145,7 +146,7 @@ export class MeshTool implements Tool {
       if (insidePolygon([...meshPositions(mesh)], mesh.hull, px, py)) {
         const next = withPoint(mesh, Math.round(px * 100) / 100, Math.round(py * 100) / 100);
         if (next) {
-          store.apply(meshEdit("Add Mesh Point", store.currentSymbolId, node.id, target, next, target.deforms ? this.fittedDeforms(ctx, node.id, deformsWithPoint) : new Map()));
+          store.apply(meshEdit("Add Mesh Point", store.currentSymbolId, node.id, target, next, this.fittedDeforms(ctx, node.id, target, deformsWithPoint)));
           meshView.picked = new Set([next.points.length / 2 - 1]);
           store.emit("stage");
         }
@@ -181,7 +182,7 @@ export class MeshTool implements Tool {
       // Only the points the drag moved are rounded, and only they drop the file's offsets.
       const { points, moved } = roundMoved(d.base.points, shape.points);
       const next = withOutlinePoints(shape, points, moved);
-      store.apply(new EditNode("Move Path Points", store.currentSymbolId, s.node.id, (n) => ({ ...n, path: next }), "path.move"));
+      editShownOutline(store, s.node.id, (n) => ({ ...n, path: next }), "Move Path Points", "path.move");
     } else if (d.kind === "box") {
       const points = [...d.base.points];
       const asMesh = outlineAsMesh(d.base);
@@ -190,7 +191,8 @@ export class MeshTool implements Tool {
         points[i * 2] = Math.round((d.base.points[i * 2]! + l.x) * 100) / 100;
         points[i * 2 + 1] = Math.round((d.base.points[i * 2 + 1]! + l.y) * 100) / 100;
       }
-      store.apply(boxEdit("Move Box Points", store.currentSymbolId, s.node.id, withOutlinePoints(d.base, points, meshView.picked), "box.move"));
+      const box = withOutlinePoints(d.base, points, meshView.picked);
+      editShownOutline(store, s.node.id, (n) => ({ ...n, box }), "Move Box Points", "box.move");
     } else if (d.kind === "move") {
       // An opened mesh's positions move alone; a mesh made here moves its texture coordinates with them.
       const base = meshPositions(d.base);
@@ -210,7 +212,7 @@ export class MeshTool implements Tool {
         offsets[i * 2 + 1] = d.offsets[i * 2 + 1]! + l.y;
       }
       const anim = store.currentAnimation!;
-      store.apply(new SetDeformKeys("Deform", store.currentSymbolId, anim.id, s.node.id, withDeformKey(d.base, store.ui.frame, offsets), "mesh.deform"));
+      store.apply(new SetDeformKeys("Deform", store.currentSymbolId, anim.id, d.target, withDeformKey(d.base, store.ui.frame, offsets), "mesh.deform"));
       store.emit("timeline");
     }
     store.emit("stage");
@@ -274,7 +276,8 @@ export class MeshTool implements Tool {
       const x = Math.round(local.x * 100) / 100, y = Math.round(local.y * 100) / 100;
       const points = withBoxPoint(node.box!.points, x, y);
       const at = points.findIndex((_, k) => k % 2 === 0 && points[k] === x && points[k + 1] === y) / 2;
-      ctx.store.apply(boxEdit("Add Box Point", ctx.store.currentSymbolId, node.id, { points, ...boxWeightsWithPoint(node.box!, at) }));
+      const box = { points, ...boxWeightsWithPoint(node.box!, at) };
+      editShownOutline(ctx.store, node.id, (n) => ({ ...n, box }), "Add Box Point");
       meshView.picked = new Set([at]);
       ctx.store.emit("stage");
     }
@@ -290,7 +293,7 @@ export class MeshTool implements Tool {
       if (left < 2) { ctx.notify("A path needs at least two knots."); return true; }
       const points = s.node.path.points.filter((_, k) => !knots.has(Math.floor(k / 6)));
       const kept = outlineWeightsKept(s.node.path, (i) => !knots.has(Math.floor(i / 3)));
-      ctx.store.apply(new EditNode("Delete Path Knots", ctx.store.currentSymbolId, s.node.id, (n) => ({ ...n, path: { ...n.path!, points, ...kept } })));
+      editShownOutline(ctx.store, s.node.id, (n) => ({ ...n, path: { ...n.path!, points, ...kept } }), "Delete Path Knots");
       meshView.picked.clear();
       ctx.store.emit("stage");
       return true;
@@ -300,14 +303,14 @@ export class MeshTool implements Tool {
       for (const i of [...meshView.picked].sort((a, b) => b - a)) points = points && withoutBoxPoint(points, i);
       if (!points) { ctx.notify("A bounding box needs at least three points."); return true; }
       const kept = outlineWeightsKept(s.node.box, (i) => !meshView.picked.has(i));
-      ctx.store.apply(boxEdit("Delete Box Points", ctx.store.currentSymbolId, s.node.id, { points, ...kept }));
+      editShownOutline(ctx.store, s.node.id, (n) => ({ ...n, box: { points, ...kept } }), "Delete Box Points");
       meshView.picked.clear();
       ctx.store.emit("stage");
       return true;
     }
     if (!s?.target || !meshView.picked.size || ctx.store.ui.mode !== "setup") return false;
     let mesh: MeshData | null = s.target.mesh;
-    let deforms = s.target.deforms ? this.fittedDeforms(ctx, s.node.id, (k) => k) : new Map<AnimId, DeformKey[]>();
+    let deforms = this.fittedDeforms(ctx, s.node.id, s.target, (k) => k);
     for (const i of [...meshView.picked].sort((a, b) => b - a)) {
       const next: MeshData | null = mesh ? withoutPoint(mesh, i) : null;
       if (!next) { ctx.notify("A mesh needs at least three points on its outline."); return true; }
@@ -320,10 +323,15 @@ export class MeshTool implements Tool {
     return true;
   }
 
-  /** Every animation's deform keys of `nodeId`, through `fit`. */
-  private fittedDeforms(ctx: ToolContext, nodeId: NodeId, fit: (keys: DeformKey[]) => DeformKey[]): Map<AnimId, DeformKey[]> {
-    return new Map(ctx.store.currentSymbol.animations.filter((a) => a.deforms?.[nodeId]?.length).map((a) => [a.id, fit(a.deforms![nodeId]!)]));
+  /** Every animation's deform keys of the edited display, through `fit`. */
+  private fittedDeforms(ctx: ToolContext, nodeId: NodeId, target: EditedMesh, fit: (keys: DeformKey[]) => DeformKey[]): Map<AnimId, DeformKey[]> {
+    const t: DeformTarget = { nodeId, skin: target.skin, index: target.index };
+    return new Map(ctx.store.currentSymbol.animations.flatMap((a) => {
+      const keys = deformKeysOf(a, t);
+      return keys?.length ? [[a.id, fit(keys)] as [AnimId, DeformKey[]]] : [];
+    }));
   }
+
 }
 
 /** A `SetMesh` on the mesh `target` names: its display, in its skin. */

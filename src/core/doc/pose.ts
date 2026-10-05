@@ -4,7 +4,7 @@ import { ikPoseAt } from "./ikKeys";
 import { tcIdle, tcLocalOf, type TcLocal, tcSolveLocal, tcSolveWorld, type TcWorld } from "@/core/math/transformConstraint";
 import { tcMixAt, tcSolveOf } from "./transformKeys";
 import { meshUvs, meshWorld } from "@/core/mesh/meshPose";
-import { deformAt } from "@/core/mesh/deform";
+import { deformAt, drawnDeformTarget } from "@/core/mesh/deform";
 import { type IkBone, type IkWorld, ikApply1, ikApply2 } from "@/core/math/ik";
 import { fromSpineLocal, toSpineLocal } from "@/core/spine/transform";
 import { cloneTf, toMatrix, type Transform } from "@/core/math/Transform";
@@ -14,9 +14,9 @@ import { DEFAULT_COLOR, isImage, isSymbol } from "./types";
 import type { ItemId, NodeId } from "./ids";
 import { sampleColorRaw, sampleTransformRaw, spanIndexAt } from "./timeline";
 import { anchorOf, displayAt, meshOfDisplay } from "./displays";
-import { boxNodeBounds, outlineWeighted, outlineWorld } from "./boxes";
+import { boxNodeBounds, outlineField, outlineWeighted, outlineWorld, skinnedOutline } from "./boxes";
 import { sequenceItemAt } from "./sequence";
-import { skinActivity, skinDisplayOf, skinLookup, skinnedDisplay, stageSkinOf, type SkinActivity } from "./skins";
+import { shownDisplay as shownInSkins, skinActivity, skinDisplayOf, skinLookup, skinnedDisplay, stageSkinOf, type SkinActivity } from "./skins";
 
 /**
  * One node, resolved for a given frame. This is the single description that
@@ -240,7 +240,8 @@ export function evaluateSymbol(
       : shown;
     entries.push({
       nodeId: node.id,
-      node,
+      // A box, point or path as the shown skins outline it (`skinnedOutline`).
+      node: skins && outlineField(node.kind) ? skinnedOutline(symbol, node, skins) : node,
       local: transform,
       world: mat(),
       color,
@@ -345,12 +346,15 @@ function applyMeshes(
     if (outlineWeighted(e.node)) { e.outline = outlineWorld(e.node, e.world, bonesOf(e)); continue; }
     const drawn = e.display ? meshOfDisplay(e.node, e.display, skinDisplayOf(symbol, e.node)) : null;
     if (!drawn) continue;
+    // The keys of the display shown, in the skin it comes from (`drawnDeformTarget`).
+    const from = shownInSkins(symbol, e.node, e.displayIndex, skins ?? []);
+    const target = from ? drawnDeformTarget(e.nodeId, e.display!, from.skin, e.displayIndex) : null;
     const mesh = drawn.mesh;
     const weighted = !!mesh.weights?.some((w) => w.length);
     const bones = weighted ? bonesOf(e) : undefined;
     e.spine = {
       itemId: e.display!.itemId,
-      vertices: meshWorld(mesh, drawn.pivot, e.world, drawn.deform ? deformAt(animation, e.nodeId, frame) : null, bones),
+      vertices: meshWorld(mesh, drawn.pivot, e.world, target ? deformAt(animation, target, frame) : null, bones),
       uvs: meshUvs(mesh, mesh.width, mesh.height),
       triangles: mesh.triangles,
       quad: false,

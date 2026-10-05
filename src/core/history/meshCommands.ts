@@ -3,6 +3,7 @@ import type { DeformKey, MeshData, Node, Project, SymbolItem } from "@/core/doc/
 import { isSymbol } from "@/core/doc/types";
 import type { AnimId, ItemId, NodeId } from "@/core/doc/ids";
 import { invalidateBounds } from "@/core/doc/pose";
+import { assignDeforms, deformKeysOf, type DeformTarget, withDeformKeysOf } from "@/core/mesh/deform";
 
 function symbolOf(p: Project, id: ItemId): SymbolItem {
   const s = p.items[id];
@@ -73,13 +74,13 @@ export class SetMesh implements Command {
     else sym.nodes[this.nodeId] = withMesh(node, this.index, mesh);
   }
 
+  /** The deform keys of the display this edits, in its skin. */
+  private get target(): DeformTarget { return { nodeId: this.nodeId, skin: this.skin, index: this.index }; }
+
   private writeDeforms(sym: SymbolItem, keys: Map<AnimId, DeformKey[] | undefined>): void {
     for (const [animId, list] of keys) {
       const anim = sym.animations.find((a) => a.id === animId);
-      if (!anim) continue;
-      const out = { ...anim.deforms };
-      if (list?.length) out[this.nodeId] = list; else delete out[this.nodeId];
-      if (Object.keys(out).length) anim.deforms = out; else delete anim.deforms;
+      if (anim) assignDeforms(anim, withDeformKeysOf(anim, this.target, list));
     }
   }
 
@@ -89,7 +90,7 @@ export class SetMesh implements Command {
     if (!node) return;
     if (!this.before) {
       const deforms = new Map<AnimId, DeformKey[] | undefined>();
-      for (const id of this.deforms.keys()) deforms.set(id, sym.animations.find((a) => a.id === id)?.deforms?.[this.nodeId]);
+      for (const id of this.deforms.keys()) deforms.set(id, deformKeysOf(sym.animations.find((a) => a.id === id), this.target));
       this.before = { mesh: this.read(sym, node), deforms };
     }
     this.write(sym, node, this.after);
@@ -115,35 +116,36 @@ export class SetMesh implements Command {
   }
 }
 
-/** One mesh node's deform keys in an animation replaced. Steps of one drag merge. */
+/** One mesh display's deform keys in an animation replaced (`DeformTarget`; a
+ *  node id alone is its default skin's display 0). Steps of one drag merge. */
 export class SetDeformKeys implements Command {
   readonly touches: TouchSet;
   private before: DeformKey[] | undefined;
   private captured = false;
+  private readonly target: DeformTarget;
 
   constructor(
     readonly label: string,
     private readonly symbolId: ItemId,
     private readonly animId: AnimId,
-    private readonly nodeId: NodeId,
+    target: NodeId | DeformTarget,
     private after: DeformKey[],
     readonly kind = "timeline.deform",
   ) {
-    this.touches = { symbols: [symbolId], nodes: [nodeId], timeline: true, stage: true };
+    this.target = typeof target === "string" ? { nodeId: target, skin: null, index: 0 } : target;
+    this.touches = { symbols: [symbolId], nodes: [this.target.nodeId], timeline: true, stage: true };
   }
 
   private write(p: Project, keys: DeformKey[] | undefined): void {
     const anim = symbolOf(p, this.symbolId).animations.find((a) => a.id === this.animId);
     if (!anim) return;
-    const out = { ...anim.deforms };
-    if (keys?.length) out[this.nodeId] = keys; else delete out[this.nodeId];
-    if (Object.keys(out).length) anim.deforms = out; else delete anim.deforms;
+    assignDeforms(anim, withDeformKeysOf(anim, this.target, keys));
     invalidateBounds([this.symbolId]);
   }
 
   apply(p: Project): void {
     if (!this.captured) {
-      this.before = symbolOf(p, this.symbolId).animations.find((a) => a.id === this.animId)?.deforms?.[this.nodeId];
+      this.before = deformKeysOf(symbolOf(p, this.symbolId).animations.find((a) => a.id === this.animId), this.target);
       this.captured = true;
     }
     this.write(p, this.after);
@@ -153,7 +155,8 @@ export class SetDeformKeys implements Command {
 
   mergeWith(next: Command): boolean {
     if (!(next instanceof SetDeformKeys) || next.kind !== this.kind) return false;
-    if (next.symbolId !== this.symbolId || next.animId !== this.animId || next.nodeId !== this.nodeId) return false;
+    const a = this.target, b = next.target;
+    if (next.symbolId !== this.symbolId || next.animId !== this.animId || a.nodeId !== b.nodeId || a.skin !== b.skin || a.index !== b.index) return false;
     this.after = next.after;
     return true;
   }

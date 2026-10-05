@@ -6,7 +6,7 @@ import type { AnimId, AssetId, CnId, FolderId, IkId, ItemId, LayerId, NodeId, Tc
 import type { TcChannel, TcFrom } from "@/core/math/transformConstraint";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 26;
+export const DOC_VERSION = 27;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -257,6 +257,8 @@ export interface Node {
   key?: string;
   /** Display 0's attachment name (`DisplayRef.name`). */
   attachmentName?: string;
+  /** Display 0's tint (`DisplayRef.tint`). */
+  tint?: string;
   /** Display 0 draws another display's mesh (`DisplayRef.linked`). */
   linked?: LinkedMesh;
   /** A box's, point's or path's editor colour ("rrggbbaa", nonessential),
@@ -278,6 +280,10 @@ export interface DisplayRef {
   /** The attachment's own name (Spine's `name`, which the region path
    *  defaults to) where an opened file gave one other than its key. */
   name?: string;
+  /** The attachment's own colour, "rrggbbaa" (Spine's `color` on a region,
+   *  mesh or linked mesh), multiplied into the slot's. Absent: white. Only
+   *  spine-core poses it (`runtimePosed`). */
+  tint?: string;
   /** It draws another display's mesh with its own image (Spine's linked mesh). */
   linked?: LinkedMesh;
   /** The image as a mesh (ARCHITECTURE ▸ Meshes), exported as a Spine mesh
@@ -352,6 +358,16 @@ export interface SkinDef {
   transforms?: TcId[];
   /** Physics, slider and path constraints only this skin has. */
   constraints?: CnId[];
+  /** Its own box, point or path for a box, point or path node: Spine's
+   *  attachment under the node's key in this skin (`skinnedOutline`). */
+  outlines?: Record<NodeId, SkinOutline>;
+}
+
+/** A skin's box, point or path for a node, the node's own kind. */
+export interface SkinOutline {
+  box?: { points: number[] } & OutlineWeights;
+  path?: PathShape;
+  point?: { x: number; y: number; rotation: number };
 }
 
 /**
@@ -584,8 +600,11 @@ export interface Animation {
    *  each list sorted by frame. Absent for a constraint: its own mixes. */
   transforms?: Record<TcId, TcKey[]>;
   /** Deform keys per mesh node (`core/mesh/deform.ts`), each list sorted by
-   *  frame. Absent: the mesh as made. */
+   *  frame. Absent: the mesh as made. Display 0's of the default skin. */
   deforms?: Record<NodeId, DeformKey[]>;
+  /** Deform keys of every other mesh display: by skin ("default" for a node's
+   *  own displays past 0), node and display index (`deformKeysOf`). */
+  displayDeforms?: Record<string, Record<NodeId, Record<string, DeformKey[]>>>;
   /** Sequence keys of nodes whose display 0 is a sequence (ARCHITECTURE ▸ Sequences). */
   sequences?: Record<NodeId, SequenceKey[]>;
   /** Inherit mode keys per bone (`core/doc/inherit.ts`), each list sorted by

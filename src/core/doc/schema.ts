@@ -406,17 +406,7 @@ export function validateProject(raw: unknown): ValidationResult {
         const node = item.nodes[id as never];
         const count = node?.mesh?.points.length ?? node?.extraDisplays?.find((d) => d.mesh)?.mesh?.points.length;
         if (!count || !Array.isArray(list)) continue;
-        const byFrame = new Map<number, DeformKey>();
-        for (const k of list as unknown[]) {
-          if (!k || typeof k !== "object") continue;
-          const r = k as Record<string, unknown>;
-          const offsets = Array.isArray(r.offsets) ? r.offsets.map((v) => num(v, 0)) : [];
-          const key: DeformKey = { frame: clampInt(r.frame, 0, 100000, 0), offsets: Array.from({ length: count }, (_, i) => offsets[i] ?? 0) };
-          const tween = sanitizeTween(r.tween);
-          if (tween?.kind === "none" || (tween?.kind === "curve" && tween.curve.length === 4)) key.tween = tween;
-          byFrame.set(key.frame, key);
-        }
-        const keys = [...byFrame.values()].sort((a, b) => a.frame - b.frame);
+        const keys = deformKeysRead(list, count);
         if (keys.length) out[id] = keys;
       }
       if (Object.keys(out).length) anim.deforms = out as never;
@@ -582,6 +572,8 @@ export function validateProject(raw: unknown): ValidationResult {
         if (pt && (pt.x || pt.y || pt.rotation)) node.point = pt; else delete node.point;
       }
       if (node.region !== undefined) { const t = node.itemId ? regionOf(node.region) : undefined; if (t) node.region = t; else delete node.region; }
+      if (node.tint !== undefined) { const t = node.itemId ? tintRead(node.tint) : undefined; if (t) node.tint = t; else delete node.tint; }
+      for (const d of node.extraDisplays ?? []) if (d.tint !== undefined) { const t = tintRead(d.tint); if (t) d.tint = t; else delete d.tint; }
       for (const d of node.extraDisplays ?? []) if (d.region !== undefined) { const t = regionOf(d.region); if (t) d.region = t; else delete d.region; }
       for (const d of node.extraDisplays ?? []) if (d.skinOnly !== undefined && d.skinOnly !== true) delete d.skinOnly;
     }
@@ -605,6 +597,28 @@ export function validateProject(raw: unknown): ValidationResult {
       }
       if (skins.length) item.skins = skins;
       else delete item.skins;
+    }
+    // Deform keys of other displays: a skin's ("default" a node's own past 0)
+    // display that is a mesh, one offset pair per point.
+    for (const anim of item.animations) {
+      if (anim.displayDeforms === undefined) continue;
+      const raw = anim.displayDeforms && typeof anim.displayDeforms === "object" ? anim.displayDeforms as Record<string, unknown> : {};
+      const out: NonNullable<typeof anim.displayDeforms> = {};
+      for (const [skin, byNode] of Object.entries(raw)) {
+        if (!byNode || typeof byNode !== "object") continue;
+        for (const [id, byIndex] of Object.entries(byNode as Record<string, unknown>)) {
+          const node = item.nodes[id as never];
+          if (!node || !byIndex || typeof byIndex !== "object") continue;
+          for (const [index, list] of Object.entries(byIndex as Record<string, unknown>)) {
+            const i = Number(index);
+            const mesh = skin === "default" ? (i > 0 ? node.extraDisplays?.[i - 1]?.mesh : undefined) : item.skins?.find((d) => d.name === skin)?.displays?.[id as never]?.[i]?.mesh;
+            if (!Number.isInteger(i) || !mesh || !Array.isArray(list)) continue;
+            const keys = deformKeysRead(list, mesh.points.length);
+            if (keys.length) ((out[skin] ??= {})[id as never] ??= {})[String(i)] = keys;
+          }
+        }
+      }
+      if (Object.keys(out).length) anim.displayDeforms = out; else delete anim.displayDeforms;
     }
     for (const anim of item.animations) {
       if (anim.transforms === undefined) continue;
@@ -813,6 +827,9 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // and paths, skins' meshes and links to another skin's mesh. Additive; an
   // older build would drop them.
   25: (p) => ({ ...p, version: 26 }),
+  // 26 -> 27: attachment tints, deform keys of any display in any skin,
+  // opened path constraints. Additive; an older build would drop them.
+  26: (p) => ({ ...p, version: 27 }),
   // 19 -> 20: `SymbolItem.transforms` and `Animation.transforms`, transform
   // constraints and their keys. Additive; an older build would drop them.
   19: (p) => ({ ...p, version: 20 }),
@@ -886,6 +903,8 @@ function sanitizeSkin(
       }
       const turn = regionOf(d.region);
       if (turn) clean.region = turn;
+      const tint = tintRead(d.tint);
+      if (tint) clean.tint = tint;
       out[String(i)] = clean;
     }
     if (Object.keys(out).length) displays[nodeId] = out;
@@ -900,6 +919,27 @@ function sanitizeSkin(
   if (transforms.length) def.transforms = transforms as SkinDef["transforms"];
   const constraints = ids(r.constraints, (id) => cnIds.has(id));
   if (constraints.length) def.constraints = constraints as SkinDef["constraints"];
+  // Its own boxes, points and paths: for nodes of that kind, well formed.
+  const outlines: NonNullable<SkinDef["outlines"]> = {};
+  for (const [nodeId, raw] of Object.entries(r.outlines && typeof r.outlines === "object" ? r.outlines as Record<string, unknown> : {})) {
+    const node = nodes[nodeId];
+    const o = raw && typeof raw === "object" ? raw as Record<string, unknown> : null;
+    if (!node || !o) continue;
+    const pts = (v: unknown) => { const q = v && typeof v === "object" ? (v as Record<string, unknown>).points : undefined; return Array.isArray(q) ? q.map((x) => num(x, NaN)) : []; };
+    if (node.kind === "box") {
+      const p = pts(o.box);
+      if (p.length >= 6 && p.length % 2 === 0 && p.every(Number.isFinite)) outlines[nodeId as never] = { box: { points: p, ...weightsOf(o.box as Record<string, unknown>, p.length / 2, nodes) } };
+    } else if (node.kind === "path") {
+      const p = pts(o.path), r2 = o.path as Record<string, unknown>;
+      if (p.length >= 12 && p.length % 6 === 0 && p.every(Number.isFinite)) {
+        outlines[nodeId as never] = { path: { points: p, ...(r2.closed === true ? { closed: true } : {}), ...(r2.constantSpeed === false ? { constantSpeed: false } : {}), ...weightsOf(r2, p.length / 2, nodes) } };
+      }
+    } else if (node.kind === "point") {
+      const q = o.point && typeof o.point === "object" ? o.point as Record<string, unknown> : {};
+      outlines[nodeId as never] = { point: { x: num(q.x, 0), y: num(q.y, 0), rotation: num(q.rotation, 0) } };
+    }
+  }
+  if (Object.keys(outlines).length) def.outlines = outlines;
   return def;
 }
 
@@ -946,6 +986,27 @@ function regionOf(raw: unknown): RegionTurn | undefined {
   if (num(r.scaleX, 1) !== 1) out.scaleX = num(r.scaleX, 1);
   if (num(r.scaleY, 1) !== 1) out.scaleY = num(r.scaleY, 1);
   return Object.keys(out).length ? out : undefined;
+}
+
+/** Deform keys read from disk: one per frame, sorted, `count` offsets each. */
+function deformKeysRead(list: unknown[], count: number): DeformKey[] {
+  const byFrame = new Map<number, DeformKey>();
+  for (const k of list) {
+    if (!k || typeof k !== "object") continue;
+    const r = k as Record<string, unknown>;
+    const offsets = Array.isArray(r.offsets) ? r.offsets.map((v) => num(v, 0)) : [];
+    const key: DeformKey = { frame: clampInt(r.frame, 0, 100000, 0), offsets: Array.from({ length: count }, (_, i) => offsets[i] ?? 0) };
+    const tween = sanitizeTween(r.tween);
+    if (tween?.kind === "none" || (tween?.kind === "curve" && tween.curve.length === 4)) key.tween = tween;
+    byFrame.set(key.frame, key);
+  }
+  return [...byFrame.values()].sort((a, b) => a.frame - b.frame);
+}
+
+/** A tint read from disk: "rrggbbaa", lower case; white is none. */
+function tintRead(v: unknown): string | undefined {
+  if (typeof v !== "string" || !/^[0-9a-fA-F]{8}$/.test(v)) return undefined;
+  return v.toLowerCase() === "ffffffff" ? undefined : v.toLowerCase();
 }
 
 /** Six mixes read from disk, 0..1; a missing one is 1. */

@@ -17,7 +17,8 @@ Legend:
 - ✅ Bones: create (Bone tool), parent, length, setup pose, Setup / Animate modes
 - ✅ Slots and region attachments (image layers, several displays per slot, attachment keys)
 - ✅ Draw order, and draw order keys
-- ✅ Blend modes, colour and two-colour tint (colour offsets)
+- ✅ Blend modes, colour and two-colour tint (colour offsets), an attachment's own colour
+  (Properties ▸ Color Effect ▸ Image tint)
 - ✅ Clipping attachments (mask layers)
 - ✅ Nested symbols, flattened into one skeleton on export
 - ✅ Bone `inherit` modes: Properties ▸ Bone ▸ Inherit; the runtime poses such a rig
@@ -51,6 +52,7 @@ Legend:
   Preview (ARCHITECTURE ▸ Skins); an opened file's skins become editable
 - ✅ Skin placeholders (skin-only displays) and a skin's own image in each slot
 - ✅ Skin bones and skin constraints, every kind
+- ✅ A skin's own box, point or path in a slot, drawn, exported and edited
 
 ### Constraints
 
@@ -59,12 +61,11 @@ Legend:
 - ✅ IK stretch, compress and scale y (4.3's `scaleY`, was uniform): solved on the stage, set in
   Properties ▸ IK
 - ✅ Transform constraint: created, edited, keyed, solved on the stage (ARCHITECTURE ▸ Transform
-  constraints); a remapped property table is kept but not edited
+  constraints); its property map edited in Properties ▸ Transform
 - ✅ Path constraint: made from bones (Make Path), edited; posed by the runtime
 - ✅ Physics constraint: added and edited per bone; the stage simulates while it plays
 - ✅ Slider constraint: an animation played by a bone value or a time
-- ✅ Creating and editing path, physics and slider constraints (opened files' physics and
-  sliders become editable; paths stay carried)
+- ✅ Creating and editing path, physics and slider constraints, opened files' included
 - ✅ Constraint order: Properties ▸ Constraints moves one up or down; the stage solves and
   the export writes in it; an opened file's order is kept (ARCHITECTURE ▸ Constraint order)
 
@@ -77,7 +78,8 @@ Legend:
 - ✅ Eases: presets, custom cubic (Ease dialog), stepped; played as Spine samples them
 - ✅ Onion skin (Spine's ghosting), cycles, bone paths (drag, bend with handles, bake)
 - ✅ Auto key (`ui.autoKey`)
-- ✅ Deform (mesh) keys: keyed with the Mesh tool, a Deform row (opened files' deforms carried)
+- ✅ Deform (mesh) keys: keyed with the Mesh tool, a Deform row; every mesh display has its own,
+  a skin's included
 - ✅ Event keys and the event list (an Events row and panel; ARCHITECTURE ▸ Events)
 - ✅ Transform constraint keys (a row per constraint)
 - ✅ Path, physics and slider constraint keys: a row per constraint, keyed from Properties
@@ -111,7 +113,7 @@ Legend:
 - ✅ spine-core parity tests: the stage against the export, frame by frame
 - ✅ Preview mixing (Mix from … over … s, Play Mix) and the fired events listed
 - ✅ Preview animation queue of any length, each crossfaded into
-- ✅ Unity check rerun after phases A to J, attachment geometry and every skin included
+- ✅ Unity check rerun after phases A to K, attachment geometry and every skin included
   (ARCHITECTURE ▸ Checked in Unity)
 
 ## Plan
@@ -237,9 +239,19 @@ meshes.
 6. The Properties panel laid out for a narrow column.
 7. The Unity check rerun, now comparing attachment geometry and every skin.
 
-Still carried: an attachment with a field the model does not hold (a tinted mesh), a mesh
-an animation deforms other than the default skin's display 0, and boxes, points and paths in
-a slot that skins fill.
+### Phase K: the last carried things (done, docs/PHASE-K-PLAN.md)
+
+1. Opened path constraints become the model's, with their keys and skins.
+2. An attachment's own colour (tint), edited in Properties.
+3. Deform keys on any display, in any skin.
+4. A transform constraint's property map edited.
+5. A skin's own box, point or path.
+6. The Unity check rerun, each skin played through every animation for a rig with a few.
+
+An opened file still carries only what no model field covers: an attachment field outside
+Spine's documented set, a timeline that does not land on frames and has no exact form (a deform
+or sequence key between frames), and a skin's own attachments under keys the default skin does
+not have in a box, point or path slot.
 
 ## Not in scope
 

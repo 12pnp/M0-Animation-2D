@@ -1,7 +1,9 @@
 import type { Store } from "./Store";
 import type { AssetStore } from "./AssetStore";
 import { createLayer, createNode } from "@/core/doc/defaults";
-import { attachmentPlan } from "@/core/doc/boxes";
+import { attachmentPlan, outlineField, outlineSkin, skinnedOutline } from "@/core/doc/boxes";
+import { stageSkinOf } from "@/core/doc/skins";
+import { SetSkinOutline } from "@/core/history/skinCommands";
 import { isImage } from "@/core/doc/types";
 import { AddNode } from "@/core/history/commands";
 import { type ConstraintField, EditNode, SetConstraintList, SetSequenceKeys } from "@/core/history/attachmentCommands";
@@ -141,4 +143,21 @@ export function doMakePath(store: Store, boneIds: readonly NodeId[]): string | n
   });
   store.selectNodes([node.id]);
   return null;
+}
+
+/**
+ * An edit of the box, point or path the stage shows on `nodeId`: a shown
+ * skin's own (`outlineSkin`), else the node's. `edit` gets and returns the
+ * node as the stage shows it; one undo step, merged by `kind`.
+ */
+export function editShownOutline(store: Store, nodeId: NodeId, edit: (n: Node) => Node, label: string, kind?: string): void {
+  const sym = store.currentSymbol;
+  const node = sym.nodes[nodeId];
+  const field = node ? outlineField(node.kind) : null;
+  if (!node || !field) return;
+  const skin = outlineSkin(sym, node, stageSkinOf(sym));
+  if (!skin) { store.apply(new EditNode(label, store.currentSymbolId, nodeId, edit, kind)); return; }
+  const next = edit(skinnedOutline(sym, node, [skin]));
+  const value = field === "point" ? next.point ?? { x: 0, y: 0, rotation: 0 } : next[field];
+  store.apply(new SetSkinOutline(label, store.currentSymbolId, skin, nodeId, { [field]: value }, kind));
 }

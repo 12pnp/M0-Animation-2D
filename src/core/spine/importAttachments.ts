@@ -79,7 +79,7 @@ export function fileLengthsOf(shape: PathShape): number[] | null {
  * image's size, its offset the transform point, a turn or scale kept.
  */
 export function sequenceDisplayOf(att: Raw, key: string, itemNamed: (name: string) => { id: ItemId; width: number; height: number } | undefined): DisplayRef | null {
-  if ((att.type !== undefined && att.type !== "region") || !only(att, ["type", "name", "path", "sequence", "x", "y", "width", "height", "rotation", "scaleX", "scaleY"])) return null;
+  if ((att.type !== undefined && att.type !== "region") || !only(att, ["type", "name", "path", "sequence", "x", "y", "width", "height", "rotation", "scaleX", "scaleY", "color"])) return null;
   if ([att.rotation, att.scaleX, att.scaleY].some((v) => v !== undefined && !finite(v))) return null;
   const seq = att.sequence as Raw | undefined;
   if (!seq || typeof seq !== "object" || !only(seq, ["count", "start", "digits", "setup"])) return null;
@@ -103,6 +103,8 @@ export function sequenceDisplayOf(att: Raw, key: string, itemNamed: (name: strin
   if (att.scaleX !== undefined && att.scaleX !== 1) turn.scaleX = att.scaleX as number;
   if (att.scaleY !== undefined && att.scaleY !== 1) turn.scaleY = att.scaleY as number;
   if (Object.keys(turn).length) ref.region = turn;
+  // Its own colour (`DisplayRef.tint`).
+  if (typeof att.color === "string" && /^[0-9a-fA-F]{8}$/.test(att.color) && att.color.toLowerCase() !== "ffffffff") ref.tint = att.color.toLowerCase();
   ref.key = key;
   return ref;
 }

@@ -60,7 +60,7 @@ describe("the AI's tools", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
       "get_reference", "render_frame", "add_bones", "attach", "add_ik", "auto_rig", "list_motions", "apply_motion", "draw_order",
-      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "make_mesh", "bind_mesh", "add_skin", "set_skin_image", "add_attachment", "make_sequence", "key_sequence", "add_physics", "link_mesh", "key_constraint", "set_inherit", "set_point", "set_constraint_order", "add_slider", "make_path", "set_skin_members", "set_cycle", "key_properties", "offset_keys", "get_bone_path", "set_bone_path",
+      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "make_mesh", "bind_mesh", "add_skin", "set_skin_image", "add_attachment", "make_sequence", "key_sequence", "add_physics", "link_mesh", "key_constraint", "set_inherit", "set_point", "set_tint", "map_transform", "set_constraint_order", "add_slider", "make_path", "set_skin_members", "set_cycle", "key_properties", "offset_keys", "get_bone_path", "set_bone_path",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -880,6 +880,32 @@ describe("cycles and bone paths through the AI's tools", () => {
     expect(skin.eye!.eye).toMatchObject({ type: "point", x: 8, y: 3, rotation: -45 });
     await expect(api.call("set_point", { point: "head", x: 1 })).rejects.toThrow(/not a point/);
     await expect(api.call("set_point", { point: "eye" })).rejects.toThrow(/Give x, y or rotation/);
+  });
+
+  it("set a tint: one undo step, written as the attachment's colour; null clears it", async () => {
+    const { store, api } = await setup();
+    const torso = Object.values(store.currentSymbol.nodes).find((n) => n.itemId && n.name.includes("torso"))!;
+    expect(await api.call("set_tint", { layer: torso.name, color: "#ff8000" })).toEqual({ layer: torso.name, display: 0, tint: "ff8000ff" });
+    expect(store.history.undoLabel).toBe(`AI: Tint "${torso.name}"`);
+    const att = exportSpine(store.project).skeleton.skins![0]!.attachments![torso.name]!;
+    expect(Object.values(att)[0]).toMatchObject({ color: "ff8000ff" });
+    expect(await api.call("set_tint", { layer: torso.name, color: null })).toMatchObject({ tint: null });
+    await expect(api.call("set_tint", { layer: torso.name, color: "orange" })).rejects.toThrow(/rrggbb/);
+    await expect(api.call("set_tint", { layer: torso.name, color: null, display: 9 })).rejects.toThrow(/no display 9/);
+  });
+
+  it("map a transform constraint's properties: one undo step each, written as Spine's properties", async () => {
+    const { store, api } = await setup();
+    await api.call("add_transform_constraint", { bones: ["head"], source: "chest", name: "nod" });
+    const out = await api.call("map_transform", { constraint: "nod", from: "rotate", to: "x", scale: 0.5, max: 40 }) as { properties: Array<{ from: string; to: Array<{ to: string; scale: number }> }> };
+    expect(out.properties.find((p) => p.from === "rotate")!.to.map((t) => [t.to, t.scale])).toEqual([["rotate", 1], ["x", 0.5]]);
+    expect(store.history.undoLabel).toBe(`AI: Transform Map "nod"`);
+    await api.call("map_transform", { constraint: "nod", from: "rotate", to: "rotate", remove: true, sourceOffset: 10 });
+    const file = exportSpine(store.project).skeleton.constraints!.find((c) => (c as { name: string }).name === "nod") as { properties: Record<string, { offset?: number; to: Record<string, unknown> }> };
+    expect(Object.keys(file.properties.rotate!.to)).toEqual(["x"]);
+    expect(file.properties.rotate!.offset).toBe(10);
+    await expect(api.call("map_transform", { constraint: "nope", from: "x", to: "x" })).rejects.toThrow(/no transform constraint/);
+    await expect(api.call("map_transform", { constraint: "nod", from: "spin", to: "x" })).rejects.toThrow(/one of rotate/);
   });
 
   it("set the constraint order: the ones named first, the rest after; one undo step", async () => {
