@@ -11,14 +11,14 @@ import type { SymbolItem } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
 
 /**
- * `mcp/amino-bridge.mjs` as Claude Code runs it: MCP over stdio on one side,
+ * `mcp/boneburst-bridge.mjs` as Claude Code runs it: MCP over stdio on one side,
  * the editor page's long poll on the other. The "page" here is a real
  * `AgentApi` on the stickman, polling as `AgentBridge` does; the model APIs
  * for Ask AI are fakes that ask for one tool and then answer — Anthropic
  * Messages for Claude, chat completions for GLM.
  */
 
-const BRIDGE = fileURLToPath(new URL("../mcp/amino-bridge.mjs", import.meta.url));
+const BRIDGE = fileURLToPath(new URL("../mcp/boneburst-bridge.mjs", import.meta.url));
 const PORT = 5391, API_PORT = 5392, GLM_PORT = 5393, GLM_API_PORT = 5394, GLMV_PORT = 5395;
 const ORIGIN = "http://localhost:5181";
 
@@ -94,7 +94,7 @@ beforeAll(async () => {
 
   bridge = spawn("node", [BRIDGE], {
     stdio: ["pipe", "pipe", "pipe"],
-    env: { ...process.env, AMINO_BRIDGE_PORT: String(PORT), ANTHROPIC_API_KEY: "test", AMINO_API_URL: `http://127.0.0.1:${API_PORT}/v1/messages` },
+    env: { ...process.env, BONEBURST_BRIDGE_PORT: String(PORT), ANTHROPIC_API_KEY: "test", BONEBURST_API_URL: `http://127.0.0.1:${API_PORT}/v1/messages` },
   });
   bridge.stdout!.setEncoding("utf8");
   bridge.stdout!.on("data", (d: string) => {
@@ -124,15 +124,18 @@ beforeAll(async () => {
   });
   await new Promise<void>((r) => glmApi.listen(GLM_API_PORT, "127.0.0.1", r));
 
-  const env: NodeJS.ProcessEnv = { ...process.env, AMINO_BRIDGE_PORT: String(GLM_PORT), GLM_API_KEY: "test-glm", AMINO_API_URL: `http://127.0.0.1:${GLM_API_PORT}/chat/completions` };
-  delete env.AMINO_PROVIDER; // auto-detect: GLM_API_KEY means glm
+  const env: NodeJS.ProcessEnv = { ...process.env, BONEBURST_BRIDGE_PORT: String(GLM_PORT), GLM_API_KEY: "test-glm", BONEBURST_API_URL: `http://127.0.0.1:${GLM_API_PORT}/chat/completions` };
+  delete env.BONEBURST_PROVIDER; // auto-detect: GLM_API_KEY means glm
   glmBridge = spawn("node", [BRIDGE], { stdio: ["pipe", "pipe", "pipe"], env });
   glmBridge.stdout!.resume(); // no MCP over stdio for this one
   await new Promise<void>((r) => glmBridge.stderr!.once("data", () => r()));
   void runPage(api, GLM_PORT);
 
-  // GLM with a vision model: AMINO_VISION=1 says it reads pictures.
-  glmVisionBridge = spawn("node", [BRIDGE], { stdio: ["pipe", "pipe", "pipe"], env: { ...env, AMINO_BRIDGE_PORT: String(GLMV_PORT), AMINO_VISION: "1" } });
+  // GLM with a vision model: VISION=1 says it reads pictures. Set by the
+  // names from before the rename (AMINO_*), which the bridge still reads.
+  const oldNames = { ...env };
+  delete oldNames.BONEBURST_BRIDGE_PORT;
+  glmVisionBridge = spawn("node", [BRIDGE], { stdio: ["pipe", "pipe", "pipe"], env: { ...oldNames, AMINO_BRIDGE_PORT: String(GLMV_PORT), AMINO_VISION: "1" } });
   glmVisionBridge.stdout!.resume();
   await new Promise<void>((r) => glmVisionBridge.stderr!.once("data", () => r()));
   void runPage(api, GLMV_PORT);
@@ -150,7 +153,7 @@ afterAll(async () => {
 describe("the AI bridge", () => {
   it("speaks MCP: initialize, then the editor's tools", async () => {
     const init = await rpc("initialize", { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "0" } });
-    expect(init.result).toMatchObject({ protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "amino-spine2d" } });
+    expect(init.result).toMatchObject({ protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "boneburst" } });
     const list = await rpc("tools/list", {});
     const tools = list.result!.tools as Array<{ name: string; inputSchema: object }>;
     expect(tools.map((t) => t.name)).toEqual(AGENT_TOOLS.map((t) => t.name));
@@ -261,7 +264,7 @@ describe("a key pasted in the popup", () => {
     await rm(keyfile, { force: true });
     keyBridge = spawn("node", [BRIDGE], {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, AMINO_BRIDGE_PORT: String(PORT), AMINO_KEYFILE: keyfile },
+      env: { ...process.env, BONEBURST_BRIDGE_PORT: String(PORT), BONEBURST_KEYFILE: keyfile },
     });
     keyBridge.stdout!.resume();
     await new Promise<void>((r) => keyBridge.stderr!.once("data", () => r()));
@@ -297,7 +300,7 @@ describe("a key pasted in the popup", () => {
   it("hands the saved key to the next start on its own", async () => {
     const fresh = spawn("node", [BRIDGE], {
       stdio: ["pipe", "pipe", "pipe"],
-      env: { ...process.env, AMINO_BRIDGE_PORT: String(PORT + 1), AMINO_KEYFILE: keyfile },
+      env: { ...process.env, BONEBURST_BRIDGE_PORT: String(PORT + 1), BONEBURST_KEYFILE: keyfile },
     });
     fresh.stdout!.resume();
     await new Promise<void>((r) => fresh.stderr!.once("data", () => r()));

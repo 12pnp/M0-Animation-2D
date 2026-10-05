@@ -1,28 +1,28 @@
 #!/usr/bin/env node
-// The AI bridge for Amino Spine2D. No dependencies: Node 18 or later.
+// The AI bridge for BoneBurst. No dependencies: Node 18 or later.
 //
-//   node mcp/amino-bridge.mjs              MCP server on stdio (what Claude Code
+//   node mcp/boneburst-bridge.mjs              MCP server on stdio (what Claude Code
 //                                          and Claude Desktop start), plus the
 //                                          HTTP side the editor page polls
-//   node mcp/amino-bridge.mjs --http-only  just the HTTP side, for Ask AI
+//   node mcp/boneburst-bridge.mjs --http-only  just the HTTP side, for Ask AI
 //
 // The editor page (Window ▸ Connect to AI) long-polls GET /agent/next for tool
 // calls and posts results to /agent/result. POST /chat runs the model with the
 // same tools: Claude (Anthropic Messages) or GLM (OpenAI-compatible), picked by
-// AMINO_PROVIDER. Keys come from the environment or the key file the popup's
+// BONEBURST_PROVIDER. Keys come from the environment or the key file the popup's
 // field writes (`POST /agent/key`) — either way they live in THIS process and
 // its key file, never longer in the page than the paste.
 // Listens on 127.0.0.1 only; only the editor's origins may call it.
 //
-// Environment: AMINO_BRIDGE_PORT (5190), AMINO_ORIGINS (comma separated;
+// Environment: BONEBURST_BRIDGE_PORT (5190), BONEBURST_ORIGINS (comma separated;
 // default the dev server, http://localhost:5181 and http://127.0.0.1:5181),
-// AMINO_PROVIDER (anthropic | glm; glm when a GLM key is known), ANTHROPIC_API_KEY,
-// GLM_API_KEY (api.z.ai; for open.bigmodel.cn also set AMINO_API_URL), AMINO_MODEL
+// BONEBURST_PROVIDER (anthropic | glm; glm when a GLM key is known), ANTHROPIC_API_KEY,
+// GLM_API_KEY (api.z.ai; for open.bigmodel.cn also set BONEBURST_API_URL), BONEBURST_MODEL
 // (claude-sonnet-5-5 / glm-4.6; the starting model — the dot popup's picker
-// changes it live via POST /agent/model), AMINO_MODELS (the picker's choices,
-// comma separated; a small built-in list per provider otherwise), AMINO_API_URL
-// (the provider's endpoint; tests point it at a fake), AMINO_KEYFILE
-// (~/.amino-bridge.json; where the popup's key field stores what it is given,
+// changes it live via POST /agent/model), BONEBURST_MODELS (the picker's choices,
+// comma separated; a small built-in list per provider otherwise), BONEBURST_API_URL
+// (the provider's endpoint; tests point it at a fake), BONEBURST_KEYFILE
+// (~/.boneburst-bridge.json; where the popup's key field stores what it is given,
 // mode 600, read back at startup).
 
 import http from "node:http";
@@ -34,10 +34,15 @@ import { randomUUID } from "node:crypto";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TOOLS = JSON.parse(readFileSync(join(HERE, "../src/app/agent/tools.json"), "utf8"));
-const PORT = Number(process.env.AMINO_BRIDGE_PORT ?? 5190);
-const ORIGINS = new Set((process.env.AMINO_ORIGINS ?? "http://localhost:5181,http://127.0.0.1:5181").split(",").map((s) => s.trim()));
+/** A setting from the environment: `BONEBURST_<name>`, or the old
+ *  `AMINO_<name>` from before the rename, so an existing setup keeps working. */
+function env(name) {
+  return process.env[`BONEBURST_${name}`] ?? process.env[`AMINO_${name}`];
+}
+const PORT = Number(env("BRIDGE_PORT") ?? 5190);
+const ORIGINS = new Set((env("ORIGINS") ?? "http://localhost:5181,http://127.0.0.1:5181").split(",").map((s) => s.trim()));
 const HTTP_ONLY = process.argv.includes("--http-only");
-const log = (...a) => process.stderr.write(`[amino-bridge] ${a.join(" ")}\n`);
+const log = (...a) => process.stderr.write(`[boneburst-bridge] ${a.join(" ")}\n`);
 
 /* The chat providers: everything provider-specific about one LLM API. The
    conversation with the page stays Anthropic-shaped; each provider's turn()
@@ -55,9 +60,14 @@ const PROVIDERS = {
 
 /* The API keys: from the environment, or from the key file the popup's field
    writes — either way only this process holds them after that. */
-const KEYFILE = process.env.AMINO_KEYFILE ?? join(homedir(), ".amino-bridge.json");
+const KEYFILE = env("KEYFILE") ?? join(homedir(), ".boneburst-bridge.json");
+// The key file from before the rename is read when there is no new one yet;
+// the next key saved goes to the new one.
+const OLD_KEYFILE = join(homedir(), ".amino-bridge.json");
 let savedKeys = {};
-try { savedKeys = JSON.parse(readFileSync(KEYFILE, "utf8")); } catch { /* none saved yet */ }
+for (const file of env("KEYFILE") ? [KEYFILE] : [KEYFILE, OLD_KEYFILE]) {
+  try { savedKeys = JSON.parse(readFileSync(file, "utf8")); break; } catch { /* none saved there */ }
+}
 const envAnthropic = process.env.ANTHROPIC_API_KEY ?? null;
 const envGlm = process.env.GLM_API_KEY ?? process.env.Z_AI_API_KEY ?? null;
 const keys = {
@@ -88,30 +98,30 @@ function setKey(name, key) {
 // A key given in the environment says which provider this start is for; a
 // key that exists only in the key file auto-activates only then (GLM's first
 // — the popup's field is GLM's).
-const PROVIDER_NAME = process.env.AMINO_PROVIDER
+const PROVIDER_NAME = env("PROVIDER")
   ?? (envAnthropic ? "anthropic" : envGlm ? "glm" : keys.glm ? "glm" : keys.anthropic ? "anthropic" : "anthropic");
-if (!PROVIDERS[PROVIDER_NAME]) { log(`Unknown AMINO_PROVIDER "${PROVIDER_NAME}" (anthropic or glm).`); process.exit(1); }
+if (!PROVIDERS[PROVIDER_NAME]) { log(`Unknown BONEBURST_PROVIDER "${PROVIDER_NAME}" (anthropic or glm).`); process.exit(1); }
 /** The active provider — switched by whichever key arrives last
- *  (`POST /agent/key`); AMINO_PROVIDER is only its starting value. */
+ *  (`POST /agent/key`); BONEBURST_PROVIDER is only its starting value. */
 let providerName = PROVIDER_NAME;
 const provider = () => PROVIDERS[providerName];
-const apiUrl = () => process.env.AMINO_API_URL ?? provider().url;
-/** The model Ask AI runs — switchable live (`POST /agent/model`); AMINO_MODEL
- *  is only its starting value. The choices the page offers: AMINO_MODELS
+const apiUrl = () => env("API_URL") ?? provider().url;
+/** The model Ask AI runs — switchable live (`POST /agent/model`); BONEBURST_MODEL
+ *  is only its starting value. The choices the page offers: BONEBURST_MODELS
  *  (comma separated) or a small built-in list per provider, plus the current. */
-const modelChoices = (name) => (process.env.AMINO_MODELS
+const modelChoices = (name) => (env("MODELS")
   ?? { anthropic: "claude-sonnet-5-5", glm: "glm-4.6,glm-4.5,glm-4.5-air" }[name])
   .split(",").map((s) => s.trim()).filter(Boolean);
-let currentModel = process.env.AMINO_MODEL ?? provider().model;
+let currentModel = env("MODEL") ?? provider().model;
 let MODELS = [...new Set([...modelChoices(providerName), currentModel])];
 const hasKey = () => !!keys[providerName];
 // Whether the model reads pictures: Claude does; GLM only its vision models
-// (glm-4.5v, glm-4.6v…). AMINO_VISION=1 or 0 says so outright.
-const vision = () => process.env.AMINO_VISION ? process.env.AMINO_VISION !== "0"
+// (glm-4.5v, glm-4.6v…). BONEBURST_VISION=1 or 0 says so outright.
+const vision = () => env("VISION") ? env("VISION") !== "0"
   : providerName === "anthropic" || /v$|v-|vision/i.test(currentModel);
 // Pictures kept in a conversation sent to the model, newest first; older
 // ones become a line of text. Each costs about a thousand tokens.
-const KEEP_IMAGES = Number(process.env.AMINO_KEEP_IMAGES ?? 8);
+const KEEP_IMAGES = Number(env("KEEP_IMAGES") ?? 8);
 
 /* ── pictures ── */
 
@@ -125,7 +135,7 @@ function splitImages(value) {
   return { text: JSON.stringify(rest), images };
 }
 
-const noVisionNote = () => `[a picture: ${currentModel} cannot see pictures; use a vision model (e.g. glm-4.5v) or set AMINO_VISION=1 if it can]`;
+const noVisionNote = () => `[a picture: ${currentModel} cannot see pictures; use a vision model (e.g. glm-4.5v) or set BONEBURST_VISION=1 if it can]`;
 const DROPPED = "[an earlier picture, left out to save tokens]";
 
 /** The conversation as sent to the model: pictures it cannot see turned into
@@ -161,7 +171,7 @@ function callPage(name, args, timeoutMs = 120000) {
     const timer = setTimeout(() => {
       pending.delete(id);
       reject(new Error(Date.now() - lastSeen > 30000
-        ? "The editor is not connected. Open Amino Spine2D and choose Window ▸ Connect to AI."
+        ? "The editor is not connected. Open BoneBurst and choose Window ▸ Connect to AI."
         : `The editor did not answer "${name}" in time.`));
     }, timeoutMs);
     pending.set(id, { resolve, reject, timer });
@@ -180,7 +190,7 @@ function flush() {
 
 function send(res, status, body) {
   res.statusCode = status;
-  res.setHeader("x-amino-chat", hasKey() ? "1" : "0");
+  res.setHeader("x-boneburst-chat", hasKey() ? "1" : "0");
   if (body === undefined) { res.end(); return; }
   res.setHeader("content-type", "application/json");
   res.end(JSON.stringify(body));
@@ -197,10 +207,10 @@ const server = http.createServer(async (req, res) => {
   if (origin && ORIGINS.has(origin)) {
     res.setHeader("access-control-allow-origin", origin);
     res.setHeader("access-control-allow-headers", "content-type");
-    res.setHeader("access-control-expose-headers", "x-amino-chat");
+    res.setHeader("access-control-expose-headers", "x-boneburst-chat");
     res.setHeader("access-control-allow-methods", "GET, POST, OPTIONS");
   } else if (origin) {
-    return send(res, 403, { error: `Origin ${origin} may not use the bridge (AMINO_ORIGINS).` });
+    return send(res, 403, { error: `Origin ${origin} may not use the bridge (BONEBURST_ORIGINS).` });
   }
   if (req.method === "OPTIONS") return send(res, 204);
   const url = new URL(req.url, "http://x");
@@ -270,7 +280,7 @@ server.listen(PORT, "127.0.0.1", () => log(`HTTP on http://127.0.0.1:${PORT} for
 
 /* ── Ask AI: Claude or GLM with the editor's tools ── */
 
-const SYSTEM = `You rig and animate Spine 2D skeletons in Amino Spine2D, a timeline editor, through tools.
+const SYSTEM = `You rig and animate Spine 2D skeletons in BoneBurst, a timeline editor, through tools.
 Conventions: x right, y UP, rotation in degrees counter-clockwise; key values are LOCAL to the parent bone and absolute (not offsets from the setup pose).
 Work like an animator: call get_rig first to learn the bones, their setup poses and IK; read existing animations with get_animation when useful.
 A looping animation keys the same pose at frame 0 and at its last frame. Prefer few keys with eases ("inout" for most body motion) over many linear keys; give one property its own ease with set_keys' "eases" (a hop: x linear, y "out" rising).
@@ -387,8 +397,8 @@ async function handle(msg) {
       return reply({
         protocolVersion: PROTOCOLS.includes(msg.params?.protocolVersion) ? msg.params.protocolVersion : PROTOCOLS[0],
         capabilities: { tools: {} },
-        serverInfo: { name: "amino-spine2d", version: "0.1.0" },
-        instructions: SYSTEM + "\nThe tools act on the skeleton open in the Amino Spine2D editor tab (Window ▸ Connect to AI).",
+        serverInfo: { name: "boneburst", version: "0.1.0" },
+        instructions: SYSTEM + "\nThe tools act on the skeleton open in the BoneBurst editor tab (Window ▸ Connect to AI).",
       });
     case "ping":
       return reply({});

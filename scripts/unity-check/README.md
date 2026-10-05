@@ -7,7 +7,7 @@ either project.
 
 ```mermaid
 flowchart LR
-    ED["Amino Spine2D<br/>File ▸ Export to Folder<br/>(Atlas as .atlas.txt)"] --> DIR["M0 Assets/AnimoTest/Spine/&lt;Rig&gt;/"]
+    ED["BoneBurst<br/>File ▸ Export to Folder<br/>(Atlas as .atlas.txt)"] --> DIR["M0 Assets/AnimoTest/Spine/&lt;Rig&gt;/"]
     DIR -->|"spine-unity importer"| SDA["SkeletonDataAsset"]
     SDA --> DUMP["dump.cs<br/>spine-csharp 4.3.40, every frame"]
     DUMP --> JSON["M0 Library/AnimoSpineCheck/dump.json"]

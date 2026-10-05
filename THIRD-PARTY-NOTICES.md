@@ -1,10 +1,10 @@
 # Third-party notices
 
-Amino Spine2D is AGPL-3.0-or-later (see [LICENSE](LICENSE) and
+BoneBurst is AGPL-3.0-or-later (see [LICENSE](LICENSE) and
 [LICENSE-EXCEPTION.md](LICENSE-EXCEPTION.md)). It is built from
 [Animo](https://github.com/justmorenoise/animo) by Moreno Tomasella (Morenoise),
 also AGPL-3.0-or-later, and it ships and builds on the software listed below.
-The app's version of this list is under **Help ▸ About Amino Spine2D**,
+The app's version of this list is under **Help ▸ About BoneBurst**,
 generated from `src/core/about.ts`.
 
 | Component | Version | Licence | Ships in the app |
@@ -30,7 +30,7 @@ licence.
 
 **Trademarks.** Spine is a trademark of Esoteric Software. DragonBones is a
 trademark of Egret Technology. PixiJS, Photoshop and Adobe Animate are
-trademarks of their respective owners. Amino Spine2D is an independent project,
+trademarks of their respective owners. BoneBurst is an independent project,
 not affiliated with or endorsed by any of them, or by Morenoise.
 
 ---

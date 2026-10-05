@@ -11,7 +11,7 @@ import {
  */
 describe("about", () => {
   it("names the app and its version", () => {
-    expect(APP_NAME).toBe("Amino Spine2D");
+    expect(APP_NAME).toBe("BoneBurst");
     expect(APP_TAGLINE).toContain("Spine");
     // vitest runs its own config, so the build-time token is never substituted.
     expect(APP_VERSION).toBe("dev");

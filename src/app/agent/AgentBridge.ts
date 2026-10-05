@@ -1,7 +1,7 @@
 import { AgentApi, AgentError } from "./AgentApi";
 
 /**
- * The page's end of `mcp/amino-bridge.mjs`, the local process an AI talks
+ * The page's end of `mcp/boneburst-bridge.mjs`, the local process an AI talks
  * to: Claude Code or Claude Desktop over MCP, or the Ask AI dialog through
  * its `/chat`. The page asks the bridge for the next tool call (a long poll,
  * plain HTTP on 127.0.0.1: nothing to install in the browser, no key in the
@@ -130,7 +130,7 @@ export class AgentBridge {
       try {
         this.abort = new AbortController();
         const res = await fetch(`${this.url}/agent/next`, { signal: this.abort.signal });
-        this.chatReady = res.headers.get("x-amino-chat") === "1";
+        this.chatReady = res.headers.get("x-boneburst-chat") === "1";
         if (this.stateNow !== "connected") this.set("connected", this.chatReady ? "Connected to the AI bridge; Ask AI is ready." : "Connected to the AI bridge.");
         failures = 0;
         if (res.status === 204) continue;
@@ -139,7 +139,7 @@ export class AgentBridge {
       } catch {
         if (!this.running) break;
         failures++;
-        this.set("connecting", "The AI bridge is not running. Start it with: node mcp/amino-bridge.mjs");
+        this.set("connecting", "The AI bridge is not running. Start it with: node mcp/boneburst-bridge.mjs");
         await new Promise((r) => setTimeout(r, Math.min(5000, 500 * failures)));
       }
     }

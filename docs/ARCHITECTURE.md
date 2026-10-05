@@ -1,6 +1,6 @@
 # Animo — architecture
 
-> **Amino Spine2D note.** This is Animo's architecture document, kept as it was.
+> **BoneBurst note.** This is Animo's architecture document, kept as it was.
 > The editor sections (transforms, undo, the timeline, layers, symbols,
 > edit-in-place, the library, dialogs, workers) describe this code as it is.
 > The DragonBones sections describe code that phase 0 removed or that later
@@ -1250,7 +1250,7 @@ An AI edits the open document through the same undoable commands as a person.
 
 ```mermaid
 flowchart LR
-    CC["Claude Code / Desktop"] -->|"MCP, stdio"| BR["mcp/amino-bridge.mjs<br/>127.0.0.1:5190"]
+    CC["Claude Code / Desktop"] -->|"MCP, stdio"| BR["mcp/boneburst-bridge.mjs<br/>127.0.0.1:5190"]
     ASK["AI panel (AiPanel)"] -->|"POST /chat"| BR
     BR -->|"Messages API or chat completions<br/>(key in the bridge)"| CL["Claude or GLM"]
     PAGE["AgentBridge (page)"] -->|"GET /agent/next (long poll)"| BR
@@ -1278,12 +1278,12 @@ flowchart LR
   without taking over the Preview panel), seeks frame by frame and compares every bone.
 - **The bridge** is one Node file with no dependencies. It serves MCP on stdio (newline-
   delimited JSON-RPC: `initialize`, `tools/list`, `tools/call`) and HTTP on 127.0.0.1 for the
-  page, and refuses other origins (`AMINO_ORIGINS`). The page long-polls it (AI ▸ Connect to
+  page, and refuses other origins (`BONEBURST_ORIGINS`). The page long-polls it (AI ▸ Connect to
   AI, remembered per browser, or `?agent` in the URL): no key and no socket server in the
   page. Ask AI runs the model inside the bridge, with its key from the bridge's environment:
   Claude (Anthropic Messages, `ANTHROPIC_API_KEY`) or GLM (OpenAI chat completions,
-  `GLM_API_KEY` on api.z.ai), picked by `AMINO_PROVIDER` — `glm` whenever `GLM_API_KEY` is
-  set. `AMINO_MODEL` (claude-sonnet-5-5 / glm-4.6) and `AMINO_API_URL` (for open.bigmodel.cn)
+  `GLM_API_KEY` on api.z.ai), picked by `BONEBURST_PROVIDER` — `glm` whenever `GLM_API_KEY` is
+  set. `BONEBURST_MODEL` (claude-sonnet-5-5 / glm-4.6) and `BONEBURST_API_URL` (for open.bigmodel.cn)
   override; the conversation with the page stays Anthropic-shaped either way. The chat is a
   dock panel (`view/agent/AiPanel.ts`, id `ai`), not a dialog, so the stage stays live beside
   it. It starts in the left panel, a dock column between the left rail and the stage
@@ -1411,9 +1411,9 @@ flowchart LR
 - **The AI can see** (`AgentVision`, painted by `view/agent/AgentVision.ts`). A tool's value
   carries pictures under `__images`; the bridge lifts them into image content for MCP,
   image blocks for Claude, and, for GLM, a user message of `image_url` parts after the tool
-  messages (text only in a tool message) when the model reads pictures (`AMINO_VISION`,
+  messages (text only in a tool message) when the model reads pictures (`BONEBURST_VISION`,
   guessed from a `…v` model name). A model that cannot see gets a line saying a picture was
-  there. Only the newest `AMINO_KEEP_IMAGES` (8) pictures are sent; the page keeps them all.
+  there. Only the newest `BONEBURST_KEEP_IMAGES` (8) pictures are sent; the page keeps them all.
   `get_reference` returns the reference's timing, where an image pixel lands in skeleton
   space, and the images at up to six frames. `render_frame` draws the skeleton at a frame as
   the stage does, see-through over the reference, every bone a magenta line with its name

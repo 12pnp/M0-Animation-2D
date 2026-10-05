@@ -8,7 +8,7 @@
  * banner) does not have to reach into `view/`.
  */
 
-export const APP_NAME = "Amino Spine2D";
+export const APP_NAME = "BoneBurst";
 export const APP_TAGLINE = "A Flash-style animation editor for Spine 4.3";
 
 /** The browser tab's title: the file first, since that is what tells two
@@ -38,18 +38,18 @@ export const LICENSE_ID = "AGPL-3.0-or-later";
 
 /** The one sentence that keeps the licence usable. See LICENSE-EXCEPTION.md. */
 export const LICENSE_NOTE =
-  "Amino Spine2D is free software, released under the GNU AGPL v3 or later, "
+  "BoneBurst is free software, released under the GNU AGPL v3 or later, "
   + "like Animo, the editor it is built from. What you export is yours: the "
   + "exported files can go into any game, commercial or not.";
 
 export const TRADEMARK_NOTE =
   "Spine is a trademark of Esoteric Software. PixiJS is a trademark of its "
-  + "owners. Amino Spine2D is an independent project, not affiliated with "
+  + "owners. BoneBurst is an independent project, not affiliated with "
   + "Esoteric Software or with Morenoise.";
 
 /** How the editor relates to the runtime it exports for. */
 export const SPINE_NOTE =
-  "Amino Spine2D exports the Spine 4.3 format: a skeleton .json, a .atlas and "
+  "BoneBurst exports the Spine 4.3 format: a skeleton .json, a .atlas and "
   + "its pages, which any Spine 4.3 runtime plays. The Preview panel and Play "
   + "mode run the official Spine runtime on those exact files: what you see there "
   + "is what your game will show. The plan is docs/PLAN.md in the source.";

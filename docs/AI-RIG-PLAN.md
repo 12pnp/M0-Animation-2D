@@ -17,7 +17,7 @@ undoable edit the user can correct, and the export checked by the existing parit
 
 The pieces are moved by bones, never repainted per frame, so the art stays the user's.
 
-## What Amino already has
+## What BoneBurst already has
 
 Phase 9 (ARCHITECTURE ▸ The AI bridge) covers step 4's second half: a model animates an
 existing rig through `tools.json` (`set_keys`, `get_pose`, `render_frame`, `check_preview`…),
@@ -42,7 +42,7 @@ model. Two kinds of backend sit behind it:
 
 ```mermaid
 flowchart LR
-    CC["Claude Code / Desktop"] -->|MCP| BR["mcp/amino-bridge.mjs"]
+    CC["Claude Code / Desktop"] -->|MCP| BR["mcp/boneburst-bridge.mjs"]
     ASK["AI panel"] -->|"POST /chat"| BR
     BR --> LLM["Claude / GLM<br/>(plans, names, keys)"]
     BR --> IMG["Image services<br/>segment · inpaint · joints"]
@@ -73,8 +73,8 @@ Why this shape:
 | Joints | DWPose / RTMPose (whole-body 2D keypoints) | RTMPose ONNX, small enough for a worker |
 
 Start hosted: it is one HTTP call per step from the bridge and needs no model files in the
-repo. Configure like the chat provider: `AMINO_IMAGE_PROVIDER` (`fal` | `replicate` | `local`),
-its key in the environment or `~/.amino-bridge.json`, set from the AI dot popup. Anime and
+repo. Configure like the chat provider: `BONEBURST_IMAGE_PROVIDER` (`fal` | `replicate` | `local`),
+its key in the environment or `~/.boneburst-bridge.json`, set from the AI dot popup. Anime and
 pixel-art styles break general pose models; the LLM's vision check (step 3 below) and the user's
 correction on the stage cover that, and a local model trained on the user's style can come
 later.
@@ -112,7 +112,7 @@ Each edit is one history step labelled "AI: …", like the existing tools.
   direction; the root's translation scales by leg length; feet that the clip plants stay planted
   through the rig's IK when it has one. Side views and front views are separate clips, since 2D
   cannot rotate a character in depth.
-- **Sources**: clips authored in Amino on the stickman, the user's own exported animations
+- **Sources**: clips authored in BoneBurst on the stickman, the user's own exported animations
   (File ▸ Open Spine already reads them), and 2D projections of mocap (check the licence of each
   set; CMU's is free to use).
 - The LLM then tunes with `set_keys`: exaggeration, timing, secondary motion. That is where it

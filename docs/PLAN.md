@@ -1,4 +1,4 @@
-# Amino Spine2D — plan
+# BoneBurst — plan
 
 A clean copy of Animo (the Flash-style DragonBones editor, github.com/justmorenoise/animo) retargeted at
 **Spine 4.3**. It exports Spine JSON and atlas files, opens existing Spine files for editing
@@ -8,7 +8,7 @@ which matches M0-Animation2D's spine-csharp 4.3.40.
 
 ```mermaid
 flowchart LR
-    subgraph EDITOR["Amino Spine2D (browser)"]
+    subgraph EDITOR["BoneBurst (browser)"]
         DOC["core/doc<br/>Project · Node · Keyframe"]
         HIST["core/history<br/>Command · History"]
         EXP["core/export/exportSpine.ts"]
@@ -37,7 +37,7 @@ does not depend on the output format: the document model, the Flash frame logic,
 panels, tools, the library and PSD import. The parts tied to DragonBones are few and clearly
 separated. Each one gets a Spine replacement:
 
-| Area | Animo (DragonBones 5.5) | Amino Spine2D (Spine 4.3) |
+| Area | Animo (DragonBones 5.5) | BoneBurst (Spine 4.3) |
 |---|---|---|
 | Contract | `core/export/dbTypes.ts` | `spineTypes.ts`, with the field list read from spine-ts 4.3 `SkeletonJson` (not docs) |
 | Transform | Flash `skX skY scX scY` | exact: `rotation = skY`, `shearX = 0`, `shearY = skX − skY`, plus a y-flip (Spine is y-up) |
@@ -129,12 +129,12 @@ one, and the AI checks its own result against the runtime. Two ways to connect:
 | 6 | **Done.** Masks as clipping attachments (outline traced from the mask's alpha), colour offsets as two-colour tint | parity checks clips and dark colours every frame; in the preview, clipping and tint measured to the pixel; 7 deliberate bugs each fail |
 | 7 | **Done.** File ▸ Open Spine (JSON + atlas + pages, or a zip): bones, slots, regions, meshes, IK and keys become the document, everything else is carried; the stage poses opened rigs through spine-core | all 16 JSON samples round-trip frame by frame (worst 0.02 px), the stage equals the export on all 16 (worst 0.0011 px), pixels match the original files in the real preview; 14 deliberate bugs each fail |
 | 8 | **Done.** Unity check: five exports (the Animo-authored Frog and Stickman, and spineboy-pro, mix-and-match and celestial-circus opened and re-exported) imported in M0 `Assets/AnimoTest/Spine`; `scripts/unity-check/` | spine-csharp 4.3.40 in Unity poses every bone within 0.00064 px of spine-core, with the same draw order, attachments and colours, at all 1,421 frames; all five render and play through SkeletonAnimation in `AnimoSpineCheck.unity`. Found and fixed: spine-csharp refuses a file without `skeleton.hash`; Export Settings can name the atlas `.atlas.txt` |
-| 9 | **Done.** `AgentApi` (10 tools over the Store, Spine conventions), `mcp/amino-bridge.mjs` (MCP for Claude Code or Desktop, plus Ask AI with the key in the bridge), AI menu | a 24-frame stickman walk made through MCP tool calls: two undo steps, both undone and redone; it matches the real runtime at every frame (0.000014 px); 6 deliberate bugs each fail |
+| 9 | **Done.** `AgentApi` (10 tools over the Store, Spine conventions), `mcp/boneburst-bridge.mjs` (MCP for Claude Code or Desktop, plus Ask AI with the key in the bridge), AI menu | a 24-frame stickman walk made through MCP tool calls: two undo steps, both undone and redone; it matches the real runtime at every frame (0.000014 px); 6 deliberate bugs each fail |
 
 ## Licences
 
 - **Animo's licence still applies.** Starting from a clean copy does not change this:
-  Amino Spine2D is a derivative of Animo, so it stays AGPL-3.0-or-later, and `LICENSE`,
+  BoneBurst is a derivative of Animo, so it stays AGPL-3.0-or-later, and `LICENSE`,
   `LICENSE-EXCEPTION.md` and the notices are kept. Hosting it publicly means publishing
   the source.
 - **The Spine runtimes need a Spine Editor licence** for whoever integrates them. That

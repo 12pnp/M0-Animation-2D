@@ -1,4 +1,4 @@
-/* ── Amino — grey-to-dark-grey chrome, named themes ─────────────
+/* ── BoneBurst — grey-to-dark-grey chrome, named themes ─────────────
    The literals here are the DEFAULT theme (Graphite, `core/prefs/themes.ts`):
    they are what the first frame is painted with, before `view/prefs/theme.ts`
    writes the chosen theme's tokens on the root element. Every surface is a

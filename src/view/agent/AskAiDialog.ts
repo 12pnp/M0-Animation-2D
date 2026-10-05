@@ -12,7 +12,7 @@ import type { AgentBridge, BridgeState } from "@/app/agent/AgentBridge";
 /** This checkout's bridge when the dev server knows it (`__BRIDGE_PATH__`,
  *  `vite.config.ts`). */
 function bridgePath(): string {
-  return typeof __BRIDGE_PATH__ === "string" && __BRIDGE_PATH__ ? __BRIDGE_PATH__ : "<path to Amino-Spine2D-Src>/mcp/amino-bridge.mjs";
+  return typeof __BRIDGE_PATH__ === "string" && __BRIDGE_PATH__ ? __BRIDGE_PATH__ : "<path to this checkout>/mcp/boneburst-bridge.mjs";
 }
 
 /** The status, in the parts every home for it shows: the dot's colour, the
@@ -147,13 +147,13 @@ export function openAiHelp(bridge: AgentBridge, toggleConnection: () => void): v
   modal.body.classList.add("ai-body", "ai-help");
   modal.body.append(
     strip.el,
-    h("p", {}, "The AI edits this tab through the bridge, a small program on this computer (mcp/amino-bridge.mjs). The page talks to it on 127.0.0.1 only; nothing leaves your machine except what the model itself sends."),
+    h("p", {}, "The AI edits this tab through the bridge, a small program on this computer (mcp/boneburst-bridge.mjs). The page talks to it on 127.0.0.1 only; nothing leaves your machine except what the model itself sends."),
     h("h3", {}, "Ask AI, in this window (Claude or GLM)"),
     step(1, "Start the bridge in a terminal, with your API key. Claude:",
       code(`ANTHROPIC_API_KEY=sk-ant-… node "${path}" --http-only`),
-      h("div", { class: "ai-hint" }, "or GLM (api.z.ai; for a bigmodel.cn key also set AMINO_API_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions, and AMINO_MODEL to pick a model):"),
+      h("div", { class: "ai-hint" }, "or GLM (api.z.ai; for a bigmodel.cn key also set BONEBURST_API_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions, and BONEBURST_MODEL to pick a model):"),
       code(`GLM_API_KEY=… node "${path}" --http-only`),
-      h("div", { class: "ai-hint" }, "Or skip the terminal: click the ● beside “Ask AI” and paste the key into the popup — the bridge keeps it in its key file (~/.amino-bridge.json, readable only by you) and every later start has it.")),
+      h("div", { class: "ai-hint" }, "Or skip the terminal: click the ● beside “Ask AI” and paste the key into the popup — the bridge keeps it in its key file (~/.boneburst-bridge.json, readable only by you) and every later start has it.")),
     step(2, "Press Connect above, then open AI ▸ Ask AI…"),
     h("h3", {}, "Claude Code or Claude Desktop (MCP)"),
     step(1, "Add the bridge as an MCP server, from a terminal:",

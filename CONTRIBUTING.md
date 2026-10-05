@@ -1,4 +1,4 @@
-# Contributing to Amino Spine2D
+# Contributing to BoneBurst
 
 Thanks for looking. Issues, bug reports and pull requests are all welcome.
 

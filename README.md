@@ -1,10 +1,10 @@
-# Amino Spine2D
+# BoneBurst
 
 A Flash-style animation editor for **Spine 4.3**, built from
 [Animo](https://github.com/justmorenoise/animo) by Morenoise.
 
 Animo has a timeline, layers, keyframes, symbols, bones and IK, masks and PSD
-import, and it exports DragonBones. Amino Spine2D keeps the editor and changes
+import, and it exports DragonBones. BoneBurst keeps the editor and changes
 what it writes to Spine: a skeleton `.json`, a `.atlas` and its pages, played in
 the editor by the official Spine runtime. It also opens existing Spine files for
 editing, and an AI can drive it through the same undoable commands.
@@ -17,7 +17,7 @@ flowchart LR
     EXP -->|"same bytes"| PREV["Preview<br/>spine-pixi-v8"]
     FILES --> GAME["Unity / Pixi / any Spine 4.3 runtime"]
     FILES --> IMP["Spine import"] --> DOC
-    AI["Claude or GLM (MCP / Ask AI)"] --> BR["mcp/amino-bridge.mjs"] --> AG["AgentApi"] --> DOC
+    AI["Claude or GLM (MCP / Ask AI)"] --> BR["mcp/boneburst-bridge.mjs"] --> AG["AgentApi"] --> DOC
 ```
 
 ## Status
@@ -42,17 +42,17 @@ look at it and at pictures of its own work (`get_reference`, `render_frame`).
 ## Connecting an AI
 
 ```bash
-node mcp/amino-bridge.mjs --http-only
+node mcp/boneburst-bridge.mjs --http-only
 ```
 
 That runs the bridge for the page alone; for Ask AI, start it with `ANTHROPIC_API_KEY`
 (Claude) or `GLM_API_KEY` (GLM, on api.z.ai) in its environment. For a bigmodel.cn
-key, also set `AMINO_API_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions`;
-`AMINO_MODEL` picks the model. For Claude Code, add the bridge to a project's
+key, also set `BONEBURST_API_URL=https://open.bigmodel.cn/api/paas/v4/chat/completions`;
+`BONEBURST_MODEL` picks the model. For Claude Code, add the bridge to a project's
 `.mcp.json` instead, and Claude starts it:
 
 ```json
-{ "mcpServers": { "amino-spine2d": { "command": "node", "args": ["<path to>/mcp/amino-bridge.mjs"] } } }
+{ "mcpServers": { "boneburst": { "command": "node", "args": ["<path to>/mcp/boneburst-bridge.mjs"] } } }
 ```
 
 Then choose **AI ▸ Connect to AI** in the editor and ask the model to animate the rig.

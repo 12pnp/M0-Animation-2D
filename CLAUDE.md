@@ -2,7 +2,7 @@
 
 Guidance for Claude Code (claude.ai/code) working in this repository.
 
-Amino Spine2D is Animo (github.com/justmorenoise/animo) retargeted from
+BoneBurst is Animo (github.com/justmorenoise/animo) retargeted from
 DragonBones 5.5 to **Spine 4.3**. [docs/PLAN.md](docs/PLAN.md) is the plan: the
 phases, the DragonBones→Spine mapping, and the checklist of export tests to
 rebuild. Phases 0–9 are done: DragonBones is gone, `src/core/spine/` holds the

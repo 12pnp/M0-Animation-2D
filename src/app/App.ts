@@ -164,7 +164,7 @@ export class App {
     this.references = new ReferenceService(this.store, this.assets);
     this.poses = new PosesService(this.store);
     this.agent = new AgentApi(this.store, new HiddenPreviewProbe(this.store, this.assets), new PageVision(this.store, this.assets), this.assets);
-    // `?agent=5191` talks to a bridge on another port (AMINO_BRIDGE_PORT),
+    // `?agent=5191` talks to a bridge on another port (BONEBURST_BRIDGE_PORT),
     // e.g. beside one another tool already runs.
     const port = Number(new URLSearchParams(location.search).get("agent"));
     this.agentBridge = new AgentBridge(this.agent, Number.isInteger(port) && port > 0 && port < 65536 ? `http://127.0.0.1:${port}` : DEFAULT_BRIDGE);

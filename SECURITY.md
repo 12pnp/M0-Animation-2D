@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Amino Spine2D is pre-1.0. Only the latest release on `main` receives fixes.
+BoneBurst is pre-1.0. Only the latest release on `main` receives fixes.
 
 ## Reporting a vulnerability
 
@@ -17,7 +17,7 @@ an on-call rota.
 
 ## Scope
 
-Amino Spine2D runs entirely in the browser: there is no server, no account and no
+BoneBurst runs entirely in the browser: there is no server, no account and no
 telemetry. Your projects live in your own file system and in this origin's
 IndexedDB. The interesting surface is therefore:
 

@@ -23,7 +23,7 @@ export default defineConfig(({ command }) => ({
   // a built copy does not carry the path of the machine that built it.
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
-    __BRIDGE_PATH__: JSON.stringify(command === "serve" ? fileURLToPath(new URL("./mcp/amino-bridge.mjs", import.meta.url)) : ""),
+    __BRIDGE_PATH__: JSON.stringify(command === "serve" ? fileURLToPath(new URL("./mcp/boneburst-bridge.mjs", import.meta.url)) : ""),
   },
   // 5181, not Animo's 5180: storage is per origin, and on one port the two
   // editors would share preferences and overwrite each other's autosave.
