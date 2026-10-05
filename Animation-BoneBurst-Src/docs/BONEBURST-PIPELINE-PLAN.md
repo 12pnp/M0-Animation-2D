@@ -5,7 +5,7 @@ the Editor without it importing the editor folder was not checked. R1 done 2026-
 the editor's side (below); its C# side is not started. R2 done 2026-10-05 except the bake
 round trip (below). R3 done 2026-10-05 for its motion half (AD-3, below); the detection
 sidecar (AD-0..2) waits for an install decision. R4 done 2026-10-06 but for the first-hand
-check in the browser (below). R5 not started. Left
+check in the browser (below). R5 skipped (owner, 2026-10-06). Left
 of R0: repointing the M2 projects' `file:` references and retiring the old folders (R0
 step 7), both owner calls.
 
@@ -333,6 +333,9 @@ runtime the game ships.
   importer reacting to a mismatched skeleton and atlas, not this change.
 
 ### R5 — Optional: desktop shell
+
+**Skipped (owner, 2026-10-06).** The editor stays a browser app; Export to Unity asks for its
+folder once per visit through the browser, as R4 built it.
 
 `docs/REWRITE-PLAN.md`'s recommendation (Tauri v2 around the existing code, not a
 rewrite) stands, with one correction: since PREVIEW-RUNTIME-PLAN P5 spine-core is no
