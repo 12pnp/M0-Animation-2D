@@ -1,3 +1,4 @@
+import { meshPositions } from "./meshPose";
 import type { NodeId } from "@/core/doc/ids";
 import type { DeformKey, MeshData } from "@/core/doc/types";
 import { insidePolygon } from "./makeMesh";
@@ -12,14 +13,13 @@ import { triangulate } from "./triangulate";
 type Weights = Array<Array<[NodeId, number]>>;
 
 function retriangulated(m: MeshData): MeshData {
-  return { ...m, triangles: triangulate(m.points, m.hull) };
+  return { ...m, triangles: triangulate([...meshPositions(m)], m.hull) };
 }
 
-/** The weights at (x, y) blended from the corners of the triangle it falls
- *  in (barycentric); null when it falls in none. */
-function weightsAt(m: MeshData, x: number, y: number): Array<[NodeId, number]> | null {
-  if (!m.weights) return null;
-  const p = m.points;
+/** The corners of the triangle (x, y) falls in, each with its barycentric
+ *  share; null when it falls in none. */
+function cornersAt(m: MeshData, x: number, y: number): Array<readonly [number, number]> | null {
+  const p = meshPositions(m);
   for (let t = 0; t < m.triangles.length; t += 3) {
     const [a, b, c] = [m.triangles[t]!, m.triangles[t + 1]!, m.triangles[t + 2]!];
     const ax = p[a * 2]!, ay = p[a * 2 + 1]!, bx = p[b * 2]!, by = p[b * 2 + 1]!, cx = p[c * 2]!, cy = p[c * 2 + 1]!;
@@ -29,18 +29,35 @@ function weightsAt(m: MeshData, x: number, y: number): Array<[NodeId, number]> |
     const l2 = ((cy - ay) * (x - cx) + (ax - cx) * (y - cy)) / det;
     const l3 = 1 - l1 - l2;
     if (l1 < -1e-9 || l2 < -1e-9 || l3 < -1e-9) continue;
-    const sum = new Map<NodeId, number>();
-    for (const [i, l] of [[a, l1], [b, l2], [c, l3]] as const) for (const [bone, w] of m.weights[i] ?? []) sum.set(bone, (sum.get(bone) ?? 0) + w * l);
-    return [...sum].filter(([, w]) => w > 1e-6).sort((u, v) => v[1] - u[1]);
+    return [[a, l1], [b, l2], [c, l3]];
   }
   return null;
 }
 
-/** `m` with a point at (x, y) inside its outline; null when outside. */
+/** The weights at (x, y) blended from the corners of the triangle it falls in. */
+function weightsAt(m: MeshData, x: number, y: number): Array<[NodeId, number]> | null {
+  const corners = cornersAt(m, x, y);
+  if (!m.weights || !corners) return null;
+  const sum = new Map<NodeId, number>();
+  for (const [i, l] of corners) for (const [bone, w] of m.weights[i] ?? []) sum.set(bone, (sum.get(bone) ?? 0) + w * l);
+  return [...sum].filter(([, w]) => w > 1e-6).sort((u, v) => v[1] - u[1]);
+}
+
+/** `m` with a point at (x, y) (a position) inside its outline; null when
+ *  outside. Where positions are not texture coordinates, its texture
+ *  coordinate is blended from the triangle it falls in. */
 export function withPoint(m: MeshData, x: number, y: number): MeshData | null {
-  if (!insidePolygon(m.points, m.hull, x, y)) return null;
-  const out: MeshData = { ...m, points: [...m.points, x, y] };
+  if (!insidePolygon([...meshPositions(m)], m.hull, x, y)) return null;
+  let out: MeshData;
+  if (m.vertices) {
+    const corners = cornersAt(m, x, y);
+    if (!corners) return null;
+    const uv = [0, 1].map((o) => corners.reduce((s, [i, l]) => s + m.points[i * 2 + o]! * l, 0));
+    out = { ...m, points: [...m.points, uv[0]!, uv[1]!], vertices: [...m.vertices, x, y] };
+  } else out = { ...m, points: [...m.points, x, y] };
   if (m.weights) out.weights = [...m.weights, weightsAt(m, x, y) ?? []];
+  // A new point's bone offsets follow from its position.
+  if (m.boneOffsets) out.boneOffsets = [...m.boneOffsets, []];
   return retriangulated(out);
 }
 
@@ -50,16 +67,42 @@ export function withoutPoint(m: MeshData, i: number): MeshData | null {
   const onHull = i < m.hull;
   if (onHull && m.hull <= 3) return null;
   const out: MeshData = { ...m, points: m.points.filter((_, k) => k >> 1 !== i), hull: onHull ? m.hull - 1 : m.hull };
+  if (m.vertices) out.vertices = m.vertices.filter((_, k) => k >> 1 !== i);
+  if (m.boneOffsets) out.boneOffsets = m.boneOffsets.filter((_, k) => k !== i);
   if (m.weights) out.weights = m.weights.filter((_, k) => k !== i);
+  // Spine's edges index the points: after a removal they no longer hold.
+  delete out.edges;
   return retriangulated(out);
 }
 
-/** `m` with point `i` at (x, y); the triangles redone so none turns over. */
+/** `m` with point `i` at (x, y); the triangles redone so none turns over.
+ *  Where positions are not texture coordinates the position moves alone. */
 export function withPointMoved(m: MeshData, i: number, x: number, y: number): MeshData {
-  const points = [...m.points];
-  points[i * 2] = x;
-  points[i * 2 + 1] = y;
-  return retriangulated({ ...m, points });
+  const moved = [...meshPositions(m)];
+  moved[i * 2] = x;
+  moved[i * 2 + 1] = y;
+  return retriangulated(withPositions(m, moved, [i]));
+}
+
+/**
+ * `m` with its positions replaced, the points in `moved` having moved: where
+ * positions are texture coordinates those move too, and a moved point's bone
+ * offsets are dropped, so it follows its bones from its new place.
+ */
+export function withPositions(m: MeshData, positions: number[], moved: Iterable<number>): MeshData {
+  const out: MeshData = m.vertices ? { ...m, vertices: positions } : { ...m, points: positions };
+  if (m.boneOffsets) {
+    const offsets = [...m.boneOffsets];
+    for (const i of moved) offsets[i] = [];
+    out.boneOffsets = offsets;
+  }
+  return out;
+}
+
+/** `m` with new weights; bone offsets of the old ones no longer apply. */
+export function withWeights(m: MeshData, weights: MeshData["weights"]): MeshData {
+  const { boneOffsets: _o, weights: _w, ...rest } = m;
+  return weights ? { ...rest, weights } : rest;
 }
 
 /** Deform keys kept in step with a point added at the end or point `i` removed. */

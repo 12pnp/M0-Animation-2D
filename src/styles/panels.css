@@ -726,3 +726,4 @@
 .graph-chip.empty { opacity: 0.55; }
 .graph-swatch { width: 8px; height: 8px; border-radius: 2px; flex: none; }
 .graph-chip:not(.on) .graph-swatch { opacity: 0.35; }
+.otree-boneicon { margin-left: 5px; color: var(--fg-dim); font-size: 10px; }

@@ -1,10 +1,13 @@
+import { displaysOf, withLink } from "@/core/doc/displays";
+import { EditNode } from "@/core/history/attachmentCommands";
+import { meshPositions } from "@/core/mesh/meshPose";
 import type { Store } from "./Store";
 import type { AssetStore } from "./AssetStore";
 import { isImage, type MeshData } from "@/core/doc/types";
 import type { NodeId } from "@/core/doc/ids";
 import { traceContour } from "@/core/atlas/contour";
 import { boxOutline, makeMesh } from "@/core/mesh/makeMesh";
-import { autoWeights, type BoneSegment } from "@/core/mesh/meshEdit";
+import { autoWeights, type BoneSegment, withWeights } from "@/core/mesh/meshEdit";
 import { bindPlan, meshableNodes, meshNodes } from "@/core/mesh/meshPlan";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { apply } from "@/core/math/Matrix2D";
@@ -48,6 +51,9 @@ export function doRemoveMesh(store: Store): number {
     for (const id of ids) {
       const deforms = new Map(sym.animations.filter((a) => a.deforms?.[id]).map((a) => [a.id, []]));
       store.apply(new SetMesh("Remove Mesh", sym.id, id, 0, undefined, deforms));
+      // Its linked images draw as plain images again.
+      const linked = displaysOf(sym.nodes[id]!).flatMap((d, i) => (d.linked?.to === 0 ? [i] : []));
+      if (linked.length) store.apply(new EditNode("Remove Mesh", sym.id, id, (n) => linked.reduce((m, i) => withLink(m, i, undefined), n)));
     }
   });
   store.emit("stage");
@@ -68,7 +74,7 @@ export function doBindMesh(store: Store, selection: readonly NodeId[] = store.se
   const setup = evaluateSymbol(sym, null, 0, "setup").byNode;
   const nodeWorld = setup.get(plan.mesh)?.world;
   if (!nodeWorld) return "The mesh is not on the stage.";
-  const world = mesh.points.flatMap((v, i, a) => {
+  const world = meshPositions(mesh).flatMap((v, i, a) => {
     if (i % 2) return [];
     const p = apply({ x: 0, y: 0 }, nodeWorld, v - node.pivot.x, a[i + 1]! - node.pivot.y);
     return [p.x, p.y];
@@ -80,7 +86,7 @@ export function doBindMesh(store: Store, selection: readonly NodeId[] = store.se
     const tip = apply({ x: 0, y: 0 }, w, len, 0);
     return [{ id, x0: w.tx, y0: w.ty, x1: tip.x, y1: tip.y }];
   });
-  const bound: MeshData = { ...mesh, weights: autoWeights(world, segments, 2) };
+  const bound: MeshData = withWeights(mesh, autoWeights(world, segments, 2));
   store.apply(new SetMesh(label, sym.id, plan.mesh, 0, bound));
   store.emit("stage");
   return null;
@@ -93,8 +99,7 @@ export function doUnbindMesh(store: Store): number {
   if (!ids.length) return 0;
   store.transaction("Unbind Mesh", () => {
     for (const id of ids) {
-      const { weights: _, ...rest } = sym.nodes[id]!.mesh!;
-      store.apply(new SetMesh("Unbind Mesh", sym.id, id, 0, rest));
+      store.apply(new SetMesh("Unbind Mesh", sym.id, id, 0, withWeights(sym.nodes[id]!.mesh!, undefined)));
     }
   });
   store.emit("stage");

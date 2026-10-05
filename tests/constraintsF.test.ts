@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { AtlasAttachmentLoader, MixFrom, Physics, Skeleton, SkeletonJson, TextureAtlas } from "@esotericsoftware/spine-core";
 import { newCnId, reseed } from "@/core/doc/ids";
 import {
   newPathConstraint, newPhysics, newSlider, pathFromSpine, pathLengths, pathThrough, pathToSpine, physicsFromSpine, physicsToSpine,
@@ -8,13 +7,13 @@ import {
 import { createImageItem, createLayer, createNode } from "@/core/doc/defaults";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { migrate, validateProject } from "@/core/doc/schema";
-import { exportSpine, spineJson } from "@/core/spine/exportSpine";
-import { atlasText } from "@/core/spine/atlas";
+import { exportSpine } from "@/core/spine/exportSpine";
 import { posedSymbol } from "@/core/spine/spinePose";
-import { isImage, type Project, type SymbolItem } from "@/core/doc/types";
+import type { SymbolItem } from "@/core/doc/types";
 import { tf } from "@/core/math/Transform";
 import { boxOutline, makeMesh } from "@/core/mesh/makeMesh";
 import { loadStickman } from "./fixtures/stickman";
+import { stageAgainstRuntime } from "./fixtures/runtimeCheck";
 
 beforeEach(() => reseed());
 
@@ -63,33 +62,6 @@ describe("path geometry", () => {
 
 /** The stage (runtime-posed) against the full export in spine-core, every
  *  frame at rest, and how far the constraint moved `bone` off the editor's own pose. */
-function stageAgainstRuntime(project: Project, sym: SymbolItem, bone: string): number {
-  const out = exportSpine(project);
-  expect(out.diagnostics.filter((d) => d.severity === "error")).toEqual([]);
-  const regions = out.usedImages.map((id, i) => { const it = project.items[id]; if (!isImage(it)) throw new Error("image"); return { name: it.name, x: 0, y: i * 200, width: it.width, height: it.height, offsetX: 0, offsetY: 0, originalWidth: it.width, originalHeight: it.height, rotated: false }; });
-  const atlas = new TextureAtlas(atlasText([{ name: "p", imagePath: "p.png", width: 512, height: 4096, scale: 1, regions }]));
-  const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(atlas)).readSkeletonData(JSON.parse(spineJson(out.skeleton))));
-  const id = Object.values(sym.nodes).find((n) => n.name === bone)!.id;
-  let moved = 0;
-  for (const anim of sym.animations) {
-    for (let f = 0; f < anim.duration; f++) {
-      sk.setupPose();
-      sk.data.findAnimation(anim.name)!.apply(sk, 0, f / project.frameRate, false, null, 1, MixFrom.setup, false, false, false);
-      sk.updateWorldTransform(Physics.reset);
-      const pose = posedSymbol(project, sym, anim, f, "animate");
-      for (const [path, name] of out.paths) {
-        const b = sk.findBone(name), e = pose.byNode.get(path as never);
-        if (!b || !e) continue;
-        const w = b.appliedPose;
-        expect(Math.abs(w.worldX - e.world.tx) + Math.abs(w.worldY + e.world.ty), `${anim.name} ${f} ${name}`).toBeLessThan(1e-3);
-      }
-      const own = evaluateSymbol(sym, anim, f, "animate").byNode.get(id)!.world, posed = pose.byNode.get(id)!.world;
-      moved = Math.max(moved, Math.hypot(own.tx - posed.tx, own.ty - posed.ty), Math.abs(own.a - posed.a) * 100);
-    }
-  }
-  return moved;
-}
-
 describe("the stage poses physics, sliders and paths through the runtime", () => {
   it("a slider: the run animation played by the head's rotation moves the far arm", async () => {
     const { project, rig, node } = await loadStickman();

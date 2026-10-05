@@ -51,7 +51,7 @@ export function physicsFromSpine(c: Raw, id: CnId, boneId: NodeId): PhysicsConst
 }
 
 /** The physics fields this model holds; the rest of a file's constraint is carried. */
-export const PHYSICS_FIELDS = new Set(["type", "name", "bone", "scaleY", ...PHYSICS_SETTINGS]);
+export const PHYSICS_FIELDS = new Set(["type", "name", "bone", "scaleY", "skin", ...PHYSICS_SETTINGS]);
 
 export function sliderToSpine(k: SliderConstraint, animation: string, bone: string | null): Raw {
   const out: Raw = { type: "slider", name: k.name, animation };
@@ -84,7 +84,7 @@ export function sliderFromSpine(c: Raw, id: CnId, animId: AnimId, boneId: NodeId
   return k;
 }
 
-export const SLIDER_FIELDS = new Set(["type", "name", "animation", "additive", "loop", "mix", "bone", "property", "from", "to", "scale", "max", "local", "time"]);
+export const SLIDER_FIELDS = new Set(["type", "name", "animation", "additive", "loop", "mix", "bone", "property", "from", "to", "scale", "max", "local", "time", "skin"]);
 
 export function pathToSpine(k: PathConstraint, bones: string[], slot: string): Raw {
   const out: Raw = { type: "path", name: k.name, bones, slot };

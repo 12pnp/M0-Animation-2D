@@ -1,11 +1,14 @@
+import { CONSTRAINT_CHANNELS, channelKeysOf, keyedConstraint, withChannelKeys, withValueKey } from "@/core/doc/constraintKeys";
+import { INHERIT_MODES, isInherit, withInheritKey } from "@/core/doc/inherit";
+import type { SpineInherit } from "@/core/spine/types";
 import { changedProps, KEY_GROUPS, type KeyGroup, keyProps } from "@/core/doc/keyButtons";
 import { offsetPlan, offsetTrack } from "@/core/doc/offset";
 import { constraintEntries, orderFrom } from "@/core/doc/constraintOrder";
 import type { Store } from "@/app/Store";
 import { drawingLayers, orderAt, reorderTargets, withDrawOrderKey, withFront } from "@/core/doc/drawOrder";
-import { type AnimId, type AssetId, type IkId, type ItemId, newIkId, newTcId, type NodeId, type TcId } from "@/core/doc/ids";
-import { displaysOf } from "@/core/doc/displays";
-import { type Animation, type EventDef, type EventKey, type IkConstraint, type IkKey, type ImageItem, isImage, type TcKey, type TransformConstraint, type Keyframe, type Node, type SymbolItem, TIMELINE_PROPS, type TimelineProp, type Track } from "@/core/doc/types";
+import { type AnimId, type AssetId, type CnId, type IkId, type ItemId, newIkId, newTcId, type NodeId, type TcId } from "@/core/doc/ids";
+import { displaysOf, linkableDisplays, withLink } from "@/core/doc/displays";
+import { type Animation, type EventDef, type EventKey, type IkConstraint, type IkKey, type ImageItem, type InheritKey, type ValueKey, isImage, type TcKey, type TransformConstraint, type Keyframe, type Node, type SymbolItem, TIMELINE_PROPS, type TimelineProp, type Track } from "@/core/doc/types";
 import { entryBox, type FrameContext } from "@/core/doc/pose";
 import { type ImageFrame, imageFrame, referenceEnd, referenceFrameOf, referenceIndexAt, referenceRect } from "@/core/doc/reference";
 import { apply } from "@/core/math/Matrix2D";
@@ -39,7 +42,7 @@ import { withNewSkin } from "@/core/doc/skins";
 import { doAddAttachment, doAddPhysics, doAddSlider, doMakePath, doMakeSequence, doSetConstraints } from "@/app/AttachmentOps";
 import { PHYSICS_DEFAULTS, PHYSICS_SETTINGS, SLIDER_PROPERTIES } from "@/core/doc/constraints";
 import { SEQUENCE_MODES, withSequenceKey } from "@/core/doc/sequence";
-import { SetConstraintOrder, SetSequenceKeys } from "@/core/history/attachmentCommands";
+import { EditNode, SetConstraintKeys, SetConstraintOrder, SetInheritKeys, SetSequenceKeys } from "@/core/history/attachmentCommands";
 import type { SequenceKey } from "@/core/doc/types";
 import { posedSymbol, skinsOf, stageSkinOf } from "@/core/spine/spinePose";
 import { exportSpine } from "@/core/spine/exportSpine";
@@ -167,6 +170,9 @@ export class AgentApi {
       case "add_physics": return this.addPhysics(str(args, "bone"), args);
       case "add_slider": return this.addSlider(str(args, "animation"), args);
       case "make_path": return this.makePath(list<string>(args, "bones"));
+      case "link_mesh": return this.linkMesh(str(args, "layer"), str(args, "image"), args);
+      case "key_constraint": return this.keyConstraint(str(args, "animation"), str(args, "constraint"), str(args, "channel"), int(args, "frame", 0), args);
+      case "set_inherit": return this.setInherit(str(args, "bone"), args);
       case "set_constraint_order": return this.setConstraintOrder(list<string>(args, "order"));
       case "key_sequence": return this.keySequence(str(args, "animation"), str(args, "layer"), int(args, "frame", 0), args);
       case "set_skin_image": return this.setSkinImage(args);
@@ -916,6 +922,77 @@ export class AgentApi {
     return { constraint: made.name, bone: bone.name, settings: Object.fromEntries(PHYSICS_SETTINGS.map((s) => [s, made[s] ?? PHYSICS_DEFAULTS[s]])) };
   }
 
+  private linkMesh(layerName: string, image: string, args: Args) {
+    const node = this.node(layerName);
+    if (!node.mesh) throw new AgentError(`"${node.name}" is not a mesh: make_mesh first.`);
+    const index = displaysOf(node).findIndex((d, i) => i > 0 && this.store.project.items[d.itemId]?.name === image);
+    if (index < 0) throw new AgentError(`"${node.name}" has no other image "${image}"; its images are ${displaysOf(node).map((d) => `"${this.store.project.items[d.itemId]?.name}"`).join(", ")}.`);
+    if (!linkableDisplays(node, 0).includes(index)) throw new AgentError(`"${image}" on "${node.name}" has a mesh or sequence of its own.`);
+    const link = args.linked === false ? undefined : args.deform === false ? { to: 0, deform: false as const } : { to: 0 };
+    this.store.apply(new EditNode(link ? `AI: Link "${image}" to "${node.name}"'s Mesh` : `AI: Unlink "${image}"`, this.store.currentSymbolId, node.id, (n) => withLink(n, index, link)));
+    this.store.emit("stage");
+    return { layer: node.name, image, linked: !!link, ...(link ? { deform: link.deform !== false } : {}) };
+  }
+
+  private keyConstraint(animName: string, name: string, channel: string, frame: number, args: Args) {
+    const anim = this.animation(animName);
+    const k = [...(this.sym.physics ?? []), ...(this.sym.sliders ?? []), ...(this.sym.paths ?? [])].find((c) => c.name === name);
+    const c = k ? keyedConstraint(this.sym, k.id) : null;
+    if (!c) throw new AgentError(`There is no physics, slider or path constraint "${name}". get_rig lists them.`);
+    const channels = CONSTRAINT_CHANNELS[c.kind] as readonly string[];
+    if (!channels.includes(channel)) throw new AgentError(`A ${c.kind} constraint keys ${channels.join(", ")}.`);
+    if (args.ease !== undefined && args.ease !== "linear" && args.ease !== "stepped" && args.ease !== "smooth") throw new AgentError(`ease is "linear", "stepped" or "smooth".`);
+    const before = channelKeysOf(anim, c.k.id, channel);
+    let keys: ValueKey[];
+    if (args.delete === true) {
+      if (!before.some((x) => x.frame === frame)) throw new AgentError(`"${name}" has no ${channel} key at frame ${frame}.`);
+      keys = before.filter((x) => x.frame !== frame);
+    } else {
+      if (typeof args.value !== "number" || !Number.isFinite(args.value)) throw new AgentError("value is a number.");
+      keys = withValueKey(before, frame, args.value);
+      if (args.ease) {
+        const tween = args.ease === "stepped" ? { kind: "none" as const } : args.ease === "smooth" ? { kind: "curve" as const, curve: [0.42, 0, 0.58, 1] } : undefined;
+        keys = keys.map((x) => {
+          if (x.frame !== frame) return x;
+          const { tween: _t, ...rest } = x;
+          return tween ? { ...rest, tween } : rest;
+        });
+      }
+    }
+    this.store.apply(new SetConstraintKeys(`AI: Key "${name}" ${channel} at ${frame + 1}`, this.store.currentSymbolId, anim.id, withChannelKeys(anim.constraintKeys, c.k.id, channel, keys)));
+    this.store.emit("timeline");
+    this.store.emit("stage");
+    return { constraint: name, channel, animation: anim.name, keys };
+  }
+
+  private setInherit(boneName: string, args: Args) {
+    const bone = this.bone(boneName);
+    const mode = args.inherit;
+    if (args.delete !== true && !isInherit(mode)) throw new AgentError(`inherit is one of ${INHERIT_MODES.join(", ")}.`);
+    if (args.animation === undefined) {
+      if (args.delete === true) throw new AgentError("delete removes a key: give the animation and frame.");
+      this.store.apply(new EditNode(`AI: Inherit "${bone.name}"`, this.store.currentSymbolId, bone.id, (n) => {
+        const out = { ...n };
+        if (mode !== "normal") out.inherit = mode as SpineInherit; else delete out.inherit;
+        return out;
+      }));
+      this.store.emit("stage");
+      return { bone: bone.name, inherit: mode };
+    }
+    const anim = this.animation(str(args, "animation"));
+    const frame = int(args, "frame", 0);
+    const before = anim.inherits?.[bone.id] ?? [];
+    let keys: InheritKey[];
+    if (args.delete === true) {
+      if (!before.some((k) => k.frame === frame)) throw new AgentError(`"${bone.name}" has no inherit key at frame ${frame}.`);
+      keys = before.filter((k) => k.frame !== frame);
+    } else keys = withInheritKey(before, frame, mode as SpineInherit);
+    this.store.apply(new SetInheritKeys(`AI: Inherit "${bone.name}" at ${frame + 1}`, this.store.currentSymbolId, anim.id, bone.id, keys));
+    this.store.emit("timeline");
+    this.store.emit("stage");
+    return { bone: bone.name, animation: anim.name, keys };
+  }
+
   private setConstraintOrder(names: string[]) {
     const order = orderFrom(this.sym, names);
     if (typeof order === "string") throw new AgentError(`${order} get_rig lists the constraints in constraintOrder.`);
@@ -1025,19 +1102,24 @@ export class AgentApi {
     const skin = this.skinNamed(str(args, "skin"));
     const bones = args.bones === undefined ? [] : list<string>(args, "bones").map((n) => this.bone(n).id);
     const names = args.constraints === undefined ? [] : list<string>(args, "constraints");
-    const ik: IkId[] = [], transforms: TcId[] = [];
+    const ik: IkId[] = [], transforms: TcId[] = [], constraints: CnId[] = [];
+    const others = [...(this.sym.physics ?? []), ...(this.sym.sliders ?? []), ...(this.sym.paths ?? [])];
     for (const n of names) {
-      const k = this.sym.ik.find((c) => c.name === n), t = (this.sym.transforms ?? []).find((c) => c.name === n);
-      if (k) ik.push(k.id); else if (t) transforms.push(t.id);
-      else throw new AgentError(`There is no IK or transform constraint "${n}".`);
+      const k = this.sym.ik.find((c) => c.name === n), t = (this.sym.transforms ?? []).find((c) => c.name === n), o = others.find((c) => c.name === n);
+      if (k) ik.push(k.id); else if (t) transforms.push(t.id); else if (o) constraints.push(o.id);
+      else throw new AgentError(`There is no constraint "${n}". get_rig lists them in constraintOrder.`);
     }
-    const refused = doSetSkinMembers(this.store, skin, { bones, ik, transforms }, args.remove !== true, "AI: Skin Members");
+    const refused = doSetSkinMembers(this.store, skin, { bones, ik, transforms, constraints }, args.remove !== true, "AI: Skin Members");
     if (refused) throw new AgentError(refused);
     const def = this.sym.skins?.find((d) => d.name === skin);
     return {
       skin,
       bones: (def?.bones ?? []).map((id) => this.sym.nodes[id]?.name),
-      constraints: [...(def?.ik ?? []).map((id) => this.sym.ik.find((c) => c.id === id)?.name), ...(def?.transforms ?? []).map((id) => this.sym.transforms?.find((c) => c.id === id)?.name)],
+      constraints: [
+        ...(def?.ik ?? []).map((id) => this.sym.ik.find((c) => c.id === id)?.name),
+        ...(def?.transforms ?? []).map((id) => this.sym.transforms?.find((c) => c.id === id)?.name),
+        ...(def?.constraints ?? []).map((id) => others.find((c) => c.id === id)?.name),
+      ],
     };
   }
 

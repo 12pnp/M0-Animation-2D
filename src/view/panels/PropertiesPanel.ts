@@ -1,3 +1,8 @@
+import { BONE_ICONS, boneIconGlyph } from "@/core/doc/boneIcons";
+import type { LinkedMesh } from "@/core/doc/types";
+import { channelKeysOf, channelOf, constraintHost, keyedConstraint, setupValue, valueAt, withChannelKeys, withValueKey } from "@/core/doc/constraintKeys";
+import { INHERIT_LABELS, INHERIT_MODES, inheritAt, withInheritKey } from "@/core/doc/inherit";
+import type { SpineInherit } from "@/core/spine/types";
 import { type ConstraintKind, constraintEntries, withConstraintMoved } from "@/core/doc/constraintOrder";
 import { clear, cls, h, on } from "@/view/widgets/dom";
 import { icon } from "@/view/icons";
@@ -19,6 +24,8 @@ import {
     colorAtFrame,
     displayAtFrame,
     doSetIkKeys,
+    doSetConstraintKeys,
+    doSetInheritKeys,
     doSetTcKeys,
     doSetTransforms,
     editsMultipleFrames,
@@ -56,7 +63,7 @@ import {
 } from "@/core/doc/types";
 import { ikRelations } from "@/core/doc/ikGraph";
 import { DEFAULT_SKIN, editedSkin, skinsOf, stageSkinOf } from "@/core/doc/skins";
-import { displaysOf } from "@/core/doc/displays";
+import { displayAt, displaysOf, linkableDisplays, withLink } from "@/core/doc/displays";
 import { isImage } from "@/core/doc/types";
 import { doSetSkinImage, doSetSkinMembers, doSetSkinOnly } from "@/app/SkinOps";
 import { doAddPhysics, doAddSlider, doMakeSequence, doRemoveSequence, doSetConstraints, doSetSequenceKeys, doSetSequenceSetup } from "@/app/AttachmentOps";
@@ -189,7 +196,7 @@ export class PropertiesPanel implements Panel {
     const skins = `${valueId(sym.skins)}:${stageSkinOf(sym).join(",")}:${editedSkin(sym, this.store.ui.editSkin) ?? ""}`
       // Physics, sliders and paths: which there are, not their values (synced).
       + [...(sym.physics ?? []), ...(sym.sliders ?? []), ...(sym.paths ?? [])].map((k) => `${k.id}:${k.name}:${"boneId" in k ? k.boneId : ""}:${"boneIds" in k ? k.boneIds.join(",") : ""}:${"animId" in k ? k.animId : ""}`).join(";");
-    return `${anim}|${tcs}|${skins}|` + nodes.map((n) => `${n.id}:${n.kind}:${displaysOf(n).map((d) => (d.skinOnly ? "s" : "d")).join("")}${n.boneColor ?? ""}:${displayAtFrame(this.store, n).display?.itemId ?? ""}:${n.mesh ? `m${n.mesh.points.length}${n.mesh.weights ? "w" : ""}` : ""}${n.sequence ? `q${n.sequence.items.length}` : ""}`).join("|");
+    return `${anim}|${tcs}|${skins}|` + nodes.map((n) => `${n.id}:${n.kind}:${displaysOf(n).map((d) => (d.skinOnly ? "s" : "d") + (d.linked ? `l${d.linked.to}${d.linked.deform === false ? "n" : ""}` : "")).join("")}${n.boneColor ?? ""}:${displayAtFrame(this.store, n).display?.itemId ?? ""}:${n.mesh ? `m${n.mesh.points.length}${n.mesh.weights ? "w" : ""}` : ""}${n.sequence ? `q${n.sequence.items.length}` : ""}`).join("|");
   }
 
   /**
@@ -462,9 +469,51 @@ export class PropertiesPanel implements Panel {
     on(color, "change", () => setColor(`${color.value.slice(1)}ff`, "Bone Colour"));
     const reset = h("button", { class: "btn", title: "Spine's default bone colour" }, "Default");
     on(reset, "click", () => setColor(undefined, "Default Bone Colour"));
+    // Spine's inherit: the bone's own in Setup mode, keyed at the playhead in
+    // Animate mode (ARCHITECTURE ▸ Inherit modes).
+    const animate = this.store.ui.mode === "animate" ? this.store.currentAnimation : null;
+    const inherit = h("select", {
+      class: "preview-anim",
+      title: animate ? "What this bone takes from its parent from this frame on: keyed here (Spine's inherit key)" : "What this bone takes from its parent: its position always, and its rotation, scale and reflection unless left out",
+    }, ...INHERIT_MODES.map((m) => h("option", { value: m }, INHERIT_LABELS[m]))) as HTMLSelectElement;
+    const inheritNow = () => {
+      const n = this.store.currentSymbol.nodes[node.id] ?? node;
+      return animate ? inheritAt(n, this.store.currentAnimation, this.store.ui.frame) : n.inherit ?? "normal";
+    };
+    inherit.value = inheritNow();
+    this.ikSync.push(() => { if (document.activeElement !== inherit) inherit.value = inheritNow(); });
+    on(inherit, "change", () => {
+      const mode = inherit.value as SpineInherit;
+      if (animate) {
+        doSetInheritKeys(this.store, node.id, withInheritKey(this.store.currentAnimation?.inherits?.[node.id] ?? [], this.store.ui.frame, mode), "Inherit Key");
+        return;
+      }
+      this.store.apply(new EditNode("Inherit", this.store.currentSymbolId, node.id, (n) => {
+        const out = { ...n };
+        if (mode !== "normal") out.inherit = mode; else delete out.inherit;
+        return out;
+      }));
+      this.store.emit("stage");
+      this.store.emit("timeline");
+    });
+    // Spine's bone icon (nonessential): shown in the Tree, written to the file.
+    const iconSel = h("select", { class: "preview-anim", title: "This bone's icon in the Tree and in Spine's editor" },
+      h("option", { value: "" }, "None"),
+      ...[...new Set([...Object.keys(BONE_ICONS), ...(node.boneIcon ? [node.boneIcon] : [])])].map((n) => h("option", { value: n }, `${boneIconGlyph(n)} ${n}`))) as HTMLSelectElement;
+    iconSel.value = node.boneIcon ?? "";
+    on(iconSel, "change", () => {
+      this.store.apply(new EditNode("Bone Icon", this.store.currentSymbolId, node.id, (n) => {
+        const out = { ...n };
+        if (iconSel.value) out.boneIcon = iconSel.value; else delete out.boneIcon;
+        return out;
+      }));
+      this.store.emit("doc");
+    });
     return this.section("Bone", true, [
       this.row("Length", [length.el]), this.row("Path drag", [drag]), this.row("Primary", [primary]),
       this.row("Colour", [color, ...(node.boneColor ? [reset] : [])]),
+      this.row("Icon", [iconSel]),
+      this.row("Inherit", [inherit]),
     ]);
   }
 
@@ -848,6 +897,31 @@ export class PropertiesPanel implements Panel {
     rows.push(this.row("Weights", [h("label", { class: "switch-label", title: "Drag over points with the Mesh tool to add this bone's weight" }, box, "Paint")]));
     rows.push(this.row("Bone", [boneSel]));
     rows.push(this.row("Brush", [radius.el, strength.el]));
+    // Linked meshes: this node's other images drawing this mesh (Spine's linked mesh).
+    const others = linkableDisplays(node, 0);
+    if (others.length) {
+      const setLink = (index: number, link: LinkedMesh | undefined, label: string) => {
+        this.store.apply(new EditNode(label, this.store.currentSymbolId, node.id, (n) => withLink(n, index, link)));
+        this.store.emit("stage");
+        this.store.emit("doc");
+      };
+      rows.push(this.noteRow("Its other images can draw this mesh, bending as it does (Spine's linked mesh):"));
+      for (const i of others) {
+        const d = displayAt(node, i)!;
+        const linked = d.linked?.to === 0;
+        const use = h("input", { type: "checkbox", class: "switch" }) as HTMLInputElement;
+        use.checked = linked;
+        on(use, "change", () => setLink(i, use.checked ? { to: 0 } : undefined, use.checked ? "Link Mesh" : "Unlink Mesh"));
+        const controls = [h("label", { class: "switch-label", title: "This image draws the mesh" }, use, this.store.project.items[d.itemId]?.name ?? "image")];
+        if (linked) {
+          const deform = h("input", { type: "checkbox", class: "switch" }) as HTMLInputElement;
+          deform.checked = d.linked!.deform !== false;
+          on(deform, "change", () => setLink(i, deform.checked ? { to: 0 } : { to: 0, deform: false }, "Linked Mesh Deform"));
+          controls.push(h("label", { class: "switch-label", title: "It takes the mesh's deform keys too (Spine's timelines)" }, deform, "Deform"));
+        }
+        rows.push(this.row(`${i + 1}`, controls));
+      }
+    }
     return this.section("Mesh", true, rows);
   }
 
@@ -873,6 +947,30 @@ export class PropertiesPanel implements Panel {
     };
     const read = (key: string, def: unknown) => (current() as Record<string, unknown> | undefined)?.[key] ?? def;
     return specs.map((spec) => {
+      // In Animate mode a keyable value is keyed at the playhead (`constraintKeys`).
+      const channel = spec.type === "number" ? channelOf(field === "sliders" ? "slider" : field === "paths" ? "path" : "physics", spec.key) : null;
+      const animate = this.store.ui.mode === "animate" ? this.store.currentAnimation : null;
+      if (spec.type === "number" && channel && animate) {
+        const now = () => {
+          const c = keyedConstraint(this.store.currentSymbol, id);
+          return c ? valueAt(channelKeysOf(this.store.currentAnimation, id, channel), this.store.ui.frame, setupValue(c, channel)) : spec.def as number;
+        };
+        const nf = new NumberField({
+          glyph: spec.glyph, min: spec.min, max: spec.max, step: spec.step, decimals: spec.decimals ?? 2, unit: spec.unit,
+          onInput: (v, committing) => {
+            const anim = this.store.currentAnimation;
+            if (!anim) return;
+            const kind = `constraint.key.${id}.${channel}`;
+            this.scrubStep(kind, committing);
+            const keys = withValueKey(channelKeysOf(anim, id, channel), this.store.ui.frame, v);
+            doSetConstraintKeys(this.store, withChannelKeys(anim.constraintKeys, id, channel, keys), `Key ${spec.label}`, kind);
+            if (committing) this.store.history.endInteraction();
+          },
+        });
+        nf.set(now());
+        this.ikSync.push(() => nf.show(now()));
+        return this.row(`${spec.label} ◆`, [nf.el]);
+      }
       if (spec.type === "number") {
         const nf = new NumberField({
           glyph: spec.glyph, min: spec.min, max: spec.max, step: spec.step, decimals: spec.decimals ?? 2, unit: spec.unit,
@@ -1093,6 +1191,9 @@ export class PropertiesPanel implements Panel {
     if (node.kind === "bone") {
       const iks = sym.ik.filter((k) => k.targetId === node.id);
       const tcs = (sym.transforms ?? []).filter((k) => k.sourceId === node.id);
+      // Physics, sliders and paths under this bone (`constraintHost`).
+      const cns = [...(sym.physics ?? []), ...(sym.sliders ?? []), ...(sym.paths ?? [])]
+        .filter((k) => { const c = keyedConstraint(sym, k.id); return !!c && constraintHost(c) === node.id; });
       for (const name of named) {
         const def = sym.skins?.find((d) => d.name === name);
         const check = (label: string, title: string, checked: boolean, run: (on: boolean) => void) => {
@@ -1108,6 +1209,8 @@ export class PropertiesPanel implements Panel {
             (v) => doSetSkinMembers(this.store, name, { ik: [k.id] }, v))),
           ...tcs.map((k) => check(k.name, `Only this skin applies the transform constraint "${k.name}"`, !!def?.transforms?.includes(k.id),
             (v) => doSetSkinMembers(this.store, name, { transforms: [k.id] }, v))),
+          ...cns.map((k) => check(k.name, `Only this skin applies "${k.name}"`, !!def?.constraints?.includes(k.id),
+            (v) => doSetSkinMembers(this.store, name, { constraints: [k.id] }, v))),
         ]));
       }
       rows.push(this.noteRow("A bone in a skin exists only while a skin listing it shows, with the bones and pictures below it; a constraint in a skin applies only then."));

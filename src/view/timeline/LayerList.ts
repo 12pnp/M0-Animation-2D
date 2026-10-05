@@ -1,3 +1,4 @@
+import { keyedConstraint } from "@/core/doc/constraintKeys";
 import { clear, cls, h, on } from "@/view/widgets/dom";
 import { dropOrderAt } from "@/core/doc/drawOrder";
 import { doSetDrawOrder } from "@/app/TimelineOps";
@@ -142,7 +143,7 @@ export class LayerList {
     const rows = timelineRows(this.store);
     const lines = treeLines(rows.map((r) => r.depth));
     rows.forEach((row, i) => this.list.appendChild(
-      row.prop ? this.propRow(row) : row.ik ? this.ikRow(row) : row.tc ? this.tcRow(row) : row.deform ? this.deformRow(row) : row.sequence ? this.sequenceRow(row) : this.row(row, i, roles, lines[i]!)));
+      row.prop ? this.propRow(row) : row.ik ? this.ikRow(row) : row.tc ? this.tcRow(row) : row.deform ? this.deformRow(row) : row.sequence ? this.sequenceRow(row) : row.inherit ? this.inheritRow(row) : row.cn ? this.constraintRow(row) : this.row(row, i, roles, lines[i]!)));
 
     // Selecting from somewhere else — the stage, or a name in the Properties
     // panel's IK section — has to be visible. Only on an actual CHANGE, and
@@ -195,6 +196,38 @@ export class LayerList {
       style: { height: `${this.cb.rowHeight}px` },
       title: "Sequence: which image plays from each key, and how (Spine's sequence keys). Key one in Properties ▸ Sequence or right-click here; drag a key to move it, Delete to remove.",
     }, h("span", { class: "prop-glyph" }, "▤"), h("div", { class: "name" }, "Sequence"));
+    on(el, "pointerdown", (ev) => {
+      if ((ev as unknown as PointerEvent).button !== 0) return;
+      this.store.clearFrameSelection();
+      this.store.selectNodes([row.layer.nodeId]);
+    });
+    return el;
+  }
+
+  /** A physics, slider or path constraint's row: its keys, under its bone. */
+  private constraintRow(row: LayerRow): HTMLElement {
+    const c = keyedConstraint(this.store.currentSymbol, row.cn!);
+    const kind = c?.kind === "physics" ? "Physics" : c?.kind === "slider" ? "Slider" : "Path";
+    const el = h("div", {
+      class: "tl-layer tl-prop prop-constraint",
+      style: { height: `${this.cb.rowHeight}px` },
+      title: `${kind} "${c?.k.name ?? ""}": its keyed values. Change a value in Properties in Animate mode to key it; drag a key to move it, Delete to remove, right-click for the ease.`,
+    }, h("span", { class: "prop-glyph" }, "◆"), h("div", { class: "name" }, c?.k.name ?? kind));
+    on(el, "pointerdown", (ev) => {
+      if ((ev as unknown as PointerEvent).button !== 0) return;
+      this.store.clearFrameSelection();
+      this.store.selectNodes([row.layer.nodeId]);
+    });
+    return el;
+  }
+
+  /** A bone's Inherit row: its inherit mode keys, under the bone. */
+  private inheritRow(row: LayerRow): HTMLElement {
+    const el = h("div", {
+      class: "tl-layer tl-prop prop-inherit",
+      style: { height: `${this.cb.rowHeight}px` },
+      title: "Inherit: what the bone takes from its parent from each key on (Spine's inherit keys). Set it in Properties ▸ Bone in Animate mode or right-click here; drag a key to move it, Delete to remove.",
+    }, h("span", { class: "prop-glyph" }, "⤓"), h("div", { class: "name" }, "Inherit"));
     on(el, "pointerdown", (ev) => {
       if ((ev as unknown as PointerEvent).button !== 0) return;
       this.store.clearFrameSelection();

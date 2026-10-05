@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { drawingLayers } from "@/core/doc/drawOrder";
+import { meshOfDisplay } from "@/core/doc/displays";
 import {
   AtlasAttachmentLoader, ClippingAttachment, type Event as SpineEvent, MeshAttachment, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
   Skin, BoundingBoxAttachment, PointAttachment, Vector2,
@@ -985,7 +986,7 @@ describe("meshes", () => {
         skeleton.updateWorldTransform(Physics.none);
         const pose = evaluateSymbol(sym, anim, f, "animate");
         for (const e of pose.entries) {
-          if (!e.spine || !e.display?.mesh) continue;
+          if (!e.spine || !e.display || !meshOfDisplay(e.node, e.display)) continue;
           const slot = skeleton.findSlot(exported.paths.get(e.nodeId as never)!)!;
           const att = slot.appliedPose.getAttachment();
           expect(att, `${anim.name} ${f}`).toBeInstanceOf(MeshAttachment);
@@ -1028,6 +1029,25 @@ describe("meshes", () => {
     }
     return project;
   }
+
+  it.each([true, false])("a linked mesh, the head drawn on the torso's weighted mesh (deform keys followed: %s)", async (deform) => {
+    const project = await meshedStickman(true, true);
+    const sym = project.items[project.rootSymbolId] as SymbolItem;
+    const torso = Object.values(sym.nodes).find((n) => n.itemId && n.name.includes("torso"))!;
+    const head = Object.values(project.items).find((i) => i.name === "head")!;
+    sym.nodes[torso.id] = { ...torso, extraDisplays: [{ itemId: head.id, pivot: { x: 10, y: 10 }, linked: deform ? { to: 0 } : { to: 0, deform: false } }] };
+    // The torso shows the head from frame 5 to frame 10, through two deform keys.
+    const anim = sym.animations[0]!;
+    const track = anim.tracks[torso.id] ?? { nodeId: torso.id, endFrame: anim.duration - 1, keys: [key(0, torso.bind)] };
+    anim.tracks[torso.id] = { ...track, keys: [...track.keys.filter((k) => k.frame !== 5 && k.frame !== 11), key(5, torso.bind, { displayIndex: 1, tween: { kind: "none" } }), key(11, torso.bind, { tween: { kind: "none" } })].sort((a, b) => a.frame - b.frame) };
+    const out = exportSpine(project).skeleton.skins![0]!.attachments!;
+    const slot = Object.values(out).find((atts) => Object.values(atts).some((a) => (a as { type?: string }).type === "linkedmesh"))!;
+    const linked = Object.values(slot).find((a) => (a as { type?: string }).type === "linkedmesh") as unknown as Record<string, unknown>;
+    expect(linked).toMatchObject({ type: "linkedmesh", ...(deform ? {} : { timelines: false }) });
+    expect(slot.head).toBe(linked as never);
+    expect(slot[linked.source as string]).toMatchObject({ type: "mesh" });
+    expect(meshParity(project)).toBeGreaterThan(20);
+  });
 
   it("an image as a mesh, unweighted: every vertex where spine-core puts it", async () => {
     expect(meshParity(await meshedStickman(false, false))).toBeGreaterThan(20);

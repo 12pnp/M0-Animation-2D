@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { EditNode } from "@/core/history/attachmentCommands";
 import { sampleTransformRaw } from "@/core/doc/timeline";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { AtlasAttachmentLoader, MixFrom, Physics, Skeleton, SkeletonJson, TextureAtlas } from "@esotericsoftware/spine-core";
@@ -59,7 +60,7 @@ describe("the AI's tools", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
       "get_reference", "render_frame", "add_bones", "attach", "add_ik", "auto_rig", "list_motions", "apply_motion", "draw_order",
-      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "make_mesh", "bind_mesh", "add_skin", "set_skin_image", "add_attachment", "make_sequence", "key_sequence", "add_physics", "set_constraint_order", "add_slider", "make_path", "set_skin_members", "set_cycle", "key_properties", "offset_keys", "get_bone_path", "set_bone_path",
+      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "make_mesh", "bind_mesh", "add_skin", "set_skin_image", "add_attachment", "make_sequence", "key_sequence", "add_physics", "link_mesh", "key_constraint", "set_inherit", "set_constraint_order", "add_slider", "make_path", "set_skin_members", "set_cycle", "key_properties", "offset_keys", "get_bone_path", "set_bone_path",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -825,6 +826,50 @@ describe("cycles and bone paths through the AI's tools", () => {
     await expect(api.call("offset_keys", { animation: "run", layers: ["nobody"], frames: 2 })).rejects.toThrow(/no bone or slot "nobody"/);
   });
 
+  it("link a mesh: another image of the layer draws its mesh; unlinked again; refused without a mesh", async () => {
+    const { store, api } = await setup();
+    const torso = Object.values(store.currentSymbol.nodes).find((n) => n.itemId && n.name.includes("torso"))!;
+    await expect(api.call("link_mesh", { layer: torso.name, image: "head" })).rejects.toThrow(/not a mesh/);
+    await api.call("make_mesh", { images: [torso.name] });
+    const head = Object.values(store.project.items).find((i) => i.name === "head")!;
+    store.apply(new EditNode("add", store.currentSymbolId, torso.id, (n) => ({ ...n, extraDisplays: [{ itemId: head.id, pivot: { x: 0, y: 0 } }] })));
+    expect(await api.call("link_mesh", { layer: torso.name, image: "head", deform: false })).toEqual({ layer: torso.name, image: "head", linked: true, deform: false });
+    expect(store.currentSymbol.nodes[torso.id]!.extraDisplays![0]!.linked).toEqual({ to: 0, deform: false });
+    expect(store.history.undoLabel).toBe(`AI: Link "head" to "${torso.name}"'s Mesh`);
+    expect(await api.call("link_mesh", { layer: torso.name, image: "head", linked: false })).toMatchObject({ linked: false });
+    await expect(api.call("link_mesh", { layer: torso.name, image: "nope" })).rejects.toThrow(/no other image "nope"/);
+  });
+
+  it("key a constraint: a physics value keyed, eased and removed; a channel it lacks refused", async () => {
+    const { store, api } = await setup();
+    await api.call("add_physics", { bone: "head" });
+    const out = await api.call("key_constraint", { animation: "run", constraint: "head_physics", channel: "gravity", frame: 3, value: 40, ease: "stepped" }) as { keys: unknown[] };
+    expect(out.keys).toEqual([{ frame: 3, value: 40, tween: { kind: "none" } }]);
+    expect(store.history.undoLabel).toBe(`AI: Key "head_physics" gravity at 4`);
+    const run = store.currentSymbol.animations.find((a) => a.name === "run")!;
+    expect(exportSpine(store.project).skeleton.animations!.run!.physics).toEqual({ head_physics: { gravity: [{ time: expect.closeTo(3 / store.project.frameRate, 6), value: 40 }] } });
+    expect(Object.keys(run.constraintKeys!)).toHaveLength(1);
+    await api.call("key_constraint", { animation: "run", constraint: "head_physics", channel: "gravity", frame: 3, delete: true });
+    expect(store.currentSymbol.animations.find((a) => a.name === "run")!.constraintKeys).toBeUndefined();
+    await expect(api.call("key_constraint", { animation: "run", constraint: "head_physics", channel: "time", frame: 1, value: 1 })).rejects.toThrow(/keys mix, inertia/);
+    await expect(api.call("key_constraint", { animation: "run", constraint: "nope", channel: "mix", frame: 1, value: 1 })).rejects.toThrow(/no physics, slider or path/);
+  });
+
+  it("set inherit: the bone's own, a key, and a key removed; each one undo step", async () => {
+    const { store, api } = await setup();
+    expect(await api.call("set_inherit", { bone: "head", inherit: "onlyTranslation" })).toEqual({ bone: "head", inherit: "onlyTranslation" });
+    const head = Object.values(store.currentSymbol.nodes).find((n) => n.name === "head")!;
+    expect(head.inherit).toBe("onlyTranslation");
+    expect(store.history.undoLabel).toBe(`AI: Inherit "head"`);
+    const keyed = await api.call("set_inherit", { bone: "head", inherit: "noScale", animation: "run", frame: 4 }) as { keys: unknown[] };
+    expect(keyed.keys).toEqual([{ frame: 4, inherit: "noScale" }]);
+    expect(store.history.undoLabel).toBe(`AI: Inherit "head" at 5`);
+    expect(exportSpine(store.project).diagnostics.filter((d) => d.severity === "error")).toEqual([]);
+    expect(await api.call("set_inherit", { bone: "head", animation: "run", frame: 4, delete: true })).toMatchObject({ keys: [] });
+    await expect(api.call("set_inherit", { bone: "head", inherit: "sideways" })).rejects.toThrow(/inherit is one of/);
+    await expect(api.call("set_inherit", { bone: "head", animation: "run", frame: 2, delete: true })).rejects.toThrow(/no inherit key at frame 2/);
+  });
+
   it("set the constraint order: the ones named first, the rest after; one undo step", async () => {
     const { store, api } = await setup();
     await api.call("add_physics", { bone: "head" });
@@ -878,7 +923,7 @@ describe("cycles and bone paths through the AI's tools", () => {
     const members = await api.call("set_skin_members", { skin: "red", bones: ["arm_near_up"], constraints: ["arm_near_fore_ik"] });
     expect(members).toEqual({ skin: "red", bones: ["arm_near_up", "arm_near_fore"], constraints: ["arm_near_fore_ik"] });
     await expect(api.call("set_skin_image", { skin: "blue", layer: torso.name, image: "head" })).rejects.toThrow(/no skin "blue"/);
-    await expect(api.call("set_skin_members", { skin: "red", constraints: ["nope"] })).rejects.toThrow(/no IK or transform constraint/);
+    await expect(api.call("set_skin_members", { skin: "red", constraints: ["nope"] })).rejects.toThrow(/no constraint "nope"/);
   });
 
   it("make a cycle in one undo step, and say where the loop does not close", async () => {

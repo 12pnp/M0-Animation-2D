@@ -22,11 +22,18 @@ export interface MeshBones {
   node: Matrix2D;
 }
 
+/** Every point's setup position (`MeshData.vertices`, else its texture
+ *  coordinate), flat, in the image's pixel frame. */
+export function meshPositions(mesh: MeshData): readonly number[] {
+  return mesh.vertices ?? mesh.points;
+}
+
 /** The point `i` in its node's space, deform included. */
 function localPoint(mesh: MeshData, pivot: { x: number; y: number }, i: number, deform?: readonly number[] | null) {
+  const p = meshPositions(mesh);
   return {
-    x: mesh.points[i * 2]! - pivot.x + (deform?.[i * 2] ?? 0),
-    y: mesh.points[i * 2 + 1]! - pivot.y + (deform?.[i * 2 + 1] ?? 0),
+    x: p[i * 2]! - pivot.x + (deform?.[i * 2] ?? 0),
+    y: p[i * 2 + 1]! - pivot.y + (deform?.[i * 2 + 1] ?? 0),
   };
 }
 
@@ -48,12 +55,21 @@ export function meshWorld(
     }
     apply(tmp, bones.node, p.x, p.y);
     const sx = tmp.x, sy = tmp.y;
+    const own = mesh.boneOffsets?.[i];
+    const dx = deform?.[i * 2] ?? 0, dy = deform?.[i * 2 + 1] ?? 0;
     let x = 0, y = 0, total = 0;
-    for (const [bone, weight] of w) {
+    for (let j = 0; j < w.length; j++) {
+      const [bone, weight] = w[j]!;
       const b = bones.now(bone), s = bones.setup(bone);
       if (!b || !s) continue;
       const o = { x: 0, y: 0 };
-      if (!applyInverse(o, s, sx, sy)) continue;
+      if (own?.[j]) {
+        // The file's own offset, the deform carried into the bone's setup space.
+        const d = boneSpaceDelta(s, bones.node, dx, dy);
+        if (!d) continue;
+        o.x = own[j]![0] + d.x;
+        o.y = own[j]![1] + d.y;
+      } else if (!applyInverse(o, s, sx, sy)) continue;
       apply(tmp, b, o.x, o.y);
       x += tmp.x * weight;
       y += tmp.y * weight;
@@ -87,14 +103,14 @@ export function spineVertices(
   for (let i = 0; i < n; i++) {
     const p = localPoint(mesh, pivot, i);
     if (!bones) { out.push(p.x, -p.y); continue; }
-    const live = (mesh.weights?.[i] ?? []).filter(([b]) => bones.setup(b));
-    if (!live.length) { if (self) out.push(1, nameOf(self), p.x, -p.y, 1); else out.push(0); continue; }
-    out.push(live.length);
+    const entries = (mesh.weights?.[i] ?? []).map((e, j) => [e, mesh.boneOffsets?.[i]?.[j]] as const).filter(([[b]]) => bones.setup(b));
+    if (!entries.length) { if (self) out.push(1, nameOf(self), p.x, -p.y, 1); else out.push(0); continue; }
+    out.push(entries.length);
     const world = apply({ x: 0, y: 0 }, bones.node, p.x, p.y);
-    for (const [bone, weight] of live) {
-      const o = { x: 0, y: 0 };
-      applyInverse(o, bones.setup(bone)!, world.x, world.y);
-      out.push(nameOf(bone), o.x, -o.y, weight);
+    for (const [[bone, weight], own] of entries) {
+      const o = own ? { x: own[0], y: own[1] } : { x: 0, y: 0 };
+      if (!own) applyInverse(o, bones.setup(bone)!, world.x, world.y);
+      out.push(nameOf(bone), o.x, 0 - o.y, weight);
     }
   }
   return out;
@@ -123,6 +139,14 @@ export function spineDeform(mesh: MeshData, offsets: readonly number[], bones: M
     }
   }
   return out;
+}
+
+/** A node-space offset in a bone's setup space: `lin(S⁻¹ · N) · d`. */
+export function boneSpaceDelta(setup: Matrix2D, node: Matrix2D, dx: number, dy: number): { x: number; y: number } | null {
+  const inv = mat();
+  if (!invert(inv, { ...setup, tx: 0, ty: 0 })) return null;
+  const w = apply({ x: 0, y: 0 }, { ...node, tx: 0, ty: 0 }, dx, dy);
+  return apply({ x: 0, y: 0 }, inv, w.x, w.y);
 }
 
 /** `S⁻¹ · N`, for tests and tools that need a bone's setup space. */

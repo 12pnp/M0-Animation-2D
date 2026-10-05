@@ -1,14 +1,14 @@
 import { h, on, raf } from "@/view/widgets/dom";
 import { FRAME_WIDTH_MAX, FRAME_WIDTH_MIN, anchoredScroll, fitFrameWidth, playheadLabel, steppedFrameWidth } from "./zoom";
 import type { Store } from "@/app/Store";
-import type { DeformKey, DrawOrderKey, EventKey, IkKey, Layer, Node, SequenceKey, TcKey, Track } from "@/core/doc/types";
+import type { Animation, DeformKey, DrawOrderKey, EventKey, IkKey, InheritKey, Layer, Node, SequenceKey, TcKey, Track } from "@/core/doc/types";
 import { moveKeys } from "@/core/doc/sequence";
 import { moveTcKeys } from "@/core/doc/transformKeys";
 import { moveDeformKeys } from "@/core/mesh/deform";
 import { ikDragAxis, ikPoseAt, moveIkKeys, withIkKey, withIkMixDragged } from "@/core/doc/ikKeys";
 import { moveDrawOrderKeys } from "@/core/doc/drawOrder";
 import { eventFrames, moveEventKeys } from "@/core/doc/events";
-import type { IkId, NodeId, TcId } from "@/core/doc/ids";
+import type { CnId, IkId, NodeId, TcId } from "@/core/doc/ids";
 import { describeFrame, ensureTrack } from "@/app/TimelineOps";
 import { keyIndexAt, MAX_FRAMES, spanIndexAt } from "@/core/doc/timeline";
 import { easeTag } from "@/core/math/easing";
@@ -23,6 +23,33 @@ const DEFORM_COLOR = "#4fd1c5";
 const SEQUENCE_COLOR = "#f6ad55";
 /** Transform constraint rows' keys. */
 const TC_COLOR = "#c792ea";
+/** Inherit rows' keys. */
+const INHERIT_COLOR = "#9ad0ff";
+/** Physics, slider and path constraint rows' keys. */
+const CONSTRAINT_KEY_COLOR = "#e0a0ff";
+
+/** The rows of whole-frame keys that are not transforms. */
+type KeyRowKind = "deform" | "sequence" | "inherit" | "constraint";
+function keyRowKind(row: { deform?: true; sequence?: true; inherit?: true; cn?: CnId } | undefined): KeyRowKind | null {
+  return row?.deform ? "deform" : row?.sequence ? "sequence" : row?.inherit ? "inherit" : row?.cn ? "constraint" : null;
+}
+type KeySel = { node: NodeId; frames: number[]; sequence?: true; inherit?: true; cn?: CnId };
+function selKind(sel: KeySel): KeyRowKind {
+  return sel.sequence ? "sequence" : sel.inherit ? "inherit" : sel.cn ? "constraint" : "deform";
+}
+function selFlag(kind: KeyRowKind, cn?: CnId): { sequence?: true; inherit?: true; cn?: CnId } {
+  return kind === "sequence" ? { sequence: true } : kind === "inherit" ? { inherit: true } : kind === "constraint" ? { cn } : {};
+}
+/** The picked keys when they are on this row. */
+function picked(sel: KeySel | null, node: NodeId, kind: KeyRowKind, cn?: CnId): number[] {
+  return sel?.node === node && selKind(sel) === kind && sel.cn === cn ? sel.frames : [];
+}
+/** A constraint row's diamonds: a frame any channel keys, with that key's tween. */
+function constraintRowKeys(anim: Animation | null | undefined, cn: CnId): Array<{ frame: number; tween?: { kind: string } }> {
+  const channels = Object.values(anim?.constraintKeys?.[cn] ?? {});
+  return constraintKeyFrames(anim, cn).map((frame) => ({ frame, tween: channels.flatMap((keys) => keys.filter((k) => k.frame === frame))[0]?.tween }));
+}
+
 /** The Events row's flags. */
 const EVENT_COLOR = "#ffb35c";
 
@@ -38,6 +65,7 @@ import { dragMarkers, type MarkerDrag, type OnionSpan, wrapSpan } from "@/core/d
 import { SEAM_TOLERANCE, type SeamGap, seamFrame, seamGap } from "@/core/doc/cycle";
 import { posedSymbol } from "@/core/spine/spinePose";
 import { eventSounds, peakBetween, type Waveform } from "@/core/doc/waveform";
+import { constraintKeyFrames, moveConstraintKeys } from "@/core/doc/constraintKeys";
 
 /** The unscaled row and ruler heights. The layer list is DOM and the grid is
  *  canvas, so the same two numbers have to reach both — see `TimelinePanel`. */
@@ -70,6 +98,10 @@ export interface FrameGridCallbacks {
   onEditDeform(nodeId: NodeId, keys: DeformKey[], label: string, kind?: string): void;
   /** A Sequence row's edit: the node's sequence keys as they are to be. */
   onEditSequence(nodeId: NodeId, keys: SequenceKey[], label: string, kind?: string): void;
+  /** An Inherit row's edit: the bone's inherit keys as they are to be. */
+  onEditInherit(nodeId: NodeId, keys: InheritKey[], label: string, kind?: string): void;
+  /** A constraint row's edit: the animation's physics, slider and path keys as they are to be. */
+  onEditConstraintKeys(keys: Animation["constraintKeys"], label: string, kind?: string): void;
   /** A transform constraint row's edit: its keys as they are to be. */
   onEditTc(tc: TcId, keys: TcKey[], label: string, kind?: string): void;
   /** An IK row's edit: the constraint's keys as they are to be. */
@@ -608,11 +640,13 @@ export class FrameGrid {
         this.drawTcRow(ctx, rows[i]!.tc!, y);
         continue;
       }
-      if (rows[i]!.deform || rows[i]!.sequence) {
-        const seq = !!rows[i]!.sequence;
-        const keys = (seq ? this.store.currentAnimation?.sequences : this.store.currentAnimation?.deforms)?.[layer.nodeId] ?? [];
-        const sel = this.deformSel?.node === layer.nodeId && !!this.deformSel.sequence === seq ? this.deformSel.frames : [];
-        this.drawKeyRow(ctx, keys, sel, seq ? SEQUENCE_COLOR : DEFORM_COLOR, y);
+      const keyKind = keyRowKind(rows[i]!);
+      if (keyKind) {
+        const keys = this.keyRowKeys(keyKind, layer.nodeId, rows[i]!.cn);
+        const sel = picked(this.deformSel, layer.nodeId, keyKind, rows[i]!.cn);
+        // Inherit keys are stepped: nothing joins them.
+        const drawn = keyKind === "inherit" ? keys.map((k) => ({ frame: k.frame, tween: { kind: "none" } })) : keys;
+        this.drawKeyRow(ctx, drawn, sel, keyKind === "sequence" ? SEQUENCE_COLOR : keyKind === "inherit" ? INHERIT_COLOR : keyKind === "constraint" ? CONSTRAINT_KEY_COLOR : DEFORM_COLOR, y);
         continue;
       }
       // A group has no artwork of its own, so it gets a thinner band: it is
@@ -917,8 +951,14 @@ export class FrameGrid {
     const offCancel = on(this.el, "pointercancel", up);
   }
 
-  /** The keys picked on a Deform row, or a Sequence row (`sequence`). */
-  deformSel: { node: NodeId; frames: number[]; sequence?: true } | null = null;
+  /** The keys picked on a Deform row, a Sequence row (`sequence`) or an Inherit row (`inherit`). */
+  deformSel: KeySel | null = null;
+
+  private keyRowKeys(kind: KeyRowKind, node: NodeId, cn?: CnId): ReadonlyArray<{ frame: number; tween?: { kind: string } }> {
+    const a = this.store.currentAnimation;
+    if (kind === "constraint") return constraintRowKeys(a, cn!);
+    return (kind === "deform" ? a?.deforms : kind === "sequence" ? a?.sequences : a?.inherits)?.[node] ?? [];
+  }
 
   /** A row of keys: a diamond per key, joined where they tween (none after
    *  a stepped key), the picked ones ringed. */
@@ -952,7 +992,8 @@ export class FrameGrid {
   }
 
   /** Move the picked deform or sequence keys by whole frames, from the keys at pointerdown. */
-  private beginDeformDrag(e: PointerEvent, node: NodeId, frames: number[], base: ReadonlyArray<DeformKey | SequenceKey>, sequence = false): void {
+  private beginDeformDrag(e: PointerEvent, node: NodeId, frames: number[], base: ReadonlyArray<unknown>, kind: KeyRowKind, cn?: CnId): void {
+    const baseAll = this.store.currentAnimation?.constraintKeys;
     this.el.setPointerCapture(e.pointerId);
     const startX = e.clientX;
     const first = Math.min(...frames);
@@ -961,10 +1002,12 @@ export class FrameGrid {
     const move = (m: PointerEvent) => {
       const delta = Math.max(-first, Math.round((m.clientX - startX) / this.frameWidth));
       if (delta === lastDelta) return;
-      if (!started) { started = true; this.cb.onBeginInteraction(sequence ? "timeline.sequenceMove" : "timeline.deformMove"); }
-      if (sequence) this.cb.onEditSequence(node, moveKeys(base as SequenceKey[], frames, delta), "Move Sequence Keys", "timeline.sequenceMove");
+      if (!started) { started = true; this.cb.onBeginInteraction(`timeline.${kind}Move`); }
+      if (kind === "sequence") this.cb.onEditSequence(node, moveKeys(base as SequenceKey[], frames, delta), "Move Sequence Keys", "timeline.sequenceMove");
+      else if (kind === "inherit") this.cb.onEditInherit(node, moveKeys(base as InheritKey[], frames, delta), "Move Inherit Keys", "timeline.inheritMove");
+      else if (kind === "constraint") this.cb.onEditConstraintKeys(moveConstraintKeys(baseAll, cn!, frames, delta), "Move Constraint Keys", "timeline.constraintMove");
       else this.cb.onEditDeform(node, moveDeformKeys(base as DeformKey[], frames, delta), "Move Deform Keys", "timeline.deformMove");
-      this.deformSel = { node, frames: frames.map((f) => f + delta), ...(sequence ? { sequence: true as const } : {}) };
+      this.deformSel = { node, frames: frames.map((f) => f + delta), ...selFlag(kind, cn) };
       lastDelta = delta;
       this.invalidate();
     };
@@ -1539,22 +1582,23 @@ export class FrameGrid {
       if (!layer) { this.store.clearFrameSelection(); return; }
       // A Deform row: a press on a key picks it (shift adds or drops one), a
       // drag moves the picked keys; elsewhere it scrubs.
-      if (this.visibleRows()[row]?.deform || this.visibleRows()[row]?.sequence) {
+      const keyKind = keyRowKind(this.visibleRows()[row]);
+      if (keyKind) {
         this.propSel = null;
         this.ikSel = null;
         this.tcSel = null;
         const node = layer.nodeId;
-        const seq = !!this.visibleRows()[row]?.sequence;
-        const keys: ReadonlyArray<DeformKey | SequenceKey> = (seq ? this.store.currentAnimation?.sequences : this.store.currentAnimation?.deforms)?.[node] ?? [];
+        const cn = this.visibleRows()[row]?.cn;
+        const keys = this.keyRowKeys(keyKind, node, cn);
         if (keys.some((k) => k.frame === frame)) {
-          const mine = this.deformSel?.node === node && !!this.deformSel.sequence === seq ? this.deformSel.frames : [];
+          const mine = picked(this.deformSel, node, keyKind, cn);
           const frames = e.shiftKey
             ? (mine.includes(frame) ? mine.filter((f) => f !== frame) : [...mine, frame])
             : (mine.includes(frame) ? mine : [frame]);
-          this.deformSel = { node, frames, ...(seq ? { sequence: true as const } : {}) };
+          this.deformSel = { node, frames, ...selFlag(keyKind, cn) };
           this.cb.onScrub(frame);
           this.invalidate();
-          if (!e.shiftKey) this.beginDeformDrag(e, node, frames, keys, seq);
+          if (!e.shiftKey) this.beginDeformDrag(e, node, frames, keys, keyKind, cn);
           return;
         }
         this.deformSel = null;

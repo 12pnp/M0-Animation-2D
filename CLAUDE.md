@@ -33,8 +33,11 @@ Bounding boxes, points, paths and sequences are made and edited (ARCHITECTURE �
 points, Sequences); physics, slider and path constraints are solved by spine-core itself, which
 poses any symbol that has one (ARCHITECTURE ▸ Physics, sliders and paths).
 Constraints apply in the symbol's order (ARCHITECTURE ▸ Constraint order), keys can be offset
-and keyed by group from the timeline (ARCHITECTURE ▸ Offset keys, Key buttons), and the
-Unity check was rerun after phase H (ARCHITECTURE ▸ Checked in Unity).
+and keyed by group from the timeline (ARCHITECTURE ▸ Offset keys, Key buttons). Inherit modes
+and physics, slider and path constraints are keyed (ARCHITECTURE ▸ Inherit modes, Physics,
+sliders and paths); an opened file's meshes, linked meshes, boxes, points, paths and sequences
+become editable where the model holds them (ARCHITECTURE ▸ Meshes, Boxes and points,
+Sequences), and the Unity check was rerun after phase I (ARCHITECTURE ▸ Checked in Unity).
 An exporter change must keep
 `tests/spineParity.test.ts` passing: it plays every fixture through spine-core
 and compares it with the stage frame by frame. An importer or exporter change

@@ -1,5 +1,6 @@
+import { constraintHost, type KeyedConstraint, keyedConstraint } from "./constraintKeys";
 import type { Animation, Layer, Node, SymbolItem } from "./types";
-import type { IkId, LayerId, NodeId, TcId } from "./ids";
+import type { CnId, IkId, LayerId, NodeId, TcId } from "./ids";
 import { ikChain } from "./ikGraph";
 import { TIMELINE_PROPS, type TimelineProp } from "./propertyKeys";
 
@@ -23,6 +24,10 @@ export interface LayerRow {
   deform?: true;
   /** A sequence node's Sequence row (`focusRows`): its sequence keys. */
   sequence?: true;
+  /** A bone's Inherit row (`focusRows`): its inherit keys. */
+  inherit?: true;
+  /** A physics, slider or path constraint's row (`focusRows`): its keys. */
+  cn?: CnId;
 }
 
 /**
@@ -330,13 +335,17 @@ export function focusRows(sym: SymbolItem, focus: readonly NodeId[], on: boolean
     const keyedTc = (sym.transforms ?? []).filter((k) => anim?.transforms?.[k.id]?.length);
     const deformed = new Set(Object.keys(anim?.deforms ?? {}).filter((id) => anim!.deforms![id as NodeId]!.length));
     const sequenced = new Set(Object.keys(anim?.sequences ?? {}).filter((id) => anim!.sequences![id as NodeId]!.length));
-    if (!keyed.length && !keyedTc.length && !deformed.size && !sequenced.size) return rows;
+    const inherited = new Set(Object.keys(anim?.inherits ?? {}).filter((id) => anim!.inherits![id as NodeId]!.length));
+    const keyedCn = Object.keys(anim?.constraintKeys ?? {}).map((id) => keyedConstraint(sym, id as CnId)).filter((c): c is KeyedConstraint => !!c);
+    if (!keyed.length && !keyedTc.length && !deformed.size && !sequenced.size && !inherited.size && !keyedCn.length) return rows;
     return rows.flatMap((r) => [
       r,
       ...keyed.filter((k) => k.targetId === r.node.id).map((k) => ({ ...r, depth: r.depth + 1, hasChildren: false, ik: k.id })),
       ...keyedTc.filter((k) => k.sourceId === r.node.id).map((k) => ({ ...r, depth: r.depth + 1, hasChildren: false, tc: k.id })),
       ...(deformed.has(r.node.id) ? [{ ...r, depth: r.depth + 1, hasChildren: false, deform: true as const }] : []),
       ...(sequenced.has(r.node.id) ? [{ ...r, depth: r.depth + 1, hasChildren: false, sequence: true as const }] : []),
+      ...(inherited.has(r.node.id) ? [{ ...r, depth: r.depth + 1, hasChildren: false, inherit: true as const }] : []),
+      ...keyedCn.filter((c) => constraintHost(c) === r.node.id).map((c) => ({ ...r, depth: r.depth + 1, hasChildren: false, cn: c.k.id })),
     ]);
   }
   const keep = new Set<string>(focus);
@@ -365,7 +374,15 @@ export function focusRows(sym: SymbolItem, focus: readonly NodeId[], on: boolean
         ...(r.node.sequence ? [{ ...row, depth: 1, sequence: true as const }] : []),
       ];
       return r.node.kind === "bone"
-        ? [row, ...TIMELINE_PROPS.map((prop) => ({ ...row, depth: 1, prop })), ...iks]
+        ? [row, ...TIMELINE_PROPS.map((prop) => ({ ...row, depth: 1, prop })),
+          ...(anim?.inherits?.[r.node.id]?.length || r.node.inherit ? [{ ...row, depth: 1, inherit: true as const }] : []), ...iks,
+          ...cnRows(sym, r.node.id).map((id) => ({ ...row, depth: 1, cn: id }))]
         : [row, ...deform, ...iks];
     });
+}
+
+/** The physics, slider and path constraints whose row sits under `host`. */
+function cnRows(sym: SymbolItem, host: NodeId): CnId[] {
+  return [...(sym.physics ?? []), ...(sym.sliders ?? []), ...(sym.paths ?? [])]
+    .filter((k) => constraintHost(keyedConstraint(sym, k.id)!) === host).map((k) => k.id);
 }

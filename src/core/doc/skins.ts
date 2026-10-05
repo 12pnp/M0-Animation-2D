@@ -1,4 +1,4 @@
-import type { IkId, NodeId, TcId } from "./ids";
+import type { CnId, IkId, NodeId, TcId } from "./ids";
 import type { DisplayRef, Node, Project, SkinDef, SymbolItem } from "./types";
 import { isImage } from "./types";
 import { displayAt, displaysOf } from "./displays";
@@ -280,7 +280,7 @@ export function withDescendantBones(sym: SymbolItem, ids: readonly NodeId[]): No
  * and transform constraints `transforms` added (`on`) or taken out.
  */
 export function withSkinMembers(
-  sym: SymbolItem, name: string, members: { bones?: readonly NodeId[]; ik?: readonly IkId[]; transforms?: readonly TcId[] }, on: boolean,
+  sym: SymbolItem, name: string, members: { bones?: readonly NodeId[]; ik?: readonly IkId[]; transforms?: readonly TcId[]; constraints?: readonly CnId[] }, on: boolean,
 ): SkinState {
   const bones = withDescendantBones(sym, members.bones ?? []);
   const edit = <T extends string>(list: readonly T[] | undefined, ids: readonly T[]): T[] | undefined => {
@@ -290,8 +290,11 @@ export function withSkinMembers(
   };
   const skins = ensured(sym.skins ?? [], name).map((s) => {
     if (s.name !== name) return s;
-    const out: SkinDef = { ...s, bones: edit(s.bones, bones), ik: edit(s.ik, members.ik ?? []), transforms: edit(s.transforms, members.transforms ?? []) };
-    for (const k of ["bones", "ik", "transforms"] as const) if (!out[k]) delete out[k];
+    const out: SkinDef = {
+      ...s, bones: edit(s.bones, bones), ik: edit(s.ik, members.ik ?? []), transforms: edit(s.transforms, members.transforms ?? []),
+      constraints: edit(s.constraints, members.constraints ?? []),
+    };
+    for (const k of ["bones", "ik", "transforms", "constraints"] as const) if (!out[k]) delete out[k];
     return out;
   });
   return { ...skinStateOf(sym), skins };

@@ -1,3 +1,5 @@
+import { SetConstraintKeys, SetInheritKeys } from "@/core/history/attachmentCommands";
+import type { Animation, InheritKey } from "@/core/doc/types";
 import type { Store } from "./Store";
 import { type Reorder, reorderAt } from "@/core/doc/drawOrder";
 import type { DeformKey, DrawOrderKey, EventDef, EventKey, IkKey, TcKey, TimelineProp, TransformConstraint } from "@/core/doc/types";
@@ -391,6 +393,24 @@ export function doKeyProps(store: Store, ids: readonly NodeId[], props: readonly
   }
   commit(store, label, tracks);
   return tracks.size > 0;
+}
+
+/** The current animation's physics, slider and path keys replaced. */
+export function doSetConstraintKeys(store: Store, keys: Animation["constraintKeys"], label: string, kind?: string): void {
+  const anim = store.currentAnimation;
+  if (!anim) return;
+  store.apply(new SetConstraintKeys(label, store.currentSymbolId, anim.id, keys, kind));
+  store.emit("timeline");
+  store.emit("stage");
+}
+
+/** A bone's inherit keys in the current animation replaced. */
+export function doSetInheritKeys(store: Store, nodeId: NodeId, keys: InheritKey[], label: string, kind?: string): void {
+  const anim = store.currentAnimation;
+  if (!anim) return;
+  store.apply(new SetInheritKeys(label, store.currentSymbolId, anim.id, nodeId, keys, kind));
+  store.emit("timeline");
+  store.emit("stage");
 }
 
 /** Each layer's keys moved by its offset (`core/doc/offset.ts`), one undo

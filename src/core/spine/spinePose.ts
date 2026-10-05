@@ -1,5 +1,8 @@
+import type { CnId } from "@/core/doc/ids";
+import { keyedConstraint, setupValue, valueAt } from "@/core/doc/constraintKeys";
+import type { SpineInherit } from "./types";
 import {
-  AtlasAttachmentLoader, type Bone, BoundingBoxAttachment, ClippingAttachment, IkConstraint, MeshAttachment, PathAttachment, PointAttachment, TransformConstraint, MixFrom, Physics, RegionAttachment, Skeleton,
+  AtlasAttachmentLoader, type Bone, BoundingBoxAttachment, ClippingAttachment, IkConstraint, Inherit, MeshAttachment, PathAttachment, PointAttachment, TransformConstraint, MixFrom, Physics, RegionAttachment, Skeleton,
   SkeletonJson, Skin, type Slot, TextureAtlas, TextureAtlasRegion, type Animation as SpineRuntimeAnimation,
 } from "@esotericsoftware/spine-core";
 import { orderAt } from "@/core/doc/drawOrder";
@@ -11,7 +14,7 @@ import { isImage } from "@/core/doc/types";
 import { displaysOf } from "@/core/doc/displays";
 import { stageSkinOf } from "@/core/doc/skins";
 import { docEpoch } from "@/core/doc/revision";
-import { runtimeSolved } from "@/core/doc/constraints";
+import { inheritAt, runtimePosed } from "@/core/doc/inherit";
 import { evaluateSymbol, type Pose, type PoseEntry } from "@/core/doc/pose";
 import { matOf } from "@/core/math/Matrix2D";
 import type { PackedPage } from "@/core/atlas/packed";
@@ -82,7 +85,7 @@ function idOf(o: object | undefined): number {
 function structureKey(project: Project, sym: SymbolItem): string {
   const nodes = Object.values(sym.nodes).map((n) => [
     n.id, n.name, n.kind, n.parentId, n.slotBone, n.inherit, n.setupDisplay, n.blendMode, n.boneLength,
-    displaysOf(n).map((d) => [d.itemId, project.items[d.itemId]?.name, idOf(d.attachment?.data), d.attachment?.name, idOf(d.mesh), idOf(d.sequence), !!d.skinOnly]),
+    displaysOf(n).map((d) => [d.itemId, project.items[d.itemId]?.name, idOf(d.attachment?.data), d.attachment?.name ?? d.key, idOf(d.mesh), idOf(d.sequence), !!d.skinOnly]),
     idOf(n.spine?.bone), idOf(n.spine?.slot), idOf(n.box), idOf(n.path),
   ]);
   const layers = sym.layers.map((l) => [l.nodeId, l.excludeFromExport, l.isMask, l.maskedBy]);
@@ -189,7 +192,7 @@ export function posedSymbol(
   skins: readonly string[] = stageSkinOf(sym),
 ): Pose {
   const pose = evaluateSymbol(sym, animation, frame, mode, skins);
-  if (!sym.spine && !runtimeSolved(sym)) return pose;
+  if (!sym.spine && !runtimePosed(sym)) return pose;
   const { rig } = rigFor(project, sym, skins);
   if (rig) applyRig(rig, sym, pose, animation, frame, mode, project.frameRate);
   return pose;
@@ -197,7 +200,7 @@ export function posedSymbol(
 
 /** Why an opened symbol is drawn with the editor's own pose, or null. */
 export function spinePoseError(project: Project, sym: SymbolItem, skins: readonly string[] = stageSkinOf(sym)): string | null {
-  return sym.spine || runtimeSolved(sym) ? rigFor(project, sym, skins).error ?? null : null;
+  return sym.spine || runtimePosed(sym) ? rigFor(project, sym, skins).error ?? null : null;
 }
 
 /**
@@ -216,6 +219,11 @@ function combineSkins(skeleton: Skeleton, skins: readonly string[]): Skin | null
   }
   return combined;
 }
+
+const INHERIT_ENUM: Record<SpineInherit, Inherit> = {
+  normal: Inherit.Normal, onlyTranslation: Inherit.OnlyTranslation, noRotationOrReflection: Inherit.NoRotationOrReflection,
+  noScale: Inherit.NoScale, noScaleOrReflection: Inherit.NoScaleOrReflection,
+};
 
 function applyRig(
   rig: Rig, sym: SymbolItem, pose: Pose, animation: Animation | null, frame: number, mode: "setup" | "animate", fps: number,
@@ -242,6 +250,13 @@ function applyRig(
 
     setColor(slot, e.color);
   }
+  // The document's inherit keys (`Animation.inherits`), stepped.
+  if (mode === "animate" && animation?.inherits) {
+    for (const [nodeId, bone] of rig.bones) {
+      const node = sym.nodes[nodeId];
+      if (node && animation.inherits[nodeId]?.length) bone.pose.inherit = INHERIT_ENUM[inheritAt(node, animation, frame)];
+    }
+  }
   if (mode === "animate" && animation) {
     rig.animations.get(animation.name)?.apply(sk, 0, frame / fps, false, null, 1, MixFrom.setup, false, false, false);
   }
@@ -267,6 +282,23 @@ function applyRig(
       const m = tcMixAt(k, animation, frame);
       c.pose.mixRotate = m.rotate; c.pose.mixX = m.x; c.pose.mixY = m.y;
       c.pose.mixScaleX = m.scaleX; c.pose.mixScaleY = m.scaleY; c.pose.mixShearY = m.shearY;
+    }
+  }
+  // The document's physics, slider and path keys, likewise (`constraintKeys`).
+  if (mode === "animate" && animation?.constraintKeys) {
+    for (const [id, channels] of Object.entries(animation.constraintKeys)) {
+      const c = keyedConstraint(sym, id as CnId);
+      if (!c) continue;
+      const rc = sk.constraints.find((x) => x.data.name === c.k.name);
+      if (!rc) continue;
+      const pose = rc.pose as unknown as Record<string, number>;
+      for (const [channel, keys] of Object.entries(channels)) {
+        if (!keys.length) continue;
+        const v = valueAt(keys, frame, setupValue(c, channel));
+        if (c.kind === "physics" && channel === "mass") pose.massInverse = 1 / v;
+        else if (c.kind === "path" && channel === "mix") { pose.mixRotate = v; pose.mixX = v; pose.mixY = v; }
+        else pose[channel] = v;
+      }
     }
   }
   // The document's draw order keys (`Animation.drawOrder`): the rig is built

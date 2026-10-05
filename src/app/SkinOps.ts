@@ -1,5 +1,5 @@
 import type { Store } from "./Store";
-import type { IkId, ItemId, NodeId, TcId } from "@/core/doc/ids";
+import type { CnId, IkId, ItemId, NodeId, TcId } from "@/core/doc/ids";
 import {
   skinDisplayFor, skinNameProblem, uniqueSkinName, withNewSkin, withoutSkin, withRenamedSkin, withSkinDisplay,
   withSkinMembers, type SkinState,
@@ -72,7 +72,7 @@ export function doSetSkinOnly(store: Store, nodeId: NodeId, index: number, on: b
 }
 
 export function doSetSkinMembers(
-  store: Store, skin: string, members: { bones?: NodeId[]; ik?: IkId[]; transforms?: TcId[] }, on: boolean, label = on ? "Add to Skin" : "Take Out of Skin",
+  store: Store, skin: string, members: { bones?: NodeId[]; ik?: IkId[]; transforms?: TcId[]; constraints?: CnId[] }, on: boolean, label = on ? "Add to Skin" : "Take Out of Skin",
 ): string | null {
   return applySkins(store, label, withSkinMembers(store.currentSymbol, skin, members, on));
 }

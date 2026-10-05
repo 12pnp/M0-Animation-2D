@@ -10,6 +10,11 @@ import { SetSkinOnly, SetSkins } from "@/core/history/skinCommands";
 import { evaluateSymbol } from "@/core/doc/pose";
 import { DOC_VERSION, type SkinDef, type SymbolItem } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
+import { AtlasAttachmentLoader, Skeleton, SkeletonJson, TextureAtlas } from "@esotericsoftware/spine-core";
+import { newCnId } from "@/core/doc/ids";
+import { newPhysics } from "@/core/doc/constraints";
+import { exportSpine } from "@/core/spine/exportSpine";
+import { importSpine } from "@/core/spine/importSpine";
 
 beforeEach(() => reseed());
 
@@ -204,5 +209,39 @@ describe("skins in the document", () => {
     expect(back.skins).toBeUndefined();
     expect(back.nodes[node("head_art")]!.skinOnly).toBeUndefined();
     expect(evaluateSymbol(back, null, 0, "setup").byNode.get(node("torso"))!.display!.itemId).toBe(before);
+  });
+});
+
+describe("physics, sliders and paths in a skin", () => {
+  it("written in the skin's per-kind list and flagged; spine-core leaves it off without the skin; opened again, a member", async () => {
+    const { project, rig, node } = await loadStickman();
+    const phys = { ...newPhysics(rig, node("head"), newCnId()), gravity: 40 };
+    rig.physics = [phys];
+    rig.skins = [{ name: "windy", constraints: [phys.id] }];
+    const out = exportSpine(project).skeleton;
+    expect(out.skins!.find((s) => s.name === "windy")).toMatchObject({ physics: [phys.name] });
+    expect(out.constraints!.find((c) => c.name === phys.name)).toMatchObject({ skin: true });
+    const data = new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(""))).readSkeletonData(JSON.parse(JSON.stringify({ ...out, skins: out.skins!.map((s) => ({ ...s, attachments: {} })) })));
+    const sk = new Skeleton(data);
+    const c = sk.constraints.find((x) => x.data.name === phys.name)!;
+    sk.setSkin(null as never); sk.updateCache();
+    expect(c.active).toBe(false);
+    sk.setSkin("windy"); sk.updateCache();
+    expect(c.active).toBe(true);
+    const opened = importSpine(out as never, "stickman", new Map()).project;
+    const sym = opened.items[opened.rootSymbolId] as SymbolItem;
+    const id = sym.physics!.find((k) => k.name === phys.name)!.id;
+    expect(sym.skins!.find((s) => s.name === "windy")!.constraints).toEqual([id]);
+    expect(sym.spine!.skins.find((s) => s.name === "windy")?.physics).toBeUndefined();
+  });
+
+  it("taken in and out with the other members", async () => {
+    const { rig, node } = await loadStickman();
+    const phys = newPhysics(rig, node("head"), newCnId());
+    rig.physics = [phys];
+    const added = withSkinMembers(rig, "windy", { constraints: [phys.id] }, true);
+    expect(added.skins!.find((s) => s.name === "windy")!.constraints).toEqual([phys.id]);
+    const removed = withSkinMembers({ ...rig, skins: added.skins }, "windy", { constraints: [phys.id] }, false);
+    expect(removed.skins!.find((s) => s.name === "windy")!.constraints).toBeUndefined();
   });
 });

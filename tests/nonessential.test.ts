@@ -78,3 +78,29 @@ describe("bone colours", () => {
     expect(s.nodes[node("torso")]!.boneColor).toBeUndefined();
   });
 });
+
+describe("bone icons", () => {
+  it("written, left out without nonessential data, and opened again as the bone's", async () => {
+    const { project, rig, node } = await loadStickman();
+    rig.nodes[node("head")] = { ...rig.nodes[node("head")]!, boneIcon: "star" };
+    const out = exportSpine(project).skeleton;
+    expect(out.bones.find((b) => b.name === "head")).toMatchObject({ icon: "star" });
+    expect(withoutNonessential(out).bones.find((b) => b.name === "head")).not.toHaveProperty("icon");
+    const opened = importSpine(out as never, "stickman", new Map()).project;
+    const head = Object.values((opened.items[opened.rootSymbolId] as SymbolItem).nodes).find((n) => n.name === "head")!;
+    expect(head.boneIcon).toBe("star");
+    expect(head.spine?.bone).toBeUndefined();
+  });
+
+  it("a version 24 document's carried icon moves to the bone; an icon on a non-bone is dropped", async () => {
+    const { project, rig, node } = await loadStickman();
+    rig.nodes[node("head")] = { ...rig.nodes[node("head")]!, spine: { bone: { icon: "eye", visible: false } } };
+    const torso = Object.values(rig.nodes).find((n) => n.kind === "image")!;
+    rig.nodes[torso.id] = { ...torso, boneIcon: "star" };
+    const out = validateProject(migrate(JSON.parse(JSON.stringify({ ...project, version: 24 })))).project;
+    const nodes = (out.items[out.rootSymbolId] as SymbolItem).nodes;
+    expect(nodes[node("head")]!.boneIcon).toBe("eye");
+    expect(nodes[node("head")]!.spine).toEqual({ bone: { visible: false } });
+    expect(nodes[torso.id]!.boneIcon).toBeUndefined();
+  });
+});

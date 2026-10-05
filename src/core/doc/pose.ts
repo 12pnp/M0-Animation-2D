@@ -13,7 +13,7 @@ import { byOrder } from "./constraintOrder";
 import { DEFAULT_COLOR, isImage, isSymbol } from "./types";
 import type { ItemId, NodeId } from "./ids";
 import { sampleColorRaw, sampleTransformRaw, spanIndexAt } from "./timeline";
-import { anchorOf, displayAt } from "./displays";
+import { anchorOf, displayAt, meshOfDisplay } from "./displays";
 import { boxNodeBounds } from "./boxes";
 import { sequenceItemAt } from "./sequence";
 import { skinActivity, skinLookup, skinnedDisplay, stageSkinOf, type SkinActivity } from "./skins";
@@ -332,8 +332,9 @@ function applyMeshes(
   const same = mode === "setup" && (skins === null || !symbol.skins?.length);
   const setupOf = () => (setup ??= same ? byNode : evaluateSymbol(symbol, null, 0, "setup", null).byNode);
   for (const e of entries) {
-    const mesh = e.display?.mesh;
-    if (!mesh) continue;
+    const drawn = e.display ? meshOfDisplay(e.node, e.display) : null;
+    if (!drawn) continue;
+    const mesh = drawn.mesh;
     const weighted = !!mesh.weights?.some((w) => w.length);
     const bones = weighted ? {
       now: (id: NodeId) => byNode.get(id)?.world,
@@ -342,7 +343,7 @@ function applyMeshes(
     } : undefined;
     e.spine = {
       itemId: e.display!.itemId,
-      vertices: meshWorld(mesh, e.display!.pivot, e.world, deformAt(animation, e.nodeId, frame), bones),
+      vertices: meshWorld(mesh, drawn.pivot, e.world, drawn.deform ? deformAt(animation, e.nodeId, frame) : null, bones),
       uvs: meshUvs(mesh, mesh.width, mesh.height),
       triangles: mesh.triangles,
       quad: false,

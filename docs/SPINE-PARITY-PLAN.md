@@ -20,8 +20,9 @@ Legend:
 - ✅ Blend modes, colour and two-colour tint (colour offsets)
 - ✅ Clipping attachments (mask layers)
 - ✅ Nested symbols, flattened into one skeleton on export
-- ◐ Bone `inherit` modes: imported and exported (`Node.inherit`), not editable in Properties
-- ✅ Bone colours: Properties ▸ Bone, on the stage and in the Tree (icons not built)
+- ✅ Bone `inherit` modes: Properties ▸ Bone ▸ Inherit; the runtime poses such a rig
+  (ARCHITECTURE ▸ Inherit modes)
+- ✅ Bone colours and icons: Properties ▸ Bone, on the stage and in the Tree
 - ✅ Compensate: the stage bar's Bones / Images, for every transform tool
 - ✅ Hand (H) and Zoom (Z): drag to pan; click to zoom (Alt out), drag a rectangle to frame
 
@@ -30,22 +31,24 @@ Legend:
 - ✅ Region
 - ✅ Clipping (from masks)
 - ✅ Mesh: made from the image's alpha, points added, moved, deleted, triangulated (ARCHITECTURE
-  ▸ Meshes); an opened file's meshes are still carried, not editable
+  ▸ Meshes); an opened file's default-skin meshes become editable, their UVs, vertices and
+  per-bone offsets kept
 - ✅ Weighted mesh: bind to bones, auto weights, weight brush
-- ◐ Linked mesh: carried
+- ✅ Linked mesh: another image of the node draws a mesh, with or without its deform keys
+  (Properties ▸ Mesh); an opened file's default-skin ones become links
 - ✅ Sequence (frame-by-frame region): made from numbered library images, keyed (a Sequence row);
-  an opened file's sequences carried
+  an opened file's unrotated ones become the document's, with their keys
 - ✅ Bounding box, point and path attachments: made and edited (box and point nodes, path nodes);
-  an opened file's carried
-- ✅ Creating attachments other than regions and clippings: meshes, bounding boxes, points,
-  paths and sequences (not linked meshes)
+  an opened file's unweighted ones (a point without an offset) become the document's
+- ✅ Creating attachments other than regions and clippings: meshes, linked meshes, bounding
+  boxes, points, paths and sequences
 
 ### Skins
 
 - ✅ Several skins: made, renamed, deleted, shown alone or combined on the stage and in the
   Preview (ARCHITECTURE ▸ Skins); an opened file's skins become editable
 - ✅ Skin placeholders (skin-only displays) and a skin's own image in each slot
-- ✅ Skin bones and skin constraints (IK and transform; path and physics ones carried)
+- ✅ Skin bones and skin constraints, every kind
 
 ### Constraints
 
@@ -75,8 +78,9 @@ Legend:
 - ✅ Deform (mesh) keys: keyed with the Mesh tool, a Deform row (opened files' deforms carried)
 - ✅ Event keys and the event list (an Events row and panel; ARCHITECTURE ▸ Events)
 - ✅ Transform constraint keys (a row per constraint)
-- ◐ Path, physics and slider constraint keys: carried; the editor sets their setup values only
-- ◐ Inherit keys: carried
+- ✅ Path, physics and slider constraint keys: a row per constraint, keyed from Properties
+  in Animate mode (ARCHITECTURE ▸ Physics, sliders and paths)
+- ✅ Inherit keys: an Inherit row under the bone
 - ✅ Graph editor: values over time as curves, with handles (ARCHITECTURE ▸ Graph editor)
 - ✅ Audio: an event's sound kept in the project, exported to `audio/`, played in the
   Preview at its volume and balance
@@ -212,6 +216,19 @@ meshes.
 4. Waveforms of event sounds on the Events row.
 5. A Preview queue of any length.
 6. The Unity check rerun on rigs holding every format change since phase 8.
+
+### Phase I: carried things made editable (done, docs/PHASE-I-PLAN.md)
+
+1. Inherit modes and inherit keys.
+2. Physics, slider and path constraint keys.
+3. Opened meshes editable (UVs, vertices and per-bone offsets kept); linked meshes.
+4. Opened boxes, points, paths and sequences become the document's where the model holds them.
+5. Skin membership of physics, sliders and paths; bone icons.
+6. The Unity check rerun, with a sample re-exported through the editor.
+
+Still carried: weighted boxes and paths, points with an offset, rotated or scaled sequence
+regions, other skins' meshes and linked meshes, and a constraint channel a file keys off the
+frames.
 
 ## Not in scope
 

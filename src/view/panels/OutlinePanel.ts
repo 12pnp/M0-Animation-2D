@@ -1,3 +1,4 @@
+import { boneIconGlyph } from "@/core/doc/boneIcons";
 import { clear, cls, h, on } from "@/view/widgets/dom";
 import { icon, type IconName } from "@/view/icons";
 import type { Panel } from "@/view/widgets/Dock";
@@ -184,7 +185,8 @@ export class OutlinePanel implements Panel {
       this.render();
     });
 
-    const name = h("span", { class: "otree-name" }, ...highlight(node.name, r.match ? this.query.trim() : ""));
+    const name = h("span", { class: "otree-name" }, ...highlight(node.name, r.match ? this.query.trim() : ""),
+      ...(node.kind === "bone" && node.boneIcon ? [h("span", { class: "otree-boneicon", title: `Icon: ${node.boneIcon}` }, boneIconGlyph(node.boneIcon))] : []));
     const badges = h("span", { class: "otree-badges" });
     if (isTarget) badges.appendChild(badge("ik", `IK target of “${ikName ?? ""}”`));
     if (isDriven) badges.appendChild(badge("link", "Solved by IK"));

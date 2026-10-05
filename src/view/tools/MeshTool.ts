@@ -2,8 +2,8 @@ import type { Tool, ToolContext } from "./Tool";
 import type { NodeId } from "@/core/doc/ids";
 import type { DeformKey, MeshData, Node, PathShape } from "@/core/doc/types";
 import { insidePolygon } from "@/core/mesh/makeMesh";
-import { deformsWithPoint, deformsWithoutPoint, paintWeights, withPoint, withPointMoved, withoutPoint } from "@/core/mesh/meshEdit";
-import { localDelta, type MeshBones } from "@/core/mesh/meshPose";
+import { deformsWithPoint, deformsWithoutPoint, paintWeights, withPoint, withPointMoved, withoutPoint, withPositions, withWeights } from "@/core/mesh/meshEdit";
+import { localDelta, type MeshBones, meshPositions } from "@/core/mesh/meshPose";
 import { deformAt, withDeformKey } from "@/core/mesh/deform";
 import { evaluateSymbol, type PoseEntry } from "@/core/doc/pose";
 import { apply, applyInverse, type Matrix2D } from "@/core/math/Matrix2D";
@@ -126,7 +126,7 @@ export class MeshTool implements Tool {
       if (!applyInverse(local, entry.world, world.x, world.y)) return;
       const px = local.x + node.pivot.x, py = local.y + node.pivot.y;
       const mesh = node.mesh!;
-      if (insidePolygon(mesh.points, mesh.hull, px, py)) {
+      if (insidePolygon([...meshPositions(mesh)], mesh.hull, px, py)) {
         const next = withPoint(mesh, Math.round(px * 100) / 100, Math.round(py * 100) / 100);
         if (next) {
           store.apply(new SetMesh("Add Mesh Point", store.currentSymbolId, node.id, 0, next, this.fittedDeforms(ctx, node.id, deformsWithPoint)));
@@ -170,13 +170,16 @@ export class MeshTool implements Tool {
       }
       store.apply(boxEdit("Move Box Points", store.currentSymbolId, s.node.id, points, "box.move"));
     } else if (d.kind === "move") {
-      const points = [...d.base.points];
+      // An opened mesh's positions move alone; a mesh made here moves its texture coordinates with them.
+      const base = meshPositions(d.base);
+      const moved = [...base];
       for (const i of meshView.picked) {
         const l = localDelta(d.base, i, d.world, d.bones, dx, dy);
-        points[i * 2] = Math.round((d.base.points[i * 2]! + l.x) * 100) / 100;
-        points[i * 2 + 1] = Math.round((d.base.points[i * 2 + 1]! + l.y) * 100) / 100;
+        moved[i * 2] = Math.round((base[i * 2]! + l.x) * 100) / 100;
+        moved[i * 2 + 1] = Math.round((base[i * 2 + 1]! + l.y) * 100) / 100;
       }
-      store.apply(new SetMesh("Move Mesh Points", store.currentSymbolId, s.node.id, 0, { ...d.base, points }, new Map(), "mesh.move"));
+      const next = withPositions(d.base, moved, meshView.picked);
+      store.apply(new SetMesh("Move Mesh Points", store.currentSymbolId, s.node.id, 0, next, new Map(), "mesh.move"));
     } else {
       const offsets = [...d.offsets];
       for (const i of meshView.picked) {
@@ -200,7 +203,7 @@ export class MeshTool implements Tool {
     if (d.kind === "move") {
       const s = this.subject(ctx);
       const mesh = s?.node.mesh;
-      if (s && mesh) store.apply(new SetMesh("Move Mesh Points", store.currentSymbolId, s.node.id, 0, withPointMoved(mesh, 0, mesh.points[0]!, mesh.points[1]!), new Map(), "mesh.move"));
+      if (s && mesh) store.apply(new SetMesh("Move Mesh Points", store.currentSymbolId, s.node.id, 0, withPointMoved(mesh, 0, meshPositions(mesh)[0]!, meshPositions(mesh)[1]!), new Map(), "mesh.move"));
     }
     store.history.endInteraction();
     store.emit("stage");
@@ -226,7 +229,7 @@ export class MeshTool implements Tool {
     // A mesh with no weights yet follows its own node, weight 1, at every point.
     const start = mesh.weights ?? mesh.points.filter((_, i) => i % 2 === 0).map(() => [[node.id, 1]] as Array<[NodeId, number]>);
     const weights = paintWeights(start, entry.spine!.vertices, world.x, world.y, radius / ctx.camera.screenScale, bone, strength);
-    store.apply(new SetMesh("Paint Weights", store.currentSymbolId, node.id, 0, { ...mesh, weights }, new Map(), "mesh.paint"));
+    store.apply(new SetMesh("Paint Weights", store.currentSymbolId, node.id, 0, withWeights(mesh, weights), new Map(), "mesh.paint"));
     store.emit("stage");
   }
 

@@ -1,3 +1,5 @@
+import { sanitizeInherits } from "./inherit";
+import { sanitizeConstraintKeys } from "./constraintKeys";
 import type { DeformKey, DisplayRef, EventDef, EventKey, IkKey, LibraryFolder, MeshData, Node, PathConstraint, PhysicsConstraint, Project, SequenceKey, SkinDef, SliderConstraint, TcKey, TransformConstraint } from "./types";
 import { SEQUENCE_MODES } from "./sequence";
 import { PHYSICS_SETTINGS, SLIDER_PROPERTIES } from "./constraints";
@@ -369,6 +371,21 @@ export function validateProject(raw: unknown): ValidationResult {
     // Meshes: points, triangles and the outline consistent; weights of bones
     // the symbol has. Deform keys of mesh nodes, one offset pair per point.
     for (const node of Object.values(item.nodes)) {
+      if (node.key !== undefined && (typeof node.key !== "string" || !node.key)) delete node.key;
+      for (const d of node.extraDisplays ?? []) if (d.key !== undefined && (typeof d.key !== "string" || !d.key)) delete d.key;
+      // A linked mesh points at another display of the node that has a mesh.
+      const all = displaysOf(node);
+      const linkOk = (l: unknown, self: number) => {
+        const r = l as { to?: unknown; deform?: unknown } | undefined;
+        return !!r && Number.isInteger(r.to) && r.to !== self && !!all[r.to as number]?.mesh;
+      };
+      if (node.linked !== undefined) {
+        if (linkOk(node.linked, 0)) node.linked = node.linked.deform === false ? { to: node.linked.to, deform: false } : { to: node.linked.to }; else delete node.linked;
+      }
+      (node.extraDisplays ?? []).forEach((d, i) => {
+        if (d.linked === undefined) return;
+        if (linkOk(d.linked, i + 1)) d.linked = d.linked.deform === false ? { to: d.linked.to, deform: false } : { to: d.linked.to }; else delete d.linked;
+      });
       if (node.mesh !== undefined) {
         const m = sanitizeMesh(node.mesh, item.nodes as Record<string, unknown>);
         if (m) node.mesh = m; else delete node.mesh;
@@ -463,6 +480,18 @@ export function validateProject(raw: unknown): ValidationResult {
         if (out.length) item.sliders = out; else delete item.sliders;
       }
     }
+    // Constraint keys of physics, sliders and paths the symbol has, their channels.
+    for (const anim of item.animations) {
+      if (anim.constraintKeys === undefined) continue;
+      const keys = sanitizeConstraintKeys(anim.constraintKeys, item);
+      if (keys) anim.constraintKeys = keys; else delete anim.constraintKeys;
+    }
+    // Inherit keys of nodes the symbol has, known modes.
+    for (const anim of item.animations) {
+      if (anim.inherits === undefined) continue;
+      const keys = sanitizeInherits(anim.inherits, item.nodes);
+      if (keys) anim.inherits = keys; else delete anim.inherits;
+    }
     // Sequence keys of nodes that show a sequence: known modes, an index, a delay.
     for (const anim of item.animations) {
       if (anim.sequences === undefined) continue;
@@ -533,8 +562,13 @@ export function validateProject(raw: unknown): ValidationResult {
         const pts = r && Array.isArray(r.points) ? r.points.map((v) => num(v, NaN)) : [];
         if (r && pts.length >= 12 && pts.length % 6 === 0 && pts.every(Number.isFinite)) {
           node.path = { points: pts, ...(r.closed === true ? { closed: true } : {}), ...(r.constantSpeed === false ? { constantSpeed: false } : {}) };
+          const f = r.fileLengths as { points?: unknown; closed?: unknown; lengths?: unknown } | undefined;
+          const nums = (v: unknown) => Array.isArray(v) && v.every((x) => typeof x === "number" && Number.isFinite(x));
+          if (f && nums(f.points) && nums(f.lengths)) node.path.fileLengths = { points: [...f.points as number[]], ...(f.closed === true ? { closed: true } : {}), lengths: [...f.lengths as number[]] };
         } else delete node.path;
       }
+      if (node.boneIcon !== undefined && (node.kind !== "bone" || typeof node.boneIcon !== "string" || !node.boneIcon)) delete node.boneIcon;
+      if (node.attachmentColor !== undefined && !(typeof node.attachmentColor === "string" && /^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(node.attachmentColor))) delete node.attachmentColor;
       if (node.box !== undefined) {
         const pts = node.kind === "box" && node.box && Array.isArray(node.box.points) ? node.box.points.map((v) => num(v, NaN)) : [];
         if (pts.length >= 6 && pts.length % 2 === 0 && pts.every(Number.isFinite)) node.box = { points: pts };
@@ -547,7 +581,8 @@ export function validateProject(raw: unknown): ValidationResult {
       const skins: SkinDef[] = [];
       const ikIds = new Set<string>(item.ik.map((k) => k.id));
       for (const r of raw) {
-        const def = sanitizeSkin(r, item.nodes, ikIds, tcIds, (id) => p.items[id as never]?.kind === "image");
+        const cnIds = new Set<string>([...(item.physics ?? []), ...(item.sliders ?? []), ...(item.paths ?? [])].map((k) => k.id));
+        const def = sanitizeSkin(r, item.nodes, ikIds, tcIds, (id) => p.items[id as never]?.kind === "image", cnIds);
         if (def && !skins.some((x) => x.name === def.name)) skins.push(def);
       }
       if (skins.length) item.skins = skins;
@@ -740,6 +775,22 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
     }
     return { ...p, version: 24 };
   },
+  // 24 -> 25: `Animation.inherits` and `Animation.constraintKeys`, inherit
+  // mode keys and physics, slider and path constraint keys, additive; a bone's
+  // carried `icon` moves to `Node.boneIcon`.
+  24: (p) => {
+    const items = (p.items ?? {}) as Record<string, { nodes?: Record<string, { boneIcon?: unknown; spine?: { bone?: Record<string, unknown> } }> }>;
+    for (const item of Object.values(items)) {
+      for (const node of Object.values(item.nodes ?? {})) {
+        const bone = node.spine?.bone;
+        if (!bone || typeof bone.icon !== "string") continue;
+        node.boneIcon ??= bone.icon;
+        const { icon: _i, ...rest } = bone;
+        if (Object.keys(rest).length) node.spine!.bone = rest; else delete node.spine!.bone;
+      }
+    }
+    return { ...p, version: 25 };
+  },
   // 19 -> 20: `SymbolItem.transforms` and `Animation.transforms`, transform
   // constraints and their keys. Additive; an older build would drop them.
   19: (p) => ({ ...p, version: 20 }),
@@ -780,7 +831,7 @@ const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite
  *  finite points, triangles of existing points, an outline of 3 or more,
  *  weights (when present) per point, of bones the symbol has. */
 function sanitizeSkin(
-  raw: unknown, nodes: Record<string, Node>, ikIds: Set<string>, tcIds: Set<string>, isImage: (id: string) => boolean,
+  raw: unknown, nodes: Record<string, Node>, ikIds: Set<string>, tcIds: Set<string>, isImage: (id: string) => boolean, cnIds: Set<string> = new Set(),
 ): SkinDef | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;
@@ -814,6 +865,8 @@ function sanitizeSkin(
   if (bones.length) def.bones = bones as SkinDef["bones"];
   if (ik.length) def.ik = ik as SkinDef["ik"];
   if (transforms.length) def.transforms = transforms as SkinDef["transforms"];
+  const constraints = ids(r.constraints, (id) => cnIds.has(id));
+  if (constraints.length) def.constraints = constraints as SkinDef["constraints"];
   return def;
 }
 
@@ -833,6 +886,14 @@ function sanitizeMesh(raw: unknown, nodes: Record<string, unknown>): MeshData | 
       .map(([b, v]) => [b, Math.max(0, v)] as [string, number]));
     if (weights.some((w) => w.length)) out.weights = weights as never;
   }
+  if (out.weights && Array.isArray(r.boneOffsets) && r.boneOffsets.length === count) {
+    const offs = r.boneOffsets as unknown[];
+    const fits = offs.every((o, i) => Array.isArray(o) && (o.length === 0 || o.length === out.weights![i]!.length)
+      && o.every((e) => Array.isArray(e) && e.length === 2 && e.every((v) => Number.isFinite(v))));
+    if (fits) out.boneOffsets = offs.map((o) => (o as Array<[number, number]>).map(([x, y]) => [x, y] as [number, number]));
+  }
+  if (Array.isArray(r.vertices) && r.vertices.length === points.length && r.vertices.every((v) => Number.isFinite(v))) out.vertices = [...r.vertices as number[]];
+  if (Array.isArray(r.edges) && r.edges.length % 2 === 0 && r.edges.every((v) => Number.isInteger(v) && (v as number) >= 0)) out.edges = [...r.edges as number[]];
   return out;
 }
 

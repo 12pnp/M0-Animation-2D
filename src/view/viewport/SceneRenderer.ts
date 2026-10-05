@@ -1,5 +1,5 @@
 import { invert, mat, matOf, type Matrix2D, mul } from "@/core/math/Matrix2D";
-import { runtimeSolved } from "@/core/doc/constraints";
+import { runtimePosed } from "@/core/doc/inherit";
 import type { Animation, SymbolItem } from "@/core/doc/types";
 import { type BlendMode, type ColorTransform, isImage, isSymbol, type Project } from "@/core/doc/types";
 import {
@@ -95,7 +95,7 @@ export class SceneRenderer {
     hiddenLayers?: Set<string>,
   ): void {
     const world = mat();
-    if ((symbol.spine || runtimeSolved(symbol)) && entries.some((e) => e.spine || e.clip)) {
+    if ((symbol.spine || runtimePosed(symbol)) && entries.some((e) => e.spine || e.clip)) {
       this.drawSpineEntries(ctx, entries, base, depth, when, hiddenLayers);
       return;
     }

@@ -1,5 +1,5 @@
 import type { Command, TouchSet } from "./Command";
-import type { Node, Project, SequenceKey, SymbolItem } from "@/core/doc/types";
+import type { Animation, InheritKey, Node, Project, SequenceKey, SymbolItem } from "@/core/doc/types";
 import { isSymbol } from "@/core/doc/types";
 import type { AnimId, ItemId, NodeId } from "@/core/doc/ids";
 import { invalidateBounds } from "@/core/doc/pose";
@@ -59,31 +59,36 @@ export function boxEdit(label: string, symbolId: ItemId, nodeId: NodeId, points:
   return new EditNode(label, symbolId, nodeId, (n) => ({ ...n, box: { points } }), kind);
 }
 
-/** One node's sequence keys in an animation replaced. Steps of one drag merge. */
-export class SetSequenceKeys implements Command {
+/** An animation's per-node key lists: sequence keys and inherit keys. */
+export type NodeKeyField = "sequences" | "inherits";
+type NodeKeys<F extends NodeKeyField> = NonNullable<Animation[F]>[NodeId];
+
+/** One node's keys of `field` in an animation replaced. Steps of one drag merge. */
+export class SetNodeKeys<F extends NodeKeyField> implements Command {
   readonly touches: TouchSet;
-  private before: SequenceKey[] | undefined;
+  private before: NodeKeys<F> | undefined;
   private captured = false;
 
   constructor(
     readonly label: string, private readonly symbolId: ItemId, private readonly animId: AnimId,
-    private readonly nodeId: NodeId, private after: SequenceKey[], readonly kind = "timeline.sequence",
+    private readonly nodeId: NodeId, private after: NodeKeys<F>, readonly kind: string, private readonly field: F,
   ) {
     this.touches = { symbols: [symbolId], nodes: [nodeId], timeline: true, stage: true };
   }
 
-  private write(p: Project, keys: SequenceKey[] | undefined): void {
+  private write(p: Project, keys: NodeKeys<F> | undefined): void {
     const anim = symbolOf(p, this.symbolId).animations.find((a) => a.id === this.animId);
     if (!anim) return;
-    const out = { ...anim.sequences };
+    const out = { ...anim[this.field] } as Record<NodeId, NodeKeys<F>>;
     if (keys?.length) out[this.nodeId] = keys; else delete out[this.nodeId];
-    if (Object.keys(out).length) anim.sequences = out; else delete anim.sequences;
+    if (Object.keys(out).length) (anim as unknown as Record<string, unknown>)[this.field] = out;
+    else delete anim[this.field];
     invalidateBounds([this.symbolId]);
   }
 
   apply(p: Project): void {
     if (!this.captured) {
-      this.before = symbolOf(p, this.symbolId).animations.find((a) => a.id === this.animId)?.sequences?.[this.nodeId];
+      this.before = symbolOf(p, this.symbolId).animations.find((a) => a.id === this.animId)?.[this.field]?.[this.nodeId] as NodeKeys<F> | undefined;
       this.captured = true;
     }
     this.write(p, this.after);
@@ -92,10 +97,24 @@ export class SetSequenceKeys implements Command {
   revert(p: Project): void { this.write(p, this.before); }
 
   mergeWith(next: Command): boolean {
-    if (!(next instanceof SetSequenceKeys) || next.kind !== this.kind || this.kind === "timeline.sequence") return false;
+    if (!(next instanceof SetNodeKeys) || next.kind !== this.kind || next.field !== this.field || this.kind === `timeline.${this.field}`) return false;
     if (next.symbolId !== this.symbolId || next.animId !== this.animId || next.nodeId !== this.nodeId) return false;
-    this.after = next.after;
+    this.after = next.after as NodeKeys<F>;
     return true;
+  }
+}
+
+/** One node's sequence keys in an animation replaced. */
+export class SetSequenceKeys extends SetNodeKeys<"sequences"> {
+  constructor(label: string, symbolId: ItemId, animId: AnimId, nodeId: NodeId, after: SequenceKey[], kind = "timeline.sequence") {
+    super(label, symbolId, animId, nodeId, after, kind === "timeline.sequence" ? "timeline.sequences" : kind, "sequences");
+  }
+}
+
+/** One bone's inherit keys in an animation replaced (`core/doc/inherit.ts`). */
+export class SetInheritKeys extends SetNodeKeys<"inherits"> {
+  constructor(label: string, symbolId: ItemId, animId: AnimId, nodeId: NodeId, after: InheritKey[], kind = "timeline.inherits") {
+    super(label, symbolId, animId, nodeId, after, kind, "inherits");
   }
 }
 
@@ -173,5 +192,44 @@ export class SetConstraintOrder implements Command {
   revert(p: Project): void {
     setOrder(symbolOf(p, this.symbolId), this.before);
     invalidateBounds([this.symbolId]);
+  }
+}
+
+/** An animation's physics, slider and path keys replaced as one value
+ *  (`core/doc/constraintKeys.ts`). Steps of one drag or scrub share a `kind` and merge. */
+export class SetConstraintKeys implements Command {
+  readonly touches: TouchSet;
+  private before: Animation["constraintKeys"];
+  private captured = false;
+
+  constructor(
+    readonly label: string, private readonly symbolId: ItemId, private readonly animId: AnimId,
+    private after: Animation["constraintKeys"], readonly kind = "timeline.constraintKeys",
+  ) {
+    this.touches = { symbols: [symbolId], timeline: true, stage: true };
+  }
+
+  private write(p: Project, keys: Animation["constraintKeys"]): void {
+    const anim = symbolOf(p, this.symbolId).animations.find((a) => a.id === this.animId);
+    if (!anim) return;
+    if (keys && Object.keys(keys).length) anim.constraintKeys = keys; else delete anim.constraintKeys;
+    invalidateBounds([this.symbolId]);
+  }
+
+  apply(p: Project): void {
+    if (!this.captured) {
+      this.before = symbolOf(p, this.symbolId).animations.find((a) => a.id === this.animId)?.constraintKeys;
+      this.captured = true;
+    }
+    this.write(p, this.after);
+  }
+
+  revert(p: Project): void { this.write(p, this.before); }
+
+  mergeWith(next: Command): boolean {
+    if (!(next instanceof SetConstraintKeys) || next.kind !== this.kind || this.kind === "timeline.constraintKeys") return false;
+    if (next.symbolId !== this.symbolId || next.animId !== this.animId) return false;
+    this.after = next.after;
+    return true;
   }
 }

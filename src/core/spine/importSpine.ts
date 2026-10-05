@@ -1,13 +1,20 @@
-import type { AssetId, IkId, NodeId, TcId } from "@/core/doc/ids";
+import { CONSTRAINT_CHANNELS, channelKeysFromSpine, withChannelKeys } from "@/core/doc/constraintKeys";
+import { inheritKeysFromSpine } from "@/core/doc/inherit";
+import { evaluateSymbol } from "@/core/doc/pose";
+import { displaysOf } from "@/core/doc/displays";
+import { deformKeysFromSpine, meshFromSpine } from "./importMesh";
+import { outlineOf, sequenceDisplayOf } from "./importAttachments";
+import { SEQUENCE_MODES } from "@/core/doc/sequence";
+import type { AssetId, CnId, IkId, NodeId, TcId } from "@/core/doc/ids";
 import { fromOffsets } from "@/core/doc/drawOrder";
 import { eventDefsFromSpine, eventValues } from "@/core/doc/events";
 import { newAnimId, newCnId, newIkId, newTcId } from "@/core/doc/ids";
 import type { TcChannel, TcFrom, TcTo } from "@/core/math/transformConstraint";
 import type {
-  Animation, BlendMode, DrawOrderKey, ColorTransform, DisplayRef, EventDef, EventKey, IkConstraint, IkKey, ImageItem, TcKey, TransformConstraint, Keyframe, Layer, Node, Project,
+  Animation, BlendMode, DeformKey, DrawOrderKey, SequenceKey, ColorTransform, DisplayRef, EventDef, EventKey, IkConstraint, IkKey, ImageItem, TcKey, TransformConstraint, Keyframe, Layer, Node, Project,
   SkinDef, SpineAttachmentRef, SymbolItem, Track,
 } from "@/core/doc/types";
-import { isDefaultColor } from "@/core/doc/types";
+import { isDefaultColor, isImage } from "@/core/doc/types";
 import { createAnimation, createImageItem, createLayer, createNode, createProject } from "@/core/doc/defaults";
 import { sampleColorRaw, sampleTransformRaw } from "@/core/doc/timeline";
 import { IDENTITY, cloneTf, type Transform } from "@/core/math/Transform";
@@ -58,7 +65,7 @@ const num = (v: unknown, fallback: number) => (typeof v === "number" && Number.i
 const str = (v: unknown): v is string => typeof v === "string";
 
 /** Only what the editor models is read off a bone; the rest rides along. */
-const BONE_FIELDS = new Set(["name", "parent", "length", "x", "y", "rotation", "scaleX", "scaleY", "shearX", "shearY", "inherit", "color"]);
+const BONE_FIELDS = new Set(["name", "parent", "length", "x", "y", "rotation", "scaleX", "scaleY", "shearX", "shearY", "inherit", "color", "icon"]);
 const SLOT_FIELDS = new Set(["name", "bone", "color", "dark", "attachment", "blend"]);
 const IK_FIELDS = new Set(["type", "name", "bones", "target", "mix", "bendPositive", "softness", "stretch", "compress", "scaleY"]);
 const BLEND: Record<string, BlendMode> = { additive: "add", multiply: "multiply", screen: "screen" };
@@ -130,6 +137,7 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
       else warn(`Bone "${boneName}": unknown inherit mode "${b.inherit}", read as normal.`);
     }
     if (str(b.color) && /^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(b.color)) node.boneColor = b.color.toLowerCase();
+    if (str(b.icon) && b.icon) node.boneIcon = b.icon;
     const rest = pick(b, (k) => !BONE_FIELDS.has(k) || (k === "color" && !node.boneColor)) ?? {};
     // The editor's transform folds shear x into the rotation, which leaves
     // the local matrix exactly as it was. Under an inherit mode other than
@@ -180,13 +188,28 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
         if (!(key in byKey) && !skinOnly.has(key) && obj(att) && displayItem(att, key)) skinOnly.set(key, att);
       }
     }
+    // A slot holding one box, point or path the model can hold, which no other
+    // skin fills, becomes that node (ARCHITECTURE ▸ Boxes and points).
+    const sole = Object.entries(byKey);
+    const otherSkins = skinsIn.some((skin) => skin !== defaultSkin && obj(skin.attachments) && obj(skin.attachments[slotName]));
+    const outline = sole.length === 1 && !skinOnly.size && !otherSkins && obj(sole[0]![1]) ? outlineOf(sole[0]![1] as SpineRaw) : null;
+    if (outline) {
+      node.kind = outline.kind;
+      node.key = sole[0]![0];
+      if (outline.kind === "box") node.box = outline.box;
+      if (outline.kind === "path") node.path = outline.path;
+      if (outline.color) node.attachmentColor = outline.color;
+    }
     // The setup attachment first: display 0 is what the bind pose shows.
-    const keys = [...Object.keys(byKey), ...skinOnly.keys()].sort((p, q) => Number(q === setupName) - Number(p === setupName));
+    const keys = outline ? [] : [...Object.keys(byKey), ...skinOnly.keys()].sort((p, q) => Number(q === setupName) - Number(p === setupName));
     for (const key of keys) {
       const att = byKey[key] ?? skinOnly.get(key);
       if (!obj(att)) continue;
       const regions = regionsOf(att, key);
       const item = displayItem(att, key);
+      // A region sequence the model can hold (ARCHITECTURE ▸ Sequences).
+      const sequence = !item && key in byKey ? sequenceDisplayOf(att, key, (n) => itemByRegion.get(n)) : null;
+      if (sequence) { displays.push(sequence); continue; }
       if (!item) {
         if (regions.length && regions.some((r) => !itemByRegion.has(r))) {
           warn(`"${slotName}" ▸ "${key}" draws ${regions.filter((r) => !itemByRegion.has(r)).map((r) => `"${r}"`).join(", ")}, which the atlas does not have.`);
@@ -206,7 +229,12 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
       if (displays[0]!.skinOnly) node.skinOnly = true;
       if (displays.length > 1) node.extraDisplays = displays.slice(1);
     }
-    const setupIndex = setupName === null ? -1 : displays.findIndex((d) => d.attachment!.name === setupName);
+    if (displays.length) {
+      if (displays[0]!.sequence) node.sequence = displays[0]!.sequence;
+      if (displays[0]!.key) node.key = displays[0]!.key;
+    }
+    const setupIndex = setupName === null ? -1 : outline ? (setupName === node.key ? 0 : -1)
+      : displays.findIndex((d) => (d.attachment?.name ?? d.key) === setupName);
     if (setupIndex !== 0) node.setupDisplay = -1;
     const slotRest = pick(s, (k) => !SLOT_FIELDS.has(k)) ?? {};
     if (setupName !== null && setupIndex < 0) slotRest.attachment = setupName;
@@ -334,7 +362,13 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
       if (!node || !obj(timelines)) { warn(`"${animName}" keys a bone "${boneName}" that does not exist; dropped.`); continue; }
       const setup = boneSetup.get(boneName)!;
       const { groups, rest } = boneComps(timelines, setup, rate, shearKept.has(boneName));
-      if (rest) ((carried.bones ??= {}) as SpineRaw)[boneName] = rest;
+      // Inherit keys become the document's when each lands on a frame.
+      const inherits = rest && "inherit" in rest ? inheritKeysFromSpine(rest.inherit, rate) : null;
+      if (inherits) {
+        (anim.inherits ??= {})[node.id] = inherits;
+        delete rest!.inherit;
+      }
+      if (rest && Object.keys(rest).length) ((carried.bones ??= {}) as SpineRaw)[boneName] = rest;
       if (groups.length === 0) continue;
       const frameOf = (f: number): Transform => fromSpineLocal(boneLocalAt(groups, setup, f));
       const made = trackOf(node, groups, [], end, (f) => ({ transform: frameOf(f), displayIndex: 0 }), (track, f) => {
@@ -462,7 +496,175 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     }
     return true;
   });
+  // Their keys become the document's channel by channel; what does not fit stays carried.
+  const modelled = new Map<string, { kind: "physics" | "slider"; id: CnId }>([
+    ...(sym.physics ?? []).map((k) => [k.name, { kind: "physics" as const, id: k.id }] as const),
+    ...(sym.sliders ?? []).map((k) => [k.name, { kind: "slider" as const, id: k.id }] as const),
+  ]);
+  for (const anim of sym.animations) {
+    for (const group of ["physics", "slider"] as const) {
+      const timelines = anim.spine?.[group];
+      if (!obj(timelines)) continue;
+      const rest: SpineRaw = {};
+      for (const [name, channels] of Object.entries(timelines)) {
+        const m = modelled.get(name);
+        if (!m || m.kind !== group || !obj(channels)) { rest[name] = channels; continue; }
+        const left: SpineRaw = {};
+        for (const [channel, list] of Object.entries(channels)) {
+          const known = (CONSTRAINT_CHANNELS[group] as readonly string[]).includes(channel);
+          const keys = known ? channelKeysFromSpine(list, rate, group === "physics" && channel !== "mix" ? 0 : 1) : null;
+          if (keys) anim.constraintKeys = withChannelKeys(anim.constraintKeys, m.id, channel, keys);
+          else left[channel] = list;
+        }
+        if (Object.keys(left).length) rest[name] = left;
+      }
+      const spine = { ...anim.spine };
+      if (Object.keys(rest).length) spine[group] = rest; else delete spine[group];
+      if (Object.keys(spine).length) anim.spine = spine; else delete anim.spine;
+    }
+  }
+  // Skins listing the physics and sliders the model now holds have them as members.
+  for (const def of sym.skins ?? []) {
+    const rest = sym.spine!.skins.find((sk) => sk.name === def.name);
+    if (!rest) continue;
+    for (const kind of ["physics", "slider"] as const) {
+      const listed = Array.isArray(rest[kind]) ? (rest[kind] as unknown[]).filter(str) : [];
+      const held = listed.map((n) => modelled.get(n)).filter((m): m is { kind: "physics" | "slider"; id: CnId } => !!m && m.kind === kind);
+      if (!held.length) continue;
+      def.constraints = [...new Set([...(def.constraints ?? []), ...held.map((m) => m.id)])];
+      const left = listed.filter((n) => modelled.get(n)?.kind !== kind);
+      if (left.length) rest[kind] = left; else delete rest[kind];
+    }
+  }
+  sym.spine!.skins = sym.spine!.skins.filter((sk) => Object.keys(sk).length > 1);
+  editableMeshes(project, sym, slotNode, boneNode, rate);
+  sequenceKeys(sym, slotNode, rate);
   return { project, diagnostics, baked };
+}
+
+/**
+ * The default skin's meshes the model can hold become the document's
+ * (ARCHITECTURE ▸ Meshes ▸ Opened meshes): `meshFromSpine`, and each
+ * animation's deform timeline as keys. A mesh another display's deform keys,
+ * or a timeline that does not convert, stays carried, the whole mesh at once.
+ */
+function editableMeshes(project: Project, sym: SymbolItem, slotNode: Map<string, Node>, boneNode: Map<string, Node>, rate: number): void {
+  const setup = evaluateSymbol(sym, null, 0, "setup", null).byNode;
+  const bone = (name: string) => {
+    const n = boneNode.get(name);
+    const w = n ? setup.get(n.id)?.world : undefined;
+    return n && w ? { id: n.id, setup: w } : undefined;
+  };
+  const setupOf = (id: NodeId) => setup.get(id)?.world;
+  for (const [slotName, slot] of slotNode) {
+    const nodeWorld = setup.get(slot.id)?.world;
+    if (!nodeWorld) continue;
+    displaysOf(sym.nodes[slot.id]!).forEach((d, index) => {
+      const att = d.attachment;
+      const item = project.items[d.itemId];
+      if (!att || d.skinOnly || att.data.type !== "mesh" || !isImage(item)) return;
+      const ctx = { width: item.width, height: item.height, pivot: d.pivot, node: nodeWorld, bone, setupOf };
+      const mesh = meshFromSpine(att.data, ctx);
+      if (!mesh) return;
+      const deforms = new Map<Animation, DeformKey[]>();
+      for (const anim of sym.animations) {
+        const raw = deformOf(anim, slotName, att.name);
+        if (raw === undefined) continue;
+        // The model keys one mesh per node: display 0's.
+        if (index !== 0) return;
+        const keys = deformKeysFromSpine(raw, mesh, ctx, rate);
+        if (!keys) return;
+        deforms.set(anim, keys);
+      }
+      for (const [anim, keys] of deforms) {
+        anim.deforms = { ...anim.deforms, [slot.id]: keys };
+        dropCarriedDeform(anim, slotName, att.name);
+      }
+      replaceDisplay(sym, slot.id, index, { mesh, key: att.name });
+    });
+    // Linked meshes whose parent is now the document's mesh, in this slot.
+    displaysOf(sym.nodes[slot.id]!).forEach((d, index) => {
+      const att = d.attachment;
+      if (!att || d.skinOnly || att.data.type !== "linkedmesh") return;
+      const data = att.data;
+      if (Object.keys(data).some((k) => !LINKED_FIELDS.has(k)) || (data.skin !== undefined && data.skin !== "default")) return;
+      if (data.slot !== undefined && data.slot !== slotName) return;
+      if (sym.animations.some((anim) => deformOf(anim, slotName, att.name) !== undefined)) return;
+      const to = displaysOf(sym.nodes[slot.id]!).findIndex((p) => p.mesh && p.key === data.source);
+      if (to < 0) return;
+      replaceDisplay(sym, slot.id, index, { linked: data.timelines === false ? { to, deform: false } : { to }, key: att.name });
+    });
+  }
+}
+
+const LINKED_FIELDS = new Set(["type", "name", "path", "source", "slot", "skin", "timelines", "width", "height"]);
+
+/** Display `index` of the node with its carried attachment replaced by `held`. */
+function replaceDisplay(sym: SymbolItem, nodeId: NodeId, index: number, held: Pick<DisplayRef, "mesh" | "key" | "linked">): void {
+  const node = sym.nodes[nodeId]!;
+  if (index === 0) {
+    const { attachment: _a, ...rest } = node;
+    sym.nodes[nodeId] = { ...rest, ...held };
+    return;
+  }
+  const extras = [...node.extraDisplays!];
+  const { attachment: _a, ...ref } = extras[index - 1]!;
+  extras[index - 1] = { ...ref, ...held };
+  sym.nodes[nodeId] = { ...node, extraDisplays: extras };
+}
+
+/**
+ * Display 0's sequence timelines as the document's keys (ARCHITECTURE ▸
+ * Sequences), each animation's when every key lands on a frame and names a
+ * mode; the delay in frames. Else the timeline stays carried.
+ */
+function sequenceKeys(sym: SymbolItem, slotNode: Map<string, Node>, rate: number): void {
+  for (const [slotName, slot] of slotNode) {
+    const node = sym.nodes[slot.id]!;
+    if (!node.sequence || !node.key) continue;
+    for (const anim of sym.animations) {
+      const atts = anim.spine?.attachments as Record<string, Record<string, Record<string, SpineRaw>>> | undefined;
+      const raw = atts?.default?.[slotName]?.[node.key]?.sequence;
+      if (!Array.isArray(raw)) continue;
+      const keys: SequenceKey[] = [];
+      for (const k of raw) {
+        if (!obj(k)) break;
+        const at = num(k.time, 0) * rate;
+        const mode = k.mode ?? "hold";
+        if (Math.abs(at - Math.round(at)) > 1e-3 || !SEQUENCE_MODES.includes(mode as never)) break;
+        const delay = num(k.delay, 0) * rate;
+        keys.push({ frame: Math.round(at), mode: mode as SequenceKey["mode"], index: Math.max(0, Math.trunc(num(k.index, 0))), delay: delay > 0 ? delay : 1 });
+      }
+      if (keys.length !== raw.length) continue;
+      anim.sequences = { ...anim.sequences, [slot.id]: keys };
+      const copy = structuredClone(atts!);
+      const att = copy.default![slotName]![node.key]!;
+      delete att.sequence;
+      if (!Object.keys(att).length) delete copy.default![slotName]![node.key];
+      if (!Object.keys(copy.default![slotName]!).length) delete copy.default![slotName];
+      if (!Object.keys(copy.default!).length) delete copy.default;
+      const spine = { ...anim.spine };
+      if (Object.keys(copy).length) spine.attachments = copy; else delete spine.attachments;
+      if (Object.keys(spine).length) anim.spine = spine; else delete anim.spine;
+    }
+  }
+}
+
+function deformOf(anim: Animation, slot: string, key: string): unknown {
+  const atts = anim.spine?.attachments as Record<string, Record<string, Record<string, SpineRaw>>> | undefined;
+  return atts?.default?.[slot]?.[key]?.deform;
+}
+
+function dropCarriedDeform(anim: Animation, slot: string, key: string): void {
+  const atts = structuredClone(anim.spine!.attachments) as Record<string, Record<string, Record<string, SpineRaw>>>;
+  const att = atts.default![slot]![key]!;
+  delete att.deform;
+  if (!Object.keys(att).length) delete atts.default![slot]![key];
+  if (!Object.keys(atts.default![slot]!).length) delete atts.default![slot];
+  if (!Object.keys(atts.default!).length) delete atts.default;
+  const spine = { ...anim.spine };
+  if (Object.keys(atts).length) spine.attachments = atts; else delete spine.attachments;
+  if (Object.keys(spine).length) anim.spine = spine; else delete anim.spine;
 }
 
 /* ── frame rate ──────────────────────────────────────────────────────────── */
@@ -659,8 +861,8 @@ function slotColorAt(g: ColorGroup, f: number): ColorTransform {
 
 function displayNames(node: Node): string[] {
   const out: string[] = [];
-  if (node.attachment) out.push(node.attachment.name);
-  for (const d of node.extraDisplays ?? []) out.push(d.attachment?.name ?? "");
+  if (node.attachment || node.key) out.push(node.attachment?.name ?? node.key!);
+  for (const d of node.extraDisplays ?? []) out.push(d.attachment?.name ?? d.key ?? "");
   return out;
 }
 

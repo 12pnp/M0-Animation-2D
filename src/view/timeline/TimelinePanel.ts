@@ -1,3 +1,5 @@
+import { constraintKeyFrames, deleteConstraintKeys, withConstraintTween } from "@/core/doc/constraintKeys";
+import { INHERIT_LABELS, INHERIT_MODES, inheritAt, withInheritKey } from "@/core/doc/inherit";
 import type { SoundStore } from "@/app/SoundStore";
 import { Waveforms } from "./waveforms";
 import { offsetPlan } from "@/core/doc/offset";
@@ -15,7 +17,7 @@ import type { Panel } from "@/view/widgets/Dock";
 import { type MenuEntry, showMenu } from "@/view/widgets/Dock";
 import { attachOptionsMenu } from "./onionButton";
 import type { Store } from "@/app/Store";
-import type { IkId, NodeId, TcId } from "@/core/doc/ids";
+import type { CnId, IkId, NodeId, TcId } from "@/core/doc/ids";
 import { deleteTcKeys, tcMixAt, tcTweenOf, withTcKey, withTcTween } from "@/core/doc/transformKeys";
 import { deformAt, deformTweenOf, deleteDeformKeys, withDeformKey, withDeformTween } from "@/core/mesh/deform";
 import { SEQUENCE_MODE_LABELS, SEQUENCE_MODES, sequenceIndexAt, withSequenceKey } from "@/core/doc/sequence";
@@ -49,7 +51,7 @@ import {
     doSetEndFrame,
     doSetRotation,
     doSetTween,
-    doCloseLoop, doKeyProps, doOffsetKeys,
+    doCloseLoop, doKeyProps, doOffsetKeys, doSetConstraintKeys, doSetInheritKeys,
     doToggleCycle,
     easeTargets,
 } from "@/app/TimelineOps";
@@ -135,6 +137,8 @@ export class TimelinePanel implements Panel {
       onEditTc: (tc, keys, label, kind) => doSetTcKeys(store, tc, keys, label, kind),
       onEditDeform: (node, keys, label, kind) => doSetDeformKeys(store, node, keys, label, kind),
       onEditSequence: (node, keys, label, kind) => doSetSequenceKeys(store, node, keys, label, kind),
+      onEditInherit: (node, keys, label, kind) => doSetInheritKeys(store, node, keys, label, kind),
+      onEditConstraintKeys: (keys, label, kind) => doSetConstraintKeys(store, keys, label, kind),
       onEditEvents: (keys, label, kind) => doSetEventKeys(store, keys, label, kind),
       onEventsMenu: (frame, x, y) => this.eventsMenu(frame, x, y),
       onDragSpanEnd: (nodeId, endFrame) => doSetEndFrame(store, nodeId, endFrame),
@@ -930,6 +934,20 @@ export class TimelinePanel implements Panel {
   /** The picked deform keys gone; false with none picked. */
   deleteDeformKeys(): boolean {
     const sel = this.grid.deformSel;
+    if (sel?.cn) {
+      const anim = this.store.currentAnimation;
+      if (!sel.frames.length || !anim) return false;
+      doSetConstraintKeys(this.store, deleteConstraintKeys(anim.constraintKeys, sel.cn, sel.frames), sel.frames.length > 1 ? "Delete Constraint Keys" : "Delete Constraint Key");
+      this.grid.deformSel = null;
+      return true;
+    }
+    if (sel?.inherit) {
+      const keys = this.store.currentAnimation?.inherits?.[sel.node];
+      if (!sel.frames.length || !keys) return false;
+      doSetInheritKeys(this.store, sel.node, keys.filter((k) => !sel.frames.includes(k.frame)), sel.frames.length > 1 ? "Delete Inherit Keys" : "Delete Inherit Key");
+      this.grid.deformSel = null;
+      return true;
+    }
     if (sel?.sequence) {
       const keys = this.store.currentAnimation?.sequences?.[sel.node];
       if (!sel.frames.length || !keys) return false;
@@ -942,6 +960,57 @@ export class TimelinePanel implements Panel {
     doSetDeformKeys(this.store, sel.node, deleteDeformKeys(keys, sel.frames), sel.frames.length > 1 ? "Delete Deform Keys" : "Delete Deform Key");
     this.grid.deformSel = null;
     return true;
+  }
+
+  /** A physics, slider or path row's menu: the picked keys' ease, or delete
+   *  them. Keys are made in Properties, a value at a time. */
+  private constraintKeyMenu(node: NodeId, cn: CnId, frame: number, x: number, y: number): void {
+    const anim = this.store.currentAnimation;
+    if (!anim) return;
+    const frames = constraintKeyFrames(anim, cn);
+    const at = frames.includes(frame);
+    const mine = this.grid.deformSel?.cn === cn ? this.grid.deformSel!.frames : [];
+    if (at && !mine.includes(frame)) this.grid.deformSel = { node, frames: [frame], cn };
+    if (!at && this.grid.deformSel?.cn !== cn) this.grid.deformSel = null;
+    this.store.setFrame(frame);
+    const sel = this.grid.deformSel?.cn === cn ? this.grid.deformSel!.frames : [];
+    const tween = (t: IkTween): MenuEntry => ({
+      label: t === "linear" ? "Linear" : t === "stepped" ? "Stepped" : "Smooth", enabled: sel.length > 0,
+      run: () => doSetConstraintKeys(this.store, withConstraintTween(anim.constraintKeys, cn, sel,
+        t === "stepped" ? { kind: "none" } : t === "smooth" ? { kind: "curve", curve: [0.42, 0, 0.58, 1] } : undefined), "Constraint Key Ease"),
+    });
+    showMenu(this.menuAnchor(x, y), [
+      tween("linear"), tween("stepped"), tween("smooth"),
+      "-",
+      { label: sel.length > 1 ? `Delete ${sel.length} Constraint Keys` : "Delete Constraint Key", enabled: sel.length > 0, run: () => { this.deleteDeformKeys(); } },
+    ]);
+  }
+
+  /** An Inherit row's menu: key a mode here, the picked keys' mode, or delete them. */
+  private inheritMenu(node: NodeId, frame: number, x: number, y: number): void {
+    const anim = this.store.currentAnimation;
+    const bone = this.store.currentSymbol.nodes[node];
+    if (!anim || !bone) return;
+    const keys = anim.inherits?.[node] ?? [];
+    const at = keys.find((k) => k.frame === frame);
+    const mine = this.grid.deformSel?.node === node && this.grid.deformSel.inherit ? this.grid.deformSel.frames : [];
+    if (at && !mine.includes(frame)) this.grid.deformSel = { node, frames: [frame], inherit: true };
+    if (!at && !(this.grid.deformSel?.node === node && this.grid.deformSel.inherit)) this.grid.deformSel = null;
+    this.store.setFrame(frame);
+    const sel = this.grid.deformSel?.inherit ? this.grid.deformSel.frames : [];
+    const now = inheritAt(bone, anim, frame);
+    showMenu(this.menuAnchor(x, y), [
+      ...INHERIT_MODES.map((mode): MenuEntry => ({
+        label: `Inherit ${INHERIT_LABELS[mode]}`, checked: now === mode,
+        run: () => {
+          // Picked keys take the mode; with none picked, a key goes in here.
+          const next = sel.length ? keys.map((k) => (sel.includes(k.frame) ? { ...k, inherit: mode } : k)) : withInheritKey(keys, frame, mode);
+          doSetInheritKeys(this.store, node, next, "Inherit Key");
+        },
+      })),
+      "-",
+      { label: sel.length > 1 ? `Delete ${sel.length} Inherit Keys` : "Delete Inherit Key", enabled: sel.length > 0, run: () => { this.deleteDeformKeys(); } },
+    ]);
   }
 
   /** A Sequence row's menu: key the sequence here (the image in force,
@@ -1168,6 +1237,9 @@ export class TimelinePanel implements Panel {
     if (tc) { this.tcMenu(tc, frame, x, y); return; }
     if (this.grid.visibleRows()[row]?.deform) { this.deformMenu(nodeId, frame, x, y); return; }
     if (this.grid.visibleRows()[row]?.sequence) { this.sequenceMenu(nodeId, frame, x, y); return; }
+    if (this.grid.visibleRows()[row]?.inherit) { this.inheritMenu(nodeId, frame, x, y); return; }
+    const cnRow = this.grid.visibleRows()[row]?.cn;
+    if (cnRow) { this.constraintKeyMenu(nodeId, cnRow, frame, x, y); return; }
     // Right-clicking outside the selection moves it, as in Flash; inside it,
     // the selection is what the menu acts on.
     if (!this.store.selection.frames.includes(`${nodeId}:${frame}`)) {

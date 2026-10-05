@@ -530,6 +530,55 @@
     }
   },
   {
+    "name": "link_mesh",
+    "description": "Let another image of a mesh layer draw that layer's mesh (Spine's linked mesh), in one undoable step: the image bends with the mesh's points, weights and, unless `deform` is false, its deform keys. For variants of one piece (a frown and a smile on one face mesh, a torn shirt over the shirt). The image must be one of the layer's own images, shown by an attachment key; `linked` false unlinks it.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "layer": { "type": "string" },
+        "image": { "type": "string" },
+        "linked": { "type": "boolean" },
+        "deform": { "type": "boolean" }
+      },
+      "required": ["layer", "image"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "key_constraint",
+    "description": "Key one value of a physics, slider or path constraint at a frame, in one undoable step (Spine's physics, slider and path timelines). Physics keys mix, inertia, strength, damping, mass, wind, gravity (e.g. gravity rising as a character falls, mix 0 to switch a sway off); a slider keys time (seconds into the animation it plays) and mix; a path keys position, spacing and mix (its three mixes together). Before the first key the constraint's own value holds; `ease` (linear, stepped, smooth) is how this key goes to the next. `delete` true removes the key.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "animation": { "type": "string" },
+        "constraint": { "type": "string" },
+        "channel": { "enum": ["mix", "inertia", "strength", "damping", "mass", "wind", "gravity", "time", "position", "spacing"] },
+        "frame": { "type": "integer" },
+        "value": { "type": "number" },
+        "ease": { "enum": ["linear", "stepped", "smooth"] },
+        "delete": { "type": "boolean" }
+      },
+      "required": ["animation", "constraint", "channel", "frame"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "set_inherit",
+    "description": "Set what a bone takes from its parent (Spine's inherit mode), in one undoable step: normal (everything), onlyTranslation (its position only: it keeps its own angle and size as the parent turns or scales, like a head that stays level), noRotationOrReflection, noScale, noScaleOrReflection. Without `animation` it is the bone's own; with `animation` and `frame` it is keyed there and holds until the next key (`delete` true removes the key).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "bone": { "type": "string" },
+        "inherit": { "enum": ["normal", "onlyTranslation", "noRotationOrReflection", "noScale", "noScaleOrReflection"] },
+        "animation": { "type": "string" },
+        "frame": { "type": "integer" },
+        "delete": { "type": "boolean" }
+      },
+      "required": ["bone"],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "set_constraint_order",
     "description": "Set the order the symbol's constraints are applied in (Spine's constraint order), in one undoable step: `order` names constraints first to last; the ones it leaves out follow, in the order they had. A constraint applied later reads what the earlier ones did to the bones, e.g. a transform constraint before an IK makes the IK reach from the constrained pose. get_rig lists the current order in constraintOrder.",
     "input_schema": {
@@ -575,7 +624,7 @@
   },
   {
     "name": "set_skin_members",
-    "description": "Bones and constraints only some skins have, in one undoable step: each bone (with the bones and pictures below it) exists, and each IK or transform constraint applies, only while a skin listing it is shown. `remove` true takes them out of the skin instead.",
+    "description": "Bones and constraints only some skins have, in one undoable step: each bone (with the bones and pictures below it) exists, and each constraint (IK, transform, physics, slider or path) applies, only while a skin listing it is shown. `remove` true takes them out of the skin instead.",
     "input_schema": {
       "type": "object",
       "properties": {

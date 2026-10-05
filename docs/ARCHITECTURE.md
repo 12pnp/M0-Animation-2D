@@ -1237,6 +1237,13 @@ bounding boxes, a point and a keyed sequence (`H_Boxes`). spine-csharp 4.3.40 ag
 0.00014 px at every frame. The comparison covers bones, draw order, attachments and colours,
 not mesh vertices.
 
+Rerun in phase I (docs/PHASE-I-PLAN.md) with three more: `I_Keys` (inherit modes and keys,
+physics, slider and path keys, a box colour, a bone icon), `I_Linked` (a weighted mesh with two
+linked images, one following its deform keys and one not, switched in by keys) and `I_Raptor`
+(spine-unity's raptor opened and exported by the editor, its weighted meshes through the model
+with their per-bone offsets, beside the sample's own atlas). All eight rigs agree within
+0.00043 px.
+
 ## The AI bridge
 
 An AI edits the open document through the same undoable commands as a person.
@@ -2000,10 +2007,47 @@ per mesh node, one offset pair per point in the node's space.
   smooth to the next. A Deform row (`LayerRow.deform`) under a keyed mesh, and in the focused
   view, which a selected mesh now opens as a bone does: drag, Delete, right-click for Key
   Deform Here and the ease. Q / W stop on them.
-- **Export** writes `type: "mesh"` (uvs, triangles, vertices, hull, width, height) and each
-  animation's `attachments.<skin>.<slot>.<attachment>.deform` timeline. **Opened files' meshes
-  stay carried**: drawn by spine-core and written back, deform timelines included; the importer
-  does not turn them into editable meshes yet, nor linked meshes.
+- **Export** writes `type: "mesh"` (uvs, triangles, vertices, hull, width, height, and
+  edges when an opened file had them) and each animation's
+  `attachments.<skin>.<slot>.<attachment>.deform` timeline.
+- **Opened meshes** (`core/spine/importMesh.ts`, the importer's `editableMeshes`): the default
+  skin's meshes become the document's, so the Mesh tool, weights and deform keys edit them. A
+  Spine mesh keeps its UVs and its vertices apart, and so may the model:
+  - `MeshData.points` are always the texture coordinates (the UVs over the image's size);
+    `MeshData.vertices`, when present, are the setup positions in the same pixel frame
+    (`meshPositions` is the one place that picks). A mesh made here has none: its points are
+    both.
+  - A weighted vertex in Spine is an offset per bone, and a file's bones need not agree on
+    one setup position (bones moved after binding; the samples disagree by up to 170 px).
+    `MeshData.boneOffsets` keeps them as the file has them, per point per weight entry, in
+    the bone's setup space; the pose (`meshWorld`) and the export (`spineVertices`) use them
+    where present, else derive them from the position. The position of such a point is where
+    the setup pose shows it.
+  - Editing: a moved point moves its position alone (its texture coordinate stays) and drops
+    its own bone offsets, so it follows its bones from where it now is (`withPositions`); a
+    point added gets a texture coordinate and weights blended from its triangle and no
+    offsets; new weights (bind, paint, unbind) drop every offset (`withWeights`).
+  - The display keeps its attachment key (`Node.key`, `DisplayRef.key`), which attachment
+    keys and linked meshes name. Each animation's deform timeline becomes keys when every key
+    lands on a frame and a weighted point's entries move it the same way; only display 0 takes
+    deform keys. A mesh whose timeline does not convert, one with a field the model does not
+    hold (a tint), and other skins' meshes stay carried. 126 of the samples' 136 default-skin
+    meshes convert.
+  - `tests/importMesh.test.ts`: the conversion both ways, deform keys, the editor's own pose of
+    a mesh whose offsets disagree against spine-core, and the editing rules.
+- **Linked meshes** (Spine's `linkedmesh`): another image of the same node draws a mesh
+  display's points, triangles and weights with its own texture, and its deform keys unless
+  told not to (Spine's `timelines`). `DisplayRef.linked` / `Node.linked` `{ to, deform? }`;
+  `meshOfDisplay` resolves what a display draws (the mesh's own transform point, since the
+  points are placed about it) for the pose; `withLink` and `linkableDisplays` are the rules.
+  Properties ▸ Mesh lists the node's other images: a switch links one, a second its deform
+  keys. Remove Mesh unlinks them. **Export** writes Spine 4.3's form,
+  `{ type: "linkedmesh", source: <the mesh's key>, width, height }` (`timelines: false`
+  without deform; pre-4.3 files said `parent`), after every key of the slot is settled, and
+  a used linked display keeps its mesh in the file. **Import** turns the default skin's
+  linked meshes into links when their source is a mesh the document now holds in the same
+  slot (other skins' stay carried). `spineParity` ▸ "a linked mesh" plays one with and
+  without deform keys; `tests/linkedMesh.test.ts`. AI: `link_mesh`.
 - **Checked**: `spineParity` ▸ "meshes": unweighted, weighted, partly unweighted and deform keys
   (linear, smooth, stepped) against spine-core's world vertices frame by frame.
 - The AI's `make_mesh` and `bind_mesh`.
@@ -2033,7 +2077,12 @@ editing.
     (`withDescendantBones`). A bone left out below a listed one would stay on in Spine with a
     stale parent, which the stage does not copy;
   - **skin constraints**: on when the source is (an IK's target, a transform constraint's
-    source) and, if some skin lists it, a shown skin does.
+    source) and, if some skin lists it, a shown skin does. Physics, slider and path
+    constraints join a skin too (`SkinDef.constraints`; Properties ▸ Skins on the bone they
+    sit under, `set_skin_members`): the export lists each under its kind and flags it
+    `skin: true`, and spine-core, which poses any symbol that has one, turns it off without
+    the skin. An opened skin's physics and slider lists become members once those
+    constraints are the document's.
 - **The format lists a skin's constraints per kind**: `ik`, `transform`, `path`, `physics`,
   `slider` (`SKIN_CONSTRAINT_KINDS`). A single `constraints` list is ignored by spine-core.
 - **`evaluateSymbol` takes the shown skins** (default `stageSkinOf`). null ignores skins
@@ -2079,7 +2128,14 @@ is its node's origin and x axis, written `{ type: "point" }` at 0, 0, 0. Pure in
 - **Export** writes the attachment under the node's name, the polygon y up; a box short of
   three points is left out with a warning. Checked against spine-core's
   `computeWorldVertices` and `computeWorldPosition` (`spineParity` ▸ "boxes and points").
-- An opened file's boxes and points stay carried. The AI's `add_attachment`.
+- **Opened ones** (`core/spine/importAttachments.ts`, `outlineOf`): a slot whose only
+  default-skin attachment is an unweighted box, a point with no offset or an unweighted path,
+  and which no other skin fills, becomes that node on its slot bone, keeping its key
+  (`Node.key`) and its editor colour (`Node.attachmentColor`, written as `color`,
+  nonessential). A path keeps the file's `lengths` while its shape is the one they were
+  measured on (`PathShape.fileLengths`, `fileLengthsOf`), since Spine's measure need not be
+  ours to the last digit. A weighted one, a point with an offset and a slot other skins fill
+  stay carried. `tests/importAttachments.test.ts`. The AI's `add_attachment`.
 
 ## Sequences
 
@@ -2104,7 +2160,13 @@ Pure in `core/doc/sequence.ts`.
   the mode, the first image and the delay at the playhead.
 - **Export**: the region with `path` and `sequence: { count, start, digits, setup }` and every
   frame's image packed; keys as the attachment's `sequence` timeline. Checked frame by frame in
-  every mode (`spineParity` ▸ "sequences"). An opened file's sequences stay carried.
+  every mode (`spineParity` ▸ "sequences").
+- **Opened ones** (`sequenceDisplayOf`): a default-skin region sequence becomes a sequence
+  display when its frames are library images named one after another, all one size, and the
+  region is unrotated, unscaled and the image's size; its offset becomes the transform point
+  (`regionCentre` inverted) and its key is kept. Display 0's `sequence` timelines become keys
+  (`sequenceKeys`: a missing mode is hold, the delay in frames) when every key lands on a
+  frame; a rotated region (the samples' dragon wings) stays carried.
 - The AI's `make_sequence` and `key_sequence`.
 
 ## Physics, sliders and paths
@@ -2148,8 +2210,49 @@ Spine's `lengths` (`pathLengths`).
   warning. **Import**: a file's physics and sliders become the model's when every field is
   one it holds (else carried, as a skin-listed one is); paths stay carried, since a path slot's
   attachment key need not be its name.
-- Keys of these constraints (mix, position, inertia, …) are not edited: an opened file's are
-  carried. The AI's `add_physics`, `add_slider` and `make_path`.
+- **Keys** (`Animation.constraintKeys`, schema 25, `core/doc/constraintKeys.ts`): per
+  constraint, per channel, one-number keys with a tween, as Spine's `physics`, `slider` and
+  `path` timelines. Physics keys mix, inertia, strength, damping, mass, wind and gravity; a
+  slider its time and mix; a path its position, spacing and mix (its three mixes together,
+  Spine's one `mix` timeline). Before a channel's first key the constraint's own value holds
+  (`valueAt`, `setupValue`). In Animate mode a keyable field in Properties (marked ◆) keys
+  its channel at the playhead; each constraint has a row under its bone (`constraintHost`)
+  whose diamonds are the frames any channel keys: a drag moves every channel's keys there,
+  Delete removes them, right-click sets their ease. One `SetConstraintKeys` per edit.
+  - The stage applies the keys to the runtime rig's constraint poses at the frame
+    (`applyRig`; mass is stored inverted, as spine-core's timeline does). **Export** writes
+    every key's value, since spine-core reads a missing physics value as 0; a document
+    channel replaces the file's, the file's other channels stay. **Import** turns an opened
+    physics constraint's or slider's channels into keys when each lands on a frame (a path's
+    mixes when they agree); `reset` keys and the rest stay carried.
+  - `tests/constraintKeys.test.ts`: the rules, the timelines both ways, and slider and path
+    keys played by the stage as spine-core plays the export.
+- The AI's `add_physics`, `add_slider`, `make_path` and `key_constraint`.
+
+## Inherit modes
+
+What a bone takes from its parent, Spine's `inherit`: everything (`normal`, absent), its
+position only (`onlyTranslation`), or all but rotation and reflection, scale, or scale and
+reflection. `Node.inherit` is the bone's own; `Animation.inherits` (schema 25) keys it, each
+key holding until the next, as Spine's stepped `inherit` timeline (`core/doc/inherit.ts`:
+`inheritAt`, `withInheritKey`, `inheritTimeline`, `inheritKeysFromSpine`).
+
+- **The runtime poses such a symbol.** The stage composes a bone as its parent's matrix
+  times its own, which is `normal` only, so a symbol with any other mode or any inherit key
+  is posed by spine-core (`runtimePosed`, used where `runtimeSolved` was), as one with
+  physics is. The keys are applied to the rig's bones at the frame (`applyRig`), like IK and
+  transform constraint keys; the bone's own mode is in the rig.
+- **Edited** in Properties ▸ Bone ▸ Inherit: the bone's own in Setup mode (`EditNode`), a key
+  at the playhead in Animate mode. The keys show on an Inherit row under the bone (focused,
+  or under its layer when keyed), stepped: right-click keys a mode or changes the picked
+  keys', a drag moves them, Delete removes them. `SetInheritKeys` is `SetNodeKeys` over
+  `inherits`, as `SetSequenceKeys` is over `sequences`.
+- **Export** writes the exported symbol's keys as each bone's `inherit` timeline (a nested
+  symbol's are not written). **Import** turns a file's timeline into keys when each lands on
+  a frame and names a mode, else it stays carried.
+- `tests/inherit.test.ts`: the rules, the file both ways, and the stage against the full
+  export in spine-core with a mode and with keys (`tests/fixtures/runtimeCheck.ts`). AI:
+  `set_inherit`; `get_rig` lists a bone's mode.
 
 ## Constraint order
 
@@ -2820,6 +2923,11 @@ stays. Applied after the skeleton is built and before its hash, never to the sta
 Colour, drawn on the stage and tinting the bone's icon in the Tree; written as `bones[].color`,
 nonessential. An opened file's bone colours become the field (a colour carried in `spine.bone`
 moves there on load).
+
+**Bone icons** (`Node.boneIcon`, Spine's icon name): Properties ▸ Bone ▸ Icon lists the names
+the samples use with a glyph each (`core/doc/boneIcons.ts`); the Tree shows the glyph after the
+bone's name. Written as `bones[].icon`, nonessential; an opened file's icons become the field
+(schema 25 moves a carried `spine.bone.icon`).
 
 ### Future export formats
 

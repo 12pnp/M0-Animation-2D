@@ -6,7 +6,7 @@ import type { AnimId, AssetId, CnId, FolderId, IkId, ItemId, LayerId, NodeId, Tc
 import type { TcChannel, TcFrom } from "@/core/math/transformConstraint";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 24;
+export const DOC_VERSION = 25;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -209,6 +209,8 @@ export interface Node {
   /** A bone's colour in the editor (Spine's, "rrggbbaa"): the stage and the
    *  Tree draw it; the export writes it as nonessential data. */
   boneColor?: string;
+  /** A bone's icon in Spine's editor, by name (`core/doc/boneIcons.ts`; nonessential). */
+  boneIcon?: string;
   /** A path node's curve (Spine's path attachment), in its own space, y down. */
   path?: PathShape;
   /** Bind-pose colour, exported as `slot.color`. Absent means neutral.
@@ -242,6 +244,15 @@ export interface Node {
   setupDisplay?: number;
   /** Display 0's Spine attachment, when opened from a Spine file. */
   attachment?: SpineAttachmentRef;
+  /** Display 0's attachment key, kept from an opened file once the model
+   *  holds the attachment itself (a mesh made editable): what attachment keys
+   *  and linked meshes name. Absent: the image's name. */
+  key?: string;
+  /** Display 0 draws another display's mesh (`DisplayRef.linked`). */
+  linked?: LinkedMesh;
+  /** A box's, point's or path's editor colour ("rrggbbaa", nonessential),
+   *  kept from an opened file. */
+  attachmentColor?: string;
   /** Fields of an opened Spine bone or slot the model has no place for,
    *  merged into what the export writes. */
   spine?: { bone?: Record<string, unknown>; slot?: Record<string, unknown> };
@@ -253,6 +264,10 @@ export interface DisplayRef {
   pivot: { x: number; y: number };
   /** The Spine attachment it came from, opened from a Spine file. */
   attachment?: SpineAttachmentRef;
+  /** Its attachment key, as `Node.key` is display 0's. */
+  key?: string;
+  /** It draws another display's mesh with its own image (Spine's linked mesh). */
+  linked?: LinkedMesh;
   /** The image as a mesh (ARCHITECTURE ▸ Meshes), exported as a Spine mesh
    *  attachment. */
   mesh?: MeshData;
@@ -261,6 +276,14 @@ export interface DisplayRef {
   skinOnly?: true;
   /** Frame-by-frame images in place of `itemId` (ARCHITECTURE ▸ Sequences). */
   sequence?: SequenceData;
+}
+
+/** A display drawing the mesh of display `to` of the same node with its own
+ *  image, as Spine's linked mesh does: the same points, triangles and weights,
+ *  and the mesh's deform keys unless `deform` is false (Spine's `timelines`). */
+export interface LinkedMesh {
+  to: number;
+  deform?: false;
 }
 
 /** A display's images in order, all the size of the first, which `itemId`
@@ -295,6 +318,8 @@ export interface SkinDef {
   bones?: NodeId[];
   ik?: IkId[];
   transforms?: TcId[];
+  /** Physics, slider and path constraints only this skin has. */
+  constraints?: CnId[];
 }
 
 /**
@@ -307,10 +332,23 @@ export interface MeshData {
   /** The image's size when the mesh was made: the texture's extent. */
   width: number;
   height: number;
+  /** Each point's place in the image (x, y in pixels, y down): its texture
+   *  coordinate, and its setup position when `vertices` is absent. */
   points: number[];
   triangles: number[];
   hull: number;
   weights?: Array<Array<[NodeId, number]>>;
+  /** Each point's setup position, in the same frame as `points`, where it is
+   *  not its texture coordinate: an opened Spine mesh's, whose vertices are
+   *  not where its UVs put them (`meshPositions`). */
+  vertices?: number[];
+  /** Spine's mesh edges (nonessential), kept from an opened file. */
+  edges?: number[];
+  /** Per point, per weight entry, where the point is in that bone's setup
+   *  space (y down), as Spine stores a weighted vertex: an opened mesh's,
+   *  whose bones need not agree on one setup position. Absent: derived from
+   *  the point's position (`S⁻¹ · N · p`). Dropped when the weights change. */
+  boneOffsets?: Array<Array<[number, number]>>;
 }
 
 /** One deform key: each point's offset from its place (x, y per point, in
@@ -518,6 +556,27 @@ export interface Animation {
   deforms?: Record<NodeId, DeformKey[]>;
   /** Sequence keys of nodes whose display 0 is a sequence (ARCHITECTURE ▸ Sequences). */
   sequences?: Record<NodeId, SequenceKey[]>;
+  /** Inherit mode keys per bone (`core/doc/inherit.ts`), each list sorted by
+   *  frame: the mode from each key on, stepped. Absent: the bone's own. */
+  inherits?: Record<NodeId, InheritKey[]>;
+  /** Keys of physics, slider and path constraints (`core/doc/constraintKeys.ts`):
+   *  per constraint, per channel (mix, inertia, time, position, …), each list
+   *  sorted by frame. Absent for a channel: the constraint's own value. */
+  constraintKeys?: Record<CnId, Record<string, ValueKey[]>>;
+}
+
+/** One key of one value: `value` from `frame` on, tweened to the next key by
+ *  `tween` (linear when absent, `none` stepped, one cubic). */
+export interface ValueKey {
+  frame: number;
+  value: number;
+  tween?: TweenSpec;
+}
+
+/** One inherit key: the bone takes `inherit` of its parent from `frame` on. */
+export interface InheritKey {
+  frame: number;
+  inherit: SpineInherit;
 }
 
 /** One IK key. `tween` eases the mix (and softness) to the next key: linear when absent,
@@ -671,5 +730,9 @@ export interface PathShape {
   closed?: boolean;
   /** Absent: true (Spine's default). */
   constantSpeed?: boolean;
+  /** An opened file's `lengths` and the shape they were measured on: written
+   *  back while the shape is unchanged (`fileLengthsOf`), since Spine's own
+   *  measure need not be ours to the last digit. */
+  fileLengths?: { points: number[]; closed?: boolean; lengths: number[] };
 }
 
