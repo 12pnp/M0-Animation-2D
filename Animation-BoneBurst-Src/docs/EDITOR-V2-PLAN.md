@@ -1,7 +1,7 @@
 # Editor v2 — from scratch, MIT, no Animo code — plan
 
-**Status:** not started (plan; reviewed against the code 2026-10-06). Open: the owner decisions at
-the end, the document-format question (D4) first, since E1's model depends on it.
+**Status:** not started (plan; reviewed against the code 2026-10-06). Owner decisions D1–D5 taken
+2026-10-06 (end of this file); next is E0.
 
 **Owner decision 2026-10-05:** replace the Animo-fork editor with a new editor
 that contains **no Animo code**, licensed **MIT** from its first commit. The
@@ -149,16 +149,20 @@ undo, onion skins — these are ideas every editor shares. The rules:
 
 ## Owner decisions
 
-- [ ] D1 Fork policy during the build: bug fixes only (recommended) or freeze
-- [ ] D2 v2 folder name (proposal: `Editor-BoneBurst-Src`, sibling of the old one)
-- [ ] D3 Send the Morenoise email anyway as a hedge (free to ask; a "no" costs
-      nothing, a "yes" buys fallback and goodwill)
-- [ ] D4 Document format: (a) Spine-native — no nested symbols, between-frame
+- [x] D1 Fork policy during the build: bug fixes only (recommended) or freeze. **Decided 2026-10-06: bug fixes and data-format work only; new features go to v2.**
+- [x] D2 v2 folder name (proposal: `Editor-BoneBurst-Src`, sibling of the old one). **Decided 2026-10-06: `Editor-BoneBurst-Src`.**
+- [x] D3 Send the Morenoise email anyway as a hedge (free to ask; a "no" costs
+      nothing, a "yes" buys fallback and goodwill). **Decided 2026-10-06: yes; the owner sends it.**
+- [x] D4 Document format: (a) Spine-native — no nested symbols, between-frame
       eases, cycles or bone-path handles beyond what the sidecar can carry
       without changing the JSON's meaning (recommended: it is the plan's
       premise and the smaller editor), or (b) a sidecar that carries v1's
-      authoring model as a format of its own
-- [ ] D5 Tool contract: keep the 50 tool names and map `layer` → slot name, with
+      authoring model as a format of its own. **Decided 2026-10-06: (a) Spine-native.** v2 has no
+      nested symbols; the sidecar holds only what does not change the JSON's meaning (view state,
+      guides, reference images, AI notes).
+- [x] D5 Tool contract: keep the 50 tool names and map `layer` → slot name, with
       cycle/offset/path tools backed by the sidecar (recommended if D4 is b),
       or version the contract and drop or rename the tools Spine has no home
-      for (recommended if D4 is a)
+      for (recommended if D4 is a). **Decided 2026-10-06, following D4: a versioned contract.** Tools
+      keep their names where the meaning holds (`layer` arguments become slot names); `set_cycle`,
+      `offset_keys` and the bone-path tools are dropped or renamed, listed in the version note (E5).
