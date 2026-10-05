@@ -29,7 +29,7 @@ import { TC_CHANNELS, type TcChannel } from "@/core/math/transformConstraint";
 import { newTcId } from "@/core/doc/ids";
 import { alertDialog, chooseDialog } from "@/view/widgets/dialogs";
 import { cloneTf, type Transform } from "@/core/math/Transform";
-import type { NodeId } from "@/core/doc/ids";
+import type { ItemId, NodeId } from "@/core/doc/ids";
 import type { Rect } from "@/core/math/geom";
 import { instancesOf, type PoseAt, selectionBounds } from "@/view/tools/gizmo";
 import {
@@ -54,6 +54,10 @@ import {
     type TransformConstraint,
 } from "@/core/doc/types";
 import { ikRelations } from "@/core/doc/ikGraph";
+import { DEFAULT_SKIN, editedSkin, skinsOf, stageSkinOf } from "@/core/doc/skins";
+import { displaysOf } from "@/core/doc/displays";
+import { isImage } from "@/core/doc/types";
+import { doSetSkinImage, doSetSkinMembers, doSetSkinOnly } from "@/app/SkinOps";
 import { type IkPatch, RemoveIkConstraint, SetBoneLength, SetIkOptions, } from "@/core/history/ikCommands";
 
 /**
@@ -166,7 +170,10 @@ export class PropertiesPanel implements Panel {
     // structure. Their values are synced, not rebuilt.
     const tcs = (this.store.currentSymbol.transforms ?? [])
       .map((k) => [k.id, k.name, k.sourceId, k.boneIds.join(","), !!k.localSource, !!k.localTarget, !!k.additive, !!k.clamp, usedMixes(k).join("")].join(":")).join(";");
-    return `${anim}|${tcs}|` + nodes.map((n) => `${n.id}:${n.kind}:${displayAtFrame(this.store, n).display?.itemId ?? ""}:${n.mesh ? `m${n.mesh.points.length}${n.mesh.weights ? "w" : ""}` : ""}`).join("|");
+    // Skins are replaced as values: their identity says when they changed.
+    const sym = this.store.currentSymbol;
+    const skins = `${valueId(sym.skins)}:${stageSkinOf(sym).join(",")}:${editedSkin(sym, this.store.ui.editSkin) ?? ""}`;
+    return `${anim}|${tcs}|${skins}|` + nodes.map((n) => `${n.id}:${n.kind}:${displaysOf(n).map((d) => (d.skinOnly ? "s" : "d")).join("")}:${displayAtFrame(this.store, n).display?.itemId ?? ""}:${n.mesh ? `m${n.mesh.points.length}${n.mesh.weights ? "w" : ""}` : ""}`).join("|");
   }
 
   /**
@@ -233,6 +240,7 @@ export class PropertiesPanel implements Panel {
     // A bone produces no slot, so it has neither colour nor blend mode.
     if (!bone) this.body.appendChild(this.colorSection(nodes));
     if (!bone && nodes.length === 1 && nodes[0]!.kind === "image" && !nodes[0]!.attachment) this.body.appendChild(this.meshSection(nodes[0]!));
+    if (nodes.length === 1 && (bone || nodes[0]!.kind === "image")) this.body.appendChild(this.skinSection(nodes[0]!));
     if (bone) {
       this.body.appendChild(this.boneSection(bone));
       const section = this.ikSection(bone);
@@ -777,6 +785,72 @@ export class PropertiesPanel implements Panel {
     rows.push(this.row("Bone", [boneSel]));
     rows.push(this.row("Brush", [radius.el, strength.el]));
     return this.section("Mesh", true, rows);
+  }
+
+  /**
+   * Skins (ARCHITECTURE ▸ Skins). On an image: what the skin being edited
+   * shows in place of each of its displays, and which displays only skins
+   * fill. On a bone: the skins it (with the bones below it) belongs to, and
+   * those of the constraints it drives.
+   */
+  private skinSection(node: Node): HTMLElement {
+    const sym = this.store.currentSymbol;
+    const named = skinsOf(sym).filter((n) => n !== DEFAULT_SKIN);
+    if (!named.length) {
+      return this.section("Skins", false, [this.noteRow("No skins. The Skins panel makes them; then each layer can show its own image in each skin.")]);
+    }
+    const rows: HTMLElement[] = [];
+    if (node.kind === "bone") {
+      const iks = sym.ik.filter((k) => k.targetId === node.id);
+      const tcs = (sym.transforms ?? []).filter((k) => k.sourceId === node.id);
+      for (const name of named) {
+        const def = sym.skins?.find((d) => d.name === name);
+        const check = (label: string, title: string, checked: boolean, run: (on: boolean) => void) => {
+          const box = h("input", { type: "checkbox", class: "switch" }) as HTMLInputElement;
+          box.checked = checked;
+          on(box, "change", () => run(box.checked));
+          return h("label", { class: "switch-label", title }, box, label);
+        };
+        rows.push(this.row(name, [
+          check("Bone", "Only this skin (and others that list it) has the bone and the bones and pictures below it", !!def?.bones?.includes(node.id),
+            (v) => doSetSkinMembers(this.store, name, { bones: [node.id] }, v)),
+          ...iks.map((k) => check(k.name, `Only this skin solves the IK "${k.name}"`, !!def?.ik?.includes(k.id),
+            (v) => doSetSkinMembers(this.store, name, { ik: [k.id] }, v))),
+          ...tcs.map((k) => check(k.name, `Only this skin applies the transform constraint "${k.name}"`, !!def?.transforms?.includes(k.id),
+            (v) => doSetSkinMembers(this.store, name, { transforms: [k.id] }, v))),
+        ]));
+      }
+      rows.push(this.noteRow("A bone in a skin exists only while a skin listing it shows, with the bones and pictures below it; a constraint in a skin applies only then."));
+      return this.section("Skins", named.some((n) => sym.skins?.find((d) => d.name === n)?.bones?.includes(node.id)), rows);
+    }
+
+    const edited = editedSkin(sym, this.store.ui.editSkin)!;
+    const skinSel = h("select", { class: "preview-anim", title: "The skin edited here (also picked in the Skins panel)" }) as HTMLSelectElement;
+    for (const name of named) skinSel.appendChild(h("option", { value: name }, name));
+    skinSel.value = edited;
+    on(skinSel, "change", () => this.store.setUi({ editSkin: skinSel.value }, "stage"));
+    rows.push(this.row("Skin", [skinSel]));
+    const images = this.store.project.itemOrder.map((id) => this.store.project.items[id]).filter(isImage);
+    const def = sym.skins?.find((d) => d.name === edited);
+    displaysOf(node).forEach((own, index) => {
+      const ownName = this.store.project.items[own.itemId]?.name ?? "?";
+      const sel = h("select", { class: "preview-anim", title: `What “${edited}” shows here` }) as HTMLSelectElement;
+      sel.appendChild(h("option", { value: "" }, own.skinOnly ? "— nothing —" : `— ${ownName} (default) —`));
+      for (const item of images) sel.appendChild(h("option", { value: item.id }, item.name));
+      sel.value = def?.displays?.[node.id]?.[String(index)]?.itemId ?? "";
+      on(sel, "change", () => {
+        const problem = doSetSkinImage(this.store, edited, node.id, index, (sel.value || null) as ItemId | null);
+        if (problem) void alertDialog({ title: "Skin Image", message: problem });
+      });
+      const only = h("input", { type: "checkbox", class: "switch" }) as HTMLInputElement;
+      only.checked = !!own.skinOnly;
+      on(only, "change", () => doSetSkinOnly(this.store, node.id, index, only.checked));
+      const onlyLabel = h("label", { class: "switch-label", title: `The default skin shows nothing here; only skins fill it (Spine's skin placeholder). ${ownName} stands in while editing.` }, only, "Only in skins");
+      rows.push(this.row(index === 0 ? "Image" : `Display ${index}`, [sel]));
+      rows.push(this.row("", [onlyLabel]));
+    });
+    const used = named.some((n) => Object.keys(sym.skins?.find((d) => d.name === n)?.displays?.[node.id] ?? {}).length) || displaysOf(node).some((d) => d.skinOnly);
+    return this.section("Skins", used, rows);
   }
 
   /** A paragraph inside a section, for the rule a row of fields cannot say. */
@@ -1387,3 +1461,13 @@ const BLEND_MODES: Array<[BlendMode, string]> = [
   ["difference", "Difference"],
   ["hardlight", "Hard Light"],
 ];
+
+/** A number per object, the same while the object is: a replaced value gets a new one. */
+const valueIds = new WeakMap<object, number>();
+let nextValueId = 1;
+function valueId(o: object | undefined): number {
+  if (!o) return 0;
+  let id = valueIds.get(o);
+  if (!id) valueIds.set(o, id = nextValueId++);
+  return id;
+}

@@ -319,7 +319,7 @@ export class PreviewSession {
       : sym.animations[0]?.name;
     // The editor knows the rig's extent; Pixi cannot measure it. An opened
     // Spine rig is measured as the runtime draws it (meshes included).
-    const skins = sym.spine ? stageSkinOf(sym) : [];
+    const skins = stageSkinOf(sym);
     const b = (sym.spine ? spineBounds(project, sym, skins) : null) ?? symbolBounds(project, sym.id);
     return {
       animation,

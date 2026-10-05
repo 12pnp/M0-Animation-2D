@@ -1,6 +1,7 @@
 import type { Store } from "@/app/Store";
 import { drawingLayers, orderAt, reorderTargets, withDrawOrderKey, withFront } from "@/core/doc/drawOrder";
-import { type AnimId, type AssetId, newIkId, newTcId, type NodeId } from "@/core/doc/ids";
+import { type AnimId, type AssetId, type IkId, type ItemId, newIkId, newTcId, type NodeId, type TcId } from "@/core/doc/ids";
+import { displaysOf } from "@/core/doc/displays";
 import { type Animation, type EventDef, type EventKey, type IkConstraint, type IkKey, type ImageItem, isImage, type TcKey, type TransformConstraint, type Keyframe, type Node, type SymbolItem, type Track } from "@/core/doc/types";
 import { entryBox, type FrameContext } from "@/core/doc/pose";
 import { type ImageFrame, imageFrame, referenceEnd, referenceFrameOf, referenceIndexAt, referenceRect } from "@/core/doc/reference";
@@ -30,6 +31,8 @@ import { evaluateSymbol } from "@/core/doc/pose";
 import { boneFromWorld, placeOnBone, siblingOrder, type SpinePoint } from "@/core/rig/rigPlan";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
 import { CURVE_Y_LIMIT, easeOf, sameEase } from "@/core/math/easing";
+import { applySkins, doSetSkinImage, doSetSkinMembers, doSetSkinOnly } from "@/app/SkinOps";
+import { withNewSkin } from "@/core/doc/skins";
 import { posedSymbol, skinsOf, stageSkinOf } from "@/core/spine/spinePose";
 import { exportSpine } from "@/core/spine/exportSpine";
 import { fromSpineLocal, type SpineLocal, toSpineLocal } from "@/core/spine/transform";
@@ -148,6 +151,9 @@ export class AgentApi {
       case "add_transform_constraint": return this.addTransform(args);
       case "make_mesh": return this.makeMeshes(list<string>(args, "images"), args.spacing);
       case "bind_mesh": return this.bindMesh(str(args, "image"), list<string>(args, "bones"));
+      case "add_skin": return this.addSkin(str(args, "name"));
+      case "set_skin_image": return this.setSkinImage(args);
+      case "set_skin_members": return this.setSkinMembers(args);
       case "key_transform": return this.keyTransform(str(args, "animation"), str(args, "constraint"), int(args, "frame", 0), args);
       case "key_event": return this.keyEvent(str(args, "animation"), int(args, "frame", 0), str(args, "event"), args);
       case "get_bone_path": return this.getBonePath(str(args, "animation"), str(args, "bone"), args.point);
@@ -234,7 +240,7 @@ export class AgentApi {
       })),
       ...(skinsOf(s).some((n) => n !== "default") ? { skins: skinsOf(s).filter((n) => n !== "default") } : {}),
       images: this.libraryImages().map((i) => ({ name: i.name, width: i.width, height: i.height })),
-      showing: { animation: anim?.name ?? null, frame: this.store.ui.frame, ...(s.spine ? { skins: stageSkinOf(s) } : {}) },
+      showing: { animation: anim?.name ?? null, frame: this.store.ui.frame, ...(skinsOf(s).some((n) => n !== "default") ? { skins: stageSkinOf(s) } : {}) },
     };
   }
 
@@ -387,7 +393,7 @@ export class AgentApi {
     }
     this.store.setUi({ animId: anim.id }, "timeline");
     this.store.setFrame(Math.max(0, Math.round(frame)));
-    return { showing: anim.name, frame: this.store.ui.frame, ...(this.sym.spine ? { skins: stageSkinOf(this.sym) } : {}) };
+    return { showing: anim.name, frame: this.store.ui.frame, ...(skinsOf(this.sym).some((n) => n !== "default") ? { skins: stageSkinOf(this.sym) } : {}) };
   }
 
   /* ── rigging ── */
@@ -851,6 +857,64 @@ export class AgentApi {
     if (refused) throw new AgentError(refused);
     const m = this.sym.nodes[ids[0]!]!.mesh!;
     return { image, bones, points: m.points.length / 2 };
+  }
+
+  private skinNamed(name: string): string {
+    const named = skinsOf(this.sym).filter((n) => n !== "default");
+    if (!named.includes(name)) throw new AgentError(`There is no skin "${name}"; the rig has ${named.length ? named.join(", ") : "none"} (add_skin makes one).`);
+    return name;
+  }
+
+  private addSkin(name: string) {
+    const refused = applySkins(this.store, "AI: New Skin", withNewSkin(this.sym, name));
+    if (refused) throw new AgentError(refused);
+    return { skins: skinsOf(this.sym).filter((n) => n !== "default"), showing: stageSkinOf(this.sym) };
+  }
+
+  private setSkinImage(args: Args) {
+    const skin = this.skinNamed(str(args, "skin"));
+    const layer = this.node(str(args, "layer"));
+    const count = displaysOf(layer).length;
+    if (!count) throw new AgentError(`"${layer.name}" shows no image, so a skin has nothing to put in its place.`);
+    const index = args.display === undefined ? 0 : Number(args.display);
+    if (!Number.isInteger(index) || index < 0 || index >= count) throw new AgentError(`"${layer.name}" has displays 0 to ${count - 1}.`);
+    let itemId: ItemId | null = null;
+    if (args.image !== null && args.image !== undefined) {
+      const item = this.libraryImages().find((i) => i.name === args.image);
+      if (!item) throw new AgentError(`There is no image "${String(args.image)}" in the library.`);
+      itemId = item.id;
+    }
+    this.store.history.transaction("AI: Skin Image", () => {
+      if (args.image !== undefined) {
+        const refused = doSetSkinImage(this.store, skin, layer.id, index, itemId, "AI: Skin Image");
+        if (refused) throw new AgentError(refused);
+      }
+      if (typeof args.only_in_skins === "boolean" && !!displaysOf(this.sym.nodes[layer.id]!)[index]!.skinOnly !== args.only_in_skins) {
+        doSetSkinOnly(this.store, layer.id, index, args.only_in_skins);
+      }
+    });
+    const ref = this.sym.skins?.find((d) => d.name === skin)?.displays?.[layer.id]?.[String(index)];
+    return { skin, layer: layer.name, display: index, image: ref ? this.store.project.items[ref.itemId]?.name ?? null : null, onlyInSkins: !!displaysOf(this.sym.nodes[layer.id]!)[index]!.skinOnly };
+  }
+
+  private setSkinMembers(args: Args) {
+    const skin = this.skinNamed(str(args, "skin"));
+    const bones = args.bones === undefined ? [] : list<string>(args, "bones").map((n) => this.bone(n).id);
+    const names = args.constraints === undefined ? [] : list<string>(args, "constraints");
+    const ik: IkId[] = [], transforms: TcId[] = [];
+    for (const n of names) {
+      const k = this.sym.ik.find((c) => c.name === n), t = (this.sym.transforms ?? []).find((c) => c.name === n);
+      if (k) ik.push(k.id); else if (t) transforms.push(t.id);
+      else throw new AgentError(`There is no IK or transform constraint "${n}".`);
+    }
+    const refused = doSetSkinMembers(this.store, skin, { bones, ik, transforms }, args.remove !== true, "AI: Skin Members");
+    if (refused) throw new AgentError(refused);
+    const def = this.sym.skins?.find((d) => d.name === skin);
+    return {
+      skin,
+      bones: (def?.bones ?? []).map((id) => this.sym.nodes[id]?.name),
+      constraints: [...(def?.ik ?? []).map((id) => this.sym.ik.find((c) => c.id === id)?.name), ...(def?.transforms ?? []).map((id) => this.sym.transforms?.find((c) => c.id === id)?.name)],
+    };
   }
 
   private addTransform(args: Args) {

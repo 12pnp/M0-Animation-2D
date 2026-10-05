@@ -705,7 +705,11 @@
 .skins-choice:hover { color: var(--fg-strong); }
 .skins-choice.on { background: var(--accent-row); color: var(--accent-row-ink); border-color: transparent; }
 .skins-folder { color: var(--fg-dim); font-size: var(--fs-sm); margin-top: 4px; }
-.skins-row.nested { padding-left: 12px; }
+.skins-row { display: flex; align-items: center; gap: 6px; padding: 2px 4px; border-radius: var(--radius); cursor: default; }
+.skins-row:hover { background: var(--hover); }
+.skins-row.on { background: var(--accent-row); color: var(--accent-row-ink); }
+.skins-row.nested { padding-left: 16px; }
+.skins-name { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .graph-panel { position: relative; height: 100%; min-height: 0; overflow: hidden; outline: none; }
 .graph-canvas { display: block; position: absolute; inset: 0; cursor: default; }
 .graph-footer { gap: 4px; flex-wrap: wrap; }

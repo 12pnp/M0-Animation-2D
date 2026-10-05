@@ -19,7 +19,8 @@ import { exportSpine, spineJson } from "@/core/spine/exportSpine";
 
 interface Worst { matrix: number; position: number; vertex: number; color: number; frames: number }
 
-function compare(rig: SampleRig): { worst: Worst; baked: number; warnings: string[] } {
+/** `skin` shown on both (none: the default skin alone); every `step`th frame. */
+function compare(rig: SampleRig, skin?: string, step = 1): { worst: Worst; baked: number; warnings: string[] } {
   const atlasText = rig.atlas;
   const original = JSON.parse(rig.json);
   const imported = importSpine(original, rig.name, imagesOf(atlasText));
@@ -30,6 +31,7 @@ function compare(rig: SampleRig): { worst: Worst; baked: number; warnings: strin
   const read = (json: unknown) => new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(atlasText))).readSkeletonData(json));
   const a = read(original);
   const b = read(JSON.parse(spineJson(exported.skeleton)));
+  if (skin) { a.setSkin(skin); b.setSkin(skin); }
   const rate = imported.project.frameRate;
   const worst: Worst = { matrix: 0, position: 0, vertex: 0, color: 0, frames: 0 };
   const fail = (where: string, what: string) => { throw new Error(`${rig.name} ${where}: ${what}`); };
@@ -61,8 +63,8 @@ function compare(rig: SampleRig): { worst: Worst; baked: number; warnings: strin
     if (!animB) fail(animA.name, "animation missing from the export");
     if (Math.abs(animB!.duration - animA.duration) > 1.5 / rate) fail(animA.name, `lasts ${animB!.duration}s, the original ${animA.duration}s`);
     const frames = Math.round(animA.duration * rate);
-    for (let f = 0; f <= frames; f++) {
-      const where = `"${animA.name}" frame ${f}`;
+    for (let f = 0; f <= frames; f += step) {
+      const where = `${skin ? `skin "${skin}" ` : ""}"${animA.name}" frame ${f}`;
       // Just after the frame: a file's key at float32(f / rate) may be a
       // hair later than f / rate itself, and it belongs to frame f.
       const t = f / rate + 2e-6;
@@ -72,6 +74,7 @@ function compare(rig: SampleRig): { worst: Worst; baked: number; warnings: strin
       for (const boneA of a.bones) {
         const boneB = b.findBone(boneA.data.name);
         if (!boneB) fail(where, `no bone "${boneA.data.name}"`);
+        if (boneA.active !== boneB!.active) fail(where, `bone "${boneA.data.name}" is ${boneB!.active ? "on" : "off"}, the original ${boneA.active ? "on" : "off"}`);
         const p = boneA.appliedPose, q = boneB!.appliedPose;
         const m = Math.max(Math.abs(p.a - q.a), Math.abs(p.b - q.b), Math.abs(p.c - q.c), Math.abs(p.d - q.d));
         const d = Math.max(Math.abs(p.worldX - q.worldX), Math.abs(p.worldY - q.worldY));
@@ -132,5 +135,12 @@ describe.skipIf(found.length === 0)("opening a Spine file and exporting it again
       expect(worst.frames).toBeGreaterThan(0);
       expect(baked).toBeLessThanOrEqual(BAKED[rig.name] ?? Infinity);
     });
+    const skins = ((JSON.parse(rig.json).skins ?? []) as Array<{ name: string }>).map((sk) => sk.name).filter((n) => n !== "default");
+    if (skins.length) {
+      // The skins become the model's (ARCHITECTURE ▸ Skins): each must play as it did.
+      it(`plays each of ${rig.name}'s ${skins.length} skins as the original does`, () => {
+        for (const skin of skins) expect(compare(rig, skin, 7).worst.frames).toBeGreaterThan(0);
+      });
+    }
   }
 });

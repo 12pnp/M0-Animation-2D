@@ -22,6 +22,7 @@ function displayZero(node: Node, itemId: ItemId): DisplayRef {
   const d: DisplayRef = { itemId, pivot: node.pivot };
   if (node.attachment) d.attachment = node.attachment;
   if (node.mesh) d.mesh = node.mesh;
+  if (node.skinOnly) d.skinOnly = true;
   return d;
 }
 

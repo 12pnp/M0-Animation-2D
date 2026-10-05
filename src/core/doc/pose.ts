@@ -13,6 +13,7 @@ import { DEFAULT_COLOR, isImage, isSymbol } from "./types";
 import type { ItemId, NodeId } from "./ids";
 import { sampleColorRaw, sampleTransformRaw, spanIndexAt } from "./timeline";
 import { anchorOf, displayAt } from "./displays";
+import { skinActivity, skinLookup, skinnedDisplay, stageSkinOf, type SkinActivity } from "./skins";
 
 /**
  * One node, resolved for a given frame. This is the single description that
@@ -200,15 +201,23 @@ export function localAt(
  * Paint order is the reverse of the layer list: `layers[0]` is the TOP layer
  * in the UI, and DragonBones draws later `slot[]` entries in front, so the
  * bottom layer is painted first and exported first.
+ *
+ * `skins` are the skins shown (ARCHITECTURE ▸ Skins): what each slot shows
+ * and which bones and constraints are on. null ignores skins altogether: the
+ * bind pose a weighted mesh is measured against, by the stage and the
+ * exporter alike.
  */
 export function evaluateSymbol(
   symbol: SymbolItem,
   animation: Animation | null,
   frame: number,
   mode: "setup" | "animate" = "animate",
+  skins: readonly string[] | null = stageSkinOf(symbol),
 ): Pose {
   const byNode = new Map<NodeId, PoseEntry>();
   const entries: PoseEntry[] = [];
+  const lookup = skins ? skinLookup(symbol, skins) : null;
+  const activity = skinActivity(symbol, skins);
 
   // Layers bottom-to-top = paint back-to-front.
   const ordered = [...symbol.layers].reverse();
@@ -217,7 +226,7 @@ export function evaluateSymbol(
     const node = symbol.nodes[layer.nodeId];
     if (!node) continue;
     const { transform, displayIndex, color, onTrack, since } = localAt(node, animation, frame, mode);
-    const display = displayAt(node, displayIndex);
+    const display = skinnedDisplay(node, displayIndex, lookup);
     entries.push({
       nodeId: node.id,
       node,
@@ -228,7 +237,8 @@ export function evaluateSymbol(
       display,
       displaySince: since,
       // A node with artwork is invisible on an index its list does not have.
-      visible: layer.visible && onTrack && displayIndex >= 0 && (display !== null || !node.itemId),
+      // A bone a skin switches off draws nothing (`skinActivity`).
+      visible: layer.visible && onTrack && displayIndex >= 0 && (display !== null || !node.itemId) && !activity.inactive.has(node.id),
       drawIndex: entries.length,
     });
   }
@@ -278,8 +288,8 @@ export function evaluateSymbol(
 
   for (const e of entries) resolve(e);
 
-  applyConstraints(symbol, byNode, mode === "animate" ? animation : null, frame);
-  applyMeshes(symbol, entries, byNode, mode === "animate" ? animation : null, frame, mode);
+  applyConstraints(symbol, byNode, mode === "animate" ? animation : null, frame, activity);
+  applyMeshes(symbol, entries, byNode, mode === "animate" ? animation : null, frame, mode, skins);
 
   return { entries, byNode };
 }
@@ -308,10 +318,12 @@ export function evaluateSymbol(
  */
 function applyMeshes(
   symbol: SymbolItem, entries: PoseEntry[], byNode: Map<NodeId, PoseEntry>,
-  animation: Animation | null, frame: number, mode: "setup" | "animate",
+  animation: Animation | null, frame: number, mode: "setup" | "animate", skins: readonly string[] | null,
 ): void {
   let setup: Map<NodeId, PoseEntry> | null = null;
-  const setupOf = () => (setup ??= mode === "setup" ? byNode : evaluateSymbol(symbol, null, 0, "setup").byNode);
+  // The bind pose ignores skins: a skin constraint must not move what a mesh is bound to.
+  const same = mode === "setup" && (skins === null || !symbol.skins?.length);
+  const setupOf = () => (setup ??= same ? byNode : evaluateSymbol(symbol, null, 0, "setup", null).byNode);
   for (const e of entries) {
     const mesh = e.display?.mesh;
     if (!mesh) continue;
@@ -331,7 +343,9 @@ function applyMeshes(
   }
 }
 
-function applyConstraints(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>, animation: Animation | null, frame: number): void {
+function applyConstraints(
+  symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>, animation: Animation | null, frame: number, activity: SkinActivity,
+): void {
   if (symbol.ik.length === 0 && !symbol.transforms?.length) return;
 
   const children = new Map<NodeId, PoseEntry[]>();
@@ -374,6 +388,7 @@ function applyConstraints(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>, an
   const ikBone = (e: PoseEntry): IkBone => ({ ...toSpineLocal(localOf(e)), ...spineWorld(e.world) });
 
   for (const constraint of symbol.ik) {
+    if (activity.ikOff.has(constraint.id)) continue;
     const { mix, bendPositive, softness } = ikPoseAt(constraint, animation, frame);
     if (mix === 0) continue;
     const effector = byNode.get(constraint.boneId);
@@ -416,6 +431,7 @@ function applyConstraints(symbol: SymbolItem, byNode: Map<NodeId, PoseEntry>, an
   const appliedLocal = (e: PoseEntry): TcLocal =>
     worldSet.has(e.nodeId) ? tcLocalOf(spineWorld(e.world), parentSpine(e)) : toSpineLocal(localOf(e));
   for (const constraint of symbol.transforms ?? []) {
+    if (activity.tcOff.has(constraint.id)) continue;
     const mix = tcMixAt(constraint, animation, frame);
     if (tcIdle(mix)) continue;
     const source = byNode.get(constraint.sourceId);
@@ -636,7 +652,8 @@ export function symbolBounds(
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const here = childFrame(sym, ctx);
   const inner = innerContext(sym, ctx);
-  const pose = evaluateSymbol(sym, here.animation, here.frame, ctx.mode);
+  // Only the exported symbol's skins reach the export (ARCHITECTURE ▸ Skins).
+  const pose = evaluateSymbol(sym, here.animation, here.frame, ctx.mode, depth === 0 ? stageSkinOf(sym) : null);
   for (const e of pose.entries) {
     if (!e.display) continue;
     const item = project.items[e.display.itemId];

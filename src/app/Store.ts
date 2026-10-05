@@ -40,6 +40,9 @@ export interface UiState {
   /** The Mesh tool's weight brush (ARCHITECTURE ▸ Meshes): on, for which
    *  bone, its radius in screen pixels and how much a stroke adds. */
   meshPaint: { on: boolean; bone: NodeId | null; radius: number; strength: number };
+  /** The skin the Skins and Properties panels edit (ARCHITECTURE ▸ Skins);
+   *  null: the first one shown, else the first. */
+  editSkin: string | null;
   /** While playing, how far past `frame` the stage poses (0..1): smooth
    *  playback draws between frames (`playStep`). 0 otherwise. */
   subFrame: number;
@@ -121,6 +124,7 @@ export class Store {
     timelineFocus: [],
     eventFrames: [],
     meshPaint: { on: false, bone: null, radius: 40, strength: 0.1 },
+    editSkin: null,
     subFrame: 0,
     playing: false,
     loop: true,

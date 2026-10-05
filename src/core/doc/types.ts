@@ -6,7 +6,7 @@ import type { AnimId, AssetId, FolderId, IkId, ItemId, LayerId, NodeId, TcId } f
 import type { TcChannel, TcFrom } from "@/core/math/transformConstraint";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 21;
+export const DOC_VERSION = 22;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -77,11 +77,13 @@ export interface SymbolItem {
    *  export as it came. The stage poses such a symbol through the runtime
    *  (`core/spine/spinePose.ts`), so what it carries is also what it shows. */
   spine?: SpineCarry;
-  /** An opened rig's skins the stage and Preview show, combined as Spine
-   *  combines skins (the default skin under them all). Absent: the default
-   *  skin, or the first other one when it draws nothing (`stageSkinOf`).
+  /** The skins the stage and Preview show, combined as Spine combines
+   *  skins (the default skin under them all). Absent: the default skin, or
+   *  the first other one when it draws nothing (`stageSkinOf`).
    *  The editor's choice only: the export does not write it. */
   stageSkins?: string[];
+  /** Skins made or opened here (ARCHITECTURE ▸ Skins), in order. */
+  skins?: SkinDef[];
   /** The events its animations fire (`core/doc/events.ts`), names unique,
    *  as Spine's skeleton `events`. */
   events?: EventDef[];
@@ -128,7 +130,8 @@ export interface SpineCarry {
   /** Every constraint's name, the model's IK included, in the file's order:
    *  the order Spine applies them in. */
   constraintOrder: string[];
-  /** Skins as the file has them, less the default skin's displays. */
+  /** What of the file's skins the model does not hold (`SymbolItem.skins`
+   *  holds the rest), merged back by name on export. */
   skins: Array<Record<string, unknown>>;
   /** Event definitions, by name. */
   events?: Record<string, unknown>;
@@ -186,6 +189,8 @@ export interface Node {
   /** Display 0 as a mesh (ARCHITECTURE ▸ Meshes); extra displays carry their
    *  own. */
   mesh?: MeshData;
+  /** Display 0 only in skins (`DisplayRef.skinOnly`). */
+  skinOnly?: true;
   /** Bind-pose colour, exported as `slot.color`. Absent means neutral.
    *  Keyframe colour overrides it wholesale, as it does in the runtime. */
   color?: ColorTransform;
@@ -231,6 +236,24 @@ export interface DisplayRef {
   /** The image as a mesh (ARCHITECTURE ▸ Meshes), exported as a Spine mesh
    *  attachment. */
   mesh?: MeshData;
+  /** The default skin leaves it empty: only a skin shows something here
+   *  (Spine's skin placeholder, ARCHITECTURE ▸ Skins). */
+  skinOnly?: true;
+}
+
+/**
+ * A skin (ARCHITECTURE ▸ Skins): what it shows in place of a node's
+ * displays, by display index, and the bones and constraints only the skins
+ * listing them have. The default skin is the nodes' own displays.
+ */
+export interface SkinDef {
+  /** Unique; never "default". */
+  name: string;
+  /** node → display index → what this skin shows there. */
+  displays?: Record<NodeId, Record<string, DisplayRef>>;
+  bones?: NodeId[];
+  ik?: IkId[];
+  transforms?: TcId[];
 }
 
 /**

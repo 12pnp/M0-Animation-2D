@@ -446,6 +446,47 @@
     }
   },
   {
+    "name": "add_skin",
+    "description": "Make a skin, in one undoable step (Spine's skins: one skeleton, several characters or outfits). It starts empty and is shown on the stage alone; set_skin_image gives it images, set_skin_members bones and constraints only it has. Returns the skins.",
+    "input_schema": {
+      "type": "object",
+      "properties": { "name": { "type": "string" } },
+      "required": ["name"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "set_skin_image",
+    "description": "What a skin shows in a layer's place, in one undoable step: `image` is a library image (null: the layer's own image again). `display` picks which of the layer's displays (default 0). `only_in_skins` true leaves that display empty in the default skin, so only skins fill it (Spine's skin placeholder). The image is placed about the same relative point as the layer's own.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "skin": { "type": "string" },
+        "layer": { "type": "string" },
+        "image": { "type": ["string", "null"] },
+        "display": { "type": "integer", "minimum": 0 },
+        "only_in_skins": { "type": "boolean" }
+      },
+      "required": ["skin", "layer"],
+      "additionalProperties": false
+    }
+  },
+  {
+    "name": "set_skin_members",
+    "description": "Bones and constraints only some skins have, in one undoable step: each bone (with the bones and pictures below it) exists, and each IK or transform constraint applies, only while a skin listing it is shown. `remove` true takes them out of the skin instead.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "skin": { "type": "string" },
+        "bones": { "type": "array", "items": { "type": "string" } },
+        "constraints": { "type": "array", "items": { "type": "string" } },
+        "remove": { "type": "boolean" }
+      },
+      "required": ["skin"],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "set_cycle",
     "description": "Make an animation a cycle, or let it play once. A cycle loops with its last frame showing frame 0 again: an animation that did not end that way grows by one frame for it, and every bone that reaches the end without a key there gets frame 0's pose keyed at that frame. Turning it off only stops the looping; keys stay. One undoable step. get_animation's `seam` then lists any bone that still does not close.",
     "input_schema": {

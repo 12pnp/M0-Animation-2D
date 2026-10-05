@@ -1,4 +1,4 @@
-import type { DeformKey, DisplayRef, EventDef, EventKey, IkKey, LibraryFolder, MeshData, Node, Project, TcKey, TransformConstraint } from "./types";
+import type { DeformKey, DisplayRef, EventDef, EventKey, IkKey, LibraryFolder, MeshData, Node, Project, SkinDef, TcKey, TransformConstraint } from "./types";
 import { eventDefsFromSpine, withEventDefValues } from "./events";
 import { DEFAULT_MOTION_BLUR, DOC_VERSION, type MotionBlurSettings, TIMELINE_PROPS } from "./types";
 import { observeId } from "./ids";
@@ -95,7 +95,7 @@ export function validateProject(raw: unknown): ValidationResult {
 
     if (item.stageSkins !== undefined) {
       const skins = Array.isArray(item.stageSkins) ? item.stageSkins.filter((n): n is string => typeof n === "string") : null;
-      if (skins && item.spine) item.stageSkins = [...new Set(skins)];
+      if (skins && (item.spine || Array.isArray(item.skins))) item.stageSkins = [...new Set(skins)];
       else delete item.stageSkins;
     }
 
@@ -399,6 +399,23 @@ export function validateProject(raw: unknown): ValidationResult {
       else delete item.transforms;
     }
     const tcIds = new Set<string>((item.transforms ?? []).map((k) => k.id));
+    // Skins: unique names, never "default"; displays of nodes and indices
+    // the symbol has, of images that exist; members it has.
+    for (const node of Object.values(item.nodes)) {
+      if (node.skinOnly !== undefined && (node.skinOnly !== true || !node.itemId)) delete node.skinOnly;
+      for (const d of node.extraDisplays ?? []) if (d.skinOnly !== undefined && d.skinOnly !== true) delete d.skinOnly;
+    }
+    if (item.skins !== undefined) {
+      const raw = Array.isArray(item.skins) ? (item.skins as unknown[]) : [];
+      const skins: SkinDef[] = [];
+      const ikIds = new Set<string>(item.ik.map((k) => k.id));
+      for (const r of raw) {
+        const def = sanitizeSkin(r, item.nodes, ikIds, tcIds, (id) => p.items[id as never]?.kind === "image");
+        if (def && !skins.some((x) => x.name === def.name)) skins.push(def);
+      }
+      if (skins.length) item.skins = skins;
+      else delete item.skins;
+    }
     for (const anim of item.animations) {
       if (anim.transforms === undefined) continue;
       const raw = anim.transforms && typeof anim.transforms === "object" ? (anim.transforms as Record<string, unknown>) : {};
@@ -573,6 +590,7 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
   // 20 -> 21: `MeshData` on displays (`Node.mesh`, `DisplayRef.mesh`) and
   // `Animation.deforms`. Additive; an older build would drop them.
   20: (p) => ({ ...p, version: 21 }),
+  21: (p) => ({ ...p, version: 22 }),
   // 19 -> 20: `SymbolItem.transforms` and `Animation.transforms`, transform
   // constraints and their keys. Additive; an older build would drop them.
   19: (p) => ({ ...p, version: 20 }),
@@ -612,6 +630,44 @@ const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite
 /** A mesh read from disk, or null when it cannot be one: an even list of
  *  finite points, triangles of existing points, an outline of 3 or more,
  *  weights (when present) per point, of bones the symbol has. */
+function sanitizeSkin(
+  raw: unknown, nodes: Record<string, Node>, ikIds: Set<string>, tcIds: Set<string>, isImage: (id: string) => boolean,
+): SkinDef | null {
+  if (!raw || typeof raw !== "object") return null;
+  const r = raw as Record<string, unknown>;
+  const name = typeof r.name === "string" ? r.name.trim() : "";
+  if (!name || name === "default") return null;
+  const def: SkinDef = { name };
+  const displays: Record<string, Record<string, DisplayRef>> = {};
+  for (const [nodeId, byIndex] of Object.entries(r.displays && typeof r.displays === "object" ? r.displays as Record<string, unknown> : {})) {
+    const node = nodes[nodeId];
+    if (!node || !byIndex || typeof byIndex !== "object") continue;
+    const count = displaysOf(node).length;
+    const out: Record<string, DisplayRef> = {};
+    for (const [index, ref] of Object.entries(byIndex as Record<string, unknown>)) {
+      const i = Number(index);
+      if (!Number.isInteger(i) || i < 0 || i >= count || !ref || typeof ref !== "object") continue;
+      const d = ref as Record<string, unknown>;
+      if (typeof d.itemId !== "string" || !isImage(d.itemId)) continue;
+      const pv = d.pivot && typeof d.pivot === "object" ? d.pivot as Record<string, unknown> : {};
+      const clean: DisplayRef = { itemId: d.itemId as DisplayRef["itemId"], pivot: { x: num(pv.x, 0), y: num(pv.y, 0) } };
+      const a = d.attachment as Record<string, unknown> | undefined;
+      if (a && typeof a === "object" && typeof a.name === "string" && a.data && typeof a.data === "object") clean.attachment = { name: a.name, data: a.data as Record<string, unknown> };
+      out[String(i)] = clean;
+    }
+    if (Object.keys(out).length) displays[nodeId] = out;
+  }
+  if (Object.keys(displays).length) def.displays = displays as SkinDef["displays"];
+  const ids = (v: unknown, keep: (id: string) => boolean) => [...new Set(Array.isArray(v) ? v.filter((id): id is string => typeof id === "string" && keep(id)) : [])];
+  const bones = ids(r.bones, (id) => !!nodes[id]);
+  const ik = ids(r.ik, (id) => ikIds.has(id));
+  const transforms = ids(r.transforms, (id) => tcIds.has(id));
+  if (bones.length) def.bones = bones as SkinDef["bones"];
+  if (ik.length) def.ik = ik as SkinDef["ik"];
+  if (transforms.length) def.transforms = transforms as SkinDef["transforms"];
+  return def;
+}
+
 function sanitizeMesh(raw: unknown, nodes: Record<string, unknown>): MeshData | null {
   if (!raw || typeof raw !== "object") return null;
   const r = raw as Record<string, unknown>;

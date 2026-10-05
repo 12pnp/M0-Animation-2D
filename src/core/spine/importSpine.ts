@@ -1,18 +1,18 @@
-import type { AssetId, NodeId } from "@/core/doc/ids";
+import type { AssetId, IkId, NodeId, TcId } from "@/core/doc/ids";
 import { fromOffsets } from "@/core/doc/drawOrder";
 import { eventDefsFromSpine, eventValues } from "@/core/doc/events";
 import { newAnimId, newIkId, newTcId } from "@/core/doc/ids";
 import type { TcChannel, TcFrom, TcTo } from "@/core/math/transformConstraint";
 import type {
   Animation, BlendMode, DrawOrderKey, ColorTransform, DisplayRef, EventDef, EventKey, IkConstraint, IkKey, ImageItem, TcKey, TransformConstraint, Keyframe, Layer, Node, Project,
-  SpineAttachmentRef, SymbolItem, Track,
+  SkinDef, SpineAttachmentRef, SymbolItem, Track,
 } from "@/core/doc/types";
 import { isDefaultColor } from "@/core/doc/types";
 import { createAnimation, createImageItem, createLayer, createNode, createProject } from "@/core/doc/defaults";
 import { sampleColorRaw, sampleTransformRaw } from "@/core/doc/timeline";
 import { IDENTITY, cloneTf, type Transform } from "@/core/math/Transform";
 import type { ExportDiagnostic } from "@/core/export/diagnostics";
-import { bonesToNames, lastTime, regionsOf } from "./carry";
+import { bonesToNames, lastTime, regionsOf, SKIN_CONSTRAINT_KINDS } from "./carry";
 import { type ChannelGroup, type Comp, type CompKey, type KeyTiming, mergeKeys, valueAt } from "./importKeys";
 import { fromSpineLocal, type SpineLocal } from "./transform";
 import { SPINE_VERSION, type SpineInherit, type SpineRaw } from "./types";
@@ -102,6 +102,7 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     project.itemOrder.push(item.id);
     itemByRegion.set(img.name, item);
   }
+  const displayItem = (att: SpineRaw, key: string) => displayItemOf(itemByRegion, att, key);
 
   /* ── bones ── */
   const bonesIn = file.bones.filter(obj);
@@ -168,15 +169,23 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     const displays: DisplayRef[] = [];
     const byKey = obj(defaultAtts[slotName]) ? defaultAtts[slotName]! : {};
     const setupName = str(s.attachment) ? s.attachment : null;
+    // A key only other skins fill is a skin-only display (Spine's skin
+    // placeholder, ARCHITECTURE ▸ Skins), the first skin's attachment standing in.
+    const skinOnly = new Map<string, SpineRaw>();
+    for (const skin of skinsIn) {
+      if (skin === defaultSkin || !obj(skin.attachments) || !obj(skin.attachments[slotName])) continue;
+      for (const [key, att] of Object.entries(skin.attachments[slotName] as SpineRaw)) {
+        if (!(key in byKey) && !skinOnly.has(key) && obj(att) && displayItem(att, key)) skinOnly.set(key, att);
+      }
+    }
     // The setup attachment first: display 0 is what the bind pose shows.
-    const keys = Object.keys(byKey).sort((p, q) => Number(q === setupName) - Number(p === setupName));
+    const keys = [...Object.keys(byKey), ...skinOnly.keys()].sort((p, q) => Number(q === setupName) - Number(p === setupName));
     for (const key of keys) {
-      const att = byKey[key];
+      const att = byKey[key] ?? skinOnly.get(key);
       if (!obj(att)) continue;
       const regions = regionsOf(att, key);
-      const item = regions.length === 1 ? itemByRegion.get(regions[0]!) : undefined;
-      const displayable = !att.sequence && item && (att.type === undefined || att.type === "region" || att.type === "mesh" || att.type === "linkedmesh");
-      if (!displayable) {
+      const item = displayItem(att, key);
+      if (!item) {
         if (regions.length && regions.some((r) => !itemByRegion.has(r))) {
           warn(`"${slotName}" ▸ "${key}" draws ${regions.filter((r) => !itemByRegion.has(r)).map((r) => `"${r}"`).join(", ")}, which the atlas does not have.`);
         }
@@ -184,12 +193,15 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
         continue;
       }
       const ref: SpineAttachmentRef = { name: key, data: bonesToNames(att, boneNames) };
-      displays.push({ itemId: item!.id, pivot: { x: item!.width / 2, y: item!.height / 2 }, attachment: ref });
+      const display: DisplayRef = { itemId: item.id, pivot: { x: item.width / 2, y: item.height / 2 }, attachment: ref };
+      if (!(key in byKey)) display.skinOnly = true;
+      displays.push(display);
     }
     if (displays.length) {
       node.itemId = displays[0]!.itemId;
       node.pivot = displays[0]!.pivot;
       node.attachment = displays[0]!.attachment;
+      if (displays[0]!.skinOnly) node.skinOnly = true;
       if (displays.length > 1) node.extraDisplays = displays.slice(1);
     }
     const setupIndex = setupName === null ? -1 : displays.findIndex((d) => d.attachment!.name === setupName);
@@ -214,15 +226,6 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
     const rest = pick(defaultSkin, (k) => k !== "attachments") ?? { name: "default" };
     const kept = Object.keys(carriedDefault).length || Object.keys(rest).length > 1;
     if (kept) carriedSkins.push({ ...rest, attachments: carriedDefault });
-  }
-  for (const skin of skinsIn) {
-    if (skin === defaultSkin) continue;
-    const atts: Record<string, Record<string, SpineRaw>> = {};
-    for (const [slot, byKey] of Object.entries(obj(skin.attachments) ? skin.attachments : {})) {
-      if (!obj(byKey)) continue;
-      atts[slot] = Object.fromEntries(Object.entries(byKey).filter(([, a]) => obj(a)).map(([k, a]) => [k, bonesToNames(a as SpineRaw, boneNames)]));
-    }
-    carriedSkins.push({ ...skin, attachments: atts });
   }
 
   /* ── layers: the bone tree, then the slots, front first ── */
@@ -256,6 +259,49 @@ export function importSpine(file: unknown, name: string, images: ReadonlyMap<str
       warn(`The file has a top-level "${legacy}" list, a layout from before Spine 4.3; those constraints were not read.`);
     }
   }
+
+  /* ── skins: each other skin a model skin; what it cannot hold is carried ── */
+  const skinDefs: SkinDef[] = [];
+  const ikNamed = new Map(sym.ik.map((k) => [k.name, k.id]));
+  const tcNamed = new Map((sym.transforms ?? []).map((k) => [k.name, k.id]));
+  for (const skin of skinsIn) {
+    if (skin === defaultSkin) continue;
+    const def: SkinDef = { name: String(skin.name) };
+    const rest: SpineRaw = pick(skin, (k) => k !== "attachments" && k !== "bones" && !(SKIN_CONSTRAINT_KINDS as readonly string[]).includes(k)) ?? {};
+    const atts: Record<string, Record<string, SpineRaw>> = {};
+    for (const [slot, byKey] of Object.entries(obj(skin.attachments) ? skin.attachments : {})) {
+      if (!obj(byKey)) continue;
+      const node = slotNode.get(slot);
+      const names = node ? displayNames(node) : [];
+      for (const [key, att] of Object.entries(byKey)) {
+        if (!obj(att)) continue;
+        const data = bonesToNames(att as SpineRaw, boneNames);
+        const index = names.indexOf(key);
+        const item = displayItem(att as SpineRaw, key);
+        // Under a key the slot has a display for: that display, in this skin.
+        if (node && index >= 0 && item) {
+          ((def.displays ??= {})[node.id] ??= {})[String(index)] = { itemId: item.id, pivot: { x: item.width / 2, y: item.height / 2 }, attachment: { name: key, data } };
+        } else (atts[slot] ??= {})[key] = data;
+      }
+    }
+    if (Object.keys(atts).length) rest.attachments = atts;
+    const bones = Array.isArray(skin.bones) ? skin.bones.filter(str) : [];
+    const boneIds = bones.map((b) => boneNode.get(b)?.id).filter((id): id is NodeId => !!id);
+    if (boneIds.length) def.bones = boneIds;
+    const strayBones = bones.filter((b) => !boneNode.has(b));
+    if (strayBones.length) rest.bones = strayBones;
+    for (const kind of SKIN_CONSTRAINT_KINDS) {
+      const listed = Array.isArray(skin[kind]) ? (skin[kind] as unknown[]).filter(str) : [];
+      const model = kind === "ik" ? ikNamed : kind === "transform" ? tcNamed : null;
+      const kept = listed.filter((n) => !model?.has(n));
+      if (kind === "ik") { const ids = listed.map((n) => ikNamed.get(n)).filter((id): id is IkId => !!id); if (ids.length) def.ik = ids; }
+      if (kind === "transform") { const ids = listed.map((n) => tcNamed.get(n)).filter((id): id is TcId => !!id); if (ids.length) def.transforms = ids; }
+      if (kept.length) rest[kind] = kept;
+    }
+    skinDefs.push(def);
+    if (Object.keys(rest).length > 1) carriedSkins.push(rest);
+  }
+  if (skinDefs.length) sym.skins = skinDefs;
 
   sym.spine = {
     header: pick(header, (k) => k !== "spine" && k !== "fps") ?? {},
@@ -817,6 +863,14 @@ function ikOf(c: SpineRaw, bones: Map<string, Node>, warn: (m: string) => void):
 }
 
 /* ── helpers ─────────────────────────────────────────────────────────────── */
+
+/** The image a default-skin or skin attachment shows as a display: a region,
+ *  mesh or linked mesh drawing one region the atlas has, not a sequence. */
+function displayItemOf(itemByRegion: Map<string, ImageItem>, att: SpineRaw, key: string): ImageItem | undefined {
+  if (att.sequence || !(att.type === undefined || att.type === "region" || att.type === "mesh" || att.type === "linkedmesh")) return undefined;
+  const regions = regionsOf(att, key);
+  return regions.length === 1 ? itemByRegion.get(regions[0]!) : undefined;
+}
 
 function pick(o: SpineRaw, keep: (k: string) => boolean): SpineRaw | null {
   const out: SpineRaw = {};

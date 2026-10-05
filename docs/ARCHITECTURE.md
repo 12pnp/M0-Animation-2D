@@ -1111,7 +1111,8 @@ flowchart LR
   the skeleton's root whatever its name (`rootBoneOf`).
 - **Displays.** The default skin's regions and meshes are the slot's displays, each keeping
   its attachment JSON (`DisplayRef.attachment`), the setup attachment first;
-  `Node.setupDisplay` −1 means the setup shows none. Everything else is carried
+  `Node.setupDisplay` −1 means the setup shows none. The other skins become the model's
+  (Skins): a key only skins have is a skin-only display. Everything else is carried
   (`SymbolItem.spine`, `Animation.spine`, `Node.spine`, `IkConstraint.spine`).
   Weighted vertices hold bone NAMES in the document (`carry.ts`), turned back into the
   export's indices on the way out, because the export may order bones differently.
@@ -1151,7 +1152,7 @@ The skeleton is `exportSpine(…, { setupOnly: true })`, the file the export wri
 generated keys, over one untrimmed page of library images. It is rebuilt only when the
 structure changes (`structureKey`). Posing spineboy-pro or celestial-circus takes 0.3 ms.
 Physics is posed at rest (`Physics.reset`), because a seek has no frames before it to
-simulate from. The skins shown over the default skin are `stageSkinOf`: the symbol's
+simulate from. The skins shown over the default skin are `stageSkinOf` (`core/doc/skins.ts`): the symbol's
 choice (`SymbolItem.stageSkins`, from the stage bar's Skin picker, `SetStageSkins`),
 else none, or the first other skin when the default one draws nothing. Several are
 combined into one `Skin` (`addSkin`, a later one winning a shared slot key) by the stage
@@ -1940,6 +1941,59 @@ per mesh node, one offset pair per point in the node's space.
 - **Checked**: `spineParity` ▸ "meshes": unweighted, weighted, partly unweighted and deform keys
   (linear, smooth, stepped) against spine-core's world vertices frame by frame.
 - The AI's `make_mesh` and `bind_mesh`.
+
+## Skins
+
+One skeleton, several characters or outfits, as Spine's skins (docs/SKINS-PLAN.md).
+`SymbolItem.skins` (schema 22): `{ name, displays?, bones?, ik?, transforms? }`, where
+`displays[nodeId][index]` is what the skin shows in place of that node's display. The default
+skin is the nodes' own displays. `DisplayRef.skinOnly` (display 0: `Node.skinOnly`) leaves a
+display empty in the default skin: Spine's skin placeholder, its own image standing in while
+editing.
+
+- **A display index is the placeholder.** Its attachment key (the image name the exporter
+  gives it, or an opened attachment's name) is what attachment keys name; a skin's display
+  is written under the same slot and key in that skin. Displays are only appended or swapped,
+  so the indices hold. A skin display placed by the panel keeps the own display's pivot in
+  proportion to the new image (`skinDisplayFor`).
+- **The rules are spine-core's** (`core/doc/skins.ts`, checked in `spineParity` ▸ "skins"):
+  - what a slot shows: the shown skins in order, the last holding the key winning
+    (`Skin.addSkin`), else the default skin; a skin-only display with no skin holding it
+    shows nothing (`skinnedDisplay`);
+  - **skin bones** (`Skeleton.updateCache`): a bone some skin lists is off unless a shown skin
+    lists it or one of its descendants; its slots are not drawn (`skinActivity`). The export
+    also lists every non-bone descendant of a listed node, since each picture is a bone of its
+    own there (`skinBoneSet`); adding a bone in the UI adds the bones below it
+    (`withDescendantBones`). A bone left out below a listed one would stay on in Spine with a
+    stale parent, which the stage does not copy;
+  - **skin constraints**: on when the source is (an IK's target, a transform constraint's
+    source) and, if some skin lists it, a shown skin does.
+- **The format lists a skin's constraints per kind**: `ik`, `transform`, `path`, `physics`,
+  `slider` (`SKIN_CONSTRAINT_KINDS`). A single `constraints` list is ignored by spine-core.
+- **`evaluateSymbol` takes the shown skins** (default `stageSkinOf`). null ignores skins
+  altogether: the bind pose a weighted mesh is measured against, which the stage
+  (`applyMeshes`) and the exporter (`setupOf`) both take, so a skin constraint cannot move
+  what a mesh is bound to. Nested symbols are evaluated with null on the stage, as the export
+  writes only the exported symbol's skins (a nested symbol with skins warns).
+- **Export** (`skinsOfModel`): each skin's attachments, bones and constraints, all marked
+  `skin`; a skin-only display keeps its key (setup attachment and keys still name it) out of
+  the default skin, and `exportedDisplays` keeps every display a skin fills. A carried skin of
+  the same name is merged in, the model winning a key both have.
+- **Import**: each non-default skin becomes a model skin: a region or mesh under a key the slot
+  has a display for overrides that display; a key only skins have becomes a skin-only display
+  (the first skin's attachment standing in); bones and modelled IK and transform constraints
+  become members by id. The rest (points, bounding boxes, paths, path and physics constraints)
+  stays in `SpineCarry.skins` under the skin's name. `spineImport` plays every skin of every
+  sample against the original (369 overrides and 130 skin bones in mix-and-match).
+- **Editing**: the Skins panel makes, renames (also double-click) and deletes skins, its
+  switches choose what the stage and Preview show, and a click picks the skin the Properties
+  panel edits (`ui.editSkin`, `editedSkin`). Properties ▸ Skins on an image: the skin's image for
+  each display and Only in skins; on a bone: which skins have it and the constraints it drives.
+  Every edit is one `SetSkins` (the skins, the stage's choice and the carried skins as one
+  value) or `SetSkinOnly`; both invalidate the symbol's bounds, as `SetStageSkins` now does.
+- The AI's `add_skin`, `set_skin_image` and `set_skin_members`; `show` takes skins for any rig.
+- Not built: skin colours, per-skin deform keys, a mesh made for a skin image (a skin display
+  is a region, or the opened attachment it came with), linked meshes.
 
 ## Bone paths
 

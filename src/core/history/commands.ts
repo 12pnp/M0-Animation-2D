@@ -1335,7 +1335,7 @@ export class SetExportSettings implements Command {
 }
 
 
-/** Which skins an opened rig shows on the stage and in the Preview
+/** Which skins a rig shows on the stage and in the Preview
  *  (`SymbolItem.stageSkins`); null goes back to the automatic choice. */
 export class SetStageSkins implements Command {
   readonly kind = "symbol.skins";
@@ -1352,11 +1352,13 @@ export class SetStageSkins implements Command {
     if (!this.captured) { this.before = sym.stageSkins; this.captured = true; }
     if (this.skins) sym.stageSkins = [...this.skins];
     else delete sym.stageSkins;
+    invalidateBounds([this.symbolId]);
   }
 
   revert(p: Project): void {
     const sym = symbolOf(p, this.symbolId);
     if (this.before) sym.stageSkins = this.before;
     else delete sym.stageSkins;
+    invalidateBounds([this.symbolId]);
   }
 }

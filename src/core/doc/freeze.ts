@@ -3,8 +3,8 @@ import type { Project } from "./types";
 /**
  * A guard for the rule every command relies on: the document's VALUES are
  * replaced, never modified. A value is a track with everything under it
- * (keys, transforms, colours, eases) and a node's `bind`, `pivot`, `color`
- * and `extraDisplays`. An undo step keeps the old object, and the frame
+ * (keys, transforms, colours, eases), a node's `bind`, `pivot`, `color`
+ * and `extraDisplays`, and a symbol's `skins`. An undo step keeps the old object, and the frame
  * algebra shares objects between the old track and the new one, so a write
  * into one of them changes history behind every command holding it —
  * `SetPivot` shifted the keys of an earlier F5 that way, and nothing showed
@@ -29,6 +29,7 @@ export function freezeValues(project: Project): void {
       if (node.color) deepFreeze(node.color);
       if (node.extraDisplays) deepFreeze(node.extraDisplays);
     }
+    if (item.skins) deepFreeze(item.skins);
     for (const anim of item.animations) {
       for (const track of Object.values(anim.tracks)) deepFreeze(track);
     }

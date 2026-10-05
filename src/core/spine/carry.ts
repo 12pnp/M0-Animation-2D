@@ -101,13 +101,18 @@ export function constraintRefs(c: SpineRaw): CarriedRef[] {
   return out;
 }
 
+/** How a skin lists the constraints it enables, one list per kind. */
+export const SKIN_CONSTRAINT_KINDS = ["ik", "transform", "path", "physics", "slider"] as const;
+
 /** Every name a carried skin relies on: its slots, the bones and
  *  constraints it enables, weighted bones, linked meshes' parents. */
 export function skinRefs(skin: SpineRaw): CarriedRef[] {
   const out: CarriedRef[] = [];
   const where = `skin "${String(skin.name)}"`;
   for (const b of (skin.bones as unknown[] | undefined) ?? []) if (str(b)) out.push({ kind: "bone", name: b, where });
-  for (const c of (skin.constraints as unknown[] | undefined) ?? []) if (str(c)) out.push({ kind: "constraint", name: c, where });
+  for (const kind of SKIN_CONSTRAINT_KINDS) {
+    for (const c of (skin[kind] as unknown[] | undefined) ?? []) if (str(c)) out.push({ kind: "constraint", name: c, where });
+  }
   const atts = obj(skin.attachments) ? skin.attachments : {};
   for (const [slot, byKey] of Object.entries(atts)) {
     out.push({ kind: "slot", name: slot, where });

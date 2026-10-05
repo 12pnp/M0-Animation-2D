@@ -325,3 +325,47 @@ describe("structure", () => {
     [e.world.a, e.world.b, e.world.c, e.world.d].forEach((v, i) => expect(v).toBeCloseTo(setupWorld(file)[i]!, 9));
   });
 });
+
+describe("skins", () => {
+  it("become the model's: an override per display, a skin-only display per key only skins have, members by id", () => {
+    const file = skeleton({
+      bones: [{ name: "root" }, { name: "arm", parent: "root" }, { name: "t", parent: "root" }],
+      slots: [{ name: "body", bone: "root", attachment: "a" }, { name: "hat", bone: "root", attachment: "c" }],
+      constraints: [{ type: "ik", name: "reach", bones: ["arm"], target: "t", skin: true }, { type: "path", name: "p", bones: ["arm"], slot: "body", skin: true }],
+      skins: [
+        { name: "default", attachments: { body: { a: { width: 8, height: 8 } } } },
+        { name: "x", bones: ["arm"], ik: ["reach"], path: ["p"], attachments: { body: { a: { path: "b", width: 6, height: 6 } }, hat: { c: { path: "c1", width: 4, height: 4 } } } },
+        { name: "y", attachments: { hat: { c: { path: "c2", width: 4, height: 4 }, pt: { type: "point" } } } },
+      ],
+    });
+    const imgs: Array<[string, number, number]> = [["a", 8, 8], ["b", 6, 6], ["c1", 4, 4], ["c2", 4, 4]];
+    const { project } = importSpine(file, "x", images(...imgs));
+    const s = sym(project);
+    const node = (name: string) => Object.values(s.nodes).find((n) => n.name === name)!;
+    const item = (name: string) => Object.values(project.items).find((i) => i.name === name)!.id;
+    expect(s.skins!.map((k) => k.name)).toEqual(["x", "y"]);
+    const [x, y] = s.skins!;
+    expect(x!.displays![node("body").id]!["0"]!.itemId).toBe(item("b"));
+    // The hat's key is only in skins: a skin-only display, the setup one.
+    expect(node("hat").skinOnly).toBe(true);
+    expect(node("hat").setupDisplay).toBeUndefined();
+    expect(x!.displays![node("hat").id]!["0"]!.itemId).toBe(item("c1"));
+    expect(y!.displays![node("hat").id]!["0"]!.itemId).toBe(item("c2"));
+    expect(x!.bones).toEqual([node("arm").id]);
+    expect(x!.ik).toEqual([s.ik[0]!.id]);
+    // What the model cannot hold stays carried, merged back by name.
+    expect(s.spine!.skins.filter((k) => k.name !== "default")).toEqual([{ name: "x", path: ["p"] }, { name: "y", attachments: { hat: { pt: { type: "point" } } } }]);
+    const out = JSON.parse(spineJson(exportSpine(project).skeleton));
+    const skinsOut = Object.fromEntries((out.skins as SpineRaw[]).map((k) => [k.name, k]));
+    expect(skinsOut.default!.attachments).toEqual({ body: { a: { width: 8, height: 8 } } });
+    expect(skinsOut.x).toMatchObject({ bones: ["arm"], ik: ["reach"], path: ["p"], attachments: { body: { a: { path: "b", width: 6, height: 6 } }, hat: { c: { path: "c1", width: 4, height: 4 } } } });
+    expect(skinsOut.y!.attachments).toEqual({ hat: { c: { path: "c2", width: 4, height: 4 }, pt: { type: "point" } } });
+    expect(out.slots.find((sl: SpineRaw) => sl.name === "hat").attachment).toBe("c");
+    // spine-core reads it, and with "y" the hat shows c2.
+    const sk = new Skeleton(new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(atlasFor(imgs)))).readSkeletonData(out));
+    sk.setSkin("y");
+    sk.setupPose();
+    expect(sk.findSlot("hat")!.appliedPose.getAttachment()!.name).toBe("c");
+    expect((sk.findSlot("hat")!.appliedPose.getAttachment() as unknown as { path: string }).path).toBe("c2");
+  });
+});

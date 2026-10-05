@@ -297,7 +297,7 @@ export class Shell {
   }
 
   /**
-   * An opened rig's skins, for the stage and the Preview: none, one, or
+   * A rig's skins, for the stage and the Preview: none, one, or
    * several combined, as a game combines them. Skins named with a folder
    * ("accessories/bag") are grouped by it. Only shown for a rig that has
    * skins beyond the default one.
@@ -306,7 +306,7 @@ export class Shell {
     const btn = h("button", { class: "skinpick" }) as HTMLButtonElement;
     const sync = () => {
       const sym = this.store.currentSymbol;
-      const named = sym.spine ? skinsOf(sym).filter((n) => n !== "default") : [];
+      const named = skinsOf(sym).filter((n) => n !== "default");
       btn.style.display = named.length ? "" : "none";
       const shown = stageSkinOf(sym);
       const label = shown.length ? shown.join(" + ") : "default";

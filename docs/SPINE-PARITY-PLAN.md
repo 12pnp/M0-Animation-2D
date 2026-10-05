@@ -41,10 +41,10 @@ Legend:
 
 ### Skins
 
-- ◐ Several skins: opened rigs only; the Skins panel picks what the stage and the Preview
-  show
-- ☐ Creating skins, skin placeholders, and putting attachments in a skin
-- ☐ Skin bones and skin constraints (Spine 4.x: bones that exist only in some skins)
+- ✅ Several skins: made, renamed, deleted, shown alone or combined on the stage and in the
+  Preview (ARCHITECTURE ▸ Skins); an opened file's skins become editable
+- ✅ Skin placeholders (skin-only displays) and a skin's own image in each slot
+- ✅ Skin bones and skin constraints (IK and transform; path and physics ones carried)
 
 ### Constraints
 
@@ -176,7 +176,7 @@ animation. It is the largest phase, so it comes after the cheaper wins.
    them.
 4. **Linked meshes** (one mesh's shape for another image), after weights.
 
-### Phase E: skins
+### Phase E: skins (done, docs/SKINS-PLAN.md)
 
 Why: one skeleton for many characters or outfits. Needs attachments to be editable, so after
 meshes.

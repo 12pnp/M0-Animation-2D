@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { drawingLayers } from "@/core/doc/drawOrder";
 import {
   AtlasAttachmentLoader, ClippingAttachment, type Event as SpineEvent, MeshAttachment, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas,
+  Skin,
 } from "@esotericsoftware/spine-core";
 import { eventValues } from "@/core/doc/events";
+import { stageSkinOf, withDescendantBones } from "@/core/doc/skins";
 import { boxOutline, makeMesh } from "@/core/mesh/makeMesh";
 import { newIkId, newTcId, reseed, type AssetId, type ItemId } from "@/core/doc/ids";
 import { identityProperties } from "@/core/doc/transformKeys";
@@ -146,6 +148,13 @@ function checkParity(project: Project, symbolId: ItemId): Worst {
   const sym = project.items[symbolId];
   if (!isSymbol(sym)) throw new Error("not a symbol");
   const { exported, skeleton } = runtimeFor(project, symbolId);
+  // The skins the stage shows, combined as a game combines them.
+  const shownSkins = stageSkinOf(sym);
+  if (shownSkins.length) {
+    const combined = new Skin(shownSkins.join(" + "));
+    for (const n of shownSkins) combined.addSkin(skeleton.data.findSkin(n)!);
+    skeleton.setSkin(combined);
+  }
   const fps = project.frameRate;
   const worst: Worst = { matrix: 0, position: 0, corner: 0, color: 0, checks: 0 };
   const fail = (where: string, what: string) => { throw new Error(`${sym.name} ${where}: ${what}`); };
@@ -174,7 +183,8 @@ function checkParity(project: Project, symbolId: ItemId): Worst {
         const bone = skeleton.findBone(name);
         if (!bone) fail(where, `no bone "${name}"`);
         const slot = skeleton.findSlot(name);
-        const attachment = slot?.appliedPose.getAttachment() ?? null;
+        // A slot on a bone a skin switches off is not drawn.
+        const attachment = slot?.bone.active ? slot.appliedPose.getAttachment() ?? null : null;
         if (!d || !d.shown) {
           // Not on the stage at this frame: nothing of it may be drawn.
           if (attachment) fail(where, `slot "${name}" shows ${attachment.name}, the stage nothing`);
@@ -930,5 +940,83 @@ describe("meshes", () => {
   it("deform keys, unweighted and weighted: linear, smooth, stepped", async () => {
     expect(meshParity(await meshedStickman(false, true))).toBeGreaterThan(20);
     expect(meshParity(await meshedStickman(true, true))).toBeGreaterThan(20);
+  });
+});
+
+describe("skins", () => {
+  async function skinnedStickman() {
+    const { project, rig, node } = await loadStickman();
+    const image = (name: string) => Object.values(project.items).find((i) => isImage(i) && i.name === name)!.id;
+    return { project, rig, node, image };
+  }
+  /** Parity with each set of shown skins; how many checks it made. */
+  function across(project: Project, rig: SymbolItem, sets: string[][]): number {
+    let checks = 0;
+    for (const shown of sets) {
+      rig.stageSkins = shown;
+      expect(stageSkinOf(rig)).toEqual(shown);
+      try { checks += checkParity(project, rig.id).checks; }
+      catch (e) { throw new Error(`skins [${shown.join(", ")}]: ${(e as Error).message}`); }
+    }
+    return checks;
+  }
+
+  it("a skin's image in a slot's place: alone, combined either way round, and none", async () => {
+    const { project, rig, node, image } = await skinnedStickman();
+    rig.skins = [
+      { name: "red", displays: { [node("torso")]: { 0: { itemId: image("head"), pivot: { x: 12, y: 40 } } } } as never },
+      { name: "blue", displays: {
+        [node("torso")]: { 0: { itemId: image("pelvis"), pivot: { x: 3, y: 4 } } },
+        [node("head_art")]: { 0: { itemId: image("shin"), pivot: { x: 40, y: 20 } } },
+      } as never },
+    ];
+    expect(across(project, rig, [[], ["red"], ["blue"], ["red", "blue"], ["blue", "red"]])).toBeGreaterThan(100);
+    // The export: the skin's attachment under the default one's key.
+    const out = exportSpine(project, rig.id).skeleton;
+    const red = out.skins!.find((sk) => sk.name === "red")!;
+    expect(Object.keys(red.attachments!.torso!)).toEqual(Object.keys(out.skins![0]!.attachments!.torso!));
+  });
+
+  it("a display only skins fill shows nothing without one", async () => {
+    const { project, rig, node, image } = await skinnedStickman();
+    rig.nodes[node("torso")] = { ...rig.nodes[node("torso")]!, skinOnly: true };
+    rig.skins = [
+      { name: "red", displays: { [node("torso")]: { 0: { itemId: image("head"), pivot: { x: 12, y: 40 } } } } as never },
+      { name: "other" },
+    ];
+    across(project, rig, [[], ["red"], ["other"]]);
+    rig.stageSkins = [];
+    expect(evaluateSymbol(rig, rig.animations[0]!, 3).byNode.get(node("torso"))!.visible).toBe(false);
+    expect(exportSpine(project, rig.id).skeleton.skins![0]!.attachments!.torso).toBeUndefined();
+  });
+
+  it("skin bones: off without their skin, on with it or with a skin listing a descendant", async () => {
+    const { project, rig, node } = await skinnedStickman();
+    rig.skins = [
+      { name: "arms", bones: withDescendantBones(rig, [node("arm_near_up"), node("arm_far_up")]) },
+      { name: "upper", bones: withDescendantBones(rig, [node("chest")]) },
+      { name: "face", bones: [node("head")] },
+    ];
+    across(project, rig, [[], ["arms"], ["upper"], ["face"], ["arms", "face"]]);
+    rig.stageSkins = ["face"];
+    const pose = evaluateSymbol(rig, rig.animations[0]!, 5);
+    expect(pose.byNode.get(node("head_art"))!.visible).toBe(true);
+    // The chest is on (the head hangs from it), its picture is not: "upper" lists it.
+    expect(pose.byNode.get(node("torso"))!.visible).toBe(false);
+    const bones = exportSpine(project, rig.id).skeleton.bones;
+    expect(bones.find((b) => b.name === "torso")!.skin).toBe(true);
+    expect(bones.find((b) => b.name === "hips")!.skin).toBeUndefined();
+  });
+
+  it("skin constraints: an IK and a transform constraint only some skins have", async () => {
+    const { project, rig, node } = await skinnedStickman();
+    rig.transforms = [{
+      id: newTcId(), name: "follow", boneIds: [node("head")], sourceId: node("hand_near_target"),
+      mix: { rotate: 0.5, x: 0.3, y: 0.3, scaleX: 0, scaleY: 0, shearY: 0 }, properties: identityProperties(),
+    }];
+    rig.skins = [{ name: "legs", ik: [rig.ik[0]!.id, rig.ik[1]!.id] }, { name: "follow", transforms: [rig.transforms![0]!.id] }];
+    expect(across(project, rig, [[], ["legs"], ["follow"], ["legs", "follow"]])).toBeGreaterThan(100);
+    const out = exportSpine(project, rig.id).skeleton;
+    expect(out.constraints!.filter((c) => (c as { skin?: boolean }).skin).map((c) => c.name).sort()).toEqual(["follow", "leg_far_shin_ik", "leg_near_shin_ik"]);
   });
 });

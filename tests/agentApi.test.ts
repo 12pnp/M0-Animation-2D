@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { evaluateSymbol } from "@/core/doc/pose";
 import { AtlasAttachmentLoader, MixFrom, Physics, Skeleton, SkeletonJson, TextureAtlas } from "@esotericsoftware/spine-core";
 import { reseed } from "@/core/doc/ids";
 import { Store } from "@/app/Store";
@@ -57,7 +58,7 @@ describe("the AI's tools", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
       "get_reference", "render_frame", "add_bones", "attach", "add_ik", "auto_rig", "list_motions", "apply_motion", "draw_order",
-      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "make_mesh", "bind_mesh", "set_cycle", "get_bone_path", "set_bone_path",
+      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "make_mesh", "bind_mesh", "add_skin", "set_skin_image", "set_skin_members", "set_cycle", "get_bone_path", "set_bone_path",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -779,6 +780,27 @@ describe("cycles and bone paths through the AI's tools", () => {
     expect(node.mesh!.weights!.every((w) => w.length > 0)).toBe(true);
     await expect(api.call("make_mesh", { images: [torso] })).rejects.toThrow(/without a mesh/);
     await expect(api.call("bind_mesh", { image: "head", bones: ["chest"] })).rejects.toThrow(/one mesh/);
+  });
+
+  it("make a skin, give it an image, a placeholder and members, each one undo step", async () => {
+    const { store, api } = await setup();
+    expect(await api.call("add_skin", { name: "red" })).toEqual({ skins: ["red"], showing: ["red"] });
+    expect(store.history.undoLabel).toBe("AI: New Skin");
+    await expect(api.call("add_skin", { name: "red" })).rejects.toThrow(/already a skin/);
+    const torso = Object.values(store.currentSymbol.nodes).find((n) => n.itemId && n.name.includes("torso"))!;
+    const out = await api.call("set_skin_image", { skin: "red", layer: torso.name, image: "head", only_in_skins: true });
+    expect(out).toMatchObject({ skin: "red", display: 0, image: "head", onlyInSkins: true });
+    expect(store.history.undoLabel).toBe("AI: Skin Image");
+    // The stage shows the skin's image.
+    const pose = evaluateSymbol(store.currentSymbol, null, 0, "setup");
+    expect(store.project.items[pose.byNode.get(torso.id)!.display!.itemId]!.name).toBe("head");
+    store.history.undo();
+    expect(store.currentSymbol.skins![0]!.displays).toBeUndefined();
+    expect(store.currentSymbol.nodes[torso.id]!.skinOnly).toBeUndefined();
+    const members = await api.call("set_skin_members", { skin: "red", bones: ["arm_near_up"], constraints: ["arm_near_fore_ik"] });
+    expect(members).toEqual({ skin: "red", bones: ["arm_near_up", "arm_near_fore"], constraints: ["arm_near_fore_ik"] });
+    await expect(api.call("set_skin_image", { skin: "blue", layer: torso.name, image: "head" })).rejects.toThrow(/no skin "blue"/);
+    await expect(api.call("set_skin_members", { skin: "red", constraints: ["nope"] })).rejects.toThrow(/no IK or transform constraint/);
   });
 
   it("make a cycle in one undo step, and say where the loop does not close", async () => {

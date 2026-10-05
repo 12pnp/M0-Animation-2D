@@ -11,13 +11,14 @@ import type { Contour } from "@/core/atlas/contour";
 import { nz } from "@/core/math/angle";
 import { mat, type Matrix2D } from "@/core/math/Matrix2D";
 import { displaysOf } from "@/core/doc/displays";
+import { skinBoneSet } from "@/core/doc/skins";
 import { childFrame, displayContext, evaluateSymbol, localAt } from "@/core/doc/pose";
 import { rotationDelta, sampleColorRaw, sampleTransformRaw } from "@/core/doc/timeline";
 import type { Transform } from "@/core/math/Transform";
 import { type EaseSegment, easeOf, easeSegments, sameEase, type TweenChannel, type TweenSpec } from "@/core/math/easing";
 import type { ExportDiagnostic } from "@/core/export/diagnostics";
 import { isAtlasName } from "./atlas";
-import { animationRefs, bonesToIndices, type CarriedRef, constraintRefs, lastTime, regionsOf, skinRefs } from "./carry";
+import { animationRefs, bonesToIndices, type CarriedRef, constraintRefs, lastTime, regionsOf, SKIN_CONSTRAINT_KINDS, skinRefs } from "./carry";
 import { keyTime, keyValues, regionCentre, type SpineKeyValues, type SpineLocal, toSpineLocal } from "./transform";
 import {
   SPINE_VERSION,
@@ -190,12 +191,15 @@ export function exportSpine(
   /** The exported symbol's constraints as written, for its IK keys. */
   const rootIk = new Map<IkId, SpineIkConstraint>();
   const rootTc = new Map<TcId, SpineTransformConstraint>();
+  /** The exported symbol's skins' attachments: skin → slot → key. */
+  const skinAttachments = new Map<string, Record<string, Record<string, SpineAttachment>>>();
+  const skinsWarned = new Set<ItemId>();
   const tcKeysWarned = new Set<ItemId>();
   const ikKeysWarned = new Set<ItemId>();
   /** The exported symbol's mesh displays, for their deform keys. */
   const rootMeshes: Array<{ nodeId: NodeId; slot: string; key: string; mesh: MeshData; pivot: { x: number; y: number }; bones: MeshBones | null }> = [];
   const setupPoses = new Map<ItemId, Map<NodeId, { world: Matrix2D }>>();
-  const setupOf = (sym: SymbolItem) => setupPoses.get(sym.id) ?? setupPoses.set(sym.id, evaluateSymbol(sym, null, 0, "setup").byNode).get(sym.id)!;
+  const setupOf = (sym: SymbolItem) => setupPoses.get(sym.id) ?? setupPoses.set(sym.id, evaluateSymbol(sym, null, 0, "setup", null).byNode).get(sym.id)!;
   const eventKeysWarned = new Set<ItemId>();
   const setups = new Map<string, SpineLocal>();
   const paths = new Map<string, string>();
@@ -311,29 +315,15 @@ export function exportSpine(
       const slotAttachments: Record<string, SpineAttachment> = {};
       const taken = new Set<string>();
       const symbolDisplays: Array<[number, DisplayRef]> = [];
-      for (const [index, ref] of exportedDisplays(s, node)) {
-        const item = project.items[ref.itemId];
-        if (isSymbol(item)) { symbolDisplays.push([index, ref]); continue; }
-        if (!isImage(item)) {
-          diagnostics.push({ severity: "warning", message: `"${node.name}" points at a library item that no longer exists.` });
-          continue;
-        }
-        usedImages.add(item.id);
+      /** The attachment a display writes under `key`: as an opened file had
+       *  it, a mesh, or a region. Only the default skin's meshes take deform keys. */
+      const attachmentOf = (ref: DisplayRef, item: ImageItem, key: string, own: boolean): SpineAttachment => {
         if (ref.attachment) {
           // As the file had it, drawing the image the display names now.
-          const key = ref.attachment.name;
-          if (taken.has(key)) continue;
-          taken.add(key);
-          keys.set(index, key);
           const data = { ...ref.attachment.data };
           if ((regionsOf(data, key)[0] ?? key) !== item.name) data.path = item.name;
-          slotAttachments[key] = data;
-          continue;
+          return data;
         }
-        let key = item.name;
-        for (let n = 2; taken.has(key); n++) key = `${item.name} (${n})`;
-        taken.add(key);
-        keys.set(index, key);
         if (ref.mesh) {
           // A mesh (ARCHITECTURE ▸ Meshes): `spineVertices` in the slot bone's
           // space, or per bone at the setup pose for a weighted one.
@@ -349,20 +339,54 @@ export function exportSpine(
             width: ref.mesh.width, height: ref.mesh.height,
           };
           if (key !== item.name) mesh.path = item.name;
-          slotAttachments[key] = mesh as unknown as SpineAttachment;
-          if (scope.depth === 0) rootMeshes.push({ nodeId: node.id, slot: name, key, mesh: ref.mesh, pivot: ref.pivot, bones });
-          continue;
+          if (own && scope.depth === 0) rootMeshes.push({ nodeId: node.id, slot: name, key, mesh: ref.mesh, pivot: ref.pivot, bones });
+          return mesh as unknown as SpineAttachment;
         }
         const centre = regionCentre(item.width, item.height, ref.pivot);
         const region: SpineRegionAttachment = { width: item.width, height: item.height };
         if (key !== item.name) region.path = item.name;
         if (centre.x !== 0) region.x = centre.x;
         if (centre.y !== 0) region.y = centre.y;
-        slotAttachments[key] = region;
+        return region;
+      };
+      // Skins (ARCHITECTURE ▸ Skins) only at the top: a nested symbol's are not written.
+      const skinned = scope.depth === 0;
+      for (const [index, ref] of exportedDisplays(s, node, skinned)) {
+        const item = project.items[ref.itemId];
+        if (isSymbol(item)) { symbolDisplays.push([index, ref]); continue; }
+        if (!isImage(item)) {
+          diagnostics.push({ severity: "warning", message: `"${node.name}" points at a library item that no longer exists.` });
+          continue;
+        }
+        let key = ref.attachment?.name ?? item.name;
+        if (ref.attachment) { if (taken.has(key)) continue; }
+        else for (let n = 2; taken.has(key); n++) key = `${item.name} (${n})`;
+        taken.add(key);
+        keys.set(index, key);
+        // A display only skins fill keeps its key out of the default skin.
+        if (skinned && ref.skinOnly) continue;
+        usedImages.add(item.id);
+        slotAttachments[key] = attachmentOf(ref, item, key, true);
+      }
+      if (skinned) {
+        for (const def of s.skins ?? []) {
+          for (const [index, ref] of Object.entries(def.displays?.[node.id] ?? {})) {
+            const key = keys.get(Number(index));
+            const item = project.items[ref.itemId];
+            if (!key || !isImage(item)) continue;
+            usedImages.add(item.id);
+            let bySlot = skinAttachments.get(def.name);
+            if (!bySlot) skinAttachments.set(def.name, bySlot = {});
+            (bySlot[name] ??= {})[key] = attachmentOf(ref, item, key, false);
+          }
+        }
+      } else if (s.skins?.length && !skinsWarned.has(s.id)) {
+        skinsWarned.add(s.id);
+        diagnostics.push({ severity: "warning", message: `"${s.name}" has skins, but only the exported symbol's skins are written; its default skin is.` });
       }
 
       if (keys.size || riding) {
-        if (keys.size) attachments[name] = slotAttachments;
+        if (Object.keys(slotAttachments).length) attachments[name] = slotAttachments;
         slotPaths.set(pathOf(node.id), name);
         displayKeys.set(pathOf(node.id), keys);
         const slot: SpineSlot = { name, bone: riding ? nameOf(node.slotBone!) : name };
@@ -676,11 +700,27 @@ export function exportSpine(
   }
   if (allConstraints.length) skeleton.constraints = allConstraints;
   const skins: SpineSkin[] = [{ name: "default", attachments }];
+  const modelSkins = new Map(skinsOfModel(sym, bones, boneNodes, rootIk, rootTc, skinAttachments).map((sk) => [sk.name, sk]));
+  for (const sk of modelSkins.values()) skins.push(sk);
   for (const raw of carry?.skins ?? []) {
     const skin = raw as unknown as SpineSkin;
     // Copied down to the slot maps: the pass below rewrites entries, and the
     // document must not change under an export.
     const own = Object.fromEntries(Object.entries(skin.attachments ?? {}).map(([slot, byKey]) => [slot, { ...byKey }]));
+    const model = modelSkins.get(skin.name);
+    if (model) {
+      // What the model holds wins a key both have; the rest is the file's.
+      const merged: SpineSkin = { ...skin, ...model };
+      const atts: Record<string, Record<string, SpineAttachment>> = own;
+      for (const [slot, byKey] of Object.entries(model.attachments ?? {})) atts[slot] = { ...atts[slot], ...byKey };
+      if (Object.keys(atts).length) merged.attachments = atts; else delete merged.attachments;
+      for (const field of ["bones", ...SKIN_CONSTRAINT_KINDS] as const) {
+        const u = [...new Set([...(skin[field] ?? []), ...(model[field] ?? [])])];
+        if (u.length) merged[field] = u; else delete merged[field];
+      }
+      skins[skins.indexOf(model)] = merged;
+      continue;
+    }
     if (skin.name !== "default") { skins.push({ ...skin, attachments: own }); continue; }
     const merged: Record<string, Record<string, SpineAttachment>> = { ...attachments };
     for (const [slot, byKey] of Object.entries(own)) merged[slot] = { ...byKey, ...merged[slot] };
@@ -1406,10 +1446,40 @@ function blendOf(node: Node, diags: ExportDiagnostic[]): SpineBlendMode | undefi
 /* ── structure ───────────────────────────────────────────────────────────── */
 
 /**
- * Display 0 always (the setup pose shows it), and the extra displays some
- * key still uses, by their index in the node's display list.
+ * The exported symbol's own skins (ARCHITECTURE ▸ Skins): each one's
+ * attachments, its bones (`skinBoneSet`, in bone order) and constraints by
+ * name, one list per kind, all marked `skin` as Spine requires.
  */
-function exportedDisplays(sym: SymbolItem, node: Node): Array<[number, DisplayRef]> {
+function skinsOfModel(
+  sym: SymbolItem, bones: SpineBone[], boneNodes: Array<{ scope: Scope; node: Node; name: string }>,
+  rootIk: Map<IkId, SpineIkConstraint>, rootTc: Map<TcId, SpineTransformConstraint>,
+  attachments: Map<string, Record<string, Record<string, SpineAttachment>>>,
+): SpineSkin[] {
+  const nameOf = new Map(boneNodes.filter((b) => b.scope.depth === 0).map((b) => [b.node.id, b.name]));
+  return (sym.skins ?? []).map((def) => {
+    const set = skinBoneSet(sym, def);
+    const names = new Set([...set].map((id) => nameOf.get(id)).filter((n): n is string => !!n));
+    const own = bones.filter((b) => names.has(b.name));
+    for (const b of own) b.skin = true;
+    const ik = (def.ik ?? []).map((id) => rootIk.get(id)).filter((c): c is SpineIkConstraint => !!c);
+    const tc = (def.transforms ?? []).map((id) => rootTc.get(id)).filter((c): c is SpineTransformConstraint => !!c);
+    for (const c of [...ik, ...tc]) c.skin = true;
+    const skin: SpineSkin = { name: def.name };
+    const atts = attachments.get(def.name);
+    if (atts) skin.attachments = atts;
+    if (own.length) skin.bones = own.map((b) => b.name);
+    if (ik.length) skin.ik = ik.map((c) => c.name);
+    if (tc.length) skin.transform = tc.map((c) => c.name);
+    return skin;
+  });
+}
+
+/**
+ * Display 0 always (the setup pose shows it), the extra displays some key
+ * still uses, and with `skinned` those a skin fills, by their index in the
+ * node's display list.
+ */
+function exportedDisplays(sym: SymbolItem, node: Node, skinned = false): Array<[number, DisplayRef]> {
   const all = displaysOf(node);
   // An opened slot's skin keeps every attachment, keyed or not.
   if (all.some((d) => d.attachment)) return all.map((d, i) => [i, d]);
@@ -1418,6 +1488,10 @@ function exportedDisplays(sym: SymbolItem, node: Node): Array<[number, DisplayRe
     for (const k of anim.tracks[node.id]?.keys ?? []) {
       if (k.displayIndex > 0 && k.displayIndex < all.length) used.add(k.displayIndex);
     }
+  }
+  if (skinned) {
+    all.forEach((d, i) => { if (d.skinOnly) used.add(i); });
+    for (const def of sym.skins ?? []) for (const i of Object.keys(def.displays?.[node.id] ?? {})) used.add(Number(i));
   }
   return [...used].sort((a, b) => a - b).filter((i) => all[i]).map((i) => [i, all[i]!]);
 }

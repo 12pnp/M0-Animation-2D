@@ -90,6 +90,8 @@ export interface SpineBone extends SpineBoneTransform {
   inherit?: SpineInherit;
   /** Editor-only colour, "rrggbbaa". */
   color?: string;
+  /** Only in the skins that list it. */
+  skin?: boolean;
 }
 
 /** The four blend modes the runtime has. */
@@ -159,9 +161,14 @@ export interface SpineSkin {
   name: string;
   /** slot name → attachment key → attachment. */
   attachments?: Record<string, Record<string, SpineAttachment>>;
-  /** Bones and constraints only this skin enables, by name. */
+  /** Bones and constraints only this skin enables, by name, constraints
+   *  one list per kind. */
   bones?: string[];
-  constraints?: string[];
+  ik?: string[];
+  transform?: string[];
+  path?: string[];
+  physics?: string[];
+  slider?: string[];
   color?: string;
 }
 

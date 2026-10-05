@@ -27,7 +27,9 @@ paths; the decisions are pure in `core/doc/cycle.ts`, `bonePath.ts`, `pathEdit.t
 Spine 4.3's, solved on the stage by a transcription of spine-core (ARCHITECTURE ▸
 Transform constraints, `core/math/transformConstraint.ts`). An image can be a mesh,
 made from its alpha, bound to bones by weights and keyed by deform (ARCHITECTURE ▸
-Meshes, `core/mesh/`). An exporter change must keep
+Meshes, `core/mesh/`). Skins put their own images in slots and have bones and
+constraints of their own, by spine-core's rules (ARCHITECTURE ▸ Skins, `core/doc/skins.ts`).
+An exporter change must keep
 `tests/spineParity.test.ts` passing: it plays every fixture through spine-core
 and compares it with the stage frame by frame. An importer or exporter change
 must keep `tests/spineImport.test.ts` (every M0 sample round-trips) and

@@ -24,7 +24,7 @@ export class HiddenPreviewProbe implements PreviewProbe {
     if (key !== this.loadedFor) {
       const result = (await buildExports(this.store.project, this.assets, [sym.id])).get(sym.id)!;
       const loaded = host.once("loaded", 20000);
-      const skins = sym.spine ? stageSkinOf(sym) : [];
+      const skins = stageSkinOf(sym);
       host.load(result.skeleton, result.atlas, result.pages.map((p) => ({ name: p.info.imagePath, png: p.blob })), {
         animation, frame, ...(skins.length ? { skins } : {}),
       });

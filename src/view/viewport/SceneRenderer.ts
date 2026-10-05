@@ -359,7 +359,8 @@ export class SceneRenderer {
       // the runtime plays it whatever the parent is doing.
       const at = displayContext(when, e.displaySince);
       const here = childFrame(item, at);
-      const inner = evaluateSymbol(item, here.animation, here.frame, when.mode);
+      // Nested: the export writes only the exported symbol's skins.
+      const inner = evaluateSymbol(item, here.animation, here.frame, when.mode, null);
 
       // The transform point sits on the bone origin, so the contents hang off
       // it by -pivot — the same offset an image display gets, expressed for a

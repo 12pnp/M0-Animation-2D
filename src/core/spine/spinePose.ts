@@ -9,6 +9,7 @@ import type { ItemId, NodeId } from "@/core/doc/ids";
 import type { Animation, ColorTransform, Project, SymbolItem } from "@/core/doc/types";
 import { isImage } from "@/core/doc/types";
 import { displaysOf } from "@/core/doc/displays";
+import { stageSkinOf } from "@/core/doc/skins";
 import { evaluateSymbol, type Pose, type PoseEntry } from "@/core/doc/pose";
 import { matOf } from "@/core/math/Matrix2D";
 import type { PackedPage } from "@/core/atlas/packed";
@@ -105,39 +106,7 @@ function rigFor(project: Project, sym: SymbolItem, skins: readonly string[]): { 
   return out;
 }
 
-/**
- * The skins the stage shows over the default skin, combined: the symbol's
- * choice (`stageSkins`, less any the file no longer has), else none when
- * the default skin draws anything, else the file's first other skin.
- * Without one the runtime draws only what the default skin holds, and a
- * game picks the rest.
- */
-export function stageSkinOf(sym: SymbolItem): string[] {
-  const named = skinsOf(sym).filter((n) => n !== "default");
-  if (sym.stageSkins) return sym.stageSkins.filter((n) => named.includes(n));
-  const skins = (sym.spine?.skins ?? []) as Array<{ name?: string; attachments?: Record<string, Record<string, { type?: string }>> }>;
-  const draws = (a: { type?: string }) => a.type === undefined || a.type === "region" || a.type === "mesh" || a.type === "linkedmesh";
-  const hasDefault = Object.values(sym.nodes).some((n) => n.attachment)
-    || skins.some((s) => s.name === "default" && Object.values(s.attachments ?? {}).some((byKey) => Object.values(byKey).some(draws)));
-  return hasDefault || named.length === 0 ? [] : [named[0]!];
-}
-
-/**
- * The stage skins after turning `name` on or off: the named skins kept in
- * the rig's own order, as the stage bar's picker and the Skins panel both
- * set them.
- */
-export function toggledSkins(named: readonly string[], shown: readonly string[], name: string): string[] {
-  const next = shown.includes(name) ? shown.filter((n) => n !== name) : [...shown, name];
-  return named.filter((n) => next.includes(n));
-}
-
-/** The skins an opened symbol has, "default" first when it has one. */
-export function skinsOf(sym: SymbolItem): string[] {
-  const names = (sym.spine?.skins ?? []).map((s) => String((s as { name?: unknown }).name));
-  return names.includes("default") || Object.values(sym.nodes).some((n) => n.attachment)
-    ? ["default", ...names.filter((n) => n !== "default")] : names;
-}
+export { skinsOf, stageSkinOf, toggledSkins } from "@/core/doc/skins";
 
 function buildRig(project: Project, sym: SymbolItem, skins: readonly string[]): { rig: Rig | null; error?: string } {
   const exported = exportSpine(project, sym.id, { setupOnly: true });
@@ -209,7 +178,7 @@ export function posedSymbol(
   project: Project, sym: SymbolItem, animation: Animation | null, frame: number, mode: "setup" | "animate",
   skins: readonly string[] = stageSkinOf(sym),
 ): Pose {
-  const pose = evaluateSymbol(sym, animation, frame, mode);
+  const pose = evaluateSymbol(sym, animation, frame, mode, skins);
   if (!sym.spine) return pose;
   const { rig } = rigFor(project, sym, skins);
   if (rig) applyRig(rig, sym, pose, animation, frame, mode, project.frameRate);
