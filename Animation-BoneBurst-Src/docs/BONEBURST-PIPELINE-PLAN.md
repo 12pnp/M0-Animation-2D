@@ -328,6 +328,7 @@ runtime the game ships.
 - Found on the way: the new repository has no `.claude/` (the old one tracked
   `.claude/skills/`: `parity-harness`, `unity-playtest`, `assembly-tier-check`,
   `managed-reference-check`, which the root CLAUDE.md names); another gap in R0's copy.
+  Fixed 2026-10-06: copied from M0-Animation2D's last commit, each gate run and passing here.
 - Between the twin-export test's runs (`FindSource_WithJsonAndItsBinaryTwin_TakesTheJson`) the
   time swung from 13 s to a 185 s timeout, with and without the watcher: stock spine-unity's own
   importer reacting to a mismatched skeleton and atlas, not this change.

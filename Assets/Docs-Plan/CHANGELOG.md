@@ -13,6 +13,8 @@ flowchart LR
 
 ## 2026-10-06
 
+- **`.claude/skills/` in this repository**: the four gates the root CLAUDE.md names (`parity-harness`, `unity-playtest`, `assembly-tier-check`, `managed-reference-check`), copied from M0-Animation2D's last commit (not another session's uncommitted edit there) with the project name updated; the first commit had left `.claude/` out. Guard: each runs here and passes (parity 215 of 215 bit-exact; compile 0 errors; tiers; managed references).
+
 - **Pipeline plan R5 (a desktop shell for the BoneBurst editor) skipped**, owner's decision (docs only): the editor stays a browser app. Plan: [BONEBURST-PIPELINE-PLAN.md](../../Animation-BoneBurst-Src/docs/BONEBURST-PIPELINE-PLAN.md).
 
 - **The BoneBurst editor exports straight into Unity: File › Export to Unity…** (`Animation-BoneBurst-Src/`, editor). The document's folder is remembered (IndexedDB `unityExport`, database version 3); the atlas is `.atlas.txt`; the skeleton is written last so the import package's new `BoneBurstRebakeOnChange` rebakes a whole export. The AI's `export_to_unity` does the same once a folder is granted. Plan: [BONEBURST-PIPELINE-PLAN.md](../../Animation-BoneBurst-Src/docs/BONEBURST-PIPELINE-PLAN.md) R4. Guard: `tests/unityExport.test.ts`, the menu item seen in the app; editor suite 2,245 passed. **Not verified:** the loop by hand (the folder picker is the user's).

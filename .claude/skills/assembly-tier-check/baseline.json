@@ -1,0 +1,10 @@
+{
+  "note": "Pre-existing violations accepted as the floor. New ones fail the gate. Regenerate only when you have deliberately paid one down.",
+  "asmdef_count": 15,
+  "upward": [],
+  "editor_refs": [],
+  "tier_placement": [],
+  "package_edges": [],
+  "fishnet_below_u": [],
+  "ui_homes": []
+}
