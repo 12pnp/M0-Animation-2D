@@ -10,7 +10,7 @@ import type { AssetId, CnId, IkId, NodeId, TcId } from "@/core/doc/ids";
 import { fromOffsets } from "@/core/doc/drawOrder";
 import { eventDefsFromSpine, eventValues } from "@/core/doc/events";
 import { newAnimId, newCnId, newIkId, newTcId } from "@/core/doc/ids";
-import type { TcChannel, TcFrom, TcTo } from "@/core/math/transformConstraint";
+import type { TcChannel, TcFrom, TcTo } from "@/core/doc/types";
 import type {
   MeshData,  Animation, BlendMode, DeformKey, DrawOrderKey, SequenceKey, ColorTransform, DisplayRef, EventDef, EventKey, IkConstraint, IkKey, ImageItem, TcKey, TransformConstraint, Keyframe, Layer, Node, Project,
   SkinDef, SpineAttachmentRef, SymbolItem, Track,

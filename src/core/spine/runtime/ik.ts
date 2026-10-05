@@ -1,5 +1,5 @@
 import { DEG_RAD, type IkData, type IkScaleY } from "./rigData";
-import type { Rig } from "./rig";
+import type { Bones } from "./bones";
 
 /**
  * Spine 4.3's IK, solved on the BoneBurst runtime's pose (the plan's P2).
@@ -21,7 +21,7 @@ export interface IkPose {
 }
 
 /** Apply one IK constraint: its bones already have their world transforms. */
-export function solveIk(rig: Rig, k: IkData, pose: IkPose): void {
+export function solveIk(rig: Bones, k: IkData, pose: IkPose): void {
   if (pose.mix === 0) return;
   const t = k.target * 6, W = rig.world;
   const tx = W[t + 4]!, ty = W[t + 5]!;
@@ -48,7 +48,7 @@ function carryY(sy: number, s: number, mode: IkScaleY): number {
 
 /** Point `bone` at the target, and stretch or squash it to reach it. */
 export function oneBone(
-  rig: Rig, bone: number, targetX: number, targetY: number,
+  rig: Bones, bone: number, targetX: number, targetY: number,
   compress: boolean, stretch: boolean, scaleY: IkScaleY, mix: number,
 ): void {
   const L = rig.local, W = rig.world, l = bone * 7;
@@ -104,7 +104,7 @@ export function oneBone(
 
 /** Bend a parent and child so the child's tip reaches the target. */
 export function twoBones(
-  rig: Rig, parent: number, child: number, targetX: number, targetY: number,
+  rig: Bones, parent: number, child: number, targetX: number, targetY: number,
   bendDir: number, stretch: boolean, scaleY: IkScaleY, softness: number, mix: number,
 ): void {
   if (rig.inherit[parent] !== "normal" || rig.inherit[child] !== "normal") return;

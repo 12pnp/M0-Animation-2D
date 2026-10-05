@@ -3,40 +3,39 @@ import { reseed, newIkId, type NodeId } from "@/core/doc/ids";
 import { createProject, createNode, createLayer } from "@/core/doc/defaults";
 import { isSymbol, type SymbolItem } from "@/core/doc/types";
 import { evaluateSymbol, invalidateBounds } from "@/core/doc/pose";
-import { ikApply1, type IkBone } from "@/core/math/ik";
+import { LooseBones } from "@/core/spine/runtime/bones";
+import { oneBone } from "@/core/spine/runtime/ik";
 
 beforeEach(() => { reseed(); invalidateBounds(); });
 
 /**
- * The solver is Spine's, transcribed (`core/math/ik.ts`); it is checked
- * against spine-core itself on whole rigs in spineParity.test.ts. These are
- * the behaviours the editor relies on.
+ * The solver is the runtime's (`core/spine/runtime/ik.ts`), held to
+ * spine-core in runtimeConstraints.test.ts and, on the stage, on whole rigs
+ * in spineParity.test.ts. These are the behaviours the editor relies on.
  */
 describe("IK solver", () => {
-  const bone = (over: Partial<IkBone> = {}): IkBone => ({
-    x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, shearX: 0, shearY: 0,
-    a: 1, b: 0, c: 0, d: 1, worldX: 0, worldY: 0, ...over,
-  });
-  const identity = { a: 1, b: 0, c: 0, d: 1, worldX: 0, worldY: 0 };
+  /** A bone at the origin under an identity parent, local rotation `rotation`, pointed at (x, y). */
+  const aim = (rotation: number, x: number, y: number, mix: number): number => {
+    const bones = new LooseBones([{ parent: -1, length: 0 }, { parent: 0, length: 50 }]);
+    bones.world.set([1, 0, 0, 1, 0, 0], 0);
+    bones.setBone(1, 0, 0, rotation, 1, 1, 0, 0);
+    oneBone(bones, 1, x, y, false, false, "none", mix);
+    return bones.local[1 * 7 + 2]!;
+  };
 
   it("points one bone at the target, in local degrees", () => {
-    const b = bone();
-    ikApply1(b, identity, 0, 50, 1);
-    expect(b.rotation).toBeCloseTo(90, 4);
+    expect(aim(0, 0, 50, 1)).toBeCloseTo(90, 4);
   });
 
   it("blends the rotation by the mix", () => {
-    const b = bone();
-    ikApply1(b, identity, 0, 50, 0.5);
-    expect(b.rotation).toBeCloseTo(45, 4);
+    expect(aim(0, 0, 50, 0.5)).toBeCloseTo(45, 4);
   });
 
   it("takes the short way round from where the bone is", () => {
-    const b = bone({ rotation: 170 });
-    ikApply1(b, identity, -100, -10, 1);
+    const r = aim(170, -100, -10, 1);
     // From 170 to the target at about -174: 16 degrees on, not 344 back.
-    expect(b.rotation).toBeGreaterThan(170);
-    expect(b.rotation).toBeLessThan(190);
+    expect(r).toBeGreaterThan(170);
+    expect(r).toBeLessThan(190);
   });
 });
 

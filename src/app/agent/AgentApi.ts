@@ -25,7 +25,7 @@ import { deleteTcKeys, tcMixAt, tcTweenOf, transformPlan, usedMixes, withMapping
 import { SetTcKeys, SetTransforms } from "@/core/history/transformCommands";
 import { doBindMesh, doMakeMesh } from "@/app/MeshOps";
 import type { AssetStore } from "@/app/AssetStore";
-import { TC_CHANNELS, type TcChannel } from "@/core/math/transformConstraint";
+import { TC_CHANNELS, type TcChannel } from "@/core/doc/types";
 import { deleteIkKeys, ikPoseAt, type IkTween, ikTweenOf, withIkKey, withIkTween } from "@/core/doc/ikKeys";
 import { cyclePlan, isCycle, SEAM_TOLERANCE, seamFrame, seamGap } from "@/core/doc/cycle";
 import { bonePaths, keyedIn, pathFrames } from "@/core/doc/bonePath";

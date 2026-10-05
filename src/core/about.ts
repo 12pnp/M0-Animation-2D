@@ -50,9 +50,10 @@ export const TRADEMARK_NOTE =
 /** How the editor relates to the runtime it exports for. */
 export const SPINE_NOTE =
   "BoneBurst exports the Spine 4.3 format: a skeleton .json, a .atlas and "
-  + "its pages, which any Spine 4.3 runtime plays. The Preview panel and Play "
-  + "mode run the official Spine runtime on those exact files: what you see there "
-  + "is what your game will show. The plan is docs/PLAN.md in the source.";
+  + "its pages, which any Spine 4.3 runtime plays. The Preview panel plays those "
+  + "exact files with BoneBurst's own Spine 4.3 runtime, which its tests hold to "
+  + "the official one frame by frame: what you see there is what your game will "
+  + "show. The plan is docs/PLAN.md in the source.";
 
 export interface Credit {
   name: string;
@@ -70,20 +71,6 @@ export const CREDITS: readonly Credit[] = Object.freeze([
     license: "AGPL-3.0-or-later",
     url: "https://github.com/justmorenoise/animo",
     what: "The editor this one is built from, by Morenoise.",
-  },
-  {
-    name: "spine-pixi-v8",
-    version: "4.3.13",
-    license: "Spine Runtimes License",
-    url: "https://github.com/EsotericSoftware/spine-runtimes",
-    what: "The Spine runtime. Included so the Preview plays your animation for real.",
-  },
-  {
-    name: "spine-core",
-    version: "4.3.13",
-    license: "Spine Runtimes License",
-    url: "https://github.com/EsotericSoftware/spine-runtimes",
-    what: "The same runtime's core. Poses opened Spine files on the stage, meshes and constraints included.",
   },
   {
     name: "PixiJS",

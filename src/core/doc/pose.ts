@@ -1,12 +1,13 @@
 import { applyInverse, clone, mat, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { orderAt } from "./drawOrder";
 import { ikPoseAt } from "./ikKeys";
-import { tcIdle, tcLocalOf, type TcLocal, tcSolveLocal, tcSolveWorld, type TcWorld } from "@/core/math/transformConstraint";
 import { tcMixAt, tcSolveOf } from "./transformKeys";
 import { meshUvs, meshWorld } from "@/core/mesh/meshPose";
 import { deformAt, drawnDeformTarget } from "@/core/mesh/deform";
-import { type IkBone, type IkWorld, ikApply1, ikApply2 } from "@/core/math/ik";
-import { fromSpineLocal, toSpineLocal } from "@/core/spine/transform";
+import { LooseBones } from "@/core/spine/runtime/bones";
+import { oneBone, twoBones } from "@/core/spine/runtime/ik";
+import { solveTransform } from "@/core/spine/runtime/transform";
+import { fromSpineLocal, type SpineLocal, toSpineLocal } from "@/core/spine/transform";
 import { cloneTf, toMatrix, type Transform } from "@/core/math/Transform";
 import type { Animation, ColorTransform, DisplayRef, IkConstraint, Node, Project, SymbolItem, TransformConstraint } from "./types";
 import { byOrder } from "./constraintOrder";
@@ -403,17 +404,26 @@ function applyConstraints(
     return false;
   };
 
-  const spineWorld = (m: Matrix2D): IkWorld => ({ a: m.a, b: -m.c, c: -m.b, d: m.d, worldX: m.tx, worldY: -m.ty });
-
-  // A bone whose WORLD a transform constraint set has no local to match
-  // until one is derived from it, as the runtime's `validateLocalTransform`
-  // does; any other bone's local is the one it was posed with (keyed or
-  // IK-solved), turns included.
-  const worldSet = new Set<NodeId>();
-  const parentSpine = (e: PoseEntry): TcWorld => spineWorld(parentWorld(e));
-  const appliedLocal = (e: PoseEntry): TcLocal =>
-    worldSet.has(e.nodeId) ? tcLocalOf(spineWorld(e.world), parentSpine(e)) : toSpineLocal(localOf(e));
-  const ikBone = (e: PoseEntry): IkBone => ({ ...appliedLocal(e), ...spineWorld(e.world) });
+  // The runtime's solvers (`core/spine/runtime/`) on a few `LooseBones`,
+  // in Spine's space: y up, `a b c d` row-major with `(a, c)` the x axis.
+  const putWorld = (bones: LooseBones, i: number, m: Matrix2D): void => bones.world.set([m.a, -m.c, -m.b, m.d, m.tx, -m.ty], i * 6);
+  const takeWorld = (bones: LooseBones, i: number): Matrix2D => {
+    const W = bones.world, w = i * 6;
+    return { a: W[w]!, b: -W[w + 2]!, c: -W[w + 1]!, d: W[w + 3]!, tx: W[w + 4]!, ty: -W[w + 5]! };
+  };
+  const putLocal = (bones: LooseBones, i: number, t: SpineLocal): void =>
+    bones.local.set([t.x, t.y, t.rotation, t.scaleX, t.scaleY, t.shearX, t.shearY], i * 7);
+  const takeLocal = (bones: LooseBones, i: number): Transform => {
+    const L = bones.local, l = i * 7;
+    return fromSpineLocal({ x: L[l]!, y: L[l + 1]!, rotation: L[l + 2]!, scaleX: L[l + 3]!, scaleY: L[l + 4]!, shearX: L[l + 5]!, shearY: L[l + 6]! });
+  };
+  /** `e` as bone `i` under bone `i - 1`, which holds its parent's world. */
+  const putBone = (bones: LooseBones, i: number, e: PoseEntry): void => {
+    putWorld(bones, i - 1, parentWorld(e));
+    putWorld(bones, i, e.world);
+    putLocal(bones, i, toSpineLocal(localOf(e)));
+  };
+  const lengthOf = (e: PoseEntry): number => (e.node.kind === "bone" ? e.node.boneLength ?? 0 : 0);
 
   const solveIk = (constraint: IkConstraint): void => {
     if (activity.ikOff.has(constraint.id)) return;
@@ -434,24 +444,22 @@ function applyConstraints(
 
     const tx = target.world.tx, ty = -target.world.ty;
     const rootParentWorld = parentWorld(root);
+    const scaleY = constraint.scaleY ?? "none";
     if (twoBone) {
-      const p = ikBone(root), c = ikBone(effector);
-      const length = effector.node.kind === "bone" ? effector.node.boneLength ?? 0 : 0;
-      const parentLength = root.node.kind === "bone" ? root.node.boneLength ?? 0 : 0;
-      ikApply2(p, c, spineWorld(rootParentWorld), length, tx, ty, bendPositive ? -1 : 1, mix, softness,
-        { stretch: constraint.stretch, scaleY: constraint.scaleY, length: parentLength });
-      solved.set(root.nodeId, fromSpineLocal(p));
-      solved.set(effector.nodeId, fromSpineLocal(c));
-      worldSet.delete(root.nodeId);
-      worldSet.delete(effector.nodeId);
+      // 0: the chain's parent, 1: its root, 2: the effector.
+      const bones = new LooseBones([{ parent: -1, length: 0 }, { parent: 0, length: lengthOf(root) }, { parent: 1, length: lengthOf(effector) }]);
+      putBone(bones, 1, root);
+      putWorld(bones, 2, effector.world);
+      putLocal(bones, 2, toSpineLocal(localOf(effector)));
+      // The exporter writes the stage's bend the other way round (y up).
+      twoBones(bones, 1, 2, tx, ty, bendPositive ? -1 : 1, !!constraint.stretch, scaleY, softness, mix);
+      solved.set(root.nodeId, takeLocal(bones, 1));
+      solved.set(effector.nodeId, takeLocal(bones, 2));
     } else {
-      const b = ikBone(root);
-      ikApply1(b, spineWorld(rootParentWorld), tx, ty, mix, {
-        compress: constraint.compress, stretch: constraint.stretch, scaleY: constraint.scaleY,
-        length: root.node.kind === "bone" ? root.node.boneLength ?? 0 : 0,
-      });
-      solved.set(root.nodeId, fromSpineLocal(b));
-      worldSet.delete(root.nodeId);
+      const bones = new LooseBones([{ parent: -1, length: 0 }, { parent: 0, length: lengthOf(root) }]);
+      putBone(bones, 1, root);
+      oneBone(bones, 1, tx, ty, !!constraint.compress, !!constraint.stretch, scaleY, mix);
+      solved.set(root.nodeId, takeLocal(bones, 1));
     }
     mul(root.world, rootParentWorld, toMatrix(mat(), localOf(root)));
     recompose(root.nodeId);
@@ -460,24 +468,23 @@ function applyConstraints(
   const solveTc = (constraint: TransformConstraint): void => {
     if (activity.tcOff.has(constraint.id)) return;
     const mix = tcMixAt(constraint, animation, frame);
-    if (tcIdle(mix)) return;
+    if (!mix.rotate && !mix.x && !mix.y && !mix.scaleX && !mix.scaleY && !mix.shearY) return;
     const source = byNode.get(constraint.sourceId);
     if (!source) return;
-    const data = tcSolveOf(constraint);
-    const sl = appliedLocal(source);
+    // 0: the source's parent, 1: the source, 2: the bone's parent, 3: the bone.
+    const k = { ...tcSolveOf(constraint), source: 1, bones: [3] };
     for (const id of constraint.boneIds) {
       const e = byNode.get(id);
       if (!e || e === source) continue;
-      const sw = spineWorld(source.world);
-      if (data.localTarget) {
-        solved.set(id, fromSpineLocal(tcSolveLocal(data, mix, sw, sl, appliedLocal(e))));
-        worldSet.delete(id);
-        mul(e.world, parentWorld(e), toMatrix(mat(), localOf(e)));
-      } else {
-        const w = tcSolveWorld(data, mix, sw, sl, spineWorld(e.world));
-        e.world = { a: w.a, b: -w.c, c: -w.b, d: w.d, tx: w.worldX, ty: -w.worldY };
-        worldSet.add(id);
-      }
+      const bones = new LooseBones([{ parent: -1, length: 0 }, { parent: 0, length: lengthOf(source) }, { parent: -1, length: 0 }, { parent: 2, length: lengthOf(e) }]);
+      putBone(bones, 1, source);
+      putBone(bones, 3, e);
+      solveTransform(bones, k, mix);
+      // A world write derives the bone's local pose at once, as the runtime
+      // does: a later change to its parent rebuilds it from that.
+      solved.set(id, takeLocal(bones, 3));
+      if (k.localTarget) mul(e.world, parentWorld(e), toMatrix(mat(), localOf(e)));
+      else e.world = takeWorld(bones, 3);
       recompose(id);
     }
   };

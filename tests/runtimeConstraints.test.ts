@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { AtlasAttachmentLoader, Physics, Skeleton, SkeletonJson, TextureAtlas } from "@esotericsoftware/spine-core";
+import { LooseBones } from "@/core/spine/runtime/bones";
 import { type Json, compare } from "./fixtures/runtimeOracle";
 
 /**
@@ -100,7 +102,11 @@ describe("IK against spine-core", () => {
 
 const SAME = { rotate: { to: { rotate: {} } }, x: { to: { x: {} } }, y: { to: { y: {} } }, scaleX: { to: { scaleX: {} } }, scaleY: { to: { scaleY: {} } }, shearY: { to: { shearY: {} } } };
 
-interface TcCase { name: string; tc: Json; /** Constraints before the transform one. */ before?: Json[]; after?: Json[]; keys?: Json[]; targetUnder?: string }
+interface TcCase {
+  name: string; tc: Json; /** Constraints before the transform one. */ before?: Json[]; after?: Json[]; keys?: Json[]; targetUnder?: string;
+  /** Overrides for the source bone's setup. */
+  src?: Json;
+}
 
 /** A source bone that turns, moves and scales over 2 s, two target bones (one
  *  with a child), and the constraint under test. */
@@ -112,7 +118,7 @@ function tcRig(c: TcCase): Json {
     skeleton: { spine: "4.3.0", fps: 30 },
     bones: [
       { name: "root" },
-      { name: "src", parent: "root", x: 30, y: 10, rotation: 15, length: 40, shearY: 7 },
+      { name: "src", parent: "root", x: 30, y: 10, rotation: 15, length: 40, shearY: 7, ...c.src },
       { name: "p", parent: "root", x: -20, y: 5, rotation: -35, scaleX: 1.3, scaleY: 0.8, length: 30 },
       { name: "t1", parent: c.targetUnder ?? "p", x: 25, y: -6, rotation: 50, scaleX: 0.9, shearY: -12, length: 25 },
       { name: "t2", parent: "root", x: 60, y: 40, rotation: 270, length: 20 },
@@ -141,6 +147,18 @@ const TC_CASES: TcCase[] = [
   { name: "world, additive", tc: { additive: true, mixRotate: 0.5, mixX: 0.5 } },
   { name: "local source", tc: { localSource: true } },
   { name: "local target", tc: { localTarget: true } },
+  // A source sheared past a half turn, mirrored: its shear y reads beyond
+  // ±180, which an added shear does not wrap (measured).
+  {
+    name: "world, additive, half mixes, a mirrored source sheared past a half turn",
+    tc: { additive: true, mixRotate: 0.5, mixX: 0.5, mixY: 0.5, mixScaleX: 0.5, mixScaleY: 0.5, mixShearY: 0.5 },
+    src: { scaleX: -1, shearY: 250 },
+  },
+  {
+    name: "local both, additive, half mixes, a source sheared past a half turn",
+    tc: { localSource: true, localTarget: true, additive: true, mixRotate: 0.5, mixX: 0.5, mixY: 0.5, mixScaleX: 0.5, mixScaleY: 0.5, mixShearY: 0.5 },
+    src: { scaleY: -0.7, shearY: 250 },
+  },
   { name: "local both, additive", tc: { localSource: true, localTarget: true, additive: true, mixRotate: 0.7, mixScaleX: 0.5 } },
   {
     name: "remapped with scale, offset and clamp", tc: {
@@ -407,3 +425,35 @@ describe("bounding boxes against spine-core", () => {
     compare("boxes", rig, EMPTY_ATLAS, undefined, undefined, true);
   });
 });
+
+describe("a local pose derived from a world matrix, against spine-core", () => {
+  // What a world-space constraint leaves: the bone's local pose is derived
+  // from its new world, and rebuilt from that when its parent moves.
+  it("matches updateLocalTransform and builds the same matrix again, mirrored or not", () => {
+    const data = new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(""))).readSkeletonData({
+      skeleton: { spine: "4.3.0" }, bones: [{ name: "root" }, { name: "parent", parent: "root", x: 5, y: -7, rotation: 30, scaleX: 1.4, scaleY: -0.8 }, { name: "b", parent: "parent" }],
+    });
+    const sk = new Skeleton(data);
+    sk.setupPose();
+    sk.updateWorldTransform(Physics.none);
+    const parent = sk.bones[1]!.appliedPose, pose = sk.bones[2]!.appliedPose;
+    let mirrored = 0, seed = 7;
+    const r = () => { seed = (seed * 16807) % 2147483647; return (seed / 2147483647) * 3 - 1.5; };
+    for (let i = 0; i < 200; i++) {
+      const w = [r(), r(), r(), r(), r() * 40, r() * 40];
+      if (w[0]! * w[3]! - w[1]! * w[2]! < 0) mirrored++;
+      [pose.a, pose.b, pose.c, pose.d, pose.worldX, pose.worldY] = w;
+      pose.updateLocalTransform(sk);
+      const theirs = [pose.x, pose.y, pose.rotation, pose.scaleX, pose.scaleY, pose.shearX, pose.shearY];
+      const bones = new LooseBones([{ parent: -1, length: 0 }, { parent: 0, length: 0 }]);
+      bones.world.set([parent.a, parent.b, parent.c, parent.d, parent.worldX, parent.worldY], 0);
+      bones.world.set(w, 6);
+      bones.worldChanged(1);
+      theirs.forEach((v, j) => expect(bones.local[7 + j], `matrix ${i} value ${j}`).toBeCloseTo(v, 4));
+      bones.localChanged(1);
+      w.forEach((v, j) => expect(bones.world[6 + j], `matrix ${i} rebuilt ${j}`).toBeCloseTo(v, 6));
+    }
+    expect(mirrored).toBeGreaterThan(50);
+  });
+});
+

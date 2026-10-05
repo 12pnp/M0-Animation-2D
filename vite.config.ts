@@ -1,7 +1,6 @@
 import { defineConfig, type Plugin } from "vite";
 import { fileURLToPath, URL } from "node:url";
-import { readFileSync, rmSync } from "node:fs";
-import { resolve } from "node:path";
+import { readFileSync } from "node:fs";
 
 const pkg = JSON.parse(
   readFileSync(fileURLToPath(new URL("./package.json", import.meta.url)), "utf8"),
@@ -14,7 +13,7 @@ export default defineConfig(({ command }) => ({
   // document URL, and a host that strips the trailing slash would then look
   // for the assets one directory up.
   base: process.env.ANIMO_BASE ?? "/",
-  plugins: [noOracleInBuild()],
+  plugins: [oracleRuntime()],
   resolve: {
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
@@ -47,14 +46,19 @@ export default defineConfig(({ command }) => ({
   },
 }));
 
-/** spine-pixi-v8 is the Preview's oracle, for `npm run dev:oracle` only
- *  (docs/PREVIEW-RUNTIME-PLAN.md, P4): a build does not ship it. */
-function noOracleInBuild(): Plugin {
-  let outDir = "";
+/** spine-pixi-v8, the Preview's oracle (docs/PREVIEW-RUNTIME-PLAN.md P4, P5),
+ *  served from its npm package to `npm run dev:oracle` only: nothing of it is in
+ *  `public/`, so a build has none of it. */
+function oracleRuntime(): Plugin {
+  const file = fileURLToPath(new URL("./node_modules/@esotericsoftware/spine-pixi-v8/dist/iife/spine-pixi-v8.js", import.meta.url));
   return {
-    name: "no-oracle-in-build",
-    apply: "build",
-    configResolved(config) { outDir = resolve(config.root, config.build.outDir); },
-    closeBundle() { rmSync(resolve(outDir, "vendor/spine-pixi-v8.js"), { force: true }); },
+    name: "oracle-runtime",
+    apply: (_config, env) => env.command === "serve" && env.mode === "oracle",
+    configureServer(server) {
+      server.middlewares.use("/vendor/spine-pixi-v8.js", (_req, res) => {
+        res.setHeader("Content-Type", "text/javascript");
+        res.end(readFileSync(file));
+      });
+    },
   };
 }

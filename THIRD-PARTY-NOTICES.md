@@ -10,8 +10,6 @@ generated from `src/core/about.ts`.
 | Component | Version | Licence | Ships in the app |
 |---|---|---|---|
 | [PixiJS](https://pixijs.com) | 8.21.0 | MIT | yes, `public/vendor/pixi.js` |
-| [spine-pixi-v8](https://github.com/EsotericSoftware/spine-runtimes) | 4.3.13 | Spine Runtimes License | yes, `public/vendor/spine-pixi-v8.js` (the Preview) |
-| [spine-core](https://github.com/EsotericSoftware/spine-runtimes) | 4.3.13 | Spine Runtimes License | yes, bundled (poses opened Spine files on the stage, reads their atlases) |
 | [ag-psd](https://github.com/Agamnentzar/ag-psd) | 31.x | MIT | yes, bundled |
 | [pako](https://github.com/nodeca/pako) | 2.x | MIT AND Zlib | yes, bundled, via ag-psd |
 | [base64-js](https://github.com/beatgammit/base64-js) | 1.x | MIT | yes, bundled, via ag-psd |
@@ -21,12 +19,18 @@ generated from `src/core/about.ts`.
 | [Vite](https://vite.dev) | 6.x | MIT | no, build only |
 | [Vitest](https://vitest.dev) | 3.x | MIT | no, tests only |
 | [TypeScript](https://www.typescriptlang.org) | 5.x | Apache-2.0 | no, build only |
+| [spine-core](https://github.com/EsotericSoftware/spine-runtimes) | 4.3.13 | Spine Runtimes License | no, tests only (the oracle BoneBurst's runtime is checked against) |
+| [spine-pixi-v8](https://github.com/EsotericSoftware/spine-runtimes) | 4.3.13 | Spine Runtimes License | no, `npm run dev:oracle` only (the official runtime in the Preview, for comparison) |
 
-The vendored files carry their notices beside them:
-`public/vendor/LICENSE-pixijs.txt` and `public/vendor/LICENSE-spine-runtimes.txt`,
-copied into every build. The Spine
-Runtimes License requires every user of the product to hold their own Spine Editor
-licence.
+The vendored file carries its notice beside it: `public/vendor/LICENSE-pixijs.txt`,
+copied into every build.
+
+The app ships no file or package of the Spine Runtimes: the Preview and the stage pose Spine files with
+BoneBurst's own runtime (`src/core/spine/runtime/`, docs/PREVIEW-RUNTIME-PLAN.md).
+spine-core and spine-pixi-v8 are development dependencies under the Spine Runtimes
+License, installed from npm for the tests and the development oracle and never built
+into `dist/`. What that means for users' Spine Editor licences is not settled: see
+docs/PREVIEW-RUNTIME-PLAN.md ▸ Licence effect.
 
 **Trademarks.** Spine is a trademark of Esoteric Software. DragonBones is a
 trademark of Egret Technology. PixiJS, Photoshop and Adobe Animate are

@@ -172,6 +172,21 @@ As the plan started; each phase's status below says what it moved off it.
   About dialog, CLAUDE.md's Licensing section, and
   `../_Discuss/2026-10-05-amino-editor-licence-audit.md` (outside this repo);
   verify `dist/` contains no Esoteric bytes.
+  **Done, but for the legal review (Risks).** The stage's IK and transform
+  constraints are the runtime's solvers (`oneBone`, `twoBones`,
+  `solveTransform`) on a `LooseBones` (`core/spine/runtime/bones.ts`); the
+  transcribed `core/math/ik.ts` and `transformConstraint.ts` are deleted, their
+  channel types moved to `core/doc/types.ts`. The switch found two runtime
+  bugs, both measured and now in `tests/runtimeConstraints.test.ts`: a local
+  pose derived from a mirrored world had its shear y 180° out, and an additive
+  world shear y was wrapped before its mix. `public/vendor/spine-pixi-v8.js` and
+  its licence are deleted; spine-core and spine-pixi-v8 4.3.13 (byte-identical
+  to the vendored file) are devDependencies, the oracle served from
+  `node_modules` under `npm run dev:oracle`. THIRD-PARTY-NOTICES.md, the About
+  dialog, CLAUDE.md and the `_Discuss` audit are updated, and none of them says
+  users need no Spine Editor licence. `grep -rn '@esotericsoftware' src/` prints
+  nothing; no file in `src/` says it is transcribed; `dist/` holds no
+  spine-core identifier, its only Esoteric mention the trademark line.
 
 ## Acceptance
 
@@ -204,7 +219,12 @@ remain the user's own content.
   it rests on (M0-Animation2D `Doc/Format`), live outside this repo; link them
   before P2 depends on them.
 - Clean-room discipline for IK and transform: whoever writes the new solvers
-  should not work from the transcribed files they replace.
+  should not work from the transcribed files they replace. (P5 replaced them by
+  the runtime's, written without opening them; P5 itself read only their
+  interfaces to swap the callers.)
+- `src/core/spine/types.ts`, the JSON contract, says its field names and
+  defaults were read out of spine-core's JSON parser: facts about the format,
+  no code, but provenance the legal review should see.
 - **The runtime's author is not clean-room (decided 2026-10-05).** P0–P2 are
   written by Claude, whose training includes the open-source Spine runtimes;
   it worked from the format's behaviour and spine-core as a black-box oracle,

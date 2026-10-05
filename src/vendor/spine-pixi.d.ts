@@ -1,7 +1,7 @@
 /**
  * The globals of the preview page's classic scripts, `public/vendor/pixi.js`
- * (PixiJS 8.21.0) and `public/vendor/spine-pixi-v8.js` (4.3.13), declared
- * only as far as `src/preview/` calls them.
+ * (PixiJS 8.21.0) and, under `npm run dev:oracle` only, spine-pixi-v8 4.3.13
+ * (served from its npm package), declared only as far as `src/preview/` calls them.
  */
 
 declare namespace PIXI {

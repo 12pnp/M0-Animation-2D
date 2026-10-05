@@ -1,5 +1,5 @@
 import { DEG_RAD, type TransformData, type TransformMix, type TransformProp } from "./rigData";
-import type { Rig } from "./rig";
+import type { Bones } from "./bones";
 
 /**
  * Spine 4.3's transform constraint on the BoneBurst runtime's pose (the
@@ -15,7 +15,7 @@ const PI = 180 * DEG_RAD;
 const wrapPi = (v: number) => (v > PI ? v - 2 * PI : v < -PI ? v + 2 * PI : v);
 
 /** The source's value of `prop`, offset by the constraint's own offsets. */
-function read(rig: Rig, k: TransformData, prop: TransformProp): number {
+function read(rig: Bones, k: Pick<TransformData, "source" | "localSource" | "offsets">, prop: TransformProp): number {
   return boneProperty(rig, k.source, prop, k.localSource, k.offsets);
 }
 
@@ -25,7 +25,7 @@ const NO_OFFSETS: Record<TransformProp, number> = { rotate: 0, x: 0, y: 0, scale
  * A bone's `prop`, as a transform constraint or slider reads it: its local
  * value, or in the world, in the skeleton's unscaled space — plus `o`.
  */
-export function boneProperty(rig: Rig, s: number, prop: TransformProp, local: boolean, o: Record<TransformProp, number> = NO_OFFSETS): number {
+export function boneProperty(rig: Bones, s: number, prop: TransformProp, local: boolean, o: Record<TransformProp, number> = NO_OFFSETS): number {
   if (local) {
     const L = rig.local, l = s * 7;
     switch (prop) {
@@ -55,7 +55,7 @@ export function boneProperty(rig: Rig, s: number, prop: TransformProp, local: bo
 }
 
 /** Drive `prop` of `bone` toward `value` by `mix`, in its local pose. */
-function writeLocal(rig: Rig, bone: number, prop: TransformProp, value: number, mix: number, additive: boolean): void {
+function writeLocal(rig: Bones, bone: number, prop: TransformProp, value: number, mix: number, additive: boolean): void {
   const L = rig.local, l = bone * 7;
   switch (prop) {
     case "rotate": L[l + 2] = L[l + 2]! + (additive ? value : value - L[l + 2]!) * mix; break;
@@ -73,7 +73,7 @@ function writeLocal(rig: Rig, bone: number, prop: TransformProp, value: number, 
 }
 
 /** Drive `prop` of `bone` toward `value` by `mix`, on its world transform. */
-function writeWorld(rig: Rig, bone: number, prop: TransformProp, value: number, mix: number, additive: boolean): void {
+function writeWorld(rig: Bones, bone: number, prop: TransformProp, value: number, mix: number, additive: boolean): void {
   const W = rig.world, w = bone * 6, sx = rig.scaleX, sy = rig.scaleY;
   switch (prop) {
     case "rotate": {
@@ -109,7 +109,9 @@ function writeWorld(rig: Rig, bone: number, prop: TransformProp, value: number, 
       let r = (value + 90) * DEG_RAD;
       if (additive) r -= PI / 2;
       else r -= by - Math.atan2(W[w + 2]! / sy, W[w]! / sx);
-      r = by + wrapPi(r) * mix;
+      // An added shear is not wrapped: a source sheared past a half turn
+      // adds it all (measured; wrapped, half a mix turns the axis around).
+      r = by + (additive ? r : wrapPi(r)) * mix;
       const len = Math.sqrt(b * b + d * d);
       W[w + 1] = Math.cos(r) * len * sx;
       W[w + 3] = Math.sin(r) * len * sy;
@@ -119,7 +121,9 @@ function writeWorld(rig: Rig, bone: number, prop: TransformProp, value: number, 
 }
 
 /** Apply one transform constraint: its source and bones are up to date. */
-export function solveTransform(rig: Rig, k: TransformData, mix: TransformMix): void {
+export function solveTransform(
+  rig: Bones, k: Pick<TransformData, "bones" | "source" | "localSource" | "localTarget" | "additive" | "clamp" | "offsets" | "properties">, mix: TransformMix,
+): void {
   if (!mix.rotate && !mix.x && !mix.y && !mix.scaleX && !mix.scaleY && !mix.shearY) return;
   for (const bone of k.bones) {
     for (const from of k.properties) {

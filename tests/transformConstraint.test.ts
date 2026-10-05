@@ -3,7 +3,8 @@ import {
   deleteTcKeys, FULL_MIX, identityProperties, isIdentityMap, moveTcKeys, NEW_MAPPING, tcMixAt, tcSolveOf, tcTweenOf, transformPlan, usedMixes,
   withMapping, withoutMapping, withSourceOffset, withTcKey, withTcTween,
 } from "@/core/doc/transformKeys";
-import { tcLocalOf, tcSolveWorld } from "@/core/math/transformConstraint";
+import { LooseBones } from "@/core/spine/runtime/bones";
+import { solveTransform } from "@/core/spine/runtime/transform";
 import { migrate, validateProject } from "@/core/doc/schema";
 import { exportSpine, spineJson } from "@/core/spine/exportSpine";
 import { importSpine } from "@/core/spine/importSpine";
@@ -74,9 +75,14 @@ describe("a new constraint", () => {
   });
 
   it("world, full mix, identity map: a bone takes the source's world matrix", () => {
-    const sw = { a: 0.6, b: -0.8, c: 0.8, d: 0.6, worldX: 10, worldY: 20 };
-    const out = tcSolveWorld(tcSolveOf({ ...k, properties: identityProperties(), mix: { ...FULL_MIX } }), FULL_MIX, sw, tcLocalOf(sw, null), { a: 1, b: 0, c: 0, d: 1, worldX: 0, worldY: 0 });
-    for (const f of ["a", "b", "c", "d", "worldX", "worldY"] as const) expect(out[f]).toBeCloseTo(sw[f], 5);
+    // 0: the source, 1: the bone, both roots; the source turned and moved.
+    const bones = new LooseBones([{ parent: -1, length: 0 }, { parent: -1, length: 0 }]);
+    const sw = [0.6, -0.8, 0.8, 0.6, 10, 20];
+    bones.world.set(sw, 0);
+    bones.worldChanged(0);
+    bones.setBone(1, 0, 0, 0, 1, 1, 0, 0);
+    solveTransform(bones, { ...tcSolveOf({ ...k, properties: identityProperties(), mix: { ...FULL_MIX } }), source: 0, bones: [1] }, FULL_MIX);
+    sw.forEach((v, i) => expect(bones.world[6 + i]).toBeCloseTo(v, 5));
   });
 });
 

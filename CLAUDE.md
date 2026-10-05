@@ -24,8 +24,8 @@ paths; the decisions are pure in `core/doc/cycle.ts`, `bonePath.ts`, `pathEdit.t
 `core/doc/ikKeys.ts`). Animations fire events, with sounds (ARCHITECTURE ▸ Events,
 `core/doc/events.ts`), and a Graph panel edits property curves and their eases
 (ARCHITECTURE ▸ Graph editor, `core/doc/graphEdit.ts`). Transform constraints are
-Spine 4.3's, solved on the stage by a transcription of spine-core (ARCHITECTURE ▸
-Transform constraints, `core/math/transformConstraint.ts`). An image can be a mesh,
+Spine 4.3's, solved on the stage by our runtime's solver (ARCHITECTURE ▸
+Transform constraints, `core/spine/runtime/transform.ts`). An image can be a mesh,
 made from its alpha, bound to bones by weights and keyed by deform (ARCHITECTURE ▸
 Meshes, `core/mesh/`). Skins put their own images in slots and have bones and
 constraints of their own, by spine-core's rules (ARCHITECTURE ▸ Skins, `core/doc/skins.ts`).
@@ -158,12 +158,11 @@ npx tsc --noEmit   # typecheck alone; faster than a build while iterating
 
 AGPL-3.0-or-later, inherited from Animo; keep `LICENSE`, `LICENSE-EXCEPTION.md`
 and `THIRD-PARTY-NOTICES.md`. What the exporter writes is the user's (the
-exception's second clause). `public/vendor/spine-pixi-v8.js` is under the Spine
-Runtimes License, not MIT (THIRD-PARTY-NOTICES.md): since
-docs/PREVIEW-RUNTIME-PLAN.md P4 it is the Preview's oracle under `npm run dev:oracle`
-only, and a build leaves it out of `dist/`. `@esotericsoftware/spine-core` is a
-test oracle only: since P3b nothing in `src/` imports it and the editor bundle
-holds none of it. `core/math/ik.ts` and `transformConstraint.ts` are still
-transcriptions of it (the plan's P2 note), so until P5 and its legal review the
-app still ships Spine Runtimes code and every user still needs their own Spine
-Editor licence.
+exception's second clause). No file or package of the Spine Runtimes ships: the Preview and the
+stage pose Spine files with our own runtime (`core/spine/runtime/`,
+docs/PREVIEW-RUNTIME-PLAN.md). `@esotericsoftware/spine-core` (the test oracle) and
+`spine-pixi-v8` (the Preview's oracle under `npm run dev:oracle`) are dev
+dependencies under the Spine Runtimes License: nothing in `src/` imports them, a
+build holds none of them, and CI checks `dist/`. Whether users then need no Spine
+Editor licence is the plan's open legal question (▸ Licence effect, Risks): do
+not state it as settled.

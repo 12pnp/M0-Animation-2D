@@ -1,5 +1,6 @@
 import { readPolyline } from "@/core/math/easing";
 import type { SpineInherit } from "../types";
+import { type Bones, localFromWorld, normalWorld } from "./bones";
 import { type IkPose, solveIk } from "./ik";
 import { solveTransform } from "./transform";
 import { type PathPose, solvePath } from "./path";
@@ -20,7 +21,7 @@ import {
  * afterwards: the inherit modes other than normal take the skeleton's scale
  * out of the parent and put it back.
  */
-export class Rig {
+export class Rig implements Bones {
   /** The skeleton's own placement, applied to the root bones. */
   x = 0;
   y = 0;
@@ -514,34 +515,9 @@ export class Rig {
   /** The local pose that gives the bone's world under its parent (normal
    *  inheritance), with no x shear. */
   private localFromWorld(bone: number): void {
-    const W = this.world, w = bone * 6;
-    const parent = this.data.bones[bone]!.parent, p = parent * 6;
-    const pa = parent >= 0 ? W[p]! : this.scaleX, pb = parent >= 0 ? W[p + 1]! : 0;
-    const pc = parent >= 0 ? W[p + 2]! : 0, pd = parent >= 0 ? W[p + 3]! : this.scaleY;
-    const px = parent >= 0 ? W[p + 4]! : this.x, py = parent >= 0 ? W[p + 5]! : this.y;
-    const pid = 1 / (pa * pd - pb * pc);
-    const dx = W[w + 4]! - px, dy = W[w + 5]! - py;
-    const ia = pid * pd, id = pid * pa, ib = pid * pb, ic = pid * pc;
-    const a = W[w]!, b = W[w + 1]!, c = W[w + 2]!, d = W[w + 3]!;
-    const ra = ia * a - ib * c, rb = ia * b - ib * d, rc = id * c - ic * a, rd = id * d - ic * b;
-    const L = this.local, l = bone * 7;
-    L[l] = dx * pd * pid - dy * pb * pid;
-    L[l + 1] = dy * pa * pid - dx * pc * pid;
-    L[l + 5] = 0;
-    let scaleX = Math.sqrt(ra * ra + rc * rc);
-    if (scaleX > 0.0001) {
-      const det = ra * rd - rb * rc;
-      // The y axis's length, signed by the mirror: shear turns it, it does not shorten it.
-      L[l + 4] = Math.sign(det) * Math.sqrt(rb * rb + rd * rd);
-      L[l + 6] = -Math.atan2(ra * rb + rc * rd, det) / DEG_RAD;
-      L[l + 2] = Math.atan2(rc, ra) / DEG_RAD;
-    } else {
-      scaleX = 0;
-      L[l + 4] = Math.sqrt(rb * rb + rd * rd);
-      L[l + 6] = 0;
-      L[l + 2] = 90 - Math.atan2(rd, rb) / DEG_RAD;
-    }
-    L[l + 3] = scaleX;
+    const W = this.world, parent = this.data.bones[bone]!.parent, p = parent * 6;
+    if (parent >= 0) localFromWorld(W, bone * 6, W[p]!, W[p + 1]!, W[p + 2]!, W[p + 3]!, W[p + 4]!, W[p + 5]!, this.local, bone * 7);
+    else localFromWorld(W, bone * 6, this.scaleX, 0, 0, this.scaleY, this.x, this.y, this.local, bone * 7);
   }
 
   private stale(bone: number): void {
@@ -587,9 +563,7 @@ export class Rig {
     W[w + 5] = pc * x + pd * y + W[p + 5]!;
     const mode = this.inherit[index]!;
     if (mode === "normal") {
-      const [la, lb, lc, ld] = local(0);
-      W[w] = pa * la + pb * lc; W[w + 1] = pa * lb + pb * ld;
-      W[w + 2] = pc * la + pd * lc; W[w + 3] = pc * lb + pd * ld;
+      normalWorld(L, l, pa, pb, pc, pd, W[p + 4]!, W[p + 5]!, W, w);
       return;
     }
     // The parent without the skeleton's scale; put back at the end.

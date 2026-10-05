@@ -33,7 +33,7 @@ import {
 } from "@/app/TimelineOps";
 import { type IkPose, ikPoseAt, withIkKey } from "@/core/doc/ikKeys";
 import { isIdentityMap, tcMixAt, transformPlan, usedMixes, withMapping, withoutMapping, withSourceOffset, withTcKey } from "@/core/doc/transformKeys";
-import { TC_CHANNELS, type TcChannel, type TcFrom } from "@/core/math/transformConstraint";
+import { TC_CHANNELS, type TcChannel, type TcFrom } from "@/core/doc/types";
 import { newTcId } from "@/core/doc/ids";
 import { alertDialog, chooseDialog } from "@/view/widgets/dialogs";
 import { cloneTf, type Transform } from "@/core/math/Transform";

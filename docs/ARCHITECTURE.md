@@ -1545,15 +1545,15 @@ guessed wrong. `core/export/dbTypes.ts` is the authority.
 
 ## Vendored runtime
 
-`public/vendor/pixi.js` (PixiJS 8.21.0) and `public/vendor/spine-pixi-v8.js` (4.3.13, the
-package's IIFE build, which bundles spine-core) are **classic scripts, not npm packages**, served
-to `preview.html` so neither is in the editor bundle. `src/vendor/spine-pixi.d.ts` declares only
-the surface `src/preview/` calls. Since docs/PREVIEW-RUNTIME-PLAN.md P4 spine-pixi-v8 is the
-**oracle only**: `preview.html` loads `pixi.js`, and `previewClient.ts` adds spine-pixi-v8 and
-imports its adapter (`spineRig.ts`) only when Vite runs in mode `oracle` (`npm run dev:oracle`;
-there `localStorage["animo.previewRuntime"] = "boneburst"` plays ours, for comparing the two in
-one origin). A build folds the mode test away, so neither is in `dist/`'s preview code, and
-`vite.config.ts` (`noOracleInBuild`) deletes the copied `dist/vendor/spine-pixi-v8.js`. Not obvious:
+`public/vendor/pixi.js` (PixiJS 8.21.0) is a **classic script, not an npm package**, served to
+`preview.html` so it is not in the editor bundle. `src/vendor/spine-pixi.d.ts` declares only the
+surface `src/preview/` calls. spine-pixi-v8 4.3.13 (the package's IIFE build, which bundles
+spine-core) is the Preview's **oracle only**: a dev dependency since
+docs/PREVIEW-RUNTIME-PLAN.md P5, served from `node_modules` at `/vendor/spine-pixi-v8.js` by
+`vite.config.ts` (`oracleRuntime`) when Vite runs in mode `oracle` (`npm run dev:oracle`), and
+added by `previewClient.ts` with its adapter (`spineRig.ts`) only then; there
+`localStorage["animo.previewRuntime"] = "boneburst"` plays ours, for comparing the two in one
+origin. A build folds the mode test away and has no copy of it; CI fails if one appears. Not obvious:
 
 - **Order matters.** The IIFE calls `require("pixi.js")`; its embedded shim maps that to the
   global `PIXI`, and only when `PIXI` already exists. So `pixi.js` loads first (the oracle is
@@ -1566,8 +1566,8 @@ one origin). A build folds the mode test away, so neither is in `dist/`'s previe
 - `PIXI.Assets.load()` cannot resolve a blob URL (no extension to pick a parser from) and returns
   an EMPTY texture without raising. Pages are built from `createImageBitmap` +
   `PIXI.Texture.from`, and handed to each atlas page as `spine.SpineTexture.from(texture.source)`.
-- The Spine Runtimes License applies to `spine-pixi-v8.js` (see THIRD-PARTY-NOTICES.md); P5
-  deletes it from the repository.
+- The Spine Runtimes License applies to spine-pixi-v8 and spine-core, both dev dependencies
+  (THIRD-PARTY-NOTICES.md).
 
 ## The BoneBurst runtime
 
@@ -1685,7 +1685,16 @@ through it (`spinePose.ts`, P3b), and it is the Preview's runtime (P4).
   is checked by what it covers: with that clip moved out of sight, spine-core draws exactly the
   slots ours does not put under it. A region's quad is split along the same diagonal with its
   triangles in Spine's order (`QUAD`). Our exports run in CI; the samples where they exist.
-- File ▸ Open Spine reads atlases with `readAtlas`; nothing in `src/` imports spine-core.
+- File ▸ Open Spine reads atlases with `readAtlas`; nothing in `src/` imports spine-core, and
+  since P5 the stage's own IK and transform constraints are solved by `ik.ts` and
+  `transform.ts` too, through `LooseBones` (`bones.ts`: the `Bones` the solvers take, which
+  `Rig` also is, and the shared `normalWorld` / `localFromWorld`).
+- **Two runtime bugs the stage's switch found** (P5, spineParity's random transform rigs),
+  both now held to spine-core in `tests/runtimeConstraints.test.ts`:
+  - a local pose derived from a MIRRORED world had its shear y 180° out, so rebuilding the
+    bone from it flipped its y axis; spine-core's `updateLocalTransform` round-trips;
+  - an additive shear y in world space is not wrapped into ±180° before its mix: a source
+    sheared past a half turn adds all of it (wrapped, half a mix turned the axis around).
 
 ## Keyboard shortcuts
 
@@ -1934,12 +1943,13 @@ wrong by the edited instance's scale.
 
 ## Bones and IK
 
-`core/math/ik.ts` is a transcription of Spine's `IkConstraint.apply1` / `apply2`
-(spine-core 4.3.13), not an independent solver. It works in Spine's space on the chain
-bones' LOCAL values against their parents' world matrices, and writes back local rotations
-only; `applyIk` in `core/doc/pose.ts` maps the stage's bones there (`toSpineLocal`, parent
-worlds flipped to y up) and the solved locals back (`fromSpineLocal`). Behaviour the file
-inherits and the port keeps: `mix` (the editor's weight) blends local rotations; a
+The stage solves IK with our runtime's solver (`oneBone` / `twoBones` in
+`core/spine/runtime/ik.ts`, The BoneBurst runtime); until docs/PREVIEW-RUNTIME-PLAN.md P5 it
+was `core/math/ik.ts`, a transcription of spine-core's. It works in Spine's space on the chain
+bones' LOCAL values against their parents' world matrices; `applyConstraints` in
+`core/doc/pose.ts` puts the chain's parent, root and effector in a `LooseBones`
+(`core/spine/runtime/bones.ts`: `toSpineLocal`, worlds flipped to y up) and takes the solved
+locals back (`fromSpineLocal`). Behaviour it keeps: `mix` (the editor's weight) blends local rotations; a
 non-uniform parent scale takes a numeric solve and ZEROES the child's local y; angles use
 the runtime's pi and wrap into (−180, 180] before mixing; a zero weight skips the solve.
 Softness is ported (`IkConstraint.softness`, pixels, two-bone chains only: near full reach
@@ -2091,19 +2101,19 @@ constraint round-trips unchanged.
   once the map is more than each property driving itself (`isIdentityMap`). Pure in
   `core/doc/transformKeys.ts` (`withMapping`, `withoutMapping`, `withSourceOffset`); one
   `SetTransforms` per edit, a scrub one step. AI: `map_transform`.
-- **The solver** (`core/math/transformConstraint.ts`) is a transcription of spine-core's
-  `TransformConstraint.update`, the `From*` / `To*` properties and
-  `BonePose.updateLocalTransform` (normal inherit), in its space and with its pi. The stage
-  runs it in one constraint pass with the IK (`applyConstraints` in `core/doc/pose.ts`), in
+- **The solver** is our runtime's (`solveTransform` in `core/spine/runtime/transform.ts`),
+  on a `LooseBones` holding the source, the bone and their parents, in Spine's space and with
+  its pi; until P5 it was `core/math/transformConstraint.ts`, a transcription of spine-core's.
+  The stage runs it in one constraint pass with the IK (`applyConstraints` in `core/doc/pose.ts`), in
   the symbol's constraint order (ARCHITECTURE ▸ Constraint order; by default IK first, then
   transform constraints in their order), which is the exporter's order. They share
   the solved locals, since a world change to a bone rebuilds its children from their solved
   locals (an IK chain under a constrained bone keeps its solve).
-  - **Local values are the applied ones**, not ones derived from the world matrix, unless an
-    earlier constraint set that bone's world (`worldSet`, the runtime's
-    `validateLocalTransform`). Deriving them every time turned a rotation of 270 into −90,
-    which changes a partial mix. An IK applied after such a constraint reads the derived
-    local too.
+  - **Local values are the applied ones**, not ones derived from the world matrix, unless a
+    constraint set that bone's world: then its local is derived at once (`worldChanged`,
+    `localFromWorld`, as `Rig` does), and a later change to its parent rebuilds it from that.
+    Deriving them every time turned a rotation of 270 into −90, which changes a partial mix.
+    An IK applied after such a constraint reads the derived local too.
 - **Checked**: `spineParity` ▸ "transform constraints: 60 random rigs" plays world and local,
   additive, clamp, remapped tables, keyed mixes and IK chains under constrained bones through
   spine-core frame by frame. A source whose keyed scale passes through 0 is left out: its axis

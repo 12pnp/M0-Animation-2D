@@ -3,9 +3,9 @@
  * reads).
  *
  * This file is the CONTRACT. Every field, unit and default here was read out
- * of the runtime's own parser (`SkeletonJson.readSkeletonData` in
- * @esotericsoftware/spine-core 4.3.13, the core of the spine-pixi-v8 build
- * the preview runs), not from documentation. The notes record what fails
+ * of the official runtime's parser (`SkeletonJson.readSkeletonData` in
+ * spine-core 4.3.13), not from documentation: the format's names and
+ * defaults, no code of it (docs/PREVIEW-RUNTIME-PLAN.md ▸ Risks). The notes record what fails
  * SILENTLY when it is guessed wrong. What the editor writes is typed; what
  * an opened file carries through untouched (meshes, paths, physics, sliders,
  * deform keys …) is `SpineRaw`, checked only for the names it references

@@ -1,8 +1,13 @@
 import { applyTween, type TweenSpec } from "@/core/math/easing";
-import { TC_CHANNELS, type TcChannel, type TcFrom, type TcMix, type TcSolve, type TcTo } from "@/core/math/transformConstraint";
+import type { TransformData } from "@/core/spine/runtime/rigData";
 import type { NodeId, TcId } from "./ids";
 import { SMOOTH_CURVE, type IkTween } from "./ikKeys";
-import type { Animation, SymbolItem, TcKey, TransformConstraint } from "./types";
+import { type Animation, type SymbolItem, TC_CHANNELS, type TcChannel, type TcFrom, type TcKey, type TcTo, type TransformConstraint } from "./types";
+
+export type TcMix = Record<TcChannel, number>;
+
+/** What the runtime's solver (`core/spine/runtime/transform.ts`) reads off a constraint, but its bones. */
+export type TcSolve = Pick<TransformData, "localSource" | "localTarget" | "additive" | "clamp" | "offsets" | "properties">;
 
 /**
  * Transform constraints (ARCHITECTURE ▸ Transform constraints): what the
@@ -27,7 +32,7 @@ export function tcSolveOf(k: TransformConstraint): TcSolve {
     additive: !!k.additive,
     clamp: !!k.clamp,
     offsets: { rotate: o.rotate ?? 0, x: o.x ?? 0, y: o.y ?? 0, scaleX: o.scaleX ?? 0, scaleY: o.scaleY ?? 0, shearY: o.shearY ?? 0 },
-    properties: k.properties,
+    properties: k.properties.map((p) => ({ from: p.from, offset: p.offset, to: p.to.map((t) => ({ prop: t.to, offset: t.offset, max: t.max, scale: t.scale })) })),
   };
 }
 

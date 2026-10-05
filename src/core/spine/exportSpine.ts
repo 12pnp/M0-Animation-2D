@@ -12,7 +12,7 @@ import { orderAt, toOffsets } from "@/core/doc/drawOrder";
 import { eventValues } from "@/core/doc/events";
 import { usedMixes } from "@/core/doc/transformKeys";
 import { type MeshBones, meshUvs, spineDeform, spineVertices } from "@/core/mesh/meshPose";
-import { TC_CHANNELS, type TcChannel } from "@/core/math/transformConstraint";
+import { TC_CHANNELS, type TcChannel } from "@/core/doc/types";
 import type { Contour } from "@/core/atlas/contour";
 import { nz } from "@/core/math/angle";
 import { mat, type Matrix2D } from "@/core/math/Matrix2D";

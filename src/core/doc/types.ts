@@ -3,7 +3,6 @@ import type { ExportSettings } from "@/core/export/settings";
 import type { ChannelEases, TweenSpec } from "@/core/math/easing";
 import type { SpineInherit } from "@/core/spine/types";
 import type { AnimId, AssetId, CnId, FolderId, IkId, ItemId, LayerId, NodeId, TcId } from "./ids";
-import type { TcChannel, TcFrom } from "@/core/math/transformConstraint";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
 export const DOC_VERSION = 27;
@@ -479,6 +478,16 @@ export interface IkConstraint {
    Spine 4.3's: `boneIds` follow `sourceId` through `properties`, a map from
    a source property to target properties. Every value as Spine writes it,
    y up (rotation counter-clockwise).                                      */
+
+/** What a transform constraint reads from its source and drives in its bones
+ *  (Spine 4.3's property names). */
+export type TcChannel = "rotate" | "x" | "y" | "scaleX" | "scaleY" | "shearY";
+export const TC_CHANNELS: readonly TcChannel[] = ["rotate", "x", "y", "scaleX", "scaleY", "shearY"];
+/** One target property a source property drives: `offset + value × scale`,
+ *  clamped toward `max` when the constraint clamps. */
+export interface TcTo { to: TcChannel; offset: number; max: number; scale: number }
+/** A source property, less its `offset`, and the target properties it drives. */
+export interface TcFrom { from: TcChannel; offset: number; to: TcTo[] }
 
 export interface TransformConstraint {
   id: TcId;
