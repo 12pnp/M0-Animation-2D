@@ -13,6 +13,8 @@ flowchart LR
 
 ## 2026-10-06
 
+- **The BoneBurst editor is version 0.2.0** (`Animation-BoneBurst-Src/package.json`, shown in About): the refactor removed motion blur and moved saved documents to version 28, which an older editor refuses, so the minor version moves.
+
 - **BoneBurst editor v2: owner decisions D1–D5 taken** (docs only): the Animo-fork editor takes bug fixes and data-format work only; v2 lives in `Editor-BoneBurst-Src/`; the Morenoise email goes out as a hedge (owner); v2 is Spine-native (no nested symbols, sidecar for view state only); the tool contract gets a new version. Plan: [EDITOR-V2-PLAN.md](../../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md). Next: E0.
 
 - **BoneBurst editor v2 plan: a new MIT editor with no Animo code** (`Animation-BoneBurst-Src/docs/`, docs only). Reviewed against the code before landing: the runtime's real folder and its one Animo-era tie (`core/math/easing.ts`), the reader/writer as rewrite rather than lift, about 20 of the 50 tools tied to the current model, and Spine JSON as the document format costing nested symbols, between-frame eases, cycles and bone-path handles. Two owner decisions added (D4 document format, D5 tool contract). Plan: [EDITOR-V2-PLAN.md](../../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md). Not started.
