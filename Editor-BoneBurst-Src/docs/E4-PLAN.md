@@ -17,8 +17,9 @@ opened again with everything back. Step 9 (the reference panel) done: a referenc
 faded, saved, opened again missing and then with its file. Step 10 (preferences) done: each
 preference changed in the dialog and seen, kept through a reload, reset. Step 11 (keying
 constraints and deforms) done: an IK mix keyed and the torso mesh deformed at two frames on
-the stickman, played, saved, posed alike by both runtimes. Later steps not started.
-`npm run check`: 317 tests.
+the stickman, played, saved, posed alike by both runtimes. Steps 12–15 planned (wrap-up, owner
+decisions 2026-10-06); weight brush and guide snapping parked for after E5. `npm run check`:
+317 tests.
 
 E4 makes the editor author a rig, not only animate one: panels and docking (D6), slots,
 attachments, draw order, skins, constraints, mesh editing, PSD import and preferences. It is
@@ -843,10 +844,35 @@ flowchart LR
    as pointer events at the vertex keyed it with the camera untouched, and a plain tool drag
    only pans. Nothing in the app zooms except the wheel and Fit.
 
-## Later steps (planned when step 12 starts)
+## Wrap-up (owner decisions, 2026-10-06)
 
-Re-importing a PSD; drawing constraints on the stage, a weight brush, snapping to guides,
-dragging references on the stage.
+E4 finishes with three more steps and one closing verification; two items are parked, not
+dropped.
+
+```mermaid
+flowchart LR
+    S12["12 · constraints drawn<br/>on the stage"] --> S13["13 · references dragged<br/>on the stage"] --> S14["14 · PSD re-import"]
+    S14 --> S15["15 · closing browser session<br/>popouts + skins, meshes,<br/>constraint drawing live"]
+    S15 --> PW["Playwright regression:<br/>popout via waitForEvent('popup')"]
+    PW --> DONE["E4 done"]
+    PARK["E4.5, after E5:<br/>weight brush · snapping to guides"] -.-> DONE
+```
+
+- **Done when (v2 plan, amended)**: every authoring surface is built and seen working in the
+  browser, popout windows included, with a permanent Playwright regression for popouts. The
+  `auto_rig` → `apply_motion` → `check_preview` flow moved to E5 and is its primary criterion.
+- **Step 12** — constraints drawn on the stage (IK chains to their targets, transform links,
+  path followers, physics and slider bones).
+- **Step 13** — reference images dragged on the stage.
+- **Step 14** — re-importing a PSD into an existing rig: new pixels and placement for the layers
+  it already has, new layers added, nothing the rig built on them (bones, weights, animation)
+  lost.
+- **Step 15** — one browser verification session: popout windows on screen (the oldest
+  unverified item, from step 1), and everything added since step 2 not yet seen live (skins,
+  mesh editing, constraint drawing); then a Playwright regression that opens a panel in a new
+  window (`waitForEvent('popup')`) and checks it draws, so it never lapses again.
+- **Parked for after E5 (E4.5)**: the weight brush; snapping to guides.
+- **Pushing**: `git push origin main` after every step commit, from 2026-10-06 on.
 
 ## Results
 
