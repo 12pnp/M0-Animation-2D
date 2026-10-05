@@ -476,10 +476,11 @@ export class Dock {
       const g = d.groupEls[t.group]!.getBoundingClientRect();
       const strip = d.stripEls[t.group]!.getBoundingClientRect();
       if (t.edge !== "into") {
-        const y = t.edge === "before" ? g.top : g.bottom;
-        r = { left: g.left, right: g.right, top: y - 1, bottom: y + 1 };
-      } else if (lastPointer.y > strip.bottom) {
-        r = g;
+        // The half of the group the new one takes.
+        const mid = (strip.bottom + g.bottom) / 2;
+        r = t.edge === "before"
+          ? { left: g.left, right: g.right, top: g.top, bottom: mid }
+          : { left: g.left, right: g.right, top: mid, bottom: g.bottom };
         area = true;
       } else {
         const tabs = d.stripEls[t.group]!.querySelectorAll(".ptab");

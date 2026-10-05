@@ -64,11 +64,9 @@ export function dropTargetAt(docks: DockRects[], x: number, y: number): DropTarg
         const tab = grp.tabs.filter((t) => (t.left + t.right) / 2 < x).length;
         return { dock: d, group: g, edge: "into", tab };
       }
-      const h = grp.rect.bottom - grp.rect.top;
-      const band = Math.min(28, h * 0.28);
-      if (y < grp.rect.top + band) return { dock: d, group: g, edge: "before" };
-      if (y > grp.rect.bottom - band) return { dock: d, group: g, edge: "after" };
-      return { dock: d, group: g, edge: "into", tab: grp.tabs.length };
+      // The strip nests the tab; the body splits the group, above or below by the half.
+      const mid = (grp.strip.bottom + grp.rect.bottom) / 2;
+      return { dock: d, group: g, edge: y < mid ? "before" : "after" };
     }
     if (!inside(dock.rect, x, y)) continue;
     if (dock.groups.length === 0) return { dock: d, edge: "empty" };

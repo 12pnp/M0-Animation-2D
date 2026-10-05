@@ -2680,8 +2680,9 @@ maps a panel id to its dock and adds the part the Window menu needs: `showPanel`
 un-collapses the right column, without which every menu entry does its job invisibly — that is
 what made the Window menu look dead.
 
-A tab drags anywhere: into a strip at a position, above or below a group, into the other dock,
-or off every dock to float. Where it lands and the new layouts are pure (`dropTargetAt`,
+A tab drags anywhere: into a strip at a position (it joins that group's tabs), onto a group's
+body (it splits off a new group above or below, by the half under the pointer), into the other
+dock, or off every dock to float. Where it lands and the new layouts are pure (`dropTargetAt`,
 `moveTab` in `view/widgets/dockDrop.ts`, tested in `tests/dockDrop.test.ts`). A tab moved to
 the other dock is stored in that dock's layout, so `Shell.addRightPanel`/`addBottomPanel`
 register a panel wherever a stored layout places it (`Dock.stores`), and `Shell` asks the
