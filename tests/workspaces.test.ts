@@ -3,6 +3,7 @@ import { PANEL_COMMANDS } from "@/core/keys/commands";
 import {
   type Workspace, LAYOUT_PRESETS, MAX_WORKSPACE_NAME, COLUMN_MIN, PRESET_COLUMN_WIDTH, clampColumnWidth, columnSizes, findWorkspace, fitColumns, storedColumns,
   parseWorkspaces, presetWorkspace, putWorkspace, removeWorkspace, workspaceNameError,
+  SLOT_DEFAULTS, parseSlots, putSlot, slotPreset, slotWorkspace,
 } from "@/view/widgets/workspaces";
 
 const ws = (rightIds: string[], bottom = 200): Workspace => ({
@@ -207,5 +208,45 @@ describe("fitColumns", () => {
   it("with no room even for the minimums, each is drawn at the minimum", () => {
     const out = fitColumns(cols(400, 400, 400, 400, [true, true, true, true]), 500);
     expect(Object.values(out)).toEqual([COLUMN_MIN, COLUMN_MIN, COLUMN_MIN, COLUMN_MIN]);
+  });
+});
+
+describe("quick layout slots", () => {
+  it("each default names a built-in preset", () => {
+    SLOT_DEFAULTS.forEach((_, i) => expect(slotPreset(i)).toBeDefined());
+  });
+
+  const cases: Array<[string, string | null, Array<"saved" | null>]> = [
+    ["nothing stored", null, [null, null, null]],
+    ["not JSON", "{", [null, null, null]],
+    ["not a list", "{}", [null, null, null]],
+    ["a malformed entry is a default", JSON.stringify([ws(["props"]), { right: 1 }, null]), ["saved", null, null]],
+    ["a short list", JSON.stringify([null, ws(["props"])]), [null, "saved", null]],
+    ["extra entries are dropped", JSON.stringify([null, null, ws(["props"]), ws(["x"])]), [null, null, "saved"]],
+  ];
+  for (const [name, raw, want] of cases) {
+    it(`parseSlots: ${name}`, () => {
+      expect(parseSlots(raw).map((w) => (w ? "saved" : null))).toEqual(want);
+    });
+  }
+
+  it("an empty slot applies its preset, a saved one itself", () => {
+    const saved = ws(["props"]);
+    const slots = putSlot(parseSlots(null), 1, saved);
+    expect(slotWorkspace(slots, 0)).toEqual(presetWorkspace(slotPreset(0)));
+    expect(slotWorkspace(slots, 1)).toEqual(saved);
+    expect(slotWorkspace(putSlot(slots, 1, null), 1)).toEqual(presetWorkspace(slotPreset(1)));
+  });
+
+  it("putSlot copies: changing the saved layout afterwards does not change the slot", () => {
+    const saved = ws(["props"]);
+    const slots = putSlot(parseSlots(null), 0, saved);
+    saved.right.groups[0]!.panelIds.push("library");
+    expect(slots[0]!.right.groups[0]!.panelIds).toEqual(["props"]);
+  });
+
+  it("round-trips through storage", () => {
+    const slots = putSlot(parseSlots(null), 2, ws(["props", "library"]));
+    expect(parseSlots(JSON.stringify(slots))).toEqual(slots);
   });
 });

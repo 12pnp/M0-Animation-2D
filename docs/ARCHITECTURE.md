@@ -2694,6 +2694,13 @@ layouts plus the shell's region sizes, stored per browser under `animo.workspace
 live — `Shell.applyWorkspace` → `Dock.applyLayouts`, which also moves panels between docks — not
 a reload, which would put unsaved work through the restore banner. Reset Layout still reloads.
 
+The right rail ends in three **quick layout** buttons (`App.buildLayoutSlots`): a click applies
+one, a right-click or a hold saves the current layout into it or resets it. A slot holds a
+saved workspace or null, which stands for its built-in grid (`SLOT_DEFAULTS`: 1 × 2, 2 × 2,
+2 × 3); the rules are pure in `view/widgets/workspaces.ts` (`parseSlots`, `slotWorkspace`,
+`putSlot`), stored under `animo.workspaceSlots`. The slot last applied or saved is lit
+(`animo.workspaceSlot`) until a layout comes from anywhere else (`Workspaces.appliedOther`).
+
 There are four side columns, each a `Dock` with its own width, resize edge and rail toggle
 (`Shell.buildColumn`): L1 and L2 left of the stage (`animo.dock.left`, `animo.dock.left.2`; L1
 by the rail, the AI panel's home) and R1 and R2 right of it (`animo.dock.right`,

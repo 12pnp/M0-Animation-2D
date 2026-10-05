@@ -104,26 +104,61 @@ export function parseWorkspaces(raw: string | null): NamedWorkspace[] {
   if (!Array.isArray(data)) return [];
   const out: NamedWorkspace[] = [];
   for (const e of data as Array<Partial<NamedWorkspace>>) {
-    const w = e?.workspace;
-    if (typeof e?.name !== "string" || !e.name.trim() || !w) continue;
-    if (!isLayout(w.right) || !isLayout(w.bottom)) continue;
-    if (w.columns !== undefined && !(Array.isArray(w.columns) && w.columns.every(isLayout))) continue;
-    if (w.left !== undefined && !isLayout(w.left)) continue;
-    if (w.left2 !== undefined && !isLayout(w.left2)) continue;
-    if (findWorkspace(out, e.name)) continue;
-    out.push({
-      name: e.name.trim(),
-      workspace: {
-        ...(w.left ? { left: withDefaults(w.left) } : {}),
-        ...(w.left2 ? { left2: withDefaults(w.left2) } : {}),
-        right: withDefaults(w.right),
-        ...(w.columns?.length ? { columns: w.columns.map(withDefaults) } : {}),
-        bottom: withDefaults(w.bottom),
-        sizes: w.sizes && typeof w.sizes === "object" ? w.sizes : {},
-      },
-    });
+    if (typeof e?.name !== "string" || !e.name.trim()) continue;
+    const workspace = parseWorkspace(e.workspace);
+    if (!workspace || findWorkspace(out, e.name)) continue;
+    out.push({ name: e.name.trim(), workspace });
   }
   return out;
+}
+
+/** One stored workspace, or null when it is malformed. */
+function parseWorkspace(v: unknown): Workspace | null {
+  const w = v as Partial<Workspace> | null;
+  if (!w || typeof w !== "object") return null;
+  if (!isLayout(w.right) || !isLayout(w.bottom)) return null;
+  if (w.columns !== undefined && !(Array.isArray(w.columns) && w.columns.every(isLayout))) return null;
+  if (w.left !== undefined && !isLayout(w.left)) return null;
+  if (w.left2 !== undefined && !isLayout(w.left2)) return null;
+  return {
+    ...(w.left ? { left: withDefaults(w.left) } : {}),
+    ...(w.left2 ? { left2: withDefaults(w.left2) } : {}),
+    right: withDefaults(w.right),
+    ...(w.columns?.length ? { columns: w.columns.map(withDefaults) } : {}),
+    bottom: withDefaults(w.bottom),
+    sizes: w.sizes && typeof w.sizes === "object" ? w.sizes : {},
+  };
+}
+
+// ── Quick slots ──────────────────────────────────────────────────────────
+
+/**
+ * The layout buttons at the foot of the right rail. Each holds a saved
+ * workspace, or null for its default: the built-in preset `SLOT_DEFAULTS[i]`.
+ */
+export const SLOT_DEFAULTS = ["1x2", "2x2", "2x3"] as const;
+
+/** The stored slots, always `SLOT_DEFAULTS.length` long; a bad entry is a default. */
+export function parseSlots(raw: string | null): Array<Workspace | null> {
+  let data: unknown;
+  try { data = raw ? JSON.parse(raw) : []; } catch { data = []; }
+  const list = Array.isArray(data) ? data : [];
+  return SLOT_DEFAULTS.map((_, i) => (list[i] == null ? null : parseWorkspace(list[i])));
+}
+
+export function slotPreset(i: number): LayoutPreset {
+  return LAYOUT_PRESETS.find((p) => p.id === SLOT_DEFAULTS[i])!;
+}
+
+/** What clicking slot `i` applies: its saved workspace, else its preset's. */
+export function slotWorkspace(slots: ReadonlyArray<Workspace | null>, i: number): Workspace {
+  return slots[i] ?? presetWorkspace(slotPreset(i));
+}
+
+export function putSlot(
+  slots: ReadonlyArray<Workspace | null>, i: number, ws: Workspace | null,
+): Array<Workspace | null> {
+  return slots.map((s, j) => (j === i ? (ws && structuredClone(ws)) : s));
 }
 
 /** Names compare without case: "Animate" and "animate" are one workspace. */

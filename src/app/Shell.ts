@@ -556,6 +556,12 @@ export class Shell {
     this.rightRail.append(this.cols.r1.toggle, this.cols.r2.toggle, this.rightPanelsEl);
   }
 
+  /** Put `el` at the foot of the right rail (the quick layout buttons). */
+  setRightRailFoot(el: HTMLElement): void {
+    el.classList.add("rail-foot");
+    this.rightRail.appendChild(el);
+  }
+
   /** A rail button: the side toggles and the panel buttons look alike on both
    *  sides, lit (`on`) while what they control is on screen. */
   private railButton(name: IconName, title: string, run: () => void): HTMLElement {

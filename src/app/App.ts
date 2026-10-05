@@ -96,7 +96,10 @@ import { cloneTf, type Transform } from "@/core/math/Transform";
 import { applyVec, mat } from "@/core/math/Matrix2D";
 import { moveBy, snapshotOf, topmostSelected } from "@/view/tools/transformOps";
 import { alertDialog, chooseDialog, confirmDialog, promptText } from "@/view/widgets/dialogs";
-import { LAYOUT_PRESETS, presetWorkspace, workspaceNameError } from "@/view/widgets/workspaces";
+import {
+  LAYOUT_PRESETS, SLOT_DEFAULTS, presetWorkspace, slotPreset, workspaceNameError,
+} from "@/view/widgets/workspaces";
+import { attachOptionsMenu } from "@/view/timeline/onionButton";
 import { Workspaces } from "./Workspaces";
 import { AtlasTooSmall, oversizeAdvice } from "@/core/atlas/oversize";
 import { busy } from "@/view/widgets/Busy";
@@ -137,6 +140,7 @@ export class App {
     this.shell = new Shell(this.store);
     this.shell.onBrand = () => this.openPreferences("about");
     this.workspaces = new Workspaces(this.shell);
+    this.shell.setRightRailFoot(this.buildLayoutSlots());
     root.appendChild(this.shell.el);
 
     this.viewport = new Viewport(this.shell.stageHost, this.store, this.assets);
@@ -1334,7 +1338,7 @@ export class App {
       label: p.label,
       run: () => {
         this.shell.applyWorkspace(presetWorkspace(p));
-        this.workspaces.clearCurrent();
+        this.workspaces.appliedOther();
       },
     }));
     const list = this.workspaces.list();
@@ -1347,6 +1351,48 @@ export class App {
         if (this.workspaces.load(w.name)) this.toast.show(`Workspace “${w.name}”`);
       },
     }))];
+  }
+
+  /** The quick layout buttons at the foot of the right rail: a click applies
+   *  one, a right-click or a hold saves the current layout into it or resets it. */
+  private buildLayoutSlots(): HTMLElement {
+    const el = h("div", { class: "rail-panels" }, h("div", { class: "rule" }));
+    const btns = SLOT_DEFAULTS.map((_, i) => {
+      const n = i + 1;
+      const btn = h("button", { class: "rail-btn rail-slot" }, String(n));
+      on(btn, "click", () => {
+        this.workspaces.loadSlot(i);
+        this.toast.show(`Layout ${n}`);
+      });
+      attachOptionsMenu(btn, () => {
+        const saved = !!this.workspaces.slots()[i];
+        showMenu(btn, [
+          { label: `Save Current Layout as Layout ${n}`, run: () => {
+            this.workspaces.saveSlot(i);
+            sync();
+            this.toast.show(`Layout ${n} saved`);
+          } },
+          { label: `Reset Layout ${n} to ${slotPreset(i).label}`, enabled: saved, run: () => {
+            this.workspaces.resetSlot(i);
+            sync();
+          } },
+        ], "right");
+      });
+      el.appendChild(btn);
+      return btn;
+    });
+    const sync = () => {
+      const slots = this.workspaces.slots();
+      const active = this.workspaces.activeSlot;
+      btns.forEach((btn, i) => {
+        btn.classList.toggle("on", active === i);
+        const what = slots[i] ? "saved layout" : `${slotPreset(i).label} grid`;
+        btn.title = `Layout ${i + 1} (${what}): click to apply, right-click to save or reset`;
+      });
+    };
+    this.workspaces.onSlotChange = sync;
+    sync();
+    return el;
   }
 
   private async saveWorkspace(): Promise<void> {
@@ -1655,7 +1701,7 @@ export class App {
       if (id !== "timeline") reg(`window.float.${id}`, () => this.shell.floatPanel(id));
     }
     reg("window.saveWorkspace", () => void this.saveWorkspace());
-    reg("window.resetLayout", () => { this.workspaces.clearCurrent(); this.shell.resetLayout(); });
+    reg("window.resetLayout", () => { this.workspaces.appliedOther(); this.shell.resetLayout(); });
 
     reg("help.shortcuts", () => this.openShortcuts());
   }
