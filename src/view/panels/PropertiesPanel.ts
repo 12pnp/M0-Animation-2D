@@ -63,6 +63,7 @@ import {
 } from "@/core/doc/types";
 import { ikRelations } from "@/core/doc/ikGraph";
 import { DEFAULT_SKIN, editedSkin, skinsOf, stageSkinOf } from "@/core/doc/skins";
+import { withPointOffset } from "@/core/doc/boxes";
 import { displayAt, displaysOf, linkableDisplays, withLink } from "@/core/doc/displays";
 import { isImage } from "@/core/doc/types";
 import { doSetSkinImage, doSetSkinMembers, doSetSkinOnly } from "@/app/SkinOps";
@@ -278,6 +279,29 @@ export class PropertiesPanel implements Panel {
       const section = this.pathSection(nodes[0]!);
       if (section) this.body.appendChild(section);
     }
+    if (nodes.length === 1 && nodes[0]!.kind === "point") this.body.appendChild(this.pointSection(nodes[0]!));
+  }
+
+  /** A point's offset from its node's origin and its turn (ARCHITECTURE ▸
+   *  Boxes and points), Spine's point `x`, `y`, `rotation`. A scrub is one undo step. */
+  private pointSection(node: Node): HTMLElement {
+    const field = (key: "x" | "y" | "rotation", glyph: string, unit?: string) => {
+      const nf = new NumberField({
+        glyph, unit, step: key === "rotation" ? 1 : 0.5, decimals: 2,
+        onInput: (v, committing) => {
+          this.scrubStep("point.edit", committing);
+          this.store.apply(new EditNode("Move Point", this.store.currentSymbolId, node.id, (n) => withPointOffset(n, { [key]: v }), "point.edit"));
+          this.store.emit("stage");
+          if (committing) this.store.history.endInteraction();
+        },
+      });
+      nf.set(node.point?.[key] ?? 0);
+      return nf.el;
+    };
+    return this.section("Point", true, [
+      this.row("Offset", [field("x", "X"), field("y", "Y")]),
+      this.row("Rotation", [field("rotation", "∠", "°")]),
+    ]);
   }
 
   /**

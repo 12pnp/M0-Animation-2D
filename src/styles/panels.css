@@ -64,6 +64,14 @@
 /* In a side column dragged narrower than a panel can lay itself out, the
    panel keeps its width and the body scrolls sideways instead of crushing it. */
 .side-col .pbody > * { min-width: 240px; }
+/* Properties lays itself out narrower: below 230px a row's label goes above
+   its fields, so a pair keeps the column's whole width. */
+.side-col .pbody > .props { min-width: 150px; }
+.props { container-type: inline-size; }
+@container (max-width: 229px) {
+  .props .prow { grid-template-columns: minmax(0, 1fr); gap: 1px; padding-bottom: 3px; }
+  .props .prow > label { text-align: left; }
+}
 .pfooter {
   display: flex; align-items: center; gap: 1px;
   padding: 2px 4px;
@@ -130,17 +138,19 @@
 .section > .sbody { padding: 4px 6px 7px; }
 .section:not(.open) > .sbody { display: none; }
 
-/* Property rows — label right-aligned in a fixed gutter, Animate-style */
+/* Property rows — label right-aligned in a fixed gutter, Animate-style.
+   minmax(0, 1fr): the fields shrink with a narrow panel instead of pushing
+   the row past its edge (a bare 1fr is never narrower than its content). */
 .prow {
   display: grid;
-  grid-template-columns: 62px 1fr;
+  grid-template-columns: 62px minmax(0, 1fr);
   align-items: center;
   gap: 6px;
   min-height: var(--h-row);
 }
 .prow > label { color: var(--fg-dim); text-align: right; white-space: nowrap; }
 .prow .fields { display: flex; align-items: center; gap: 5px; min-width: 0; }
-.prow .fields.pair { display: grid; grid-template-columns: 1fr 1fr; gap: 5px; }
+.prow .fields.pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 5px; }
 .prow input[type="text"], .prow input[type="number"], .prow select { width: 100%; }
 .prow .unit { color: var(--fg-dim); flex: none; }
 .prow.wide { grid-template-columns: 1fr; }
@@ -526,7 +536,7 @@
 .recovery .spacer { flex: 1 1 auto; }
 
 /* Paired fields with a chain toggle between them. */
-.prow .fields.pair.linked { grid-template-columns: 1fr 18px 1fr; }
+.prow .fields.pair.linked { grid-template-columns: minmax(0, 1fr) 18px minmax(0, 1fr); }
 .linkbtn { width: 18px; height: var(--h-field); }
 .linkbtn svg { width: 12px; height: 12px; }
 .linkbtn.on { color: var(--accent); background: transparent; }

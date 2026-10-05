@@ -60,7 +60,7 @@ describe("the AI's tools", () => {
     expect(AGENT_TOOLS.map((t) => t.name)).toEqual([
       "get_rig", "get_animation", "get_pose", "new_animation", "set_keys", "delete_keys", "show", "undo", "redo", "check_preview",
       "get_reference", "render_frame", "add_bones", "attach", "add_ik", "auto_rig", "list_motions", "apply_motion", "draw_order",
-      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "make_mesh", "bind_mesh", "add_skin", "set_skin_image", "add_attachment", "make_sequence", "key_sequence", "add_physics", "link_mesh", "key_constraint", "set_inherit", "set_constraint_order", "add_slider", "make_path", "set_skin_members", "set_cycle", "key_properties", "offset_keys", "get_bone_path", "set_bone_path",
+      "key_draw_order", "key_ik", "define_event", "key_event", "add_transform_constraint", "key_transform", "make_mesh", "bind_mesh", "add_skin", "set_skin_image", "add_attachment", "make_sequence", "key_sequence", "add_physics", "link_mesh", "key_constraint", "set_inherit", "set_point", "set_constraint_order", "add_slider", "make_path", "set_skin_members", "set_cycle", "key_properties", "offset_keys", "get_bone_path", "set_bone_path",
     ]);
     for (const t of AGENT_TOOLS) expect(t.input_schema.type).toBe("object");
   });
@@ -868,6 +868,18 @@ describe("cycles and bone paths through the AI's tools", () => {
     expect(await api.call("set_inherit", { bone: "head", animation: "run", frame: 4, delete: true })).toMatchObject({ keys: [] });
     await expect(api.call("set_inherit", { bone: "head", inherit: "sideways" })).rejects.toThrow(/inherit is one of/);
     await expect(api.call("set_inherit", { bone: "head", animation: "run", frame: 2, delete: true })).rejects.toThrow(/no inherit key at frame 2/);
+  });
+
+  it("set a point's offset and turn: one undo step, written as Spine's point", async () => {
+    const { store, api } = await setup();
+    await api.call("add_attachment", { kind: "point", on: "head", name: "eye" });
+    expect(await api.call("set_point", { point: "eye", x: 8, y: -3 })).toEqual({ point: "eye", x: 8, y: -3, rotation: 0 });
+    expect(await api.call("set_point", { point: "eye", rotation: 45 })).toEqual({ point: "eye", x: 8, y: -3, rotation: 45 });
+    expect(store.history.undoLabel).toBe(`AI: Move Point "eye"`);
+    const skin = exportSpine(store.project).skeleton.skins![0]!.attachments!;
+    expect(skin.eye!.eye).toMatchObject({ type: "point", x: 8, y: 3, rotation: -45 });
+    await expect(api.call("set_point", { point: "head", x: 1 })).rejects.toThrow(/not a point/);
+    await expect(api.call("set_point", { point: "eye" })).rejects.toThrow(/Give x, y or rotation/);
   });
 
   it("set the constraint order: the ones named first, the rest after; one undo step", async () => {

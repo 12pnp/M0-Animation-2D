@@ -1183,7 +1183,10 @@ inherit modes, transform, path, physics and slider constraints, clipping, draw o
 bone's local transform and each slot's attachment and colour, applies the carried
 timelines at the frame, and reads back world matrices, attachments, colours, the draw
 order, clipping and every region's and mesh's world vertices (`PoseEntry.spine`,
-`PoseEntry.clip`). `SceneRenderer.drawSpineEntries` draws a region as one affine image and
+`PoseEntry.clip`), and every box's and path's (`PoseEntry.outline`). Which display a slot shows
+is found by the attachment its key finds (`Skeleton.getAttachment`), not by the attachment's
+name, which a file may set apart from its key (Spine's `name`; mix-and-match's skins do).
+`SceneRenderer.drawSpineEntries` draws a region as one affine image and
 a mesh triangle by triangle, and clips the way `SkeletonClipping` does: one clip at a time,
 through its end slot. `entryBox` and the hit test use the same vertices, so outlines and
 picking follow the mesh. Picking an attachment picks the bone it rides.
@@ -1243,6 +1246,17 @@ linked images, one following its deform keys and one not, switched in by keys) a
 (spine-unity's raptor opened and exported by the editor, its weighted meshes through the model
 with their per-bone offsets, beside the sample's own atlas). All eight rigs agree within
 0.00043 px.
+
+Rerun in phase J (docs/PHASE-J-PLAN.md). The folder had been emptied since, so it holds five
+new rigs: four of spine-unity's samples opened and exported by the editor, each with a phase J
+format held by the model and edited (`J_Spineboy`: the point moved and turned with `set_point`;
+`J_Stretchyman`: weighted paths, a knot dragged; `J_MixMatch`: 33 skins with their meshes and
+links to another skin's mesh, one skin's mesh edited; `J_Dragon`: turned sequence regions),
+and the stickman with a point, a box and a bound mesh made by the AI tools (`J_Authored`). The
+comparison now covers where each attachment is too: a region's corners (spine-csharp starts a
+rotated atlas region at another corner, so up to a shift round them), every mesh's, box's,
+path's and clip's world vertices, and a point's position and rotation, at every frame and in
+each skin at the setup pose. All five agree within 0.0019 px.
 
 ## The AI bridge
 
@@ -2030,9 +2044,16 @@ per mesh node, one offset pair per point in the node's space.
   - The display keeps its attachment key (`Node.key`, `DisplayRef.key`), which attachment
     keys and linked meshes name. Each animation's deform timeline becomes keys when every key
     lands on a frame and a weighted point's entries move it the same way; only display 0 takes
-    deform keys. A mesh whose timeline does not convert, one with a field the model does not
-    hold (a tint), and other skins' meshes stay carried. 126 of the samples' 136 default-skin
-    meshes convert.
+    deform keys. A mesh whose timeline does not convert and one with a field the model does not
+    hold (a tint) stay carried. 126 of the samples' 136 default-skin meshes convert.
+  - The attachment's own name, where a file sets it apart from its key (Spine's `name`, which
+    the region path defaults to), is kept (`DisplayRef.name`, `Node.attachmentName`) and
+    written back, with `path` only where the image differs from it.
+  - **Other skins' meshes** become the skin's display with a `mesh` (220 of the samples' 239;
+    the rest are deformed by an animation, which only display 0 of the default skin can be, or
+    tinted). In Setup mode the Mesh tool edits the mesh the stage shows (`editedMesh`,
+    `shownDisplay`: the last shown skin that fills the display, else the node's own), and
+    `SetMesh` writes it there (`skin`); deform keys stay display 0's.
   - `tests/importMesh.test.ts`: the conversion both ways, deform keys, the editor's own pose of
     a mesh whose offsets disagree against spine-core, and the editing rules.
 - **Linked meshes** (Spine's `linkedmesh`): another image of the same node draws a mesh
@@ -2044,9 +2065,12 @@ per mesh node, one offset pair per point in the node's space.
   keys. Remove Mesh unlinks them. **Export** writes Spine 4.3's form,
   `{ type: "linkedmesh", source: <the mesh's key>, width, height }` (`timelines: false`
   without deform; pre-4.3 files said `parent`), after every key of the slot is settled, and
-  a used linked display keeps its mesh in the file. **Import** turns the default skin's
-  linked meshes into links when their source is a mesh the document now holds in the same
-  slot (other skins' stay carried). `spineParity` ▸ "a linked mesh" plays one with and
+  a used linked display keeps its mesh in the file. A link may name the skin whose display
+  holds its mesh (`LinkedMesh.skin`, Spine's `skin`; `meshOfDisplay` takes the skins through
+  `skinDisplayOf`), written as `skin`. **Import** turns a linked mesh into a link when its
+  source is a mesh the document now holds in the same slot, in the skin it names or else the
+  default skin: the default skin's, and other skins' (mix-and-match's 6 link to another skin's
+  mesh). `spineParity` ▸ "a linked mesh" plays one with and
   without deform keys; `tests/linkedMesh.test.ts`. AI: `link_mesh`.
 - **Checked**: `spineParity` ▸ "meshes": unweighted, weighted, partly unweighted and deform keys
   (linear, smooth, stepped) against spine-core's world vertices frame by frame.
@@ -2107,8 +2131,8 @@ editing.
   Every edit is one `SetSkins` (the skins, the stage's choice and the carried skins as one
   value) or `SetSkinOnly`; both invalidate the symbol's bounds, as `SetStageSkins` now does.
 - The AI's `add_skin`, `set_skin_image` and `set_skin_members`; `show` takes skins for any rig.
-- Not built: skin colours, per-skin deform keys, a mesh made for a skin image (a skin display
-  is a region, or the opened attachment it came with), linked meshes.
+- Not built: skin colours, per-skin deform keys, a mesh made for a skin image here (a skin
+  display is a region, an opened file's mesh or link, or the opened attachment it came with).
 
 ## Boxes and points
 
@@ -2116,8 +2140,21 @@ A bounding box (a hit area) and a point (a spawn point with a direction), as Spi
 `boundingbox` and `point` attachments. Each is a node kind of its own (`"box"`, `"point"`):
 a slot on its own bone, like an image, that draws nothing; the overlay outlines it in Spine's
 colours (`drawBoxes`). `Node.box.points` is the polygon in the node's space, y down; a point
-is its node's origin and x axis, written `{ type: "point" }` at 0, 0, 0. Pure in
-`core/doc/boxes.ts`.
+is its node's origin and x axis moved by `Node.point` `{ x, y, rotation }` (y down, clockwise;
+`pointMatrix`), written as the attachment's `x`, `y`, `rotation` y up and counterclockwise
+(`pointToSpine`); absent, `{ type: "point" }` at 0, 0, 0. Pure in `core/doc/boxes.ts`.
+
+- **A point's offset** is edited in Properties ▸ Point (Offset, Rotation; a scrub is one undo
+  step, `withPointOffset`). The overlay draws, picks and boxes it there. AI: `set_point`.
+- **Weighted boxes and paths** (opened ones): `OutlineWeights`, `weights` and the file's
+  `boneOffsets` per point, as a mesh holds them. Their world points follow the mesh rule
+  (`outlineWorld` through `meshWorld`; `PoseEntry.outline`, which a runtime-posed rig reads from
+  spine-core's `computeWorldVertices`), and the export writes them per bone (`spineVertices`
+  over `outlineAsMesh`). The Mesh tool drags them through `localDelta`; a moved point drops its
+  own offsets (`withOutlinePoints`) and only moved points are rounded (`roundMoved`), so an
+  opened file's others stay exactly as they were. A point added to a box takes half of each
+  neighbour's weights (`boxWeightsWithPoint`); a deleted one takes its weights with it
+  (`outlineWeightsKept`). The stage outlines and picks them where they are in the world.
 
 - **Made** from Modify ▸ Attachments (`attachmentPlan`): on a picture, in its place, a box
   taking the picture's alpha outline about its pivot; on a bone, under it at its origin; the
@@ -2129,13 +2166,16 @@ is its node's origin and x axis, written `{ type: "point" }` at 0, 0, 0. Pure in
   three points is left out with a warning. Checked against spine-core's
   `computeWorldVertices` and `computeWorldPosition` (`spineParity` ▸ "boxes and points").
 - **Opened ones** (`core/spine/importAttachments.ts`, `outlineOf`): a slot whose only
-  default-skin attachment is an unweighted box, a point with no offset or an unweighted path,
-  and which no other skin fills, becomes that node on its slot bone, keeping its key
+  default-skin attachment is a box, a point or a path, and which no other skin fills, becomes
+  that node on its slot bone (a weighted one read against each bone's setup world, which the
+  importer composes from the bones as it reads them), keeping its key
   (`Node.key`) and its editor colour (`Node.attachmentColor`, written as `color`,
   nonessential). A path keeps the file's `lengths` while its shape is the one they were
   measured on (`PathShape.fileLengths`, `fileLengthsOf`), since Spine's measure need not be
-  ours to the last digit. A weighted one, a point with an offset and a slot other skins fill
-  stay carried. `tests/importAttachments.test.ts`. The AI's `add_attachment`.
+  ours to the last digit. A slot other skins fill stays carried. All 9 of the samples' weighted
+  paths and spineboy's point become the document's. `tests/importAttachments.test.ts`,
+  `tests/boxes.test.ts`, `spineParity` ▸ "boxes and points" (a point with an offset and a box
+  weighted to two bones). The AI's `add_attachment` and `set_point`.
 
 ## Sequences
 
@@ -2166,7 +2206,10 @@ Pure in `core/doc/sequence.ts`.
   region is unrotated, unscaled and the image's size; its offset becomes the transform point
   (`regionCentre` inverted) and its key is kept. Display 0's `sequence` timelines become keys
   (`sequenceKeys`: a missing mode is hold, the delay in frames) when every key lands on a
-  frame; a rotated region (the samples' dragon wings) stays carried.
+  frame. A rotated or scaled region (the samples' dragon wings) keeps Spine's turn
+  (`DisplayRef.region`, display 0's `Node.region`), written with the region; the pivot still
+  places its centre as if unturned. The stage's own pose cannot turn a display, so a symbol
+  with one is posed by spine-core (`runtimePosed`).
 - The AI's `make_sequence` and `key_sequence`.
 
 ## Physics, sliders and paths
@@ -2223,8 +2266,10 @@ Spine's `lengths` (`pathLengths`).
     (`applyRig`; mass is stored inverted, as spine-core's timeline does). **Export** writes
     every key's value, since spine-core reads a missing physics value as 0; a document
     channel replaces the file's, the file's other channels stay. **Import** turns an opened
-    physics constraint's or slider's channels into keys when each lands on a frame (a path's
-    mixes when they agree); `reset` keys and the rest stay carried.
+    physics constraint's or slider's channels into keys (a path's mixes when they agree). A
+    channel with a key between frames at the chosen rate is written frame by frame
+    (`bakedChannelKeys`: Spine's value at every whole frame, straight between), as bone keys
+    are; `reset` keys and the rest stay carried.
   - `tests/constraintKeys.test.ts`: the rules, the timelines both ways, and slider and path
     keys played by the stage as spine-core plays the export.
 - The AI's `add_physics`, `add_slider`, `make_path` and `key_constraint`.
@@ -2248,8 +2293,9 @@ key holding until the next, as Spine's stepped `inherit` timeline (`core/doc/inh
   keys', a drag moves them, Delete removes them. `SetInheritKeys` is `SetNodeKeys` over
   `inherits`, as `SetSequenceKeys` is over `sequences`.
 - **Export** writes the exported symbol's keys as each bone's `inherit` timeline (a nested
-  symbol's are not written). **Import** turns a file's timeline into keys when each lands on
-  a frame and names a mode, else it stays carried.
+  symbol's are not written). **Import** turns a file's timeline into keys when each names a
+  mode, else it stays carried; a key between frames takes the next whole frame, the first it
+  shows on.
 - `tests/inherit.test.ts`: the rules, the file both ways, and the stage against the full
   export in spine-core with a mode and with keys (`tests/fixtures/runtimeCheck.ts`). AI:
   `set_inherit`; `get_rig` lists a bone's mode.
@@ -2608,6 +2654,12 @@ by the rail, the AI panel's home) and R1 and R2 right of it (`animo.dock.right`,
 DRAWN is `fitColumns`, which shrinks the open ones in proportion so they fit beside a
 `STAGE_MIN` stage, so four columns never push the stage or a rail off the window. Closing a
 column's last panel folds it, and so does a workspace that leaves it empty — all but R1.
+
+A column narrower than a panel can lay itself out keeps the panel 240 px wide and scrolls it
+sideways (`.side-col .pbody > *`). Properties lays itself out narrower instead, down to 150 px:
+it is a size container, and below 230 px each row puts its label above its fields
+(`@container` in `panels.css`), so a pair of fields keeps the column's whole width. Its
+columns are `minmax(0, 1fr)`: a bare `1fr` is never narrower than its content.
 
 A workspace stores L1 as `left`, L2 as `left2`, R1 as `right` and R2 as `columns[0]`. A column
 it was saved without hands its panels to its side's first column (`Dock.applyLayouts`'

@@ -1,7 +1,9 @@
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { AtlasAttachmentLoader, MeshAttachment, MixFrom, Physics, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas } from "@esotericsoftware/spine-core";
+import {
+  AtlasAttachmentLoader, MeshAttachment, MixFrom, Physics, PointAttachment, RegionAttachment, Skeleton, SkeletonJson, TextureAtlas, Vector2, VertexAttachment,
+} from "@esotericsoftware/spine-core";
 
 /**
  * Phase 8: the editor's exports in Unity. `Assets/AnimoTest/Spine` in
@@ -11,7 +13,9 @@ import { AtlasAttachmentLoader, MeshAttachment, MixFrom, Physics, RegionAttachme
  * writes `Library/AnimoSpineCheck/dump.json`, positions in Unity units (the
  * asset's import scale). This test poses the same files
  * with spine-core 4.3.13, the preview's runtime, and compares: every bone's
- * world matrix, the draw order, and each slot's attachment and colour. Skipped,
+ * world matrix, the draw order, each slot's attachment and colour, and where the
+ * attachment is: a region's corners, a mesh's, box's, path's or clip's world
+ * vertices, a point's position and rotation (`v`, absent in a dump from before). Skipped,
  * not passed, without the folder or the dump.
  */
 
@@ -19,8 +23,8 @@ const M0 = process.env.M0_PROJECT ?? resolve(__dirname, "../../M0-Animation2D");
 const RIGS = `${M0}/Assets/AnimoTest/Spine`;
 const DUMP = `${M0}/Library/AnimoSpineCheck/dump.json`;
 
-type Frame = { b: number[]; s: Array<[string, string | null, number, number, number, number]> };
-type Dump = Record<string, { fps: number; scale: number; animations: Record<string, Frame[]> } | null>;
+type Frame = { b: number[]; s: Array<[string, string | null, number, number, number, number, number[]?]> };
+type Dump = Record<string, { fps: number; scale: number; animations: Record<string, Frame[]>; skins?: Record<string, Frame["s"]> } | null>;
 
 const ready = existsSync(RIGS) && existsSync(DUMP);
 
@@ -47,7 +51,48 @@ describe.skipIf(!ready)("spine-unity plays the exports as the preview's runtime 
         if (other) sk.setSkin(other);
       }
       const unity = dump[rig]!;
-      let worst = 0, frames = 0;
+      let worst = 0, worstVertex = 0, frames = 0;
+      /** Each slot in draw order against Unity's: attachment, colour and where it is. */
+      const slotsMatch = (sk2: Skeleton, theirs: Frame["s"], where: string) => {
+        const order = sk2.drawOrder.appliedPose;
+        if (order.map((s) => s.data.name).join("|") !== theirs.map((s) => s[0]).join("|")) throw new Error(`${where}: draw order differs`);
+        order.forEach((slot, i) => {
+          const [name, att, r, g, b, a, v] = theirs[i]!;
+          const mine = slot.appliedPose.getAttachment()?.name ?? null;
+          if (mine !== att) throw new Error(`${where}: slot "${name}" shows ${att} in Unity, ${mine} in spine-core`);
+          const c = slot.appliedPose.color;
+          if (Math.max(Math.abs(c.r - r), Math.abs(c.g - g), Math.abs(c.b - b), Math.abs(c.a - a)) > 1e-4) {
+            throw new Error(`${where}: slot "${name}" colour differs`);
+          }
+          if (!v) return;
+          const shown = slot.appliedPose.getAttachment();
+          let mine2: number[] = [];
+          // A point first: spine-core's is a vertex attachment too.
+          if (shown instanceof PointAttachment) {
+            const at = shown.computeWorldPosition(slot.bone.appliedPose, new Vector2());
+            mine2 = [at.x, at.y, shown.computeWorldRotation(slot.bone.appliedPose)];
+          } else if (shown instanceof RegionAttachment) {
+            mine2 = new Array<number>(8);
+            shown.computeWorldVertices(slot, shown.getOffsets(slot.appliedPose), mine2, 0, 2);
+          } else if (shown instanceof VertexAttachment) {
+            mine2 = new Array<number>(shown.worldVerticesLength);
+            shown.computeWorldVertices(sk2, slot, 0, shown.worldVerticesLength, mine2, 0, 2);
+          }
+          if (mine2.length !== v.length) throw new Error(`${where}: slot "${name}" has ${v.length} numbers in Unity, ${mine2.length} in spine-core`);
+          const point = shown instanceof PointAttachment;
+          // spine-csharp starts a region from another corner when its atlas
+          // region is rotated: the same four corners, shifted round.
+          const shifts = shown instanceof RegionAttachment ? [0, 2, 4, 6] : [0];
+          const off = (shift: number) => Math.max(...mine2.map((x, k) => {
+            const theirs = v[(k + shift) % v.length]!;
+            // A point's rotation is in degrees, not scaled.
+            return point && k === 2 ? Math.abs(((((x - theirs) % 360) + 540) % 360) - 180) : Math.abs(x - theirs / unity.scale);
+          }));
+          const d = Math.min(...shifts.map(off));
+          worstVertex = Math.max(worstVertex, d);
+          if (d > 0.01) throw new Error(`${where}: slot "${name}" ${point ? "point" : "vertices"} off by ${d}`);
+        });
+      };
       for (const anim of data.animations) {
         const theirs = unity.animations[anim.name];
         expect(theirs, `${rig} "${anim.name}"`).toBeTruthy();
@@ -65,20 +110,20 @@ describe.skipIf(!ready)("spine-unity plays the exports as the preview's runtime 
             worst = Math.max(worst, d);
             if (m > 1e-3 || d > 0.01) throw new Error(`${where}: bone "${bone.data.name}" matrix off by ${m}, position by ${d}`);
           });
-          const order = sk.drawOrder.appliedPose;
-          if (order.map((s) => s.data.name).join("|") !== u.s.map((s) => s[0]).join("|")) throw new Error(`${where}: draw order differs`);
-          order.forEach((slot, i) => {
-            const [name, att, r, g, b, a] = u.s[i]!;
-            const mine = slot.appliedPose.getAttachment()?.name ?? null;
-            if (mine !== att) throw new Error(`${where}: slot "${name}" shows ${att} in Unity, ${mine} in spine-core`);
-            const c = slot.appliedPose.color;
-            if (Math.max(Math.abs(c.r - r), Math.abs(c.g - g), Math.abs(c.b - b), Math.abs(c.a - a)) > 1e-4) {
-              throw new Error(`${where}: slot "${name}" colour differs`);
-            }
-          });
+          slotsMatch(sk, u.s, where);
         });
       }
-      console.log(rig, "frames", frames, "worst px", worst);
+      // Each skin alone over the default one, at the setup pose (a dump from before has none).
+      let skins = 0;
+      for (const [name, theirs] of Object.entries(unity.skins ?? {})) {
+        const one = new Skeleton(data);
+        one.setSkin(name);
+        one.setupPose();
+        one.updateWorldTransform(Physics.reset);
+        slotsMatch(one, theirs, `${rig} skin "${name}"`);
+        skins++;
+      }
+      console.log(rig, "frames", frames, "skins", skins, "worst px", worst, "worst vertex px", worstVertex);
       expect(frames).toBeGreaterThan(0);
     });
   }

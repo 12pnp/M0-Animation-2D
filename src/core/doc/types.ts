@@ -6,7 +6,7 @@ import type { AnimId, AssetId, CnId, FolderId, IkId, ItemId, LayerId, NodeId, Tc
 import type { TcChannel, TcFrom } from "@/core/math/transformConstraint";
 
 /** Bumped whenever the on-disk shape changes; `schema.ts` bridges versions. */
-export const DOC_VERSION = 25;
+export const DOC_VERSION = 26;
 
 /* ── Colour ───────────────────────────────────────────────────────────────
    Stored exactly as DragonBones expects: multipliers as 0-100 percentages,
@@ -204,8 +204,15 @@ export interface Node {
   skinOnly?: true;
   /** Display 0's sequence (`DisplayRef.sequence`). */
   sequence?: SequenceData;
-  /** A box node's polygon (Spine's bounding box), in its own space, y down. */
-  box?: { points: number[] };
+  /** A box node's polygon (Spine's bounding box), in its own space, y down;
+   *  weighted as a mesh is when opened so (`OutlineWeights`). */
+  box?: { points: number[] } & OutlineWeights;
+  /** A point node's offset from its origin (Spine's point attachment `x`,
+   *  `y`, `rotation`), in its own space: y down, rotation clockwise in
+   *  degrees, as the editor's. Absent: at the origin, along its x axis. */
+  point?: { x: number; y: number; rotation: number };
+  /** Display 0's region turn (`DisplayRef.region`). */
+  region?: RegionTurn;
   /** A bone's colour in the editor (Spine's, "rrggbbaa"): the stage and the
    *  Tree draw it; the export writes it as nonessential data. */
   boneColor?: string;
@@ -248,6 +255,8 @@ export interface Node {
    *  holds the attachment itself (a mesh made editable): what attachment keys
    *  and linked meshes name. Absent: the image's name. */
   key?: string;
+  /** Display 0's attachment name (`DisplayRef.name`). */
+  attachmentName?: string;
   /** Display 0 draws another display's mesh (`DisplayRef.linked`). */
   linked?: LinkedMesh;
   /** A box's, point's or path's editor colour ("rrggbbaa", nonessential),
@@ -266,6 +275,9 @@ export interface DisplayRef {
   attachment?: SpineAttachmentRef;
   /** Its attachment key, as `Node.key` is display 0's. */
   key?: string;
+  /** The attachment's own name (Spine's `name`, which the region path
+   *  defaults to) where an opened file gave one other than its key. */
+  name?: string;
   /** It draws another display's mesh with its own image (Spine's linked mesh). */
   linked?: LinkedMesh;
   /** The image as a mesh (ARCHITECTURE ▸ Meshes), exported as a Spine mesh
@@ -276,6 +288,23 @@ export interface DisplayRef {
   skinOnly?: true;
   /** Frame-by-frame images in place of `itemId` (ARCHITECTURE ▸ Sequences). */
   sequence?: SequenceData;
+  /** An opened region's rotation and scale, Spine's own (y up, counterclockwise),
+   *  about its centre. The pivot still places the centre as if unturned. Only
+   *  spine-core poses it (`runtimePosed`). */
+  region?: RegionTurn;
+}
+
+export interface RegionTurn {
+  rotation?: number;
+  scaleX?: number;
+  scaleY?: number;
+}
+
+/** A box's or path's points bound to bones, as `MeshData.weights` and
+ *  `boneOffsets` bind a mesh's (one entry per point). */
+export interface OutlineWeights {
+  weights?: Array<Array<[NodeId, number]>>;
+  boneOffsets?: Array<Array<[number, number]>>;
 }
 
 /** A display drawing the mesh of display `to` of the same node with its own
@@ -284,6 +313,9 @@ export interface DisplayRef {
 export interface LinkedMesh {
   to: number;
   deform?: false;
+  /** The skin whose display `to` holds the mesh (Spine's `skin`). Absent:
+   *  the node's own display. */
+  skin?: string;
 }
 
 /** A display's images in order, all the size of the first, which `itemId`
@@ -725,7 +757,7 @@ export interface PathConstraint {
 }
 
 /** A path's points, three per knot: the handle in, the knot, the handle out. */
-export interface PathShape {
+export interface PathShape extends OutlineWeights {
   points: number[];
   closed?: boolean;
   /** Absent: true (Spine's default). */

@@ -14,9 +14,9 @@ import { DEFAULT_COLOR, isImage, isSymbol } from "./types";
 import type { ItemId, NodeId } from "./ids";
 import { sampleColorRaw, sampleTransformRaw, spanIndexAt } from "./timeline";
 import { anchorOf, displayAt, meshOfDisplay } from "./displays";
-import { boxNodeBounds } from "./boxes";
+import { boxNodeBounds, outlineWeighted, outlineWorld } from "./boxes";
 import { sequenceItemAt } from "./sequence";
-import { skinActivity, skinLookup, skinnedDisplay, stageSkinOf, type SkinActivity } from "./skins";
+import { skinActivity, skinDisplayOf, skinLookup, skinnedDisplay, stageSkinOf, type SkinActivity } from "./skins";
 
 /**
  * One node, resolved for a given frame. This is the single description that
@@ -51,6 +51,10 @@ export interface PoseEntry {
    *  slot drawn after it up to and including `until` (to the end when
    *  null). */
   clip?: { polygon: number[]; until: NodeId | null };
+  /** A box's or path's points in the world where they follow bones (weighted,
+   *  or posed by the runtime); else they are the node's points through `world`
+   *  (`entryOutline`). */
+  outline?: number[];
 }
 
 /**
@@ -331,16 +335,19 @@ function applyMeshes(
   // The bind pose ignores skins: a skin constraint must not move what a mesh is bound to.
   const same = mode === "setup" && (skins === null || !symbol.skins?.length);
   const setupOf = () => (setup ??= same ? byNode : evaluateSymbol(symbol, null, 0, "setup", null).byNode);
+  const bonesOf = (e: PoseEntry) => ({
+    now: (id: NodeId) => byNode.get(id)?.world,
+    setup: (id: NodeId) => setupOf().get(id)?.world,
+    node: setupOf().get(e.nodeId)?.world ?? e.world,
+  });
   for (const e of entries) {
-    const drawn = e.display ? meshOfDisplay(e.node, e.display) : null;
+    // A weighted box or path follows its bones by the mesh rule.
+    if (outlineWeighted(e.node)) { e.outline = outlineWorld(e.node, e.world, bonesOf(e)); continue; }
+    const drawn = e.display ? meshOfDisplay(e.node, e.display, skinDisplayOf(symbol, e.node)) : null;
     if (!drawn) continue;
     const mesh = drawn.mesh;
     const weighted = !!mesh.weights?.some((w) => w.length);
-    const bones = weighted ? {
-      now: (id: NodeId) => byNode.get(id)?.world,
-      setup: (id: NodeId) => setupOf().get(id)?.world,
-      node: setupOf().get(e.nodeId)?.world ?? e.world,
-    } : undefined;
+    const bones = weighted ? bonesOf(e) : undefined;
     e.spine = {
       itemId: e.display!.itemId,
       vertices: meshWorld(mesh, drawn.pivot, e.world, drawn.deform ? deformAt(animation, e.nodeId, frame) : null, bones),

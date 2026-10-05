@@ -8,6 +8,7 @@ import {
 import { eventValues } from "@/core/doc/events";
 import { stageSkinOf, withDescendantBones } from "@/core/doc/skins";
 import { boxOutline, makeMesh } from "@/core/mesh/makeMesh";
+import { entryOutline, pointMatrix } from "@/core/doc/boxes";
 import { newIkId, newTcId, reseed, type AssetId, type ItemId, type NodeId } from "@/core/doc/ids";
 import { identityProperties } from "@/core/doc/transformKeys";
 import { maskGroups } from "@/core/doc/layerTree";
@@ -237,11 +238,12 @@ function checkParity(project: Project, symbolId: ItemId): Worst {
           // Boxes and points: Spine's bounding box vertices and point position.
           if (entry.node.kind === "box") {
             if (!(attachment instanceof BoundingBoxAttachment)) fail(where, `slot "${name}" shows ${attachment?.name ?? "nothing"}, the stage a bounding box`);
-            const pts = entry.node.box!.points;
+            // Where the stage puts them: through the node, or weighted through the bones.
+            const pts = entryOutline(entry);
             const verts = new Array<number>(pts.length);
             (attachment as BoundingBoxAttachment).computeWorldVertices(skeleton, slot, 0, pts.length, verts, 0, 2);
             for (let i = 0; i < pts.length; i += 2) {
-              const pt = apply({ x: 0, y: 0 }, d.world, pts[i]!, pts[i + 1]!);
+              const pt = { x: pts[i]!, y: pts[i + 1]! };
               const diff = Math.max(Math.abs(verts[i]! - pt.x), Math.abs(verts[i + 1]! + pt.y));
               worst.corner = Math.max(worst.corner, diff);
               if (diff > 1e-3) fail(where, `box "${name}" vertex ${i / 2}: ${verts.slice(i, i + 2)} vs ${[pt.x, -pt.y]}`);
@@ -250,9 +252,10 @@ function checkParity(project: Project, symbolId: ItemId): Worst {
             if (!(attachment instanceof PointAttachment)) fail(where, `slot "${name}" shows ${attachment?.name ?? "nothing"}, the stage a point`);
             const at = (attachment as PointAttachment).computeWorldPosition(bone!.appliedPose, new Vector2());
             const angle = (attachment as PointAttachment).computeWorldRotation(bone!.appliedPose);
-            const want = Math.atan2(-d.world.b, d.world.a) * 180 / Math.PI;
+            const w = mul(mat(), d.world, pointMatrix(entry.node));
+            const want = Math.atan2(-w.b, w.a) * 180 / Math.PI;
             const turn = Math.abs(((angle - want) % 360 + 540) % 360 - 180);
-            if (Math.abs(at.x - d.world.tx) > 1e-3 || Math.abs(at.y + d.world.ty) > 1e-3 || turn > 1e-3) fail(where, `point "${name}" at ${at.x},${at.y} ${angle}° vs ${d.world.tx},${-d.world.ty} ${want}°`);
+            if (Math.abs(at.x - w.tx) > 1e-3 || Math.abs(at.y + w.ty) > 1e-3 || turn > 1e-3) fail(where, `point "${name}" at ${at.x},${at.y} ${angle}° vs ${w.tx},${-w.ty} ${want}°`);
           }
           continue;
         }
@@ -1155,6 +1158,25 @@ describe("boxes and points", () => {
     rig.animations[0]!.tracks[box.id] = { nodeId: box.id, endFrame: rig.animations[0]!.duration - 1, keys: [
       key(0, box.bind), key(6, box.bind, { displayIndex: -1 }), key(12, tf(10, -4, 70, 70, 1, 1.4)),
     ] };
+    expect(checkParity(project, rig.id).checks).toBeGreaterThan(100);
+  });
+
+  it("a point with an offset and a box weighted to two bones: where spine-core puts them, frame by frame", async () => {
+    const { project, rig, node } = await loadStickman();
+    const point = createNode("point", "muzzle", { parentId: node("arm_near_fore") });
+    point.bind = tf(60, 3, -40, -40, 1.2, 0.7);
+    point.point = { x: 12, y: -5, rotation: 35 };
+    const box = createNode("box", "sleeve", { parentId: node("chest") });
+    // Points placed in the box's space at the setup pose, each bound to the
+    // upper arm, the forearm or both; the file-style offsets left to the export.
+    box.box = {
+      points: [0, 0, 40, -10, 80, 0, 40, 30],
+      weights: [[[node("arm_near_up"), 1]], [[node("arm_near_up"), 0.5], [node("arm_near_fore"), 0.5]], [[node("arm_near_fore"), 1]], [[node("arm_near_up"), 0.3], [node("arm_near_fore"), 0.7]]],
+    };
+    for (const n of [point, box]) { rig.nodes[n.id] = n; rig.layers.unshift(createLayer(n.id, n.name, rig.layers.length)); }
+    const att = exportSpine(project).skeleton.skins![0]!.attachments!;
+    expect(att.muzzle!.muzzle).toMatchObject({ type: "point", x: 12, y: 5, rotation: -35 });
+    expect((att.sleeve!.sleeve as { vertices: unknown[] }).vertices[0]).toBe(1);
     expect(checkParity(project, rig.id).checks).toBeGreaterThan(100);
   });
 });

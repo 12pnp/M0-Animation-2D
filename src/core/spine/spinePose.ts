@@ -85,8 +85,8 @@ function idOf(o: object | undefined): number {
 function structureKey(project: Project, sym: SymbolItem): string {
   const nodes = Object.values(sym.nodes).map((n) => [
     n.id, n.name, n.kind, n.parentId, n.slotBone, n.inherit, n.setupDisplay, n.blendMode, n.boneLength,
-    displaysOf(n).map((d) => [d.itemId, project.items[d.itemId]?.name, idOf(d.attachment?.data), d.attachment?.name ?? d.key, idOf(d.mesh), idOf(d.sequence), !!d.skinOnly]),
-    idOf(n.spine?.bone), idOf(n.spine?.slot), idOf(n.box), idOf(n.path),
+    displaysOf(n).map((d) => [d.itemId, project.items[d.itemId]?.name, idOf(d.attachment?.data), d.attachment?.name ?? d.key, idOf(d.mesh), idOf(d.sequence), idOf(d.linked), idOf(d.region), d.name, !!d.skinOnly]),
+    idOf(n.spine?.bone), idOf(n.spine?.slot), idOf(n.box), idOf(n.path), idOf(n.point),
   ]);
   const layers = sym.layers.map((l) => [l.nodeId, l.excludeFromExport, l.isMask, l.maskedBy]);
   const ik = sym.ik.map((k) => [k.name, k.boneId, k.targetId, k.chain, k.bendPositive, k.weight, k.softness, k.stretch, k.compress, k.scaleY, idOf(k.spine)]);
@@ -337,7 +337,8 @@ function applyRig(
     delete e.clip;
     e.color = colorOf(slot, att);
     let shown = -1;
-    for (const [index, key] of rig.displayNames.get(e.nodeId) ?? []) if (att && key === att.name) shown = index;
+    // By the attachment the key finds, as an attachment's own name need not be its key.
+    for (const [index, key] of rig.displayNames.get(e.nodeId) ?? []) if (att && sk.getAttachment(slot.data.index, key) === att) shown = index;
     e.displayIndex = shown;
     e.display = shown >= 0 ? displaysOf(e.node)[shown] ?? null : null;
     e.spine = drawOf(rig, sk, slot, att) ?? undefined;
@@ -348,8 +349,16 @@ function applyRig(
       e.clip = { polygon: v, until: null };
       clips.push({ entry: e, end: att.endSlot ? sk.slots[att.endSlot.index] ?? null : null });
     }
-    // Boxes, points and paths draw nothing; the overlay outlines them.
+    // Boxes, points and paths draw nothing; the overlay outlines them, a
+    // box's or path's points where the runtime puts them (weights, deform).
     const outlined = att instanceof BoundingBoxAttachment || att instanceof PointAttachment || att instanceof PathAttachment;
+    delete e.outline;
+    if (att instanceof BoundingBoxAttachment || att instanceof PathAttachment) {
+      const v = new Array<number>(att.worldVerticesLength);
+      att.computeWorldVertices(sk, slot, 0, att.worldVerticesLength, v, 0, 2);
+      for (let i = 1; i < v.length; i += 2) v[i] = -v[i]!;
+      e.outline = v;
+    }
     e.visible = layerVisible && (!!e.spine || !!e.clip || outlined);
     slotEntries.push(e);
   }

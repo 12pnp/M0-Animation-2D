@@ -1,4 +1,4 @@
-import { applyTween, type TweenSpec } from "@/core/math/easing";
+import { applyTween, readPolyline, spinePolyline, type TweenSpec } from "@/core/math/easing";
 import type { CnId, NodeId } from "./ids";
 import { PATH_DEFAULTS, PHYSICS_DEFAULTS } from "./constraints";
 import type { Animation, PathConstraint, PhysicsConstraint, SliderConstraint, SymbolItem, ValueKey } from "./types";
@@ -205,6 +205,52 @@ export function channelKeysFromSpine(raw: unknown, fps: number, missing: number,
     keys.push(key);
   }
   return new Set(keys.map((k) => k.frame)).size === keys.length ? keys : null;
+}
+
+/**
+ * A file's channel with a key between frames, written frame by frame: Spine's
+ * value at every whole frame from the first key on to the frame after the
+ * last, straight between (as bone keys are, `importKeys`). Exact at every
+ * frame. Null when it is not a channel.
+ */
+export function bakedChannelKeys(raw: unknown, fps: number, missing: number, pathMix = false): ValueKey[] | null {
+  if (!Array.isArray(raw) || !raw.length) return null;
+  const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+  const valueOf = (r: Raw): number | null => {
+    if (!pathMix) return num(r.value, missing);
+    const rot = num(r.mixRotate, 1), x = num(r.mixX, 1), y = num(r.mixY, x);
+    return Math.abs(rot - x) > 1e-9 || Math.abs(x - y) > 1e-9 ? null : rot;
+  };
+  // Times in frames; a curve's controls too.
+  const keys: Array<{ at: number; value: number; curve: null | "stepped" | number[] }> = [];
+  for (const r of raw as Raw[]) {
+    if (!r || typeof r !== "object") return null;
+    const value = valueOf(r);
+    if (value === null) return null;
+    const at = num(r.time, 0) * fps;
+    if (keys.length && at <= keys[keys.length - 1]!.at) return null;
+    let curve: null | "stepped" | number[] = null;
+    if (r.curve === "stepped") curve = "stepped";
+    else if (Array.isArray(r.curve)) {
+      const c = r.curve.map((v) => num(v, 0));
+      if (c.length < 4 || (pathMix && (c.length < 12 || [4, 8].some((o) => c.slice(o, o + 4).some((v, j) => Math.abs(v - c[j]!) > 1e-6))))) return null;
+      curve = [c[0]! * fps, c[1]!, c[2]! * fps, c[3]!];
+    }
+    keys.push({ at, value, curve });
+  }
+  const valueAtFrame = (f: number): number => {
+    let i = 0;
+    while (i + 1 < keys.length && keys[i + 1]!.at <= f + 1e-6) i++;
+    const a = keys[i]!, b = keys[i + 1];
+    if (!b || a.curve === "stepped" || f <= a.at) return a.value;
+    if (!a.curve) return a.value + ((b.value - a.value) * (f - a.at)) / (b.at - a.at);
+    const [c1x, c1y, c2x, c2y] = a.curve as [number, number, number, number];
+    return readPolyline(spinePolyline({ x0: a.at, y0: a.value, c1x, c1y, c2x, c2y, x1: b.at, y1: b.value }), f);
+  };
+  const first = Math.ceil(keys[0]!.at - 1e-3) || 0, last = Math.ceil(keys[keys.length - 1]!.at - 1e-3) || 0;
+  const out: ValueKey[] = [];
+  for (let f = first; f <= last; f++) out.push({ frame: f, value: valueAtFrame(f) });
+  return out;
 }
 
 /** Keys loaded from a file: constraints the symbol has, their channels, whole

@@ -42,7 +42,14 @@ describe("Spine's inherit timeline", () => {
   });
 
   it.each([
-    { name: "a key between frames", raw: [{ time: 0.11, inherit: "noScale" }] },
+    { name: "on the next whole frame, the first it shows on", raw: [{ time: 0.11, inherit: "noScale" }], want: [{ frame: 4, inherit: "noScale" }] },
+    { name: "two before one frame: the later", raw: [{ time: 0.11, inherit: "noScale" }, { time: 0.12, inherit: "onlyTranslation" }], want: [{ frame: 4, inherit: "onlyTranslation" }] },
+    { name: "one between frames, then one on the frame after: that one", raw: [{ time: 0.11, inherit: "noScale" }, { time: 4 / 30 }], want: [{ frame: 4, inherit: "normal" }] },
+  ])("a key between frames: $name", ({ raw, want }) => {
+    expect(inheritKeysFromSpine(raw, 30)).toEqual(want);
+  });
+
+  it.each([
     { name: "an unknown mode", raw: [{ time: 0, inherit: "sideways" }] },
     { name: "not a list", raw: { inherit: "noScale" } },
   ])("stays carried: $name", ({ raw }) => {

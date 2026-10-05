@@ -31,15 +31,17 @@ Legend:
 - ✅ Region
 - ✅ Clipping (from masks)
 - ✅ Mesh: made from the image's alpha, points added, moved, deleted, triangulated (ARCHITECTURE
-  ▸ Meshes); an opened file's default-skin meshes become editable, their UVs, vertices and
-  per-bone offsets kept
+  ▸ Meshes); an opened file's meshes become editable, other skins' too (the Mesh tool edits
+  the one the stage shows), their UVs, vertices, per-bone offsets and names kept
 - ✅ Weighted mesh: bind to bones, auto weights, weight brush
 - ✅ Linked mesh: another image of the node draws a mesh, with or without its deform keys
-  (Properties ▸ Mesh); an opened file's default-skin ones become links
+  (Properties ▸ Mesh); an opened file's become links, in any skin, to the source's skin
 - ✅ Sequence (frame-by-frame region): made from numbered library images, keyed (a Sequence row);
-  an opened file's unrotated ones become the document's, with their keys
-- ✅ Bounding box, point and path attachments: made and edited (box and point nodes, path nodes);
-  an opened file's unweighted ones (a point without an offset) become the document's
+  an opened file's become the document's with their keys, a rotated or scaled one keeping its
+  turn
+- ✅ Bounding box, point and path attachments: made and edited (box and point nodes, path nodes),
+  a point's offset and turn in Properties ▸ Point; an opened file's become the document's,
+  weighted ones following their bones
 - ✅ Creating attachments other than regions and clippings: meshes, linked meshes, bounding
   boxes, points, paths and sequences
 
@@ -79,7 +81,8 @@ Legend:
 - ✅ Event keys and the event list (an Events row and panel; ARCHITECTURE ▸ Events)
 - ✅ Transform constraint keys (a row per constraint)
 - ✅ Path, physics and slider constraint keys: a row per constraint, keyed from Properties
-  in Animate mode (ARCHITECTURE ▸ Physics, sliders and paths)
+  in Animate mode (ARCHITECTURE ▸ Physics, sliders and paths); an opened file's keys between
+  frames written frame by frame
 - ✅ Inherit keys: an Inherit row under the bone
 - ✅ Graph editor: values over time as curves, with handles (ARCHITECTURE ▸ Graph editor)
 - ✅ Audio: an event's sound kept in the project, exported to `audio/`, played in the
@@ -97,8 +100,6 @@ Legend:
 - ✅ Open Spine 4.3 JSON with its atlas, from files, a folder or a zip
 - ✅ PSD import (layers as images)
 - ✅ Checked in Unity (spine-csharp), phase 8 (`scripts/unity-check/`)
-- ☐ Binary `.skel` export (smaller and faster to load; what most shipping games use)
-- ☐ Opening a binary `.skel`
 - ✅ Nonessential data: Export Settings ▸ Nonessential data (on by default)
 - ✅ Image sequences from numbered images (Properties ▸ Sequence ▸ Make Sequence)
 - ☐ Video and sprite-sheet export (planned for the desktop build, ARCHITECTURE ▸ Future
@@ -110,7 +111,8 @@ Legend:
 - ✅ spine-core parity tests: the stage against the export, frame by frame
 - ✅ Preview mixing (Mix from … over … s, Play Mix) and the fired events listed
 - ✅ Preview animation queue of any length, each crossfaded into
-- ✅ Unity check rerun after phases A to H (ARCHITECTURE ▸ Checked in Unity)
+- ✅ Unity check rerun after phases A to J, attachment geometry and every skin included
+  (ARCHITECTURE ▸ Checked in Unity)
 
 ## Plan
 
@@ -200,13 +202,11 @@ meshes.
 4. Slider constraint (4.3).
 5. IK stretch, compress and uniform: port the rest of `apply1`/`apply2`.
 
-### Phase G: export formats and tools (done but binary and video, by choice)
+### Phase G: export formats and tools (done but video, by choice)
 
-1. Binary `.skel` export, checked by reading it with spine-core's `SkeletonBinary` and
-   comparing with the JSON export frame by frame; opening `.skel` files.
-2. Nonessential data options in Export Settings.
-3. Hand and Zoom tools; Compensate; bone colours in the tree.
-4. Video and sprite-sheet export (desktop build).
+1. Nonessential data options in Export Settings.
+2. Hand and Zoom tools; Compensate; bone colours in the tree.
+3. Video and sprite-sheet export (desktop build).
 
 ### Phase H: animation tools and the rest (done, docs/PHASE-H-PLAN.md)
 
@@ -226,14 +226,26 @@ meshes.
 5. Skin membership of physics, sliders and paths; bone icons.
 6. The Unity check rerun, with a sample re-exported through the editor.
 
-Still carried: weighted boxes and paths, points with an offset, rotated or scaled sequence
-regions, other skins' meshes and linked meshes, and a constraint channel a file keys off the
-frames.
+### Phase J: the rest of the carried attachments (done, docs/PHASE-J-PLAN.md)
+
+1. Points with an offset, edited in Properties ▸ Point.
+2. Rotated or scaled sequence regions, posed by the runtime.
+3. Weighted boxes and paths, edited with the Mesh tool.
+4. Other skins' meshes and linked meshes, the Mesh tool on the mesh the stage shows.
+5. Keys between frames: constraint channels written frame by frame, inherit keys on the next
+   frame.
+6. The Properties panel laid out for a narrow column.
+7. The Unity check rerun, now comparing attachment geometry and every skin.
+
+Still carried: an attachment with a field the model does not hold (a tinted mesh), a mesh
+an animation deforms other than the default skin's display 0, and boxes, points and paths in
+a slot that skins fill.
 
 ## Not in scope
 
 - Spine's own file format (`.spine` projects). This editor's document is `.boneburst`; Spine
-  exchanges skeletons through the JSON or binary export, which is what this plan targets.
+  exchanges skeletons through its JSON export, which is what this plan targets.
+- Spine's binary format (`.skel`): neither written nor opened. Games load the JSON export.
 - Matching Spine's UI. The checklist is about what can be authored, not how Spine lays it
   out.
 - Licensing: every user still needs a Spine licence for the runtimes

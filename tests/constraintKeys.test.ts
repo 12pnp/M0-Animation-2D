@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { newCnId, reseed, type CnId } from "@/core/doc/ids";
 import {
-  channelKeysFromSpine, channelTimeline, constraintKeyFrames, deleteConstraintKeys, moveConstraintKeys, valueAt,
+  bakedChannelKeys, channelKeysFromSpine, channelTimeline, constraintKeyFrames, deleteConstraintKeys, moveConstraintKeys, valueAt,
   withChannelKeys, withConstraintTween, withValueKey,
 } from "@/core/doc/constraintKeys";
 import { newPathConstraint, newPhysics, newSlider, pathThrough } from "@/core/doc/constraints";
@@ -12,6 +12,7 @@ import { importSpine } from "@/core/spine/importSpine";
 import type { SymbolItem, ValueKey } from "@/core/doc/types";
 import { loadStickman } from "./fixtures/stickman";
 import { stageAgainstRuntime } from "./fixtures/runtimeCheck";
+import { AtlasAttachmentLoader, MixFrom, Skeleton, SkeletonJson, TextureAtlas } from "@esotericsoftware/spine-core";
 
 beforeEach(() => reseed());
 
@@ -73,6 +74,20 @@ describe("Spine's timelines", () => {
   ])("stays carried: $name", ({ raw }) => {
     expect(channelKeysFromSpine(raw, 30, 0)).toBeNull();
   });
+  it.each([
+    { name: "linear across a key between frames", raw: [{ time: 0, value: 0 }, { time: 0.05, value: 1.5 }, { time: 0.1, value: 3 }], want: [[0, 0], [1, 1], [2, 2], [3, 3]] },
+    { name: "stepped: the value from the frame after the key", raw: [{ time: 0, value: 0, curve: "stepped" }, { time: 0.05, value: 5 }], want: [[0, 0], [1, 0], [2, 5]] },
+    { name: "before the first key: no key (the constraint's own holds)", raw: [{ time: 0.05, value: 2 }], want: [[2, 2]] },
+  ])("written frame by frame: $name", ({ raw, want }) => {
+    expect(bakedChannelKeys(raw, 30, 0)!.map((x) => [x.frame, Math.round(x.value * 1e9) / 1e9])).toEqual(want);
+  });
+  it("written frame by frame: a bezier as spine-core samples it", () => {
+    const raw = [{ time: 0, value: 0, curve: [0.04, 0, 0.06, 1] }, { time: 0.11, value: 1 }];
+    const baked = bakedChannelKeys(raw, 30, 0)!;
+    expect(baked.map((x) => x.frame)).toEqual([0, 1, 2, 3, 4]);
+    expect(baked[4]!.value).toBe(1);
+    expect(baked[2]!.value).toBeGreaterThan(0.4);
+  });
   it("a missing value reads as the channel's default", () => {
     expect(channelKeysFromSpine([{ time: 0.1 }], 30, 1)).toEqual([k(3, 1)]);
   });
@@ -112,6 +127,34 @@ describe("the stage plays the keys as spine-core plays the export", () => {
     rig.paths = [pc];
     for (const a of rig.animations) a.constraintKeys = { [pc.id]: { position: [k(0, 0.1), k(12, 0.6)], mix: [k(4, 1, { kind: "none" }), k(9, 0.4)] } };
     expect(stageAgainstRuntime(project, rig, "head")).toBeGreaterThan(1);
+  });
+
+  it("open: a slider channel with keys between frames plays as spine-core plays the file, at every frame", async () => {
+    const { project, rig } = await loadStickman();
+    const slider = newSlider(rig, rig.animations[1]!.id, null, newCnId(), 0);
+    rig.sliders = [slider];
+    const file = exportSpine(project).skeleton as unknown as Record<string, Record<string, Record<string, unknown>>>;
+    const first = Object.keys(file.animations!)[0]!;
+    // Keys at 0.11 s and 0.258 s: on no frame at the rig's rate or a multiple up to 120.
+    file.animations![first]!.slider = { [slider.name]: { time: [{ time: 0.11, value: 0.1, curve: [0.15, 0.1, 0.2, 0.5] }, { time: 0.258333, value: 0.5, curve: "stepped" }, { time: 0.4, value: 0.2 }] } };
+    const result = importSpine(file as never, "stickman", new Map());
+    const sym = result.project.items[result.project.rootSymbolId] as SymbolItem;
+    const anim = sym.animations.find((a) => a.name === first)!;
+    const keys = anim.constraintKeys?.[sym.sliders![0]!.id]?.time;
+    expect(keys?.length).toBeGreaterThan(3);
+    expect(anim.spine?.slider).toBeUndefined();
+    expect(result.baked).toBeGreaterThan(0);
+    // spine-core's slider time at each whole frame of the original file.
+    const data = new SkeletonJson(new AtlasAttachmentLoader(new TextureAtlas(""))).readSkeletonData(JSON.stringify({ ...file, skins: [] }));
+    const sk = new Skeleton(data);
+    const run = data.findAnimation(first)!;
+    const fps = result.project.frameRate;
+    for (let f = 0; f <= 0.5 * fps; f++) {
+      sk.setupPose();
+      run.apply(sk, 0, f / fps, false, null, 1, MixFrom.setup, false, false, false);
+      const c = sk.constraints.find((x) => x.data.name === slider.name)!;
+      expect(valueAt(keys, f, 0)).toBeCloseTo((c.pose as unknown as { time: number }).time, 6);
+    }
   });
 
   it("export then open: physics and slider keys come back as keys; a channel the model lacks stays carried", async () => {

@@ -71,6 +71,26 @@ export function skinLookup(sym: SymbolItem, skins: readonly string[]): Map<strin
   return out;
 }
 
+/** A skin's display of `node` by skin name and index, for the links that
+ *  name a skin (`meshOfDisplay`). */
+export function skinDisplayOf(sym: SymbolItem, node: Node): (skin: string, index: number) => DisplayRef | null {
+  return (skin, index) => sym.skins?.find((d) => d.name === skin)?.displays?.[node.id]?.[index] ?? null;
+}
+
+/**
+ * Where what the stage shows at display `index` of `node` lives: the last of
+ * `skins` that fills it (`skin` its name), else the node's own (`skin` null);
+ * null for a display only skins fill and none of them does. The tools edit it there.
+ */
+export function shownDisplay(sym: SymbolItem, node: Node, index: number, skins: readonly string[]): { display: DisplayRef; skin: string | null } | null {
+  for (const name of [...skins].reverse()) {
+    const ref = sym.skins?.find((d) => d.name === name)?.displays?.[node.id]?.[index];
+    if (ref) return { display: ref, skin: name };
+  }
+  const own = displayAt(node, index);
+  return own && !own.skinOnly ? { display: own, skin: null } : null;
+}
+
 /**
  * What `node` shows at display `index` with the skins `lookup` was built for:
  * the skin's display, else the node's own, else nothing for a display only

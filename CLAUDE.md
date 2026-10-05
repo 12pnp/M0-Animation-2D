@@ -35,9 +35,10 @@ poses any symbol that has one (ARCHITECTURE ▸ Physics, sliders and paths).
 Constraints apply in the symbol's order (ARCHITECTURE ▸ Constraint order), keys can be offset
 and keyed by group from the timeline (ARCHITECTURE ▸ Offset keys, Key buttons). Inherit modes
 and physics, slider and path constraints are keyed (ARCHITECTURE ▸ Inherit modes, Physics,
-sliders and paths); an opened file's meshes, linked meshes, boxes, points, paths and sequences
-become editable where the model holds them (ARCHITECTURE ▸ Meshes, Boxes and points,
-Sequences), and the Unity check was rerun after phase I (ARCHITECTURE ▸ Checked in Unity).
+sliders and paths); an opened file's meshes and linked meshes in every skin, weighted boxes
+and paths, points with an offset and turned sequences become editable (ARCHITECTURE ▸ Meshes,
+Boxes and points, Sequences), and the Unity check, which compares attachment geometry and
+every skin, was rerun after phase J (ARCHITECTURE ▸ Checked in Unity).
 An exporter change must keep
 `tests/spineParity.test.ts` passing: it plays every fixture through spine-core
 and compares it with the stage frame by frame. An importer or exporter change

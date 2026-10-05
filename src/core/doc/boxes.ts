@@ -1,21 +1,53 @@
-import type { Node, SymbolItem } from "./types";
+import type { MeshData, Node, OutlineWeights, SymbolItem } from "./types";
 import type { NodeId } from "./ids";
 import { cloneTf, IDENTITY, type Transform } from "@/core/math/Transform";
+import { apply, matOf, type Matrix2D } from "@/core/math/Matrix2D";
+import { meshWorld, type MeshBones } from "@/core/mesh/meshPose";
 
 /**
  * Bounding boxes and points (ARCHITECTURE ▸ Boxes and points), pure. A box
  * node holds a polygon in its own space (y down, about its origin), which
  * Spine's `boundingbox` attachment writes in the slot bone's space; a point
- * node is its own origin and x axis, Spine's `point` attachment at 0, 0, 0.
- * Neither draws: the stage outlines them.
+ * node is its own origin and x axis moved by `Node.point`, Spine's `point`
+ * attachment. A box or path opened weighted follows its bones by the mesh
+ * rule (`meshWorld`). Neither draws: the stage outlines them.
  */
 
 /** A point's pick and outline radius, in its own units. */
 export const POINT_RADIUS = 6;
 
+/** A point node's place in its own space: its offset, then its rotation. */
+export function pointMatrix(node: Node): Matrix2D {
+  const p = node.point;
+  if (!p) return matOf(1, 0, 0, 1, 0, 0);
+  const r = (p.rotation * Math.PI) / 180, c = Math.cos(r), s = Math.sin(r);
+  return matOf(c, s, -s, c, p.x, p.y);
+}
+
+/** `node` with its point offset changed by `patch`; none at the origin. */
+export function withPointOffset(node: Node, patch: Partial<NonNullable<Node["point"]>>): Node {
+  const p = { x: 0, y: 0, rotation: 0, ...node.point, ...patch };
+  const out = { ...node };
+  if (p.x || p.y || p.rotation) out.point = p; else delete out.point;
+  return out;
+}
+
+/** The point as Spine's attachment writes it: y up, counterclockwise. */
+export function pointToSpine(node: Node): Record<string, number> {
+  const p = node.point, out: Record<string, number> = {};
+  if (!p) return out;
+  if (p.x) out.x = p.x;
+  if (p.y) out.y = 0 - p.y;
+  if (p.rotation) out.rotation = 0 - p.rotation;
+  return out;
+}
+
 /** The box a box or point node takes on the stage, in its own space. */
 export function boxNodeBounds(node: Node): { x: number; y: number; w: number; h: number } | null {
-  if (node.kind === "point") return { x: -POINT_RADIUS, y: -POINT_RADIUS, w: POINT_RADIUS * 2, h: POINT_RADIUS * 2 };
+  if (node.kind === "point") {
+    const x = node.point?.x ?? 0, y = node.point?.y ?? 0;
+    return { x: x - POINT_RADIUS, y: y - POINT_RADIUS, w: POINT_RADIUS * 2, h: POINT_RADIUS * 2 };
+  }
   const p = node.kind === "box" ? node.box?.points : node.kind === "path" ? node.path?.points : undefined;
   if (!p || p.length < 6) return null;
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
@@ -24,6 +56,70 @@ export function boxNodeBounds(node: Node): { x: number; y: number; w: number; h:
     y0 = Math.min(y0, p[i + 1]!); y1 = Math.max(y1, p[i + 1]!);
   }
   return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+}
+
+/** A box's or path's points and their weights, if any. */
+export function outlineOfNode(node: Node): ({ points: number[] } & OutlineWeights) | null {
+  return node.kind === "box" ? node.box ?? null : node.kind === "path" ? node.path ?? null : null;
+}
+
+/** Whether a box's or path's points follow bones. */
+export function outlineWeighted(node: Node): boolean {
+  return !!outlineOfNode(node)?.weights?.some((w) => w.length);
+}
+
+/** An outline as a mesh with no triangles, for the mesh rule's functions
+ *  (`meshWorld`, `spineVertices`, `localDelta`): its points about 0, 0. */
+export function outlineAsMesh(o: { points: number[] } & OutlineWeights): MeshData {
+  const m: MeshData = { width: 1, height: 1, points: o.points, triangles: [], hull: 0 };
+  if (o.weights) m.weights = o.weights;
+  if (o.boneOffsets) m.boneOffsets = o.boneOffsets;
+  return m;
+}
+
+/** A box's or path's points in the world: through the node, or, weighted,
+ *  through its bones (`bones` now and at the setup pose). */
+export function outlineWorld(node: Node, world: Matrix2D, bones?: MeshBones | null): number[] {
+  const o = outlineOfNode(node);
+  if (!o) return [];
+  if (bones && outlineWeighted(node)) return meshWorld(outlineAsMesh(o), { x: 0, y: 0 }, world, null, bones);
+  const out = new Array<number>(o.points.length), q = { x: 0, y: 0 };
+  for (let i = 0; i < o.points.length; i += 2) {
+    apply(q, world, o.points[i]!, o.points[i + 1]!);
+    out[i] = q.x; out[i + 1] = q.y;
+  }
+  return out;
+}
+
+/** `o` with point positions `points`, the moved ones dropping the file's own
+ *  bone offsets (they follow their bones from where they now are). */
+export function withOutlinePoints<T extends { points: number[] } & OutlineWeights>(o: T, points: number[], moved: Iterable<number>): T {
+  const out = { ...o, points };
+  if (o.boneOffsets) {
+    const offs = [...o.boneOffsets];
+    for (const i of moved) offs[i] = [];
+    if (offs.some((x) => x.length)) out.boneOffsets = offs; else delete out.boneOffsets;
+  }
+  return out;
+}
+
+/** A box's or path's points in the world as the pose has them. */
+export function entryOutline(e: { node: Node; world: Matrix2D; outline?: number[] }): number[] {
+  return e.outline ?? outlineWorld(e.node, e.world);
+}
+
+/** The points of `next` that differ from `base`, rounded to hundredths, the
+ *  rest left exactly as they were (an opened file's are not rounded). */
+export function roundMoved(base: readonly number[], next: readonly number[]): { points: number[]; moved: number[] } {
+  const moved: number[] = [];
+  const points = [...next];
+  for (let i = 0; i < next.length / 2; i++) {
+    if (next[i * 2] === base[i * 2] && next[i * 2 + 1] === base[i * 2 + 1]) continue;
+    moved.push(i);
+    points[i * 2] = Math.round(next[i * 2]! * 100) / 100;
+    points[i * 2 + 1] = Math.round(next[i * 2 + 1]! * 100) / 100;
+  }
+  return { points, moved };
 }
 
 /** Whether (x, y) is within `tolerance` of the polyline `line`. */
@@ -71,6 +167,28 @@ export function withBoxPoint(p: readonly number[], x: number, y: number): number
 export function withoutBoxPoint(p: readonly number[], i: number): number[] | null {
   if (p.length / 2 <= 3) return null;
   return p.filter((_, k) => k >> 1 !== i);
+}
+
+/**
+ * A box's weights after `withBoxPoint` put a point in at `at`: the new point
+ * takes the two it sits between, half each, merged by bone, and no offsets.
+ */
+export function boxWeightsWithPoint(box: { points: number[] } & OutlineWeights, at: number): OutlineWeights {
+  if (!box.weights) return {};
+  const n = box.weights.length;
+  const merged = new Map<NodeId, number>();
+  for (const w of [box.weights[(at - 1 + n) % n]!, box.weights[at % n]!]) for (const [b, v] of w) merged.set(b, (merged.get(b) ?? 0) + v / 2);
+  const out: OutlineWeights = { weights: [...box.weights.slice(0, at), [...merged], ...box.weights.slice(at)] };
+  if (box.boneOffsets) out.boneOffsets = [...box.boneOffsets.slice(0, at), [], ...box.boneOffsets.slice(at)];
+  return out;
+}
+
+/** The weights of the points `keep` says stay. */
+export function outlineWeightsKept(o: OutlineWeights, keep: (i: number) => boolean): OutlineWeights {
+  const out: OutlineWeights = {};
+  if (o.weights) out.weights = o.weights.filter((_, i) => keep(i));
+  if (o.boneOffsets) out.boneOffsets = o.boneOffsets.filter((_, i) => keep(i));
+  return out;
 }
 
 /** `base`, else `base 2`, …: a name no node of `sym` has. */

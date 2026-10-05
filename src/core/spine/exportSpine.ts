@@ -1,5 +1,6 @@
 import { fileLengthsOf } from "./importAttachments";
-import type { Animation, ColorTransform, DisplayRef, IkKey, MeshData, TransformConstraint, ImageItem, Layer, Node, Project, SymbolItem, Track } from "@/core/doc/types";
+import type { Animation, ColorTransform, DisplayRef, IkKey, MeshData, OutlineWeights, TransformConstraint, ImageItem, Layer, Node, Project, SymbolItem, Track } from "@/core/doc/types";
+import { outlineAsMesh, pointToSpine } from "@/core/doc/boxes";
 import { byOrder } from "@/core/doc/constraintOrder";
 import { inheritTimeline } from "@/core/doc/inherit";
 import { channelTimeline, keyedConstraint } from "@/core/doc/constraintKeys";
@@ -14,8 +15,8 @@ import { TC_CHANNELS, type TcChannel } from "@/core/math/transformConstraint";
 import type { Contour } from "@/core/atlas/contour";
 import { nz } from "@/core/math/angle";
 import { mat, type Matrix2D } from "@/core/math/Matrix2D";
-import { displayAt, displaysOf } from "@/core/doc/displays";
-import { skinBoneSet } from "@/core/doc/skins";
+import { displaysOf, meshOfDisplay } from "@/core/doc/displays";
+import { skinBoneSet, skinDisplayOf } from "@/core/doc/skins";
 import { sequenceNaming } from "@/core/doc/sequence";
 import { withoutNonessential } from "./nonessential";
 import { sanitizeExportSettings } from "@/core/export/settings";
@@ -376,11 +377,13 @@ export function exportSpine(
           // A linked mesh (ARCHITECTURE ▸ Meshes ▸ Linked meshes): Spine 4.3 names
           // its source mesh by key, in this slot when `slot` is left out.
           const source = keys.get(ref.linked.to);
-          if (!source || !displayAt(node, ref.linked.to)?.mesh) {
+          if (!source || !meshOfDisplay(node, ref, skinDisplayOf(s, node))) {
             diagnostics.push({ severity: "error", message: `"${node.name}" ▸ "${key}" is linked to a display that is not a mesh in the file.` });
           }
           const linked: Record<string, unknown> = { type: "linkedmesh", source: source ?? key, width: item.width, height: item.height };
-          if (key !== item.name) linked.path = item.name;
+          if (ref.linked.skin) linked.skin = ref.linked.skin;
+          if (ref.name) linked.name = ref.name;
+          if ((ref.name ?? key) !== item.name) linked.path = item.name;
           if (ref.linked.deform === false) linked.timelines = false;
           return linked as unknown as SpineAttachment;
         }
@@ -399,7 +402,9 @@ export function exportSpine(
             width: ref.mesh.width, height: ref.mesh.height,
           };
           if (ref.mesh.edges?.length) mesh.edges = [...ref.mesh.edges];
-          if (key !== item.name) mesh.path = item.name;
+          // The path defaults to the name, which defaults to the key.
+          if (ref.name) mesh.name = ref.name;
+          if ((ref.name ?? key) !== item.name) mesh.path = item.name;
           if (own && scope.depth === 0) rootMeshes.push({ nodeId: node.id, slot: name, key, mesh: ref.mesh, pivot: ref.pivot, bones });
           return mesh as unknown as SpineAttachment;
         }
@@ -423,6 +428,13 @@ export function exportSpine(
         }
         if (centre.x !== 0) region.x = centre.x;
         if (centre.y !== 0) region.y = centre.y;
+        // An opened region's turn, about its centre (`DisplayRef.region`).
+        if (ref.region) {
+          const r = region as unknown as Record<string, number>;
+          if (ref.region.rotation) r.rotation = ref.region.rotation;
+          if (ref.region.scaleX !== undefined && ref.region.scaleX !== 1) r.scaleX = ref.region.scaleX;
+          if (ref.region.scaleY !== undefined && ref.region.scaleY !== 1) r.scaleY = ref.region.scaleY;
+        }
         return region;
       };
       // A box or point node (ARCHITECTURE ▸ Boxes and points): one attachment,
@@ -430,6 +442,17 @@ export function exportSpine(
       if (node.kind === "box" || node.kind === "point" || node.kind === "path") {
         const key = node.key ?? node.name;
         const colored = (att: Record<string, unknown>) => (node.attachmentColor ? { ...att, color: node.attachmentColor } : att) as SpineAttachment;
+        // A weighted box or path is written per bone, as a weighted mesh is.
+        const outlineVertices = (o: { points: number[] } & OutlineWeights): Array<number | string> => {
+          if (!o.weights?.some((w) => w.length)) return o.points.map((v, i) => nz(i % 2 ? -v : v));
+          const setupPose = setupOf(s);
+          const bones: MeshBones = {
+            now: (id) => (dropped(id) ? undefined : setupPose.get(id)?.world),
+            setup: (id) => (dropped(id) ? undefined : setupPose.get(id)?.world),
+            node: setupPose.get(node.id)?.world ?? mat(),
+          };
+          return spineVertices(outlineAsMesh(o), { x: 0, y: 0 }, bones, (id) => nameOf(id), node.slotBone ?? node.id);
+        };
         if (node.kind === "path") {
           const shape = node.path;
           if (shape && shape.points.length >= 12) {
@@ -438,17 +461,17 @@ export function exportSpine(
             if (shape.closed) att.closed = true;
             if (shape.constantSpeed === false) att.constantSpeed = false;
             att.vertexCount = shape.points.length / 2;
-            att.vertices = shape.points.map((v, i) => nz(i % 2 ? -v : v));
+            att.vertices = outlineVertices(shape);
             att.lengths = fileLengthsOf(shape) ?? pathLengths(shape);
             slotAttachments[key] = colored(att);
           } else diagnostics.push({ severity: "warning", message: `Path "${node.name}" has fewer than two knots; it is left out.` });
         } else if (node.kind === "point") {
           keys.set(0, key);
-          slotAttachments[key] = colored({ type: "point" });
+          slotAttachments[key] = colored({ type: "point", ...pointToSpine(node) });
         } else if ((node.box?.points.length ?? 0) >= 6) {
           const p = node.box!.points;
           keys.set(0, key);
-          slotAttachments[key] = colored({ type: "boundingbox", vertexCount: p.length / 2, vertices: p.map((v, i) => nz(i % 2 ? -v : v)) });
+          slotAttachments[key] = colored({ type: "boundingbox", vertexCount: p.length / 2, vertices: outlineVertices(node.box!) });
         } else diagnostics.push({ severity: "warning", message: `Bounding box "${node.name}" has fewer than three points; it is left out.` });
       }
       // Skins (ARCHITECTURE ▸ Skins) only at the top: a nested symbol's are not written.

@@ -47,36 +47,11 @@ export function meshFromSpine(att: Raw, ctx: MeshContext): MeshData | null {
     if (!verts.every(finite)) return null;
     for (let i = 0; i < n; i++) positions.push(verts[i * 2]! + ctx.pivot.x, -verts[i * 2 + 1]! + ctx.pivot.y);
   } else {
-    weights = [];
-    boneOffsets = [];
-    let at = 0;
-    for (let i = 0; i < n; i++) {
-      const count = verts[at++];
-      if (!Number.isInteger(count) || count < 1) return null;
-      let x = 0, y = 0, total = 0;
-      const own: Array<[NodeId, number]> = [];
-      const offs: Array<[number, number]> = [];
-      for (let j = 0; j < count; j++) {
-        const [name, bx, by, w] = [verts[at], verts[at + 1], verts[at + 2], verts[at + 3]];
-        at += 4;
-        const bone = typeof name === "string" ? ctx.bone(name) : undefined;
-        if (!bone || !finite(bx) || !finite(by) || !finite(w)) return null;
-        // Each bone's offset is kept as the file has it (`boneOffsets`): its
-        // bones need not agree on one setup position. The position is where
-        // the setup pose shows the point.
-        const p = apply({ x: 0, y: 0 }, bone.setup, bx, 0 - by);
-        x += p.x * w; y += p.y * w; total += w;
-        own.push([bone.id, w]);
-        offs.push([bx, 0 - by]);
-      }
-      boneOffsets!.push(offs);
-      if (!total) return null;
-      const local = { x: 0, y: 0 };
-      if (!applyInverse(local, ctx.node, x / total, y / total)) return null;
-      positions.push(local.x + ctx.pivot.x, local.y + ctx.pivot.y);
-      weights.push(own);
-    }
-    if (at !== verts.length) return null;
+    const bound = boundVertices(verts, n, ctx);
+    if (!bound) return null;
+    positions.push(...bound.positions);
+    weights = bound.weights;
+    boneOffsets = bound.boneOffsets;
   }
   const hull = Number.isInteger(att.hull) && (att.hull as number) >= 3 && (att.hull as number) <= n ? att.hull as number : n;
   const mesh: MeshData = { width: ctx.width, height: ctx.height, points, triangles: [...tris] as number[], hull };
@@ -84,6 +59,44 @@ export function meshFromSpine(att: Raw, ctx: MeshContext): MeshData | null {
   if (positions.some((v, i) => Math.abs(v - points[i]!) > 1e-4)) mesh.vertices = positions;
   if (Array.isArray(att.edges) && att.edges.every((v) => Number.isInteger(v))) mesh.edges = [...att.edges] as number[];
   return mesh;
+}
+
+/**
+ * A weighted attachment's `vertices` (per point: a count, then bone, x, y,
+ * weight per bone): the positions where the setup pose shows the points, in
+ * the node's space plus `pivot`, y down; each bone's weight; and each bone's
+ * offset as the file has it, in that bone's setup space, y down (its bones
+ * need not agree on one setup position). Null when any entry is not one.
+ */
+export function boundVertices(
+  verts: readonly unknown[], n: number, ctx: Pick<MeshContext, "node" | "bone" | "pivot">,
+): { positions: number[]; weights: Array<Array<[NodeId, number]>>; boneOffsets: Array<Array<[number, number]>> } | null {
+  const positions: number[] = [], weights: Array<Array<[NodeId, number]>> = [], boneOffsets: Array<Array<[number, number]>> = [];
+  let at = 0;
+  for (let i = 0; i < n; i++) {
+    const count = verts[at++];
+    if (!Number.isInteger(count) || (count as number) < 1) return null;
+    let x = 0, y = 0, total = 0;
+    const own: Array<[NodeId, number]> = [];
+    const offs: Array<[number, number]> = [];
+    for (let j = 0; j < (count as number); j++) {
+      const [name, bx, by, w] = [verts[at], verts[at + 1], verts[at + 2], verts[at + 3]];
+      at += 4;
+      const bone = typeof name === "string" ? ctx.bone(name) : undefined;
+      if (!bone || !finite(bx) || !finite(by) || !finite(w)) return null;
+      const p = apply({ x: 0, y: 0 }, bone.setup, bx, 0 - by);
+      x += p.x * w; y += p.y * w; total += w;
+      own.push([bone.id, w]);
+      offs.push([bx, 0 - by]);
+    }
+    if (!total) return null;
+    const local = { x: 0, y: 0 };
+    if (!applyInverse(local, ctx.node, x / total, y / total)) return null;
+    positions.push(local.x + ctx.pivot.x, local.y + ctx.pivot.y);
+    weights.push(own);
+    boneOffsets.push(offs);
+  }
+  return at === verts.length ? { positions, weights, boneOffsets } : null;
 }
 
 /**

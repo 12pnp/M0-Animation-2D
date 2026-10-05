@@ -1,6 +1,6 @@
 import { sanitizeInherits } from "./inherit";
 import { sanitizeConstraintKeys } from "./constraintKeys";
-import type { DeformKey, DisplayRef, EventDef, EventKey, IkKey, LibraryFolder, MeshData, Node, PathConstraint, PhysicsConstraint, Project, SequenceKey, SkinDef, SliderConstraint, TcKey, TransformConstraint } from "./types";
+import type { DeformKey, DisplayRef, EventDef, EventKey, IkKey, LibraryFolder, MeshData, Node, OutlineWeights, PathConstraint, PhysicsConstraint, Project, RegionTurn, SequenceKey, SkinDef, SliderConstraint, TcKey, TransformConstraint } from "./types";
 import { SEQUENCE_MODES } from "./sequence";
 import { PHYSICS_SETTINGS, SLIDER_PROPERTIES } from "./constraints";
 import type { AnimId, CnId, NodeId } from "./ids";
@@ -9,7 +9,7 @@ import { DEFAULT_MOTION_BLUR, DOC_VERSION, type MotionBlurSettings, TIMELINE_PRO
 import { observeId } from "./ids";
 import { isDefaultExport, sanitizeExportSettings } from "@/core/export/settings";
 import { normalizeMasks } from "./layerTree";
-import { displaysOf } from "./displays";
+import { displaysOf, meshOfDisplay } from "./displays";
 import { CURVE_Y_LIMIT, EASE_FAMILIES, TWEEN_CHANNELS, TWEEN_LINEAR, type TweenSpec, } from "@/core/math/easing";
 
 export interface Diagnostic {
@@ -373,6 +373,8 @@ export function validateProject(raw: unknown): ValidationResult {
     for (const node of Object.values(item.nodes)) {
       if (node.key !== undefined && (typeof node.key !== "string" || !node.key)) delete node.key;
       for (const d of node.extraDisplays ?? []) if (d.key !== undefined && (typeof d.key !== "string" || !d.key)) delete d.key;
+      if (node.attachmentName !== undefined && (typeof node.attachmentName !== "string" || !node.attachmentName)) delete node.attachmentName;
+      for (const d of node.extraDisplays ?? []) if (d.name !== undefined && (typeof d.name !== "string" || !d.name)) delete d.name;
       // A linked mesh points at another display of the node that has a mesh.
       const all = displaysOf(node);
       const linkOk = (l: unknown, self: number) => {
@@ -561,7 +563,7 @@ export function validateProject(raw: unknown): ValidationResult {
         const r = node.kind === "path" && node.path && typeof node.path === "object" ? node.path as unknown as Record<string, unknown> : null;
         const pts = r && Array.isArray(r.points) ? r.points.map((v) => num(v, NaN)) : [];
         if (r && pts.length >= 12 && pts.length % 6 === 0 && pts.every(Number.isFinite)) {
-          node.path = { points: pts, ...(r.closed === true ? { closed: true } : {}), ...(r.constantSpeed === false ? { constantSpeed: false } : {}) };
+          node.path = { points: pts, ...(r.closed === true ? { closed: true } : {}), ...(r.constantSpeed === false ? { constantSpeed: false } : {}), ...weightsOf(r, pts.length / 2, item.nodes) };
           const f = r.fileLengths as { points?: unknown; closed?: unknown; lengths?: unknown } | undefined;
           const nums = (v: unknown) => Array.isArray(v) && v.every((x) => typeof x === "number" && Number.isFinite(x));
           if (f && nums(f.points) && nums(f.lengths)) node.path.fileLengths = { points: [...f.points as number[]], ...(f.closed === true ? { closed: true } : {}), lengths: [...f.lengths as number[]] };
@@ -571,9 +573,16 @@ export function validateProject(raw: unknown): ValidationResult {
       if (node.attachmentColor !== undefined && !(typeof node.attachmentColor === "string" && /^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(node.attachmentColor))) delete node.attachmentColor;
       if (node.box !== undefined) {
         const pts = node.kind === "box" && node.box && Array.isArray(node.box.points) ? node.box.points.map((v) => num(v, NaN)) : [];
-        if (pts.length >= 6 && pts.length % 2 === 0 && pts.every(Number.isFinite)) node.box = { points: pts };
+        if (pts.length >= 6 && pts.length % 2 === 0 && pts.every(Number.isFinite)) node.box = { points: pts, ...weightsOf(node.box as unknown as Record<string, unknown>, pts.length / 2, item.nodes) };
         else delete node.box;
       }
+      if (node.point !== undefined) {
+        const r = node.kind === "point" && node.point && typeof node.point === "object" ? node.point as unknown as Record<string, unknown> : null;
+        const pt = r ? { x: num(r.x, 0), y: num(r.y, 0), rotation: num(r.rotation, 0) } : null;
+        if (pt && (pt.x || pt.y || pt.rotation)) node.point = pt; else delete node.point;
+      }
+      if (node.region !== undefined) { const t = node.itemId ? regionOf(node.region) : undefined; if (t) node.region = t; else delete node.region; }
+      for (const d of node.extraDisplays ?? []) if (d.region !== undefined) { const t = regionOf(d.region); if (t) d.region = t; else delete d.region; }
       for (const d of node.extraDisplays ?? []) if (d.skinOnly !== undefined && d.skinOnly !== true) delete d.skinOnly;
     }
     if (item.skins !== undefined) {
@@ -584,6 +593,15 @@ export function validateProject(raw: unknown): ValidationResult {
         const cnIds = new Set<string>([...(item.physics ?? []), ...(item.sliders ?? []), ...(item.paths ?? [])].map((k) => k.id));
         const def = sanitizeSkin(r, item.nodes, ikIds, tcIds, (id) => p.items[id as never]?.kind === "image", cnIds);
         if (def && !skins.some((x) => x.name === def.name)) skins.push(def);
+      }
+      // A link stands only while it reaches a mesh (`meshOfDisplay`).
+      const inSkin = (nodeId: string) => (skin: string, i: number) => skins.find((x) => x.name === skin)?.displays?.[nodeId as never]?.[i];
+      for (const def of skins) {
+        for (const [nodeId, byIndex] of Object.entries(def.displays ?? {})) {
+          for (const [i, d] of Object.entries(byIndex)) {
+            if (d.linked && (Number(i) === d.linked.to && !d.linked.skin || !meshOfDisplay(item.nodes[nodeId as never]!, d, inSkin(nodeId)))) delete d.linked;
+          }
+        }
       }
       if (skins.length) item.skins = skins;
       else delete item.skins;
@@ -791,6 +809,10 @@ const MIGRATIONS: Record<number, (p: Record<string, unknown>) => Record<string, 
     }
     return { ...p, version: 25 };
   },
+  // 25 -> 26: points with an offset, turned sequence regions, weighted boxes
+  // and paths, skins' meshes and links to another skin's mesh. Additive; an
+  // older build would drop them.
+  25: (p) => ({ ...p, version: 26 }),
   // 19 -> 20: `SymbolItem.transforms` and `Animation.transforms`, transform
   // constraints and their keys. Additive; an older build would drop them.
   19: (p) => ({ ...p, version: 20 }),
@@ -853,6 +875,17 @@ function sanitizeSkin(
       const clean: DisplayRef = { itemId: d.itemId as DisplayRef["itemId"], pivot: { x: num(pv.x, 0), y: num(pv.y, 0) } };
       const a = d.attachment as Record<string, unknown> | undefined;
       if (a && typeof a === "object" && typeof a.name === "string" && a.data && typeof a.data === "object") clean.attachment = { name: a.name, data: a.data as Record<string, unknown> };
+      // A skin's own mesh, or a link to a mesh (checked once every skin is read).
+      if (typeof d.key === "string" && d.key) clean.key = d.key;
+      if (typeof d.name === "string" && d.name) clean.name = d.name;
+      const mesh = d.mesh !== undefined ? sanitizeMesh(d.mesh, nodes) : null;
+      if (mesh) clean.mesh = mesh;
+      const l = d.linked as { to?: unknown; deform?: unknown; skin?: unknown } | undefined;
+      if (!mesh && l && typeof l === "object" && Number.isInteger(l.to) && (l.to as number) >= 0 && (l.to as number) < count) {
+        clean.linked = { to: l.to as number, ...(l.deform === false ? { deform: false as const } : {}), ...(typeof l.skin === "string" && l.skin ? { skin: l.skin } : {}) };
+      }
+      const turn = regionOf(d.region);
+      if (turn) clean.region = turn;
       out[String(i)] = clean;
     }
     if (Object.keys(out).length) displays[nodeId] = out;
@@ -880,6 +913,16 @@ function sanitizeMesh(raw: unknown, nodes: Record<string, unknown>): MeshData | 
   const tris = Array.isArray(r.triangles) ? r.triangles.map((v) => (Number.isInteger(v) && (v as number) >= 0 && (v as number) < count ? (v as number) : -1)) : [];
   if (!tris.length || tris.length % 3 || tris.some((i) => i < 0)) return null;
   const out: MeshData = { width: Math.max(1, num(r.width, 1)), height: Math.max(1, num(r.height, 1)), points, triangles: tris, hull };
+  Object.assign(out, weightsOf(r, count, nodes));
+  if (Array.isArray(r.vertices) && r.vertices.length === points.length && r.vertices.every((v) => Number.isFinite(v))) out.vertices = [...r.vertices as number[]];
+  if (Array.isArray(r.edges) && r.edges.length % 2 === 0 && r.edges.every((v) => Number.isInteger(v) && (v as number) >= 0)) out.edges = [...r.edges as number[]];
+  return out;
+}
+
+/** A mesh's, box's or path's weights read from disk: per point, of bones the
+ *  symbol has; the file's bone offsets when they fit them. */
+function weightsOf(r: Record<string, unknown>, count: number, nodes: Record<string, unknown>): OutlineWeights {
+  const out: OutlineWeights = {};
   if (Array.isArray(r.weights) && r.weights.length === count) {
     const weights = r.weights.map((w) => (Array.isArray(w) ? w : [])
       .filter((e): e is [string, number] => Array.isArray(e) && typeof e[0] === "string" && !!nodes[e[0]] && Number.isFinite(e[1]))
@@ -892,9 +935,17 @@ function sanitizeMesh(raw: unknown, nodes: Record<string, unknown>): MeshData | 
       && o.every((e) => Array.isArray(e) && e.length === 2 && e.every((v) => Number.isFinite(v))));
     if (fits) out.boneOffsets = offs.map((o) => (o as Array<[number, number]>).map(([x, y]) => [x, y] as [number, number]));
   }
-  if (Array.isArray(r.vertices) && r.vertices.length === points.length && r.vertices.every((v) => Number.isFinite(v))) out.vertices = [...r.vertices as number[]];
-  if (Array.isArray(r.edges) && r.edges.length % 2 === 0 && r.edges.every((v) => Number.isInteger(v) && (v as number) >= 0)) out.edges = [...r.edges as number[]];
   return out;
+}
+
+/** A region's turn read from disk: finite numbers, the defaults left out. */
+function regionOf(raw: unknown): RegionTurn | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>, out: RegionTurn = {};
+  if (num(r.rotation, 0)) out.rotation = num(r.rotation, 0);
+  if (num(r.scaleX, 1) !== 1) out.scaleX = num(r.scaleX, 1);
+  if (num(r.scaleY, 1) !== 1) out.scaleY = num(r.scaleY, 1);
+  return Object.keys(out).length ? out : undefined;
 }
 
 /** Six mixes read from disk, 0..1; a missing one is 1. */

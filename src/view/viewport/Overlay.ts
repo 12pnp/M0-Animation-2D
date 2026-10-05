@@ -1,5 +1,6 @@
 import type { Camera } from "./Camera";
 import { pathPolyline } from "@/core/doc/constraints";
+import { entryOutline, pointMatrix } from "@/core/doc/boxes";
 import { boneRow } from "@/core/doc/boneRow";
 import { uiFont, type UiFontSize } from "@/core/prefs/fonts";
 import type { Pose } from "@/core/doc/pose";
@@ -801,31 +802,33 @@ export class Overlay {
       ctx.save();
       ctx.lineWidth = 1;
       if (e.node.kind === "path") {
-        const line = e.node.path && e.node.path.points.length >= 12 ? pathPolyline(e.node.path) : [];
+        // The curve through its points in the world (`entryOutline`), so weights and the runtime's deform show.
+        const line = e.node.path && e.node.path.points.length >= 12 ? pathPolyline({ ...e.node.path, points: entryOutline(e) }) : [];
         if (line.length < 4) { ctx.restore(); continue; }
         ctx.strokeStyle = PATH_COLOR;
         ctx.lineWidth = 1.5;
         ctx.beginPath();
         for (let i = 0; i < line.length; i += 2) {
-          applyMat(p, screen, line[i]!, line[i + 1]!);
+          applyMat(p, cam.matrix, line[i]!, line[i + 1]!);
           if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
         }
         if (e.node.path!.closed) ctx.closePath();
         ctx.stroke();
       } else if (e.node.kind === "box") {
-        const pts = e.node.box?.points ?? [];
+        const pts = (e.node.box?.points.length ?? 0) >= 6 ? entryOutline(e) : [];
         if (pts.length < 6) { ctx.restore(); continue; }
         ctx.strokeStyle = BOX_COLOR;
         ctx.fillStyle = BOX_FILL;
         ctx.beginPath();
         for (let i = 0; i < pts.length; i += 2) {
-          applyMat(p, screen, pts[i]!, pts[i + 1]!);
+          applyMat(p, cam.matrix, pts[i]!, pts[i + 1]!);
           if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y);
         }
         ctx.closePath();
         ctx.fill();
         ctx.stroke();
       } else {
+        mul(screen, screen, pointMatrix(e.node));
         // A ring on the point and a tick along its x axis: its rotation.
         applyMat(p, screen, 0, 0);
         const cx = p.x, cy = p.y;

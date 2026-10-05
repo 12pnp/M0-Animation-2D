@@ -5,14 +5,16 @@ import { contentMatrixOf, SceneRenderer } from "./SceneRenderer";
 import { type Guide, Overlay, RULER } from "./Overlay";
 import type { Store } from "@/app/Store";
 import type { AssetStore } from "@/app/AssetStore";
-import { entryBox, type FrameContext, type Pose, spinePixelAt } from "@/core/doc/pose";
+import { entryBox, type FrameContext, type Pose, type PoseEntry, spinePixelAt } from "@/core/doc/pose";
+import { editedMesh } from "@/core/mesh/meshPlan";
+import { stageSkinOf } from "@/core/doc/skins";
 import { inPolygon, nearPolyline } from "@/core/doc/boxes";
 import { pathPolyline } from "@/core/doc/constraints";
 import { posedSymbol, spineBounds } from "@/core/spine/spinePose";
 import type { NodeId } from "@/core/doc/ids";
 import { applyInverse, invert, mat, matOf, type Matrix2D, mul } from "@/core/math/Matrix2D";
 import { polygonContains, type Rect, rectContains, transformCorners } from "@/core/math/geom";
-import { isImage, isSymbol } from "@/core/doc/types";
+import { isImage, isSymbol, type MeshData, type Node as DocNode } from "@/core/doc/types";
 import { meshView, verticesOf } from "@/view/tools/MeshTool";
 import type { MeshDraw } from "./Overlay";
 import { ToolManager } from "@/view/tools/ToolManager";
@@ -80,14 +82,21 @@ export class Viewport {
       const path = !!box.path;
       return { vertices, triangles: [], hull: path ? 0 : vertices.length / 2, picked: meshView.node === box.id ? meshView.picked : new Set(), tint: null, ...(path ? { handles: true } : {}) };
     }
-    const node = this.store.selectedNodes.find((n) => n.mesh);
-    const entry = node ? this.lastPose?.byNode.get(node.id) : undefined;
-    if (!node?.mesh || !entry?.spine) return null;
+    // The mesh the stage shows on a selected node, a skin's included (`editedMesh`).
+    const sym = this.store.currentSymbol;
+    let found: { node: DocNode; entry: PoseEntry; mesh: MeshData } | null = null;
+    for (const node of this.store.selectedNodes) {
+      const entry = this.lastPose?.byNode.get(node.id);
+      const mesh = entry?.spine ? editedMesh(sym, node, entry.displayIndex, stageSkinOf(sym))?.mesh : undefined;
+      if (entry && mesh) { found = { node, entry, mesh }; break; }
+    }
+    if (!found) return null;
+    const { node, entry, mesh } = found;
     const paint = this.store.ui.meshPaint;
     const tint = paint.on && paint.bone
-      ? node.mesh.points.filter((_, i) => i % 2 === 0).map((_, i) => node.mesh!.weights?.[i]?.find(([b]) => b === paint.bone)?.[1] ?? (paint.bone === node.id && !node.mesh!.weights ? 1 : 0))
+      ? mesh.points.filter((_, i) => i % 2 === 0).map((_, i) => mesh.weights?.[i]?.find(([b]) => b === paint.bone)?.[1] ?? (paint.bone === node.id && !mesh.weights ? 1 : 0))
       : null;
-    return { vertices: entry.spine.vertices, triangles: node.mesh.triangles, hull: node.mesh.hull, picked: meshView.node === node.id ? meshView.picked : new Set(), tint };
+    return { vertices: entry.spine!.vertices, triangles: mesh.triangles, hull: mesh.hull, picked: meshView.node === node.id ? meshView.picked : new Set(), tint };
   }
   private toolCtx: ToolContext;
   private lastGizmo: Gizmo | null = null;
@@ -503,8 +512,14 @@ export class Viewport {
           // moves it, as picking an attachment in Spine picks its bone.
           return e.node.slotBone ?? e.nodeId;
         }
-        const box = entryBox(project, e, when);
         const outline = e.node.kind === "box" || e.node.kind === "point" || e.node.kind === "path";
+        // Points that follow bones are tested where they are in the world.
+        if (e.outline && (e.node.box || e.node.path)) {
+          const hit = e.node.box ? inPolygon(e.outline, wx, wy) : nearPolyline(pathPolyline({ ...e.node.path!, points: e.outline }), wx, wy, 8 / this.camera.screenScale);
+          if (hit) return e.nodeId;
+          continue;
+        }
+        const box = entryBox(project, e, when);
         if (!box || (!e.display && !outline)) continue;
 
         const local = { x: 0, y: 0 };

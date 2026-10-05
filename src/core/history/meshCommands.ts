@@ -30,6 +30,17 @@ function meshOf(node: Node, index: number): MeshData | undefined {
   return index === 0 ? node.mesh : node.extraDisplays?.[index - 1]?.mesh;
 }
 
+/** The skins with skin `skin`'s display `index` of `nodeId` given `mesh`. */
+function skinsWithMesh(sym: SymbolItem, skin: string, nodeId: NodeId, index: number, mesh: MeshData | undefined): SymbolItem["skins"] {
+  return sym.skins?.map((def) => {
+    const ref = def.name === skin ? def.displays?.[nodeId]?.[index] : undefined;
+    if (!ref) return def;
+    const out = { ...ref };
+    if (mesh) out.mesh = mesh; else delete out.mesh;
+    return { ...def, displays: { ...def.displays, [nodeId]: { ...def.displays![nodeId], [index]: out } } };
+  });
+}
+
 /**
  * A node's mesh replaced (ARCHITECTURE ▸ Meshes): made, edited, bound,
  * removed; with the deform keys of the animations a change of points
@@ -47,8 +58,19 @@ export class SetMesh implements Command {
     private after: MeshData | undefined,
     private deforms: Map<AnimId, DeformKey[]> = new Map(),
     readonly kind = "mesh.edit",
+    /** A skin's display (`shownDisplay`), else the node's own. */
+    private readonly skin: string | null = null,
   ) {
     this.touches = { symbols: [symbolId], nodes: [nodeId], stage: true, timeline: deforms.size > 0 };
+  }
+
+  private read(sym: SymbolItem, node: Node): MeshData | undefined {
+    return this.skin ? sym.skins?.find((d) => d.name === this.skin)?.displays?.[this.nodeId]?.[this.index]?.mesh : meshOf(node, this.index);
+  }
+
+  private write(sym: SymbolItem, node: Node, mesh: MeshData | undefined): void {
+    if (this.skin) sym.skins = skinsWithMesh(sym, this.skin, this.nodeId, this.index, mesh);
+    else sym.nodes[this.nodeId] = withMesh(node, this.index, mesh);
   }
 
   private writeDeforms(sym: SymbolItem, keys: Map<AnimId, DeformKey[] | undefined>): void {
@@ -68,9 +90,9 @@ export class SetMesh implements Command {
     if (!this.before) {
       const deforms = new Map<AnimId, DeformKey[] | undefined>();
       for (const id of this.deforms.keys()) deforms.set(id, sym.animations.find((a) => a.id === id)?.deforms?.[this.nodeId]);
-      this.before = { mesh: meshOf(node, this.index), deforms };
+      this.before = { mesh: this.read(sym, node), deforms };
     }
-    sym.nodes[this.nodeId] = withMesh(node, this.index, this.after);
+    this.write(sym, node, this.after);
     this.writeDeforms(sym, this.deforms);
     invalidateBounds([this.symbolId]);
   }
@@ -79,14 +101,14 @@ export class SetMesh implements Command {
     const sym = symbolOf(p, this.symbolId);
     const node = sym.nodes[this.nodeId];
     if (!node || !this.before) return;
-    sym.nodes[this.nodeId] = withMesh(node, this.index, this.before.mesh);
+    this.write(sym, node, this.before.mesh);
     this.writeDeforms(sym, this.before.deforms);
     invalidateBounds([this.symbolId]);
   }
 
   mergeWith(next: Command): boolean {
     if (!(next instanceof SetMesh) || next.kind !== this.kind) return false;
-    if (next.symbolId !== this.symbolId || next.nodeId !== this.nodeId || next.index !== this.index) return false;
+    if (next.symbolId !== this.symbolId || next.nodeId !== this.nodeId || next.index !== this.index || next.skin !== this.skin) return false;
     this.after = next.after;
     for (const [id, keys] of next.deforms) this.deforms.set(id, keys);
     return true;

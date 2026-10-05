@@ -22,10 +22,12 @@ function displayZero(node: Node, itemId: ItemId): DisplayRef {
   const d: DisplayRef = { itemId, pivot: node.pivot };
   if (node.attachment) d.attachment = node.attachment;
   if (node.key) d.key = node.key;
+  if (node.attachmentName) d.name = node.attachmentName;
   if (node.linked) d.linked = node.linked;
   if (node.mesh) d.mesh = node.mesh;
   if (node.skinOnly) d.skinOnly = true;
   if (node.sequence) d.sequence = node.sequence;
+  if (node.region) d.region = node.region;
   return d;
 }
 
@@ -34,10 +36,13 @@ function displayZero(node: Node, itemId: ItemId): DisplayRef {
  * display's transform point, since the points are placed about it), and
  * whether it takes the node's deform keys. Null for a display that is not a mesh.
  */
-export function meshOfDisplay(node: Node, display: DisplayRef): { mesh: MeshData; pivot: { x: number; y: number }; deform: boolean } | null {
+export function meshOfDisplay(
+  node: Node, display: DisplayRef, inSkin?: (skin: string, index: number) => DisplayRef | null | undefined,
+): { mesh: MeshData; pivot: { x: number; y: number }; deform: boolean } | null {
   if (display.mesh) return { mesh: display.mesh, pivot: display.pivot, deform: true };
   if (!display.linked) return null;
-  const parent = displayAt(node, display.linked.to);
+  // A link naming a skin draws that skin's display (Spine's `skin`).
+  const parent = display.linked.skin ? inSkin?.(display.linked.skin, display.linked.to) : displayAt(node, display.linked.to);
   return parent?.mesh ? { mesh: parent.mesh, pivot: parent.pivot, deform: display.linked.deform !== false } : null;
 }
 

@@ -19,12 +19,14 @@ flowchart LR
 1. Export each rig with **Atlas as .atlas.txt (Unity)** on (Export Settings ▸ Files) into its
    own folder under M0 `Assets/AnimoTest/Spine/`. Unity imports it: an atlas asset, a
    material, a SkeletonData asset.
-2. `python3 .claude/skills/unity-playtest/playtest.py eval "@<this folder>/dump.cs" --budget 120000`
-   (from M0) poses every rig with spine-csharp at every frame of every animation, into
-   `Library/AnimoSpineCheck/dump.json`.
+2. `python3 .claude/skills/unity-playtest/playtest.py eval "@<this folder>/dump.cs" --budget 300000`
+   (from M0) poses every rig with spine-csharp at every frame of every animation, and in each
+   skin at the setup pose, into `Library/AnimoSpineCheck/dump.json`.
 3. `npx vitest run tests/unityParity.test.ts` (here) poses the same files with spine-core and
-   compares every bone's world matrix, the draw order, and each slot's attachment and colour.
-   Positions are divided by the asset's import scale (0.01 by default).
+   compares every bone's world matrix, the draw order, each slot's attachment and colour, and
+   where the attachment is: a region's corners, a mesh's, box's, path's or clip's world
+   vertices, a point's position and rotation. Positions are divided by the asset's import
+   scale (0.01 by default).
 4. `scene.cs` builds `Assets/AnimoTest/Spine/AnimoSpineCheck.unity` (every rig looping, a
    camera) in an additive scene, so the open scenes stay as they are; it refuses when the scene
    exists. `playcheck.cs` opens it as a preview scene, plays 1.5 s through each
@@ -45,3 +47,8 @@ Traps met on the way:
   `EditorSceneManager.OpenPreviewScene` instead.
 - **spine-unity reads at the asset's import scale.** Bone positions come out in Unity units
   (× 0.01 by default); matrices are unaffected.
+- **A rotated atlas region starts at another corner** in spine-csharp's
+  `RegionAttachment.ComputeWorldVertices` than in spine-core's: the same four corners, shifted
+  round. The test compares them up to that shift.
+- **spine-core's `PointAttachment` is a `VertexAttachment`** (with no vertices); spine-csharp's
+  is not. Test for a point first.

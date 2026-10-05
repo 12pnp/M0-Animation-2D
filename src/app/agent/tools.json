@@ -579,6 +579,21 @@
     }
   },
   {
+    "name": "set_point",
+    "description": "Move a point attachment (add_attachment kind point) away from its layer's origin and turn it, in one undoable step: x and y in the layer's own space (y down), rotation in degrees clockwise, as the stage shows them. Spine's point x, y and rotation. Give any of the three; the others stay.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "point": { "type": "string" },
+        "x": { "type": "number" },
+        "y": { "type": "number" },
+        "rotation": { "type": "number" }
+      },
+      "required": ["point"],
+      "additionalProperties": false
+    }
+  },
+  {
     "name": "set_constraint_order",
     "description": "Set the order the symbol's constraints are applied in (Spine's constraint order), in one undoable step: `order` names constraints first to last; the ones it leaves out follow, in the order they had. A constraint applied later reads what the earlier ones did to the bones, e.g. a transform constraint before an IK makes the IK reach from the constrained pose. get_rig lists the current order in constraintOrder.",
     "input_schema": {

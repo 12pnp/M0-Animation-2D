@@ -8,6 +8,7 @@ import type { Store } from "@/app/Store";
 import { drawingLayers, orderAt, reorderTargets, withDrawOrderKey, withFront } from "@/core/doc/drawOrder";
 import { type AnimId, type AssetId, type CnId, type IkId, type ItemId, newIkId, newTcId, type NodeId, type TcId } from "@/core/doc/ids";
 import { displaysOf, linkableDisplays, withLink } from "@/core/doc/displays";
+import { withPointOffset } from "@/core/doc/boxes";
 import { type Animation, type EventDef, type EventKey, type IkConstraint, type IkKey, type ImageItem, type InheritKey, type ValueKey, isImage, type TcKey, type TransformConstraint, type Keyframe, type Node, type SymbolItem, TIMELINE_PROPS, type TimelineProp, type Track } from "@/core/doc/types";
 import { entryBox, type FrameContext } from "@/core/doc/pose";
 import { type ImageFrame, imageFrame, referenceEnd, referenceFrameOf, referenceIndexAt, referenceRect } from "@/core/doc/reference";
@@ -173,6 +174,7 @@ export class AgentApi {
       case "link_mesh": return this.linkMesh(str(args, "layer"), str(args, "image"), args);
       case "key_constraint": return this.keyConstraint(str(args, "animation"), str(args, "constraint"), str(args, "channel"), int(args, "frame", 0), args);
       case "set_inherit": return this.setInherit(str(args, "bone"), args);
+      case "set_point": return this.setPoint(str(args, "point"), args);
       case "set_constraint_order": return this.setConstraintOrder(list<string>(args, "order"));
       case "key_sequence": return this.keySequence(str(args, "animation"), str(args, "layer"), int(args, "frame", 0), args);
       case "set_skin_image": return this.setSkinImage(args);
@@ -963,6 +965,23 @@ export class AgentApi {
     this.store.emit("timeline");
     this.store.emit("stage");
     return { constraint: name, channel, animation: anim.name, keys };
+  }
+
+  /** A point's offset and turn (Spine's point `x`, `y`, `rotation`), y down and clockwise as the stage. */
+  private setPoint(name: string, args: Args) {
+    const node = this.node(name);
+    if (node.kind !== "point") throw new AgentError(`"${node.name}" is not a point (add_attachment makes one).`);
+    const patch: Partial<NonNullable<Node["point"]>> = {};
+    for (const k of ["x", "y", "rotation"] as const) {
+      if (args[k] === undefined) continue;
+      if (typeof args[k] !== "number" || !Number.isFinite(args[k])) throw new AgentError(`${k} is a number.`);
+      patch[k] = args[k] as number;
+    }
+    if (!Object.keys(patch).length) throw new AgentError("Give x, y or rotation.");
+    this.store.apply(new EditNode(`AI: Move Point "${node.name}"`, this.store.currentSymbolId, node.id, (n) => withPointOffset(n, patch)));
+    this.store.emit("stage");
+    const p = this.sym.nodes[node.id]!.point;
+    return { point: node.name, x: p?.x ?? 0, y: p?.y ?? 0, rotation: p?.rotation ?? 0 };
   }
 
   private setInherit(boneName: string, args: Args) {

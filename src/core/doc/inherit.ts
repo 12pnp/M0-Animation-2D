@@ -32,9 +32,11 @@ export function inheritAt(node: Node, anim: Animation | null | undefined, frame:
 }
 
 /** A symbol the stage cannot compose itself: some bone takes less than its
- *  whole parent, now or in a key, or a constraint only the runtime solves. */
+ *  whole parent, now or in a key, a constraint only the runtime solves, or a
+ *  turned region (`DisplayRef.region`). */
 export function runtimePosed(sym: SymbolItem): boolean {
   if (runtimeSolved(sym)) return true;
+  if (Object.values(sym.nodes).some((n) => n.region || n.extraDisplays?.some((d) => d.region))) return true;
   if (Object.values(sym.nodes).some((n) => n.inherit && n.inherit !== "normal")) return true;
   return sym.animations.some((a) => Object.values(a.inherits ?? {}).some((keys) => keys.length > 0));
 }
@@ -54,8 +56,8 @@ export function inheritTimeline(keys: readonly InheritKey[], fps: number): Array
   });
 }
 
-/** A file's `inherit` timeline as keys, or null when a key falls between
- *  frames or names no mode (then it stays carried). */
+/** A file's `inherit` timeline as keys, each on the first whole frame it
+ *  shows on; null when a key names no mode (then it stays carried). */
 export function inheritKeysFromSpine(raw: unknown, fps: number): InheritKey[] | null {
   if (!Array.isArray(raw)) return null;
   const keys: InheritKey[] = [];
@@ -63,10 +65,13 @@ export function inheritKeysFromSpine(raw: unknown, fps: number): InheritKey[] | 
     if (!k || typeof k !== "object") return null;
     const r = k as Record<string, unknown>;
     const time = typeof r.time === "number" ? r.time : 0;
-    const frame = Math.round(time * fps);
-    if (Math.abs(frame - time * fps) > 1e-3) return null;
+    // A key between frames takes the next whole frame: the first it shows on.
+    const at = time * fps, frame = Math.abs(at - Math.round(at)) <= 1e-3 ? Math.round(at) : Math.ceil(at);
     const mode = r.inherit === undefined ? "normal" : r.inherit;
     if (!isInherit(mode)) return null;
+    // Two keys before one frame: the later shows there.
+    const same = keys.findIndex((k) => k.frame === frame);
+    if (same >= 0) keys.splice(same, 1);
     keys.push({ frame, inherit: mode });
   }
   return keys.sort((a, b) => a.frame - b.frame);
