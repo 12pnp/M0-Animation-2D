@@ -1,5 +1,5 @@
 import { apply, applyInverse, invert, mat, type Matrix2D } from "@/core/math/Matrix2D";
-import { readPolyline, boneburstPolyline } from "@/core/math/easing";
+import { readPolyline, boneburstPolyline } from "@/core/boneburst/runtime/bezier";
 import type { NodeId } from "@/core/doc/ids";
 import type { DeformKey, MeshData } from "@/core/doc/types";
 

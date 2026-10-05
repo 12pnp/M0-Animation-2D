@@ -1,4 +1,5 @@
-import { readPolyline, boneburstPolyline, type TweenSpec } from "@/core/math/easing";
+import { type TweenSpec } from "@/core/math/easing";
+import { boneburstPolyline, readPolyline } from "@/core/boneburst/runtime/bezier";
 import { deleteKeys, keySpan, moveKeys, withKeyAt, withKeyTween } from "./keyList";
 import type { CnId, NodeId } from "./ids";
 import { PATH_DEFAULTS, PHYSICS_DEFAULTS } from "./constraints";

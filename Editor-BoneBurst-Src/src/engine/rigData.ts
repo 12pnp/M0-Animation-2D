@@ -1,4 +1,4 @@
-import type { Atlas, AtlasRegion } from "./atlasRead";
+import type { AtlasImages, ImageRegion } from "./regions";
 import { type Json, num, obj, list, parseColor } from "./rigJson";
 import { type BoneBurstInherit, type TransformProp, type TransformMix, type BoneData, type SlotData, type ConstraintData, type SkinData, type AnimationData, type BlendMode, type IkScaleY, TRANSFORM_PROPS, type PathConstraintData, PHYSICS_PROPS, type PhysicsProp, type MeshData, type AttachmentData, type SliderData, type RigData, type EventFire } from "./rigTypes";
 import { readMesh, readRegion, readPath, readClipping, readBox, readPoint, linkMesh } from "./rigAttachments";
@@ -19,7 +19,7 @@ function constraintMixes(k: Json, driven: ReadonlySet<TransformProp>): Transform
   return m;
 }
 
-export function readRig(json: unknown, atlas: Atlas): RigData {
+export function readRig(json: unknown, atlas: AtlasImages): RigData {
   const file = obj(json);
   const unsupported = new Set<string>();
 
@@ -153,7 +153,7 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
     }
   }
 
-  const regions = new Map<string, AtlasRegion>();
+  const regions = new Map<string, ImageRegion>();
   for (const r of atlas.regions) if (!regions.has(r.name)) regions.set(r.name, r);
 
   const skins: SkinData[] = [];
@@ -226,7 +226,7 @@ export function readRig(json: unknown, atlas: Atlas): RigData {
 
   return {
     bones, slots, constraints, skins, animations,
-    // Absent stays 0, as the runtime leaves it; the preview falls back to 24.
+    // Absent stays 0, as the runtime leaves it; the timeline shows 30 then (SPEC §2).
     fps: num(obj(file.skeleton).fps, 0),
     referenceScale: num(obj(file.skeleton).referenceScale, 100),
     unsupported: [...unsupported].sort(),

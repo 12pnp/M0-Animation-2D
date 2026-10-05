@@ -1,27 +1,22 @@
-import type { AtlasRegion } from "./atlasRead";
+import type { ImageRegion } from "./regions";
 
 /** How a bone takes its parent's transform (`inherit`; absent is "normal"). */
 export type BoneBurstInherit =
   | "normal" | "onlyTranslation" | "noRotationOrReflection" | "noScale" | "noScaleOrReflection";
 
 /**
- * A Spine 4.3 skeleton JSON read into the BoneBurst runtime's model
- * (docs/PREVIEW-RUNTIME-PLAN.md). Written from the format, held to
- * spine-core by `tests/spineRuntime.test.ts`; nothing here is taken from
- * spine-core's source.
- *
- * P0 covers bones, slots, region attachments, skins and
- * the bone, attachment, colour and draw order timelines; P1 meshes (weighted
- * or not), linked meshes, deform keys, sequences and bones only some skins
- * enable. Whatever else a file holds is listed in `unsupported`, so the
- * preview can say so instead of silently drawing something else.
+ * A Spine 4.3 skeleton JSON read into the engine's model (docs/SPEC.md §6).
+ * Written from the format, held to spine-core by `tests/engineOracle.test.ts`;
+ * nothing here is taken from spine-core's source. Whatever a file holds that
+ * the engine does not play is listed in `unsupported`, so the stage can say so
+ * instead of silently drawing something else.
  */
 
 export type Rgba = [number, number, number, number];
 /**
  * Degrees to radians as the runtime converts them: with π written to eight
  * digits (3.1415927), so 90° is π/2 + 2.3e-8 and cos 90° is -2.3e-8, not 0.
- * Measured against spine-core in `tests/spineRuntime.test.ts`; the exact
+ * Measured against spine-core (`tests/engineOracle.test.ts`); the exact
  * π leaves every matrix off by about 1e-7.
  */
 
@@ -57,7 +52,7 @@ export interface SlotData {
 
 export interface Frame {
   /** The atlas region; null when the atlas lacks it (drawn as nothing). */
-  region: AtlasRegion | null;
+  region: ImageRegion | null;
   /** A region attachment's corners in the bone's space (y up): bottom left,
    *  bottom right, top right, top left. Empty for a mesh. */
   corners: Float64Array;
@@ -409,6 +404,6 @@ export interface RigData {
   fps: number;
   /** Pixels per unit physics forces are given in (`skeleton.referenceScale`). */
   referenceScale: number;
-  /** What the file uses that this runtime does not play yet, for the preview to show. */
+  /** What the file uses that this runtime does not play yet, for the stage to show. */
   unsupported: string[];
 }

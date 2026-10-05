@@ -39,7 +39,9 @@ dom=$(grep -rnE '\b(document|window|navigator)\.[a-zA-Z]|\bHTML[A-Za-z]*Element\
   | grep -vE '^[^:]+:[0-9]+:\s*(\*|//|/\*)' || true)
 if [ -n "$dom" ]; then echo "$dom"; echo "error: a pure layer touches the DOM" >&2; exit 1; fi
 
-if [ -d dist ] && grep -rlE 'esotericsoftware|spine-core|spine-pixi' dist/; then
+# The package itself, not the word (the engine's comments name spine-core as its oracle). Read
+# from the source maps, which keep module paths: vite.config.ts builds them.
+if [ -d dist ] && grep -rlE '@esotericsoftware/|node_modules/@esotericsoftware' dist/; then
   echo "error: dist/ carries a Spine runtime" >&2; exit 1
 fi
 

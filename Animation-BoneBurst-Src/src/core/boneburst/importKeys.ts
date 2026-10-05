@@ -1,5 +1,6 @@
 import type { ChannelEases, EaseSpec, TweenChannel, TweenSpec } from "@/core/math/easing";
-import { CHANNEL_PARENT, CURVE_Y_LIMIT, readPolyline, sameEase, boneburstPolyline } from "@/core/math/easing";
+import { CHANNEL_PARENT, CURVE_Y_LIMIT, sameEase } from "@/core/math/easing";
+import { boneburstPolyline, readPolyline } from "@/core/boneburst/runtime/bezier";
 import type { BoneBurstLocal } from "./transform";
 import type { ColorTransform } from "@/core/doc/types";
 import { colorOfLightDark } from "./color";

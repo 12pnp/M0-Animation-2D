@@ -2,8 +2,7 @@ import { type BoneBurstInherit, DEG_RAD } from "./rigTypes";
 
 /**
  * What the IK and transform solvers (`ik.ts`, `transform.ts`) read and write:
- * a `Rig`, or `LooseBones` for the few bones the editor's own pose hands them
- * (`core/doc/pose.ts`). Local poses 7 per bone (x, y, rotation, scale x and y,
+ * a `Rig`. Local poses 7 per bone (x, y, rotation, scale x and y,
  * shear x and y), world matrices 6 per bone (a, b, c, d, x, y), y up.
  */
 export interface Bones {
@@ -66,50 +65,4 @@ export function localFromWorld(
     L[l + 2] = 90 - Math.atan2(rd, rb) / DEG_RAD;
   }
   L[l + 3] = scaleX;
-}
-
-/**
- * A handful of bones outside any `Rig`, for the editor's own pose: each with
- * its parent among them (or -1), normal inheritance, the skeleton at the
- * origin unscaled. A bone the caller fills in and no solver writes (the
- * chain's parent, a constraint's source) keeps the world it was given.
- */
-export class LooseBones implements Bones {
-  readonly local: Float64Array;
-  readonly world: Float64Array;
-  readonly inherit: BoneBurstInherit[];
-  readonly data: { bones: Array<{ parent: number; length: number }> };
-  readonly x = 0;
-  readonly y = 0;
-  readonly scaleX = 1;
-  readonly scaleY = 1;
-
-  constructor(bones: Array<{ parent: number; length: number }>) {
-    this.data = { bones };
-    this.local = new Float64Array(bones.length * 7);
-    this.world = new Float64Array(bones.length * 6);
-    this.inherit = bones.map(() => "normal");
-  }
-
-  setBone(bone: number, x: number, y: number, rotation: number, scaleX: number, scaleY: number, shearX: number, shearY: number): void {
-    this.local.set([x, y, rotation, scaleX, scaleY, shearX, shearY], bone * 7);
-    this.localChanged(bone);
-  }
-
-  localChanged(bone: number): void {
-    const [pa, pb, pc, pd, px, py] = this.parentMatrix(bone);
-    normalWorld(this.local, bone * 7, pa, pb, pc, pd, px, py, this.world, bone * 6);
-  }
-
-  worldChanged(bone: number): void {
-    const [pa, pb, pc, pd, px, py] = this.parentMatrix(bone);
-    localFromWorld(this.world, bone * 6, pa, pb, pc, pd, px, py, this.local, bone * 7);
-  }
-
-  private parentMatrix(bone: number): [number, number, number, number, number, number] {
-    const parent = this.data.bones[bone]!.parent;
-    if (parent < 0) return [1, 0, 0, 1, 0, 0];
-    const W = this.world, p = parent * 6;
-    return [W[p]!, W[p + 1]!, W[p + 2]!, W[p + 3]!, W[p + 4]!, W[p + 5]!];
-  }
 }

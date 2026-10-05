@@ -13,6 +13,7 @@
     "check": "scripts/check.sh"
   },
   "devDependencies": {
+    "@esotericsoftware/spine-core": "^4.3.13",
     "@types/node": "^22.20.5",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",

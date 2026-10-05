@@ -1,0 +1,343 @@
+import { updateBone } from "@/edit/bones";
+import { EditRefused } from "@/edit/history";
+import { boneInherit, boneNumber } from "@/model/defaults";
+import type { Session } from "../session";
+import { type Camera, fit, pan, toScreen, toWorld, zoomAt } from "./camera";
+import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, scaleFactors, type ScreenBone, tidy, type Tool, turn, turnSign } from "./gizmo";
+import { boneMatrix, boneTip, bounds, parentMatrix } from "./posed";
+import { Renderer } from "./renderer";
+
+/** How far from the selected bone's origin a press still grabs it, in pixels (the gizmo's ring). */
+const GRAB = 56;
+const LABEL: Record<Tool, string> = { move: "Move", rotate: "Rotate", scale: "Scale" };
+
+interface Drag {
+  bone: string;
+  tool: Tool;
+  start: Point;
+  /** The pointer's last world position (rotate adds the turn since). */
+  last: Point;
+  turned: number;
+  x: number; y: number; rotation: number; scaleX: number; scaleY: number;
+  /** The bone's and its parent's world matrices when the drag began. */
+  matrix: Matrix;
+  parent: Matrix;
+  /** Which way a world turn moves the local rotation, for inherit modes other than normal. */
+  sign: number;
+  inherit: string;
+  shearX: number;
+  /** The keys as the file had them (absent: undefined), for an axis that ends where it began. */
+  written: Dragged;
+}
+
+/** The setup values a drag sets. */
+type Dragged = { [K in "x" | "y" | "rotation" | "scaleX" | "scaleY"]?: number | undefined };
+
+/**
+ * The canvas viewport: the skeleton's images (WebGL2) with the bones and the gizmo drawn over
+ * them (2D canvas). A press on a bone selects it and drags it with the current tool, one undo
+ * step per drag; a press elsewhere pans, as do the middle button and Space. The wheel zooms at
+ * the pointer.
+ */
+export class Stage {
+  readonly element: HTMLDivElement;
+  tool: Tool = "move";
+  camera: Camera = { x: 0, y: 0, zoom: 1 };
+  /** The pointer's world position, for the status line. */
+  pointer: Point | null = null;
+  /** A message for the status line (a refused edit). */
+  onStatus: (message: string) => void = () => {};
+  /** The pointer's world position or the zoom, for the status line's corner. */
+  onPointer: (text: string) => void = () => {};
+  private readonly gl: HTMLCanvasElement;
+  private readonly overlay: HTMLCanvasElement;
+  private readonly renderer: Renderer;
+  private size = { width: 1, height: 1 };
+  private dpr = 1;
+  private drag: Drag | null = null;
+  private panning: { x: number; y: number } | null = null;
+  private space = false;
+  private queued = false;
+  private fitted = false;
+
+  constructor(private readonly session: Session) {
+    this.element = document.createElement("div");
+    this.element.className = "stage";
+    this.gl = document.createElement("canvas");
+    this.overlay = document.createElement("canvas");
+    this.overlay.className = "overlay";
+    this.overlay.tabIndex = 0;
+    this.element.append(this.gl, this.overlay);
+    this.renderer = new Renderer(this.gl);
+    new ResizeObserver(() => this.resize()).observe(this.element);
+    this.overlay.addEventListener("pointerdown", (e) => this.down(e));
+    this.overlay.addEventListener("pointermove", (e) => this.move(e));
+    this.overlay.addEventListener("pointerup", (e) => this.up(e));
+    this.overlay.addEventListener("pointercancel", () => this.cancel());
+    this.overlay.addEventListener("pointerleave", () => { this.pointer = null; this.onPointer(""); });
+    this.overlay.addEventListener("wheel", (e) => this.wheel(e), { passive: false });
+    this.overlay.addEventListener("contextmenu", (e) => e.preventDefault());
+    window.addEventListener("keydown", (e) => { if (e.code === "Space" && !isTyping(e)) { this.space = true; e.preventDefault(); } });
+    window.addEventListener("keyup", (e) => { if (e.code === "Space") this.space = false; });
+    session.onChange(() => this.redraw());
+  }
+
+  /** Show the whole skeleton. */
+  fitView(): void {
+    const p = this.session.pose();
+    this.camera = fit(this.size, p ? bounds(p) : null);
+    this.redraw();
+  }
+
+  /** A new document: fit it once the stage has a size. */
+  opened(): void {
+    this.fitted = false;
+    this.renderer.keepOnly(this.session.pages);
+    this.redraw();
+  }
+
+  /** Abandon a drag in progress (Escape): the bone goes back, nothing recorded. */
+  cancel(): boolean {
+    if (!this.drag) return false;
+    this.drag = null;
+    this.session.history?.cancel();
+    this.session.changed();
+    return true;
+  }
+
+  redraw(): void {
+    if (this.queued) return;
+    this.queued = true;
+    requestAnimationFrame(() => { this.queued = false; this.paint(); });
+  }
+
+  private resize(): void {
+    const r = this.element.getBoundingClientRect();
+    this.size = { width: Math.max(1, r.width), height: Math.max(1, r.height) };
+    this.dpr = window.devicePixelRatio || 1;
+    for (const c of [this.gl, this.overlay]) {
+      c.width = Math.round(this.size.width * this.dpr);
+      c.height = Math.round(this.size.height * this.dpr);
+    }
+    this.paint();
+  }
+
+  private paint(): void {
+    const p = this.session.pose();
+    if (p && !this.fitted && this.size.width > 1) {
+      this.fitted = true;
+      this.camera = fit(this.size, bounds(p));
+    }
+    const css = getComputedStyle(this.element);
+    this.renderer.draw(p, this.session.pages, this.camera, this.size, this.dpr, rgb(css.getPropertyValue("--stage-bg")));
+    const g = this.overlay.getContext("2d")!;
+    g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
+    g.clearRect(0, 0, this.size.width, this.size.height);
+    if (!p) return;
+    const bone = css.getPropertyValue("--bone").trim(), selected = css.getPropertyValue("--accent").trim();
+    for (const b of this.screenBones()) {
+      const on = b.name === this.session.selection;
+      drawBone(g, b, on ? selected : bone, on);
+    }
+    const sel = this.selectedIndex();
+    if (sel >= 0) this.drawGizmo(g, sel, selected);
+  }
+
+  /** Every active bone, origin to tip, in screen pixels, in the skeleton's order. */
+  private screenBones(): ScreenBone[] {
+    const p = this.session.pose();
+    if (!p) return [];
+    const out: ScreenBone[] = [];
+    for (const b of p.rig.data.bones) {
+      if (!p.rig.active[b.index]) continue;
+      const m = boneMatrix(p, b.index), tip = boneTip(p, b.index);
+      const [x0, y0] = toScreen(this.camera, this.size, m[4], m[5]);
+      const [x1, y1] = toScreen(this.camera, this.size, tip[0], tip[1]);
+      out.push({ name: b.name, x0, y0, x1, y1 });
+    }
+    return out;
+  }
+
+  private selectedIndex(): number {
+    const p = this.session.pose(), s = this.session.selection;
+    return p && s !== null ? p.bones.get(s) ?? -1 : -1;
+  }
+
+  private drawGizmo(g: CanvasRenderingContext2D, bone: number, color: string): void {
+    const p = this.session.pose()!;
+    const m = boneMatrix(p, bone);
+    const [ox, oy] = toScreen(this.camera, this.size, m[4], m[5]);
+    g.save();
+    g.strokeStyle = color;
+    g.fillStyle = color;
+    g.lineWidth = 1.5;
+    if (this.tool === "rotate") {
+      g.beginPath(); g.arc(ox, oy, GRAB - 8, 0, Math.PI * 2); g.stroke();
+    } else {
+      // The bone's own axes on screen (y up in the world, so the screen y is flipped).
+      const ax = Math.atan2(-m[2], m[0]), ay = Math.atan2(-m[3], m[1]);
+      for (const [angle, len] of [[ax, GRAB - 12], [ay, GRAB - 24]] as const) {
+        const ex = ox + Math.cos(angle) * len, ey = oy + Math.sin(angle) * len;
+        g.beginPath(); g.moveTo(ox, oy); g.lineTo(ex, ey); g.stroke();
+        if (this.tool === "scale") g.fillRect(ex - 4, ey - 4, 8, 8);
+        else arrowHead(g, ex, ey, angle);
+      }
+    }
+    g.beginPath(); g.arc(ox, oy, 3, 0, Math.PI * 2); g.fill();
+    g.restore();
+  }
+
+  private local(e: PointerEvent | WheelEvent): [number, number] {
+    const r = this.overlay.getBoundingClientRect();
+    return [e.clientX - r.left, e.clientY - r.top];
+  }
+
+  private down(e: PointerEvent): void {
+    this.overlay.focus();
+    const [sx, sy] = this.local(e);
+    this.overlay.setPointerCapture(e.pointerId);
+    if (e.button === 1 || e.button === 2 || this.space || !this.session.history) {
+      this.panning = { x: sx, y: sy };
+      return;
+    }
+    let name = pickBone(this.screenBones(), sx, sy);
+    if (name === null) {
+      const sel = this.selectedIndex();
+      if (sel >= 0) {
+        const m = boneMatrix(this.session.pose()!, sel);
+        const [ox, oy] = toScreen(this.camera, this.size, m[4], m[5]);
+        if (Math.hypot(sx - ox, sy - oy) <= GRAB) name = this.session.selection;
+      }
+    }
+    if (name === null) {
+      if (this.session.selection !== null) { this.session.selection = null; this.session.changed(); }
+      this.panning = { x: sx, y: sy };
+      return;
+    }
+    if (name !== this.session.selection) { this.session.selection = name; this.session.changed(); }
+    const p = this.session.pose()!, index = p.bones.get(name)!;
+    const b = this.session.doc!.bones!.find((x) => x.name === name)!;
+    const at = toWorld(this.camera, this.size, sx, sy), parent = parentMatrix(p, index);
+    this.drag = {
+      bone: name, tool: this.tool, start: at, last: at, turned: 0,
+      x: boneNumber(b, "x"), y: boneNumber(b, "y"), rotation: boneNumber(b, "rotation"),
+      scaleX: boneNumber(b, "scaleX"), scaleY: boneNumber(b, "scaleY"),
+      matrix: boneMatrix(p, index), parent,
+      sign: turnSign(parent, boneInherit(b), p.rig.scaleX * p.rig.scaleY < 0),
+      inherit: boneInherit(b), shearX: boneNumber(b, "shearX"),
+      written: { x: b.x, y: b.y, rotation: b.rotation, scaleX: b.scaleX, scaleY: b.scaleY },
+    };
+    this.session.history!.begin(`${LABEL[this.tool]} bone ${name}`);
+  }
+
+  private move(e: PointerEvent): void {
+    const [sx, sy] = this.local(e);
+    this.pointer = toWorld(this.camera, this.size, sx, sy);
+    if (this.panning) {
+      this.camera = pan(this.camera, sx - this.panning.x, sy - this.panning.y);
+      this.panning = { x: sx, y: sy };
+      this.redraw();
+    } else if (this.drag) {
+      this.dragTo(this.pointer, e.shiftKey);
+    }
+    this.onPointer(`${this.pointer[0].toFixed(1)}, ${this.pointer[1].toFixed(1)}`);
+  }
+
+  /** One step of the drag: the bone's new local values, measured from where the drag began. */
+  private dragTo(at: Point, shift: boolean): void {
+    const d = this.drag!, h = this.session.history!;
+    let patch: Dragged;
+    if (d.tool === "move") {
+      const [dx, dy] = moveDelta(d.parent, at[0] - d.start[0], at[1] - d.start[1]);
+      patch = { x: tidy(d.x + dx, 2), y: tidy(d.y + dy, 2) };
+    } else if (d.tool === "rotate") {
+      // Summed step by step, so a drag round the bone more than half a turn keeps going.
+      d.turned += turn([d.matrix[4], d.matrix[5]], d.last, at);
+      d.last = at;
+      const rough = d.rotation + d.turned * d.sign;
+      let r = d.inherit === "normal"
+        ? localRotation(d.parent, (Math.atan2(d.matrix[2], d.matrix[0]) * 180) / Math.PI + d.turned, d.shearX, d.scaleX, rough)
+        : rough;
+      if (shift) r = Math.round(r / 15) * 15;
+      patch = { rotation: tidy(r, 2) };
+    } else {
+      const [fx, fy] = scaleFactors(d.matrix, d.start, at, shift);
+      patch = { scaleX: tidy(d.scaleX * fx, 3), scaleY: tidy(d.scaleY * fy, 3) };
+    }
+    patch = asWritten(patch, { x: d.x, y: d.y, rotation: d.rotation, scaleX: d.scaleX, scaleY: d.scaleY }, d.written);
+    try {
+      h.apply("step", updateBone(d.bone, patch));
+    } catch (err) {
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+    }
+    this.session.changed();
+  }
+
+  private up(e: PointerEvent): void {
+    if (this.overlay.hasPointerCapture(e.pointerId)) this.overlay.releasePointerCapture(e.pointerId);
+    this.panning = null;
+    if (this.drag) {
+      this.drag = null;
+      this.session.history?.end();
+      this.session.changed();
+    }
+  }
+
+  private wheel(e: WheelEvent): void {
+    e.preventDefault();
+    const [sx, sy] = this.local(e);
+    // Trackpad pinches arrive as ctrl+wheel with small deltas; mouse wheels as larger steps.
+    const factor = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015));
+    this.camera = zoomAt(this.camera, this.size, sx, sy, factor);
+    this.redraw();
+    this.onPointer(`${Math.round(this.camera.zoom * 100)}%`);
+  }
+}
+
+function drawBone(g: CanvasRenderingContext2D, b: ScreenBone, color: string, selected: boolean): void {
+  const dx = b.x1 - b.x0, dy = b.y1 - b.y0, len = Math.hypot(dx, dy);
+  g.save();
+  g.fillStyle = color;
+  g.strokeStyle = color;
+  g.globalAlpha = selected ? 0.95 : 0.7;
+  if (len < 4) {
+    g.beginPath(); g.arc(b.x0, b.y0, 4, 0, Math.PI * 2); g.stroke();
+  } else {
+    // A thin kite: widest a fifth of the way along.
+    const w = Math.min(5, len * 0.12), ux = dx / len, uy = dy / len;
+    const mx = b.x0 + dx * 0.2, my = b.y0 + dy * 0.2;
+    g.beginPath();
+    g.moveTo(b.x0, b.y0);
+    g.lineTo(mx - uy * w, my + ux * w);
+    g.lineTo(b.x1, b.y1);
+    g.lineTo(mx + uy * w, my - ux * w);
+    g.closePath();
+    g.fill();
+  }
+  g.globalAlpha = 1;
+  g.beginPath(); g.arc(b.x0, b.y0, 2.5, 0, Math.PI * 2); g.fill();
+  g.restore();
+}
+
+function arrowHead(g: CanvasRenderingContext2D, x: number, y: number, angle: number): void {
+  g.beginPath();
+  g.moveTo(x + Math.cos(angle) * 6, y + Math.sin(angle) * 6);
+  g.lineTo(x + Math.cos(angle + 2.5) * 6, y + Math.sin(angle + 2.5) * 6);
+  g.lineTo(x + Math.cos(angle - 2.5) * 6, y + Math.sin(angle - 2.5) * 6);
+  g.closePath();
+  g.fill();
+}
+
+/** A CSS colour (`#rrggbb`) as 0..1 channels; mid grey when unreadable. */
+function rgb(css: string): [number, number, number] {
+  const m = /^#([0-9a-f]{6})$/i.exec(css.trim());
+  if (!m) return [0.5, 0.5, 0.5];
+  const n = parseInt(m[1]!, 16);
+  return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
+}
+
+export function isTyping(e: KeyboardEvent): boolean {
+  const t = e.target as HTMLElement | null;
+  return !!t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.isContentEditable);
+}

@@ -1,11 +1,12 @@
 # Editor v2 — from scratch, MIT, no Animo code — plan
 
-**Status:** E0 and E1 done 2026-10-06. `../Editor-BoneBurst-Src/`: MIT licence, notices, spec,
-clean-room rules; the document model over Spine 4.3's schema, an order-preserving JSON reader,
-Spine JSON, atlas and sidecar in and out, the BoneBurst profile check, and undo over whole
-documents. Every sample skeleton (16) and atlas (19) round-trips with zero differences
-(`Editor-BoneBurst-Src/docs/E1-PLAN.md`). The fork's sources were not opened. Next: E2 (stage),
-starting with the runtime's provenance pass.
+**Status:** E0, E1 and E2 done 2026-10-06. `../Editor-BoneBurst-Src/`: MIT licence, notices, spec,
+clean-room rules; the document model, Spine JSON, atlas and sidecar in and out, undo
+(`Editor-BoneBurst-Src/docs/E1-PLAN.md`); the runtime lifted as its engine after the provenance
+pass, held to spine-core on every sample, and a stage that shows and edits the stickman's setup
+pose (`Editor-BoneBurst-Src/docs/E2-PLAN.md`). The provenance pass opened the runtime and, to cut
+its two ties, the lines of this editor that used them (listed there); spine-core knowledge in the
+runtime's solvers stays an open legal question (its SPEC §6). Next: E3 (timeline and playback).
 
 **Owner decision 2026-10-05:** replace the Animo-fork editor with a new editor
 that contains **no Animo code**, licensed **MIT** from its first commit. The

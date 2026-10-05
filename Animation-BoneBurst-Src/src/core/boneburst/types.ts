@@ -1,3 +1,5 @@
+import type { BoneBurstInherit } from "./runtime/rigTypes";
+export type { BoneBurstInherit };
 /**
  * The Spine 4.3 skeleton JSON shapes this editor writes (and, from phase 7,
  * reads).
@@ -77,11 +79,8 @@ export interface BoneBurstBoneTransform {
 /**
  * Enum strings (`inherit`, `blend`) are read by upper-casing the first
  * letter and indexing the enum: a misspelling becomes undefined, not an
- * error.
+ * error. `BoneBurstInherit` is the runtime's (`runtime/rigTypes.ts`).
  */
-export type BoneBurstInherit =
-  | "normal" | "onlyTranslation" | "noRotationOrReflection" | "noScale" | "noScaleOrReflection";
-
 export interface BoneBurstBone extends BoneBurstBoneTransform {
   name: string;
   parent?: string;

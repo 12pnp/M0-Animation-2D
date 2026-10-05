@@ -174,3 +174,16 @@ export function jsonEqual(
 export function obj(entries: Iterable<readonly [string, Json]>): JsonObject {
   return new Map(entries);
 }
+
+/**
+ * The value as `JSON.parse` would give it: objects as plain objects. What the engine reads
+ * (SPEC §6). Integer-like keys take `JSON.parse`'s order here, which is the order Spine's own
+ * web runtime sees too.
+ */
+export function plainJson(v: Json): unknown {
+  if (v === null || typeof v !== "object") return v;
+  if (Array.isArray(v)) return v.map(plainJson);
+  const out: Record<string, unknown> = {};
+  for (const [k, e] of v as JsonObject) out[k] = plainJson(e);
+  return out;
+}

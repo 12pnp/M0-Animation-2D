@@ -12,9 +12,9 @@ import {
 } from "./rigTypes";
 
 /**
- * One posed instance of a `RigData`: the BoneBurst runtime's skeleton
- * (docs/PREVIEW-RUNTIME-PLAN.md). DOM-free, so the preview draws it and
- * vitest holds it to spine-core frame by frame (`tests/spineRuntime.test.ts`).
+ * One posed instance of a `RigData`: the engine's skeleton (docs/SPEC.md §6).
+ * DOM-free, so the stage draws it and vitest holds it to spine-core frame by
+ * frame (`tests/engineOracle.test.ts`).
  *
  * The format is y up; a skeleton `scaleY` of -1 poses it y down, as
  * spine-pixi's `Skeleton.yDown` does. It is not a flip of the y-up pose

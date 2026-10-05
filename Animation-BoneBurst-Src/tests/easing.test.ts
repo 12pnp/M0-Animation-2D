@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { RotateTimeline } from "@esotericsoftware/spine-core";
 import {
-  EASE_FAMILIES, applyTween, easeFunction, exportNote, easeLabel, easeSegments, idealEase, readPolyline, boneburstPolyline,
-  easeOf, splitTween, type EaseDir, type EaseSegment, type EaseSpec,
+  EASE_FAMILIES, applyTween, easeFunction, exportNote, easeLabel, easeSegments, idealEase,
+  easeOf, splitTween, type EaseDir, type EaseSpec,
 } from "@/core/math/easing";
+import { boneburstPolyline, type EaseSegment, readPolyline } from "@/core/boneburst/runtime/bezier";
 import {
   anchorsOf, constrain, curveValueAt, insertAnchor, moveAnchor, moveHandle, removeAnchor, toCorner,
 } from "@/core/math/easeCurve";

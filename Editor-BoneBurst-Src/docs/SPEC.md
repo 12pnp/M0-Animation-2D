@@ -1,6 +1,6 @@
 # BoneBurst Editor — architecture spec
 
-**Status:** E0, 2026-10-06. Written before any implementation, from the v2 plan
+**Status:** E2 done, 2026-10-06 (E1: model and IO; E2: engine and stage). Written before any implementation, from the v2 plan
 (`../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md`, decisions D1–D5), the BoneBurst format
 specs (`../Packages/com.module.ta-creator-boneburst/Doc/Format/`, ours) and Spine 4.3's public
 JSON format. Not from the Animo-fork editor's code or its architecture document (CLAUDE.md ▸
@@ -36,7 +36,7 @@ flowchart TB
 | `src/model` | the document's types and pure queries over them | nothing of ours |
 | `src/io` | Spine JSON and atlas reading and writing; the sidecar; round-trip normalisation | `model` |
 | `src/edit` | edits (pure functions document → document) and the history | `model` |
-| `src/engine` | posing a document at a time: bones, constraints, physics, meshes | `model` |
+| `src/engine` | posing a document at a time: bones, constraints, physics, meshes; reads plain Spine JSON | `model` |
 | `src/ui` | everything with a DOM | anything above |
 | `src/agent` | the AI tools and their bridge | `model`, `io`, `edit`, `engine` |
 
@@ -94,12 +94,53 @@ unknown is ignored with a warning, never guessed at.
 
 ## 6. Engine
 
-Posing is the BoneBurst runtime, lifted from `Animation-BoneBurst-Src/src/core/boneburst/runtime/`
-in E2 after the plan's provenance pass (its two easing helpers move in first). Until then
-`src/engine` is empty. The stage and the preview pose with the same engine: there is one posing
-path, so the stage cannot disagree with the preview.
+Posing is the BoneBurst runtime, lifted in E2 from `Animation-BoneBurst-Src/src/core/boneburst/runtime/`
+after the plan's provenance pass. The stage and the preview pose with the same engine: there is
+one posing path, so the stage cannot disagree with the preview.
+
+- **Input is plain JSON.** `io/json.plainJson(skeletonToJson(doc))` gives the engine what
+  `JSON.parse` would; `engine/rigData.readRig` builds its `RigData` from that and the atlas's
+  regions (`engine/regions.atlasImages` over the model's atlas: one atlas reader, `io/atlas`).
+- **`Rig`** holds one posed instance: `setupPose`, `apply(animation, time)`, `updateWorld`;
+  `drawList` says what to draw, in order, with clipping. `Track` plays and crossfades (E3).
+- **Held to spine-core 4.3.13** by `tests/engineOracle.test.ts`: every sample and the stickman,
+  every skin, setup pose and each animation at six times, bone matrices and drawn vertices
+  within 1e-4 relative (worst 6.6e-5). Physics is posed off there (`Physics.none`).
+
+### Provenance (E2, 2026-10-06)
+
+Checked file by file before the lift: authorship and dates from git, imports, any Animo-side name
+or line, and comments pointing at the old editor.
+
+- **Animo: clean.** Every file was created in the runtime's own commits ("Our own Spine runtime",
+  P0–P5, 2026-10-05; `bones.ts` in P5), as new files, not copied or renamed from the fork's code.
+  The repository's history has one author throughout. No Animo-side names (layers, symbols,
+  tweens, documents) appear. The runtime imported two things from outside its folder: the
+  bezier helpers (written in our Phase 4, 2026-09-30, in the Animo-era `core/math/easing.ts`)
+  and `BoneBurstInherit` (our Phase 1 contract). Both moved into the runtime in v1 first
+  (`runtime/bezier.ts`, `runtime/rigTypes.ts`), so the folder stood alone when lifted.
+- **spine-core: carried, not cleared.** The runtime's own plan records that its author (Claude)
+  knows spine-core's algorithms from training, worked from the format with spine-core as a
+  black-box oracle without opening its source, and that the inherit modes and solvers follow
+  spine-core's structure closely (`ik.ts`, `transform.ts`, `path.ts`, `physics.ts` say so in
+  their headers). Its plan asks for legal review, with a human clean-room rewrite of the solvers
+  from a written spec as the fallback. That stands for v2 as it did for v1.
+
+| v2 file | From (`runtime/`) | Change in the lift |
+|---|---|---|
+| `bezier.ts` | `bezier.ts` | comments only |
+| `bones.ts` | `bones.ts` | `LooseBones` left out (the old editor's own pose used it) |
+| `ik.ts`, `transform.ts`, `path.ts`, `physics.ts`, `slider.ts` | same names | comments only |
+| `track.ts`, `rig.ts`, `draw.ts` | same names | comments only |
+| `rigData.ts`, `rigAnimation.ts`, `rigAttachments.ts`, `rigJson.ts`, `rigTypes.ts` | same names | comments; atlas types from `regions.ts` |
+| `regions.ts` | — (replaces `atlasRead.ts`) | new: the regions from the model's atlas |
 
 ## 7. Interface (E2–E4)
+
+E2 (`src/ui/`): the stage draws the setup pose through the engine (`stage/posed.ts`, re-posed
+on every document revision), images with WebGL2 and bones and the gizmo on a 2D canvas over it.
+The gizmo's maths is DOM-free (`stage/gizmo.ts`, `stage/camera.ts`); a drag is one gesture and
+writes local setup values through `updateBone`, an untouched axis left as the file had it.
 
 One window: the **stage** (canvas, the setup pose or the pose at the playhead, gizmos), the
 **timeline** (one row per bone, slot and constraint with keys; frames at `skeleton.fps`), the

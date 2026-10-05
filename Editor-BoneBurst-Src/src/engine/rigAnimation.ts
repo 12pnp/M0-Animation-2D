@@ -329,11 +329,8 @@ function readDeform(slot: number, mesh: MeshData | PathData | ClippingData | Box
 /**
  * A draw order key: each listed slot moves `offset` places from where the
  * setup order has it; every other slot keeps its setup order in the places
- * left. Plays a malformed key as spine-core does; `core/doc/drawOrder.ts`
- * `fromOffsets` refuses one instead (the importer keeps it carried), and
- * `tests/drawOrder.test.ts` holds the two equal on every valid key.
+ * left. Plays a malformed key as spine-core does.
  */
-
 export function orderFromOffsets(offsets: Json[], slotIndex: Map<string, number>, count: number): number[] {
   const order = new Array<number>(count).fill(-1);
   const moved = new Set<number>();

@@ -1,6 +1,7 @@
 import { rotationDelta, sampleTransformRaw, sampleColorRaw } from "@/core/doc/timeline";
 import { type ColorTransform, type Track, DEFAULT_COLOR, type Animation } from "@/core/doc/types";
-import { type EaseSegment, type TweenSpec, easeSegments, type TweenChannel, easeOf } from "@/core/math/easing";
+import { type TweenSpec, easeSegments, type TweenChannel, easeOf } from "@/core/math/easing";
+import type { EaseSegment } from "@/core/boneburst/runtime/bezier";
 import type { Transform } from "@/core/math/Transform";
 import type { FrameAt, Run } from "./exportTypes";
 import { keyTime } from "./transform";
