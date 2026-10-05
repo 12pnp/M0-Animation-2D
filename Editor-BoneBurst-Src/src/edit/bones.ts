@@ -1,5 +1,6 @@
 import type { Bone, Constraint, Skeleton } from "@/model/skeleton";
 import { EditRefused, type Edit } from "./history";
+import { removeSlots, slotUsers } from "./slots";
 
 /** The fields of a bone an edit may set; `undefined` removes the key (the default then applies). */
 export type BonePatch = { -readonly [K in Exclude<keyof Bone, "name" | "extra">]?: Bone[K] | undefined };
@@ -66,4 +67,113 @@ function renameInConstraint(
     case "path": return "bones" in bones ? { ...c, ...bones } : c;
     case "physics": case "slider": return c.bone === from ? { ...c, bone: to } : c;
   }
+}
+
+/** The bone and every bone under it, in skeleton order. */
+export function subtree(s: Skeleton, name: string): string[] {
+  const out = new Set([name]);
+  for (const b of s.bones ?? []) if (b.parent !== undefined && out.has(b.parent)) out.add(b.name);
+  return (s.bones ?? []).filter((b) => out.has(b.name)).map((b) => b.name);
+}
+
+/** Index just past `name`'s subtree in `bones`. */
+function afterSubtree(bones: readonly Bone[], name: string): number {
+  const under = new Set([name]);
+  let last = bones.findIndex((b) => b.name === name);
+  bones.forEach((b, i) => { if (b.parent !== undefined && under.has(b.parent)) { under.add(b.name); last = i; } });
+  return last + 1;
+}
+
+/** Add a bone under `parent`, after the parent's other descendants (the first bone of an empty skeleton has none). */
+export function addBone(name: string, parent: string | null, patch: BonePatch = {}): Edit<Skeleton> {
+  return (s) => {
+    const bones = s.bones ?? [];
+    if (!name.trim()) throw new EditRefused("A bone needs a name.");
+    if (bones.some((b) => b.name === name)) throw new EditRefused(`There is already a bone "${name}".`);
+    if (parent === null && bones.length) throw new EditRefused("A bone needs a parent; the skeleton has its root.");
+    if (parent !== null && !bones.some((b) => b.name === parent)) throw new EditRefused(`There is no bone "${parent}".`);
+    const fields = Object.fromEntries(Object.entries(patch).filter(([k, v]) => v !== undefined && k !== "parent"));
+    const bone = { name, ...(parent !== null ? { parent } : {}), ...fields, extra: new Map() } as Bone;
+    const at = parent === null ? 0 : afterSubtree(bones, parent);
+    return { ...s, bones: [...bones.slice(0, at), bone, ...bones.slice(at)] };
+  };
+}
+
+/**
+ * Delete a bone with every bone under it, the slots on them (with their skin entries and
+ * timelines) and their bone timelines. Refused for the root, and while a constraint, or something
+ * outside those slots, names one of them.
+ */
+export function deleteBone(name: string): Edit<Skeleton> {
+  return (s) => {
+    const b = s.bones?.find((x) => x.name === name);
+    if (!b) throw new EditRefused(`There is no bone "${name}".`);
+    if (b.parent === undefined) throw new EditRefused("The root bone cannot be deleted.");
+    const gone = new Set(subtree(s, name));
+    for (const c of s.constraints ?? []) {
+      const names = constraintBones(c);
+      const hit = names.find((n) => gone.has(n));
+      if (hit) throw new EditRefused(`"${name}" cannot be deleted: the ${c.type} constraint "${c.name}" uses "${hit}". Delete the constraint first.`);
+    }
+    const slots = new Set((s.slots ?? []).filter((x) => gone.has(x.bone)).map((x) => x.name));
+    for (const slot of slots) {
+      const why = slotUsers(s, slot);
+      // Users inside the deleted slots go with them; only outside ones block.
+      if (why && !insideOnly(s, slot, slots)) throw new EditRefused(`"${name}" cannot be deleted: the slot "${slot}" is in use (${why}).`);
+    }
+    const out = removeSlots(s, slots);
+    return {
+      ...out,
+      bones: (out.bones ?? []).filter((x) => !gone.has(x.name)),
+      ...(out.skins ? { skins: out.skins.map((k) => (k.bones?.some((n) => gone.has(n)) ? { ...k, bones: k.bones.filter((n) => !gone.has(n)) } : k)) } : {}),
+      ...(out.animations ? { animations: out.animations.map((a) => (a.bones?.some((g) => gone.has(g.name)) ? { ...a, bones: a.bones.filter((g) => !gone.has(g.name)) } : a)) } : {}),
+    };
+  };
+}
+
+/** The bones a constraint names. */
+function constraintBones(c: Constraint): string[] {
+  switch (c.type) {
+    case "ik": return [...(c.bones ?? []), ...(c.target !== undefined ? [c.target] : [])];
+    case "transform": return [...(c.bones ?? []), ...(c.source !== undefined ? [c.source] : [])];
+    case "path": return [...(c.bones ?? [])];
+    case "physics": case "slider": return c.bone !== undefined ? [c.bone] : [];
+  }
+}
+
+/** Whether every user of `slot` is itself among the slots going. */
+function insideOnly(s: Skeleton, slot: string, going: ReadonlySet<string>): boolean {
+  if (s.constraints?.some((c) => c.type === "path" && c.slot === slot)) return false;
+  for (const sk of s.skins ?? []) for (const ss of sk.attachments ?? []) for (const e of ss.entries) {
+    const a = e.attachment;
+    const uses = a.end === slot || (a.source !== undefined && a.slot === slot && ss.slot !== slot);
+    if (uses && !going.has(ss.slot)) return false;
+  }
+  return true;
+}
+
+/**
+ * Move a bone (and everything under it) under `parent`, with the local values `local` that keep
+ * it where it was (the stage works them out from the pose). Bones stay ordered parent first.
+ */
+export function reparentBone(name: string, parent: string, local: BonePatch = {}): Edit<Skeleton> {
+  return (s) => {
+    const bones = s.bones ?? [];
+    const b = bones.find((x) => x.name === name);
+    if (!b) throw new EditRefused(`There is no bone "${name}".`);
+    if (!bones.some((x) => x.name === parent)) throw new EditRefused(`There is no bone "${parent}".`);
+    if (b.parent === undefined) throw new EditRefused("The root bone has no parent.");
+    const moving = new Set(subtree(s, name));
+    if (moving.has(parent)) throw new EditRefused(`"${parent}" is under "${name}"; a bone cannot hang from its own descendant.`);
+    if (b.parent === parent) return s;
+    const rest = bones.filter((x) => !moving.has(x.name));
+    const block = bones.filter((x) => moving.has(x.name)).map((x) => {
+      if (x.name !== name) return x;
+      const next: Record<string, unknown> = { ...x, parent };
+      for (const [k, v] of Object.entries(local)) { if (k === "parent") continue; if (v === undefined) delete next[k]; else next[k] = v; }
+      return next as unknown as Bone;
+    });
+    const at = afterSubtree(rest, parent);
+    return { ...s, bones: [...rest.slice(0, at), ...block, ...rest.slice(at)] };
+  };
 }

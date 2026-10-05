@@ -2,6 +2,7 @@ import { readAtlas } from "@/io/atlas";
 import { readSkeleton } from "@/io/skeletonRead";
 import { writeSkeleton } from "@/io/skeletonWrite";
 import { History } from "@/edit/history";
+import { newSkeleton } from "@/edit/newSkeleton";
 import type { Atlas } from "@/model/atlas";
 import type { Issue } from "@/model/issue";
 import { profileIssues } from "@/model/profile";
@@ -11,6 +12,16 @@ import type { PhysicsMode } from "@/engine/physics";
 import { atlasImages, NO_IMAGES, type AtlasImages } from "@/engine/regions";
 import { baseName, pickFiles } from "./files";
 import { Poser, type Posed } from "./stage/posed";
+
+/** A selection in the rig: what the rig tree, the stage and the properties panel show. */
+export type Selection =
+  | { readonly kind: "bone"; readonly name: string }
+  | { readonly kind: "slot"; readonly name: string }
+  | { readonly kind: "attachment"; readonly skin: string; readonly slot: string; readonly key: string };
+
+export function sameSelection(a: Selection | null, b: Selection | null): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
 
 /** A file as the session reads it: a browser `File`, or a fetched fixture. */
 export interface Source { name: string; text(): Promise<string>; blob(): Promise<Blob> }
@@ -32,7 +43,8 @@ export class Session {
   /** Page image by page name; a page with none draws nothing. */
   pages = new Map<string, ImageBitmap>();
   skin: string | null = null;
-  selection: string | null = null;
+  /** What is selected: a bone, a slot, or an attachment (skin, slot, key). Not in the document, not undone. */
+  selected: Selection | null = null;
   /** What reading found, and pages the atlas names that were not given. */
   issues: Issue[] = [];
   /** The document as last opened or saved: undo returns the very object, so undoing back to it is clean. */
@@ -53,6 +65,19 @@ export class Session {
   private readonly listeners = new Set<() => void>();
 
   get doc(): Skeleton | null { return this.history?.doc ?? null; }
+
+  /** The selected bone's name, when a bone is what is selected. */
+  get selectedBone(): string | null { return this.selected?.kind === "bone" ? this.selected.name : null; }
+
+  /** Select (null: nothing) and tell the listeners. */
+  select(sel: Selection | null): void {
+    if (sameSelection(sel, this.selected)) return;
+    this.selected = sel;
+    this.changed();
+  }
+
+  /** Select a bone by name (null: nothing). */
+  selectBone(name: string | null): void { this.select(name === null ? null : { kind: "bone", name }); }
   get dirty(): boolean { return !!this.history && this.history.doc !== this.saved; }
 
   onChange(f: () => void): () => void {
@@ -144,8 +169,10 @@ export class Session {
   /** Open a skeleton, its atlas and its pages from the given files. Throws when there is no skeleton. */
   async open(files: readonly Source[]): Promise<void> {
     const picked = pickFiles(files);
-    if (!picked.skeleton) throw new Error("Choose a Spine skeleton (.json), with its .atlas and page images.");
-    const { skeleton, issues } = readSkeleton(await picked.skeleton.text());
+    if (!picked.skeleton && !picked.atlas) throw new Error("Choose a Spine skeleton (.json) with its .atlas and page images, or an atlas with its images to start a new skeleton.");
+    // An atlas alone starts a new skeleton (a root bone) to build a rig from its regions.
+    const { skeleton, issues } = picked.skeleton ? readSkeleton(await picked.skeleton.text()) : { skeleton: newSkeleton(randomHash()), issues: [] };
+    const fileName = picked.skeleton?.name ?? `${picked.atlas!.name.replace(/\.atlas(\.txt)?$/i, "")}.json`;
     const all: Issue[] = [...issues, ...profileIssues(skeleton)];
     let atlas: Atlas | null = null;
     const pages = new Map<string, ImageBitmap>();
@@ -159,17 +186,18 @@ export class Session {
         pages.set(p.name, await createImageBitmap(await img.blob(), { premultiplyAlpha: pma ? "none" : "premultiply" }));
       }
     } else {
-      all.push({ where: picked.skeleton.name, message: "no atlas was given; the bones are shown without images" });
+      all.push({ where: fileName, message: "no atlas was given; the bones are shown without images" });
     }
     for (const b of this.pages.values()) b.close();
     this.history = new History(skeleton);
-    this.saved = this.history.doc;
-    this.name = baseName(picked.skeleton.name);
+    // A skeleton started from an atlas is new: unsaved until saved.
+    this.saved = picked.skeleton ? this.history.doc : null;
+    this.name = baseName(fileName);
     this.atlas = atlas;
     this.images = atlas ? atlasImages(atlas) : NO_IMAGES;
     this.pages = pages;
     this.skin = null;
-    this.selection = null;
+    this.selected = null;
     this.shown = null;
     this.time = 0;
     this.playing = false;
@@ -187,4 +215,10 @@ export class Session {
     this.changed();
     return text;
   }
+}
+
+/** A random 11-character hash for a new skeleton's header, like the Spine Editor's. */
+function randomHash(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(8));
+  return btoa(String.fromCharCode(...bytes)).slice(0, 11);
 }

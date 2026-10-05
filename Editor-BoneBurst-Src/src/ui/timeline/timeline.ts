@@ -106,7 +106,7 @@ export class Timeline {
 
   /** Key the selected bone's rotate, translate and scale at the playhead. */
   keySelectedBone(): void {
-    const a = this.session.animation, bone = this.session.selection, p = this.session.pose();
+    const a = this.session.animation, bone = this.session.selectedBone, p = this.session.pose();
     if (!a || bone === null || !p) { this.onStatus("Choose an animation and select a bone to key it."); return; }
     const i = p.bones.get(bone);
     if (i === undefined) return;
@@ -164,7 +164,7 @@ export class Timeline {
     this.select.disabled = !doc;
     for (const b of this.animButtons) b.disabled = !a;
     for (const b of this.curveButtons) b.disabled = !a || !this.selected.size;
-    this.keyBtn.disabled = !a || s.selection === null;
+    this.keyBtn.disabled = !a || s.selectedBone === null;
     this.playBtn.disabled = !a;
     this.playBtn.textContent = s.playing ? "⏸" : "▶";
     this.playBtn.title = s.playing ? "Pause (Space)" : "Play (Space)";
@@ -172,12 +172,12 @@ export class Timeline {
     const end = a ? timeFrame(animationDuration(a), s.fps) : 0;
     this.frameOut.textContent = a ? `frame ${s.frame} / ${end} · ${s.fps} fps` : "";
 
-    this.rows = doc && a ? buildRows(doc, a, s.selection, this.expanded) : [];
+    this.rows = doc && a ? buildRows(doc, a, s.selectedBone, this.expanded) : [];
     // Keys an undo or another edit took away leave the selection.
     const live = new Set(this.rows.flatMap((r) => marks(r, s.fps).flatMap((m) => m.refs.map((x) => refId(x, s.fps)))));
     for (const id of [...this.selected.keys()]) if (!live.has(id)) this.selected.delete(id);
     // The labels are DOM: rebuilt only when the rows or the selected bone change, not every frame.
-    const sig = `${a?.name}|${s.selection}|${!!doc}|${this.rows.map((r) => `${r.id}:${r.expandable}:${r.expanded}`).join(",")}`;
+    const sig = `${a?.name}|${s.selectedBone}|${!!doc}|${this.rows.map((r) => `${r.id}:${r.expandable}:${r.expanded}`).join(",")}`;
     if (sig !== this.labelSig) { this.labelSig = sig; this.renderLabels(); }
     this.redraw();
   }
@@ -196,7 +196,7 @@ export class Timeline {
     const rows = this.rows.map((r) => {
       const el = document.createElement("div");
       el.className = `row depth${r.depth}`;
-      if (r.bone !== undefined && r.bone === s.selection && r.depth === 0) el.classList.add("selected");
+      if (r.bone !== undefined && r.bone === s.selectedBone && r.depth === 0) el.classList.add("selected");
       if (r.expandable) {
         const t = button(r.expanded ? "▾" : "▸", r.expanded ? "Collapse" : "Show each timeline", () => {
           if (this.expanded.has(r.id)) this.expanded.delete(r.id); else this.expanded.add(r.id);
@@ -210,8 +210,7 @@ export class Timeline {
       el.append(name);
       if (r.bone !== undefined) el.addEventListener("click", (e) => {
         if ((e.target as HTMLElement).classList.contains("twisty")) return;
-        s.selection = r.bone!;
-        s.changed();
+        s.selectBone(r.bone!);
       });
       return el;
     });
@@ -324,7 +323,7 @@ export class Timeline {
       mark.refs.forEach((r, j) => this.selected.set(ids[j]!, r));
     }
     const row = this.rows[i]!;
-    if (row.bone !== undefined && s.selection !== row.bone) s.selection = row.bone;
+    if (row.bone !== undefined && s.selectedBone !== row.bone) s.selected = { kind: "bone", name: row.bone };
     s.pause();
     this.drag = { kind: "keys", from: Math.round(xFrame(this.view, x)), applied: 0, refs: [...this.selected.values()] };
     s.history?.begin(`Move ${this.selected.size} key${this.selected.size === 1 ? "" : "s"}`);

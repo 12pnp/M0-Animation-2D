@@ -3,7 +3,8 @@
 **Status:** in progress, 2026-10-06. Step 1 (the Dockview shell, D6) done except one check:
 **popout windows are not verified on screen** (the built-in browser pane loads a popout's page in
 place of the app; Claude in Chrome was not connected). Every other acceptance point holds, and
-`npm run check` passes (224 tests). Later steps not started.
+`npm run check` passes (249 tests). Step 2 (the rig's structure) done: a rig built from an empty
+skeleton on screen, saved and read back alike by both runtimes. Later steps not started.
 
 E4 makes the editor author a rig, not only animate one: panels and docking (D6), slots,
 attachments, draw order, skins, constraints, mesh editing, PSD import and preferences. It is
@@ -69,10 +70,86 @@ flowchart TB
 5. Remove the fixed CSS grid shell; panels size from Dockview.
 6. Check on screen: split, tab, float, pop out each panel; reload restores; gates green.
 
-## Later steps (planned when step 1 lands)
+## Step 2 — the rig's structure: bones, slots, region attachments, draw order
 
-Slots and attachments, draw order, skins, constraints, mesh editing, PSD import, the sidecar's
-read and write (view state, guides, references), the reference panel, preferences.
+The rig tree becomes the place to build a rig: add, delete and reparent bones; add, delete,
+rename slots and set their bone, colours, blend and setup attachment; add region attachments from
+the atlas, edit and rename them; reorder slots (the setup draw order). Each is an edit on the
+document that keeps it a file the BoneBurst profile accepts (SPEC §2): it is refused with its
+reason, never written broken.
+
+### Decisions
+
+- **Deleting cascades only where it must, and is refused where it would guess.** Deleting a bone
+  deletes its descendants, the slots on them with their skin entries and timelines, and their bone
+  timelines; it is refused while a constraint names one of those bones or slots ("delete the
+  constraint first"), and for the root while other bones hang from it. Deleting a slot removes
+  its skin entries, its slot and attachment timelines and its draw order offsets; refused while a
+  path constraint or a clipping attachment's `end` names it. Deleting an attachment removes its
+  deform and sequence timelines; a slot whose setup attachment it was shows nothing.
+- **Renaming rewrites every reference** (as `renameBone` does): a slot's name in skins,
+  animations, draw order offsets, clipping `end`, path constraints and linked meshes' `slot`; an
+  attachment's key in every skin's entry for that slot, the slot's setup attachment, attachment
+  keys, deform and sequence timelines and linked meshes' `source`.
+- **Reparenting keeps the bone where it is on screen**: the stage works out the local values that
+  give the same setup world transform under the new parent (normal inheritance), and the edit
+  takes them. Bones stay ordered parent before child: the bone and its descendants move to just
+  after the new parent's subtree. A bone cannot become its own descendant's child.
+- **Reordering slots keeps every draw order key meaning what it meant**: each key's order is
+  rebuilt by name from the old offsets, then written as offsets against the new setup order
+  (ascending, Format §11.11); a folder's slot list is re-sorted to the new setup order the same way
+  (§11.12).
+- **A new region** takes its key and path from the atlas region, its size from the region's
+  original size, and goes in the default skin on the selected slot (a new slot on the selected
+  bone when a bone is selected).
+- **Selection becomes typed**: a bone, a slot, or an attachment (skin, slot, key). The stage
+  still picks bones; the rig tree and the properties panel follow any kind.
+
+### Steps
+
+1. `edit/bones.ts` (`addBone`, `deleteBone`, `reparentBone`), `edit/slots.ts` (`addSlot`,
+   `deleteSlot`, `renameSlot`, `updateSlot`, `moveSlot`), `edit/attachments.ts` (`addRegion`,
+   `deleteAttachment`, `renameAttachment`, `updateAttachment`), each with table tests: refusals,
+   references rewritten, the profile still holding, both runtimes posing the result alike.
+2. Typed selection in the session; the stage, timeline and properties read it.
+3. Rig tree: bones, their slots, the slots' attachments; add, delete; a draw order view.
+4. Properties for a slot and for a region attachment (other kinds shown, read only).
+5. On screen: build a small rig on the stickman's atlas from an empty skeleton; save; read back.
+
+### Step 2 results
+
+1. `edit/bones.ts` (`addBone`, `deleteBone`, `reparentBone`, `subtree`), `edit/slots.ts`
+   (`addSlot`, `deleteSlot`, `renameSlot`, `updateSlot`, `moveSlot`), `edit/attachments.ts`
+   (`addRegion`, `deleteAttachment`, `renameAttachment`, `updateAttachment`),
+   `edit/drawOrder.ts` (draw order keys kept by name), `edit/newSkeleton.ts`.
+   `tests/rig.test.ts`, 25 tests: every edited sample keeps the profile, round-trips and is
+   posed alike by the engine and spine-core; moving, renaming and deleting a slot leave
+   raptor-pro's draw order keys drawing what they drew (four of these fail with the remapping
+   off); a synthetic draw order folder is re-sorted and keeps its order; refusals for the root,
+   an IK target, a path constraint's slot, a clipping's end, a linked mesh's source.
+   **Added to the plan:** an atlas opened without a skeleton starts a new one (a root bone, a
+   random header hash, unsaved), so a rig can be built from nothing.
+2. Typed selection (`Selection`: bone, slot, attachment) in the session; `selectedBone` for
+   the stage, the timeline and keying.
+3. Rig panel: bones as a tree with their slots and the slots' attachments (the shown skin's
+   and the default's; the shown one marked), + Bone, + Slot, + Region (a region chosen from the
+   atlas), Delete (also the Delete key in the panel); a draw order view, front to back, with
+   forward and back. **Changed on screen:** the region chooser was first a menu that added on
+   change; it added a second region from one choice (the menu rebuilt its options inside its own
+   change handler), so it is now a choice plus a + Region button.
+4. Properties for a bone (parent as a menu that keeps the bone where it is; defaults left out),
+   a slot (name, bone, shown attachment, colour, dark, blend) and a region (name, image, x, y,
+   rotation, scale, size, colour); other attachment kinds read only. Fields are labelled for
+   screen readers by their label, not their value.
+5. On screen: from the stickman's atlas alone, bones `body` and `neck`, the head and torso
+   regions, the head brought in front, a slot renamed, an attachment deleted and undone, `neck`
+   moved under `root` without moving on screen; saved; the saved file has no profile issue and
+   both runtimes pose it identically.
+
+## Later steps (planned when step 2 lands)
+
+Skins, constraints, mesh editing, PSD import, the sidecar's read and write (view state, guides,
+references), the reference panel, preferences.
 
 ## Results
 

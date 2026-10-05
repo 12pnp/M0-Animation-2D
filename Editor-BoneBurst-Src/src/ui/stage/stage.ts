@@ -146,7 +146,7 @@ export class Stage {
     if (!p) return;
     const bone = css.getPropertyValue("--bone").trim(), selected = css.getPropertyValue("--accent").trim();
     for (const b of this.screenBones()) {
-      const on = b.name === this.session.selection;
+      const on = b.name === this.session.selectedBone;
       drawBone(g, b, on ? selected : bone, on);
     }
     const sel = this.selectedIndex();
@@ -169,7 +169,7 @@ export class Stage {
   }
 
   private selectedIndex(): number {
-    const p = this.session.pose(), s = this.session.selection;
+    const p = this.session.pose(), s = this.session.selectedBone;
     return p && s !== null ? p.bones.get(s) ?? -1 : -1;
   }
 
@@ -210,21 +210,21 @@ export class Stage {
       this.panning = { x: sx, y: sy };
       return;
     }
-    let name = pickBone(this.screenBones(), sx, sy, 6, this.session.selection);
+    let name = pickBone(this.screenBones(), sx, sy, 6, this.session.selectedBone);
     if (name === null) {
       const sel = this.selectedIndex();
       if (sel >= 0) {
         const m = boneMatrix(this.session.pose()!, sel);
         const [ox, oy] = toScreen(this.camera, this.size, m[4], m[5]);
-        if (Math.hypot(sx - ox, sy - oy) <= GRAB) name = this.session.selection;
+        if (Math.hypot(sx - ox, sy - oy) <= GRAB) name = this.session.selectedBone;
       }
     }
     if (name === null) {
-      if (this.session.selection !== null) { this.session.selection = null; this.session.changed(); }
+      this.session.select(null);
       this.panning = { x: sx, y: sy };
       return;
     }
-    if (name !== this.session.selection) { this.session.selection = name; this.session.changed(); }
+    this.session.selectBone(name);
     this.session.pause();
     const p = this.session.pose()!, index = p.bones.get(name)!;
     const b = this.session.doc!.bones!.find((x) => x.name === name)!;

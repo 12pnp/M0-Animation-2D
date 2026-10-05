@@ -7,7 +7,8 @@ import type { AtlasImages } from "@/engine/regions";
 import { Rig } from "@/engine/rig";
 import { readRig } from "@/engine/rigData";
 import type { AnimationData, RigData } from "@/engine/rigTypes";
-import type { Matrix } from "./gizmo";
+import { localFromWorld } from "@/engine/bones";
+import { type Matrix, tidy } from "./gizmo";
 
 /**
  * The document posed by the engine (SPEC §6: the one posing path): the setup pose, or an
@@ -105,4 +106,17 @@ export function bounds(p: Posed): { minX: number; minY: number; maxX: number; ma
     add(tx, ty);
   }
   return minX <= maxX ? { minX, minY, maxX, maxY } : null;
+}
+
+/**
+ * The local values that keep `bone` where the pose has it in the world once it hangs from
+ * `parent` (normal inheritance): what reparenting writes. Shear x comes out 0; the rest is
+ * rounded as a drag writes it.
+ */
+export function localUnder(p: Posed, bone: number, parent: number) {
+  const W = p.rig.world, out = new Float64Array(7);
+  const q = parent * 6;
+  localFromWorld(W, bone * 6, W[q]!, W[q + 1]!, W[q + 2]!, W[q + 3]!, W[q + 4]!, W[q + 5]!, out, 0);
+  const r = (n: number, k: number) => tidy(n, k);
+  return { x: r(out[0]!, 2), y: r(out[1]!, 2), rotation: r(out[2]!, 2), scaleX: r(out[3]!, 4), scaleY: r(out[4]!, 4), shearX: r(out[5]!, 2), shearY: r(out[6]!, 2) };
 }

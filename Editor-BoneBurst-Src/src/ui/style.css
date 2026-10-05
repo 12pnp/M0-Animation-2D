@@ -168,31 +168,52 @@ html .dockview-theme-light {
   padding: 10px 10px 6px;
 }
 .panel .empty { color: var(--muted); padding: 0 10px; margin: 4px 0; }
-.outline .rows { display: flex; flex-direction: column; padding-bottom: 8px; }
-.outline .row {
-  border: 0;
-  border-radius: 0;
-  background: transparent;
-  text-align: left;
-  padding: 3px 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.outline { display: flex; flex-direction: column; }
+.outline-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px;
+  border-bottom: 1px solid var(--line);
+  position: sticky;
+  top: 0;
+  background: var(--panel);
+  z-index: 1;
 }
+.outline-bar button, .outline-bar select { padding: 2px 8px; font-size: 12px; }
+.outline-bar select { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; max-width: 140px; }
+.outline-bar .sep { width: 1px; background: var(--line); margin: 0 2px; }
+.outline .rows { display: flex; flex-direction: column; padding: 4px 0 8px; }
+.outline .row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-height: 22px;
+  padding-right: 8px;
+  white-space: nowrap;
+  cursor: default;
+}
+.outline .row:hover { background: var(--hover); }
+.outline .row .name { overflow: hidden; text-overflow: ellipsis; }
+.outline .row .note { margin-left: auto; color: var(--muted); font-size: 11px; }
+.outline .row.slot .name::before { content: "▣ "; color: var(--muted); }
+.outline .row.attachment .name::before { content: "▫ "; color: var(--muted); }
 .outline .row.selected { background: var(--accent); color: var(--accent-text); }
+.outline .row.selected .note, .outline .row.selected .name::before { color: inherit; }
+.outline .twisty { border: 0; background: transparent; padding: 0; width: 16px; font-size: 10px; color: inherit; }
+.outline .twisty-gap { display: inline-block; width: 16px; }
 
 .inspector .fields { display: flex; flex-direction: column; gap: 4px; padding: 0 10px 10px; }
 .inspector .field { display: grid; grid-template-columns: 80px 1fr; align-items: center; gap: 8px; }
 .inspector .field span { color: var(--muted); }
-.inspector input {
+.inspector input, .inspector select {
   min-width: 0;
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 5px;
   padding: 3px 6px;
-  font-family: var(--font-mono);
-  font-size: 12px;
 }
+.inspector input.number { font-family: var(--font-mono); font-size: 12px; }
 .inspector .readonly output { padding: 3px 0; }
 
 .status {

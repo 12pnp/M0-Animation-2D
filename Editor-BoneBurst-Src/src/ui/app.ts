@@ -101,6 +101,7 @@ export function mountApp(root: HTMLElement): void {
   timeline.onStatus = say;
   stage.onPointer = (t) => { pointer.textContent = t; };
   inspector.onStatus = say;
+  outline.onStatus = say;
 
   // Playback: the playhead moves by real time while playing.
   let last = 0;
@@ -169,25 +170,29 @@ export function mountApp(root: HTMLElement): void {
 
   hint.append(
     Object.assign(document.createElement("p"), { textContent: `${EDITOR_NAME} — Spine ${SPINE_VERSION}` }),
-    Object.assign(document.createElement("p"), { textContent: "Drop a skeleton .json with its .atlas and page images here, or use Open…" }),
+    Object.assign(document.createElement("p"), { textContent: "Drop a skeleton .json with its .atlas and page images here, or use Open… An atlas with its images alone starts a new skeleton." }),
   );
   if (import.meta.env.DEV) {
     // For inspecting the live editor from the browser console; not in a build.
     (window as unknown as { boneburst: unknown }).boneburst = { session, stage, get workspace() { return workspace; } };
     const dev = button("Open the stickman fixture", "Dev only: tests/fixtures/stickman", () => void openStickman());
-    hint.append(dev);
+    const devNew = button("New skeleton on the stickman's atlas", "Dev only: tests/fixtures/stickman, atlas and image", () => void openStickman(false));
+    hint.append(dev, devNew);
   }
   refresh();
 
-  async function openStickman(): Promise<void> {
-    const sources = STICKMAN.map((name): Source => {
+  /** The stickman fixture; without its skeleton, a new skeleton on its atlas. */
+  async function openStickman(withSkeleton = true): Promise<void> {
+    const sources = STICKMAN.filter((n) => withSkeleton || !n.endsWith(".json")).map((name): Source => {
       const url = `/tests/fixtures/stickman/${name}`;
       const get = async () => { const r = await fetch(url); if (!r.ok) throw new Error(`${url}: ${r.status}`); return r; };
       return { name, text: async () => (await get()).text(), blob: async () => (await get()).blob() };
     });
     await open(sources);
   }
-  if (import.meta.env.DEV && new URLSearchParams(location.search).get("open") === "stickman") void openStickman();
+  const devOpen = import.meta.env.DEV ? new URLSearchParams(location.search).get("open") : null;
+  if (devOpen === "stickman") void openStickman();
+  else if (devOpen === "stickman-atlas") void openStickman(false);
 
   fileInput.addEventListener("change", () => {
     if (fileInput.files?.length) void open([...fileInput.files].map(fileSource));
@@ -214,7 +219,7 @@ export function mountApp(root: HTMLElement): void {
     if (mod || e.altKey) return;
     if (key === "escape") {
       if (!stage.cancel() && session.playing) session.pause();
-      else if (session.selection !== null) { session.selection = null; session.changed(); }
+      else session.select(null);
       return;
     }
     if (key === "f") { stage.fitView(); return; }
@@ -229,6 +234,8 @@ export function mountApp(root: HTMLElement): void {
     }
     if (key === "k") { timeline.keySelectedBone(); return; }
     if ((key === "delete" || key === "backspace") && timeline.hasSelection) { e.preventDefault(); timeline.deleteSelected(); return; }
+    // In the rig panel, Delete deletes what is selected there (Undo brings it back).
+    if ((key === "delete" || key === "backspace") && outline.element.contains(e.target as Node)) { e.preventDefault(); outline.deleteSelected(); return; }
     const t = TOOLS.find((x) => x.key.toLowerCase() === key);
     if (t) setTool(t.tool);
   }

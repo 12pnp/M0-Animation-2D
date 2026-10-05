@@ -1,10 +1,12 @@
-import { type BonePatch, renameBone, updateBone } from "@/edit/bones";
-import { type Edit, EditRefused } from "@/edit/history";
-import { BONE_DEFAULTS, boneInherit, boneNumber, type BoneNumber } from "@/model/defaults";
-import type { Bone, Skeleton } from "@/model/skeleton";
+import { type AttachmentPatch, type AttachmentRef, findAttachment, renameAttachment, updateAttachment } from "@/edit/attachments";
 import { type BoneProperty, keyBone } from "@/edit/boneKeys";
-import type { Session } from "../session";
-import { animatedLocal } from "../stage/posed";
+import { type BonePatch, renameBone, reparentBone, subtree, updateBone } from "@/edit/bones";
+import { type Edit, EditRefused } from "@/edit/history";
+import { BLEND_MODES, renameSlot, updateSlot } from "@/edit/slots";
+import { BONE_DEFAULTS, boneInherit, boneNumber, type BoneNumber } from "@/model/defaults";
+import { attachmentType, type Skeleton } from "@/model/skeleton";
+import type { Selection, Session } from "../session";
+import { animatedLocal, localUnder, Poser } from "../stage/posed";
 import { empty, heading } from "./outline";
 
 /** The timeline each value keys in Animate mode (length is setup only). */
@@ -12,22 +14,30 @@ const KEYED: Partial<Record<BoneNumber, BoneProperty>> = {
   x: "translate", y: "translate", rotation: "rotate", scaleX: "scale", scaleY: "scale", shearX: "shear", shearY: "shear",
 };
 
-const FIELDS: ReadonlyArray<{ key: BoneNumber; label: string }> = [
+const BONE_FIELDS: ReadonlyArray<{ key: BoneNumber; label: string }> = [
   { key: "x", label: "X" }, { key: "y", label: "Y" }, { key: "rotation", label: "Rotation" },
   { key: "scaleX", label: "Scale X" }, { key: "scaleY", label: "Scale Y" },
   { key: "shearX", label: "Shear X" }, { key: "shearY", label: "Shear Y" }, { key: "length", label: "Length" },
 ];
 
+/** A region's numbers (Format-Json-Atlas.md §8.3), with what an absent key means. */
+const REGION_FIELDS: ReadonlyArray<{ key: "x" | "y" | "rotation" | "scaleX" | "scaleY" | "width" | "height"; label: string; default?: number }> = [
+  { key: "x", label: "X", default: 0 }, { key: "y", label: "Y", default: 0 }, { key: "rotation", label: "Rotation", default: 0 },
+  { key: "scaleX", label: "Scale X", default: 1 }, { key: "scaleY", label: "Scale Y", default: 1 },
+  { key: "width", label: "Width" }, { key: "height", label: "Height" },
+];
+
 /**
- * The selected bone's setup values. A field commits on Enter or when it loses focus, as one undo
- * step; a value the edit refuses is put back and the reason shown.
+ * The properties of what is selected: a bone, a slot or an attachment. A field commits on Enter
+ * or when it loses focus, as one undo step; a value the edit refuses is put back and the reason
+ * shown. In Animate mode a bone's transform fields key at the playhead.
  */
 export class Inspector {
   readonly element: HTMLDivElement;
   onStatus: (message: string) => void = () => {};
-  /** What the panel shows; undefined until it first draws. */
-  private shown: { doc: Skeleton | null; bone: Bone | null; name: string | null; at: string } | undefined;
-  private inputs = new Map<string, HTMLInputElement>();
+  /** What the panel shows, as a key; undefined until it first draws. */
+  private shown: string | undefined;
+  private inputs = new Map<string, HTMLInputElement | HTMLSelectElement>();
 
   constructor(private readonly session: Session) {
     this.element = document.createElement("div");
@@ -37,87 +47,179 @@ export class Inspector {
   }
 
   private update(force = false): void {
-    const name = this.session.selection;
-    const bone = name !== null ? this.session.doc?.bones?.find((b) => b.name === name) ?? null : null;
-    const doc = this.session.doc;
-    const anim = this.session.animation;
-    // In Animate mode the values are the pose at the playhead: they change with the document and the frame.
-    const at = anim ? `${anim.name}|${this.session.frame}|${this.session.history?.revision}` : "";
-    // A bone object changes exactly when its setup values do; `doc` is only for the empty message.
-    if (this.shown && bone === this.shown.bone && name === this.shown.name && !doc === !this.shown.doc && at === this.shown.at) return;
+    const s = this.session, doc = s.doc, sel = s.selected, anim = s.animation;
+    // The selected object changes exactly when its values do; the frame matters in Animate mode.
+    const target = doc && sel ? selectedObject(doc, sel) : undefined;
+    const key = JSON.stringify([!!doc, sel, anim ? [anim.name, s.frame, s.history?.revision] : null]) + (target ? identity(target) : "");
+    if (this.shown === key) return;
     // Not under a field being typed in, nor while playing: it shows the document once that ends.
-    if (!force && (this.element.contains(this.element.ownerDocument.activeElement) || this.session.playing)) return;
-    this.shown = { doc, bone, name, at };
+    if (!force && (this.element.contains(this.element.ownerDocument.activeElement) || s.playing)) return;
+    this.shown = key;
     this.inputs.clear();
-    this.element.replaceChildren(heading(anim ? `Bone · keys at frame ${this.session.frame}` : "Bone"));
-    if (!bone) {
-      this.element.append(empty(this.session.doc ? "Select a bone on the stage or in the list." : "Nothing open."));
+    if (!doc || !sel || !target) {
+      this.element.replaceChildren(heading("Properties"), empty(doc ? "Select a bone, slot or attachment." : "Nothing open."));
       return;
     }
     const form = document.createElement("div");
     form.className = "fields";
-    const was = bone.name;
-    form.append(this.textField("name", "Name", bone.name, (v) => (v === was ? null : renameBone(was, v)), (v) => `Rename bone ${was} to ${v}`));
-    const p = anim ? this.session.pose() : null, index = p?.bones.get(was);
+    if (sel.kind === "bone") this.boneForm(form, doc, sel.name);
+    else if (sel.kind === "slot") this.slotForm(form, doc, sel.name);
+    else this.attachmentForm(form, doc, sel);
+    const title = sel.kind === "bone" ? (anim ? `Bone · keys at frame ${s.frame}` : "Bone") : sel.kind === "slot" ? "Slot" : "Attachment";
+    this.element.replaceChildren(heading(title), form);
+  }
+
+  private boneForm(form: HTMLElement, doc: Skeleton, name: string): void {
+    const s = this.session, bone = doc.bones!.find((b) => b.name === name)!, anim = s.animation;
+    form.append(this.textField("name", "Name", bone.name, (v) => (v === name ? null : renameBone(name, v)), (v) => `Rename bone ${name} to ${v}`,
+      (v) => s.select({ kind: "bone", name: v })));
+    const p = anim ? s.pose() : null, index = p?.bones.get(name);
     const local = p && index !== undefined ? animatedLocal(p, index) : null;
-    const time = this.session.keyTime;
-    for (const f of FIELDS) {
+    const time = s.keyTime;
+    for (const f of BONE_FIELDS) {
       const keyed = local && f.key !== "length" ? KEYED[f.key] : undefined;
       const shownValue = keyed && local ? local[f.key as keyof typeof local] : boneNumber(bone, f.key);
       form.append(this.textField(f.key, f.label, format(shownValue), (v) => {
-        const n = Number(v);
-        if (v.trim() === "" || !Number.isFinite(n)) throw new EditRefused(`${f.label} needs a number.`);
-        if (keyed && local && anim) return keyBone(anim.name, was, [keyed], { ...local, [f.key]: n }, time);
+        const n = number(v, f.label);
+        if (keyed && local && anim) return keyBone(anim.name, name, [keyed], { ...local, [f.key]: n }, time);
         const patch: BonePatch = {};
         // Back to the default: drop the key, as Spine writes it.
         patch[f.key] = n === BONE_DEFAULTS[f.key] ? undefined : n;
-        return updateBone(was, patch);
-      }, () => (keyed ? `Key ${f.label.toLowerCase()} of ${was} at frame ${this.session.frame}` : `Set ${f.label.toLowerCase()} of bone ${was}`), "decimal"));
+        return updateBone(name, patch);
+      }, () => (keyed ? `Key ${f.label.toLowerCase()} of ${name} at frame ${s.frame}` : `Set ${f.label.toLowerCase()} of bone ${name}`), undefined, "decimal"));
     }
-    form.append(readOnly("Parent", bone.parent ?? "—"), readOnly("Inherit", boneInherit(bone)));
-    this.element.append(form);
+    if (bone.parent === undefined) form.append(readOnly("Parent", "— (root)"));
+    else {
+      // A bone can hang from any bone but itself and those under it; it stays where it is on screen.
+      const under = new Set(subtree(doc, name));
+      const options = (doc.bones ?? []).map((b) => b.name).filter((n) => !under.has(n));
+      form.append(this.selectField("parent", "Parent", options.map((n) => [n, n]), bone.parent, (v) => {
+        const setup = new Poser(doc, s.images).pose(s.skin, null, 0);
+        const i = setup.bones.get(name), j = setup.bones.get(v);
+        const keep = i !== undefined && j !== undefined && boneInherit(bone) === "normal" ? localUnder(setup, i, j) : {};
+        // A value at its default leaves the key out, as Spine writes it.
+        const patch: Record<string, number | undefined> = {};
+        for (const [k, n] of Object.entries(keep) as [BoneNumber, number][]) patch[k] = n === BONE_DEFAULTS[k] ? undefined : n;
+        return reparentBone(name, v, patch as BonePatch);
+      }, (v) => `Move bone ${name} under ${v}`));
+    }
+    form.append(readOnly("Inherit", boneInherit(bone)));
+  }
+
+  private slotForm(form: HTMLElement, doc: Skeleton, name: string): void {
+    const s = this.session, slot = doc.slots!.find((x) => x.name === name)!;
+    form.append(this.textField("name", "Name", slot.name, (v) => (v === name ? null : renameSlot(name, v)), (v) => `Rename slot ${name} to ${v}`,
+      (v) => s.select({ kind: "slot", name: v })));
+    form.append(this.selectField("bone", "Bone", (doc.bones ?? []).map((b) => [b.name, b.name]), slot.bone, (v) => updateSlot(name, { bone: v }), (v) => `Put slot ${name} on ${v}`));
+    const keys = [...new Set((doc.skins ?? []).flatMap((k) => k.attachments ?? []).filter((ss) => ss.slot === name).flatMap((ss) => ss.entries.map((e) => e.key)))];
+    form.append(this.selectField("attachment", "Shows", [["", "— nothing"], ...keys.map((k): [string, string] => [k, k])], slot.attachment ?? "",
+      (v) => updateSlot(name, { attachment: v || undefined }), (v) => (v ? `Show ${v} in slot ${name}` : `Show nothing in slot ${name}`)));
+    form.append(this.textField("color", "Colour", slot.color ?? "ffffffff", (v) => updateSlot(name, { color: v.toLowerCase() === "ffffffff" ? undefined : v }), () => `Set colour of slot ${name}`));
+    form.append(this.textField("dark", "Dark", slot.dark ?? "", (v) => updateSlot(name, { dark: v.trim() === "" ? undefined : v }), () => `Set dark colour of slot ${name}`));
+    form.append(this.selectField("blend", "Blend", BLEND_MODES.map((m) => [m, m]), slot.blend ?? "normal",
+      (v) => updateSlot(name, { blend: v === "normal" ? undefined : v }), (v) => `Set blend of slot ${name} to ${v}`));
+  }
+
+  private attachmentForm(form: HTMLElement, doc: Skeleton, r: AttachmentRef): void {
+    const s = this.session, a = findAttachment(doc, r)!, type = attachmentType(a);
+    form.append(this.textField("name", "Name", r.key, (v) => (v === r.key ? null : renameAttachment(r, v)), (v) => `Rename attachment ${r.key} to ${v}`,
+      (v) => s.select({ kind: "attachment", skin: r.skin, slot: r.slot, key: v })));
+    form.append(readOnly("Type", type), readOnly("Skin", r.skin), readOnly("Slot", r.slot));
+    if (type !== "region") {
+      form.append(empty("Editing this kind arrives in a later step; it is kept as it is."));
+      return;
+    }
+    form.append(this.textField("path", "Image", a.path ?? a.name ?? r.key, (v) => updateAttachment(r, { path: v === (a.name ?? r.key) ? undefined : v }), () => `Set image of ${r.key}`));
+    for (const f of REGION_FIELDS) {
+      const value = a[f.key] ?? f.default ?? 0;
+      form.append(this.textField(f.key, f.label, format(value), (v) => {
+        const n = number(v, f.label);
+        const patch: AttachmentPatch = {};
+        patch[f.key] = f.default !== undefined && n === f.default ? undefined : n;
+        return updateAttachment(r, patch);
+      }, () => `Set ${f.label.toLowerCase()} of ${r.key}`, undefined, "decimal"));
+    }
+    form.append(this.textField("color", "Colour", a.color ?? "ffffffff", (v) => updateAttachment(r, { color: v.toLowerCase() === "ffffffff" ? undefined : v }), () => `Set colour of ${r.key}`));
+  }
+
+  /** Apply an edit from a field; refusals go to the status line; the panel then shows the document. */
+  private commit(label: string, edit: () => Edit<Skeleton> | null, after?: () => void): void {
+    const h = this.session.history;
+    if (!h) return;
+    try {
+      const e = edit();
+      if (e && h.apply(label, e)) {
+        after?.();
+        this.session.changed();
+      }
+    } catch (err) {
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+    }
+    const focused = [...this.inputs].find(([, i]) => i === this.element.ownerDocument.activeElement)?.[0];
+    this.shown = undefined;
+    this.update(true);
+    if (focused) this.inputs.get(focused)?.focus();
   }
 
   private textField(
     key: string, label: string, value: string,
-    edit: (v: string) => Edit<Skeleton> | null, labelFor: (v: string) => string, mode?: "decimal",
+    edit: (v: string) => Edit<Skeleton> | null, labelFor: (v: string) => string, after?: (v: string) => void, mode?: "decimal",
   ): HTMLLabelElement {
-    const row = document.createElement("label");
-    row.className = "field";
-    const span = document.createElement("span");
-    span.textContent = label;
     const input = document.createElement("input");
     input.value = value;
     input.spellcheck = false;
-    if (mode) input.inputMode = mode;
-    const commit = () => {
-      const h = this.session.history;
-      if (!h) return;
-      try {
-        const e = edit(input.value);
-        if (e && h.apply(labelFor(input.value), e)) {
-          if (key === "name") this.session.selection = input.value;
-          this.session.changed();
-        }
-      } catch (err) {
-        if (!(err instanceof EditRefused)) throw err;
-        this.onStatus(err.message);
-      }
-      // Whatever happened, show what the document holds now, keeping the field focus moved to.
-      const focused = [...this.inputs].find(([, i]) => i === this.element.ownerDocument.activeElement)?.[0];
-      this.shown = undefined;
-      this.update(true);
-      if (focused) this.inputs.get(focused)?.focus();
-    };
+    if (mode) { input.inputMode = mode; input.classList.add("number"); }
     input.addEventListener("keydown", (e) => {
       if (e.key === "Enter") { e.preventDefault(); input.blur(); }
       if (e.key === "Escape") { input.value = value; input.blur(); }
     });
-    input.addEventListener("change", commit);
+    input.addEventListener("change", () => this.commit(labelFor(input.value), () => edit(input.value), after && (() => after(input.value))));
     this.inputs.set(key, input);
-    row.append(span, input);
-    return row;
+    return field(label, input);
   }
+
+  private selectField(key: string, label: string, options: ReadonlyArray<readonly [string, string]>, value: string,
+    edit: (v: string) => Edit<Skeleton> | null, labelFor: (v: string) => string): HTMLLabelElement {
+    const select = document.createElement("select");
+    select.append(...options.map(([v, text]) => new Option(text, v)));
+    select.value = value;
+    select.addEventListener("change", () => this.commit(labelFor(select.value), () => edit(select.value)));
+    this.inputs.set(key, select);
+    return field(label, select);
+  }
+}
+
+/** The bone, slot or attachment a selection names, if the document has it. */
+export function selectedObject(doc: Skeleton, sel: Selection): object | undefined {
+  if (sel.kind === "bone") return doc.bones?.find((b) => b.name === sel.name);
+  if (sel.kind === "slot") return doc.slots?.find((x) => x.name === sel.name);
+  return findAttachment(doc, sel);
+}
+
+/** A stable text for an object's identity within a session, so a changed object redraws the panel. */
+const ids = new WeakMap<object, number>();
+let nextId = 1;
+function identity(o: object): string {
+  let id = ids.get(o);
+  if (id === undefined) ids.set(o, (id = nextId++));
+  return `#${id}`;
+}
+
+function number(v: string, label: string): number {
+  const n = Number(v);
+  if (v.trim() === "" || !Number.isFinite(n)) throw new EditRefused(`${label} needs a number.`);
+  return n;
+}
+
+function field(label: string, control: HTMLElement): HTMLLabelElement {
+  const row = document.createElement("label");
+  row.className = "field";
+  const span = document.createElement("span");
+  span.textContent = label;
+  control.setAttribute("aria-label", label);
+  row.append(span, control);
+  return row;
 }
 
 function readOnly(label: string, value: string): HTMLDivElement {
