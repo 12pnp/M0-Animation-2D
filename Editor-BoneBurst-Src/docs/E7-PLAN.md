@@ -1,9 +1,12 @@
 # E7 — the daily driver: history, shortcuts, a build, a robustness pass — plan
 
-**Status:** in progress, 2026-10-06; steps 1 (the History panel), 2 (the shortcuts table and sheet), 3 (running without the dev server), 4 (edits fuzzed: eight findings, seven fixed, one the runtime's own) 5 (hostile files: nine findings fixed, two in the C# reader handed on) and 6 (the daily driver end to end; Unity's side through the C# harness, the asset bake not run) done. Scope chosen by the owner:
-the History panel and the shortcuts sheet (set aside at E6 step 3), running without the dev
-server, and a robustness pass.
-Not in E7: the AnimatedDrawings detection sidecar (waits on the owner's install decision).
+**Status:** **done**, 2026-10-06. All seven steps: the History panel; one shortcuts table, its
+sheet and the menus reading it; `npm start` with a split build; edits fuzzed (seven findings fixed,
+among them weighted meshes that bone edits had silently rebound since E4; one, NaN poses from
+degenerate constraints, is the C# runtime's own behaviour); hostile files (seven findings fixed,
+two in the C# reader handed on and since fixed there); the owner's flow end to end, its export
+posed by BoneBurst's C# runtime as v2 poses it. Not run: the asset bake in the Unity Editor (the
+owner's choice at step 6). Not in E7: the AnimatedDrawings detection sidecar.
 
 E6 made v2 the editor in use, but it still runs as a developer runs it: `npm run dev`, shortcuts
 only discoverable from menus, undo only one step at a time. E7 makes it an artist's daily
@@ -512,3 +515,55 @@ flowchart LR
    ran); this test stays on export and open.
 6. `npm run check`'s suites: 657 vitest, 19 browser tests, all pass (its type check stops on the
    other session's work in progress in `tests/preferences.test.ts`, not on this step's files).
+
+## Step 7 — close
+
+```mermaid
+flowchart LR
+    DW["E7's done-when<br/>(EDITOR-V2-PLAN ▸ E7)"] --> CHK["each part checked<br/>against the step results"]
+    CS["b71de45: the C# reader refuses<br/>two more draw-order shapes"] --> PROF["v2's profile says them too<br/>(model/profile.ts)"]
+    CHK --> DOCS["charter row · SPEC §4, §5, §6, §7, §9<br/>README · CLAUDE.md · root CLAUDE.md"]
+```
+
+### Decisions
+
+- **The done-when, part by part**, against what the steps showed, written into the status.
+- **One loose end from the hand-on**: the C# reader's fix (b71de45, from step 5's H1/H2) now also
+  refuses draw-order offsets out of slot order and two slots moved to one place. v2's profile
+  said neither, so such a file would open here quietly and fail in Unity: two profile rules, with
+  rows in `tests/hostileFindings.test.ts` that fail without them.
+- **SPEC** where E7 changed the shape: §4 (History `entries`/`goTo`; edits refuse non-finite numbers;
+  bone order kept in weighted vertices), §5 (the JSON reader's depth and range limits; what opening
+  reports), §6 (the engine's tolerance of broken data; missing regions), §7 (the shortcuts table, the
+  History panel, `npm start` and the split build), §9 (the fuzz, hostile-file and daily-driver checks).
+- **README, CLAUDE.md, the charter and root CLAUDE.md**: E7 done; the commands (`daily-driver.ts`,
+  the `FUZZ_*`/`HOSTILE_*` switches).
+
+### Steps
+
+1. The two profile rules and their rows.
+2. The docs.
+3. `npm run check`; results; status.
+
+### Step 7 results
+
+1. **The done-when** (`EDITOR-V2-PLAN.md` ▸ E7), part by part:
+   - *an artist starts it with one command*: `npm start` (step 3), tested on the build by
+     `e2e-build/smoke.spec.ts`;
+   - *sees and reaches every undo step*: the History panel and `History.goTo` (step 1);
+   - *and every shortcut*: Help ▸ Keyboard Shortcuts and `?`, from the one table the key handler
+     dispatches from (step 2);
+   - *the fuzzed edits, hostile files and the end-to-end flow find nothing left unfixed*: about
+     250,000 fuzzed edits and 40,800 mutated files clean after the fixes (steps 4–5); the flow clean
+     on its first full run, its export posed alike by the C# runtime (step 6). The one exception is
+     named: the Unity Editor bake not run.
+2. **The draw-order rules aligned**: since b71de45 BoneBurst's C# reader also refuses offsets out
+   of slot order and two slots moved to one place; v2's profile now says both (`model/profile.ts`),
+   rows in `tests/hostileFindings.test.ts` (2, failing without the rules). No corpus file breaks
+   either rule.
+3. **Docs**: SPEC §4 (History `entries`/`goTo`; what edits refuse; bone order in weighted vertices),
+   §5 (the reader's limits; what opening says), §6 (the engine and broken data), §7 (keys and the
+   History; `npm start` and the split build), §9 (E7's nets), §10 (E7); the README (History, the
+   shortcuts sheet, hostile files; `daily-driver.ts`); the editor's `CLAUDE.md` (the commands, the
+   fuzz and hostile-file switches); the charter's status and E7 row; root `CLAUDE.md`.
+4. `npm run check`: 659 vitest, 19 browser tests, 1 build browser test, all pass.

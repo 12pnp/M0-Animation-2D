@@ -89,6 +89,16 @@ over the others. Sidecar changes are not undo steps.
   the group's last document, so the gesture is one undo step whatever the pointer did. It records
   nothing only when it ends on the identical document it started from.
 - Selection, the playhead and view state are not in the document and are not undone.
+- **Every step is reachable (E7)**: `History.entries` lists the steps (the done ones, then those a
+  redo brings back, and how many the undo limit let go); `goTo(n)` undoes or redoes one step at a
+  time to `n`, so whatever follows the document (a re-import's atlas) sees each step. The History
+  panel is that list.
+- **What an edit refuses (E7, the fuzz)**: a number a file cannot hold (NaN, ±Infinity:
+  `edit/finite.refuseNonFinite`); a bone that cannot hold vertices (its world matrix has no
+  inverse: inactive in the skin shown, or scaled to zero) for binding, weighting or a vertex edit,
+  saying which skin to show. Weighted vertices name bones by index, so every change to the bone
+  order (`addBone`, `reparentBone`, `deleteBone`) goes through `withBoneOrder`, which remaps them by
+  name and refuses deleting a bone a weighted attachment still uses.
 
 ## 5. Reading and writing
 
@@ -98,7 +108,15 @@ over the others. Sidecar changes are not undo steps.
   as written, every value kept; meanings through queries (`regionBounds`, `regionDegrees`). Pages
   are images next to it.
 - JSON is read by our own parser: objects keep every key's place, integer-like keys included
-  (`JSON.parse` moves those first, and Spine reads names in document order).
+  (`JSON.parse` moves those first, and Spine reads names in document order). It refuses nesting
+  deeper than 1,000 and numbers out of range (`1e400` would open as Infinity and never save).
+- **Opening says what is wrong (E7, hostile files)**: a file opens with its issues listed, or is
+  refused with a reason, never with a crash. The profile (`model/profile.ts`) holds a file to what
+  BoneBurst's C# reader requires, including geometry (uvs in pairs, triangles in threes within the
+  vertices, weights by real bones), curve lengths, draw-order offsets (in slot order, within the
+  slots, no slot twice, no two to one place) and hex colours; `engine/atlasCheck.missingRegions`
+  names attachments whose regions the atlas lacks. A page image the browser cannot decode opens
+  without that page, said.
 - **Round-trip test:** every sample skeleton the format specs' tests use, read then written,
   equals the original after normalisation: numbers compared as float32, `nonessential` fields as
   the file has them, key order per the spec.
@@ -114,6 +132,10 @@ one posing path, so the stage cannot disagree with the preview.
   regions (`engine/regions.atlasImages` over the model's atlas: one atlas reader, `io/atlas`).
 - **`Rig`** holds one posed instance: `setupPose`, `apply(animation, time)`, `updateWorld`;
   `drawList` says what to draw, in order, with clipping. `Track` plays and crossfades (E3).
+- **Broken data is posed, not thrown (E7)**: lists skip entries that are not objects, number lists
+  take numbers only (`rigJson.list`, `nums`), a malformed weighted stream or triangle list draws
+  nothing, and a draw-order key keeps a slot's first move. Valid files pose exactly as before
+  (`scripts/unity-parity.ts`).
 - **Held to spine-core 4.3.13** by `tests/engineOracle.test.ts`: every sample and the stickman,
   every skin, setup pose and each animation at six times, bone matrices and drawn vertices
   within 1e-4 relative (worst 6.6e-5). Physics is posed off there (`Physics.none`).
@@ -206,6 +228,16 @@ one-path `currentColor` outlines, for those it lacks (constraint kinds, mesh, bo
 kinds, curves). `ui/icons.ts` names them; an icon is a span masked by its file, so it takes the
 text's colour in either theme. Each set's `MANIFEST.md` names its pinned commit and every file's
 origin; `tests/icons.test.ts` guards files, manifests, styling and licences.
+
+**Keys and the History (E7)**: every keyboard shortcut is a row of `ui/shortcuts.ts` (its keys,
+group, what it does and how a key event matches); `app.ts` dispatches from it into handlers typed
+by its ids, and the menus, titles and messages show its keys. Help ▸ Keyboard Shortcuts (or `?`)
+lists it. The History panel lists the undo steps; a click goes there.
+
+**Running it (E7)**: `npm start` (`scripts/start.mjs`) builds `dist/` when stale and serves it on
+the dev server's origin (localhost:5185), starting the AI bridge when none answers. Dockview loads
+from its ES module, its styles taken from its package at build time (`vite.config.ts` ▸
+`dockviewStyles`); the PSD reader and the AI layer load on first use; no chunk is over 500 kB.
 
 **Preferences (E4 step 10)** are the person's, not the document's: theme, rulers, bones, undo
 steps, new references' opacity, kept in the browser's storage (`boneburst.preferences`,
@@ -318,10 +350,18 @@ real bridge drives the editor in a browser through `auto_rig` → `apply_motion`
 - `scripts/check.sh`: typecheck and build, the tests (zero tests is a failure), no Spine runtime
   package imported from `src/`, none shipped in `dist/`, and the clean-room tripwire.
 - `@esotericsoftware/spine-core` may be a **dev** dependency later, as a test oracle only.
+- **E7's nets, in `npm run check`**: the build's own browser test (`e2e-build/`); seeded random
+  edits on every corpus rig with the document's invariants after each step
+  (`tests/fuzzEdits.test.ts`, `FUZZ_SEED`/`FUZZ_STEPS` for longer runs); hostile files, hand-made
+  and seeded mutations, judged by what BoneBurst's C# reader refuses (`tests/hostileFiles.test.ts`,
+  `HOSTILE_*`); the owner's flow end to end (`e2e/dailyDriver.spec.ts`). By hand, with Unity's
+  .NET SDK: `scripts/unity-parity.ts` (the corpus) and `scripts/daily-driver.ts` (the flow's
+  export), both through `scripts/oracle/csharp.ts`.
 - Fixtures: `../Packages/com.module.ta-creator-boneburst/Tests/Editor/Data~/samples/`.
 
 ## 10. Plan
 
 E0 this charter · E1 model and IO, headless · E2 stage · E3 timeline and playback ·
-E4 authoring surfaces · E5 AI tools · E6 parity with the old editor and cutover
+E4 authoring surfaces · E5 AI tools · E6 parity with the old editor and cutover · E7 the daily
+driver (history, shortcuts, `npm start`, robustness)
 (`EDITOR-V2-PLAN.md` ▸ Phases).

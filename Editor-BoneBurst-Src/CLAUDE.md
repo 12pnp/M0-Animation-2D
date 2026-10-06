@@ -50,6 +50,9 @@ node mcp/bridge.mjs  # the AI bridge (MCP on stdio, the editor's AI button on :5
 npx vite-node scripts/oracle-parity.ts  # E6: the old editor as oracle: round trips compared
 npx vite-node scripts/oracle-edits.ts   # E6: the same edits through both editors' bridges, posed
 npx vite-node scripts/unity-parity.ts   # the engine against BoneBurst's C# runtime (needs Unity's .NET SDK)
+npx vite-node scripts/daily-driver.ts   # E7: e2e/dailyDriver.spec.ts's export, posed by the C# runtime
+FUZZ_STEPS=1000 FUZZ_SEED=3 npx vitest run tests/fuzzEdits.test.ts       # E7: longer edit fuzzing
+HOSTILE_STEPS=150 HOSTILE_SEED=3 npx vitest run tests/hostileFiles.test.ts  # E7: longer hostile-file runs
 ```
 
 An MCP client starts the bridge itself: in this repository the root `.mcp.json` does it for Claude

@@ -120,14 +120,22 @@ export function profileIssues(s: Skeleton, opts: { written?: boolean } = {}): Is
     for (const k of an.drawOrder ?? []) for (const o of k.offsets ?? []) if (o.slot !== undefined && !slots.has(o.slot)) bad(`${w}/drawOrder`, `"${o.slot}" is not a slot`);
     // Draw order keys move each slot once, within the order (E7-PLAN step 5).
     const order = (s.slots ?? []).map((x) => x.name);
+    // Listed in slot order, and no two to one place: the readers' walk needs both (b71de45).
     for (const [ki, k] of (an.drawOrder ?? []).entries()) {
-      const seen = new Set<string>();
+      const seen = new Set<string>(), taken = new Set<number>();
+      let last = -1;
       for (const o of k.offsets ?? []) {
         if (o.slot === undefined) continue;
         if (seen.has(o.slot)) bad(`${w}/drawOrder[${ki}]`, `"${o.slot}" is moved twice in one key`);
         seen.add(o.slot);
-        const at = order.indexOf(o.slot) + (o.offset ?? 0);
-        if (order.includes(o.slot) && (at < 0 || at >= order.length)) bad(`${w}/drawOrder[${ki}]`, `"${o.slot}" is moved past the ${order.length} slots`);
+        const from = order.indexOf(o.slot);
+        if (from < 0) continue;
+        if (from < last) bad(`${w}/drawOrder[${ki}]`, `"${o.slot}" is listed after a slot that follows it`);
+        last = Math.max(last, from);
+        const at = from + (o.offset ?? 0);
+        if (at < 0 || at >= order.length) bad(`${w}/drawOrder[${ki}]`, `"${o.slot}" is moved past the ${order.length} slots`);
+        else if (taken.has(at)) bad(`${w}/drawOrder[${ki}]`, `"${o.slot}" is moved to a place another slot takes`);
+        else taken.add(at);
       }
     }
     // Curves have four numbers a channel; colours in keys are hex (E7-PLAN step 5).

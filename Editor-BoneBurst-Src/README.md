@@ -39,7 +39,10 @@ drop a PSD to start a rig from its layers, or drop a PSD on an open rig to bring
   poses; onion skin; constraint, deform, draw-order and event keys; playback with physics.
 - **Stage**: Move, Rotate, Scale and Shear with Local, Parent and World axes; snapping to bones,
   guides, a grid or whole pixels; rulers, guides and reference images; a weight brush.
-- **Safe**: undo for every edit; a recovery copy of unsaved work kept in the browser.
+- **Safe**: undo for every edit, and a History panel that goes back to any step; a recovery copy of
+  unsaved work kept in the browser; a broken file refused with a reason, or opened saying what is
+  wrong.
+- **Keys**: every shortcut listed in Help ▸ Keyboard Shortcuts (or press `?`).
 - **Files**: Spine 4.3 JSON, read and written exactly (a file opened and saved comes back as it
   was); Export to Unity writes the atlas, pages and skeleton into a folder BoneBurst rebakes.
 
@@ -65,6 +68,7 @@ first shows the server failed, and the first keeps the editor. To run two, give 
 ```bash
 npm run check                               # types, tests, browser tests, licence guards
 npx vite-node scripts/unity-parity.ts       # v2's engine against BoneBurst's C# runtime (needs Unity's .NET SDK)
+npx vite-node scripts/daily-driver.ts       # the daily-driver test's export, posed by the C# runtime (run its e2e first)
 npx vite-node scripts/oracle-parity.ts      # the old editor as oracle: round trips (taken from its tag)
 npx vite-node scripts/oracle-edits.ts       # the old editor as oracle: the same edits through both bridges
 ```

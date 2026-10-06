@@ -45,6 +45,9 @@ describe("files BoneBurst's C# reader refuses say so when opened (H6)", () => {
     ["a curve of the wrong length", { animations: { w: { bones: { a: { rotate: [{ value: 1, curve: [0.5] }, { time: 1, value: 2 }] } } } } }, /a curve of 1 numbers; it needs 4/],
     ["a draw-order offset out of range", { animations: { w: { drawOrder: [{ offsets: [{ slot: "s", offset: 99 }] }] } } }, /moved past the 3 slots/],
     ["one slot moved twice", { animations: { w: { drawOrder: [{ offsets: [{ slot: "s", offset: 1 }, { slot: "s", offset: 2 }] }] } } }, /"s" is moved twice/],
+    // As the C# reader since b71de45 (E7 step 7).
+    ["offsets out of slot order", { animations: { w: { drawOrder: [{ offsets: [{ slot: "u", offset: -1 }, { slot: "s", offset: 1 }] }] } } }, /"s" is listed after a slot that follows it/],
+    ["two slots moved to one place", { animations: { w: { drawOrder: [{ offsets: [{ slot: "s", offset: 2 }, { slot: "t", offset: 1 }] }] } } }, /"t" is moved to a place another slot takes/],
     ["a colour that is not one", { slots: [{ name: "s", bone: "root", color: "zzzzzzzz" }] }, /color "zzzzzzzz" is not a hex colour/],
     ["a key colour that is not one", { animations: { w: { slots: { s: { rgba: [{ color: "12" }] } } } } }, /color "12" is not a hex colour/],
   ])("%s", (_, extra, why) => {

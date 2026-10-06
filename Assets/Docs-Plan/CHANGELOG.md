@@ -13,6 +13,13 @@ flowchart LR
 
 ## 2026-10-06
 
+- **BoneBurst Editor v2, E7 closed: the daily driver done** (`Editor-BoneBurst-Src/`).
+  - **The done-when, part by part**: one command to start (`npm start`); every undo step reachable (History panel); every shortcut listed (Help ▸ Keyboard Shortcuts, from one table). The fuzzed edits, hostile files and the owner's flow end to end found nothing left unfixed: fourteen findings fixed across steps 4–5. The Unity Editor bake was not run (owner's choice).
+  - **Loose end closed**: since b71de45, BoneBurst's C# reader refuses draw-order offsets out of slot order and two slots moved to one place. v2's profile now reports both (`model/profile.ts`), so such a file no longer opens quietly here and fails in Unity.
+  - **Docs**: SPEC §4–§7, §9 and §10 where E7 changed the shape; the README; the editor's `CLAUDE.md` commands; the charter's status and E7 row; root `CLAUDE.md`.
+  - Plan: [E7-PLAN.md](../../Editor-BoneBurst-Src/docs/E7-PLAN.md) ▸ Step 7.
+  - **Guard**: 2 new rows in `tests/hostileFindings.test.ts`, failing without the rules. `npm run check`: 659 vitest, 19 browser tests and 1 build browser test pass.
+
 - **BoneBurst Editor v2: ⌘S saves a project file (`.bbdata`); Spine JSON and Unity are File ▸ Export** (`Editor-BoneBurst-Src/`).
   - One file holds the rig, atlas, page images, sidecar (view, guides, notes) and reference pictures, so reopening needs nothing beside it. Open… reads it; Save Project overwrites the file it was opened from or saved to (Chrome/Edge file pickers; a download elsewhere). File ▸ Export Spine JSON… writes the `.json`, atlas and pages without marking the document saved. The old JSON Save and `sidecarToSave` are deleted.
   - Plan: [BBDATA-PLAN.md](../../Editor-BoneBurst-Src/docs/BBDATA-PLAN.md).
