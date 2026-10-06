@@ -394,3 +394,8 @@ dialog.preferences .actions { display: flex; justify-content: flex-end; gap: 8px
 .menu-check { width: 14px; text-align: center; flex: none; }
 .menu-label { flex: 1 1 auto; }
 .menu-keys { color: var(--muted); margin-left: 24px; }
+
+/* The stage's tool strip: groups of buttons floating over the foot of the canvas. */
+.stage-panel { position: relative; }
+.stage-tools { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: calc(100% - 20px); pointer-events: none; }
+.stage-tools .group { display: flex; gap: 4px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 2px 8px rgb(0 0 0 / 0.3); pointer-events: auto; }
