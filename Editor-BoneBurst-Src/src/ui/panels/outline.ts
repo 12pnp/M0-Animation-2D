@@ -33,6 +33,14 @@ export class Outline {
   private rendered = "";
   private readonly rows = new Map<string, HTMLElement>();
   private readonly list: HTMLDivElement;
+  /** What the search field holds, lower-cased: only rows whose name has it are listed. */
+  private query = "";
+  /** The selections made, for Back and Forward; `at` is where the shown one is in it. */
+  private trail: Selection[] = [];
+  private at = -1;
+  private trailOf = "";
+  private readonly back: HTMLButtonElement;
+  private readonly forward: HTMLButtonElement;
   private readonly regionPick: HTMLSelectElement;
   private readonly kindPick: HTMLSelectElement;
   private readonly buttons: Record<"bone" | "slot" | "region" | "del" | "up" | "down" | "tree" | "order" | "skins" | "skin" | "dup" | "constraints" | "constraint" | "events" | "event", HTMLButtonElement>;
@@ -70,7 +78,24 @@ export class Outline {
     this.list = document.createElement("div");
     this.list.className = "rows";
     this.list.setAttribute("role", "tree");
-    this.element.append(bar, this.list);
+    // The search row: a field with its icon inside, and Back and Forward through the selections made.
+    const search = document.createElement("div");
+    search.className = "outline-search";
+    const field = document.createElement("div");
+    field.className = "field";
+    const input = document.createElement("input");
+    input.type = "search";
+    input.placeholder = "Search";
+    input.setAttribute("aria-label", "Search the rig");
+    input.addEventListener("input", () => { this.query = input.value.trim().toLowerCase(); this.rendered = ""; this.update(); });
+    field.append(icon("search"), input);
+    const nav = document.createElement("div");
+    nav.className = "nav";
+    this.back = iconButton(button("Back", "Back to the previous selection", () => this.go(-1)), "back", false);
+    this.forward = iconButton(button("Forward", "Forward to the next selection", () => this.go(1)), "forward", false);
+    nav.append(this.back, this.forward);
+    search.append(field, nav);
+    this.element.append(bar, search, this.list);
     session.onChange(() => this.update());
     this.update();
   }
@@ -86,6 +111,27 @@ export class Outline {
       if (sel.kind === "skin" && this.session.skin === sel.name) this.session.skin = null;
       this.session.select(null);
     }
+  }
+
+  /** Select what the trail holds `step` away: Back (-1) or Forward (1). */
+  private go(step: -1 | 1): void {
+    const to = this.at + step, sel = this.trail[to];
+    if (!sel) return;
+    this.at = to;
+    this.session.select(sel);
+  }
+
+  /** Keep the trail of selections: a new one cuts off what was ahead; a new document starts it again. */
+  private follow(): void {
+    const s = this.session, id = s.history ? String(historyId(s.history)) : "";
+    if (id !== this.trailOf) { this.trailOf = id; this.trail = []; this.at = -1; }
+    const sel = s.selected;
+    if (sel && !sameSelection(sel, this.trail[this.at] ?? null)) {
+      this.trail = [...this.trail.slice(0, this.at + 1), sel].slice(-100);
+      this.at = this.trail.length - 1;
+    }
+    this.back.disabled = this.at <= 0;
+    this.forward.disabled = this.at >= this.trail.length - 1;
   }
 
   private setView(v: View): void { this.view = v; this.rendered = ""; this.update(); }
@@ -271,7 +317,8 @@ export class Outline {
 
   private update(): void {
     const s = this.session, doc = s.doc;
-    const sig = JSON.stringify([this.view, s.skin, [...this.closed], [...this.opened], s.selected?.kind === "attachment" ? s.selected.slot : null, this.view === "events" ? s.animation?.name ?? null : null]);
+    this.follow();
+    const sig = JSON.stringify([this.query, this.view, s.skin, [...this.closed], [...this.opened], s.selected?.kind === "attachment" ? s.selected.slot : null, this.view === "events" ? s.animation?.name ?? null : null]);
     // The document's own history, not only its revision: a newly opened one starts at 0 again.
     const key = doc ? `${historyId(s.history!)}|${s.history!.revision}|${sig}` : "none";
     if (key !== this.rendered) {
@@ -279,9 +326,12 @@ export class Outline {
       this.rows.clear();
       if (!doc) this.list.replaceChildren(empty("Open a skeleton to see its rig."));
       else {
-        const items = this.items(doc);
+        // A search lists the rows whose name has it, flat.
+        const all = this.items(doc);
+        const items = this.query ? all.filter((it) => it.label.toLowerCase().includes(this.query)).map((it) => ({ ...it, depth: 0 })) : all;
         this.list.replaceChildren(...items.map((it) => this.row(it)));
-        if (!items.length) this.list.append(empty(this.view === "order" ? "No slots yet." : this.view === "constraints" ? "No constraints yet: select a bone, choose a kind, + Constraint."
+        if (!items.length && this.query) this.list.append(empty(`Nothing here matches "${this.query}".`));
+        else if (!items.length) this.list.append(empty(this.view === "order" ? "No slots yet." : this.view === "constraints" ? "No constraints yet: select a bone, choose a kind, + Constraint."
           : this.view === "events" ? "No events yet: + Event adds one; then select it and press Key (K) to fire it at the playhead." : "No bones yet: + Bone adds the root."));
       }
       const regions = [...new Set(s.images.regions.map((r) => r.name))], chosen = this.regionPick.value;

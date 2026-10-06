@@ -179,7 +179,24 @@ html .dockview-theme-light {
   --dv-icon-hover-background-color: var(--hover);
   --dv-drag-over-background-color: color-mix(in srgb, var(--accent) 22%, transparent);
   --dv-edge-dock-indicator-color: var(--accent);
+  /* Panel headers (flat, no shadows): the radius of a field and of a small button. */
+  --bb-radius-input: 6px;
+  --bb-radius-button: 4px;
   font-family: var(--font-ui);
+}
+html .dockview-theme-dark {
+  --bb-header-bg: #2b2b2b;
+  --bb-field-bg: #3a3a3a;
+  --bb-field-border: #222;
+  --bb-text: #e0e0e0;
+  --bb-text-dim: #8a8a8a;
+}
+html .dockview-theme-light {
+  --bb-header-bg: #ececea;
+  --bb-field-bg: #ffffff;
+  --bb-field-border: #cfcfca;
+  --bb-text: #1d1d1b;
+  --bb-text-dim: #6b6b66;
 }
 
 /* Every panel fills what the dock gives it. */
@@ -216,7 +233,8 @@ html .dockview-theme-light {
   padding: 10px 10px 6px;
 }
 .panel .empty { color: var(--muted); padding: 0 10px; margin: 4px 0; }
-.outline { display: flex; flex-direction: column; }
+.outline { display: flex; flex-direction: column; overflow: hidden; }
+.outline-bar, .outline-search { flex: none; }
 .outline-bar {
   display: flex;
   flex-wrap: wrap;
@@ -231,7 +249,17 @@ html .dockview-theme-light {
 .outline-bar button, .outline-bar select { padding: 2px 8px; font-size: 12px; }
 .outline-bar select { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; max-width: 140px; }
 .outline-bar .sep { width: 1px; background: var(--line); margin: 0 2px; }
-.outline .rows { display: flex; flex-direction: column; padding: 4px 0 8px; }
+/* The rig panel's header row: a search field with Back and Forward beside it. */
+.outline-search { display: flex; align-items: center; gap: 8px; padding: 6px 8px; background: var(--bb-header-bg); border-bottom: 1px solid var(--bb-field-border); }
+.outline-search .field { position: relative; flex: 1; min-width: 0; height: 32px; }
+.outline-search .field .icon { position: absolute; left: 8px; top: 50%; margin-top: -8px; color: var(--bb-text-dim); pointer-events: none; }
+.outline-search input { width: 100%; height: 100%; padding: 0 8px 0 32px; background: var(--bb-field-bg); color: var(--bb-text); border: 1px solid var(--bb-field-border); border-radius: var(--bb-radius-input); font: inherit; }
+.outline-search input::placeholder { color: var(--bb-text-dim); }
+.outline-search .nav { display: flex; gap: 2px; }
+.outline-search .nav button { width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; background: var(--bb-field-bg); color: var(--bb-text-dim); border: 1px solid var(--bb-field-border); border-radius: var(--bb-radius-button); }
+.outline-search .nav button:hover:not(:disabled) { color: var(--bb-text); }
+.outline-search .nav button .icon { width: 16px; height: 16px; }
+.outline .rows { display: flex; flex-direction: column; padding: 4px 0 8px; flex: 1; min-height: 0; overflow-y: auto; }
 .outline .row {
   display: flex;
   align-items: center;
