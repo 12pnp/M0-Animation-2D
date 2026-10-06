@@ -16,6 +16,7 @@ import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix, type Posed } 
 import { constraintShapes, hitConstraint } from "./constraintShapes";
 import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
 import { boneColourOf } from "../boneLook";
+import { boneHalfWidth, jointRadius } from "./boneScale";
 import { NO_LOOK, type StageLook } from "./look";
 import { type Backdrop, Renderer } from "./renderer";
 import { ghostsFor, type OnionOptions } from "./onion";
@@ -223,11 +224,12 @@ export class Stage {
     const bone = css.getPropertyValue("--bone").trim(), selected = css.getPropertyValue("--accent").trim();
     if (this.show.bones) {
       // A bone with a colour of its own keeps it; the rest take the preference, else the theme's.
+      const unit = this.session.boneUnit(), size = this.session.boneSize;
       const own = new Map<string, string>();
       for (const b of this.session.doc?.bones ?? []) { const c = boneColourOf(b); if (c) own.set(b.name, c); }
       for (const b of this.screenBones()) {
         const on = b.name === this.session.selectedBone;
-        drawBone(g, b, on ? this.selectedBoneColour ?? selected : own.get(b.name) ?? this.boneColour ?? bone, on);
+        drawBone(g, b, on ? this.selectedBoneColour ?? selected : own.get(b.name) ?? this.boneColour ?? bone, on, boneHalfWidth(unit, size, this.camera.zoom), jointRadius(unit, size, this.camera.zoom));
       }
     }
     if (this.show.constraints) this.drawConstraints(g, p, css, selected);
@@ -890,17 +892,17 @@ export class Stage {
   }
 }
 
-function drawBone(g: CanvasRenderingContext2D, b: ScreenBone, color: string, selected: boolean): void {
+function drawBone(g: CanvasRenderingContext2D, b: ScreenBone, color: string, selected: boolean, halfWidth: number, joint: number): void {
   const dx = b.x1 - b.x0, dy = b.y1 - b.y0, len = Math.hypot(dx, dy);
   g.save();
   g.fillStyle = color;
   g.strokeStyle = color;
   g.globalAlpha = selected ? 0.95 : 0.7;
   if (len < 4) {
-    g.beginPath(); g.arc(b.x0, b.y0, 4, 0, Math.PI * 2); g.stroke();
+    g.beginPath(); g.arc(b.x0, b.y0, joint * 1.6, 0, Math.PI * 2); g.stroke();
   } else {
     // A thin kite: widest a fifth of the way along.
-    const w = Math.min(5, len * 0.12), ux = dx / len, uy = dy / len;
+    const w = Math.min(halfWidth, len * 0.18), ux = dx / len, uy = dy / len;
     const mx = b.x0 + dx * 0.2, my = b.y0 + dy * 0.2;
     g.beginPath();
     g.moveTo(b.x0, b.y0);
@@ -911,7 +913,7 @@ function drawBone(g: CanvasRenderingContext2D, b: ScreenBone, color: string, sel
     g.fill();
   }
   g.globalAlpha = 1;
-  g.beginPath(); g.arc(b.x0, b.y0, 2.5, 0, Math.PI * 2); g.fill();
+  g.beginPath(); g.arc(b.x0, b.y0, joint, 0, Math.PI * 2); g.fill();
   g.restore();
 }
 

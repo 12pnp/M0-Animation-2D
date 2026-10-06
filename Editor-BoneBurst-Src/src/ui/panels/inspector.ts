@@ -49,6 +49,8 @@ const REGION_FIELDS: ReadonlyArray<{ key: "x" | "y" | "rotation" | "scaleX" | "s
 export class Inspector {
   readonly element: HTMLDivElement;
   onStatus: (message: string) => void = () => {};
+  /** The person set the bone size (the app keeps it as a preference). */
+  onBoneSize: (size: number) => void = () => {};
   /** What the panel shows, as a key; undefined until it first draws. */
   private shown: string | undefined;
   private inputs = new Map<string, HTMLInputElement | HTMLSelectElement>();
@@ -174,6 +176,17 @@ export class Inspector {
       const off = keysOffFrame(s.doc!, s.fps);
       this.onStatus(`${s.fps} frames a second; keys keep their times${off ? `, and ${off} key${off === 1 ? " now falls" : "s now fall"} between frames` : ""}.`);
     }, "decimal"));
+    // How big every bone is drawn, on the stage and in what an AI is shown: a multiple of the default.
+    const size = document.createElement("input");
+    size.inputMode = "decimal";
+    size.classList.add("number");
+    size.value = format(s.boneSize);
+    size.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") { e.preventDefault(); size.blur(); }
+      if (e.key === "Escape") { size.value = format(s.boneSize); size.blur(); }
+    });
+    size.addEventListener("change", () => { const n = Number(size.value); if (size.value.trim() !== "" && Number.isFinite(n)) this.onBoneSize(n); size.value = format(s.boneSize); });
+    form.append(field("Bone size", size));
     form.append(readOnly("Hash", doc.header?.hash ?? "—"));
   }
 

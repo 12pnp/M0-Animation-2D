@@ -13,6 +13,8 @@ export interface PreferenceValues {
   readonly stagePanels: boolean;
   /** The colour bones are drawn in on the stage ("#rrggbb", or "auto" for the theme's); a bone with a colour of its own keeps it. */
   readonly boneColour: string;
+  /** How big bones are drawn, a multiple of the default (BONE_SIZE_RANGE). */
+  readonly boneSize: number;
   /** The highlight of the selected bone and its gizmo ("#rrggbb", or "auto" for the theme's accent). */
   readonly selectedBoneColour: string;
   readonly bones: boolean;
@@ -59,8 +61,10 @@ export interface PreferenceValues {
   readonly snapPixels: boolean;
 }
 
-export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, stagePanels: true, boneColour: "auto", selectedBoneColour: "auto", bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
+export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, stagePanels: true, boneColour: "auto", boneSize: 1, selectedBoneColour: "auto", bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
   grid: false, checker: true, axes: true, checkerColour: "auto", gridColour: "auto", gridThickness: 1, axisXColour: "#303030", axisYColour: "#303030", axisThickness: 1, tabBarColour: "#201f24", tabActiveColour: "auto", tabTextColour: "auto", tabDimTextColour: "auto", gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
+export { BONE_SIZE_RANGE } from "./stage/boneScale";
+import { BONE_SIZE_RANGE } from "./stage/boneScale";
 export const GRID_RANGE = [1, 1000] as const;
 export const THICKNESS_RANGE = [0.5, 8] as const;
 export const ONION_RANGE = [0, 10] as const;
@@ -102,6 +106,7 @@ export function readPreferences(text: string | null): PreferenceValues {
     axes: bool("axes", DEFAULTS.axes),
     stagePanels: bool("stagePanels", DEFAULTS.stagePanels),
     boneColour: colour("boneColour", DEFAULTS.boneColour),
+    boneSize: num("boneSize", BONE_SIZE_RANGE[0], BONE_SIZE_RANGE[1], DEFAULTS.boneSize),
     selectedBoneColour: colour("selectedBoneColour", DEFAULTS.selectedBoneColour),
     checkerColour: colour("checkerColour", DEFAULTS.checkerColour),
     gridColour: colour("gridColour", DEFAULTS.gridColour),
@@ -157,6 +162,7 @@ export class Preferences {
       onionAfter: Number.isFinite(merged.onionAfter) ? clamp(Math.round(merged.onionAfter), ONION_RANGE[0], ONION_RANGE[1]) : this.current.onionAfter,
       gridThickness: Number.isFinite(merged.gridThickness) ? clamp(merged.gridThickness, THICKNESS_RANGE[0], THICKNESS_RANGE[1]) : this.current.gridThickness,
       axisThickness: Number.isFinite(merged.axisThickness) ? clamp(merged.axisThickness, THICKNESS_RANGE[0], THICKNESS_RANGE[1]) : this.current.axisThickness,
+      boneSize: Number.isFinite(merged.boneSize) ? clamp(merged.boneSize, BONE_SIZE_RANGE[0], BONE_SIZE_RANGE[1]) : this.current.boneSize,
       gridSize: Number.isFinite(merged.gridSize) ? clamp(merged.gridSize, GRID_RANGE[0], GRID_RANGE[1]) : this.current.gridSize,
     }));
     if (writePreferences(next) === writePreferences(this.current)) return;

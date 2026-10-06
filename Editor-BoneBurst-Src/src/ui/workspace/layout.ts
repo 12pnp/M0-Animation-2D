@@ -56,10 +56,12 @@ export interface SavedWorkspace {
   readonly version: 1;
   readonly dockview: SerializedDockview;
   readonly deferred: Deferred;
+  /** Panels this build has that were closed when it was saved: they stay closed (Window shows them again). */
+  readonly closed?: readonly PanelId[];
 }
 
-export function saveWorkspace(dockview: SerializedDockview, deferred: Deferred): SavedWorkspace {
-  return { format: "boneburst-workspace", version: 1, dockview, deferred };
+export function saveWorkspace(dockview: SerializedDockview, deferred: Deferred, closed: readonly PanelId[] = []): SavedWorkspace {
+  return { format: "boneburst-workspace", version: 1, dockview, deferred, ...(closed.length ? { closed } : {}) };
 }
 
 /**
@@ -67,7 +69,7 @@ export function saveWorkspace(dockview: SerializedDockview, deferred: Deferred):
  * any group or split left empty), and those panels deferred. Null when the text is not a
  * workspace this build reads, or nothing built is left in it.
  */
-export function restoreWorkspace(text: string | null, built: ReadonlySet<PanelId>): { dockview: SerializedDockview; deferred: Deferred } | null {
+export function restoreWorkspace(text: string | null, built: ReadonlySet<PanelId>): { dockview: SerializedDockview; deferred: Deferred; closed: PanelId[] } | null {
   let saved: Partial<SavedWorkspace>;
   try {
     saved = text ? (JSON.parse(text) as Partial<SavedWorkspace>) : {};
@@ -125,6 +127,7 @@ export function restoreWorkspace(text: string | null, built: ReadonlySet<PanelId
         ...(popout.length ? { popoutGroups: popout } : {}),
       } as SerializedDockview,
       deferred,
+      closed: (saved.closed ?? []).filter((id): id is PanelId => isPanelId(id) && built.has(id)),
     };
   } catch {
     return null;

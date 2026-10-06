@@ -79,3 +79,17 @@ describe("restoring a saved workspace", () => {
     expect(restoreWorkspace(text, BUILT)).toBeNull();
   });
 });
+
+describe("closed panels", () => {
+  const text = (closed: readonly PanelId[]) => JSON.stringify(saveWorkspace({
+    grid: { root: { type: "branch", data: [leaf("g1", ["rigTree"]), leaf("g2", ["stage"])] }, width: 1, height: 1, orientation: "HORIZONTAL" as never },
+    panels: Object.fromEntries(["rigTree", "stage"].map(panel)),
+  } as never, {}, closed));
+  it("come back as the panels that were closed when it was saved, those this build has", () => {
+    expect(restoreWorkspace(text(["timeline", "properties"]), BUILT)!.closed).toEqual(["timeline", "properties"]);
+    expect(restoreWorkspace(text(["timeline", "ai"]), BUILT)!.closed).toEqual(["timeline"]);
+  });
+  it("are none for a workspace saved before they were kept", () => {
+    expect(restoreWorkspace(text([]), BUILT)!.closed).toEqual([]);
+  });
+});

@@ -9,6 +9,10 @@ import { PANEL_ICONS, PANEL_TITLES, type PanelId } from "./panelIds";
 /** Where the browser keeps the workspace (view-only state of the app, not of a document). */
 export const WORKSPACE_KEY = "boneburst.workspace";
 
+/** Each mode keeps its own layout: the setup pose's (the original key) and the animation's. */
+export type WorkspaceMode = "pose" | "animate";
+const animateKey = `${WORKSPACE_KEY}.animate`;
+
 /** A built panel: its element, and what it does when the dock lays it out. */
 export interface PanelContent {
   readonly element: HTMLElement;
@@ -33,6 +37,9 @@ export class Workspace {
   /** Panels a saved layout had and this build does not: applied when they arrive. */
   private deferred: Deferred = {};
   private saveTimer = 0;
+  private mode: WorkspaceMode = "pose";
+  /** Panels the saved layout had closed: they are not brought back with the panels a build adds. */
+  private closed = new Set<PanelId>();
 
   constructor(
     host: HTMLElement,
@@ -114,31 +121,63 @@ export class Workspace {
   /** The saved layout, or the default; then any built panel it lacks, where it belongs. */
   private restore(): void {
     let text: string | null = null;
-    try { text = localStorage.getItem(WORKSPACE_KEY); } catch { /* storage blocked: the default */ }
+    try { text = localStorage.getItem(this.storageKey()); } catch { /* storage blocked: the default */ }
     const saved = restoreWorkspace(text, new Set(this.built));
     if (saved) {
       try {
         this.api.fromJSON(saved.dockview);
         this.deferred = saved.deferred;
+        this.closed = new Set(saved.closed);
       } catch {
         this.api.clear();
       }
     }
     if (!this.api.panels.length) { this.defaultLayout(); return; }
     for (const id of this.built) {
-      if (this.isOpen(id)) continue;
+      if (this.isOpen(id) || this.closed.has(id)) continue;
       this.add(id, arrivalPlacement(id, this.deferred, this.present()));
       this.sizeAlone(id);
     }
   }
 
+  private storageKey(): string { return this.mode === "pose" ? WORKSPACE_KEY : animateKey; }
+
+  private saveNow(): void {
+    try {
+      localStorage.setItem(this.storageKey(), JSON.stringify(saveWorkspace(this.api.toJSON(), this.deferred, this.built.filter((id) => !this.isOpen(id)))));
+    } catch { /* storage full or blocked: the layout is not kept */ }
+  }
+
   private scheduleSave(): void {
     clearTimeout(this.saveTimer);
-    this.saveTimer = window.setTimeout(() => {
-      try {
-        localStorage.setItem(WORKSPACE_KEY, JSON.stringify(saveWorkspace(this.api.toJSON(), this.deferred)));
-      } catch { /* storage full or blocked: the layout is not kept */ }
-    }, 250);
+    this.saveTimer = window.setTimeout(() => this.saveNow(), 250);
+  }
+
+  /**
+   * Switch to a mode's layout: the one it was left with, or, the first time, the layout as it is now
+   * (which it then keeps). The layout being left is saved first.
+   */
+  setMode(mode: WorkspaceMode): void {
+    if (mode === this.mode) return;
+    clearTimeout(this.saveTimer);
+    this.saveNow();
+    this.mode = mode;
+    let text: string | null = null;
+    try { text = localStorage.getItem(this.storageKey()); } catch { /* storage blocked: keep this layout */ }
+    const saved = restoreWorkspace(text, new Set(this.built));
+    if (!saved) { this.saveNow(); return; }
+    try {
+      this.api.fromJSON(saved.dockview);
+      this.deferred = saved.deferred;
+      this.closed = new Set(saved.closed);
+    } catch {
+      return;
+    }
+    for (const id of this.built) {
+      if (this.isOpen(id) || this.closed.has(id)) continue;
+      this.add(id, arrivalPlacement(id, this.deferred, this.present()));
+      this.sizeAlone(id);
+    }
   }
 }
 

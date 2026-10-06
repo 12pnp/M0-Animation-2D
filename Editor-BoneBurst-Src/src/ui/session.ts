@@ -21,7 +21,8 @@ import { baseName, pickFiles } from "./files";
 import { decodePng, type PngImage } from "@/io/png";
 import { writeAtlas } from "@/io/atlas";
 import { matchReferences, referenceFile } from "./stage/references";
-import { boneMatrix, Poser, type Posed } from "./stage/posed";
+import { boneUnitOf } from "./stage/boneScale";
+import { bounds, boneMatrix, Poser, type Posed } from "./stage/posed";
 
 /** A selection in the rig: what the rig tree, the stage and the properties panel show. */
 export type Selection =
@@ -71,6 +72,9 @@ export class Session {
   /** Preferences the session takes (E4 step 10): undo steps for the next document, new references' opacity. */
   undoSteps = 500;
   referenceOpacity = 0.5;
+  /** How big bones are drawn, a multiple of the default (a preference; Properties ▸ Skeleton sets it). */
+  boneSize = 1;
+  private unit: { history: History<Skeleton>; skin: string | null; value: number } | null = null;
   /** Reference pictures by reference path; a reference without one is missing (its file not given). */
   referenceImages = new Map<string, ImageBitmap>();
   /** The files those pictures came from, kept as given to be written into the project. */
@@ -313,6 +317,16 @@ export class Session {
     if (!doc) return null;
     if (this.poser?.doc !== doc) this.poser = { doc, value: new Poser(doc, this.images) };
     return this.poser.value;
+  }
+
+  /** The unit bones are drawn in (`boneUnitOf`), worked out once for each open document and skin from its setup pose. */
+  boneUnit(): number {
+    const h = this.history, doc = this.doc;
+    if (!h || !doc) return 1;
+    if (this.unit?.history !== h || this.unit.skin !== this.skin) {
+      this.unit = { history: h, skin: this.skin, value: boneUnitOf(bounds(new Poser(doc, this.images).pose(this.skin, null, 0))) };
+    }
+    return this.unit.value;
   }
 
   /** The document posed as shown: the setup pose, or the animation at the playhead. */
@@ -583,7 +597,7 @@ function sourceOf(f: { name: string; data: Uint8Array }): Source {
 export interface DocumentState { readonly __documentState: never }
 
 /** The session's fields that belong to the person or the page, not to a document. */
-const SHARED_FIELDS: ReadonlySet<string> = new Set(["listeners", "undoSteps", "referenceOpacity", "unkeyed", "unkeyedRev"]);
+const SHARED_FIELDS: ReadonlySet<string> = new Set(["listeners", "undoSteps", "referenceOpacity", "boneSize", "unkeyed", "unkeyedRev"]);
 
 /** An atlas with what goes with it: its regions in numbers, page images, exact pixels, the files Save writes. */
 interface AtlasState {

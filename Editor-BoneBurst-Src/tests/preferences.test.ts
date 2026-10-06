@@ -14,7 +14,7 @@ function store(initial: string | null = null, blocked = false): Store & { saved:
 describe("preferences", () => {
   it("start from the defaults, and read back what was written", () => {
     expect(readPreferences(null)).toEqual(DEFAULTS);
-    const p = { theme: "dark" as const, rulers: false, stagePanels: false, boneColour: "#334455", selectedBoneColour: "#ff00aa", bones: false, constraints: false, undoSteps: 1200, referenceOpacity: 0.3, ai: true, autosave: false, autosaveSeconds: 90, onion: true, onionBefore: 3, onionAfter: 0, onionKeyedOnly: true, onionColour: false, grid: true, checker: false, axes: false, checkerColour: "#112233", gridColour: "#445566", gridThickness: 2.5, axisXColour: "#aa0000", axisYColour: "#00aa00", axisThickness: 3, tabBarColour: "#101820", tabActiveColour: "auto", tabTextColour: "#ddeeff", tabDimTextColour: "#778899", gridSize: 12.5, snap: false, snapGrid: false, snapGuides: false, snapBones: false, snapPixels: true };
+    const p = { theme: "dark" as const, rulers: false, stagePanels: false, boneColour: "#334455", boneSize: 2.5, selectedBoneColour: "#ff00aa", bones: false, constraints: false, undoSteps: 1200, referenceOpacity: 0.3, ai: true, autosave: false, autosaveSeconds: 90, onion: true, onionBefore: 3, onionAfter: 0, onionKeyedOnly: true, onionColour: false, grid: true, checker: false, axes: false, checkerColour: "#112233", gridColour: "#445566", gridThickness: 2.5, axisXColour: "#aa0000", axisYColour: "#00aa00", axisThickness: 3, tabBarColour: "#101820", tabActiveColour: "auto", tabTextColour: "#ddeeff", tabDimTextColour: "#778899", gridSize: 12.5, snap: false, snapGrid: false, snapGuides: false, snapBones: false, snapPixels: true };
     expect(readPreferences(writePreferences(p))).toEqual(p);
   });
   it.each([
@@ -59,5 +59,17 @@ describe("stage background preferences", () => {
     const prefs = new Preferences(null);
     prefs.set({ gridThickness: 99, axisThickness: 0.1 });
     expect(prefs.values).toMatchObject({ gridThickness: 8, axisThickness: 0.5 });
+  });
+});
+
+describe("bone size", () => {
+  it("reads in range, and is brought into range", () => {
+    expect(readPreferences(JSON.stringify({ version: 1, boneSize: 3 })).boneSize).toBe(3);
+    expect(readPreferences(JSON.stringify({ version: 1, boneSize: 50 })).boneSize).toBe(DEFAULTS.boneSize);
+    const prefs = new Preferences(null);
+    prefs.set({ boneSize: 99 });
+    expect(prefs.values.boneSize).toBe(10);
+    prefs.set({ boneSize: 0 });
+    expect(prefs.values.boneSize).toBe(0.2);
   });
 });

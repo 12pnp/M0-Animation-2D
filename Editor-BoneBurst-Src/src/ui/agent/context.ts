@@ -3,6 +3,7 @@ import { type AtlasImages, regionAlpha } from "@/engine/regions";
 import type { Skeleton } from "@/model/skeleton";
 import type { Session } from "../session";
 import { ExportRefused, exportToUnity } from "../unityExport";
+import { boneHalfWidth, jointRadius } from "../stage/boneScale";
 import { type Camera, fit, type Size, toScreen } from "../stage/camera";
 import { drawnVertices } from "@/engine/draw";
 import { boneMatrix, boneTip, bounds, constraintNow, type Posed, Poser } from "../stage/posed";
@@ -135,18 +136,20 @@ function render(session: Session, p: Posed, req: RenderRequest): RenderResult {
     bones.push({ name: b.name, joint, tip, ...(inside(joint) || inside(tip) ? {} : { outside: true as const }) });
   }
   if (req.bones) {
-    g.lineWidth = 2;
+    // Bones in the same proportion to the picture as on the stage: the size the person set.
+    const unit = session.boneUnit(), size = session.boneSize, bodyWidth = Math.max(1.5, 2 * boneHalfWidth(unit, size, cam.zoom) * 0.5), joint = jointRadius(unit, size, cam.zoom);
+    g.lineWidth = bodyWidth;
     g.font = "11px Inter, system-ui, sans-serif";
     g.textBaseline = "middle";
     for (const b of bones) {
       const colour = /far|right/i.test(b.name) ? "#2f6fff" : "#d0249f";
       g.strokeStyle = g.fillStyle = colour;
       g.beginPath(); g.moveTo(b.joint[0], b.joint[1]); g.lineTo(b.tip[0], b.tip[1]); g.stroke();
-      g.beginPath(); g.arc(b.joint[0], b.joint[1], 3, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.arc(b.joint[0], b.joint[1], joint, 0, Math.PI * 2); g.fill();
       g.lineWidth = 3; g.strokeStyle = "rgba(255,255,255,0.85)";
       const lx = (b.joint[0] + b.tip[0]) / 2 + 4, ly = (b.joint[1] + b.tip[1]) / 2;
       g.strokeText(b.name, lx, ly); g.fillText(b.name, lx, ly);
-      g.lineWidth = 2;
+      g.lineWidth = bodyWidth;
     }
   }
   for (const d of req.paths) {

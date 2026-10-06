@@ -1,5 +1,5 @@
 import { pickColour } from "./colourPopup";
-import { AUTOSAVE_RANGE, DEFAULTS, GRID_RANGE, ONION_RANGE, type Preferences, type PreferenceValues, THICKNESS_RANGE, type Theme, UNDO_RANGE } from "./preferences";
+import { AUTOSAVE_RANGE, BONE_SIZE_RANGE, DEFAULTS, GRID_RANGE, ONION_RANGE, type Preferences, type PreferenceValues, THICKNESS_RANGE, type Theme, UNDO_RANGE } from "./preferences";
 
 /**
  * The Preferences dialog (E4-PLAN step 10): a native `<dialog>`; each change applies at once.
@@ -47,6 +47,7 @@ export class PreferencesDialog {
         check("Show rulers on the stage", p.rulers, (on) => this.prefs.set({ rulers: on })),
         check("Show the tool panels over the stage (View ▸ Stage Panels)", p.stagePanels, (on) => this.prefs.set({ stagePanels: on })),
         check("Show bones on the stage", p.bones, (on) => this.prefs.set({ bones: on })),
+        number(`Bone size (× the default, ${BONE_SIZE_RANGE[0]}–${BONE_SIZE_RANGE[1]})`, p.boneSize, 0.1, (n) => this.prefs.set({ boneSize: n })),
         colourPicker("Default bone colour", p.boneColour, (c) => this.prefs.set({ boneColour: c }), true, themeColour("--bone")),
         colourPicker("Selected bone colour", p.selectedBoneColour, (c) => this.prefs.set({ selectedBoneColour: c }), true, themeColour("--accent")),
         note("A bone can have a colour and an icon of its own: select it and see Properties."),
@@ -167,7 +168,7 @@ export class PreferencesDialog {
 const KEYS: Readonly<Record<string, readonly (keyof PreferenceValues)[]>> = {
   general: ["theme", "undoSteps", "referenceOpacity"],
   files: ["autosave", "autosaveSeconds"],
-  display: ["rulers", "stagePanels", "bones", "boneColour", "selectedBoneColour", "constraints"],
+  display: ["rulers", "stagePanels", "bones", "boneColour", "boneSize", "selectedBoneColour", "constraints"],
   background: ["checker", "checkerColour", "gridColour", "gridThickness", "axes", "axisXColour", "axisYColour", "axisThickness"],
   tabs: ["tabBarColour", "tabActiveColour", "tabTextColour", "tabDimTextColour"],
   grid: ["gridSize"],

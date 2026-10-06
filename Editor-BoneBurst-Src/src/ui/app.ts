@@ -24,7 +24,7 @@ import { stageMenu } from "./stageMenu";
 import { TransformStrip } from "./stage/transformStrip";
 import { lookOf } from "./stage/look";
 import { DIVIDER, MenuBar } from "./menubar";
-import { icon, iconButton } from "./icons";
+import { icon, iconButton, setIcon } from "./icons";
 import type { View } from "@/edit/sidecar";
 import { download, saveProject } from "./project";
 import { ExportRefused, exportFiles, exportToUnity } from "./unityExport";
@@ -158,7 +158,18 @@ export function mountApp(root: HTMLElement): void {
   const transform = new TransformStrip(session, new Map(TOOLS.map((t, i) => [t.tool, toolBtns[i]!] as const)), { autoKey: () => stage.autoKey, status: (m) => say(m) });
   // What is selected, as a path above the panels: bone, then slot, then attachment.
   crumb = el("div", "stage-crumb");
-  stageTools.append(crumb, transform.element, group(...spaceBtns), group(...showBtns, autoKeyBtn));
+  // Pose / Animate: one button for the mode. Pose edits the setup pose (no animation shown); Animate
+  // shows the last animation used, or the first, and what is done there is keyed.
+  let lastAnimation: string | null = null;
+  const modeBtn = iconButton(button("Pose", "", () => {
+    if (session.animation) { session.showAnimation(null); return; }
+    const names = (session.doc?.animations ?? []).map((a) => a.name);
+    const pick = lastAnimation !== null && names.includes(lastAnimation) ? lastAnimation : names[0];
+    if (pick === undefined) { say("No animations yet: New… in the Timeline adds one."); return; }
+    session.showAnimation(pick);
+  }), "bone");
+  modeBtn.classList.add("mode");
+  stageTools.append(crumb, group(modeBtn), transform.element, group(...spaceBtns), group(...showBtns, autoKeyBtn));
   // Fit stays in the panel's top right corner, whatever its size.
   const fitCorner = el("div", "stage-fit");
   fitCorner.append(fitBtn);
@@ -300,6 +311,7 @@ export function mountApp(root: HTMLElement): void {
     stage.grid = p.grid ? p.gridSize : null;
     stage.look = lookOf(p);
     stage.boneColour = p.boneColour === "auto" ? null : p.boneColour;
+    if (session.boneSize !== p.boneSize) { session.boneSize = p.boneSize; session.changed(); }
     stageTools.hidden = !p.stagePanels;
     stage.selectedBoneColour = p.selectedBoneColour === "auto" ? null : p.selectedBoneColour;
     // The panel tabs' colours: "auto" leaves the theme's.
@@ -334,6 +346,7 @@ export function mountApp(root: HTMLElement): void {
   timeline.onStatus = say;
   stage.onPointer = (t) => { pointer.textContent = t; };
   inspector.onStatus = say;
+  inspector.onBoneSize = (n) => prefs.set({ boneSize: n });
   outline.onStatus = say;
   references.onStatus = say;
   references.centre = () => [stage.camera.x, stage.camera.y];
@@ -455,6 +468,15 @@ export function mountApp(root: HTMLElement): void {
     issuesBtn.textContent = `${notes.length} note${notes.length === 1 ? "" : "s"}`;
     issuesList.replaceChildren(...notes.map((n) => Object.assign(document.createElement("li"), { textContent: n })));
     hint.hidden = !!doc;
+    // The mode button says what is shown now, and what a click switches to.
+    const animating = !!session.animation;
+    if (session.animation) lastAnimation = session.animation.name;
+    modeBtn.querySelector(".label")!.textContent = animating ? "Animate" : "Pose";
+    setIcon(modeBtn, animating ? "key" : "bone");
+    modeBtn.title = animating ? `Animate: editing ${session.animation!.name}. Click for the setup pose (Pose)` : "Pose: editing the setup pose. Click to animate";
+    modeBtn.disabled = !doc;
+    workspace.setMode(animating ? "animate" : "pose");
+    modeBtn.setAttribute("aria-pressed", String(animating));
     // The path of what is selected.
     const sel = session.selected, parts: string[] = [];
     if (doc && sel) {
