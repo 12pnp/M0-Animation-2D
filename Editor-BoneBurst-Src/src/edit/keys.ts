@@ -119,6 +119,35 @@ export function setCurve(animation: string, refs: readonly KeyRef[], curve: "lin
   });
 }
 
+/** A straight interval as a cubic: handles a third and two thirds along, on the line. */
+const LINEAR: Shape = [1 / 3, 1 / 3, 2 / 3, 2 / 3];
+
+/**
+ * The curve of the key at `ref`, channel by channel (E5 step 4): `stepped`, or per channel a
+ * shape (null: straight). All straight is no curve; a key with no next key has no interval to
+ * shape and is left without one.
+ */
+export function setKeyCurve(animation: string, ref: KeyRef, curve: "stepped" | readonly (Shape | null)[]): Edit<Skeleton> {
+  return onAnimation(animation, (a) => withList(a, ref.path, (keys) => {
+    const i = keys.findIndex((k) => sameTime(keyTime(k), ref.time));
+    if (i < 0) throw new EditRefused(`There is no key at ${ref.time}s on ${pathId(ref.path)}.`);
+    const k = keys[i]!, after = keys[i + 1], { curve: _, ...rest } = k;
+    let next: Key;
+    if (!after || (curve !== "stepped" && curve.every((c) => c === null))) next = rest as Key;
+    else if (curve === "stepped") next = { ...rest, curve: "stepped" } as Key;
+    else {
+      const seg = segment(ref.path, k, after), n = channelCount(ref.path);
+      const out: number[] = [];
+      for (let c = 0; c < n; c++) {
+        const one: Segment = { t0: seg.t0, t1: seg.t1, v0: [seg.v0[c]!], v1: [seg.v1[c]!] };
+        out.push(...shapeCurve(curve[c] ?? LINEAR, one));
+      }
+      next = { ...rest, curve: out } as Key;
+    }
+    return { keys: keys.map((x, j) => (j === i ? next : x)), origin: keys.map((_, j) => j), settled: true };
+  }));
+}
+
 /* ── structure ─────────────────────────────────────────────────────────── */
 
 interface Rebuilt {

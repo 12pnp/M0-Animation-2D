@@ -4,7 +4,7 @@ import type { Skeleton } from "@/model/skeleton";
 import type { Session } from "../session";
 import { type Camera, fit, type Size, toScreen } from "../stage/camera";
 import { drawnVertices } from "@/engine/draw";
-import { boneMatrix, boneTip, bounds, type Posed, Poser } from "../stage/posed";
+import { boneMatrix, boneTip, bounds, constraintNow, type Posed, Poser } from "../stage/posed";
 import { type Backdrop, Renderer } from "../stage/renderer";
 import { referenceQuad } from "../stage/references";
 
@@ -40,7 +40,9 @@ function base64(c: HTMLCanvasElement): string {
 
 export function sessionContext(session: Session): AgentContext {
   const poser = poserCache();
-  const pose = (skin: string | null, animation: string | null, time: number) => poser(session.doc!, session.images).pose(skin, animation, time);
+  // Posed at the float32 time, as the playhead is: keys are stored as float32, and a frame's
+  // float64 time can fall just before the key written at it.
+  const pose = (skin: string | null, animation: string | null, time: number) => poser(session.doc!, session.images).pose(skin, animation, Math.fround(time));
   const refs = (): AgentReference[] => session.sidecar.references.map((r) => {
     const b = session.referenceImages.get(r.path);
     return { path: r.path, x: r.x, y: r.y, scale: r.scale, opacity: r.opacity, width: b?.width ?? null, height: b?.height ?? null };
@@ -56,6 +58,10 @@ export function sessionContext(session: Session): AgentContext {
       session.seek(v.frame);
     },
     pose: (skin, animation, time) => posedBones(pose(skin, animation, time)),
+    constraintNow: (skin, animation, time, type, name) => {
+      const p = pose(skin, animation, time), i = p.rig.data.constraints.findIndex((k) => k.kind === type && k.name === name);
+      return i < 0 ? null : constraintNow(p, i);
+    },
     references: refs,
     referencePicture: async (path) => {
       const b = session.referenceImages.get(path);

@@ -64,10 +64,12 @@ describe("the read tools (E5 step 3)", () => {
     expect(anim.bones.hips[1]).toMatchObject({ frame: 2, y: boneNumber(hb, "y") - 10 });
     expect(anim.cycle).toBe(anim.seam.length === 0);
     // Eases: the presets read back by name; stepped as hold.
-    let doc = setCurve("run", [{ path: { section: "bones", owner: "hips", timeline: "rotate" }, time: 0 }], PRESETS.easeIn)(doc0);
-    doc = setCurve("run", [{ path: { section: "bones", owner: "hips", timeline: "translate" }, time: 0 }], "stepped")(doc);
+    // The hips' y changes from frame 0 to 2 (x stays put, a flat channel shows no ease); its rotate holds.
+    let doc = setCurve("run", [{ path: { section: "bones", owner: "hips", timeline: "translate" }, time: 0 }], PRESETS.easeIn)(doc0);
+    doc = setCurve("run", [{ path: { section: "bones", owner: "hips", timeline: "rotate" }, time: 0 }], "stepped")(doc);
     const eased = await call("get_animation", { animation: "run" }, ctxOf(doc));
-    expect(eased.bones.hips[0]).toMatchObject({ ease: "linear", eases: { rotation: "in", x: "hold", y: "hold" } });
+    expect(eased.bones.hips[0]).toMatchObject({ ease: "linear", eases: { y: "in", rotation: "hold" } });
+    expect(eased.bones.hips[0].eases.x).toBeUndefined();
     // A walk keyed differently at its two ends has a seam there; keyed alike, it is a cycle.
     const local = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, shearX: 0, shearY: 0 };
     let w = addAnimation("w")(doc0);

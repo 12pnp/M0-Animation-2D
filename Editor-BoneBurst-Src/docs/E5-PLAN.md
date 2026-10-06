@@ -4,6 +4,7 @@
 with its version note, the gate in `npm run check`. Step 2 (the bridge) done: an MCP client's call
 reaches the open rig (`undo`, `redo` built; every argument checked). Step 3 (the read tools) done:
 `get_rig`, `get_animation`, `get_pose`, `get_reference`, `show`, `render_frame`. Step 4 (the key
+tools) done: all eleven, and a walk keyed on the stickman by an AI over MCP. Step 5 (the building
 tools) next.
 
 E5 puts the AI tools onto v2's model: an MCP client (Claude Code, Claude Desktop, any agent) and
@@ -291,3 +292,96 @@ flowchart LR
    on every bone, the stickman's root at the origin included, so the figure took a third of the
    picture; they are now framed on the drawn pictures and the bones on them (scale 1.29 → 2.26
    pixels per unit), a bone outside the picture marked `outside`.
+
+## Step 4 — the key tools
+
+An AI animates: it makes animations, keys bones (absolute local values, eases per key and per
+property), deletes keys, keys constraints, draw order, events and inherit modes, and pins a pose.
+`new_animation`, `set_keys`, `delete_keys`, `key_ik`, `key_transform`, `key_constraint`,
+`key_draw_order`, `key_properties`, `define_event`, `key_event`, `set_inherit`. It ends with an
+AI keying a walk on the stickman over MCP.
+
+```mermaid
+flowchart LR
+    SK["set_keys {keys[]}"] -->|"merge by bone and frame;<br/>left-out values from the pose<br/>before the call"| KB["edit/boneKeys keyBone"]
+    KB --> CU["edit/keys setKeyCurve<br/>(a shape per channel)"]
+    KI["key_ik · key_transform ·<br/>key_constraint"] -->|"values in force from<br/>ctx.constraintNow"| KC["edit/constraintKeys"]
+    KD["key_draw_order"] -->|"edit/drawOrder offsetsFor"| SETK["edit/keys setKey"]
+    EV["define_event · key_event"] --> EE["edit/events (new)"]
+    KB & CU & KC & SETK & EE --> H["one History step 'AI: …'"]
+```
+
+### Decisions
+
+- **One call, one step**: each tool's edits compose into one edit applied as one History step
+  labelled "AI: <tool> …"; an edit's refusal (`EditRefused`) becomes the tool's refusal.
+- **`set_keys`**: keys are merged by bone and frame; what a key leaves out is the value the
+  animation has there before the call (the pose's local values, before constraints); `rotation`
+  keys rotate, `x`/`y` translate, `scaleX`/`scaleY` scale (`keyBone`, split timelines kept).
+  Curves are set after every value is in place: each keyed channel gets `eases[property]`, else
+  `ease`, else linear (`hold` steps the whole key); the names map to the editor's presets (`in`,
+  `out`, `inout`), arrays are normalised cubics. A last key's ease has nothing to shape and is
+  kept off. Returns the keys made and the animation's new length.
+- **`new_animation`**: **meaning change** (version note): a Spine animation lasts until its last
+  key, so `frames` is reported back as the length to key, not stored; an empty animation is made.
+- **`delete_keys`**: every bone timeline's key at that frame for that bone.
+- **`key_ik`, `key_transform`, `key_constraint`**: the key holds every value of its timeline; what
+  the call leaves out is the value in force there (`ctx.constraintNow`); `smooth` is the in-out
+  preset; `delete` removes the key. `key_constraint` maps channels as the contract says (a path's
+  `mix` keys its three mixes together).
+- **`key_draw_order`** (new pure helper over `edit/drawOrder`'s `orderOf` and `offsetsFor`): the
+  listed slots, or a bone's slots directly on it, take the places they hold at that frame in the
+  order given, front first; `setup: true` keys the setup order. **Meaning** (version note): names
+  are slots or bones, not layers.
+- **`define_event`, `key_event`** (new `edit/events.ts`): events with their values and sound;
+  rename follows into keys, delete takes its keys; several events may fire on one frame, kept
+  in the order keyed.
+- **`set_inherit`**: the bone's own (`updateBone`) or keyed (the `inherit` timeline).
+- **`key_properties`**: keys the pose at that frame without changing it: `changed` (properties
+  not at the setup pose), `all`, or the groups named. **Fixed in the version note:** its `layers`
+  name bones (step 1 said slots).
+- **`get_animation` grows** the lists these tools point at: `ik`, `transforms`, `constraints`
+  (physics, slider, path), `drawOrder` (front first), `events`.
+
+### Steps
+
+1. `edit/events.ts`, the draw order key helper, `setKeyCurve`; table tests.
+2. `agent/keys.ts`, the context's `constraintNow`, `get_animation`'s new lists; tests through the
+   test context on the stickman and Stretchyman (transform, path) and a physics constraint.
+3. On screen: an AI (this session, through the stand-in MCP client) keys a walk on the stickman
+   with `set_keys`, checks feet with `get_pose`, shows it; played; undone in one step.
+
+### Step 4 results
+
+1. `edit/events.ts` (define, rename following keys, delete with keys, key with several on one
+   frame in order, delete keys), `edit/drawOrder.ts` (`drawOrderAt`, `reorderFront`),
+   `edit/keys.ts` (`setKeyCurve`: a shape per channel, stepped, straight is no curve, a last key
+   none). `tests/keyEdits.test.ts`, 3 tests (the runtime plays x easing in while y stays straight;
+   draw orders; events written and read back as Spine reads them). Two planted bugs fail them (one
+   shape for every channel; the front order not reversed).
+2. `agent/keys.ts` (eleven tools), `agent/apply.ts`, the context's `constraintNow`;
+   `get_animation` lists `ik`, `transforms`, `constraints`, `drawOrder`, `events`.
+   `tests/agentKeys.test.ts`, 6 tests on the stickman, Stretchyman and Celestial Circus. Version
+   note: `new_animation` and `key_draw_order` (meaning) added; `key_properties`' line corrected
+   (its `layers` name bones). **Found while testing:**
+   - A flat channel's straight handles read back as a cubic. A flat channel shows no ease, so
+     `get_animation` now says "linear" for it.
+   - An ease given to a key that is still the last on its timeline has no interval, and Spine's
+     format cannot store it. It was dropped silently; `set_keys`, `key_ik`, `key_transform` and
+     `key_constraint` now say so in their answer (key the next frame first, or ease again).
+   - **A real bug:** poses for the tools were taken at a frame's float64 time, a hair before the
+     float32 time its key is stored at, so the value in force at a key's own frame read as the
+     one before it (an IK mix of 0.5 at frame 4 read 1). Both contexts now pose at the float32
+     time, as the session's playhead does.
+
+   Three planted faults fail the tests: no float32 time, left-out values taken from the setup
+   pose, per-property eases ignored. The second **passed at first**, because no test keyed one
+   property of a pair between keys; a test where `x` alone is keyed between keys (its `y` the
+   animation's −413, not the setup's −400) was **added** and fails it.
+3. On screen, this session as the AI through the stand-in MCP client: `get_rig` for the setup
+   (the ground at the feet's y, −539.23); `new_animation walk 24`; one `set_keys` of 19 keys (the
+   feet planted half the cycle and lifted 15 with in-out eases, half a cycle apart; the hips
+   bobbing; the hands swinging against the feet); `get_pose` every 3 frames: the feet never below
+   the ground; `get_animation`: 24 frames, a cycle, no seam; `render_frame` at frame 6 with both
+   feet's paths (checked by eye); `show walk 6`. Played in the editor (the timeline's keys, the
+   stickman walking); one Undo, "AI: set_keys 19 keys in walk", took every key back.

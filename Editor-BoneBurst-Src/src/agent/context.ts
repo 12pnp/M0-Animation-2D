@@ -1,6 +1,6 @@
 import type { History } from "@/edit/history";
 import type { AtlasImages } from "@/engine/regions";
-import type { Skeleton } from "@/model/skeleton";
+import type { ConstraintType, Skeleton } from "@/model/skeleton";
 
 /**
  * What the AI tools get from the editor (E5-PLAN steps 2–3): data, and the few things only the
@@ -54,6 +54,8 @@ export interface AgentContext {
   show(view: AgentView): void;
   /** Every bone posed: `animation` (null: setup) at `time` seconds, `skin` shown. */
   pose(skin: string | null, animation: string | null, time: number): readonly PosedBone[];
+  /** A constraint's animatable values in force at `time` of `animation` (null: setup), named as its keys name them; null when the rig has no such constraint. */
+  constraintNow(skin: string | null, animation: string | null, time: number, type: ConstraintType, name: string): Record<string, number | boolean> | null;
   references(): readonly AgentReference[];
   /** A reference's picture as base64 PNG, or null when its file was not given. */
   referencePicture(path: string): Promise<string | null>;

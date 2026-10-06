@@ -3,6 +3,7 @@ import type { History } from "@/edit/history";
 import { NO_IMAGES, type AtlasImages } from "@/engine/regions";
 import type { Skeleton } from "@/model/skeleton";
 import { posedBones, poserCache } from "@/ui/agent/context";
+import { constraintNow } from "@/ui/stage/posed";
 
 /**
  * An agent context for tests (E5 step 3): the document's history, poses from the stage's own
@@ -19,7 +20,12 @@ export function testContext(history: History<Skeleton> | null, images: AtlasImag
     changed() { c.told++; },
     view: () => view,
     show: (v) => { view = v; c.shown.push(v); },
-    pose: (skin, animation, time) => posedBones(poser(history!.doc, images).pose(skin, animation, time)),
+    // At the float32 time, as the editor's context poses (keys are stored as float32).
+    pose: (skin, animation, time) => posedBones(poser(history!.doc, images).pose(skin, animation, Math.fround(time))),
+    constraintNow: (skin, animation, time, type, name) => {
+      const p = poser(history!.doc, images).pose(skin, animation, Math.fround(time)), i = p.rig.data.constraints.findIndex((k) => k.kind === type && k.name === name);
+      return i < 0 ? null : constraintNow(p, i);
+    },
     references: () => references,
     referencePicture: async (path) => (references.some((r) => r.path === path && r.width !== null) ? `png-of-${path}` : null),
     render: async (req) => {

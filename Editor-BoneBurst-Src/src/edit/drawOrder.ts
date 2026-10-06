@@ -78,3 +78,21 @@ export function remapDrawOrder(a: Animation, from: readonly string[], to: readon
   }
   return out;
 }
+
+/** The slots' order (back to front) at `time` in `a`: the last draw order key at or before it, else the setup order. */
+export function drawOrderAt(a: Animation, slots: readonly string[], time: number): string[] {
+  const k = [...(a.drawOrder ?? [])].reverse().find((x) => (x.time ?? 0) <= time + 1e-5);
+  return orderOf(slots, k?.offsets);
+}
+
+/**
+ * `order` with the slots in `front` (front first) moved into the places they hold in it, in that
+ * order; every other slot keeps its place (E5 step 4: key_draw_order).
+ */
+export function reorderFront(order: readonly string[], front: readonly string[]): string[] {
+  const places = order.map((s, i) => (front.includes(s) ? i : -1)).filter((i) => i >= 0);
+  const out = [...order];
+  // Places ascend back to front, so the front-most of `front` takes the last place.
+  [...front].reverse().forEach((s, j) => { out[places[j]!] = s; });
+  return out;
+}

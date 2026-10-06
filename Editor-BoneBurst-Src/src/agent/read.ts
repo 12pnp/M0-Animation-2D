@@ -1,4 +1,5 @@
 import { PRESETS, type Shape } from "@/edit/curves";
+import { orderOf } from "@/edit/drawOrder";
 import { boneNumber } from "@/model/defaults";
 import { type Animation, type Attachment, attachmentType, type Key, type Skeleton } from "@/model/skeleton";
 import { animationDuration, DEFAULT_FPS, frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
@@ -131,7 +132,8 @@ export function easeOf(k: Key, next: Key | undefined, c: number, stored: (key: K
   if (b.length < 4) return "linear";
   const t0 = keyTime(k), t1 = keyTime(next), v0 = stored(k), v1 = stored(next);
   const dt = t1 - t0, dv = v1 - v0;
-  if (!(dt > 0)) return "linear";
+  // A flat channel shows no ease, whatever its handles say.
+  if (!(dt > 0) || dv === 0) return "linear";
   const shape = [(b[0]! - t0) / dt, dv ? (b[1]! - v0) / dv : 0, (b[2]! - t0) / dt, dv ? (b[3]! - v0) / dv : 1].map((n) => Math.round(n * 1000) / 1000);
   if (Math.abs(shape[0]! - shape[1]!) < 0.005 && Math.abs(shape[2]! - shape[3]!) < 0.005) return "linear";
   const named = NAMED.find(([, p]) => p.every((v, i) => Math.abs(v - shape[i]!) < 0.01));
@@ -176,7 +178,39 @@ function getAnimation(args: Args, ctx: AgentContext) {
     }
   }
   const seam = seamOf(ctx, ctx.view().skin, a);
-  return { animation: a.name, frames: lastFrame(a, fps), fps, bones, cycle: seam.length === 0, seam };
+  return { animation: a.name, frames: lastFrame(a, fps), fps, bones, ...otherKeys(doc, a, fps), cycle: seam.length === 0, seam };
+}
+
+/** A constraint key's ease as key_ik and its kin take it: linear, stepped, smooth, or a cubic. */
+function constraintEase(k: Key, next: Key | undefined, stored: (key: Key) => number): string | number[] {
+  const e = easeOf(k, next, 0, stored);
+  return e === "hold" ? "stepped" : e === "inout" ? "smooth" : e;
+}
+
+/** The keys the other key tools make: IK, transform, physics, slider and path constraints, draw order, events. */
+function otherKeys(doc: Skeleton, a: Animation, fps: number) {
+  const frame = (k: Key) => timeFrame(keyTime(k), fps);
+  const out: Record<string, unknown[]> = {};
+  const push = (list: string, v: unknown) => (out[list] ??= []).push(v);
+  for (const { path, keys } of keyLists(a)) {
+    if (path.section === "ik") {
+      push("ik", { ik: path.owner, keys: keys.map((k, i) => ({ frame: frame(k), mix: k.mix ?? 1, bendPositive: k.bendPositive ?? true, softness: k.softness ?? 0, ease: constraintEase(k, keys[i + 1], (x) => x.mix ?? 1) })) });
+    } else if (path.section === "transform") {
+      push("transforms", { constraint: path.owner, keys: keys.map((k, i) => {
+        const x = k.mixX ?? 1;
+        return { frame: frame(k), mix: { rotate: k.mixRotate ?? 1, x, y: k.mixY ?? x, scaleX: k.mixScaleX ?? 1, scaleY: k.mixScaleY ?? 1, shearY: k.mixShearY ?? 1 }, ease: constraintEase(k, keys[i + 1], (y) => y.mixRotate ?? 1) };
+      }) });
+    } else if ((path.section === "physics" || path.section === "slider" || path.section === "path") && "timeline" in path) {
+      const value = (k: Key) => (path.timeline === "mix" && path.section === "path" ? k.mixRotate ?? 1 : k.value ?? (path.timeline === "mix" || (path.section === "slider" && path.timeline === "time") ? 1 : 0));
+      push("constraints", { type: path.section, constraint: path.owner === "" ? "(every physics constraint)" : path.owner, channel: path.timeline, keys: keys.map((k, i) => ({ frame: frame(k), ...(path.timeline === "reset" ? {} : { value: value(k), ease: constraintEase(k, keys[i + 1], value) }) })) });
+    } else if (path.section === "drawOrder") {
+      const slots = (doc.slots ?? []).map((x) => x.name);
+      out.drawOrder = keys.map((k) => (k.offsets?.length ? { frame: frame(k), front: orderOf(slots, k.offsets).reverse() } : { frame: frame(k), setup: true }));
+    } else if (path.section === "events") {
+      out.events = keys.map((k) => ({ frame: frame(k), event: k.name, ...Object.fromEntries((["int", "float", "string", "volume", "balance"] as const).filter((f) => k[f] !== undefined).map((f) => [f, k[f]])) }));
+    }
+  }
+  return out;
 }
 
 // ── get_pose ──

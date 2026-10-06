@@ -254,6 +254,17 @@ offscreen copy of the stage's renderer, framed on the drawn pictures and the bon
 meaning changes are in the version note: `show` takes one skin (view state, not an undo step) and
 `get_reference` returns v2's still references.
 
+**Keying (E5 step 4).** `agent/keys.ts`: `new_animation`, `set_keys`, `delete_keys`,
+`key_properties`, `key_ik`, `key_transform`, `key_constraint`, `key_draw_order`, `define_event`,
+`key_event`, `set_inherit`. Each call's edits are one History step, "AI: …" (`agent/apply.ts`).
+`set_keys` merges keys by bone and frame, takes what a key leaves out from the pose before the
+call, and sets each channel's curve after every value is in place (`edit/keys.ts` `setKeyCurve`,
+a shape per channel); an ease given to a key still last on its timeline cannot be stored in
+Spine's file and the answer says so. Constraint keys take the values in force from the context's
+`constraintNow`. New pure edits: `edit/events.ts`; `edit/drawOrder.ts` `drawOrderAt`,
+`reorderFront`. Poses for the tools are taken at the float32 time, as the playhead is: keys are
+stored as float32, and a frame's float64 time can fall just before the key written at it.
+
 ## 9. Verification
 
 - `scripts/check.sh`: typecheck and build, the tests (zero tests is a failure), no Spine runtime

@@ -62,7 +62,7 @@
       {
         "tool": "key_properties",
         "change": "meaning",
-        "what": "`layers` names slots."
+        "what": "`layers` names bones (the bones whose pose is keyed)."
       },
       {
         "tool": "show",
@@ -73,6 +73,16 @@
         "tool": "get_reference",
         "change": "meaning",
         "what": "A reference is a still picture placed in skeleton space and shown at every frame (the sidecar's), not a per-frame sequence of one animation; `frames` returns each reference's picture once."
+      },
+      {
+        "tool": "key_draw_order",
+        "change": "meaning",
+        "what": "`front` names slots, or bones standing for the slots directly on them, not layers."
+      },
+      {
+        "tool": "new_animation",
+        "change": "meaning",
+        "what": "A Spine animation lasts until its last key, so `frames` is not stored: it is reported back as the frame to key to give the animation that length."
       }
     ]
   },
@@ -88,7 +98,7 @@
     },
     {
       "name": "get_animation",
-      "description": "Every key of one animation, per bone: frame, local x, y, rotation, scaleX, scaleY (and shearX, shearY when keyed) and the ease of the interval that starts at the key (with `eases` for properties that follow their own). Also its length in frames, and `seam`: every bone whose pose at the last frame differs from frame 0, where a loop would hitch (`cycle` is true when there is none). Keys set by other tools (constraints, meshes, events) are not listed.",
+      "description": "Every key of one animation, per bone: frame, local x, y, rotation, scaleX, scaleY (and shearX, shearY when keyed) and the ease of the interval that starts at the key (with `eases` for properties that follow their own). Also its length in frames, and `seam`: every bone whose pose at the last frame differs from frame 0, where a loop would hitch (`cycle` is true when there is none). Constraint, draw order and event keys are listed under `ik`, `transforms`, `constraints`, `drawOrder` and `events`.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -130,7 +140,7 @@
     },
     {
       "name": "new_animation",
-      "description": "Create an empty animation. It loops over `frames` frames: frame `frames` is the same instant as frame 0, so a looping animation keys the same pose at 0 and at `frames`.",
+      "description": "Create an empty animation. A Spine animation lasts until its last key: `frames` is the length you mean to give it, reported back so you key that frame (a loop keys the same pose at 0 and at its last frame).",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -832,7 +842,7 @@
     },
     {
       "name": "key_draw_order",
-      "description": "Key the draw order at a frame of an animation, in one undoable step: from that frame on (until the next draw order key) the listed layers draw in this order, FRONT first, in the places they hold there; the others keep theirs. A bone stands for the pictures hanging directly on it. `setup: true` instead keys a return to the setup order. Spine's draw order keys; get_animation's `drawOrder` lists them.",
+      "description": "Key the draw order at a frame of an animation, in one undoable step: from that frame on (until the next draw order key) the listed slots draw in this order, FRONT first, in the places they hold there; the others keep theirs. A bone stands for the slots directly on it. `setup: true` instead keys a return to the setup order. Spine's draw order keys; get_animation's `drawOrder` lists them.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -849,7 +859,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Layer or bone names, front first."
+            "description": "Slot or bone names, front first."
           },
           "setup": {
             "type": "boolean"
@@ -1656,7 +1666,7 @@
     },
     {
       "name": "key_properties",
-      "description": "Key properties of `layers` at `frame` without changing the pose, in one undoable step (Spine's key buttons): `properties` \"changed\" (the default) keys each property whose value there is not the setup pose's; \"all\" keys rotate, x, y, scale and shear; or a list of groups from rotate, translate, scale, shear. Use it to pin a pose before editing around it.",
+      "description": "Key properties of the bones in `layers` at `frame` without changing the pose, in one undoable step (Spine's key buttons): `properties` \"changed\" (the default) keys each property whose value there is not the setup pose's; \"all\" keys rotate, x, y, scale and shear; or a list of groups from rotate, translate, scale, shear. Use it to pin a pose before editing around it.",
       "input_schema": {
         "type": "object",
         "properties": {
