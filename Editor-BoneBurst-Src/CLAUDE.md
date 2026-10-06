@@ -42,7 +42,12 @@ npm test           # vitest run
 npm run e2e        # Playwright: popout windows (once: npx playwright install chromium)
 npm run build      # tsc --noEmit && vite build
 npm run check      # all of it (e2e too), plus the licence guards
+node mcp/bridge.mjs  # the AI bridge (MCP on stdio, the editor's AI button on :5191)
 ```
+
+An MCP client starts the bridge itself, e.g. Claude Code:
+`claude mcp add boneburst-editor -- node "<this folder>/mcp/bridge.mjs"`; then press AI in the
+editor's toolbar.
 
 ## How code is written here
 

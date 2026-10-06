@@ -44,3 +44,4 @@ files.
 | `crosshair.svg` | `icons/crosshair.svg` | a point attachment |
 | `scissors.svg` | `icons/scissors.svg` | a clipping attachment |
 | `layers.svg` | `icons/layers.svg` | draw order keys |
+| `bot.svg` | `icons/bot.svg` | the AI button (E5) |

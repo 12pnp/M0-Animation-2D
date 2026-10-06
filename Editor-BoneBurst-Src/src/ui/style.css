@@ -119,6 +119,11 @@ button[aria-pressed="true"] { background: var(--accent); border-color: var(--acc
 button:has(> .icon) { display: inline-flex; align-items: center; gap: 5px; }
 button.icon-only { padding-left: 6px; padding-right: 6px; }
 .outline-bar button .icon { width: 14px; height: 14px; }
+/* The AI button's dot (E5 step 2): grey off, amber looking for the bridge, green connected. */
+.ai-button { position: relative; }
+.ai-button::after { content: ""; position: absolute; top: 3px; right: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.ai-button[data-state="looking"]::after { background: #e0a030; }
+.ai-button[data-state="connected"]::after { background: #3cb371; }
 button:focus-visible, input:focus-visible, select:focus-visible, .overlay:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;

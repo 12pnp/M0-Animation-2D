@@ -12,7 +12,7 @@ const FILES = {
   move: "lucide/move", rotate: "lucide/rotate-cw", scale: "lucide/scaling", fit: "lucide/scan",
   settings: "lucide/settings", up: "lucide/arrow-up", down: "lucide/arrow-down", delete: "lucide/trash",
   play: "lucide/play", pause: "lucide/pause", start: "lucide/skip-back", loop: "lucide/repeat",
-  addImage: "lucide/image-plus", key: "lucide/diamond", drawOrder: "lucide/layers",
+  addImage: "lucide/image-plus", key: "lucide/diamond", drawOrder: "lucide/layers", ai: "lucide/bot",
   bone: "lucide/bone", skin: "lucide/shirt", slot: "lucide/square-dashed",
   region: "lucide/image", linkedmesh: "lucide/link", path: "lucide/spline", point: "lucide/crosshair", clipping: "lucide/scissors",
   mesh: "godot/mesh", boundingbox: "godot/bounding-box",

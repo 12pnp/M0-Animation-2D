@@ -16,9 +16,11 @@ export interface PreferenceValues {
   readonly undoSteps: number;
   /** New reference images' opacity, 0..1. */
   readonly referenceOpacity: number;
+  /** Connected to the AI bridge (E5 step 2): the toolbar's AI button. */
+  readonly ai: boolean;
 }
 
-export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5 };
+export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5, ai: false };
 export const UNDO_RANGE = [50, 5000] as const;
 export const PREFERENCES_KEY = "boneburst.preferences";
 export const PREFERENCES_VERSION = 1;
@@ -42,6 +44,7 @@ export function readPreferences(text: string | null): PreferenceValues {
     constraints: bool("constraints", DEFAULTS.constraints),
     undoSteps: Math.round(num("undoSteps", UNDO_RANGE[0], UNDO_RANGE[1], DEFAULTS.undoSteps)),
     referenceOpacity: num("referenceOpacity", 0, 1, DEFAULTS.referenceOpacity),
+    ai: bool("ai", DEFAULTS.ai),
   };
 }
 

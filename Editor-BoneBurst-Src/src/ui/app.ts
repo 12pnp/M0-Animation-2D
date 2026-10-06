@@ -13,6 +13,7 @@ import { isTyping, Stage } from "./stage/stage";
 import { Timeline } from "./timeline/timeline";
 import { animationDuration, timeFrame } from "@/model/timelines";
 import { encodePng } from "@/io/png";
+import { AiBridge } from "./agent/bridge";
 import { iconButton } from "./icons";
 import { isPanelId, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
 import { type PanelContent, Workspace } from "./workspace/workspace";
@@ -69,7 +70,13 @@ export function mountApp(root: HTMLElement): void {
   panelsMenu.title = "Show a panel, or put the panels back where they started";
   const prefsBtn = iconButton(button("⚙", "Preferences: theme, rulers, bones, undo steps (⌘,)", () => prefsDialog.open()), "settings", false);
   prefsBtn.setAttribute("aria-label", "Preferences");
-  bar.append(openBtn, saveBtn, sep(), undoBtn, redoBtn, sep(), ...toolBtns, sep(), fitBtn, skinLabel, sep(), panelsMenu, prefsBtn, title, fileInput, prefsDialog.element);
+  // The AI bridge (E5 step 2): an MCP client or Ask AI works on the open rig through it.
+  const ai = new AiBridge({ get history() { return session.history; }, changed: () => session.changed() });
+  const aiBtn = iconButton(button("AI", "Connect to the AI bridge, so an MCP client (Claude Code, Claude Desktop) or Ask AI can work on the open rig", () => prefs.set({ ai: !prefs.values.ai })), "ai");
+  aiBtn.classList.add("ai-button");
+  aiBtn.dataset.state = "off";
+  ai.onState((state, detail) => { aiBtn.dataset.state = state; aiBtn.title = detail; message.textContent = detail; });
+  bar.append(openBtn, saveBtn, sep(), undoBtn, redoBtn, sep(), ...toolBtns, sep(), fitBtn, skinLabel, sep(), panelsMenu, aiBtn, prefsBtn, title, fileInput, prefsDialog.element);
 
   // The stage panel: the canvas, with the hint over it while nothing is open.
   const stagePanel = el("section", "stage-panel");
@@ -124,6 +131,8 @@ export function mountApp(root: HTMLElement): void {
     stage.redraw();
     session.undoSteps = p.undoSteps;
     session.referenceOpacity = p.referenceOpacity;
+    aiBtn.setAttribute("aria-pressed", String(p.ai));
+    if (p.ai) ai.start(); else if (ai.state !== "off") ai.stop();
   };
   applyPrefs(prefs.values);
   prefs.onChange(applyPrefs);

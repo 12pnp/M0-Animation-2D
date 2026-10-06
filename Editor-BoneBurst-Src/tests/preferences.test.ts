@@ -14,7 +14,7 @@ function store(initial: string | null = null, blocked = false): Store & { saved:
 describe("preferences", () => {
   it("start from the defaults, and read back what was written", () => {
     expect(readPreferences(null)).toEqual(DEFAULTS);
-    const p = { theme: "dark" as const, rulers: false, bones: false, constraints: false, undoSteps: 1200, referenceOpacity: 0.3 };
+    const p = { theme: "dark" as const, rulers: false, bones: false, constraints: false, undoSteps: 1200, referenceOpacity: 0.3, ai: true };
     expect(readPreferences(writePreferences(p))).toEqual(p);
   });
   it.each([

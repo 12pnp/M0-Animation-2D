@@ -232,6 +232,18 @@ data, no Animo name; one phrase ("the symbol's constraints") rewritten. Code tha
 editor's model (the agent API and its modules) is rewritten, not lifted; v1's agent tests are
 read for what each tool must do.
 
+**The bridge (E5 step 2).** `mcp/bridge.mjs`, a dependency-free Node process: MCP over stdio for
+Claude Code and Claude Desktop, and on 127.0.0.1:5191 the HTTP side the editor tab long-polls
+(`/agent/next`, `/agent/result`, `/agent/status`; only the editor's origins), plus Ask AI's
+`/chat` with Claude or GLM, whose keys stay in the bridge and its key file. `initialize` gives the
+client the contract's version note. The tab's end (`ui/agent/bridge.ts`, the toolbar's AI button,
+kept as the `ai` preference) hands each call to `agent/host.ts`: the tool by name, its arguments
+checked against its schema (`agent/schema.ts`), then the tool; a refusal (`AgentRefused`) is a
+message the model reads. Lifted from v1's `mcp/boneburst-bridge.mjs` after its pass (ours: Phase 9,
+10 commits, one author; Node built-ins only): the contract's path, v2's prompts and origins, the
+version note in `initialize`, and a settable call timeout changed; the old `AMINO_*` aliases and
+key file dropped.
+
 ## 9. Verification
 
 - `scripts/check.sh`: typecheck and build, the tests (zero tests is a failure), no Spine runtime

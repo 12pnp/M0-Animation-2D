@@ -1,0 +1,71 @@
+import type { History } from "@/edit/history";
+import type { Skeleton } from "@/model/skeleton";
+import type { Contract, Tool } from "./contract";
+import { schemaProblem } from "./schema";
+import contract from "./tools.json";
+
+/**
+ * Where an AI's tool calls land (E5-PLAN step 2): the contract's tool by name, its arguments
+ * checked against its schema, then the tool itself. Pure: the editor gives the document's
+ * history and a way to say it changed. A refusal is an `AgentRefused`, whose message the model
+ * reads and can act on; anything else that throws is the editor's fault and says so.
+ */
+
+/** A call the model can fix: its message says what was wrong. */
+export class AgentRefused extends Error {}
+
+/** What the editor gives the tools. */
+export interface AgentContext {
+  /** The open document's history; null when nothing is open. */
+  readonly history: History<Skeleton> | null;
+  /** Tell the editor the document or the view changed. */
+  changed(): void;
+}
+
+/** A tool's value may carry pictures under this key; the bridge sends them as images. */
+export const IMAGES_KEY = "__images";
+
+type ToolFn = (args: Record<string, unknown>, ctx: AgentContext) => unknown | Promise<unknown>;
+
+export const CONTRACT = contract as unknown as Contract;
+const BY_NAME = new Map<string, Tool>(CONTRACT.tools.map((t) => [t.name, t]));
+
+function open(ctx: AgentContext): History<Skeleton> {
+  if (!ctx.history) throw new AgentRefused("Nothing is open in the editor: open a skeleton (or drop a PSD) first.");
+  return ctx.history;
+}
+
+/** Undo or redo up to `steps` steps; what was undone or redone, newest first. */
+function step(dir: "undo" | "redo"): ToolFn {
+  return (args, ctx) => {
+    const h = open(ctx), want = (args.steps as number | undefined) ?? 1, done: string[] = [];
+    for (let i = 0; i < want; i++) {
+      const label = dir === "undo" ? h.undoLabel : h.redoLabel;
+      if (label === undefined || !(dir === "undo" ? h.undo() : h.redo())) break;
+      done.push(label);
+    }
+    if (done.length) ctx.changed();
+    return { [dir === "undo" ? "undone" : "redone"]: done, ...(done.length < want ? { note: `only ${done.length} step${done.length === 1 ? "" : "s"} to ${dir}` } : {}) };
+  };
+}
+
+/** The tools built so far; the rest of the contract answers that it is coming (steps 3–8). */
+const TOOLS: Record<string, ToolFn> = {
+  undo: step("undo"),
+  redo: step("redo"),
+};
+
+/** Run the tool `name` with `args` on the editor's document. */
+export async function callTool(name: string, args: unknown, ctx: AgentContext): Promise<unknown> {
+  const tool = BY_NAME.get(name);
+  if (!tool) throw new AgentRefused(`There is no tool "${name}" in contract version ${CONTRACT.version.number}.`);
+  const given = args ?? {};
+  const problem = schemaProblem(given, tool.input_schema as Record<string, unknown>);
+  if (problem) throw new AgentRefused(`${name}: ${problem}.`);
+  const fn = TOOLS[name];
+  if (!fn) throw new AgentRefused(`${name} is in the contract but not built in this editor yet.`);
+  return fn(given as Record<string, unknown>, ctx);
+}
+
+/** The tools the editor answers now. */
+export const builtTools = (): string[] => Object.keys(TOOLS);
