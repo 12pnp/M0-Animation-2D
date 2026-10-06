@@ -22,6 +22,7 @@ import { ghostsFor, type OnionOptions } from "./onion";
 import { type SnapOptions, type Snapped, type SnapTargets, snapPoint } from "./snap";
 import { brush, brushWeights } from "./weightBrush";
 import { hitReference, movedReference, type Placed, referenceCorner, referenceQuad, scaledReference } from "./references";
+import { keysOf } from "../shortcuts";
 
 /** How far from the selected bone's origin a press still grabs it, in pixels (the gizmo's ring). */
 const GRAB = 56;
@@ -756,7 +757,7 @@ export class Stage {
       space: this.space,
       lock: null,
     };
-    if (unkeyed) { this.onStatus(`Unkeyed pose of ${name}: press Key (K) to key it; moving the playhead drops it.`); return; }
+    if (unkeyed) { this.onStatus(`Unkeyed pose of ${name}: press Key (${keysOf("key")}) to key it; moving the playhead drops it.`); return; }
     this.session.history!.begin(anim !== null
       ? `Key ${KEYED[this.tool]} of ${name} at frame ${this.session.frame}`
       : `${LABEL[this.tool]} bone ${name}`);

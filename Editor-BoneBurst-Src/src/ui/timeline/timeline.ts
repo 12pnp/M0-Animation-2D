@@ -15,6 +15,7 @@ import { animatedLocal } from "../stage/posed";
 import {
   buildRows, shiftedRefs, frameX, labelStep, type Mark, markAt, marks, refId, ROW, type Row, rowAt, RULER, type View, xFrame,
 } from "./layout";
+import { keysOf } from "../shortcuts";
 
 const CURVES: ReadonlyArray<{ label: string; title: string; icon: IconName; curve: "linear" | "stepped" | Shape }> = [
   { label: "Linear", icon: "curveLinear", title: "Straight from each selected key to the next", curve: "linear" },
@@ -81,12 +82,12 @@ export class Timeline {
     const renameBtn = button("Rename…", "Rename this animation", () => this.renameAnimation());
     const deleteBtn = iconButton(button("Delete", "Delete this animation", () => this.deleteAnimation()), "delete");
     this.animButtons = [renameBtn, deleteBtn];
-    const startBtn = iconButton(button("⏮", "To the first frame (Home)", () => session.seek(0)), "start", false);
-    this.playBtn = iconButton(button("▶", "Play (Space)", () => this.togglePlay()), "play", false);
+    const startBtn = iconButton(button("⏮", `To the first frame (${keysOf("firstFrame")})`, () => session.seek(0)), "start", false);
+    this.playBtn = iconButton(button("▶", `Play (${keysOf("play")})`, () => this.togglePlay()), "play", false);
     this.loopBtn = iconButton(button("Loop", "Loop playback", () => { session.loop = !session.loop; session.changed(); }), "loop");
     this.frameOut = document.createElement("output");
     this.frameOut.className = "frame";
-    this.keyBtn = iconButton(button("Key", "Key the selected bone's rotate, translate and scale here, or fire the selected event here (K)", () => this.keySelected()), "key");
+    this.keyBtn = iconButton(button("Key", `Key the selected bone's rotate, translate and scale here, or fire the selected event here (${keysOf("key")})`, () => this.keySelected()), "key");
     // Icons only, so the bar stays one line; the name leads the tooltip and is the accessible name.
     this.curveButtons = CURVES.map((c) => {
       const b = button(c.label, `${c.label}: ${c.title.toLowerCase()}`, () => this.applyCurve(c.curve));
@@ -136,7 +137,7 @@ export class Timeline {
   /** Copy the selected keys (⌘C); what it says. */
   copySelected(): string {
     const a = this.session.animation;
-    if (!a || !this.selected.size) return "Select keys to copy (click, Shift-click, drag a box, or ⌘A).";
+    if (!a || !this.selected.size) return `Select keys to copy (click, Shift-click, drag a box, or ${keysOf("selectAll")}).`;
     clipboard.keys = copyKeys(a, [...this.selected.values()], this.session.fps);
     return `Copied ${clipboard.keys.keys.length} key${clipboard.keys.keys.length === 1 ? "" : "s"}.`;
   }
@@ -144,7 +145,7 @@ export class Timeline {
   /** Paste the copied keys with the first at the playhead (⌘V), the pasted keys selected; what it says. */
   paste(): string {
     const a = this.session.animation, clip = clipboard.keys, doc = this.session.doc, fps = this.session.fps;
-    if (!clip) return "Copy keys first (⌘C).";
+    if (!clip) return `Copy keys first (${keysOf("copyKeys")}).`;
     if (!a || !doc) return "Choose an animation to paste the keys into.";
     this.session.pause();
     const frame = this.session.frame, p = pasteKeys(a.name, clip, frame, fps), skipped = p.skipped(doc);
@@ -243,7 +244,7 @@ export class Timeline {
     this.keyBtn.disabled = !a || (s.selectedBone === null && s.selected?.kind !== "event");
     this.playBtn.disabled = !a;
     setIcon(this.playBtn, s.playing ? "pause" : "play");
-    this.playBtn.title = s.playing ? "Pause (Space)" : "Play (Space)";
+    this.playBtn.title = `${s.playing ? "Pause" : "Play"} (${keysOf("play")})`;
     this.playBtn.setAttribute("aria-label", this.playBtn.title);
     this.loopBtn.setAttribute("aria-pressed", String(s.loop));
     const end = a ? timeFrame(animationDuration(a), s.fps) : 0;

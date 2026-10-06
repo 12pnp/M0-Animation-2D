@@ -10,6 +10,8 @@ import { HistoryPanel } from "./panels/history";
 import { References } from "./panels/references";
 import { fileSource, Session, type Source } from "./session";
 import type { Space, Tool } from "./stage/gizmo";
+import { keysOf, matching, type ShortcutId } from "./shortcuts";
+import { ShortcutsSheet } from "./shortcutsSheet";
 import { isTyping, Stage } from "./stage/stage";
 import { Timeline } from "./timeline/timeline";
 import { animationDuration, timeFrame } from "@/model/timelines";
@@ -32,11 +34,11 @@ import { type PanelContent, Workspace } from "./workspace/workspace";
 /** The stickman the plan names for E2, served by the dev server from the test fixtures. */
 const STICKMAN = ["Stickman_IK.json", "Stickman_IK.atlas.txt", "Stickman_IK_tex.png"];
 
-const TOOLS: ReadonlyArray<{ tool: Tool; label: string; key: string }> = [
-  { tool: "move", label: "Move", key: "W" },
-  { tool: "rotate", label: "Rotate", key: "E" },
-  { tool: "scale", label: "Scale", key: "R" },
-  { tool: "shear", label: "Shear", key: "T" },
+const TOOLS: ReadonlyArray<{ tool: Tool; label: string; shortcut: ShortcutId }> = [
+  { tool: "move", label: "Move", shortcut: "toolMove" },
+  { tool: "rotate", label: "Rotate", shortcut: "toolRotate" },
+  { tool: "scale", label: "Scale", shortcut: "toolScale" },
+  { tool: "shear", label: "Shear", shortcut: "toolShear" },
 ];
 
 /**
@@ -52,6 +54,7 @@ export function mountApp(root: HTMLElement): void {
   try { storage = window.localStorage; } catch { /* blocked: the defaults */ }
   const prefs = new Preferences(storage);
   const prefsDialog = new PreferencesDialog(prefs);
+  const sheet = new ShortcutsSheet();
   // The theme before the dock is built, so it starts in it.
   if (prefs.values.theme !== "system") document.documentElement.dataset.theme = prefs.values.theme;
   const outline = new Outline(session);
@@ -63,8 +66,8 @@ export function mountApp(root: HTMLElement): void {
   fileInput.multiple = true;
   fileInput.accept = ".json,.atlas,.txt,.png,.jpg,.jpeg,.webp,.psd";
   fileInput.hidden = true;
-  const openBtn = iconButton(button("Open…", "Open a skeleton with its atlas and images, or a Photoshop file to start a rig from (⌘O). Drop a PSD on an open rig to bring its changes in", () => fileInput.click()), "open");
-  const saveBtn = iconButton(button("Save", "Save the skeleton JSON, with the atlas and pages of an imported PSD (⌘S)", () => void save()), "save");
+  const openBtn = iconButton(button("Open…", `Open a skeleton with its atlas and images, or a Photoshop file to start a rig from (${keysOf("open")}). Drop a PSD on an open rig to bring its changes in`, () => fileInput.click()), "open");
+  const saveBtn = iconButton(button("Save", `Save the skeleton JSON, with the atlas and pages of an imported PSD (${keysOf("save")})`, () => void save()), "save");
   // Export to Unity (E5 step 8): into the folder chosen once; Shift-click chooses another.
   const unityBtn = button("Export to Unity…", "Export to Unity…: write the skeleton, atlas and pages into your Unity folder, where the BoneBurst import rebakes them (Shift-click: choose another folder)", () => {});
   unityBtn.setAttribute("aria-label", "Export to Unity…");
@@ -73,11 +76,11 @@ export function mountApp(root: HTMLElement): void {
   const undoBtn = iconButton(button("Undo", "", () => { session.history?.undo(); session.changed(); }), "undo");
   const redoBtn = iconButton(button("Redo", "", () => { session.history?.redo(); session.changed(); }), "redo");
   const toolBtns = TOOLS.map((t) => {
-    const b = iconButton(button(t.label, `${t.label} (${t.key})`, () => setTool(t.tool)), t.tool);
+    const b = iconButton(button(t.label, `${t.label} (${keysOf(t.shortcut)})`, () => setTool(t.tool)), t.tool);
     b.dataset.tool = t.tool;
     return b;
   });
-  const fitBtn = iconButton(button("Fit", "Show the whole skeleton (F)", () => stage.fitView()), "fit", false);
+  const fitBtn = iconButton(button("Fit", `Show the whole skeleton (${keysOf("fit")})`, () => stage.fitView()), "fit", false);
   const skinLabel = el("label", "skin");
   const skinSelect = document.createElement("select");
   skinSelect.addEventListener("change", () => { session.skin = skinSelect.value || null; session.changed(); });
@@ -85,7 +88,7 @@ export function mountApp(root: HTMLElement): void {
   const panelsMenu = document.createElement("select");
   panelsMenu.title = "Show a panel, or put the panels back where they started";
   // The app icon at the menu bar's left: the Preferences button.
-  const prefsBtn = button("", "Preferences: theme, rulers, bones, undo steps (⌘,)", () => prefsDialog.open());
+  const prefsBtn = button("", `Preferences: theme, rulers, bones, undo steps (${keysOf("preferences")})`, () => prefsDialog.open());
   prefsBtn.className = "app-icon";
   prefsBtn.setAttribute("aria-label", "Preferences");
   const appMark = document.createElement("span");
@@ -100,7 +103,7 @@ export function mountApp(root: HTMLElement): void {
   aiBtn.classList.add("ai-button");
   aiBtn.dataset.state = "off";
   ai.onState((state, detail) => { aiBtn.dataset.state = state; aiBtn.title = detail; message.textContent = detail; });
-  bar.append(openBtn, saveBtn, unityBtn, sep(), undoBtn, redoBtn, sep(), skinLabel, aiBtn, fileInput, prefsDialog.element);
+  bar.append(openBtn, saveBtn, unityBtn, sep(), undoBtn, redoBtn, sep(), skinLabel, aiBtn, fileInput, prefsDialog.element, sheet.element);
 
   // The stage panel: the canvas, with the hint over it while nothing is open.
   const stagePanel = el("section", "stage-panel");
@@ -122,7 +125,7 @@ export function mountApp(root: HTMLElement): void {
   const toggleAutoKey = () => {
     stage.autoKey = !stage.autoKey;
     autoKeyBtn.setAttribute("aria-pressed", String(stage.autoKey));
-    say(stage.autoKey ? "Auto Key on: dragging keys the animation." : "Auto Key off: dragging poses the bone unkeyed; press Key (K) to key it.");
+    say(stage.autoKey ? "Auto Key on: dragging keys the animation." : `Auto Key off: dragging poses the bone unkeyed; press Key (${keysOf("key")}) to key it.`);
   };
   const autoKeyBtn = iconButton(button("Auto Key", "Auto Key: with an animation chosen, a drag on the stage keys it. Off, a drag poses the bone without keying until you press Key", toggleAutoKey), "autoKey");
   autoKeyBtn.setAttribute("aria-pressed", "true");
@@ -175,35 +178,35 @@ export function mountApp(root: HTMLElement): void {
   });
   const menubar = new MenuBar([
     { label: "File", items: () => [
-      { label: "Open…", keys: "⌘O", run: () => fileInput.click() },
-      { label: "Save", keys: "⌘S", disabled: !session.doc, run: () => void save() },
+      { label: "Open…", keys: keysOf("open"), run: () => fileInput.click() },
+      { label: "Save", keys: keysOf("save"), disabled: !session.doc, run: () => void save() },
       { label: "Close File", disabled: !session.doc, run: () => tabs.closeCurrent() },
       { label: "Export to Unity…", disabled: !session.doc, run: () => void toUnity(false) },
       { label: "Export to Unity, another folder…", disabled: !session.doc, run: () => void toUnity(true) },
     ] },
     { label: "Edit", items: () => [
-      { label: "Undo", keys: "⌘Z", disabled: !session.history?.canUndo, run: () => undoBtn.click() },
-      { label: "Redo", keys: "⇧⌘Z", disabled: !session.history?.canRedo, run: () => redoBtn.click() },
+      { label: "Undo", keys: keysOf("undo"), disabled: !session.history?.canUndo, run: () => undoBtn.click() },
+      { label: "Redo", keys: keysOf("redo"), disabled: !session.history?.canRedo, run: () => redoBtn.click() },
       DIVIDER,
-      { label: "Copy Keys", keys: "⌘C", disabled: !timeline.hasSelection, run: () => say(timeline.copySelected()) },
-      { label: "Paste Keys", keys: "⌘V", disabled: !clipboard.keys || !session.animation, run: () => say(timeline.paste()) },
-      { label: "Select All Keys", keys: "⌘A", disabled: !session.animation, run: () => timeline.selectAll() },
-      { label: "Copy Pose", keys: "⌥⌘C", disabled: !session.doc, run: () => say(copyPose(session)) },
-      { label: "Paste Pose", keys: "⌥⌘V", disabled: !clipboard.pose || !session.doc, run: () => say(pastePoseHere(session)) },
+      { label: "Copy Keys", keys: keysOf("copyKeys"), disabled: !timeline.hasSelection, run: () => say(timeline.copySelected()) },
+      { label: "Paste Keys", keys: keysOf("pasteKeys"), disabled: !clipboard.keys || !session.animation, run: () => say(timeline.paste()) },
+      { label: "Select All Keys", keys: keysOf("selectAll"), disabled: !session.animation, run: () => timeline.selectAll() },
+      { label: "Copy Pose", keys: keysOf("copyPose"), disabled: !session.doc, run: () => say(copyPose(session)) },
+      { label: "Paste Pose", keys: keysOf("pastePose"), disabled: !clipboard.pose || !session.doc, run: () => say(pastePoseHere(session)) },
       DIVIDER,
-      { label: "Preferences…", keys: "⌘,", run: () => prefsDialog.open() },
+      { label: "Preferences…", keys: keysOf("preferences"), run: () => prefsDialog.open() },
     ] },
     { label: "View", items: () => [
-      ...TOOLS.map((t) => ({ label: t.label, keys: t.key, checked: stage.tool === t.tool, run: () => setTool(t.tool) })),
+      ...TOOLS.map((t) => ({ label: t.label, keys: keysOf(t.shortcut), checked: stage.tool === t.tool, run: () => setTool(t.tool) })),
       { label: "Auto Key", checked: stage.autoKey, run: toggleAutoKey },
       DIVIDER,
-      { label: "Fit to skeleton", keys: "F", run: () => stage.fitView() },
+      { label: "Fit to skeleton", keys: keysOf("fit"), run: () => stage.fitView() },
       { label: "Onion Skin", checked: prefs.values.onion, run: () => prefs.set({ onion: !prefs.values.onion }) },
       DIVIDER,
       { label: "Checkerboard", checked: prefs.values.checker, run: () => prefs.set({ checker: !prefs.values.checker }) },
       { label: "Centre Axes", checked: prefs.values.axes, run: () => prefs.set({ axes: !prefs.values.axes }) },
       { label: "Grid", checked: prefs.values.grid, run: () => prefs.set({ grid: !prefs.values.grid }) },
-      { label: "Snapping", keys: "⇧⌘;", checked: prefs.values.snap, run: () => prefs.set({ snap: !prefs.values.snap }) },
+      { label: "Snapping", keys: keysOf("snapping"), checked: prefs.values.snap, run: () => prefs.set({ snap: !prefs.values.snap }) },
       { label: "Snap to Grid", checked: prefs.values.snapGrid, disabled: !prefs.values.snap, run: () => prefs.set({ snapGrid: !prefs.values.snapGrid }) },
       { label: "Snap to Guides", checked: prefs.values.snapGuides, disabled: !prefs.values.snap, run: () => prefs.set({ snapGuides: !prefs.values.snapGuides }) },
       { label: "Snap to Bones", checked: prefs.values.snapBones, disabled: !prefs.values.snap, run: () => prefs.set({ snapBones: !prefs.values.snapBones }) },
@@ -215,6 +218,8 @@ export function mountApp(root: HTMLElement): void {
       { label: "Reset layout", run: () => workspace.reset() },
     ] },
     { label: "Help", items: () => [
+      { label: "Keyboard Shortcuts", keys: keysOf("shortcuts"), run: () => sheet.open() },
+      DIVIDER,
       { label: `About ${EDITOR_NAME}`, run: () => say(`${EDITOR_NAME} — Spine ${SPINE_VERSION}, MIT.`) },
     ] },
   ]);
@@ -385,8 +390,8 @@ export function mountApp(root: HTMLElement): void {
     unityBtn.disabled = !doc;
     undoBtn.disabled = !h?.canUndo;
     redoBtn.disabled = !h?.canRedo;
-    undoBtn.title = h?.undoLabel ? `Undo ${h.undoLabel} (⌘Z)` : "Undo (⌘Z)";
-    redoBtn.title = h?.redoLabel ? `Redo ${h.redoLabel} (⇧⌘Z)` : "Redo (⇧⌘Z)";
+    undoBtn.title = h?.undoLabel ? `Undo ${h.undoLabel} (${keysOf("undo")})` : `Undo (${keysOf("undo")})`;
+    redoBtn.title = h?.redoLabel ? `Redo ${h.redoLabel} (${keysOf("redo")})` : `Redo (${keysOf("redo")})`;
     const skins = (doc?.skins ?? []).map((s) => s.name).filter((n) => n !== "default");
     // A shown skin an edit or an undo took away: back to the default skin.
     if (session.skin !== null && !skins.includes(session.skin)) session.skin = null;
@@ -469,47 +474,58 @@ export function mountApp(root: HTMLElement): void {
   });
   window.addEventListener("beforeunload", (e) => { if (tabs.anyDirty) e.preventDefault(); });
 
-  window.addEventListener("keydown", onKey);
-  function onKey(e: KeyboardEvent): void {
-    const mod = e.metaKey || e.ctrlKey, key = e.key.toLowerCase();
-    if (mod && key === "o") { e.preventDefault(); fileInput.click(); return; }
-    if (mod && key === "s") { e.preventDefault(); void save(); return; }
-    if (mod && (key === "," || e.code === "Comma")) { e.preventDefault(); prefsDialog.open(); return; }
-    if (isTyping(e)) return;
-    if (mod && key === "z") { e.preventDefault(); (e.shiftKey ? redoBtn : undoBtn).click(); return; }
-    // Copy and paste (E6 step 4c): keys with ⌘C/⌘V, a pose with ⌥⌘C/⌥⌘V; e.code, as ⌥ changes e.key.
-    if (mod && e.code === "KeyC") { e.preventDefault(); say(e.altKey ? copyPose(session) : timeline.copySelected()); return; }
-    if (mod && e.code === "KeyV") { e.preventDefault(); say(e.altKey ? pastePoseHere(session) : timeline.paste()); return; }
-    if (mod && key === "a" && session.animation) { e.preventDefault(); timeline.selectAll(); return; }
-    // Snapping on and off (E6 step 4e), as the old editor's ⇧⌘;.
-    if (mod && e.shiftKey && e.code === "Semicolon") { e.preventDefault(); prefs.set({ snap: !prefs.values.snap }); say(`Snapping ${prefs.values.snap ? "on" : "off"}.`); return; }
-    if (mod && key === "y") { e.preventDefault(); redoBtn.click(); return; }
-    if (mod || e.altKey) return;
-    if (key === "escape") {
+  // Every shortcut is a row of `SHORTCUTS` (E7 step 2); a handler returns false when it does not
+  // apply here, and the next matching row is tried.
+  const shortcuts: Record<ShortcutId, () => boolean | void> = {
+    open: () => fileInput.click(),
+    save: () => void save(),
+    preferences: () => prefsDialog.open(),
+    undo: () => undoBtn.click(),
+    redo: () => redoBtn.click(),
+    redoAlt: () => redoBtn.click(),
+    copyKeys: () => say(timeline.copySelected()),
+    copyPose: () => say(copyPose(session)),
+    pasteKeys: () => say(timeline.paste()),
+    pastePose: () => say(pastePoseHere(session)),
+    selectAll: () => { if (!session.animation) return false; timeline.selectAll(); },
+    snapping: () => { prefs.set({ snap: !prefs.values.snap }); say(`Snapping ${prefs.values.snap ? "on" : "off"}.`); },
+    escape: () => {
       if (!stage.cancel() && session.playing) session.pause();
       else session.select(null);
-      return;
-    }
-    if (key === "f") { stage.fitView(); return; }
+    },
+    fit: () => stage.fitView(),
     // The weight brush's size (E6 step 4f), while it is on.
-    if ((key === "[" || key === "]") && brush.on) { say(`Brush ${resizeBrush(key === "]" ? 1 : -1)} px.`); stage.redraw(); return; }
-    if (e.code === "Space") { e.preventDefault(); timeline.togglePlay(); return; }
-    if (key === "," || key === ".") { e.preventDefault(); session.seek(session.frame + (key === "," ? -1 : 1)); return; }
-    if (key === "home") { e.preventDefault(); session.seek(0); return; }
-    if (key === "end") {
-      e.preventDefault();
-      const a = session.animation;
-      if (a) session.seek(timeFrame(animationDuration(a), session.fps));
+    brushSmaller: () => { if (!brush.on) return false; say(`Brush ${resizeBrush(-1)} px.`); stage.redraw(); },
+    brushLarger: () => { if (!brush.on) return false; say(`Brush ${resizeBrush(1)} px.`); stage.redraw(); },
+    play: () => timeline.togglePlay(),
+    prevFrame: () => session.seek(session.frame - 1),
+    nextFrame: () => session.seek(session.frame + 1),
+    firstFrame: () => session.seek(0),
+    lastFrame: () => { const a = session.animation; if (a) session.seek(timeFrame(animationDuration(a), session.fps)); },
+    key: () => timeline.keySelected(),
+    // The timeline's selected keys; on the stage in mesh mode, the selected vertex; in the rig
+    // panel, what is selected there (Undo brings it back).
+    delete: (e?: KeyboardEvent) => {
+      if (timeline.hasSelection) { timeline.deleteSelected(); return; }
+      const at = e?.target as Node | null;
+      if (at && stage.element.contains(at) && stage.deleteVertex()) return;
+      if (at && outline.element.contains(at)) { outline.deleteSelected(); return; }
+      return false;
+    },
+    toolMove: () => setTool("move"),
+    toolRotate: () => setTool("rotate"),
+    toolScale: () => setTool("scale"),
+    toolShear: () => setTool("shear"),
+    shortcuts: () => sheet.open(),
+  };
+
+  window.addEventListener("keydown", onKey);
+  function onKey(e: KeyboardEvent): void {
+    for (const s of matching(e, isTyping(e))) {
+      if ((shortcuts[s.id as ShortcutId] as (e: KeyboardEvent) => boolean | void)(e) === false) continue;
+      if (!s.keepDefault) e.preventDefault();
       return;
     }
-    if (key === "k") { timeline.keySelected(); return; }
-    if ((key === "delete" || key === "backspace") && timeline.hasSelection) { e.preventDefault(); timeline.deleteSelected(); return; }
-    // On the stage in mesh mode, Delete deletes the selected vertex.
-    if ((key === "delete" || key === "backspace") && stage.element.contains(e.target as Node) && stage.deleteVertex()) { e.preventDefault(); return; }
-    // In the rig panel, Delete deletes what is selected there (Undo brings it back).
-    if ((key === "delete" || key === "backspace") && outline.element.contains(e.target as Node)) { e.preventDefault(); outline.deleteSelected(); return; }
-    const t = TOOLS.find((x) => x.key.toLowerCase() === key);
-    if (t) setTool(t.tool);
   }
 }
 

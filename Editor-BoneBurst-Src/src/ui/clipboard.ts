@@ -4,6 +4,7 @@ import { EditRefused } from "@/edit/history";
 import { type CopiedKeys, type CopiedPose, pastePose } from "@/edit/paste";
 import type { Session } from "./session";
 import { animatedLocal } from "./stage/posed";
+import { keysOf } from "./shortcuts";
 
 /**
  * The page's clipboard (E6-PLAN step 4c): the keys last copied and the pose last copied, each
@@ -35,7 +36,7 @@ export function copyPose(session: Session): string {
 /** Paste the copied pose: keyed at the playhead where it differs, or as the setup pose; what it says. */
 export function pastePoseHere(session: Session): string {
   const pose = clipboard.pose, h = session.history;
-  if (!pose) return "Copy a pose first (⌥⌘C).";
+  if (!pose) return `Copy a pose first (${keysOf("copyPose")}).`;
   if (!h) return "Open a skeleton first.";
   const anim = session.animation?.name ?? null;
   session.pause();

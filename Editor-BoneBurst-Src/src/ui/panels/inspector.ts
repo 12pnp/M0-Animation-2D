@@ -21,6 +21,7 @@ import type { Selection, Session } from "../session";
 import { brush, BRUSH_STRENGTH } from "../stage/weightBrush";
 import { animatedLocal, constraintNow, localUnder, Poser } from "../stage/posed";
 import { empty, heading } from "./outline";
+import { keysOf } from "../shortcuts";
 
 /** The timeline each value keys in Animate mode (length is setup only). */
 const KEYED: Partial<Record<BoneNumber, BoneProperty>> = {
@@ -158,7 +159,7 @@ export class Inspector {
     const anim = s.animation;
     if (anim) {
       const frames = (anim.events ?? []).filter((k) => k.name === name).map((k) => timeFrame(k.time ?? 0, s.fps));
-      form.append(readOnly(`In ${anim.name}`, frames.length ? `frame ${frames.join(", ")}` : "not keyed: Key (K) fires it at the playhead"));
+      form.append(readOnly(`In ${anim.name}`, frames.length ? `frame ${frames.join(", ")}` : `not keyed: Key (${keysOf("key")}) fires it at the playhead`));
     }
   }
 

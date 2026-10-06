@@ -10,6 +10,7 @@ import { CONSTRAINT_ICONS, icon, iconButton, type IconName } from "../icons";
 import { type Selection, sameSelection, type Session } from "../session";
 import { boneColourOf, boneIconOf } from "../boneLook";
 import { newConstraint } from "./newConstraint";
+import { keysOf } from "../shortcuts";
 
 type View = "tree" | "order" | "skins" | "constraints" | "events";
 
@@ -62,7 +63,7 @@ export class Outline {
       order: button("Draw order", "Slots front to back", () => this.setView("order")),
       skins: button("Skins", "The skins; choosing one shows it", () => this.setView("skins")),
       constraints: button("Constraints", "The constraints, in the order they apply", () => this.setView("constraints")),
-      events: button("Events", "The skeleton's events: select one to key it (K) or edit its values", () => this.setView("events")),
+      events: button("Events", `The skeleton's events: select one to key it (${keysOf("key")}) or edit its values`, () => this.setView("events")),
       event: button("+ Event", "Add an event to the skeleton", () => this.addEvent()),
       constraint: button("+ Constraint", "Add a constraint of the chosen kind to the selected bone (a path: the selected slot)", () => this.addConstraint(this.kindPick.value as ConstraintType)),
       skin: button("+ Skin", "Add an empty skin", () => this.addSkin()),
@@ -334,7 +335,7 @@ export class Outline {
         this.list.replaceChildren(...items.map((it) => this.row(it)));
         if (!items.length && this.query) this.list.append(empty(`Nothing here matches "${this.query}".`));
         else if (!items.length) this.list.append(empty(this.view === "order" ? "No slots yet." : this.view === "constraints" ? "No constraints yet: select a bone, choose a kind, + Constraint."
-          : this.view === "events" ? "No events yet: + Event adds one; then select it and press Key (K) to fire it at the playhead." : "No bones yet: + Bone adds the root."));
+          : this.view === "events" ? `No events yet: + Event adds one; then select it and press Key (${keysOf("key")}) to fire it at the playhead.` : "No bones yet: + Bone adds the root."));
       }
       const regions = [...new Set(s.images.regions.map((r) => r.name))], chosen = this.regionPick.value;
       this.regionPick.replaceChildren(...(regions.length ? regions.map((n) => new Option(n, n)) : [new Option("no atlas", "")]));

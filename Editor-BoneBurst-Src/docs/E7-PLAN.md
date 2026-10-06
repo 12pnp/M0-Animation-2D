@@ -1,6 +1,6 @@
 # E7 — the daily driver: history, shortcuts, a build, a robustness pass — plan
 
-**Status:** in progress, 2026-10-06; step 1 (the History panel) done. Scope chosen by the owner:
+**Status:** in progress, 2026-10-06; steps 1 (the History panel) and 2 (the shortcuts table and sheet) done. Scope chosen by the owner:
 the History panel and the shortcuts sheet (set aside at E6 step 3), running without the dev
 server, and a robustness pass.
 Not in E7: the AnimatedDrawings detection sidecar (waits on the owner's install decision).
@@ -114,3 +114,62 @@ flowchart LR
    the Rig panel's search row (`overflow-y: auto` on `.outline .rows`). Its fix, reading the
    canvas's own pixels, landed in that session's commits; with it the test passes, the exact
    comparison kept. Then `npm run check`: 468 vitest, 14 browser tests, all pass.
+## Step 2 — the shortcuts table and sheet
+
+```mermaid
+flowchart LR
+    T["SHORTCUTS (src/ui/shortcuts.ts)<br/>id · keys · group · what · match"] -->|"matching(e, typing)"| K["app.ts onKey"]
+    K -->|"handlers: Record&lt;ShortcutId, …&gt;"| H["open · save · undo · copy · play · tools …"]
+    T -->|"keysOf(id)"| M["menus · toolbar titles"]
+    T -->|"listed by group"| S["ShortcutsSheet (dialog)<br/>Help ▸ Keyboard Shortcuts · ?"]
+```
+
+### Decisions
+
+- **A row is data plus a match**: `{ id, keys, group, what, chord }`. `chord` describes the key
+  event: ⌘ (⌘ or Ctrl), ⌥ and ⇧ each required, refused, or either, plus `e.key` or `e.code` (`e.code`
+  where ⌥ changes `e.key`, as today). The defaults are what `onKey` does now: a key without ⌘
+  needs ⌥ up and takes either ⇧; `whileTyping` marks the three that work in a text field (⌘O, ⌘S,
+  ⌘,).
+- **Order and fall-through kept.** `onKey` walks the rows in table order. A handler returns false
+  when it does not apply (⌘A with no animation, `[` and `]` with the brush off), and the walk goes
+  on as the `if` chain did. Delete is one row whose handler tries the timeline, the stage's vertex,
+  then the rig panel, in that order. The one change: every handled key now calls `preventDefault`
+  (before, F, K, the tools and the brush keys did not; none of them has a browser default that
+  matters outside a text field), except Escape (`keepDefault`), on which a dialog closes.
+- **Completeness by type**: `ShortcutId` is the union of the table's ids, and the handler map is a
+  `Record<ShortcutId, …>`, so a row without a handler, or a handler without a row, does not
+  compile. The tool keys come from the same table (one row per tool), and so does `TOOLS`' key text.
+- **Menus and titles read the table** (`keysOf(id)`); a test checks `app.ts` writes no key text of
+  its own (`keys: "…"`, or ⌘/⇧/⌥ inside a title).
+- **The sheet**: a native `<dialog>` like Preferences: groups (File, Edit, View, Tools, Playback,
+  Timeline, Stage), each row the keys and what they do, a filter field, Escape or Close to shut.
+  Help ▸ Keyboard Shortcuts, and `?` (⇧/), a new row. It lists the table, nothing else.
+- **Tests**: `tests/shortcuts.test.ts` (ids unique; no two rows match the same event, for every
+  row's own event and its ⇧ variants; the table's matches equal today's `onKey` on a list of
+  events; `keysOf` for every id; `app.ts` writes no key text); `e2e/shortcutsSheet.spec.ts` (`?`
+  opens it, filter, Escape; a few keys still do what they did).
+
+### Step 2 results
+
+1. `src/ui/shortcuts.ts`: 28 rows (the 27 keys `onKey` handled, ⌘Y included, and `?` for the
+   sheet), each with its keys, group, what it does and its chord; `keysOf`, `matches`, `matching`.
+   `keepDefault` on Escape (added while building: with `preventDefault` on Escape, a dialog with a
+   button focused no longer closed).
+2. `app.ts`: `onKey` is a walk over `matching(e, isTyping(e))` into a `Record<ShortcutId, …>` of
+   handlers (⌘A and the brush keys decline when they do not apply; Delete tries the timeline, the
+   stage's vertex, then the rig panel). `TOOLS` names its row; the menus, the toolbar titles
+   (Open, Save, tools, Fit, Preferences, Undo, Redo) and Auto Key's message read `keysOf`. Beyond
+   `app.ts`, the key text in titles and messages of `timeline.ts` (Play, Key, To the first frame,
+   the copy and paste messages), `clipboard.ts`, `outline.ts`, `inspector.ts` and `stage.ts` reads it
+   too: the text check found "To the first frame (Home)", which the plan's list had missed.
+3. `src/ui/shortcutsSheet.ts`: the `<dialog>` by group with a filter; Help ▸ Keyboard Shortcuts
+   (its `?` shown) and `?`.
+4. Tests: `tests/shortcuts.test.ts` (5: unique ids and keys; each row's own event, with ⇧ both ways
+   where free, matches only that row; 39 events matched as the old `if` chain did, ⌘⇧C, ⌥W, ⇧W and
+   ⌘; among them; in a text field only ⌘O, ⌘S, ⌘,; no key text written outside the table);
+   `e2e/shortcutsSheet.spec.ts` (`?` opens it, the groups, the filter, Escape with a button
+   focused, the Help menu, then E, ⌘Z and Space doing what they did). Planted faults, each caught:
+   Escape's default prevented (the e2e), a tool key taking ⌥, a menu writing "⌘Z" itself, a
+   handler missing (does not compile), Undo taking ⇧ too.
+5. `npm run check`: 473 vitest and 15 browser tests, all pass.

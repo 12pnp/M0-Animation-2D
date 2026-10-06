@@ -493,3 +493,15 @@ dialog.preferences h3 .reset { padding: 1px 10px; font-size: 12px; font-weight: 
 .history-step.start { font-style: italic; }
 .history-step.undone { color: var(--muted); }
 .history-step[aria-current] { background: var(--accent); color: var(--accent-text); }
+
+/* Help ▸ Keyboard Shortcuts (E7 step 2). */
+dialog.shortcuts { border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); padding: 12px 16px; width: 560px; max-width: calc(100vw - 20px); max-height: calc(100vh - 40px); font: 13px var(--font-ui); }
+dialog.shortcuts[open] { display: flex; flex-direction: column; gap: 8px; }
+dialog.shortcuts::backdrop { background: rgb(0 0 0 / 0.35); }
+dialog.shortcuts h2 { margin: 0; font-size: 15px; }
+dialog.shortcuts .shortcut-list { overflow-y: auto; min-height: 0; flex: 1; }
+dialog.shortcuts h3 { margin: 10px 0 4px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+dialog.shortcuts dl { display: grid; grid-template-columns: 7em 1fr; gap: 3px 12px; margin: 0; }
+dialog.shortcuts dt, dialog.shortcuts dd { margin: 0; }
+dialog.shortcuts kbd { font: 12px var(--font-mono); padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
+dialog.shortcuts .actions { display: flex; justify-content: flex-end; }
