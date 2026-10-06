@@ -28,7 +28,7 @@ describe("the agent host (E5 step 2)", () => {
     const c = ctx(new History(newSkeleton("h")));
     expect(await refused(callTool("undo", { steps: 0 }, c))).toBe("undo: arguments.steps must be at least 1.");
     expect(await refused(callTool("undo", { step: 2 }, c))).toBe("undo: arguments.step is not an argument here (it takes steps).");
-    expect(await refused(callTool("list_motions", {}, c))).toBe("list_motions is in the contract but not built in this editor yet.");
+    expect(await refused(callTool("add_skin", { name: "x" }, c))).toBe("add_skin is in the contract but not built in this editor yet.");
   });
   it("checks arguments the way the contract's schemas say", () => {
     const ease = { oneOf: [{ type: "string", enum: ["linear", "in"] }, { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4 }] };

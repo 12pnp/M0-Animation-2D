@@ -4,6 +4,7 @@ import { type AgentContext, AgentRefused } from "./context";
 import type { Contract, Tool } from "./contract";
 import { BUILD_TOOLS } from "./build";
 import { KEY_TOOLS } from "./keys";
+import { MOTION_TOOLS } from "./motion";
 import { READ_TOOLS } from "./read";
 import { schemaProblem } from "./schema";
 import contract from "./tools.json";
@@ -48,6 +49,7 @@ const TOOLS: Record<string, ToolFn> = {
   ...READ_TOOLS,
   ...KEY_TOOLS,
   ...BUILD_TOOLS,
+  ...MOTION_TOOLS,
 };
 
 /** Run the tool `name` with `args` on the editor's document. */

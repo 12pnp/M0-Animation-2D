@@ -278,6 +278,18 @@ drawn, a straight one forward for the facing). v1's `rigPlan.ts` spoke the old m
 rewritten in these tools. A transform constraint is made with Spine 4.3's identity property map
 (without one it moves nothing). New edit: `edit/attachments.ts` `addAttachment`.
 
+**Motion (E5 step 6).** `agent/motion.ts`: `list_motions`, `apply_motion`. The library is clip
+data: seven hand-made clips (`agent/rig/motions.json`, from `scripts/build-motions.ts`) and five
+AnimatedDrawings motion captures (`agent/rig/motions-bvh.json`, from `scripts/build-bvh-motions.ts`
+through `agent/rig/bvh.ts` and `bvhClip.ts`; MIT, © Meta, in THIRD-PARTY-NOTICES). `agent/rig/motion.ts`
+retargets a clip onto the rig: limbs and torso by world angle, hips, head, hands and feet by
+offset, feet held on the ground, two-bone IK chains keyed at their targets. Provenance (§8): all
+ours; `bvh.ts`, `bvhClip.ts`, the data and the scripts lifted (the scripts write both data files
+again byte for byte); from `motion.ts` the parts that stand alone lifted and the posing rewritten
+in Spine's y-up matrices, its answers equal to v1's to 1e-13 on twelve rigs and clips (v1 run as
+an oracle; three kept in `tests/fixtures/retarget-v1.json`). An IK chain's bend is the
+constraint's own `bendPositive` (v1 read it off the pose, unknown for a limb drawn straight).
+
 ## 9. Verification
 
 - `scripts/check.sh`: typecheck and build, the tests (zero tests is a failure), no Spine runtime

@@ -6,7 +6,8 @@ reaches the open rig (`undo`, `redo` built; every argument checked). Step 3 (the
 `get_rig`, `get_animation`, `get_pose`, `get_reference`, `show`, `render_frame`. Step 4 (the key
 tools) done: all eleven, and a walk keyed on the stickman by an AI over MCP. Step 5 (the building
 tools) done: the thirteen, and the figure PSD rigged by an AI with `auto_rig` over MCP and waving.
-Step 6 (motion) next.
+Step 6 (motion) done: the motion library on v2, AnimatedDrawings' captures (AD-3) included.
+Step 7 (`check_preview`) next.
 
 E5 puts the AI tools onto v2's model: an MCP client (Claude Code, Claude Desktop, any agent) and
 the in-app Ask AI drive the open rig through the tool contract, each edit one undo step. It is
@@ -485,3 +486,83 @@ flowchart LR
    whose child also runs through the picture); the test's joints are now the ones read on screen,
    where the forearm fits a little better, and fail without the edge. Run again: arms on the
    upper arms, the raised arm attached at the shoulder.
+
+## Step 6 — motion
+
+An AI gives a rig a walk, a run, an idle, a jump, a wave or one of AnimatedDrawings' motion
+captures in one step, fitted to its proportions, feet on the ground, IK targets keyed.
+`list_motions`, `apply_motion`; the motion half of the AnimatedDrawings plan (AD-3) runs on v2.
+
+```mermaid
+flowchart LR
+    LIB["agent/rig/motions.json (7 clips)<br/>+ motions-bvh.json (5 AD takes)"] --> LM["list_motions:<br/>clips + roles guessed"]
+    RIG["the rig: bones, setup pose,<br/>IK chains and bends"] --> RT["agent/rig/motion.ts retarget<br/>(math rewritten, y up)"]
+    LIB --> RT
+    RT -->|"keys per frame: bones' rotations,<br/>hips x/y, IK targets"| AM["apply_motion: one History step,<br/>a new animation"]
+    AM --> CHK["check: the runtime's pose<br/>against the retarget's"]
+    BVH["AnimatedDrawings BVH takes<br/>(MIT, © Meta)"] -->|"scripts/build-bvh-motions.ts<br/>agent/rig/bvh.ts · bvhClip.ts"| LIB
+```
+
+### Decisions
+
+- **Provenance** (SPEC §8): all of it is ours (git: "Motion library: list_motions and
+  apply_motion", 2026-10-02; the AD-3 commit, 2026-10-05; one author). **Lifted:** `bvh.ts`
+  (no imports), `bvhClip.ts` (imports the clip types and `bvh.ts`), the clip data, both build
+  scripts, and from `motion.ts` the parts that stand alone: the clip and role types, the role
+  rules, sampling, `boneSide`, `guessRoles`. **Rewritten:** the retarget's posing, which in v1
+  composes world matrices through the old editor's y-down matrix and transform modules: v2 composes
+  Spine's local transforms itself, y up, keeping the algorithm (world angles for limbs and torso,
+  offsets for hips, head, hands and feet; feet held on the ground by lifting the hips; IK chains
+  keyed at their targets, never their bones; a joint bending against its IK mirrored).
+- **Lift check**: v2's build scripts write the clip files again, byte for byte the same as v1's
+  (the hand-made clips from their formulas in a test; the AnimatedDrawings takes once, locally,
+  from the checkout at `../../AnimatedDrawings`, commit `b8596848`).
+- **`list_motions`**: every clip (name, description, view, length, whether it loops) and the roles
+  guessed from the rig's bone names, with the guess's notes.
+- **`apply_motion`**: a new animation (named after the clip unless given; an existing name is
+  refused), keyed at every frame (linear: between sparse keys the hips and a planted foot would
+  each move straight and the leg come short), in one History step; returns the mapping, the
+  notes, and a check: the runtime's pose of the new animation against the retarget's at each frame
+  (`matches` when every bone is within 0.5). The animation ends where it starts for a looping clip.
+- **Licences**: the AnimatedDrawings takes ship as clip data: a THIRD-PARTY-NOTICES row and
+  `public/vendor/LICENCE-AnimatedDrawings.txt` (MIT, © Meta Platforms).
+
+### Steps
+
+1. `agent/rig/motion.ts`, `bvh.ts`, `bvhClip.ts`, the data, `scripts/build-motions.ts`,
+   `scripts/build-bvh-motions.ts`; the lift check; tests for the retarget's math and the BVH reader.
+2. `agent/motion.ts` (the two tools); tests: each clip fitted to the stickman and the figure PSD's
+   auto-rigged rig, feet never below the ground, the runtime matching the retarget, one undo step.
+3. On screen: the figure auto-rigged and given `walk` and `wave_hello` over MCP, played.
+
+### Step 6 results
+
+1. **Provenance**: git: `motion.ts`, `motions.json`, `buildMotions.ts` from "Motion library:
+   list_motions and apply_motion" (2026-10-02); `bvh.ts`, `bvhClip.ts`, `motions-bvh.json`,
+   `buildBvhMotions.ts` from the AD-3 commit (2026-10-05); one author. `bvh.ts` imports nothing,
+   `bvhClip.ts` only the clip types and `bvh.ts`, the scripts only these and Node; no Animo name.
+   `motion.ts` imports v1's `core/math` matrix and transform modules (the old editor's, y down)
+   for the retarget's posing. **Lifted**: `bvh.ts`, `bvhClip.ts`, the data, the scripts
+   (`scripts/build-motions.ts`, `scripts/build-bvh-motions.ts`), and from `motion.ts` the clip
+   and role types, the role rules, sampling, `boneSide`, `guessRoles`. **Rewritten**: the
+   posing, in Spine's own matrices, y up (`localMatrix`, `multiply`, `localRotationFor`).
+   **Lift checks**: both scripts write the data again byte for byte (the captures from the
+   AnimatedDrawings checkout at `b8596848`); v1's retarget, run in its own folder on twelve
+   requests v2 built (the stickman's side clips both facings, the auto-rigged figure's front
+   clips and captures), gives v2's answers to 2.3e-13 over 33,912 values, notes and ground equal;
+   three are kept as `tests/fixtures/retarget-v1.json`.
+2. `agent/motion.ts` (`list_motions`, `apply_motion`, `rigForMotion`). `tests/agentMotion.test.ts`,
+   7 tests: v1's answers; world matrices as the runtime composes them; the BVH reader; the library
+   and the guessed roles; `idle_front`, `wave_hello` and `jumping` on the auto-rigged figure (one
+   undo step each, the runtime matching, feet on the ground, a looping clip with no seam); `walk` on
+   the stickman with a map (IK targets keyed, not the bones they turn); refusals. Three planted
+   faults fail them. **Found while testing**: on the figure the runtime missed the retarget by up
+   to 77 units at the knees. The chain's bend was read off the setup pose (as in v1), unknown for
+   legs drawn straight, so the retarget bent the knees the clip's way and the runtime the
+   constraint's. The bend is now the constraint's own `bendPositive`; differences 0.001–0.05.
+   Planting v1's way back fails the test. THIRD-PARTY-NOTICES row and
+   `public/vendor/LICENCE-AnimatedDrawings.txt` (MIT, © Meta).
+3. On screen, this session as the AI through MCP: the figure PSD dropped, `auto_rig`,
+   `list_motions` (12 clips, the front roles guessed right), `apply_motion wave_hello` (210
+   frames at 30 fps, `matches` within 0.007, the feet at the ground), `render_frame` at frame 100
+   with both hands' paths (checked by eye), `show`; played in the editor.
