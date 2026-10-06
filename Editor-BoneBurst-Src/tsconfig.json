@@ -19,5 +19,5 @@
     "baseUrl": ".",
     "paths": { "@/*": ["src/*"] }
   },
-  "include": ["src", "tests", "e2e", "e2e-build", "scripts", "vite.config.ts", "playwright.config.ts", "playwright.build.config.ts"]
+  "include": ["src", "tests", "e2e", "e2e-build", "e2e-perf", "scripts", "vite.config.ts", "playwright.config.ts", "playwright.build.config.ts", "playwright.perf.config.ts"]
 }
