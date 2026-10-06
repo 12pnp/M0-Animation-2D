@@ -32,7 +32,8 @@ namespace BoneBurst.Tests
         private const string Core = "Module.PA.BoneBurst.Core";
         private const string Unity = "Module.PB.BoneBurst.Unity";
         private const string Import = "Module.PA.BoneBurst.Import";
-        private const string Runtime = "Packages/com.module.ta-creator-boneburst/Runtime/";
+        private const string CorePackage = "Packages/com.module.ta-creator-boneburst-core/";
+        private const string CoreRuntime = CorePackage + "Runtime/";
         private const string ImportRuntime = "Packages/com.module.ta-creator-boneburst-import/Runtime/";
 
         // The BoneBurst assemblies each one may reference: only those below it.
@@ -76,8 +77,8 @@ namespace BoneBurst.Tests
             Assert.That(hits, Is.Empty, $"{assembly} is part of the managed pose path; this belongs in {Unity}");
         }
 
-        [TestCase(Data, Runtime + "Data/")]
-        [TestCase(Core, Runtime + "Core/")]
+        [TestCase(Data, CoreRuntime + "Data/")]
+        [TestCase(Core, CoreRuntime + "Core/")]
         [TestCase(Import, ImportRuntime)]
         public void Assembly_OwnsItsFolder(string assembly, string folder)
         {
@@ -85,6 +86,16 @@ namespace BoneBurst.Tests
             Assert.That(files, Is.Not.Empty, $"control: {assembly} has no source");
             List<string> outside = files.Where(f => !f.StartsWith(folder, StringComparison.Ordinal)).ToList();
             Assert.That(outside, Is.Empty, $"{assembly} compiles exactly {folder}");
+        }
+
+        [Test]
+        public void CorePackage_DeclaresOnlyThePoseDependencies()
+        {
+            // The ECS port takes this package without the front's AssetSystem, UniTask and pb-creator-base.
+            string manifest = File.ReadAllText(CorePackage + "package.json");
+            Assert.That(manifest, Does.Contain("com.unity.collections"), "control: dependencies were not read");
+            Assert.That(manifest, Does.Not.Contain("pb-creator-base").And.Not.Contain("unitask")
+                .And.Not.Contain("ta-creator-boneburst\""), "the core package must not depend on the front");
         }
 
         [Test]

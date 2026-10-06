@@ -11,6 +11,11 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-07 — **Data and Core move to their own package, `com.module.ta-creator-boneburst-core`** (P1 of [BoneBurst-ECS-Plan](Review/BoneBurst-ECS-Plan.md))
+- `Runtime/Data` (`Module.PA.BoneBurst.Data`) and `Runtime/Core` (`Module.PA.BoneBurst.Core`) moved with their `.meta` files to `Packages/com.module.ta-creator-boneburst-core/Runtime/`. Assembly names, namespaces, GUIDs and `InternalsVisibleTo` lists are unchanged; the new package depends only on collections and mathematics. **Why:** the ECS port takes the pose core without this package's AssetSystem, UniTask and pb-creator-base dependencies, and a copy would break `CLAUDE.md` §4's single source of truth.
+- `package.json` here and in `com.module.ta-creator-boneburst-import` list the core package; `Tools~/ParityHarness/ParityHarness.csproj` compiles Data and Core from it. M2-Creator-All and M2-Sample-25DL-Shader gain a `file:` entry for it in their manifests (M2-Sample's old, dead `M0-Animation2D` path is corrected).
+- Guards: `BoneBurstAssemblyLayoutTests` (the two folder-ownership cases follow the move; new `CorePackage_DeclaresOnlyThePoseDependencies`). Checked: parity harness 215/215 and 0 values not bit-exact, tier check 0 cycles, Editor compile clean, EditMode `Module.TA.BoneBurst.Tests.Editor` 210/212 (1 skipped; 1 failing test needs the demo's baked `mix-and-match-pro.sbdata.bytes`, absent from this checkout and never in git), SpineCsharp 215/215, PlayMode 37/37, Timeline 14/14, Import 28/29 on the first run (a timeout; the fixture passes alone, 15/15). **Not verified:** M2-Creator-All and M2-Sample-25DL-Shader were not opened against the split.
+
 ### 2026-10-06 — **the old editor archived at the tag `old-editor-final`: the profile's note, the dump's comment** (docs and comments only)
 - `Doc/Format/BoneBurst-Profile.md`: its 2026-10-06 note adds that the old editor and its pipeline plan are archived at the git tag `old-editor-final`. `Tools~/ParityHarness/Dump.cs`: the comment says the old editor's `tests/boneburstUnity.test.ts`, which reads the same dump, is at that tag. Why: E6 step 7 removed `Animation-BoneBurst-Src/` from `main` (`Editor-BoneBurst-Src/docs/E6-PLAN.md`, D8). Guard: v2's `scripts/unity-parity.ts` still reads the dump. Nothing compiles differently.
 

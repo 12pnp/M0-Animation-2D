@@ -1,0 +1,12 @@
+{
+  "name": "com.module.ta-creator-boneburst-core",
+  "displayName": "TA Creator BoneBurst Core",
+  "version": "0.1.0",
+  "unity": "6000.6",
+  "license": "SEE LICENSE IN LICENSE",
+  "description": "BoneBurst's data and pose core: the .sbdata format and readers (Module.PA.BoneBurst.Data) and the pose, constraint, timeline and mesh logic with no UnityEngine (Module.PA.BoneBurst.Core). Shared by the MonoBehaviour runtime (com.module.ta-creator-boneburst) and the ECS port. Plan: com.module.ta-creator-boneburst/Doc/Review/BoneBurst-ECS-Plan.md.",
+  "dependencies": {
+    "com.unity.collections": "6.6.0",
+    "com.unity.mathematics": "1.4.0"
+  }
+}

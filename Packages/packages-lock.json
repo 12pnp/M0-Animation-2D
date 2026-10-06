@@ -107,7 +107,17 @@
         "com.unity.burst": "2.0.0",
         "com.unity.collections": "6.6.0",
         "com.unity.mathematics": "1.4.0",
+        "com.module.ta-creator-boneburst-core": "0.1.0",
         "com.module.pb-creator-base": "2026.9.120"
+      }
+    },
+    "com.module.ta-creator-boneburst-core": {
+      "version": "file:com.module.ta-creator-boneburst-core",
+      "depth": 0,
+      "source": "embedded",
+      "dependencies": {
+        "com.unity.collections": "6.6.0",
+        "com.unity.mathematics": "1.4.0"
       }
     },
     "com.module.ta-creator-boneburst-import": {
@@ -116,6 +126,7 @@
       "source": "embedded",
       "dependencies": {
         "com.module.ta-creator-boneburst": "0.1.0",
+        "com.module.ta-creator-boneburst-core": "0.1.0",
         "com.module.pb-creator-base": "2026.9.120",
         "com.unity.mathematics": "1.4.0"
       }

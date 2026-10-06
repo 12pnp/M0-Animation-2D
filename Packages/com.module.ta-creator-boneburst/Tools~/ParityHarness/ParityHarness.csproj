@@ -19,13 +19,14 @@
     <PackageRoot>$(MSBuildThisFileDirectory)../../</PackageRoot>
     <SpineCsharp>$(PackageRoot)../com.esotericsoftware.spine.spine-csharp/</SpineCsharp>
     <ProjectRoot>$(PackageRoot)../../</ProjectRoot>
+    <CorePackage>$(PackageRoot)../com.module.ta-creator-boneburst-core/</CorePackage>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="$(SpineCsharp)**/*.cs" />
     <!-- BoneBurst's managed pose path is exactly two assemblies, Module.PA.BoneBurst.Data and .Core
          (Doc/Review/BoneBurst-AssemblySplit-Plan.md D6); the Unity front, Module.PB.BoneBurst.Unity, stays out. -->
-    <Compile Include="$(PackageRoot)Runtime/Data/**/*.cs" />
-    <Compile Include="$(PackageRoot)Runtime/Core/**/*.cs" />
+    <Compile Include="$(CorePackage)Runtime/Data/**/*.cs" />
+    <Compile Include="$(CorePackage)Runtime/Core/**/*.cs" />
     <!-- The export readers the parity tests load samples with (com.module.ta-creator-boneburst-import). -->
     <Compile Include="$(PackageRoot)../com.module.ta-creator-boneburst-import/Runtime/**/*.cs" />
     <!-- The shared sample corpus (in the neutral Editor test assembly) and the spine-csharp parity suites

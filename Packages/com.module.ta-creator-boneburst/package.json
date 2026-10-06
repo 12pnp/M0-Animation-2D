@@ -13,6 +13,7 @@
     "com.unity.burst": "2.0.0",
     "com.unity.collections": "6.6.0",
     "com.unity.mathematics": "1.4.0",
+    "com.module.ta-creator-boneburst-core": "0.1.0",
     "com.module.pb-creator-base": "2026.9.120"
   }
 }

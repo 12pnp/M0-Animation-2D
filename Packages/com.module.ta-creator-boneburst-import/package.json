@@ -7,6 +7,7 @@
   "description": "The authoring side of BoneBurst: readers for Spine 4.3 exports (JSON, binary, atlas) and the Editor bake that turns an export into a BoneBurstAsset with its .sbdata data. Players read only the baked data. Plan: Doc/Review/BoneBurstImport-Plan.md.",
   "dependencies": {
     "com.module.ta-creator-boneburst": "0.1.0",
+    "com.module.ta-creator-boneburst-core": "0.1.0",
     "com.module.pb-creator-base": "2026.9.120",
     "com.unity.mathematics": "1.4.0"
   }
