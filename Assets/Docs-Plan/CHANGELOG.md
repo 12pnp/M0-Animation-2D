@@ -11,6 +11,10 @@ flowchart LR
     BEN --> MS["mix-and-match-pro_SkeletonData<br/>(stock side)"]
 ```
 
+## 2026-10-07
+
+- **BoneBurst Editor v2: Preferences ▸ User interface (font size, interface scale 95%, toolbar position and labels, row height, fewer ticks, default FPS, tree colours and indent), and Play from Pose** (`Editor-BoneBurst-Src/`). Spine's "User interface" settings, as many as v2 has a use for, each reset per section; the interface scale is CSS zoom (95% by default, 100% under automation) with `src/ui/pageScale.ts` correcting every pointer and popup position. Play in Pose mode switches to Animate on the last animation shown, then plays. Left out: bitmap/Unicode fonts, and a separate Animate/Setup toolbar position (one setting). Guarded by `tests/preferences.test.ts`, `tests/uiPrefsEffects.test.ts`, `e2e/uiScale.spec.ts`, `e2e/playFromPose.spec.ts`; 708 unit and 36 browser tests passed on the working tree, and the staged tree (the other session's ruler, Hide IK and floating-panel work left out) type-checks with 706 unit tests passing. The Preferences window was not looked at by eye.
+
 ## 2026-10-06
 
 - **BoneBurst Editor v2: the Rig tree scrolls sideways; thin scrollbars, lit while the mouse is in the panel** (`Editor-BoneBurst-Src/`).

@@ -92,7 +92,9 @@ export interface View {
 }
 
 export const RULER = 24;
-export const ROW = 22;
+/** A row's height in pixels: a live binding, set from Preferences ▸ Timeline (`setRowHeight`). */
+export let ROW = 22;
+export function setRowHeight(n: number): void { ROW = Math.max(8, Math.round(n)); }
 
 export function frameX(v: View, frame: number): number { return (frame - v.first) * v.frameWidth; }
 export function xFrame(v: View, x: number): number { return x / v.frameWidth + v.first; }
@@ -114,9 +116,15 @@ export function markAt(v: View, ms: readonly Mark[], x: number, radius = 6): Mar
 }
 
 /** How often the ruler labels frames: every 1, 2, 5, 10 … frames, at least 48 px apart. */
+/** The steps between labelled ticks: the frame-rate divisors, or (fewer ticks) a 1-2-5 series. */
+const TICKS_FPS: readonly number[] = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600];
+const TICKS_125: readonly number[] = [1, 2, 5, 10, 20, 50, 100, 200, 500, 1000];
+let ticks = TICKS_FPS;
+export function setTickSeries(fewer: boolean): void { ticks = fewer ? TICKS_125 : TICKS_FPS; }
+
 export function labelStep(frameWidth: number): number {
-  for (const s of [1, 2, 5, 10, 15, 30, 60, 120, 300, 600]) if (s * frameWidth >= 48) return s;
-  return 1200;
+  for (const s of ticks) if (s * frameWidth >= 48) return s;
+  return ticks.at(-1)! * 2;
 }
 
 /** A key's identity in the selection. */

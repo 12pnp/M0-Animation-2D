@@ -1,5 +1,6 @@
 import { type Recent, folders, type FolderHandle, type ProjectFolder, projectsIn, readRecent, recent, type RecentHandle } from "./recent";
 import type { ProjectFile } from "./session";
+import { toStyle } from "./pageScale";
 
 /**
  * The Open dialog: a helper before the browser's own file picker. Files lists the recent projects,
@@ -100,8 +101,8 @@ export class OpenDialog {
       handle.setPointerCapture(e.pointerId);
       const move = (m: PointerEvent) => {
         this.dialog.style.margin = "0";
-        this.dialog.style.left = `${Math.min(Math.max(0, m.clientX - dx), window.innerWidth - 80)}px`;
-        this.dialog.style.top = `${Math.min(Math.max(0, m.clientY - dy), window.innerHeight - 40)}px`;
+        this.dialog.style.left = `${toStyle(Math.min(Math.max(0, m.clientX - dx), window.innerWidth - 80))}px`;
+        this.dialog.style.top = `${toStyle(Math.min(Math.max(0, m.clientY - dy), window.innerHeight - 40))}px`;
       };
       const up = () => { handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", up); };
       handle.addEventListener("pointermove", move);

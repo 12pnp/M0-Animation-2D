@@ -1,4 +1,5 @@
 import type { MenuItem } from "./menubar";
+import { pageScale, toStyle } from "./pageScale";
 
 /**
  * A right-click menu at a point, in the page's own style (the menu bar's lists). It closes when an
@@ -41,8 +42,9 @@ export function showContextMenu(clientX: number, clientY: number, items: readonl
   host.append(list);
   // Inside the window: it opens left or up when there is not room to the right or below.
   const w = list.offsetWidth, h = list.offsetHeight;
-  list.style.left = `${Math.max(4, Math.min(clientX, win.innerWidth - w - 4))}px`;
-  list.style.top = `${Math.max(4, Math.min(clientY, win.innerHeight - h - 4))}px`;
+  const k = pageScale(doc);
+  list.style.left = `${toStyle(Math.max(4, Math.min(clientX, win.innerWidth - w * k - 4)), doc)}px`;
+  list.style.top = `${toStyle(Math.max(4, Math.min(clientY, win.innerHeight - h * k - 4)), doc)}px`;
   setTimeout(() => doc.addEventListener("pointerdown", outside, true));
   doc.addEventListener("keydown", key, true);
   win.addEventListener("blur", close);

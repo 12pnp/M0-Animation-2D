@@ -9,6 +9,24 @@ export type Theme = "system" | "light" | "dark";
 export interface PreferenceValues {
   readonly theme: Theme;
   readonly rulers: boolean;
+  /** The interface's size, in percent of the browser's own (UI_SCALE_RANGE): 95 draws everything a twentieth smaller. */
+  readonly uiScale: number;
+  /** The interface's text size (the page's base font: 12, 13 or 14 px). */
+  readonly fontSize: FontSize;
+  /** The stage's tool panels' text labels: always, never, or hidden when the stage is narrow. */
+  readonly toolbarLabels: ToolbarLabels;
+  /** Where the stage's tool panels sit along the stage's foot. */
+  readonly toolbarPosition: ToolbarPosition;
+  /** The height of a row in the timeline and graph, in pixels. */
+  readonly rowHeight: number;
+  /** Timeline ticks and labels in a 1-2-5 series (1, 2, 5, 10, 20, 50), instead of the frame-rate divisors (10, 15, 30, 60). */
+  readonly fewerTicks: boolean;
+  /** The frame rate a new project starts with. */
+  readonly defaultFps: number;
+  /** The rig tree's names and icons in each bone's colour. */
+  readonly treeColours: boolean;
+  /** The rig tree's indent for each level, in pixels. */
+  readonly treeIndent: number;
   /** The transform, space and show panels over the stage's foot. */
   readonly stagePanels: boolean;
   /** The colour bones are drawn in on the stage ("#rrggbb", or "auto" for the theme's); a bone with a colour of its own keeps it. */
@@ -61,10 +79,21 @@ export interface PreferenceValues {
   readonly snapPixels: boolean;
 }
 
-export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, stagePanels: true, boneColour: "auto", boneSize: 1, selectedBoneColour: "auto", bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
+/** The interface size, in percent. */
+export const UI_SCALE_RANGE = [60, 140] as const;
+/** 95: a twentieth smaller than the browser's own size; a browser under automation (the browser tests) keeps 100, so what they measure is in the pixels they see. */
+const DEFAULT_UI_SCALE = typeof navigator !== "undefined" && navigator.webdriver ? 100 : 95;
+export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, uiScale: DEFAULT_UI_SCALE, fontSize: "medium", toolbarLabels: "auto", toolbarPosition: "center", rowHeight: 22, fewerTicks: false, defaultFps: 30, treeColours: true, treeIndent: 14, stagePanels: true, boneColour: "auto", boneSize: 1, selectedBoneColour: "auto", bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
   grid: false, checker: true, axes: true, checkerColour: "auto", gridColour: "auto", gridThickness: 1, axisXColour: "#303030", axisYColour: "#303030", axisThickness: 1, tabBarColour: "#201f24", tabActiveColour: "auto", tabTextColour: "auto", tabDimTextColour: "auto", gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
 export { BONE_SIZE_RANGE } from "./stage/boneScale";
 import { BONE_SIZE_RANGE } from "./stage/boneScale";
+export type FontSize = "small" | "medium" | "large";
+export const FONT_SIZES: Readonly<Record<FontSize, number>> = { small: 12, medium: 13, large: 14 };
+export type ToolbarLabels = "auto" | "show" | "hide";
+export type ToolbarPosition = "left" | "center" | "right";
+export const ROW_HEIGHT_RANGE = [16, 40] as const;
+export const DEFAULT_FPS_RANGE = [1, 240] as const;
+export const TREE_INDENT_RANGE = [6, 40] as const;
 export const GRID_RANGE = [1, 1000] as const;
 export const THICKNESS_RANGE = [0.5, 8] as const;
 export const ONION_RANGE = [0, 10] as const;
@@ -85,6 +114,7 @@ export function readPreferences(text: string | null): PreferenceValues {
   const v = o as Record<string, unknown>;
   const num = (k: string, lo: number, hi: number, d: number) => (typeof v[k] === "number" && (v[k] as number) >= lo && (v[k] as number) <= hi ? (v[k] as number) : d);
   const colour = (k: string, d: string) => (typeof v[k] === "string" && /^(auto|#[0-9a-fA-F]{6})$/.test(v[k] as string) ? (v[k] as string) : d);
+  const choice = <T extends string>(k: string, options: readonly T[], d: T): T => (options.includes(v[k] as T) ? (v[k] as T) : d);
   const bool = (k: string, d: boolean) => (typeof v[k] === "boolean" ? (v[k] as boolean) : d);
   return {
     theme: v.theme === "light" || v.theme === "dark" || v.theme === "system" ? v.theme : DEFAULTS.theme,
@@ -104,6 +134,15 @@ export function readPreferences(text: string | null): PreferenceValues {
     grid: bool("grid", DEFAULTS.grid),
     checker: bool("checker", DEFAULTS.checker),
     axes: bool("axes", DEFAULTS.axes),
+    uiScale: num("uiScale", UI_SCALE_RANGE[0], UI_SCALE_RANGE[1], DEFAULTS.uiScale),
+    fontSize: choice("fontSize", ["small", "medium", "large"] as const, DEFAULTS.fontSize),
+    toolbarLabels: choice("toolbarLabels", ["auto", "show", "hide"] as const, DEFAULTS.toolbarLabels),
+    toolbarPosition: choice("toolbarPosition", ["left", "center", "right"] as const, DEFAULTS.toolbarPosition),
+    rowHeight: Math.round(num("rowHeight", ROW_HEIGHT_RANGE[0], ROW_HEIGHT_RANGE[1], DEFAULTS.rowHeight)),
+    fewerTicks: bool("fewerTicks", DEFAULTS.fewerTicks),
+    defaultFps: Math.round(num("defaultFps", DEFAULT_FPS_RANGE[0], DEFAULT_FPS_RANGE[1], DEFAULTS.defaultFps)),
+    treeColours: bool("treeColours", DEFAULTS.treeColours),
+    treeIndent: Math.round(num("treeIndent", TREE_INDENT_RANGE[0], TREE_INDENT_RANGE[1], DEFAULTS.treeIndent)),
     stagePanels: bool("stagePanels", DEFAULTS.stagePanels),
     boneColour: colour("boneColour", DEFAULTS.boneColour),
     boneSize: num("boneSize", BONE_SIZE_RANGE[0], BONE_SIZE_RANGE[1], DEFAULTS.boneSize),
@@ -163,6 +202,10 @@ export class Preferences {
       gridThickness: Number.isFinite(merged.gridThickness) ? clamp(merged.gridThickness, THICKNESS_RANGE[0], THICKNESS_RANGE[1]) : this.current.gridThickness,
       axisThickness: Number.isFinite(merged.axisThickness) ? clamp(merged.axisThickness, THICKNESS_RANGE[0], THICKNESS_RANGE[1]) : this.current.axisThickness,
       boneSize: Number.isFinite(merged.boneSize) ? clamp(merged.boneSize, BONE_SIZE_RANGE[0], BONE_SIZE_RANGE[1]) : this.current.boneSize,
+      uiScale: Number.isFinite(merged.uiScale) ? clamp(Math.round(merged.uiScale), UI_SCALE_RANGE[0], UI_SCALE_RANGE[1]) : this.current.uiScale,
+      rowHeight: Number.isFinite(merged.rowHeight) ? clamp(Math.round(merged.rowHeight), ROW_HEIGHT_RANGE[0], ROW_HEIGHT_RANGE[1]) : this.current.rowHeight,
+      defaultFps: Number.isFinite(merged.defaultFps) ? clamp(Math.round(merged.defaultFps), DEFAULT_FPS_RANGE[0], DEFAULT_FPS_RANGE[1]) : this.current.defaultFps,
+      treeIndent: Number.isFinite(merged.treeIndent) ? clamp(Math.round(merged.treeIndent), TREE_INDENT_RANGE[0], TREE_INDENT_RANGE[1]) : this.current.treeIndent,
       gridSize: Number.isFinite(merged.gridSize) ? clamp(merged.gridSize, GRID_RANGE[0], GRID_RANGE[1]) : this.current.gridSize,
     }));
     if (writePreferences(next) === writePreferences(this.current)) return;

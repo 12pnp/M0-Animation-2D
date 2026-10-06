@@ -2,7 +2,8 @@ import { EDITOR_NAME, titleFor } from "@/about";
 import { Inspector } from "./panels/inspector";
 import { pickFiles, spineFolderProblems } from "./files";
 import { Outline } from "./panels/outline";
-import { type PreferenceValues, Preferences } from "./preferences";
+import { FONT_SIZES, type PreferenceValues, Preferences } from "./preferences";
+import { setRowHeight, setTickSeries } from "./timeline/layout";
 import { PreferencesDialog } from "./preferencesDialog";
 import { AnimationsPanel } from "./panels/animationsPanel";
 import { HistoryPanel } from "./panels/history";
@@ -167,13 +168,9 @@ export function mountApp(root: HTMLElement): void {
   crumb = el("div", "stage-crumb");
   // Pose / Animate: one button for the mode. Pose edits the setup pose (no animation shown); Animate
   // shows the last animation used, or the first, and what is done there is keyed.
-  let lastAnimation: string | null = null;
   const modeBtn = iconButton(button("Pose", "", () => {
     if (session.animation) { session.showAnimation(null); return; }
-    const names = (session.doc?.animations ?? []).map((a) => a.name);
-    const pick = lastAnimation !== null && names.includes(lastAnimation) ? lastAnimation : names[0];
-    if (pick === undefined) { say("No animations yet: New… in the Timeline adds one."); return; }
-    session.showAnimation(pick);
+    if (!session.enterAnimate()) say("No animations yet: New… in the Timeline adds one.");
   }), "bone");
   modeBtn.classList.add("mode");
   // The path window: the selected path attachment's vertices, by number (docs/PATH-PLAN.md); it sits in the Local Path panel.
@@ -183,6 +180,8 @@ export function mountApp(root: HTMLElement): void {
   const fitCorner = el("div", "stage-fit");
   fitCorner.append(fitBtn);
   stagePanel.append(fitCorner);
+  // "Automatic" text labels: hidden while the stage is narrow.
+  new ResizeObserver(() => stageTools.classList.toggle("narrow", stagePanel.clientWidth < 560)).observe(stagePanel);
   stagePanel.append(stage.element, hint, stageTools);
   const main = el("main", "dock");
 
@@ -329,6 +328,17 @@ export function mountApp(root: HTMLElement): void {
     localPath.onion = () => ({ before: prefs.values.onionBefore, after: prefs.values.onionAfter, keyedOnly: prefs.values.onionKeyedOnly, colour: prefs.values.onionColour });
     stage.onion = p.onion ? { before: p.onionBefore, after: p.onionAfter, keyedOnly: p.onionKeyedOnly, colour: p.onionColour } : null;
     stage.grid = p.grid ? p.gridSize : null;
+    // The interface size: CSS zoom on the page (the pointer maths in `pageScale.ts` follows it).
+    document.documentElement.style.zoom = p.uiScale === 100 ? "" : String(p.uiScale / 100);
+    // The rest of Preferences ▸ User interface: text size, the stage's tool panels, the timeline, the rig tree, new projects' frame rate.
+    document.documentElement.style.setProperty("--ui-font-size", `${FONT_SIZES[p.fontSize]}px`);
+    stageTools.dataset.align = p.toolbarPosition;
+    stageTools.dataset.labels = p.toolbarLabels;
+    setRowHeight(p.rowHeight);
+    setTickSeries(p.fewerTicks);
+    timeline.redraw();
+    outline.setLook(p.treeIndent, p.treeColours);
+    session.defaultFps = p.defaultFps;
     stage.look = lookOf(p);
     localPath.background = () => ({ look: lookOf(prefs.values), grid: prefs.values.grid ? prefs.values.gridSize : null });
     localPath.refresh();
@@ -538,7 +548,6 @@ export function mountApp(root: HTMLElement): void {
     hint.hidden = !!doc;
     // The mode button says what is shown now, and what a click switches to.
     const animating = !!session.animation;
-    if (session.animation) lastAnimation = session.animation.name;
     modeBtn.querySelector(".label")!.textContent = animating ? "Animate" : "Pose";
     setIcon(modeBtn, animating ? "key" : "bone");
     modeBtn.title = animating ? `Animate: editing ${session.animation!.name}. Click for the setup pose (Pose)` : "Pose: editing the setup pose. Click to animate";

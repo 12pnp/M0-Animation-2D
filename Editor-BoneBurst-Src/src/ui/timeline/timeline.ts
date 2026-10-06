@@ -16,6 +16,7 @@ import {
   buildRows, shiftedRefs, frameX, labelStep, type Mark, markAt, marks, refId, ROW, type Row, rowAt, RULER, type View, xFrame,
 } from "./layout";
 import { keysOf } from "../shortcuts";
+import { localPoint, pageScale } from "../pageScale";
 
 const CURVES: ReadonlyArray<{ label: string; title: string; icon: IconName; curve: "linear" | "stepped" | Shape }> = [
   { label: "Linear", icon: "curveLinear", title: "Straight from each selected key to the next", curve: "linear" },
@@ -160,7 +161,9 @@ export class Timeline {
   }
 
   togglePlay(): void {
-    if (this.session.playing) this.session.pause(); else this.session.play();
+    if (this.session.playing) { this.session.pause(); return; }
+    if (!this.session.animation && !this.session.doc?.animations?.length) { this.onStatus("No animations yet: New… adds one."); return; }
+    this.session.play();
   }
 
   deleteSelected(): void {
@@ -242,7 +245,8 @@ export class Timeline {
     for (const b of this.animButtons) b.disabled = !a;
     for (const b of this.curveButtons) b.disabled = !a || !this.selected.size;
     this.keyBtn.disabled = !a || (s.selectedBone === null && s.selected?.kind !== "event");
-    this.playBtn.disabled = !a;
+    // Play is there in Pose mode too: it switches to Animate (the last animation, or the first) and plays.
+    this.playBtn.disabled = !a && !doc?.animations?.length;
     setIcon(this.playBtn, s.playing ? "pause" : "play");
     this.playBtn.title = `${s.playing ? "Pause" : "Play"} (${keysOf("play")})`;
     this.playBtn.setAttribute("aria-label", this.playBtn.title);
@@ -328,7 +332,7 @@ export class Timeline {
   private paint(): void {
     const c = this.canvas, parent = c.parentElement!;
     const view = this.element.ownerDocument.defaultView ?? window;
-    const dpr = view.devicePixelRatio || 1;
+    const dpr = (view.devicePixelRatio || 1) * pageScale(this.canvas.ownerDocument);
     // The graph fills what is in view; the rows run as long as they need.
     const width = Math.max(1, parent.clientWidth), height = this.graph ? this.graphHeight() : Math.max(parent.clientHeight, RULER + this.rows.length * ROW);
     if (c.width !== Math.round(width * dpr) || c.height !== Math.round(height * dpr)) {
@@ -410,8 +414,7 @@ export class Timeline {
   }
 
   private local(e: PointerEvent | WheelEvent): [number, number] {
-    const r = this.canvas.getBoundingClientRect();
-    return [e.clientX - r.left, e.clientY - r.top];
+    return localPoint(this.canvas, e);
   }
 
   private down(e: PointerEvent): void {

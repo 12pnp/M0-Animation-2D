@@ -17,6 +17,7 @@ import { constraintShapes, hitConstraint } from "./constraintShapes";
 import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
 import { movePathPoint, movePathVertex } from "@/edit/path";
 import { boneColourOf } from "../boneLook";
+import { localPoint, pageScale } from "../pageScale";
 import { hitPath, type PathView, pathView, toSlot } from "./pathView";
 import { boneHalfWidth, jointRadius } from "./boneScale";
 import { NO_LOOK, type StageLook } from "./look";
@@ -200,7 +201,7 @@ export class Stage {
   /** The panel's size, from the dock (Dockview calls this whenever it lays the panel out). */
   resize(width: number, height: number): void {
     this.size = { width: Math.max(1, width), height: Math.max(1, height) };
-    this.dpr = this.view().devicePixelRatio || 1;
+    this.dpr = (this.view().devicePixelRatio || 1) * pageScale(this.element.ownerDocument);
     for (const c of [this.gl, this.overlay]) {
       c.width = Math.round(this.size.width * this.dpr);
       c.height = Math.round(this.size.height * this.dpr);
@@ -783,8 +784,7 @@ export class Stage {
   }
 
   private local(e: PointerEvent | WheelEvent): [number, number] {
-    const r = this.overlay.getBoundingClientRect();
-    return [e.clientX - r.left, e.clientY - r.top];
+    return localPoint(this.overlay, e);
   }
 
   private down(e: PointerEvent): void {

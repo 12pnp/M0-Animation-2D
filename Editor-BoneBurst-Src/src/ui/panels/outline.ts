@@ -33,6 +33,9 @@ export class Outline {
   private readonly closed = new Set<string>();
   private readonly opened = new Set<string>();
   private rendered = "";
+  /** The tree's look, from the preferences: each level's indent in pixels, and bones' own colours on their names and icons. */
+  private indent = 14;
+  private treeColours = true;
   /** The selection last shown, so a new one is revealed and flashed once. */
   private shownSel = "";
   private readonly rows = new Map<string, HTMLElement>();
@@ -101,6 +104,15 @@ export class Outline {
     search.append(field, nav);
     this.element.append(bar, search, this.list);
     session.onChange(() => this.update());
+    this.update();
+  }
+
+  /** The tree's look changed (Preferences ▸ Tree): draw it again. */
+  setLook(indent: number, treeColours: boolean): void {
+    if (indent === this.indent && treeColours === this.treeColours) return;
+    this.indent = indent;
+    this.treeColours = treeColours;
+    this.rendered = "";
     this.update();
   }
 
@@ -402,7 +414,7 @@ export class Outline {
     const row = document.createElement("div");
     row.className = `row ${it.kind}`;
     row.setAttribute("role", "treeitem");
-    row.style.paddingLeft = `${6 + it.depth * 14}px`;
+    row.style.paddingLeft = `${6 + it.depth * this.indent}px`;
     if (it.toggle) {
       row.setAttribute("aria-expanded", String(!!it.open));
       const t = button(it.open ? "▾" : "▸", it.open ? "Fold" : "Unfold", () => {
@@ -418,10 +430,11 @@ export class Outline {
       pad.className = "twisty-gap";
       row.append(pad);
     }
-    if (it.icon) { const i = icon(it.icon); if (it.colour) i.style.color = it.colour; row.append(i); }
+    if (it.icon) { const i = icon(it.icon); if (it.colour && this.treeColours) i.style.color = it.colour; row.append(i); }
     const name = document.createElement("span");
     name.className = "name";
     name.textContent = it.label;
+    if (it.colour && this.treeColours) name.style.color = it.colour;
     row.append(name);
     if (it.note) {
       const note = document.createElement("span");

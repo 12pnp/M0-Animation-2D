@@ -86,7 +86,7 @@ html, body { height: 100%; margin: 0; }
 body {
   background: var(--bg);
   color: var(--text);
-  font: 13px/1.4 var(--font-ui);
+  font: var(--ui-font-size, 13px)/1.4 var(--font-ui);
 }
 #app {
   height: 100%;
@@ -622,3 +622,13 @@ dialog.open-project .op-buttons { flex: none; display: flex; justify-content: ce
 /* Lit while the mouse is anywhere in the scrolling panel (class set by scrollbars.ts, since :hover on a scrollbar is unreliable); brighter on the thumb itself. */
 .scroll-hot::-webkit-scrollbar-thumb { background: var(--muted); background-clip: content-box; }
 *::-webkit-scrollbar-thumb:hover { background: var(--accent); background-clip: content-box; }
+
+/* Preferences ▸ User interface: where the stage's tool panels sit, and whether they show their words. */
+.stage-tools[data-align="left"] { left: 10px; transform: none; justify-content: flex-start; }
+.stage-tools[data-align="right"] { left: auto; right: 10px; transform: none; justify-content: flex-end; }
+.stage-tools[data-labels="hide"] .label, .stage-tools[data-labels="auto"].narrow .label { display: none; }
+.stage-tools[data-labels="hide"] .t-row > button:first-child, .stage-tools[data-labels="auto"].narrow .t-row > button:first-child { width: 36px; justify-content: center; }
+.stage-tools[data-labels="hide"] .group button.mode, .stage-tools[data-labels="auto"].narrow .group button.mode { min-width: 0; }
+dialog.preferences .slider { display: flex; align-items: center; gap: 8px; }
+dialog.preferences .slider input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); }
+dialog.preferences .slider input[type="number"] { width: 64px; }

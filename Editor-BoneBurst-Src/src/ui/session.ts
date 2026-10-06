@@ -75,6 +75,8 @@ export class Session {
   referenceOpacity = 0.5;
   /** How big bones are drawn, a multiple of the default (a preference; Properties ▸ Skeleton sets it). */
   boneSize = 1;
+  /** The frame rate a new project starts with (Preferences ▸ Timeline). */
+  defaultFps = 30;
   private unit: { history: History<Skeleton>; skin: string | null; value: number } | null = null;
   /** Reference pictures by reference path; a reference without one is missing (its file not given). */
   referenceImages = new Map<string, ImageBitmap>();
@@ -98,6 +100,8 @@ export class Session {
   private saved: Skeleton | null = null;
   /** The animation shown and keyed, or null for the setup pose (see `animation`). */
   private shown: string | null = null;
+  /** The animation last shown, for Pose to come back to Animate on it. */
+  private lastShown: string | null = null;
   /** The playhead in seconds: a frame's float32 time when paused, anything while playing. */
   time = 0;
   playing = false;
@@ -258,7 +262,17 @@ export class Session {
   /** Show an animation (null: the setup pose), from its start. */
   showAnimation(name: string | null): void {
     this.shown = name;
+    if (name !== null) this.lastShown = name;
     this.seek(0);
+  }
+
+  /** Switch from Pose to Animate: show the animation last shown, else the first. False when the document has none. */
+  enterAnimate(): boolean {
+    const names = (this.doc?.animations ?? []).map((a) => a.name);
+    const pick = this.lastShown !== null && names.includes(this.lastShown) ? this.lastShown : names[0];
+    if (pick === undefined) return false;
+    this.showAnimation(pick);
+    return true;
   }
 
   get hasUnkeyed(): boolean { return this.unkeyed.size > 0; }
@@ -284,10 +298,13 @@ export class Session {
     this.changed();
   }
 
+  /** Play. In Pose mode this first switches to Animate (the last animation shown, or the first), then plays. */
   play(): void {
-    if (!this.animation) return;
+    if (!this.animation && !this.enterAnimate()) return;
+    const anim = this.animation;
+    if (!anim) return;
     this.clearUnkeyed();
-    const end = animationDuration(this.animation);
+    const end = animationDuration(anim);
     if (!this.loop && this.time >= end) this.time = 0;
     this.playing = true;
     this.physics = "reset";
@@ -378,7 +395,7 @@ export class Session {
 
   /** A new project: a skeleton with only a root bone and no atlas, clean until edited, saved with Save Project. */
   newProject(): void {
-    this.replace(newSkeleton(randomHash()), false, "untitled", null, new Map(), []);
+    this.replace(newSkeleton(randomHash(), this.defaultFps), false, "untitled", null, new Map(), []);
     this.saved = this.history!.doc;
     this.changed();
   }
@@ -395,7 +412,7 @@ export class Session {
     if (picked.psd && !picked.skeleton) { await this.openPsd(picked.psd); return; }
     if (!picked.skeleton && !picked.atlas) throw new Error("Choose a Spine skeleton (.json) with its .atlas and page images, or an atlas with its images to start a new skeleton.");
     // An atlas alone starts a new skeleton (a root bone) to build a rig from its regions.
-    const { skeleton, issues } = picked.skeleton ? readSkeleton(await picked.skeleton.text()) : { skeleton: newSkeleton(randomHash()), issues: [] };
+    const { skeleton, issues } = picked.skeleton ? readSkeleton(await picked.skeleton.text()) : { skeleton: newSkeleton(randomHash(), this.defaultFps), issues: [] };
     const fileName = picked.skeleton?.name ?? `${picked.atlas!.name.replace(/\.atlas(\.txt)?$/i, "")}.json`;
     // The profile and the atlas's regions are the live notes' (`notes`): they follow every edit.
     const all: Issue[] = [...issues];
@@ -523,6 +540,7 @@ export class Session {
     this.weightBone = null;
     this.setup = null;
     this.shown = null;
+    this.lastShown = null;
     this.clearUnkeyed();
     this.time = 0;
     this.playing = false;
@@ -624,7 +642,7 @@ function sourceOf(f: { name: string; data: Uint8Array }): Source {
 export interface DocumentState { readonly __documentState: never }
 
 /** The session's fields that belong to the person or the page, not to a document. */
-const SHARED_FIELDS: ReadonlySet<string> = new Set(["listeners", "undoSteps", "referenceOpacity", "boneSize", "unkeyed", "unkeyedRev"]);
+const SHARED_FIELDS: ReadonlySet<string> = new Set(["listeners", "undoSteps", "referenceOpacity", "boneSize", "defaultFps", "unkeyed", "unkeyedRev"]);
 
 /** An atlas with what goes with it: its regions in numbers, page images, exact pixels, the files Save writes. */
 interface AtlasState {

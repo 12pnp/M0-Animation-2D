@@ -1,5 +1,6 @@
 import { type Hsv, hexToHsv, hsvToHex } from "./colour";
 import { icon } from "./icons";
+import { pageScale, toStyle } from "./pageScale";
 
 /** The browser's eyedropper (Chromium has it; Firefox and Safari do not). */
 interface EyeDropperApi { open(): Promise<{ sRGBHex: string }> }
@@ -109,8 +110,8 @@ export function pickColour(anchor: HTMLElement, current: string, onApply: (hex: 
 
   host.append(pop);
   const a = anchor.getBoundingClientRect(), w = 220, h = 236;
-  pop.style.left = `${Math.max(8, Math.min(a.left, window.innerWidth - w - 8))}px`;
-  pop.style.top = `${a.bottom + h + 8 > window.innerHeight ? Math.max(8, a.top - h - 4) : a.bottom + 4}px`;
+  pop.style.left = `${toStyle(Math.max(8, Math.min(a.left, window.innerWidth - w * pageScale() - 8)))}px`;
+  pop.style.top = `${toStyle(a.bottom + (h + 8) * pageScale() > window.innerHeight ? Math.max(8, a.top - (h + 4) * pageScale()) : a.bottom + 4)}px`;
   draw();
   setTimeout(() => document.addEventListener("pointerdown", outside, true));
   host.addEventListener("keydown", key, true);

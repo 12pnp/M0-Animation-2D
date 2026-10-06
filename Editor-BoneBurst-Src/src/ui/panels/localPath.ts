@@ -2,6 +2,7 @@ import { drawnVertices } from "@/engine/draw";
 import type { Skeleton } from "@/model/skeleton";
 import { animationDuration, frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
 import { iconButton } from "../icons";
+import { localPoint, pageScale } from "../pageScale";
 import type { Session } from "../session";
 import { boneMatrix, boneTip, type Posed, Poser } from "../stage/posed";
 import { drawBackdrop } from "../stage/canvasBackdrop";
@@ -193,7 +194,7 @@ export class LocalPathPanel {
     const s = this.session, r = this.trail();
     for (const k of ["local", "world"] as const) this.spaceBtns[k].setAttribute("aria-pressed", String(this.space === k));
     for (const l of LAYERS) this.layerBtns[l].setAttribute("aria-pressed", String(this.show[l]));
-    const width = Math.max(1, Math.floor(this.body.clientWidth)), height = Math.max(1, Math.floor(this.body.clientHeight)), dpr = window.devicePixelRatio || 1;
+    const width = Math.max(1, Math.floor(this.body.clientWidth)), height = Math.max(1, Math.floor(this.body.clientHeight)), dpr = (window.devicePixelRatio || 1) * pageScale();
     if (this.canvas.width !== Math.round(width * dpr) || this.canvas.height !== Math.round(height * dpr)) {
       this.canvas.width = Math.round(width * dpr);
       this.canvas.height = Math.round(height * dpr);
@@ -387,7 +388,7 @@ export class LocalPathPanel {
 
   /** A press: on a mark, the playhead goes to its frame; anywhere else it starts a pan (the middle and right buttons pan from a mark too). */
   private down(e: PointerEvent): void {
-    const box = this.canvas.getBoundingClientRect(), x = e.clientX - box.left, y = e.clientY - box.top;
+    const [x, y] = localPoint(this.canvas, e);
     if (e.button === 0) {
       let best = -1, bestD = 12;
       for (let f = 0; f * 2 < this.marks.length; f++) {
@@ -417,7 +418,7 @@ export class LocalPathPanel {
   /** The wheel zooms about the pointer: the point under it stays put. A trackpad's pinch comes as ctrl + wheel with small steps. */
   private wheel(e: WheelEvent): void {
     e.preventDefault();
-    const box = this.canvas.getBoundingClientRect(), px = e.clientX - box.left - box.width / 2, py = e.clientY - box.top - box.height / 2;
+    const [lx, ly] = localPoint(this.canvas, e), px = lx - this.canvas.offsetWidth / 2, py = ly - this.canvas.offsetHeight / 2;
     const next = Math.min(200, Math.max(0.05, this.zoom * Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)))), ratio = next / this.zoom;
     this.pan = { x: px - (px - this.pan.x) * ratio, y: py - (py - this.pan.y) * ratio };
     this.zoom = next;

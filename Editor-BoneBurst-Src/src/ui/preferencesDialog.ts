@@ -1,5 +1,6 @@
 import { pickColour } from "./colourPopup";
-import { AUTOSAVE_RANGE, BONE_SIZE_RANGE, DEFAULTS, GRID_RANGE, ONION_RANGE, type Preferences, type PreferenceValues, THICKNESS_RANGE, type Theme, UNDO_RANGE } from "./preferences";
+import { AUTOSAVE_RANGE, BONE_SIZE_RANGE, DEFAULTS, GRID_RANGE, ONION_RANGE, DEFAULT_FPS_RANGE, type FontSize, type Preferences, type PreferenceValues, ROW_HEIGHT_RANGE, TREE_INDENT_RANGE, type ToolbarLabels, type ToolbarPosition, THICKNESS_RANGE, type Theme, UI_SCALE_RANGE, UNDO_RANGE } from "./preferences";
+import { toStyle } from "./pageScale";
 
 /**
  * The Preferences dialog (E4-PLAN step 10): a native `<dialog>`; each change applies at once.
@@ -37,6 +38,26 @@ export class PreferencesDialog {
         number(`Undo steps kept (${UNDO_RANGE[0]}–${UNDO_RANGE[1]})`, p.undoSteps, 1, (n) => this.prefs.set({ undoSteps: n })),
         note("Takes effect for the next document opened."),
         number("New references' opacity (%)", Math.round(p.referenceOpacity * 100), 1, (n) => this.prefs.set({ referenceOpacity: n / 100 })),
+      ],
+      interface: [
+        select("Font size", [["small", "Small"], ["medium", "Medium"], ["large", "Large"]], p.fontSize, (v) => this.prefs.set({ fontSize: v as FontSize })),
+        slider(`Interface scale (%, ${UI_SCALE_RANGE[0]}–${UI_SCALE_RANGE[1]})`, p.uiScale, UI_SCALE_RANGE[0], UI_SCALE_RANGE[1], 5, (n) => this.prefs.set({ uiScale: n })),
+        note("Scales the whole interface larger or smaller, like the browser's zoom."),
+        select("Toolbar position", [["left", "Left"], ["center", "Center"], ["right", "Right"]], p.toolbarPosition, (v) => this.prefs.set({ toolbarPosition: v as ToolbarPosition })),
+        select("Toolbar text labels", [["auto", "Automatic"], ["show", "Show"], ["hide", "Hide"]], p.toolbarLabels, (v) => this.prefs.set({ toolbarLabels: v as ToolbarLabels })),
+        note("Automatic hides the labels when the Stage is narrow."),
+      ],
+      timeline: [
+        number(`Default timeline FPS (${DEFAULT_FPS_RANGE[0]}–${DEFAULT_FPS_RANGE[1]})`, p.defaultFps, 1, (n) => this.prefs.set({ defaultFps: n })),
+        note("The frame rate a new project starts with."),
+        check("Fewer timeline ticks (1-2-5 series)", p.fewerTicks, (on) => this.prefs.set({ fewerTicks: on })),
+        slider(`Row height (pixels, ${ROW_HEIGHT_RANGE[0]}–${ROW_HEIGHT_RANGE[1]})`, p.rowHeight, ROW_HEIGHT_RANGE[0], ROW_HEIGHT_RANGE[1], 1, (n) => this.prefs.set({ rowHeight: n })),
+        note("The height of each row in the timeline and graph."),
+      ],
+      tree: [
+        check("Tree colours", p.treeColours, (on) => this.prefs.set({ treeColours: on })),
+        note("Names and icons in the rig tree take each bone's colour."),
+        slider(`Tree indentation (pixels, ${TREE_INDENT_RANGE[0]}–${TREE_INDENT_RANGE[1]})`, p.treeIndent, TREE_INDENT_RANGE[0], TREE_INDENT_RANGE[1], 1, (n) => this.prefs.set({ treeIndent: n })),
       ],
       files: [
         check("Keep a recovery copy of unsaved work", p.autosave, (on) => this.prefs.set({ autosave: on })),
@@ -154,8 +175,8 @@ export class PreferencesDialog {
         const left = Math.min(Math.max(0, m.clientX - dx), window.innerWidth - 80);
         const top = Math.min(Math.max(0, m.clientY - dy), window.innerHeight - 40);
         this.element.style.margin = "0";
-        this.element.style.left = `${left}px`;
-        this.element.style.top = `${top}px`;
+        this.element.style.left = `${toStyle(left)}px`;
+        this.element.style.top = `${toStyle(top)}px`;
       };
       const up = () => { handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", up); };
       handle.addEventListener("pointermove", move);
@@ -167,6 +188,9 @@ export class PreferencesDialog {
 /** The preferences each section holds: what its Reset puts back. */
 const KEYS: Readonly<Record<string, readonly (keyof PreferenceValues)[]>> = {
   general: ["theme", "undoSteps", "referenceOpacity"],
+  interface: ["fontSize", "uiScale", "toolbarPosition", "toolbarLabels"],
+  timeline: ["defaultFps", "fewerTicks", "rowHeight"],
+  tree: ["treeColours", "treeIndent"],
   files: ["autosave", "autosaveSeconds"],
   display: ["rulers", "stagePanels", "bones", "boneColour", "boneSize", "selectedBoneColour", "constraints"],
   background: ["checker", "checkerColour", "gridColour", "gridThickness", "axes", "axisXColour", "axisYColour", "axisThickness"],
@@ -181,7 +205,7 @@ interface NavNode { readonly id: string; readonly label: string; readonly childr
 const NAV: readonly NavNode[] = [
   { id: "application", label: "Application", children: [{ id: "general", label: "General" }, { id: "files", label: "Files" }] },
   { id: "viewport", label: "Viewport", children: [{ id: "display", label: "Display" }, { id: "background", label: "Background" }, { id: "grid", label: "Grid" }] },
-  { id: "interface", label: "User interface", children: [{ id: "tabs", label: "Panel tabs" }] },
+  { id: "ui", label: "User interface", children: [{ id: "interface", label: "Interface" }, { id: "timeline", label: "Timeline" }, { id: "tree", label: "Tree" }, { id: "tabs", label: "Panel tabs" }] },
   { id: "behavior", label: "Behavior", children: [{ id: "onion", label: "Onion skin" }] },
 ];
 
@@ -201,6 +225,29 @@ function select(label: string, options: readonly (readonly [string, string])[], 
   sel.value = value;
   sel.addEventListener("change", () => onChange(sel.value));
   return row(label, sel);
+}
+
+/** A slider with its number beside it, as Spine's settings have: either changes the value. */
+function slider(label: string, value: number, min: number, max: number, step: number, onChange: (n: number) => void): HTMLLabelElement {
+  const box = document.createElement("span");
+  box.className = "slider";
+  const range = document.createElement("input");
+  range.type = "range";
+  range.min = String(min);
+  range.max = String(max);
+  range.step = String(step);
+  range.value = String(value);
+  const out = document.createElement("input");
+  out.type = "number";
+  out.min = String(min);
+  out.max = String(max);
+  out.step = String(step);
+  out.value = String(value);
+  range.addEventListener("input", () => { out.value = range.value; });
+  range.addEventListener("change", () => onChange(Number(range.value)));
+  out.addEventListener("change", () => { const n = Number(out.value); if (out.value.trim() !== "" && Number.isFinite(n)) onChange(n); });
+  box.append(range, out);
+  return row(label, box);
 }
 
 function check(label: string, value: boolean, onChange: (on: boolean) => void): HTMLLabelElement {
