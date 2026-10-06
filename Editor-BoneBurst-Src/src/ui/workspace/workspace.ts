@@ -66,6 +66,12 @@ export class Workspace {
     this.sizeAlone(id);
   }
 
+  /** Close a panel (it can be shown again, in its default place). */
+  close(id: PanelId): void { this.api.getPanel(id)?.api.close(); }
+
+  /** Show the panel if it is closed, close it if it is open (the activity bar's buttons). */
+  toggle(id: PanelId): void { if (this.isOpen(id)) this.close(id); else this.show(id); }
+
   /** Back to the default layout. */
   reset(): void {
     this.api.clear();

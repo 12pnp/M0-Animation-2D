@@ -17,7 +17,7 @@ import { AiBridge, DEFAULT_BRIDGE } from "./agent/bridge";
 import { ChatClient } from "./agent/chat";
 import { sessionContext } from "./agent/context";
 import { AskAi } from "./panels/askAi";
-import { iconButton } from "./icons";
+import { type IconName, iconButton } from "./icons";
 import { ExportRefused, exportToUnity } from "./unityExport";
 import { isPanelId, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
 import { type PanelContent, Workspace } from "./workspace/workspace";
@@ -108,7 +108,12 @@ export function mountApp(root: HTMLElement): void {
   const references = new References(session);
   // Ask AI (E5 step 9): the bridge's model with the editor's tools; sending connects the AI button.
   const askAi = new AskAi(new ChatClient(ai.url), ai, () => { if (!prefs.values.ai) prefs.set({ ai: true }); });
-  root.replaceChildren(bar, main, status, issuesList);
+  // The activity bar: one button per built panel, pressed while the panel is open.
+  const activity = el("nav", "activity");
+  activity.setAttribute("aria-label", "Panels");
+  const body = el("div", "body");
+  body.append(activity, main);
+  root.replaceChildren(bar, body, status, issuesList);
 
   // The docking shell (D6): every panel is a Dockview panel.
   const workspace = new Workspace(main, new Map<PanelId, PanelContent>([
@@ -119,6 +124,19 @@ export function mountApp(root: HTMLElement): void {
     ["reference", { element: references.element }],
     ["ai", { element: askAi.element }],
   ]), (w) => w.addEventListener("keydown", onKey));
+  const PANEL_ICONS: Readonly<Record<PanelId, IconName>> = {
+    stage: "panelStage", rigTree: "panelRig", properties: "panelProperties", timeline: "panelTimeline",
+    reference: "addImage", ai: "ai", preview: "play",
+  };
+  const activityBtns = workspace.built.map((id) => {
+    const b = iconButton(button(PANEL_TITLES[id], `${PANEL_TITLES[id]}: show or hide the panel`, () => workspace.toggle(id)), PANEL_ICONS[id], false);
+    b.dataset.panel = id;
+    return b;
+  });
+  const syncActivity = () => { for (const b of activityBtns) b.setAttribute("aria-pressed", String(workspace.isOpen(b.dataset.panel as PanelId))); };
+  workspace.api.onDidLayoutChange(syncActivity);
+  syncActivity();
+  activity.append(...activityBtns);
   const refreshPanels = () => {
     panelsMenu.replaceChildren(
       new Option("Panels…", ""),
