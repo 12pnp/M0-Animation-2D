@@ -1,5 +1,6 @@
 import type { Issue } from "./issue";
-import { ATTACHMENT_TYPES, type Constraint, type ConstraintType, type Skeleton, attachmentType } from "./skeleton";
+import { ATTACHMENT_TYPES, type Attachment, type Constraint, type ConstraintType, type Skeleton, attachmentType } from "./skeleton";
+import { channelCount, keyLists } from "./timelines";
 
 /**
  * The BoneBurst profile of Spine 4.3 JSON (Doc/Format/BoneBurst-Profile.md): what both BoneBurst
@@ -35,8 +36,10 @@ export function profileIssues(s: Skeleton, opts: { written?: boolean } = {}): Is
   const slots = new Set<string>();
   for (const [i, sl] of (s.slots ?? []).entries()) {
     boneRef(`slots[${i}]`, sl.bone, `"${sl.name}": bone`);
+    colour(`slots[${i}] "${sl.name}"`, { color: sl.color, dark: sl.dark }, bad);
     slots.add(sl.name);
   }
+  for (const [i, b] of (s.bones ?? []).entries()) colour(`bones[${i}] "${b.name}"`, { color: b.color }, bad);
 
   const byKind = new Map<ConstraintType, Set<string>>();
   for (const [i, c] of (s.constraints ?? []).entries()) {
@@ -73,6 +76,9 @@ export function profileIssues(s: Skeleton, opts: { written?: boolean } = {}): Is
           for (const k of ["uvs", "vertices", "triangles"] as const) if (a[k] === undefined) bad(w, `mesh without ${k}`);
         }
         if (type === "path" && a.lengths === undefined) bad(w, "path without lengths");
+        // The geometry the C# reader takes (E7-PLAN step 5): whole, in range, weights by real bones.
+        if (a.source === undefined) for (const m of geometryIssues(a, type, s.bones?.length ?? 0)) bad(w, m);
+        colour(w, { color: a.color }, bad);
         if (type === "clipping" && a.end !== undefined && !slots.has(a.end)) bad(w, `clipping end "${a.end}" is not a slot`);
       }
     }
@@ -112,6 +118,27 @@ export function profileIssues(s: Skeleton, opts: { written?: boolean } = {}): Is
     }
     for (const k of an.events ?? []) if (typeof k.name === "string" && !events.has(k.name)) bad(`${w}/events`, `event "${k.name}" does not exist`);
     for (const k of an.drawOrder ?? []) for (const o of k.offsets ?? []) if (o.slot !== undefined && !slots.has(o.slot)) bad(`${w}/drawOrder`, `"${o.slot}" is not a slot`);
+    // Draw order keys move each slot once, within the order (E7-PLAN step 5).
+    const order = (s.slots ?? []).map((x) => x.name);
+    for (const [ki, k] of (an.drawOrder ?? []).entries()) {
+      const seen = new Set<string>();
+      for (const o of k.offsets ?? []) {
+        if (o.slot === undefined) continue;
+        if (seen.has(o.slot)) bad(`${w}/drawOrder[${ki}]`, `"${o.slot}" is moved twice in one key`);
+        seen.add(o.slot);
+        const at = order.indexOf(o.slot) + (o.offset ?? 0);
+        if (order.includes(o.slot) && (at < 0 || at >= order.length)) bad(`${w}/drawOrder[${ki}]`, `"${o.slot}" is moved past the ${order.length} slots`);
+      }
+    }
+    // Curves have four numbers a channel; colours in keys are hex (E7-PLAN step 5).
+    for (const { path, keys } of keyLists(an)) {
+      const n = channelCount(path);
+      for (const [ki, k] of keys.entries()) {
+        const where = `${w}/${"owner" in path ? `${path.section}/${path.owner}` : path.section}${"timeline" in path ? `/${path.timeline}` : ""}[${ki}]`;
+        if (Array.isArray(k.curve) && n > 0 && k.curve.length !== 4 * n) bad(where, `a curve of ${k.curve.length} numbers; it needs ${4 * n}`);
+        colour(where, { color: k.color, light: k.light, dark: k.dark }, bad);
+      }
+    }
   }
   return out;
 }
@@ -143,3 +170,51 @@ const PATH_TIMELINES = new Set(["position", "spacing", "mix"]);
 const PHYSICS_TIMELINES = new Set(["reset", "inertia", "strength", "damping", "mass", "wind", "gravity", "mix"]);
 const SLIDER_TIMELINES = new Set(["time", "mix"]);
 const TRANSFORM_PROPERTIES = new Set(["rotate", "x", "y", "scaleX", "scaleY", "shearY"]);
+
+/** Colours as hex: RRGGBBAA, or RRGGBB for a dark (and light) colour; the C# reader refuses others. */
+function colour(where: string, fields: Readonly<Record<string, unknown>>, bad: (w: string, m: string) => void): void {
+  for (const [k, v] of Object.entries(fields)) {
+    if (v === undefined) continue;
+    if (typeof v !== "string" || !/^[0-9a-fA-F]{6}([0-9a-fA-F]{2})?$/.test(v)) bad(where, `${k} "${String(v)}" is not a hex colour`);
+  }
+}
+
+/**
+ * What is wrong with an attachment's geometry (E7-PLAN step 5): a mesh's uvs in pairs, its
+ * triangles in threes and within its vertices, its hull no larger; any vertex list either one pair
+ * a vertex or, weighted, per vertex a count and that many (bone, x, y, weight) with the bone a
+ * real one, ending where the last vertex does.
+ */
+function geometryIssues(a: Attachment, type: string, boneCount: number): string[] {
+  const out: string[] = [];
+  let count: number | undefined;
+  if (type === "mesh") {
+    if (!a.uvs) return out;
+    if (a.uvs.length % 2) out.push(`${a.uvs.length} uv numbers: uvs come in pairs`);
+    count = Math.floor(a.uvs.length / 2);
+    const tris = a.triangles ?? [];
+    if (tris.length % 3) out.push(`${tris.length} triangle indices: triangles come in threes`);
+    const far = tris.find((t) => !(Number.isInteger(t) && t >= 0 && t < count!));
+    if (far !== undefined) out.push(`triangle index ${far} past the ${count} vertices`);
+    if (a.hull !== undefined && a.hull > count) out.push(`hull of ${a.hull} past the ${count} vertices`);
+  } else if (type === "path" || type === "clipping" || type === "boundingbox") {
+    count = a.vertexCount;
+  }
+  const v = a.vertices;
+  if (count === undefined || !v) return out;
+  if (v.length === count * 2) return out;
+  // Weighted: walk it.
+  let i = 0, vertices = 0;
+  while (i < v.length) {
+    const n = v[i]!;
+    if (!(Number.isInteger(n) && n > 0 && i + 1 + n * 4 <= v.length)) { out.push(`weighted vertices end mid-vertex at ${i}`); return out; }
+    for (let k = 0; k < n; k++) {
+      const b = v[i + 1 + k * 4]!;
+      if (!(Number.isInteger(b) && b >= 0 && b < boneCount)) { out.push(`weighted to bone index ${b}, past the ${boneCount} bones`); return out; }
+    }
+    i += 1 + n * 4;
+    vertices++;
+  }
+  if (vertices !== count) out.push(`${vertices} weighted vertices for ${count}`);
+  return out;
+}

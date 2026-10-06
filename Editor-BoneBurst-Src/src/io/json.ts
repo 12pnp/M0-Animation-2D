@@ -7,6 +7,9 @@ export class JsonSyntaxError extends Error {
   }
 }
 
+/** How deep objects and arrays may nest: a skeleton nests under ten. */
+const MAX_DEPTH = 1000;
+
 /**
  * Parse JSON text into `Json`, objects as `Map`s in document order. A duplicate key keeps the
  * place of its first occurrence and takes the last value, as Spine's reader does
@@ -64,16 +67,23 @@ export function parseJson(text: string): Json {
     const m = /^-?(0|[1-9]\d*)(\.\d+)?([eE][+-]?\d+)?/.exec(text.slice(i, i + 64));
     if (!m) fail("bad number");
     i += m![0].length;
-    return Number(m![0]);
+    const n = Number(m![0]);
+    // 1e400 parses as Infinity, which no file can hold: the document would open and never save
+    // (E7-PLAN step 5).
+    if (!Number.isFinite(n)) fail(`number ${m![0]} out of range`);
+    return n;
   };
+  // Deeper than any skeleton nests, and well short of the stack (E7-PLAN step 5).
+  let depth = 0;
   const value = (): Json => {
     ws();
     const c = text[i];
+    if ((c === "{" || c === "[") && ++depth > MAX_DEPTH) fail(`nested deeper than ${MAX_DEPTH}`);
     if (c === "{") {
       i++;
       const map = new Map<string, Json>();
       ws();
-      if (text[i] === "}") { i++; return map; }
+      if (text[i] === "}") { i++; depth--; return map; }
       for (;;) {
         ws();
         if (text[i] !== '"') fail("expected a key");
@@ -84,7 +94,7 @@ export function parseJson(text: string): Json {
         map.set(key, value());
         ws();
         if (text[i] === ",") { i++; continue; }
-        if (text[i] === "}") { i++; return map; }
+        if (text[i] === "}") { i++; depth--; return map; }
         fail("expected ',' or '}'");
       }
     }
@@ -92,12 +102,12 @@ export function parseJson(text: string): Json {
       i++;
       const arr: Json[] = [];
       ws();
-      if (text[i] === "]") { i++; return arr; }
+      if (text[i] === "]") { i++; depth--; return arr; }
       for (;;) {
         arr.push(value());
         ws();
         if (text[i] === ",") { i++; continue; }
-        if (text[i] === "]") { i++; return arr; }
+        if (text[i] === "]") { i++; depth--; return arr; }
         fail("expected ',' or ']'");
       }
     }

@@ -1,5 +1,5 @@
 import { boneburstPolyline } from "./bezier";
-import { type Json, list, num, parseColor, obj } from "./rigJson";
+import { nums, type Json, list, num, parseColor, obj } from "./rigJson";
 import { type BoneBurstInherit, type TimelineBody, type Timeline, type SkinData, type SequenceMode, type PhysicsProp, type PathData, type MeshData, type Interval, type EventFire, type ClippingData, type Channel, type BoxData, type BoneProp, type AnimationData, TRANSFORM_PROPS, PHYSICS_PROPS, type TransformMix, type TransformProp } from "./rigTypes";
 
 /** A transform key's mixes: absent ones 1, except y, which takes x's
@@ -311,7 +311,7 @@ function readDeform(slot: number, mesh: MeshData | PathData | ClippingData | Box
   const vertices = keys.map((k) => {
     const out = new Float64Array(mesh.deformLength);
     if (!mesh.weighted) out.set(mesh.vertices.subarray(0, mesh.deformLength));
-    const values = (k.vertices as number[] | undefined) ?? [];
+    const values = nums(k.vertices);
     const at = num(k.offset, 0);
     for (let i = 0; i < values.length && at + i < out.length; i++) out[at + i] = out[at + i]! + values[i]!;
     return out.map(Math.fround);
@@ -331,16 +331,18 @@ function readDeform(slot: number, mesh: MeshData | PathData | ClippingData | Box
 /**
  * A draw order key: each listed slot moves `offset` places from where the
  * setup order has it; every other slot keeps its setup order in the places
- * left. Plays a malformed key as spine-core does.
+ * left. Plays a malformed key as spine-core does. A key that moves one slot
+ * twice, or two slots to one place, keeps the first (E7-PLAN step 5): before,
+ * the first hung filling the places left, the second left a place empty.
  */
 export function orderFromOffsets(offsets: Json[], slotIndex: Map<string, number>, count: number): number[] {
   const order = new Array<number>(count).fill(-1);
   const moved = new Set<number>();
   for (const o of offsets) {
     const slot = slotIndex.get(String(o.slot));
-    if (slot === undefined) continue;
+    if (slot === undefined || moved.has(slot)) continue;
     const at = slot + num(o.offset, 0);
-    if (at >= 0 && at < count) { order[at] = slot; moved.add(slot); }
+    if (at >= 0 && at < count && order[at] === -1) { order[at] = slot; moved.add(slot); }
   }
   let next = 0;
   for (let slot = 0; slot < count; slot++) {

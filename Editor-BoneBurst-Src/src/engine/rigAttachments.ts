@@ -1,15 +1,15 @@
 import type { ImageRegion } from "./regions";
-import { type Json, num, parseColor } from "./rigJson";
+import { type Json, num, nums, parseColor } from "./rigJson";
 import { type Sequence, type RegionData, DEG_RAD, type Frame, type MeshData, type PathData, type BoxData, type PointData, type ClippingData } from "./rigTypes";
 
 /** The sequence an attachment declares, or null. */
-function readSequence(a: Json): Sequence | null {
+export function readSequence(a: Json): Sequence | null {
   if (!a.sequence || typeof a.sequence !== "object") return null;
   const q = a.sequence as Json;
   return { count: Math.max(1, num(q.count, 1)), start: num(q.start, 1), digits: num(q.digits, 0), setup: num(q.setup, 0) };
 }
 /** The region path each frame shows: the path itself, or one per sequence frame. */
-function framePaths(path: string, sequence: Sequence | null): string[] {
+export function framePaths(path: string, sequence: Sequence | null): string[] {
   if (!sequence) return [path];
   return Array.from({ length: sequence.count }, (_, i) => path + String(sequence.start + i).padStart(sequence.digits, "0"));
 }
@@ -93,22 +93,19 @@ export function readMesh(key: string, a: Json, regions: Map<string, ImageRegion>
   const name = typeof a.name === "string" ? a.name : key;
   const path = typeof a.path === "string" ? a.path : name;
   const sequence = readSequence(a);
-  const regionUVs = Float64Array.from((a.uvs as number[] | undefined) ?? [], Math.fround);
-  const raw = (a.vertices as number[] | undefined) ?? [];
-  const vertexCount = regionUVs.length / 2;
+  const regionUVs = Float64Array.from(nums(a.uvs), Math.fround);
+  const raw = nums(a.vertices);
+  const vertexCount = Math.floor(regionUVs.length / 2);
   const weighted = raw.length > regionUVs.length;
   let deformLength = vertexCount * 2;
-  if (weighted) {
-    deformLength = 0;
-    for (let i = 0; i < raw.length;) { const n = raw[i]!; deformLength += n * 2; i += 1 + n * 4; }
-  }
+  if (weighted) deformLength = weightedLength(raw) ?? 0;
   const mesh: MeshData = {
     kind: "mesh", name, color: parseColor(a.color), sequence, timeline: null!, timelineSlots: [],
     frames: framePaths(path, sequence).map((p) => ({ region: regions.get(p) ?? null, corners: new Float64Array(0), uvs: new Float32Array(regionUVs.length) })),
     vertexCount, weighted,
     // Weighted streams keep their bone counts and indices exact.
     vertices: weighted ? weightedStream(raw) : Float64Array.from(raw, Math.fround),
-    deformLength, regionUVs, triangles: Uint32Array.from((a.triangles as number[] | undefined) ?? []),
+    deformLength, regionUVs, triangles: meshTriangles(nums(a.triangles), Math.floor(regionUVs.length / 2)),
   };
   mesh.timeline = mesh;
   for (const f of mesh.frames) pageUVs(f.region, regionUVs, f.uvs);
@@ -118,19 +115,16 @@ export function readMesh(key: string, a: Json, regions: Map<string, ImageRegion>
  *  longer than two numbers each. */
 export function readPath(key: string, a: Json): PathData {
   const name = typeof a.name === "string" ? a.name : key;
-  const raw = (a.vertices as number[] | undefined) ?? [];
+  const raw = nums(a.vertices);
   const vertexCount = num(a.vertexCount, raw.length / 2);
   const weighted = raw.length > vertexCount * 2;
   let deformLength = vertexCount * 2;
-  if (weighted) {
-    deformLength = 0;
-    for (let i = 0; i < raw.length;) { const n = raw[i]!; deformLength += n * 2; i += 1 + n * 4; }
-  }
+  if (weighted) deformLength = weightedLength(raw) ?? 0;
   const path: PathData = {
     kind: "path", name, color: parseColor(a.color), frames: [], sequence: null, timeline: null!,
     vertexCount, weighted, vertices: weighted ? weightedStream(raw) : Float64Array.from(raw, Math.fround), deformLength,
     closed: a.closed === true, constantSpeed: a.constantSpeed !== false,
-    lengths: ((a.lengths as number[] | undefined) ?? []).map(Math.fround),
+    lengths: nums(a.lengths).map(Math.fround),
   };
   path.timeline = path;
   return path;
@@ -140,14 +134,11 @@ export function readPath(key: string, a: Json): PathData {
 function vertexStream(raw: number[], vertexCount: number) {
   const weighted = raw.length > vertexCount * 2;
   let deformLength = vertexCount * 2;
-  if (weighted) {
-    deformLength = 0;
-    for (let i = 0; i < raw.length;) { const n = raw[i]!; deformLength += n * 2; i += 1 + n * 4; }
-  }
+  if (weighted) deformLength = weightedLength(raw) ?? 0;
   return { weighted, deformLength, vertices: weighted ? weightedStream(raw) : Float64Array.from(raw, Math.fround) };
 }
 export function readBox(key: string, a: Json): BoxData {
-  const raw = (a.vertices as number[] | undefined) ?? [];
+  const raw = nums(a.vertices);
   const vertexCount = num(a.vertexCount, raw.length / 2);
   const box: BoxData = {
     kind: "box", name: typeof a.name === "string" ? a.name : key, color: parseColor(a.color),
@@ -165,7 +156,7 @@ export function readPoint(key: string, a: Json): PointData {
   return point;
 }
 export function readClipping(key: string, a: Json, slotIndex: Map<string, number>): ClippingData {
-  const raw = (a.vertices as number[] | undefined) ?? [];
+  const raw = nums(a.vertices);
   const vertexCount = num(a.vertexCount, raw.length / 2);
   const clip: ClippingData = {
     kind: "clipping", name: typeof a.name === "string" ? a.name : key, color: parseColor(a.color),
@@ -177,7 +168,28 @@ export function readClipping(key: string, a: Json, slotIndex: Map<string, number
 }
 /** A weighted vertex stream with x, y and weight in 32-bit floats; the
  *  bone counts and indices stay whole. */
+/**
+ * A weighted vertex stream's deform length (two numbers an influence), or null when it is
+ * malformed: a bone count that is not a whole number above 0, or influences running past the end.
+ * Walking a malformed one hung (a negative count) or read past it (E7-PLAN step 5).
+ */
+export function weightedLength(raw: readonly number[]): number | null {
+  let length = 0;
+  for (let i = 0; i < raw.length;) {
+    const n = raw[i]!;
+    if (!(Number.isInteger(n) && n > 0 && i + 1 + n * 4 <= raw.length)) return null;
+    length += n * 2;
+    i += 1 + n * 4;
+  }
+  return length;
+}
+/** A mesh's triangles: whole ones, every index within its vertices; a broken list draws nothing (E7-PLAN step 5). */
+function meshTriangles(t: readonly number[], vertexCount: number): Uint32Array {
+  const ok = t.length % 3 === 0 && t.every((i) => Number.isInteger(i) && i >= 0 && i < vertexCount);
+  return ok ? Uint32Array.from(t) : new Uint32Array(0);
+}
 function weightedStream(raw: number[]): Float64Array {
+  if (weightedLength(raw) === null) return new Float64Array(0);
   const out = Float64Array.from(raw);
   for (let i = 0; i < out.length;) {
     const n = out[i++]!;

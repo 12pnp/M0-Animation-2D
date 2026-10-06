@@ -15,6 +15,7 @@ import { profileIssues } from "@/model/profile";
 import type { Animation, ConstraintType, Skeleton } from "@/model/skeleton";
 import { animationDuration, DEFAULT_FPS, frameTime, timeFrame } from "@/model/timelines";
 import type { PhysicsMode } from "@/engine/physics";
+import { missingRegions } from "@/engine/atlasCheck";
 import { atlasImages, NO_IMAGES, type AtlasImages } from "@/engine/regions";
 import { baseName, pickFiles } from "./files";
 import { decodePng, type PngImage } from "@/io/png";
@@ -367,12 +368,19 @@ export class Session {
     const pages = new Map<string, ImageBitmap>(), pageData = new Map<string, () => Promise<PngImage>>();
     if (picked.atlas) {
       atlas = readAtlas(await picked.atlas.text());
+      all.push(...missingRegions(skeleton, atlasImages(atlas)));
       for (const p of atlas.pages) {
         const img = picked.images.get(p.name);
         if (!img) { all.push({ where: picked.atlas.name, message: `page "${p.name}" was not given; its images are not drawn` }); continue; }
         // Premultiplied on upload unless the atlas says the page already is.
         const pma = p.fields.some((f) => f.key === "pma" && f.values[0] === "true");
-        pages.set(p.name, await createImageBitmap(await img.blob(), { premultiplyAlpha: pma ? "none" : "premultiply" }));
+        // A page the browser cannot read as an image opens without it, said (E7-PLAN step 5).
+        let bitmap: ImageBitmap;
+        try { bitmap = await createImageBitmap(await img.blob(), { premultiplyAlpha: pma ? "none" : "premultiply" }); } catch {
+          all.push({ where: picked.atlas.name, message: `page "${p.name}" (${img.name}) is not an image this browser can read; its images are not drawn` });
+          continue;
+        }
+        pages.set(p.name, bitmap);
         pageData.set(p.name, async () => decodePng(new Uint8Array(await (await img.blob()).arrayBuffer()), p.name));
       }
     } else {

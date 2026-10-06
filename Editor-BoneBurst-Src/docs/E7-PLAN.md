@@ -1,6 +1,6 @@
 # E7 — the daily driver: history, shortcuts, a build, a robustness pass — plan
 
-**Status:** in progress, 2026-10-06; steps 1 (the History panel), 2 (the shortcuts table and sheet), 3 (running without the dev server) and 4 (edits fuzzed: eight findings, seven fixed, one the runtime's own) done. Scope chosen by the owner:
+**Status:** in progress, 2026-10-06; steps 1 (the History panel), 2 (the shortcuts table and sheet), 3 (running without the dev server), 4 (edits fuzzed: eight findings, seven fixed, one the runtime's own) and 5 (hostile files: nine findings fixed, two in the C# reader handed on) done. Scope chosen by the owner:
 the History panel and the shortcuts sheet (set aside at E6 step 3), running without the dev
 server, and a robustness pass.
 Not in E7: the AnimatedDrawings detection sidecar (waits on the owner's install decision).
@@ -344,3 +344,101 @@ flowchart LR
 4. **Planted faults**, each caught by the default run: `updateBone`'s guard removed (1 run fails);
    `withBoneOrder` skipped in `addBone` (9) or `reparentBone` (13), caught by the drift invariant.
 5. `npm run check`: 538 vitest, 16 browser tests, 1 build browser test, all pass.
+
+## Step 5 — hostile files
+
+```mermaid
+flowchart LR
+    HAND["hand-made cases<br/>JSON · skeleton · atlas · sidecar · PSD · PNG"] --> OPEN
+    MUT["seeded mutations of every corpus file<br/>(drop, retype, duplicate, shuffle, truncate, extreme numbers)"] --> OPEN
+    OPEN["the open path, headless:<br/>readSkeleton · profileIssues · readAtlas · readSidecar · Poser · writeSkeleton"] --> OK{"opens?"}
+    OK -->|"yes"| INV["poses (setup + every animation) without throwing<br/>saves; save → read → save fixed<br/>a damaged file says so (issues)"]
+    OK -->|"no"| WHY["refused with a reason:<br/>our own error, never a TypeError / RangeError"]
+    OPEN --> TIME["under 2 s, no hang"]
+    E2E["e2e: garbage page image, broken PSD, truncated JSON<br/>through Open…"] --> UI["a message, no page error,<br/>the editor still works"]
+```
+
+### Decisions
+
+- **The open path, headless**: what `Session.open` does without the DOM. The skeleton is read,
+  checked against the profile, the atlas and sidecar read, the rig built and posed (setup pose,
+  every animation at a few times), then saved again. A file may **open** (then it poses without
+  throwing, saves, saves to a fixed point, and a file that is damaged says so in its issues), or be
+  **refused** (then the error is the editor's own, with a reason: a `JsonSyntaxError`,
+  `PsdRefused`, `PngRefused`, a plain `Error` written for the user; a `TypeError`, `RangeError` or
+  stack overflow is a bug). Either way it takes under 2 s.
+- **Two sources of files**: a hand-written table of the cases a person or a tool produces. These
+  are empty and truncated files, a BOM, `1e400`, deep nesting, wrong types, a bone whose parent is
+  missing or comes later or is itself, duplicate names, out-of-range indices in meshes, weights,
+  draw order and keys, unsorted and negative times, curves of the wrong length, constraints naming
+  nothing, linked meshes in a cycle, sequences of 0 or 1e6, 100,000 bones, garbage atlases, PSDs
+  that are not one or break its limits. The second source is seeded **mutations** of every corpus
+  skeleton, atlas and sidecar: a field dropped, its type changed, an array entry duplicated,
+  shuffled or cut, a number made extreme, a name made empty or duplicate, as `FUZZ_SEED`/`FUZZ_STEPS`
+  in step 4.
+- **In the browser**: Open… with a page image that is not an image, a PSD that is not one, a
+  truncated skeleton. Each shows a message, raises no page error, and the stickman still opens
+  afterwards.
+- **Each finding fixed** where it belongs (the reader says an issue instead of crashing, the engine
+  skips what it cannot pose, the open path refuses with a reason), with a table row failing on the
+  old code; the plan lists them.
+
+### Steps
+
+1. `tests/hostileFiles.test.ts`: the headless open path, the table, the mutations.
+2. Run long; triage; fix each finding with its row.
+3. `e2e/hostileFiles.spec.ts`.
+4. Results here.
+
+### Step 5 results
+
+1. **`tests/hostileFiles.test.ts`**: the open path headless. Reading (`readSkeleton`, the profile,
+   `readAtlas`, `readSidecar`, `missingRegions`, the rig built once) is the only stage that may
+   refuse, with the editor's own error. After that, every skin's setup pose and every animation
+   at three times, posed and drawn (triangle indices checked against the vertices), then saved,
+   and save → read → save fixed: none of it may throw. Each file is under 2 s. 60 hand-made
+   cases, 3 sidecars, 3 PSDs, and seeded mutations of every corpus skeleton and atlas
+   (`HOSTILE_SEED`, `HOSTILE_STEPS`, `HOSTILE_LOG` names each case before it runs, so a hang shows
+   which, `HOSTILE_EXPORT` writes the cases out for the C# reader).
+2. **The C# reader as the judge of "says so"**: every hand-made case was run through BoneBurst's
+   C# reader (`run.sh --dump`); 42 of the 60 it refuses. A file the C# reader refuses that opens
+   here must say what is wrong (`CSHARP_REFUSES`); the others (an IK of three bones, keys out of
+   order, two roots, 100,000 bones…) may open quietly, as Unity takes them.
+3. **Findings**, each fixed with rows in `tests/hostileFindings.test.ts` (23; 19 failed on the old
+   code, the draw-order row hung it, the rest are the controls):
+   - **H1** a draw-order key moving one slot twice **hung** the engine (`orderFromOffsets` filled the
+     places left past the end, forever); two slots moved to one place left a hole. The first move
+     and the first claim on a place now win.
+   - **H2** JSON nested 100,000 deep overflowed the parser's stack; refused past 1,000 levels.
+     `1e400` read as Infinity: the document opened and could never be saved; refused as out of range.
+   - **H3** a key that is `null` (or not an object) crashed posing; the engine's lists skip
+     anything that is not an object.
+   - **H4** a mesh with triangle indices out of range, or uvs in odd numbers, was handed to the
+     drawing as it was (indices past the vertices: garbage for WebGL); the engine draws nothing of
+     a broken triangle list. A weighted vertex stream with a negative or impossible bone count
+     would have **hung** walking it; malformed streams are now refused by `weightedLength`.
+   - **H5** a field of the wrong type kept as written (`lengths: {}`) crashed the engine, which reads
+     the written JSON; it takes numbers only through `nums`.
+   - **H6** six kinds of file the C# reader refuses opened here saying nothing: geometry (uvs in
+     pairs, triangles in threes within the vertices, hull, weighted vertices ending where they
+     should with real bones), curves of the wrong length, draw-order offsets out of range or
+     moving a slot twice, colours that are not hex (slots, bones, attachments, keys); new
+     profile rules (`src/model/profile.ts`). And an attachment whose region (or sequence frame)
+     the atlas lacks, which the bake refuses: `src/engine/atlasCheck.ts` ▸ `missingRegions`, said
+     when the file opens.
+   - **H7** a page image the browser cannot decode failed the whole open with the browser's bare
+     message; the rig now opens without that page, saying which page and file.
+   Not a finding: a skeleton whose slot names a missing bone is refused with the engine's reason,
+   and the open tab is kept (`app.ts` parks the shown tab and puts it back when opening fails,
+   and opening poses the new document); the browser test now checks the title to hold that.
+4. **The C# reader's own bugs**, found by the same cases and handed on as a task (not v2's code):
+   the draw-order key that moves a slot twice throws `IndexOutOfRangeException` in
+   `SkeletonJsonReader.DrawOrder`, and the 100,000-deep nesting overflows `JsonNode`'s stack,
+   which would take the Unity Editor down.
+5. **Runs**: seeds 1–4 × 150 and 5–6 × 300 mutated skeletons and atlases on every rig (about 40,800
+   files), all clean. In `npm run check`: 60 hand-made cases and 12 mutations per rig.
+6. **Browser**: `e2e/hostileFiles.spec.ts` drives Open… with a page that is not an image (opens,
+   said), a cut-off skeleton, a PSD that is not one, a slot on a missing bone, JSON nested too
+   deep (each refused with its reason, the stickman still the open document), then a good file;
+   no page error. A planted fault, the unreadable-page handling removed, fails it.
+7. Valid files pose exactly as before: `scripts/unity-parity.ts`, 17 rigs agree, worst 0.0067.

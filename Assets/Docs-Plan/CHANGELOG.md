@@ -13,6 +13,19 @@ flowchart LR
 
 ## 2026-10-06
 
+- **BoneBurst Editor v2, E7 step 5: hostile files. Every way in either refuses with a reason or opens saying what is wrong; two hangs and five crashes gone** (`Editor-BoneBurst-Src/`).
+  - **How it was tested**: `tests/hostileFiles.test.ts` runs the open path headless on 60 hand-made cases and on seeded mutations of every corpus skeleton and atlas. Reading may refuse; after that, posing, drawing and saving may not throw, and each file takes under 2 s. BoneBurst's C# reader judges which damaged files must say so: it refuses 42 of the 60, and each of those that opens here reports what is wrong.
+  - **The two hangs**: a draw-order key moving one slot twice (`orderFromOffsets`, where the first move now wins), and a weighted vertex stream with a negative bone count (`weightedLength`).
+  - **Fixed**:
+    - JSON nested past 1,000 levels and numbers out of range are refused; `1e400` used to open as Infinity and then never save.
+    - The engine skips null keys and wrong-typed fields, and draws nothing of a broken triangle list.
+    - New profile rules, for what the C# reader refuses: mesh geometry and weights, curve lengths, draw-order offsets, hex colours.
+    - A region missing from the atlas is reported when the file opens (`src/engine/atlasCheck.ts`).
+    - A page image the browser cannot read opens without that page, saying which page and file.
+  - **Handed on**: the same cases crash the C# reader itself (the draw-order key throws `IndexOutOfRangeException`; deep nesting overflows the stack, which would take the Unity Editor down). That is the import package's work, started as its own task.
+  - Plan: [E7-PLAN.md](../../Editor-BoneBurst-Src/docs/E7-PLAN.md) ▸ Step 5.
+  - **Guard**: `tests/hostileFindings.test.ts` (23 rows; 19 fail on the old code, and the old draw-order code hangs) and `e2e/hostileFiles.spec.ts`, through Open…. About 40,800 mutated files are clean in long runs. Valid files pose as before: `scripts/unity-parity.ts`, 17 rigs agree. 650 vitest and 17 browser tests pass.
+
 - **BoneBurst Editor v2, E7 step 4: the edit layer fuzzed. Eight findings: seven fixed, and one is the C# runtime's own behaviour; the worst silently rebound weighted meshes** (`Editor-BoneBurst-Src/`).
   - **The fuzz test** (`tests/fuzzEdits.test.ts`) runs seeded random sequences of 58 edit kinds on the 17 corpus rigs. After every step: no new profile issue, saving reads back unchanged, posing does not throw, only `EditRefused` is thrown, and no weighted attachment the step did not aim at changes its bones. At the end, undo and redo return the very documents.
   - **F3**: `addBone`, `reparentBone` and `deleteBone` changed the bone order without renumbering weighted vertices' bone indices. Since E4, a bone added to a rig with weighted meshes rebound the meshes bound to later bones to the wrong bones. `withBoneOrder` now remaps them by name, and refuses deleting a bone a weighted attachment uses.
