@@ -9,7 +9,8 @@ tools) done: the thirteen, and the figure PSD rigged by an AI with `auto_rig` ov
 Step 6 (motion) done: the motion library on v2, AnimatedDrawings' captures (AD-3) included.
 Step 7 (`check_preview`) done: the owner's flow `auto_rig` → `apply_motion` → `check_preview`
 ran end to end over MCP on the figure PSD. Step 8 (the rest of the contract) done: every tool of contract version 2 is built (skins, tints,
-sequences, meshes, Export to Unity). Step 9 (Ask AI) next.
+sequences, meshes, Export to Unity). Step 9 (Ask AI) done: the AI panel, Claude or GLM with the editor's tools, each step shown as
+the editor runs it. Step 10 (the end-to-end MCP test, then E5 closes) next.
 
 E5 puts the AI tools onto v2's model: an MCP client (Claude Code, Claude Desktop, any agent) and
 the in-app Ask AI drive the open rig through the tool contract, each edit one undo step. It is
@@ -735,4 +736,81 @@ flowchart LR
    both arms and the body (outlines traced); `bind_mesh` of the left arm to its two bones; a keyed
    elbow bend, the arm bending smoothly (checked by eye); `add_skin blue`, its own image in the
    head's place, tinted; `export_to_unity` refused with no folder chosen, saying what to press.
+
+## Step 9 — Ask AI
+
+The AI inside the editor: a person types what they want, a model (Claude or GLM, the bridge's
+providers) does it with the same tools an MCP client has, and the panel shows each step as the
+editor runs it.
+
+```mermaid
+sequenceDiagram
+    participant P as AI panel (ui/panels/askAi.ts)
+    participant B as mcp/bridge.mjs
+    participant M as Claude / GLM
+    participant E as AiBridge (the editor's tools)
+    P->>B: POST /chat {messages}
+    loop until the model answers in words
+        B->>M: the conversation + tools
+        M-->>B: tool_use
+        B->>E: /agent/next (the long poll)
+        E-->>P: onCall: the step, shown live
+        E->>B: /agent/result
+    end
+    B-->>P: {messages, text}
+```
+
+### Decisions
+
+- **The panel** is the reserved `ai` panel ("AI", tabbed with Properties by default), rewritten
+  for v2 from the bridge's HTTP side (`/chat`, `/agent/status`, `/agent/models`, `/agent/key`,
+  `/agent/provider`, `/agent/model`), not from v1's views. A pure part, `ui/agent/chat.ts` (the
+  client, with `fetch` given, and the transcript: the conversation as the rows the panel shows),
+  and the DOM, `ui/panels/askAi.ts`.
+- **Fewest decisions.** Sending turns the AI connection on (the toolbar's AI button) when it is
+  off, since the tools run through it. The provider and model are pickers; with no key for the
+  provider, the panel shows a key field (the key goes to the local bridge, which keeps it in its
+  key file, never in the page or the browser's storage).
+- **Live steps.** `/chat` answers when the model is done, so the panel also listens to the
+  editor's end (`AiBridge.onCall`): each tool call appears as it runs, with its outcome (done, or
+  the refusal). The conversation's own record replaces them when the answer comes.
+- **Pictures.** The person can attach pictures (the pose or style to match); they go as image
+  blocks in their message. Pictures the tools return show small in the transcript.
+- **Kept**: the conversation lives in the panel for the page's life; New chat clears it. No
+  stop button: the bridge runs the model's turns to the end (at most 24), so stopping the page's
+  wait would leave the model working unseen.
+
+### Steps
+
+1. `ui/agent/chat.ts` with tests (`tests/askAi.test.ts`: the transcript of a conversation with
+   tool calls, refusals and pictures; the client against a fake `fetch`).
+2. `AiBridge.onCall`; the panel; registered in the workspace.
+3. A browser test (`e2e/askAi.spec.ts`): the bridge started with a fake model, a message typed in
+   the panel, the model's tool call run by the editor and shown, its answer shown.
+4. On screen: the panel, with a real provider if a key is at hand, else the fake.
+
+### Step 9 results
+
+1. `ui/agent/chat.ts` (`ChatClient`, `transcript`, `userMessage`), `ui/panels/askAi.ts` (`AskAi`),
+   `AiBridge.onCall` (each call's start and outcome), registered as the `ai` panel; styles in
+   `style.css`. The provider and model pickers, the key field (shown only while the provider has
+   no key), New chat, attached pictures (click one to take it off), the transcript with steps
+   (✓ done, ✗ refused with the reason, … running) and the pictures tools returned.
+2. **Added**: `?bridge=<port>` points the page at a bridge on another local port (127.0.0.1 only):
+   the browser test runs its own bridge, so `npm run check` passes while the owner's bridge is
+   running on 5191.
+3. **Found on screen**: the transcript scrolled to the end before a returned picture loaded,
+   leaving the answer below the fold; it scrolls again as pictures load.
+4. Tests: `tests/askAi.test.ts` (2: the transcript of a conversation with steps, a refusal and
+   pictures; the client's endpoints, the bridge's refusal, a bridge not running);
+   `e2e/askAi.spec.ts` (the bridge with a fake model on its own port: a message typed, the AI
+   connection turned on by sending, `get_rig` run by the editor and an `attach` refused, both shown
+   while the model works, the answer built from what `get_rig` returned; New chat clears). Three
+   planted faults fail them (the live steps not wired; sending not connecting the editor; a
+   refusal shown as done). In the browser test Playwright first clicked the middle of the short
+   "AI" tab, its close button; it clicks the tab's words.
+5. On screen in the in-app browser: the figure PSD, the AI panel, a question answered by a
+   stand-in model through a real bridge on a side port (`get_rig`, `render_frame` with its
+   picture, the answer). No API key was at hand, so no real model was asked: with a key the panel
+   is the same, the bridge's providers unchanged since step 2.
 

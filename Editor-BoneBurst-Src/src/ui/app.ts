@@ -13,8 +13,10 @@ import { isTyping, Stage } from "./stage/stage";
 import { Timeline } from "./timeline/timeline";
 import { animationDuration, timeFrame } from "@/model/timelines";
 import { encodePng } from "@/io/png";
-import { AiBridge } from "./agent/bridge";
+import { AiBridge, DEFAULT_BRIDGE } from "./agent/bridge";
+import { ChatClient } from "./agent/chat";
 import { sessionContext } from "./agent/context";
+import { AskAi } from "./panels/askAi";
 import { iconButton } from "./icons";
 import { ExportRefused, exportToUnity } from "./unityExport";
 import { isPanelId, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
@@ -78,7 +80,9 @@ export function mountApp(root: HTMLElement): void {
   const prefsBtn = iconButton(button("⚙", "Preferences: theme, rulers, bones, undo steps (⌘,)", () => prefsDialog.open()), "settings", false);
   prefsBtn.setAttribute("aria-label", "Preferences");
   // The AI bridge (E5 step 2): an MCP client or Ask AI works on the open rig through it.
-  const ai = new AiBridge(sessionContext(session));
+  // `?bridge=<port>` talks to a bridge on another local port (tests, or two bridges at once).
+  const port = new URLSearchParams(location.search).get("bridge");
+  const ai = new AiBridge(sessionContext(session), port && /^\d{2,5}$/.test(port) ? `http://127.0.0.1:${port}` : DEFAULT_BRIDGE);
   const aiBtn = iconButton(button("AI", "Connect to the AI bridge, so an MCP client (Claude Code, Claude Desktop) or Ask AI can work on the open rig", () => prefs.set({ ai: !prefs.values.ai })), "ai");
   aiBtn.classList.add("ai-button");
   aiBtn.dataset.state = "off";
@@ -102,6 +106,8 @@ export function mountApp(root: HTMLElement): void {
   status.append(message, pointer, issuesBtn);
   const timeline = new Timeline(session);
   const references = new References(session);
+  // Ask AI (E5 step 9): the bridge's model with the editor's tools; sending connects the AI button.
+  const askAi = new AskAi(new ChatClient(ai.url), ai, () => { if (!prefs.values.ai) prefs.set({ ai: true }); });
   root.replaceChildren(bar, main, status, issuesList);
 
   // The docking shell (D6): every panel is a Dockview panel.
@@ -111,6 +117,7 @@ export function mountApp(root: HTMLElement): void {
     ["rigTree", { element: outline.element }],
     ["properties", { element: inspector.element }],
     ["reference", { element: references.element }],
+    ["ai", { element: askAi.element }],
   ]), (w) => w.addEventListener("keydown", onKey));
   const refreshPanels = () => {
     panelsMenu.replaceChildren(

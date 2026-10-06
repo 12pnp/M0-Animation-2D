@@ -47,7 +47,8 @@ node mcp/bridge.mjs  # the AI bridge (MCP on stdio, the editor's AI button on :5
 
 An MCP client starts the bridge itself, e.g. Claude Code:
 `claude mcp add boneburst-editor -- node "<this folder>/mcp/bridge.mjs"`; then press AI in the
-editor's toolbar.
+editor's toolbar. Ask AI (the AI panel) uses the same bridge with Claude or GLM; `?bridge=<port>` in
+the editor's URL talks to a bridge on another port.
 
 ## How code is written here
 

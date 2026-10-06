@@ -16,11 +16,17 @@ export const START_BRIDGE = "node mcp/bridge.mjs";
 
 interface Call { readonly id: string; readonly name: string; readonly args?: unknown }
 
+/** A tool call the editor is running for an AI (Ask AI shows them live), then its outcome. */
+export type CallEvent =
+  | { readonly phase: "start"; readonly id: string; readonly name: string; readonly args: unknown }
+  | { readonly phase: "end"; readonly id: string; readonly name: string; readonly ok: boolean; readonly detail: string };
+
 export class AiBridge {
   private running = false;
   private now: BridgeState = "off";
   private abort: AbortController | null = null;
   private readonly listeners = new Set<(state: BridgeState, detail: string) => void>();
+  private readonly callListeners = new Set<(e: CallEvent) => void>();
   /** Whether the bridge holds an API key, so Ask AI can run. */
   chatReady = false;
 
@@ -31,6 +37,12 @@ export class AiBridge {
   onState(f: (state: BridgeState, detail: string) => void): () => void {
     this.listeners.add(f);
     return () => this.listeners.delete(f);
+  }
+
+  /** Each tool call as it starts and ends. */
+  onCall(f: (e: CallEvent) => void): () => void {
+    this.callListeners.add(f);
+    return () => this.callListeners.delete(f);
   }
 
   start(): void {
@@ -75,12 +87,16 @@ export class AiBridge {
 
   private async answer(call: Call): Promise<void> {
     let body: Record<string, unknown>;
+    const tell = (e: CallEvent) => { for (const f of this.callListeners) f(e); };
+    tell({ phase: "start", id: call.id, name: call.name, args: call.args ?? {} });
     try {
       body = { id: call.id, ok: true, value: await callTool(call.name, call.args ?? {}, this.ctx) };
+      tell({ phase: "end", id: call.id, name: call.name, ok: true, detail: "" });
     } catch (err) {
       // A refusal is the model's to fix; anything else is the editor's failure, said as such.
       const message = err instanceof AgentRefused ? err.message : `The editor failed: ${err instanceof Error ? err.message : String(err)}`;
       body = { id: call.id, ok: false, error: message };
+      tell({ phase: "end", id: call.id, name: call.name, ok: false, detail: message });
     }
     await fetch(`${this.url}/agent/result`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   }

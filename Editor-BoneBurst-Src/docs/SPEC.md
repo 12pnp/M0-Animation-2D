@@ -303,6 +303,12 @@ image's opaque outline, `edit/trace.ts`; bound by the editor's Bind; linked mesh
 browser's folder picker, kept in IndexedDB; the atlas and pages, then the skeleton). Every tool of
 contract version 2 is built; `tests/agentHost.test.ts` holds the two lists equal.
 
+**Ask AI (E5 step 9).** The `ai` panel (`ui/panels/askAi.ts`) sends the conversation to the
+bridge's `/chat` (Claude or GLM with the same tools) and shows it as rows (`ui/agent/chat.ts`
+`transcript`); while the model works, the editor's own calls (`AiBridge.onCall`) show as steps.
+Sending turns the AI connection on. Keys stay in the bridge. `?bridge=<port>` picks another local
+bridge port.
+
 ## 9. Verification
 
 - `scripts/check.sh`: typecheck and build, the tests (zero tests is a failure), no Spine runtime
