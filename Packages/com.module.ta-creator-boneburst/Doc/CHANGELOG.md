@@ -11,6 +11,9 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-07 — **ECS port P4 recorded: the animation state as unmanaged memory** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
+- [BoneBurst-ECS-Plan](Review/BoneBurst-ECS-Plan.md) §12: `BoneTrackState` ports `BoneAnimationState` into pointer-linked unmanaged memory. Guards: 72 seeded fuzz cases (24 fixtures × 3 seeds × 220 frames) give exactly the managed class's commands, modes, hold factors, rotation memory, unkeyed state and events, and three deliberate bugs failed 50, 72 and 67 tests. Core is unchanged; the managed class remains the oracle.
+
 ### 2026-10-07 — **`PoseStep` in Core and a `SkeletonBlob` over external arrays, for the ECS pose system** (P3 of [BoneBurst-ECS-Plan](Review/BoneBurst-ECS-Plan.md))
 - **`Core/Instance/PoseStep.cs`** holds the pose order (setup pose when flagged, apply, world update) that `Jobs/PoseJob.cs` had inline; `PoseJob.Pose` now calls it. **`SkeletonBlob(content, in BlobView)`** wraps arrays owned elsewhere (an Entities BlobAsset): `View` returns the given view, nothing is copied or freed. **Why:** the ECS port poses with the same code over its own blob, and one pose order beats two copies. Behaviour of the MonoBehaviour runtime is unchanged. Guards: parity harness 215/215 and 0 values not bit-exact, Editor compile clean, `Module.TA.BoneBurst.Tests.Editor` 210/212 (the one failing test needs the demo's baked data, absent from this checkout), PlayMode 37/37; the ECS side's 125 tests in `M0-25DPlatformer-ECS` compare it with `ManagedPose` over 24 fixtures.
 

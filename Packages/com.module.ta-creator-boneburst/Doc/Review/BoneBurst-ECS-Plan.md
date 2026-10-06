@@ -1,6 +1,6 @@
 # BoneBurst ECS port: Plan
 
-**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 onward not started.**
+**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 onward not started.**
 
 BoneBurst's pose, constraint, timeline and mesh code (`Module.PA.BoneBurst.Core`) is already Burst-friendly pointer code with no `UnityEngine`. The port keeps that code unchanged and replaces only the managed shell around it (`BoneBurstSystem`, `BoneBurstSkeleton`, `BoneBurstAsset`, `BoneAnimationState`, the GPU and fetch buffers) with Entities 6.7 systems, bakers and Entities Graphics. The result is a new package in `M0-25DPlatformer-ECS/Packages`.
 
@@ -266,3 +266,25 @@ Built in `M0-25DPlatformer-ECS/Packages/com.module.ta-creator-boneburst-ecs/` (c
 **Found while testing:** a setup-pose reset (`NeedsSetupPose`) restores bones only; slots, deform and constraints keep what an earlier animation left. That is how the MonoBehaviour runtime behaves too, so tests use a fresh instance per animation; P6's skin and attachment changes must not assume a reset cleans slots.
 
 **Not done / next:** the pose job completes inside the system, because tests read the results at once; P5 will let it overlap the frame. No colour, flip or `LocalTransform` input yet (the header uses white and scale 1; the pose does not read them), no events leave the instance yet (P4). Managed header building per instance stays on the main thread, as in the MonoBehaviour runtime (2.5 ms for 2000 skeletons there); measure in P7 before changing it.
+
+## 12. P4 result (2026-10-07): animation state
+
+**What was built** (25D repo, in `com.module.ta-creator-boneburst-ecs/Runtime`):
+
+*   `BoneTrackState` (+ `TrackEntry`): a line-by-line port of the managed `BoneAnimationState` into unmanaged memory. Entries are separate allocations linked by pointer, freed after their Dispose event is delivered (a dead list, flushed when nothing can still point at them); the queue, the steps, and the command output (`Commands`, `Modes`, `HoldFactors`, `Rotation`) are `UnsafeList`s; events leave as `TrackEventRecord`s (track and animation indices, keyed-event payload by blob index), never as pointers. It reads the ECS blob only (timeline ids and instant flags come from `SkeletonBlobData`). Mixes are a small pair list per state. The managed class stays in Core as the oracle.
+*   `BoneBurstInstanceStore` keeps one `BoneTrackState` per instance (freed with it); `Stage(index, ref state)` hands its commands to the pose step.
+*   Systems, in order: `BoneBurstInstanceSystem` (also adds the request and event buffers, applies `BoneBurstInitial.Animation` and the default mix) → `BoneBurstAnimationSystem` (requests, `Update`, clock, `Apply`, stage) → `BoneBurstPoseSystem` → `BoneBurstAnimationAfterSystem` (`AfterApply`: fired events, total alpha and rotation memory fed back; queues keyed events and completes). Gameplay talks through `DynamicBuffer<BoneBurstAnimationRequest>` (set, add, set empty, add empty, clear track, clear tracks, set empty animations) and reads `DynamicBuffer<BoneBurstTrackEvent>`, rebuilt every frame. `BoneBurstAnimationSettings` (optional) gives time scale, unscaled time and default mix, applied as the MonoBehaviour front does (`delta × TimeScale` drives both the tracks and the skeleton clock).
+
+**Gates:**
+
+| Gate | Result |
+|---|---|
+| `ApplyCommand` streams identical to `BoneAnimationState`: seeded random operations (set, add with delays, set and add empty, clear track and tracks, set empty animations, entry tweaks: alpha, time scale, additive, reverse, shortest rotation, event and attachment thresholds, mix duration, track end, animation start; random mixes, default mix, time scale and frame times), 3 seeds × 24 fixtures × 220 frames, compared every frame: every command field, modes, hold factors, rotation memory, unkeyed state, applied flag, and the full event stream including keyed events | PASS, 72 of 72, exact equality |
+| Systems end to end (requests from a buffer, initial animation, time scale 2 and 0.5, default mix): pose and events equal the managed pipeline every frame over 150 frames; a keyed event is seen | PASS, 3 of 3 |
+| Disposing a state with queued, next and mixing entries frees everything once | PASS |
+| 25D `Module.TA.BoneBurstEcs.Tests.Editor` | 201 of 201 |
+| A deliberate bug must fail the test | PASS, three: mixing-from time ignoring `TimeScale` failed 50 of 198; `alphaHold` without its division failed 72; `HasTimeline` always false failed 67. Every fuzz case reaches hold and mixing. |
+
+**Left out on purpose:** the managed `TryAdvanceSteady` shortcut (a lone track-0 entry at alpha 1 becomes one Fast command, a perf optimisation with the same output); P7 measures first. Skipping idle instances (no entries, no physics) is also P7. The port has no Burst compile step yet: the systems run it on the main thread, as the MonoBehaviour front does with the managed class.
+
+**Next:** P5, the Entities Graphics route: the shared pose buffer, a DOTS-instanced shader derived from the BoneBurst ones, bounds, and the batching and sorting checks S0 left open.
