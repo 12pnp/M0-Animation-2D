@@ -8,7 +8,7 @@ import { type PreferenceValues, Preferences } from "./preferences";
 import { PreferencesDialog } from "./preferencesDialog";
 import { References } from "./panels/references";
 import { fileSource, Session, type Source } from "./session";
-import type { Tool } from "./stage/gizmo";
+import type { Space, Tool } from "./stage/gizmo";
 import { isTyping, Stage } from "./stage/stage";
 import { Timeline } from "./timeline/timeline";
 import { animationDuration, timeFrame } from "@/model/timelines";
@@ -121,7 +121,21 @@ export function mountApp(root: HTMLElement): void {
     say(stage.autoKey ? "Auto Key on: dragging keys the animation." : "Auto Key off: dragging poses the bone unkeyed; press Key (K) to key it.");
   }), "autoKey");
   autoKeyBtn.setAttribute("aria-pressed", "true");
-  stageTools.append(group(...toolBtns), group(autoKeyBtn), group(...showBtns));
+  const SPACES: ReadonlyArray<{ space: Space; label: string; tip: string }> = [
+    { space: "local", label: "Local", tip: "Move along the bone's own axes" },
+    { space: "parent", label: "Parent", tip: "Move freely, in the parent's space" },
+    { space: "world", label: "World", tip: "Move along the world's axes" },
+  ];
+  const spaceBtns = SPACES.map((x) => {
+    const b = button(x.label, x.tip, () => {
+      stage.space = x.space;
+      for (const o of spaceBtns) o.setAttribute("aria-pressed", String(o === b));
+      stage.redraw();
+    });
+    b.setAttribute("aria-pressed", String(x.space === stage.space));
+    return b;
+  });
+  stageTools.append(group(...toolBtns), group(...spaceBtns), group(autoKeyBtn), group(...showBtns));
   // Fit stays in the panel's top right corner, whatever its size.
   const fitCorner = el("div", "stage-fit");
   fitCorner.append(fitBtn);

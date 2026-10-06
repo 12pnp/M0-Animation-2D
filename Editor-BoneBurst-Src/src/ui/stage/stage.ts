@@ -10,7 +10,7 @@ import { axisOf, guideScreen, hitGuide, RULER, rulerAt, rulerOf, tickStep } from
 import { boneInherit, boneNumber } from "@/model/defaults";
 import type { Session } from "../session";
 import { type Camera, fit, pan, toScreen, toWorld, zoomAt } from "./camera";
-import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, scaleFactors, type ScreenBone, shearDelta, tidy, type Tool, turn, turnSign } from "./gizmo";
+import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, lockToAxis, scaleFactors, type ScreenBone, shearDelta, type Space, spaceAxes, tidy, type Tool, turn, turnSign } from "./gizmo";
 import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix, type Posed } from "./posed";
 import { constraintShapes, hitConstraint } from "./constraintShapes";
 import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
@@ -42,6 +42,9 @@ interface Drag {
   shearY: number;
   /** Animate mode: the animation and time the drag keys at. */
   key: { animation: string; time: number } | null;
+  /** Move along an axis of `space` (local, world), chosen at the drag's start; null until then. */
+  space: Space;
+  lock: 0 | 1 | null;
   /** Auto Key off in an animation: the drag poses the bone without writing the document. */
   unkeyed: boolean;
   /** The keys as the file had them (absent: undefined), for an axis that ends where it began. */
@@ -62,6 +65,8 @@ export class Stage {
   tool: Tool = "move";
   /** With an animation chosen: a drag keys it (on), or poses the bone unkeyed until Key (off). */
   autoKey = true;
+  /** The Move tool's axes: parent's is the free drag; local and world hold it to one axis. */
+  space: Space = "parent";
   camera: Camera = { x: 0, y: 0, zoom: 1 };
   /** The pointer's world position, for the status line. */
   pointer: Point | null = null;
@@ -555,8 +560,9 @@ export class Stage {
     if (this.tool === "rotate") {
       g.beginPath(); g.arc(ox, oy, GRAB - 8, 0, Math.PI * 2); g.stroke();
     } else {
-      // The bone's own axes on screen (y up in the world, so the screen y is flipped).
-      const ax = Math.atan2(-m[2], m[0]), ay = Math.atan2(-m[3], m[1]);
+      // The axes of the chosen space on screen (y up in the world, so the screen y is flipped).
+      const [u, v] = spaceAxes(this.tool === "move" ? this.space : "local", m, parentMatrix(p, bone));
+      const ax = Math.atan2(-u[1], u[0]), ay = Math.atan2(-v[1], v[0]);
       for (const [angle, len] of [[ax, GRAB - 12], [ay, GRAB - 24]] as const) {
         const ex = ox + Math.cos(angle) * len, ey = oy + Math.sin(angle) * len;
         g.beginPath(); g.moveTo(ox, oy); g.lineTo(ex, ey); g.stroke();
@@ -633,6 +639,8 @@ export class Stage {
       written: { x: b.x, y: b.y, rotation: b.rotation, scaleX: b.scaleX, scaleY: b.scaleY, shearX: b.shearX, shearY: b.shearY },
       key: anim !== null && !unkeyed ? { animation: anim, time: this.session.keyTime } : null,
       unkeyed,
+      space: this.space,
+      lock: null,
     };
     if (unkeyed) { this.onStatus(`Unkeyed pose of ${name}: press Key (K) to key it; moving the playhead drops it.`); return; }
     this.session.history!.begin(anim !== null
@@ -664,6 +672,11 @@ export class Stage {
     const d = this.drag!, h = this.session.history!;
     let patch: Dragged;
     if (d.tool === "move") {
+      if (d.space !== "parent") {
+        const held = lockToAxis([at[0] - d.start[0], at[1] - d.start[1]], spaceAxes(d.space, d.matrix, d.parent), d.lock, 4 / this.camera.zoom);
+        d.lock = held.lock;
+        at = [d.start[0] + held.delta[0], d.start[1] + held.delta[1]];
+      }
       const [dx, dy] = moveDelta(d.parent, at[0] - d.start[0], at[1] - d.start[1]);
       patch = { x: tidy(d.x + dx, 2), y: tidy(d.y + dy, 2) };
     } else if (d.tool === "rotate") {

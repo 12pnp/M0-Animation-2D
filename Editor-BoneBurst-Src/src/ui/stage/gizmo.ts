@@ -31,6 +31,38 @@ export function asWritten<P extends Record<string, number | undefined>>(
   return out as P;
 }
 
+/** The space the Move tool works in: the bone's own axes, its parent's, or the world's. */
+export type Space = "local" | "parent" | "world";
+
+function unit(x: number, y: number): Point {
+  const n = Math.hypot(x, y);
+  return n === 0 ? [1, 0] : [x / n, y / n];
+}
+
+/** A space's two axes as world unit vectors: the bone's x and y, the parent's, or the world's. */
+export function spaceAxes(space: Space, bone: Matrix, parent: Matrix): readonly [Point, Point] {
+  if (space === "world") return [[1, 0], [0, 1]];
+  const m = space === "local" ? bone : parent;
+  return [unit(m[0], m[2]), unit(m[1], m[3])];
+}
+
+/**
+ * A move held to one axis: once the pointer has gone `threshold` from where it began, the axis it
+ * went nearer to is chosen (`lock`, kept for the rest of the drag), and the displacement is its
+ * part along that axis. Until then nothing moves.
+ */
+export function lockToAxis(delta: Point, axes: readonly [Point, Point], lock: 0 | 1 | null, threshold: number): { delta: Point; lock: 0 | 1 | null } {
+  const along = (a: Point) => delta[0] * a[0] + delta[1] * a[1];
+  let chosen = lock;
+  if (chosen === null) {
+    if (Math.hypot(delta[0], delta[1]) < threshold) return { delta: [0, 0], lock: null };
+    chosen = Math.abs(along(axes[0])) >= Math.abs(along(axes[1])) ? 0 : 1;
+  }
+  const a = axes[chosen], t = along(a);
+  // `+ 0` turns a negative zero into 0.
+  return { delta: [a[0] * t + 0, a[1] * t + 0], lock: chosen };
+}
+
 /** Degrees of shear for each world unit the pointer moves along the bone's own axes. */
 const SHEAR_PER_UNIT = 0.5;
 

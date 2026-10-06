@@ -9,7 +9,7 @@ import type { Skeleton } from "@/model/skeleton";
 import { atlasImages } from "@/engine/regions";
 import { fit, pan, toScreen, toWorld, zoomAt } from "@/ui/stage/camera";
 import { baseName, pickFiles } from "@/ui/files";
-import { asWritten, localRotation, moveDelta, pickBone, scaleFactors, shearDelta, tidy, turn, turnSign } from "@/ui/stage/gizmo";
+import { asWritten, localRotation, lockToAxis, spaceAxes, moveDelta, pickBone, scaleFactors, shearDelta, tidy, turn, turnSign } from "@/ui/stage/gizmo";
 import { boneMatrix, bounds, parentMatrix, Poser, poseSetup } from "@/ui/stage/posed";
 import { STICKMAN } from "./fixtures/rigs";
 
@@ -199,5 +199,24 @@ describe("an unkeyed pose", () => {
     expect(moved.local[o]).toBe(l[o]! + 10);
     expect(boneMatrix(moved, i)).not.toEqual(before);
     expect([...boneMatrix(poser.pose(null, null, 0), i)]).toEqual(before);
+  });
+});
+
+describe("Move along an axis of a space", () => {
+  const world = spaceAxes("world", [1, 0, 0, 1, 0, 0], [1, 0, 0, 1, 0, 0]);
+  it("holds the drag to the nearer axis once it has gone far enough", () => {
+    expect(lockToAxis([1, 1], world, null, 4)).toEqual({ delta: [0, 0], lock: null });
+    expect(lockToAxis([10, 3], world, null, 4)).toEqual({ delta: [10, 0], lock: 0 });
+    expect(lockToAxis([3, -10], world, null, 4)).toEqual({ delta: [0, -10], lock: 1 });
+  });
+  it("keeps the first choice, whatever the pointer does next", () => {
+    expect(lockToAxis([2, 30], world, 0, 4)).toEqual({ delta: [2, 0], lock: 0 });
+  });
+  it("takes the bone's or the parent's axes as unit vectors in the world", () => {
+    const turned = [0, -1, 1, 0, 5, 5] as const; // a bone turned 90 degrees: its x points up the world
+    const [x, y] = spaceAxes("local", turned, [1, 0, 0, 1, 0, 0]);
+    expect(x).toEqual([0, 1]);
+    expect(y).toEqual([-1, 0]);
+    expect(spaceAxes("parent", turned, [2, 0, 0, 2, 0, 0])[0]).toEqual([1, 0]);
   });
 });
