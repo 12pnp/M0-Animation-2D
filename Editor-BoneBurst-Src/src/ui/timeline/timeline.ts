@@ -444,7 +444,8 @@ export class Timeline {
     this.rows.forEach((r, i) => {
       const y = RULER + i * ROW + ROW / 2;
       for (const m of marks(r, fps)) {
-        const x = frameX(v, m.frame);
+        // On the same pixel column as the frame's tick and the playhead line.
+        const x = Math.round(frameX(v, m.frame)) + 0.5;
         if (x < -8 || x > width + 8) continue;
         const on = m.refs.every((ref) => this.selected.has(refId(ref, fps)));
         g.fillStyle = on ? accent : r.depth ? col("--muted") : text;
@@ -523,7 +524,7 @@ export class Timeline {
     g.textAlign = "center";
     const w = Math.ceil(g.measureText(label).width) + 10, h = BADGE_H;
     // On the same line as the ruler's own numbers (their middle is 9 px down).
-    const x = Math.min(Math.max(frameX(this.view, s.time * s.fps), w / 2), width - w / 2), y = top + 9 - h / 2;
+    const x = Math.min(Math.max(Math.round(frameX(this.view, s.time * s.fps)) + 0.5, w / 2), width - w / 2), y = top + 9 - h / 2;
     g.fillStyle = PLAYHEAD;
     g.beginPath();
     g.roundRect(x - w / 2, y, w, h, 4);
