@@ -4,8 +4,24 @@
     {
       "name": "editor-v2",
       "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "Editor-BoneBurst-Src", "run", "dev"],
+      "runtimeArgs": [
+        "--prefix",
+        "Editor-BoneBurst-Src",
+        "run",
+        "dev"
+      ],
       "port": 5185
+    },
+    {
+      "name": "editor-v1-oracle",
+      "runtimeExecutable": "npm",
+      "runtimeArgs": [
+        "--prefix",
+        "Animation-BoneBurst-Src",
+        "run",
+        "dev"
+      ],
+      "port": 5181
     }
   ]
 }

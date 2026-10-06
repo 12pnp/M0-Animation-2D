@@ -25,7 +25,7 @@ const TAKES: Array<{ config: string; seconds?: number } & Pick<BvhClipOptions, "
 ];
 
 /** The two keys of AnimatedDrawings' motion configs this needs. */
-function config(name: string): { file: string; up: BvhClipOptions["up"]; start?: number; end?: number } {
+function config(name: string): { file: string; up: BvhClipOptions["up"]; start?: number | undefined; end?: number | undefined } {
   const text = readFileSync(join(ad, "examples/config/motion", `${name}.yaml`), "utf8");
   const field = (k: string) => /^(\S+):\s*(.*)$/m.exec(text.split("\n").find((l) => l.startsWith(`${k}:`)) ?? "")?.[2]?.trim();
   const int = (k: string) => { const v = field(k); return v && v !== "null" ? Number(v) : undefined; };
@@ -37,7 +37,7 @@ const clips: MotionClip[] = TAKES.map((t) => {
   const bvh = parseBvh(readFileSync(join(ad, c.file), "utf8"));
   // A long take is cut to `seconds`: a library clip is a few cycles, not the whole session.
   const end = t.seconds ? Math.min(c.end ?? Infinity, (c.start ?? 0) + Math.round(t.seconds / bvh.frameTime)) : c.end;
-  return bvhClip(bvh, { name: t.name, description: t.description, view: t.view, up: c.up, start: c.start, end });
+  return bvhClip(bvh, { name: t.name, description: t.description, view: t.view, up: c.up, ...(c.start !== undefined ? { start: c.start } : {}), ...(end !== undefined ? { end } : {}) });
 });
 
 const out = fileURLToPath(new URL("../src/agent/rig/motions-bvh.json", import.meta.url));
