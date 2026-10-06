@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { decodePng } from "../src/io/png";
 
 /**
@@ -11,6 +11,13 @@ import { decodePng } from "../src/io/png";
  */
 
 const STICK = join(dirname(fileURLToPath(import.meta.url)), "..", "tests", "fixtures", "stickman");
+
+/** Choose an item from a menu in the menu bar (there is no toolbar row any more). */
+async function menuItem(page: Page, menu: string, item: string): Promise<void> {
+  await page.getByRole("button", { name: menu, exact: true }).click();
+  // Its name carries the shortcut text too ("Save⌘S"), so match the start.
+  await page.getByRole("menuitem", { name: new RegExp(`^${item}`) }).click();
+}
 
 test("Export to Unity…: the skeleton, atlas and page written into the chosen folder, the skeleton last; the folder remembered", async ({ page }) => {
   await page.addInitScript(() => {
@@ -38,7 +45,7 @@ test("Export to Unity…: the skeleton, atlas and page written into the chosen f
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
 
-  await page.getByRole("button", { name: "Export to Unity…" }).click();
+  await menuItem(page, "File", "Export to Unity…");
   await expect(page.locator(".message").getByText(/Exported to Unity/)).toBeVisible();
   expect(await page.evaluate(() => (window as unknown as { order: string[] }).order)).toEqual(["Stickman_IK.atlas.txt", "Stickman_IK_tex.png", "Stickman_IK.json"]);
 
@@ -64,7 +71,7 @@ test("Export to Unity…: the skeleton, atlas and page written into the chosen f
   });
   await page.evaluate(async () => (await (await navigator.storage.getDirectory()).getDirectoryHandle("Unity")).removeEntry("Stickman_IK.json"));
   expect(await has()).toBe(false);
-  await page.getByRole("button", { name: "Export to Unity…" }).click();
+  await menuItem(page, "File", "Export to Unity…");
   await expect.poll(has).toBe(true);
   expect(await page.evaluate(() => (window as unknown as { picks: number }).picks)).toBe(1);
 });

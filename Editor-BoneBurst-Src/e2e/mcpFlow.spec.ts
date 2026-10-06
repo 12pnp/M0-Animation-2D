@@ -76,7 +76,7 @@ test("over MCP: auto_rig → apply_motion → check_preview on the figure PSD, s
   await page.goto(`/?bridge=${PORT}`);
   await page.evaluate(() => localStorage.clear());
   await page.reload();
-  await page.locator("header input[type=file]").setInputFiles(join(ROOT, "tests", "fixtures", "psd", "figure.psd"));
+  await page.locator("input[type=file]").setInputFiles(join(ROOT, "tests", "fixtures", "psd", "figure.psd"));
   await expect(page.locator(".outline .row", { hasText: "arm L" })).toBeVisible();
   await page.locator(".ai-button").click();
   await expect(page.locator(".ai-button")).toHaveAttribute("data-state", "connected");

@@ -92,6 +92,8 @@ export class Stage {
   look: StageLook = NO_LOOK;
   /** The colour bones are drawn in unless they have their own; null: the theme's. */
   boneColour: string | null = null;
+  /** The colour the selected bone and its gizmo are drawn in; null: the theme's accent. */
+  selectedBoneColour: string | null = null;
   /** What the drag snapped to this step, drawn until the drag ends. */
   private snapped: Snapped | null = null;
   /** A weight-brush stroke under way (E6 step 4f), and where the pointer is on screen for the circle. */
@@ -222,12 +224,12 @@ export class Stage {
       for (const b of this.session.doc?.bones ?? []) { const c = boneColourOf(b); if (c) own.set(b.name, c); }
       for (const b of this.screenBones()) {
         const on = b.name === this.session.selectedBone;
-        drawBone(g, b, on ? selected : own.get(b.name) ?? this.boneColour ?? bone, on);
+        drawBone(g, b, on ? this.selectedBoneColour ?? selected : own.get(b.name) ?? this.boneColour ?? bone, on);
       }
     }
     if (this.show.constraints) this.drawConstraints(g, p, css, selected);
     const sel = this.selectedIndex();
-    if (sel >= 0) this.drawGizmo(g, sel, selected);
+    if (sel >= 0) this.drawGizmo(g, sel, this.selectedBoneColour ?? selected);
     const mesh = this.meshMode();
     if (mesh) this.drawMesh(g, mesh, selected, bone);
     this.drawGuides(g, css.getPropertyValue("--guide").trim() || "#36c2d9");

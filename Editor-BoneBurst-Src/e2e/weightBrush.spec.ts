@@ -48,7 +48,7 @@ test("Paint weights: a stroke over a vertex raises the shown bone's weight there
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
-  await page.locator("header input[type=file]").setInputFiles(["spineboy-pro.json", "spineboy-pro.atlas.txt", "spineboy-pro.png"].map((f) => join(SPINEBOY, f)));
+  await page.locator("input[type=file]").setInputFiles(["spineboy-pro.json", "spineboy-pro.atlas.txt", "spineboy-pro.png"].map((f) => join(SPINEBOY, f)));
   await page.waitForFunction(() => document.title.includes("spineboy-pro"));
   const t = (await target(page))!;
   expect(t).not.toBeNull();

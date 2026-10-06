@@ -47,6 +47,7 @@ export class PreferencesDialog {
         check("Show rulers on the stage", p.rulers, (on) => this.prefs.set({ rulers: on })),
         check("Show bones on the stage", p.bones, (on) => this.prefs.set({ bones: on })),
         colourPicker("Default bone colour", p.boneColour, (c) => this.prefs.set({ boneColour: c }), true, themeColour("--bone")),
+        colourPicker("Selected bone colour", p.selectedBoneColour, (c) => this.prefs.set({ selectedBoneColour: c }), true, themeColour("--accent")),
         note("A bone can have a colour and an icon of its own: select it and see Properties."),
         check("Show constraints on the stage", p.constraints, (on) => this.prefs.set({ constraints: on })),
       ],
@@ -163,7 +164,7 @@ export class PreferencesDialog {
 const KEYS: Readonly<Record<string, readonly (keyof PreferenceValues)[]>> = {
   general: ["theme", "undoSteps", "referenceOpacity"],
   files: ["autosave", "autosaveSeconds"],
-  display: ["rulers", "bones", "boneColour", "constraints"],
+  display: ["rulers", "bones", "boneColour", "selectedBoneColour", "constraints"],
   background: ["checker", "checkerColour", "gridColour", "gridThickness", "axes", "axisXColour", "axisYColour", "axisThickness"],
   tabs: ["tabBarColour", "tabActiveColour"],
   grid: ["gridSize"],

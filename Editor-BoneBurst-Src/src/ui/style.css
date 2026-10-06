@@ -90,9 +90,12 @@ body {
 }
 #app {
   height: 100%;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
 }
+/* The menu bar, the recovery offer and the status line take their own height; the dock takes the rest. */
+#app > .body { flex: 1 1 0; min-height: 0; }
+#app > :not(.body) { flex: none; }
 /* The activity bar: a narrow strip of panel buttons left of the dock. */
 .body { display: flex; min-height: 0; }
 .body > .dock { flex: 1 1 auto; }
@@ -505,3 +508,4 @@ dialog.shortcuts dl { display: grid; grid-template-columns: 7em 1fr; gap: 3px 12
 dialog.shortcuts dt, dialog.shortcuts dd { margin: 0; }
 dialog.shortcuts kbd { font: 12px var(--font-mono); padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
 dialog.shortcuts .actions { display: flex; justify-content: flex-end; }
+.menubar > .ai-button { margin-left: auto; padding: 1px 8px; font-size: 12px; align-self: center; }

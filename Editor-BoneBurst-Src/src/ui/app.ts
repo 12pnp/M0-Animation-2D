@@ -103,7 +103,9 @@ export function mountApp(root: HTMLElement): void {
   aiBtn.classList.add("ai-button");
   aiBtn.dataset.state = "off";
   ai.onState((state, detail) => { aiBtn.dataset.state = state; aiBtn.title = detail; message.textContent = detail; });
-  bar.append(openBtn, saveBtn, unityBtn, sep(), undoBtn, redoBtn, sep(), skinLabel, aiBtn, fileInput, prefsDialog.element, sheet.element);
+  // There is no toolbar row: Open, Save, Export, Undo, Redo and the skin are in the menus, the AI
+  // button sits at the menu bar's right end, and the buttons the code drives stay (unattached).
+  bar.append(openBtn, saveBtn, unityBtn, undoBtn, redoBtn, skinLabel);
 
   // The stage panel: the canvas, with the hint over it while nothing is open.
   const stagePanel = el("section", "stage-panel");
@@ -202,6 +204,11 @@ export function mountApp(root: HTMLElement): void {
       DIVIDER,
       { label: "Fit to skeleton", keys: keysOf("fit"), run: () => stage.fitView() },
       { label: "Onion Skin", checked: prefs.values.onion, run: () => prefs.set({ onion: !prefs.values.onion }) },
+      // The skins the file has, to show one at a time (the old toolbar's Skin choice).
+      ...((session.doc?.skins ?? []).map((k) => k.name).filter((n) => n !== "default").length
+        ? [DIVIDER, { label: "Skin: default", checked: session.skin === null, run: () => { session.skin = null; session.changed(); } },
+          ...(session.doc?.skins ?? []).map((k) => k.name).filter((n) => n !== "default").map((n) => ({ label: `Skin: ${n}`, checked: session.skin === n, run: () => { session.skin = n; session.changed(); } }))]
+        : []),
       DIVIDER,
       { label: "Checkerboard", checked: prefs.values.checker, run: () => prefs.set({ checker: !prefs.values.checker }) },
       { label: "Centre Axes", checked: prefs.values.axes, run: () => prefs.set({ axes: !prefs.values.axes }) },
@@ -227,7 +234,8 @@ export function mountApp(root: HTMLElement): void {
   body.append(activity, main);
   menubar.element.prepend(prefsBtn);
   menubar.element.append(tabs.element);
-  root.replaceChildren(menubar.element, bar, body, status, issuesList);
+  root.replaceChildren(menubar.element, body, status, issuesList, fileInput, prefsDialog.element, sheet.element);
+  menubar.element.append(aiBtn);
 
   // The docking shell (D6): every panel is a Dockview panel.
   const workspace = new Workspace(main, new Map<PanelId, PanelContent>([
@@ -275,6 +283,7 @@ export function mountApp(root: HTMLElement): void {
     stage.grid = p.grid ? p.gridSize : null;
     stage.look = lookOf(p);
     stage.boneColour = p.boneColour === "auto" ? null : p.boneColour;
+    stage.selectedBoneColour = p.selectedBoneColour === "auto" ? null : p.selectedBoneColour;
     // The panel tabs' colours: "auto" leaves the theme's.
     const rootStyle = document.documentElement.style;
     for (const [name, value] of [["--tab-bar-bg", p.tabBarColour], ["--tab-active-bg", p.tabActiveColour]] as const) {
@@ -444,7 +453,7 @@ export function mountApp(root: HTMLElement): void {
     });
     const discard = button("Discard", "Delete the kept copy", () => { void clearRecovery().then(() => done("The kept copy was discarded.")); });
     offer.append(text, restore, discard);
-    bar.after(offer);
+    menubar.element.after(offer);
   });
 
   /** The stickman fixture; without its skeleton, a new skeleton on its atlas. */
@@ -544,8 +553,3 @@ function button(text: string, title: string, onClick: () => void): HTMLButtonEle
   return b;
 }
 
-function sep(): HTMLSpanElement {
-  const s = el("span", "sep");
-  s.setAttribute("aria-hidden", "true");
-  return s;
-}
