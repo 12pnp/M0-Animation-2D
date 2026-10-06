@@ -9,7 +9,7 @@ import type { Skeleton } from "@/model/skeleton";
 import { atlasImages } from "@/engine/regions";
 import { fit, pan, toScreen, toWorld, zoomAt } from "@/ui/stage/camera";
 import { baseName, pickFiles } from "@/ui/files";
-import { asWritten, localRotation, lockToAxis, spaceAxes, moveDelta, pickBone, scaleFactors, shearDelta, tidy, turn, turnSign } from "@/ui/stage/gizmo";
+import { asWritten, localRotation, lockToAxis, scaleAlong, spaceAxes, moveDelta, pickBone, scaleFactors, shearDelta, tidy, turn, turnSign } from "@/ui/stage/gizmo";
 import { boneMatrix, bounds, parentMatrix, Poser, poseSetup } from "@/ui/stage/posed";
 import { STICKMAN } from "./fixtures/rigs";
 
@@ -218,5 +218,20 @@ describe("Move along an axis of a space", () => {
     expect(x).toEqual([0, 1]);
     expect(y).toEqual([-1, 0]);
     expect(spaceAxes("parent", turned, [2, 0, 0, 2, 0, 0])[0]).toEqual([1, 0]);
+  });
+});
+
+describe("Scale along an axis of a space", () => {
+  const still = [1, 0, 0, 1, 0, 0] as const;
+  it("scales only the bone axis the drag went along, by how far the pointer went on it", () => {
+    expect(scaleAlong("local", still, still, [10, 0], [10, 0], null, 4).factors).toEqual([1, 1]);
+    expect(scaleAlong("local", still, still, [10, 0], [20, 1], null, 4)).toEqual({ factors: [2, 1], lock: 0 });
+    expect(scaleAlong("local", still, still, [0, 10], [1, 15], null, 4)).toEqual({ factors: [1, 1.5], lock: 1 });
+  });
+  it("in the world's space scales the bone axis most nearly along the chosen world axis", () => {
+    const turned = [0, -1, 1, 0, 0, 0] as const; // the bone's x points up the world
+    const r = scaleAlong("world", turned, still, [0, 10], [1, 30], null, 4);
+    expect(r.lock).toBe(1);
+    expect(r.factors).toEqual([3, 1]);
   });
 });

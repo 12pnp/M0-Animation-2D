@@ -10,7 +10,7 @@ import { axisOf, guideScreen, hitGuide, RULER, rulerAt, rulerOf, tickStep } from
 import { boneInherit, boneNumber } from "@/model/defaults";
 import type { Session } from "../session";
 import { type Camera, fit, pan, toScreen, toWorld, zoomAt } from "./camera";
-import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, lockToAxis, scaleFactors, type ScreenBone, shearDelta, type Space, spaceAxes, tidy, type Tool, turn, turnSign } from "./gizmo";
+import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, lockToAxis, scaleAlong, scaleFactors, type ScreenBone, shearDelta, type Space, spaceAxes, tidy, type Tool, turn, turnSign } from "./gizmo";
 import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix, type Posed } from "./posed";
 import { constraintShapes, hitConstraint } from "./constraintShapes";
 import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
@@ -561,7 +561,7 @@ export class Stage {
       g.beginPath(); g.arc(ox, oy, GRAB - 8, 0, Math.PI * 2); g.stroke();
     } else {
       // The axes of the chosen space on screen (y up in the world, so the screen y is flipped).
-      const [u, v] = spaceAxes(this.tool === "move" ? this.space : "local", m, parentMatrix(p, bone));
+      const [u, v] = spaceAxes(this.tool === "move" || (this.tool === "scale" && this.space !== "parent") ? this.space : "local", m, parentMatrix(p, bone));
       const ax = Math.atan2(-u[1], u[0]), ay = Math.atan2(-v[1], v[0]);
       for (const [angle, len] of [[ax, GRAB - 12], [ay, GRAB - 24]] as const) {
         const ex = ox + Math.cos(angle) * len, ey = oy + Math.sin(angle) * len;
@@ -693,7 +693,13 @@ export class Stage {
       const [lx, ly] = shearDelta((Math.atan2(d.matrix[2], d.matrix[0]) * 180) / Math.PI, at[0] - d.start[0], at[1] - d.start[1], shift);
       patch = { shearX: tidy(d.shearX + lx, 2), shearY: tidy(d.shearY + ly, 2) };
     } else {
-      const [fx, fy] = scaleFactors(d.matrix, d.start, at, shift);
+      let fx: number, fy: number;
+      if (d.space === "parent" || shift) [fx, fy] = scaleFactors(d.matrix, d.start, at, shift);
+      else {
+        const held = scaleAlong(d.space, d.matrix, d.parent, d.start, at, d.lock, 4 / this.camera.zoom);
+        [fx, fy] = held.factors;
+        d.lock = held.lock;
+      }
       patch = { scaleX: tidy(d.scaleX * fx, 3), scaleY: tidy(d.scaleY * fy, 3) };
     }
     try {
