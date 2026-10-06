@@ -67,9 +67,10 @@ export function lockToAxis(delta: Point, axes: readonly [Point, Point], lock: 0 
  * A scale held to one of the bone's axes (Scale in the Local or World space): the drag picks the
  * nearer axis of `space` as `lockToAxis` does; in the world's space that is the bone axis most
  * nearly along it. The factor is how far the pointer went along that bone axis from the origin;
- * the other axis stays 1. Nothing scales until the axis is chosen.
+ * the other axis stays 1. Nothing scales until the axis is chosen, or when the press began within
+ * `minStart` of the origin (along that axis).
  */
-export function scaleAlong(space: Space, bone: Matrix, parent: Matrix, p0: Point, p1: Point, lock: 0 | 1 | null, threshold: number): { factors: Point; lock: 0 | 1 | null } {
+export function scaleAlong(space: Space, bone: Matrix, parent: Matrix, p0: Point, p1: Point, lock: 0 | 1 | null, threshold: number, minStart = 1e-9): { factors: Point; lock: 0 | 1 | null } {
   const held = lockToAxis([p1[0] - p0[0], p1[1] - p0[1]], spaceAxes(space, bone, parent), lock, threshold);
   if (held.lock === null) return { factors: [1, 1], lock: null };
   const own = spaceAxes("local", bone, parent);
@@ -80,7 +81,7 @@ export function scaleAlong(space: Space, bone: Matrix, parent: Matrix, p0: Point
   }
   const u = own[j], o: Point = [bone[4], bone[5]];
   const a = (p0[0] - o[0]) * u[0] + (p0[1] - o[1]) * u[1], b = (p1[0] - o[0]) * u[0] + (p1[1] - o[1]) * u[1];
-  const f = Math.abs(a) < 1e-9 ? 1 : b / a;
+  const f = Math.abs(a) < minStart ? 1 : b / a;
   return { factors: j === 0 ? [f, 1] : [1, f], lock: held.lock };
 }
 
@@ -147,11 +148,12 @@ export function turnSign(parent: Matrix, inherit: string, skeletonFlip: boolean)
  * axes (`bone`, its world matrix when the drag began). `uniform` scales both by the change in
  * distance. An axis the drag started across (less than a fifth of the reach along it) keeps 1.
  */
-export function scaleFactors(bone: Matrix, p0: Point, p1: Point, uniform: boolean): Point {
+export function scaleFactors(bone: Matrix, p0: Point, p1: Point, uniform: boolean, minStart = 1e-9): Point {
   const ox = bone[4], oy = bone[5];
   const v0: Point = [p0[0] - ox, p0[1] - oy], v1: Point = [p1[0] - ox, p1[1] - oy];
   const l0 = Math.hypot(v0[0], v0[1]);
-  if (l0 < 1e-9) return [1, 1];
+  // A press this close to the origin would make the ratio jump: nothing scales.
+  if (l0 < minStart) return [1, 1];
   if (uniform) { const f = Math.hypot(v1[0], v1[1]) / l0; return [f, f]; }
   const [a, b, c, d] = bone;
   const det = a * d - b * c;

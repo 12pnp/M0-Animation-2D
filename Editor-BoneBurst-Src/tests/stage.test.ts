@@ -235,3 +235,15 @@ describe("Scale along an axis of a space", () => {
     expect(r.factors).toEqual([3, 1]);
   });
 });
+
+describe("Scale from too near the origin", () => {
+  const still = [1, 0, 0, 1, 0, 0] as const;
+  it("scales nothing when the press began within the minimum start distance", () => {
+    expect(scaleFactors(still, [3, 0], [30, 0], true, 12)).toEqual([1, 1]);
+    expect(scaleAlong("local", still, still, [3, 0], [30, 0], null, 4, 12).factors).toEqual([1, 1]);
+  });
+  it("scales as before from further out", () => {
+    expect(scaleFactors(still, [20, 0], [40, 0], true, 12)).toEqual([2, 2]);
+    expect(scaleAlong("local", still, still, [20, 0], [40, 0], null, 4, 12).factors).toEqual([2, 1]);
+  });
+});

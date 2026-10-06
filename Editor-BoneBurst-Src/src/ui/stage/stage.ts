@@ -21,6 +21,8 @@ import { hitReference, movedReference, type Placed, referenceCorner, referenceQu
 
 /** How far from the selected bone's origin a press still grabs it, in pixels (the gizmo's ring). */
 const GRAB = 56;
+/** A Scale drag that began nearer than this to the bone's origin (pixels) scales nothing: its ratio would jump. */
+const MIN_SCALE_START = 12;
 const LABEL: Record<Tool, string> = { move: "Move", rotate: "Rotate", scale: "Scale", shear: "Shear" };
 /** The property each tool keys in Animate mode. */
 const KEYED: Record<Tool, BoneProperty> = { move: "translate", rotate: "rotate", scale: "scale", shear: "shear" };
@@ -745,9 +747,9 @@ export class Stage {
       patch = { shearX: tidy(d.shearX + lx, 2), shearY: tidy(d.shearY + ly, 2) };
     } else {
       let fx: number, fy: number;
-      if (d.space === "parent" || shift) [fx, fy] = scaleFactors(d.matrix, d.start, at, shift);
+      if (d.space === "parent" || shift) [fx, fy] = scaleFactors(d.matrix, d.start, at, shift, MIN_SCALE_START / this.camera.zoom);
       else {
-        const held = scaleAlong(d.space, d.matrix, d.parent, d.start, at, d.lock, 4 / this.camera.zoom);
+        const held = scaleAlong(d.space, d.matrix, d.parent, d.start, at, d.lock, 4 / this.camera.zoom, MIN_SCALE_START / this.camera.zoom);
         [fx, fy] = held.factors;
         d.lock = held.lock;
       }
