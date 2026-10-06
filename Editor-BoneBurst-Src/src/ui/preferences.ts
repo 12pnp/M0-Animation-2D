@@ -21,9 +21,16 @@ export interface PreferenceValues {
   /** A recovery copy of unsaved work kept in the browser (E6 step 4a), every `autosaveSeconds`. */
   readonly autosave: boolean;
   readonly autosaveSeconds: number;
+  /** Onion skin (E6 step 4d): on, how many frames before and after, keyed frames only, colour-coded. */
+  readonly onion: boolean;
+  readonly onionBefore: number;
+  readonly onionAfter: number;
+  readonly onionKeyedOnly: boolean;
+  readonly onionColour: boolean;
 }
 
-export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30 };
+export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true };
+export const ONION_RANGE = [0, 10] as const;
 export const AUTOSAVE_RANGE = [5, 600] as const;
 export const UNDO_RANGE = [50, 5000] as const;
 export const PREFERENCES_KEY = "boneburst.preferences";
@@ -51,6 +58,11 @@ export function readPreferences(text: string | null): PreferenceValues {
     ai: bool("ai", DEFAULTS.ai),
     autosave: bool("autosave", DEFAULTS.autosave),
     autosaveSeconds: Math.round(num("autosaveSeconds", AUTOSAVE_RANGE[0], AUTOSAVE_RANGE[1], DEFAULTS.autosaveSeconds)),
+    onion: bool("onion", DEFAULTS.onion),
+    onionBefore: Math.round(num("onionBefore", ONION_RANGE[0], ONION_RANGE[1], DEFAULTS.onionBefore)),
+    onionAfter: Math.round(num("onionAfter", ONION_RANGE[0], ONION_RANGE[1], DEFAULTS.onionAfter)),
+    onionKeyedOnly: bool("onionKeyedOnly", DEFAULTS.onionKeyedOnly),
+    onionColour: bool("onionColour", DEFAULTS.onionColour),
   };
 }
 
@@ -85,6 +97,8 @@ export class Preferences {
       undoSteps: Number.isFinite(merged.undoSteps) ? clamp(Math.round(merged.undoSteps), UNDO_RANGE[0], UNDO_RANGE[1]) : this.current.undoSteps,
       referenceOpacity: Number.isFinite(merged.referenceOpacity) ? clamp(merged.referenceOpacity, 0, 1) : this.current.referenceOpacity,
       autosaveSeconds: Number.isFinite(merged.autosaveSeconds) ? clamp(Math.round(merged.autosaveSeconds), AUTOSAVE_RANGE[0], AUTOSAVE_RANGE[1]) : this.current.autosaveSeconds,
+      onionBefore: Number.isFinite(merged.onionBefore) ? clamp(Math.round(merged.onionBefore), ONION_RANGE[0], ONION_RANGE[1]) : this.current.onionBefore,
+      onionAfter: Number.isFinite(merged.onionAfter) ? clamp(Math.round(merged.onionAfter), ONION_RANGE[0], ONION_RANGE[1]) : this.current.onionAfter,
     }));
     if (writePreferences(next) === writePreferences(this.current)) return;
     this.current = next;

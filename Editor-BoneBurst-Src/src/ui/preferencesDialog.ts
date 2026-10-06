@@ -1,4 +1,4 @@
-import { AUTOSAVE_RANGE, type Preferences, type Theme, UNDO_RANGE } from "./preferences";
+import { AUTOSAVE_RANGE, ONION_RANGE, type Preferences, type Theme, UNDO_RANGE } from "./preferences";
 
 /**
  * The Preferences dialog (E4-PLAN step 10): a native `<dialog>`; each change applies at once.
@@ -41,6 +41,11 @@ export class PreferencesDialog {
     const autosaveNote = document.createElement("p");
     autosaveNote.className = "note";
     autosaveNote.textContent = "One copy, in this browser. It is not your file: Save writes that.";
+    const onion = check("Onion skin (View ▸ Onion Skin)", p.onion, (on) => this.prefs.set({ onion: on }));
+    const before = number(`Onion frames before (${ONION_RANGE[0]}–${ONION_RANGE[1]})`, p.onionBefore, 1, (n) => this.prefs.set({ onionBefore: n }));
+    const after = number(`Onion frames after (${ONION_RANGE[0]}–${ONION_RANGE[1]})`, p.onionAfter, 1, (n) => this.prefs.set({ onionAfter: n }));
+    const keyedOnly = check("Onion: keyed frames only", p.onionKeyedOnly, (on) => this.prefs.set({ onionKeyedOnly: on }));
+    const colour = check("Onion: colour-coded (past red, future green)", p.onionColour, (on) => this.prefs.set({ onionColour: on }));
     const actions = document.createElement("div");
     actions.className = "actions";
     const reset = document.createElement("button");
@@ -52,7 +57,7 @@ export class PreferencesDialog {
     close.textContent = "Close";
     close.value = "close";
     actions.append(reset, close);
-    this.form.replaceChildren(title, theme, rulers, bones, constraints, undo, undoNote, opacity, autosave, every, autosaveNote, actions);
+    this.form.replaceChildren(title, theme, rulers, bones, constraints, undo, undoNote, opacity, autosave, every, autosaveNote, onion, before, after, keyedOnly, colour, actions);
   }
 }
 

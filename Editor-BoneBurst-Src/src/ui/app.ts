@@ -171,6 +171,7 @@ export function mountApp(root: HTMLElement): void {
       ...TOOLS.map((t) => ({ label: t.label, keys: t.key, checked: stage.tool === t.tool, run: () => setTool(t.tool) })),
       DIVIDER,
       { label: "Fit to skeleton", keys: "F", run: () => stage.fitView() },
+      { label: "Onion Skin", checked: prefs.values.onion, run: () => prefs.set({ onion: !prefs.values.onion }) },
     ] },
     { label: "Window", items: () => [
       ...workspace.built.map((id) => ({ label: PANEL_TITLES[id], checked: workspace.isOpen(id), run: () => workspace.toggle(id) })),
@@ -227,6 +228,7 @@ export function mountApp(root: HTMLElement): void {
     else document.documentElement.dataset.theme = p.theme;
     workspace.refreshTheme();
     stage.show = { rulers: p.rulers, bones: p.bones, constraints: p.constraints };
+    stage.onion = p.onion ? { before: p.onionBefore, after: p.onionAfter, keyedOnly: p.onionKeyedOnly, colour: p.onionColour } : null;
     stage.redraw();
     session.undoSteps = p.undoSteps;
     session.referenceOpacity = p.referenceOpacity;

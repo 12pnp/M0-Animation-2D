@@ -14,7 +14,7 @@ function store(initial: string | null = null, blocked = false): Store & { saved:
 describe("preferences", () => {
   it("start from the defaults, and read back what was written", () => {
     expect(readPreferences(null)).toEqual(DEFAULTS);
-    const p = { theme: "dark" as const, rulers: false, bones: false, constraints: false, undoSteps: 1200, referenceOpacity: 0.3, ai: true, autosave: false, autosaveSeconds: 90 };
+    const p = { theme: "dark" as const, rulers: false, bones: false, constraints: false, undoSteps: 1200, referenceOpacity: 0.3, ai: true, autosave: false, autosaveSeconds: 90, onion: true, onionBefore: 3, onionAfter: 0, onionKeyedOnly: true, onionColour: false };
     expect(readPreferences(writePreferences(p))).toEqual(p);
   });
   it.each([
@@ -32,8 +32,8 @@ describe("preferences", () => {
   it("keep changes in the storage, tell listeners, bring numbers into range; Reset gives the defaults", () => {
     const st = store(), prefs = new Preferences(st), heard: string[] = [];
     prefs.onChange((p) => heard.push(p.theme));
-    prefs.set({ theme: "light", undoSteps: 99999, referenceOpacity: -1, autosaveSeconds: 2 });
-    expect(prefs.values).toMatchObject({ theme: "light", undoSteps: 5000, referenceOpacity: 0, autosaveSeconds: 5 });
+    prefs.set({ theme: "light", undoSteps: 99999, referenceOpacity: -1, autosaveSeconds: 2, onionBefore: 40, onionAfter: -3 });
+    expect(prefs.values).toMatchObject({ theme: "light", undoSteps: 5000, referenceOpacity: 0, autosaveSeconds: 5, onionBefore: 10, onionAfter: 0 });
     expect(new Preferences(st).values).toEqual(prefs.values);
     prefs.set({ theme: "light" });
     expect(heard).toEqual(["light"]);

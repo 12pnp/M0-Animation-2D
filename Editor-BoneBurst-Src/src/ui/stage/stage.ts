@@ -15,6 +15,7 @@ import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix, type Posed } 
 import { constraintShapes, hitConstraint } from "./constraintShapes";
 import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
 import { type Backdrop, Renderer } from "./renderer";
+import { ghostsFor, type OnionOptions } from "./onion";
 import { hitReference, movedReference, type Placed, referenceCorner, referenceQuad, scaledReference } from "./references";
 
 /** How far from the selected bone's origin a press still grabs it, in pixels (the gizmo's ring). */
@@ -66,6 +67,8 @@ export class Stage {
   pointer: Point | null = null;
   /** Preferences (E4 step 10): rulers and bones drawn or not. Hidden bones are still picked. */
   show = { rulers: true, bones: true, constraints: true };
+  /** Onion skin (E6 step 4d): which ghosts to draw, or null when off. */
+  onion: OnionOptions | null = null;
   /** A message for the status line (a refused edit). */
   onStatus: (message: string) => void = () => {};
   /** The pointer's world position or the zoom, for the status line's corner. */
@@ -179,7 +182,7 @@ export class Stage {
       const bitmap = this.session.referenceImages.get(r.path);
       if (bitmap) refs.push({ bitmap, ...referenceQuad(r, bitmap.width, bitmap.height), opacity: r.opacity });
     }
-    this.renderer.draw(p, this.session.pages, this.camera, this.size, this.dpr, rgb(css.getPropertyValue("--stage-bg")), refs);
+    this.renderer.draw(p, this.session.pages, this.camera, this.size, this.dpr, rgb(css.getPropertyValue("--stage-bg")), refs, ghostsFor(this.session, this.onion));
     const g = this.overlay.getContext("2d")!;
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     g.clearRect(0, 0, this.size.width, this.size.height);

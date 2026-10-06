@@ -1,6 +1,7 @@
 import { drawnVertices } from "@/engine/draw";
 import type { BlendMode } from "@/engine/rigTypes";
 import type { Camera, Size } from "./camera";
+import type { Ghost } from "./onion";
 import type { Posed } from "./posed";
 
 /**
@@ -94,7 +95,7 @@ export class Renderer {
 
   /** `size` in CSS pixels; the canvas is `size × dpr` device pixels. */
   draw(p: Posed | null, pages: ReadonlyMap<string, ImageBitmap>, cam: Camera, size: Size, dpr: number, background: [number, number, number],
-    references: readonly Backdrop[] = []): void {
+    references: readonly Backdrop[] = [], ghosts: readonly Ghost[] = []): void {
     const gl = this.gl;
     gl.viewport(0, 0, Math.round(size.width * dpr), Math.round(size.height * dpr));
     gl.clearColor(background[0], background[1], background[2], 1);
@@ -121,6 +122,20 @@ export class Renderer {
       gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, 0);
     }
     if (!p) return;
+    // Onion skin (E6 step 4d): each ghost posed when its turn comes and drawn faint, before the skeleton.
+    for (const g of ghosts) {
+      const gp = g.pose();
+      if (gp) this.slots(gp, pages, g);
+    }
+    this.slots(p, pages, null);
+  }
+
+  /**
+   * Every slot of `p` in draw order. A ghost draws at its opacity: in its colour as a silhouette
+   * (light and dark both the colour, so every pixel takes it), or in the slot's own colours faded.
+   */
+  private slots(p: Posed, pages: ReadonlyMap<string, ImageBitmap>, ghost: Ghost | null): void {
+    const gl = this.gl;
     let clip = -1;
     for (const d of p.draw.slots) {
       if (d.clip !== clip) {
@@ -132,7 +147,8 @@ export class Renderer {
       const n = d.vertexCount;
       const pos = new Float64Array(n * 2);
       drawnVertices(p.rig, d, pos);
-      const data = new Float32Array(n * STRIDE), uvs = d.frame.uvs, [r, g, b, a] = d.color, dark = d.dark ?? [0, 0, 0];
+      const data = new Float32Array(n * STRIDE), uvs = d.frame.uvs, tint = ghost?.colour;
+      const [r, g, b] = tint ?? d.color, a = d.color[3] * (ghost ? ghost.opacity : 1), dark = tint ?? d.dark ?? [0, 0, 0];
       for (let i = 0; i < n; i++) {
         const o = i * STRIDE;
         data[o] = pos[i * 2]!; data[o + 1] = pos[i * 2 + 1]!;
@@ -141,7 +157,7 @@ export class Renderer {
         data[o + 8] = dark[0]; data[o + 9] = dark[1]; data[o + 10] = dark[2];
       }
       gl.bindTexture(gl.TEXTURE_2D, this.texture(page));
-      blend(gl, d.blend);
+      blend(gl, ghost ? "normal" : d.blend);
       gl.bufferData(gl.ARRAY_BUFFER, data, gl.STREAM_DRAW);
       gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, d.triangles, gl.STREAM_DRAW);
       gl.drawElements(gl.TRIANGLES, d.triangles.length, gl.UNSIGNED_INT, 0);

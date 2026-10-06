@@ -5,7 +5,7 @@ all 17 corpus rigs back exactly; the old editor changes every one, and poses one
 Step 2 (edit-script parity) done: both scripts agree once each known difference is taken out
 (0.007 and 0 px); `set_keys`' named eases now are version 1's curves. Step 3 (the gap list) done: walked in the old editor, decided by the owner. Step 4 (the gaps
 chosen, built in v2) in progress: 4a (autosave and recovery) done; 4b (events on the
-timeline) done; 4c (copy and paste, multiple selection) done; 4d (onion skin) next.
+timeline) done; 4c (copy and paste, multiple selection) done; 4d (onion skin) done; 4e (snapping and a grid) next.
 
 E6 makes v2 the editor people use. The old editor (`../../Animation-BoneBurst-Src/`, AGPL, the
 Animo fork) is the **behavioural oracle**: it is run, never read, and v2 has to agree with it on
@@ -412,4 +412,52 @@ flowchart LR
    refitted; a pose keyed where it is the same; the box selecting nothing).
 3. **Found while testing**: a box started near a key's diamond grabs the key (the diamond's 6 px
    reach wins); start a box on empty track.
+
+### 4d — onion skin
+
+```mermaid
+flowchart LR
+    T["View ▸ Onion Skin (a preference)"] --> F["onionFrames: the frames before<br/>and after the playhead (or the keyed ones)"]
+    F --> G["a ghost Poser poses each"]
+    G --> R["Renderer: ghosts drawn first, faint,<br/>red before · green after (or plain)"]
+    R --> S["then the skeleton at the playhead"]
+```
+
+#### Decisions
+
+- **What**: with an animation shown and the playhead still, the poses at nearby frames drawn
+  behind the skeleton, faint, nearer ones stronger. Not while playing (the motion shows itself).
+- **Which frames** (Preferences, as the old editor's Onion Skin Options): how many before and
+  after (2 and 2 by default, 0–10), every frame or only the frames with keys ("keyed frames
+  only"), and colour-coded (past red, future green, as silhouettes) or plain (the images,
+  faded). A loop wraps the frames past either end round; otherwise they stop at the ends.
+- **Drawn by the stage's renderer**: a pass before the skeleton, each ghost posed by a second
+  `Poser` of its own (so the shown pose is not disturbed) and drawn as soon as it is posed;
+  clipping as for the skeleton. Colour-coded ghosts use the two-colour tint with light and dark
+  both the ghost's colour, which gives a silhouette in that colour.
+- **Toggle**: View ▸ Onion Skin, kept as a preference.
+
+#### Steps
+
+1. `ui/stage/onion.ts` (`onionFrames`, pure), the renderer's ghost pass, the stage passing ghosts,
+   the preferences and the View menu item.
+2. Tests: the frames chosen (counts, ends, loop, keyed only, opacity falloff); a browser test (the
+   stage's pixels behind the skeleton change when onion skin is on, and only then).
+
+#### 4d results
+
+1. `src/ui/stage/onion.ts` (`onionFrames`, `ghostsFor`, the ghosts' own `Poser`); the renderer's
+   ghost pass (`Renderer.slots`, shared by the ghosts and the skeleton; a colour-coded ghost is a
+   silhouette in its colour through the two-colour tint, a plain one the images faded); the stage
+   passing the ghosts; Preferences: Onion skin, frames before and after (2, 2; 0–10), keyed frames
+   only, colour-coded; **View ▸ Onion Skin**. No ghosts while playing, nor without an animation.
+2. Tests: `tests/onion.test.ts` (3: counts, ends, nearer stronger; loop wrapping, the playhead's
+   frame never a ghost; keyed frames only, wrapping); `tests/preferences.test.ts` (the ranges);
+   `e2e/onion.spec.ts` (on: hundreds of red and green pixels appear on the stage; off: the stage
+   pixel for pixel as before). Four planted faults fail them (ghosts posed but not drawn; no
+   silhouette colour; no wrap at a loop's ends; ghosts at no opacity).
+3. Seen on screen: the stickman's `run` at frame 8 with three ghosts either side, red behind and
+   green ahead.
+4. The stage, renderer and View-menu lines were agreed with the other session (which was building
+   document tabs in `app.ts` and `session.ts` meanwhile).
 
