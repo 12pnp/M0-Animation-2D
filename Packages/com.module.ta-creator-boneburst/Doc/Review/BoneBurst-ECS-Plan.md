@@ -334,7 +334,7 @@ P5 is split in two because the render side needs a shader, Entities Graphics reg
 
 ## 15. P6 result (2026-10-07): CPU route, skins, tint black, Lit2D
 
-**Built** (25D repo, commits `78bf56b`, `e40cd7c` and the Lit2D one):
+**Built** (25D repo, commits `78bf56b`, `e40cd7c` and `107cd0f`):
 
 *   **CPU route.** `BoneBurstCpuMeshJob` (the scratch step of the MonoBehaviour front's `MeshJob`, without vertex fetch) and `BoneBurstCpuMeshSystem` mesh every instance that is not GPU-skinned and every GPU instance the classifier sent to the CPU (deform, clipping): the job fills the instance's own lists, the main thread uploads the vertices every frame and the indices and submesh table only when the topology hash changed. `BoneBurstGpuMesh` became `BoneBurstDrawMesh` (a shared GPU mesh, or the instance's own CPU mesh with a `Version`); the render system rebuilds an instance's render entities when its mesh or that version changes, and picks the GPU or CPU variant of the shader keyword `BONE_BURST_GPU`. A GPU instance that falls back invalidates its GPU topology, so it returns to a shared mesh when the classifier allows. **Change from the plan:** R2 as planned was a shared vertex buffer (vertex fetch); this step is the simpler per-instance mesh, which is what the MonoBehaviour front did before fetch. Fetch stays open until a measurement asks for it.
 *   **Skin requests**: `SetSkin`, `SkinBegin`/`SkinAdd`/`SkinApply` (the M2 `SpineLook` pattern), `SetAttachment`, `SetupPoseSlots`, `SetupPose`, in the same request buffer as the animation requests.
