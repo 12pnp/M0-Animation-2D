@@ -10,7 +10,7 @@ import { axisOf, guideScreen, hitGuide, RULER, rulerAt, rulerOf, tickStep } from
 import { boneInherit, boneNumber } from "@/model/defaults";
 import type { Session } from "../session";
 import { type Camera, fit, pan, toScreen, toWorld, zoomAt } from "./camera";
-import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, scaleFactors, type ScreenBone, tidy, type Tool, turn, turnSign } from "./gizmo";
+import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, scaleFactors, type ScreenBone, shearDelta, tidy, type Tool, turn, turnSign } from "./gizmo";
 import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix, type Posed } from "./posed";
 import { constraintShapes, hitConstraint } from "./constraintShapes";
 import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
@@ -19,9 +19,9 @@ import { hitReference, movedReference, type Placed, referenceCorner, referenceQu
 
 /** How far from the selected bone's origin a press still grabs it, in pixels (the gizmo's ring). */
 const GRAB = 56;
-const LABEL: Record<Tool, string> = { move: "Move", rotate: "Rotate", scale: "Scale" };
+const LABEL: Record<Tool, string> = { move: "Move", rotate: "Rotate", scale: "Scale", shear: "Shear" };
 /** The property each tool keys in Animate mode. */
-const KEYED: Record<Tool, BoneProperty> = { move: "translate", rotate: "rotate", scale: "scale" };
+const KEYED: Record<Tool, BoneProperty> = { move: "translate", rotate: "rotate", scale: "scale", shear: "shear" };
 
 interface Drag {
   bone: string;
@@ -46,7 +46,7 @@ interface Drag {
 }
 
 /** The setup values a drag sets. */
-type Dragged = { [K in "x" | "y" | "rotation" | "scaleX" | "scaleY"]?: number | undefined };
+type Dragged = { [K in "x" | "y" | "rotation" | "scaleX" | "scaleY" | "shearX" | "shearY"]?: number | undefined };
 
 /**
  * The canvas viewport: the skeleton's images (WebGL2) with the bones and the gizmo drawn over
@@ -57,6 +57,8 @@ type Dragged = { [K in "x" | "y" | "rotation" | "scaleX" | "scaleY"]?: number | 
 export class Stage {
   readonly element: HTMLDivElement;
   tool: Tool = "move";
+  /** With an animation chosen: a drag keys it (on), or edits the setup pose (off). */
+  autoKey = true;
   camera: Camera = { x: 0, y: 0, zoom: 1 };
   /** The pointer's world position, for the status line. */
   pointer: Point | null = null;
@@ -554,6 +556,7 @@ export class Stage {
         const ex = ox + Math.cos(angle) * len, ey = oy + Math.sin(angle) * len;
         g.beginPath(); g.moveTo(ox, oy); g.lineTo(ex, ey); g.stroke();
         if (this.tool === "scale") g.fillRect(ex - 4, ey - 4, 8, 8);
+        else if (this.tool === "shear") { g.beginPath(); g.moveTo(ex, ey - 5); g.lineTo(ex + 5, ey); g.lineTo(ex, ey + 5); g.lineTo(ex - 5, ey); g.closePath(); g.fill(); }
         else arrowHead(g, ex, ey, angle);
       }
     }
@@ -610,7 +613,7 @@ export class Stage {
     const p = this.session.pose()!, index = p.bones.get(name)!;
     const b = this.session.doc!.bones!.find((x) => x.name === name)!;
     const at = toWorld(this.camera, this.size, sx, sy), parent = parentMatrix(p, index);
-    const anim = this.session.animation?.name ?? null;
+    const anim = this.autoKey ? this.session.animation?.name ?? null : null;
     // Animate mode starts from the pose at the playhead; setup mode from the setup values.
     const from = anim !== null ? animatedLocal(p, index) : {
       x: boneNumber(b, "x"), y: boneNumber(b, "y"), rotation: boneNumber(b, "rotation"),
@@ -622,7 +625,7 @@ export class Stage {
       matrix: boneMatrix(p, index), parent,
       sign: turnSign(parent, boneInherit(b), p.rig.scaleX * p.rig.scaleY < 0),
       inherit: boneInherit(b),
-      written: { x: b.x, y: b.y, rotation: b.rotation, scaleX: b.scaleX, scaleY: b.scaleY },
+      written: { x: b.x, y: b.y, rotation: b.rotation, scaleX: b.scaleX, scaleY: b.scaleY, shearX: b.shearX, shearY: b.shearY },
       key: anim !== null ? { animation: anim, time: this.session.keyTime } : null,
     };
     this.session.history!.begin(anim !== null
@@ -666,6 +669,9 @@ export class Stage {
         : rough;
       if (shift) r = Math.round(r / 15) * 15;
       patch = { rotation: tidy(r, 2) };
+    } else if (d.tool === "shear") {
+      const [lx, ly] = shearDelta((Math.atan2(d.matrix[2], d.matrix[0]) * 180) / Math.PI, at[0] - d.start[0], at[1] - d.start[1], shift);
+      patch = { shearX: tidy(d.shearX + lx, 2), shearY: tidy(d.shearY + ly, 2) };
     } else {
       const [fx, fy] = scaleFactors(d.matrix, d.start, at, shift);
       patch = { scaleX: tidy(d.scaleX * fx, 3), scaleY: tidy(d.scaleY * fy, 3) };
@@ -675,7 +681,7 @@ export class Stage {
         const local = { x: d.x, y: d.y, rotation: d.rotation, scaleX: d.scaleX, scaleY: d.scaleY, shearX: d.shearX, shearY: d.shearY, ...patch };
         h.apply("step", keyBone(d.key.animation, d.bone, [KEYED[d.tool]], local as LocalPose, d.key.time));
       } else {
-        patch = asWritten(patch, { x: d.x, y: d.y, rotation: d.rotation, scaleX: d.scaleX, scaleY: d.scaleY }, d.written);
+        patch = asWritten(patch, { x: d.x, y: d.y, rotation: d.rotation, scaleX: d.scaleX, scaleY: d.scaleY, shearX: d.shearX, shearY: d.shearY }, d.written);
         h.apply("step", updateBone(d.bone, patch));
       }
     } catch (err) {

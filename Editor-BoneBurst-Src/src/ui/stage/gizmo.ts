@@ -7,7 +7,7 @@
 
 export type Matrix = readonly [number, number, number, number, number, number];
 export type Point = readonly [number, number];
-export type Tool = "move" | "rotate" | "scale";
+export type Tool = "move" | "rotate" | "scale" | "shear";
 
 const DEG = 180 / Math.PI;
 
@@ -29,6 +29,21 @@ export function asWritten<P extends Record<string, number | undefined>>(
   const out: Record<string, number | undefined> = { ...patch };
   for (const k of Object.keys(out)) if (out[k] === began[k]) out[k] = written[k];
   return out as P;
+}
+
+/** Degrees of shear for each world unit the pointer moves along the bone's own axes. */
+const SHEAR_PER_UNIT = 0.5;
+
+/**
+ * The shear a drag adds: the world displacement (`dx`, `dy`) taken along the bone's axes (its
+ * world rotation `deg`), so a drag along the bone's x shears x and along its y shears y. `lock`
+ * keeps only the larger of the two.
+ */
+export function shearDelta(deg: number, dx: number, dy: number, lock: boolean): Point {
+  const r = (deg * Math.PI) / 180, c = Math.cos(r), s = Math.sin(r);
+  let lx = (dx * c + dy * s) * SHEAR_PER_UNIT, ly = (-dx * s + dy * c) * SHEAR_PER_UNIT;
+  if (lock) { if (Math.abs(lx) >= Math.abs(ly)) ly = 0; else lx = 0; }
+  return [lx, ly];
 }
 
 /** The world displacement (`dx`, `dy`) in the parent's space: what a bone's x and y add. */

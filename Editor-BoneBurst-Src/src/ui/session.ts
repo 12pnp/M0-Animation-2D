@@ -458,6 +458,24 @@ export class Session {
     this.changed();
   }
 
+  /**
+   * Open a recovery copy (E6 step 4a) through the same path as files, then mark it unsaved; an
+   * atlas the editor had made (a PSD import never saved) is to be written by the next Save again.
+   */
+  async restore(files: readonly Source[], generated: { atlasText: string } | null): Promise<void> {
+    await this.open(files);
+    this.saved = null;
+    if (generated && this.atlas) {
+      const pages: Page[] = [];
+      for (const p of this.atlas.pages) {
+        const px = await this.pagePixels(p.name);
+        if (px) pages.push({ name: p.name, ...px });
+      }
+      this.generated = { atlasText: generated.atlasText, pages };
+    }
+    this.changed();
+  }
+
   /** The document as Spine JSON text; marks it saved. */
   save(): string {
     if (!this.history) throw new Error("Nothing is open.");

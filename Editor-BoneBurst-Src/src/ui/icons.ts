@@ -9,7 +9,7 @@ import type { ConstraintType } from "@/model/skeleton";
 
 const FILES = {
   open: "lucide/folder-open", save: "lucide/save", exportUnity: "lucide/folder-output", undo: "lucide/undo-2", redo: "lucide/redo-2",
-  move: "lucide/move", rotate: "lucide/rotate-cw", scale: "lucide/scaling", fit: "lucide/scan",
+  move: "lucide/move", rotate: "lucide/rotate-cw", scale: "lucide/scaling", shear: "lucide/shear", autoKey: "lucide/key-round", fit: "lucide/scan",
   settings: "lucide/settings", up: "lucide/arrow-up", down: "lucide/arrow-down", delete: "lucide/trash",
   play: "lucide/play", pause: "lucide/pause", start: "lucide/skip-back", loop: "lucide/repeat",
   addImage: "lucide/image-plus", key: "lucide/diamond", drawOrder: "lucide/layers", ai: "lucide/bot",

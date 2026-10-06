@@ -1,4 +1,4 @@
-import { type Preferences, type Theme, UNDO_RANGE } from "./preferences";
+import { AUTOSAVE_RANGE, type Preferences, type Theme, UNDO_RANGE } from "./preferences";
 
 /**
  * The Preferences dialog (E4-PLAN step 10): a native `<dialog>`; each change applies at once.
@@ -36,6 +36,11 @@ export class PreferencesDialog {
     undoNote.className = "note";
     undoNote.textContent = "Takes effect for the next document opened.";
     const opacity = number("New references' opacity (%)", Math.round(p.referenceOpacity * 100), 1, (n) => this.prefs.set({ referenceOpacity: n / 100 }));
+    const autosave = check("Keep a recovery copy of unsaved work", p.autosave, (on) => this.prefs.set({ autosave: on }));
+    const every = number(`Every (seconds, ${AUTOSAVE_RANGE[0]}–${AUTOSAVE_RANGE[1]})`, p.autosaveSeconds, 1, (n) => this.prefs.set({ autosaveSeconds: n }));
+    const autosaveNote = document.createElement("p");
+    autosaveNote.className = "note";
+    autosaveNote.textContent = "One copy, in this browser. It is not your file: Save writes that.";
     const actions = document.createElement("div");
     actions.className = "actions";
     const reset = document.createElement("button");
@@ -47,7 +52,7 @@ export class PreferencesDialog {
     close.textContent = "Close";
     close.value = "close";
     actions.append(reset, close);
-    this.form.replaceChildren(title, theme, rulers, bones, constraints, undo, undoNote, opacity, actions);
+    this.form.replaceChildren(title, theme, rulers, bones, constraints, undo, undoNote, opacity, autosave, every, autosaveNote, actions);
   }
 }
 

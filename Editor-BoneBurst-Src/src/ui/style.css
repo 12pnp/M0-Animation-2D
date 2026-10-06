@@ -39,16 +39,16 @@
 }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --bg: #1b1c1e;
-    --panel: #232427;
-    --line: #34363a;
+    --bg: #262626;
+    --panel: #2d2d2d;
+    --line: #3d3d3d;
     --text: #e6e6e3;
     --muted: #9a9a95;
     --accent: #4c9bff;
     --accent-text: #0b1220;
-    --stage-bg: #2b2d31;
+    --stage-bg: #4f4f4f;
     --bone: #c8c8c4;
-    --hover: #2d2f33;
+    --hover: #3a3a3a;
     --playhead: #ff6a4d;
     --guide: #36c2d9;
   --c-ik: #f0a04b;
@@ -65,16 +65,16 @@
   }
 }
 :root[data-theme="dark"] {
-  --bg: #1b1c1e;
-  --panel: #232427;
-  --line: #34363a;
+  --bg: #262626;
+  --panel: #2d2d2d;
+  --line: #3d3d3d;
   --text: #e6e6e3;
   --muted: #9a9a95;
   --accent: #4c9bff;
   --accent-text: #0b1220;
-  --stage-bg: #2b2d31;
+  --stage-bg: #4f4f4f;
   --bone: #c8c8c4;
-  --hover: #2d2f33;
+  --hover: #3a3a3a;
   --playhead: #ff6a4d;
   --guide: #36c2d9;
   color-scheme: dark;
@@ -399,3 +399,9 @@ dialog.preferences .actions { display: flex; justify-content: flex-end; gap: 8px
 .stage-panel { position: relative; }
 .stage-tools { position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: calc(100% - 20px); pointer-events: none; }
 .stage-tools .group { display: flex; gap: 4px; padding: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 2px 8px rgb(0 0 0 / 0.3); pointer-events: auto; }
+
+/* The recovery offer (E6 step 4a): under the toolbar until Restore or Discard. */
+.recovery-bar { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--hover); border-bottom: 1px solid var(--line); }
+.recovery-bar .text { flex: 1; min-width: 0; }
+.stage-fit { position: absolute; top: 10px; right: 10px; z-index: 1; }
+.stage-fit button { padding: 3px; }

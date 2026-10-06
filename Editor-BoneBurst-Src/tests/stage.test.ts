@@ -9,7 +9,7 @@ import type { Skeleton } from "@/model/skeleton";
 import { atlasImages } from "@/engine/regions";
 import { fit, pan, toScreen, toWorld, zoomAt } from "@/ui/stage/camera";
 import { baseName, pickFiles } from "@/ui/files";
-import { asWritten, localRotation, moveDelta, pickBone, scaleFactors, tidy, turn, turnSign } from "@/ui/stage/gizmo";
+import { asWritten, localRotation, moveDelta, pickBone, scaleFactors, shearDelta, tidy, turn, turnSign } from "@/ui/stage/gizmo";
 import { boneMatrix, bounds, parentMatrix, poseSetup } from "@/ui/stage/posed";
 import { STICKMAN } from "./fixtures/rigs";
 
@@ -171,5 +171,18 @@ describe("picking files", () => {
   });
   it("names the document after its file", () => {
     expect(baseName("/x/y/Stickman_IK.json")).toBe("Stickman_IK");
+  });
+});
+
+describe("shearDelta", () => {
+  it("takes the drag along the bone's own axes", () => {
+    expect(shearDelta(0, 10, 4, false)).toEqual([5, 2]);
+    const [lx, ly] = shearDelta(90, 10, 0, false);
+    expect(lx).toBeCloseTo(0);
+    expect(ly).toBeCloseTo(-5);
+  });
+  it("keeps only the larger axis when locked", () => {
+    expect(shearDelta(0, 10, 4, true)).toEqual([5, 0]);
+    expect(shearDelta(0, 2, -8, true)).toEqual([0, -4]);
   });
 });

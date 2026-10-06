@@ -1,7 +1,10 @@
 import { writeAtlas } from "@/io/atlas";
 import { encodePng } from "@/io/png";
 import { writeSkeleton } from "@/io/skeletonWrite";
+import { idbGet, idbSet } from "./idb";
 import type { Session } from "./session";
+
+const KEY = "unity-folder";
 
 /**
  * Export to Unity (E5-PLAN step 8): the skeleton, its atlas and pages written into a folder the
@@ -50,17 +53,6 @@ export async function writeFiles(folder: Folder, files: readonly ExportFile[]): 
   return files.map((f) => f.name);
 }
 
-const DB = "boneburst-editor", STORE = "handles", KEY = "unity-folder";
-
-function db(): Promise<IDBDatabase> {
-  return new Promise((ok, fail) => {
-    const r = indexedDB.open(DB, 1);
-    r.onupgradeneeded = () => r.result.createObjectStore(STORE);
-    r.onsuccess = () => ok(r.result);
-    r.onerror = () => fail(r.error);
-  });
-}
-
 /** The folder chosen in this page; IndexedDB is read only when there is none yet (after a reload). */
 let chosen: Folder | null = null;
 
@@ -68,26 +60,13 @@ let chosen: Folder | null = null;
 export const unityFolder = {
   async get(): Promise<Folder | null> {
     if (chosen) return chosen;
-    try {
-      const d = await db();
-      return await new Promise((ok) => {
-        const r = d.transaction(STORE).objectStore(STORE).get(KEY);
-        r.onsuccess = () => { chosen = (r.result as Folder | undefined) ?? null; ok(chosen); };
-        r.onerror = () => ok(null);
-      });
-    } catch { return null; }
+    chosen = await idbGet<Folder>("handles", KEY);
+    return chosen;
   },
   async set(f: Folder): Promise<void> {
     chosen = f;
-    try {
-      const d = await db();
-      await new Promise<void>((ok) => {
-        const t = d.transaction(STORE, "readwrite");
-        t.objectStore(STORE).put(f, KEY);
-        t.oncomplete = () => ok();
-        t.onerror = () => ok();
-      });
-    } catch { /* not kept: chosen again next time */ }
+    // Not kept (a private window): chosen again after a reload.
+    await idbSet("handles", KEY, f);
   },
 };
 

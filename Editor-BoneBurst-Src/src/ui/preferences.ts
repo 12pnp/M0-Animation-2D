@@ -18,9 +18,13 @@ export interface PreferenceValues {
   readonly referenceOpacity: number;
   /** Connected to the AI bridge (E5 step 2): the toolbar's AI button. */
   readonly ai: boolean;
+  /** A recovery copy of unsaved work kept in the browser (E6 step 4a), every `autosaveSeconds`. */
+  readonly autosave: boolean;
+  readonly autosaveSeconds: number;
 }
 
-export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5, ai: false };
+export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30 };
+export const AUTOSAVE_RANGE = [5, 600] as const;
 export const UNDO_RANGE = [50, 5000] as const;
 export const PREFERENCES_KEY = "boneburst.preferences";
 export const PREFERENCES_VERSION = 1;
@@ -45,6 +49,8 @@ export function readPreferences(text: string | null): PreferenceValues {
     undoSteps: Math.round(num("undoSteps", UNDO_RANGE[0], UNDO_RANGE[1], DEFAULTS.undoSteps)),
     referenceOpacity: num("referenceOpacity", 0, 1, DEFAULTS.referenceOpacity),
     ai: bool("ai", DEFAULTS.ai),
+    autosave: bool("autosave", DEFAULTS.autosave),
+    autosaveSeconds: Math.round(num("autosaveSeconds", AUTOSAVE_RANGE[0], AUTOSAVE_RANGE[1], DEFAULTS.autosaveSeconds)),
   };
 }
 
@@ -78,6 +84,7 @@ export class Preferences {
       ...merged,
       undoSteps: Number.isFinite(merged.undoSteps) ? clamp(Math.round(merged.undoSteps), UNDO_RANGE[0], UNDO_RANGE[1]) : this.current.undoSteps,
       referenceOpacity: Number.isFinite(merged.referenceOpacity) ? clamp(merged.referenceOpacity, 0, 1) : this.current.referenceOpacity,
+      autosaveSeconds: Number.isFinite(merged.autosaveSeconds) ? clamp(Math.round(merged.autosaveSeconds), AUTOSAVE_RANGE[0], AUTOSAVE_RANGE[1]) : this.current.autosaveSeconds,
     }));
     if (writePreferences(next) === writePreferences(this.current)) return;
     this.current = next;

@@ -50,3 +50,5 @@ files.
 | `list-tree.svg` | `icons/list-tree.svg` | the activity bar's Rig button |
 | `sliders-horizontal.svg` | `icons/sliders-horizontal.svg` | the activity bar's Properties button |
 | `film.svg` | `icons/film.svg` | the activity bar's Timeline button |
+| `shear.svg` | `icons/shear.svg` | the Shear tool (drawn in Lucide style) |
+| `key-round.svg` | `icons/key-round.svg` | the Auto Key button |

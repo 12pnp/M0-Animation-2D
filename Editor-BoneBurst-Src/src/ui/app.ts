@@ -20,6 +20,7 @@ import { AskAi } from "./panels/askAi";
 import { DIVIDER, MenuBar } from "./menubar";
 import { type IconName, iconButton } from "./icons";
 import { ExportRefused, exportToUnity } from "./unityExport";
+import { Autosaver, clearRecovery, readRecovery, sourcesOf } from "./recovery";
 import { isPanelId, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
 import { type PanelContent, Workspace } from "./workspace/workspace";
 
@@ -30,6 +31,7 @@ const TOOLS: ReadonlyArray<{ tool: Tool; label: string; key: string }> = [
   { tool: "move", label: "Move", key: "W" },
   { tool: "rotate", label: "Rotate", key: "E" },
   { tool: "scale", label: "Scale", key: "R" },
+  { tool: "shear", label: "Shear", key: "T" },
 ];
 
 /**
@@ -70,7 +72,7 @@ export function mountApp(root: HTMLElement): void {
     b.dataset.tool = t.tool;
     return b;
   });
-  const fitBtn = iconButton(button("Fit", "Show the whole skeleton (F)", () => stage.fitView()), "fit");
+  const fitBtn = iconButton(button("Fit", "Show the whole skeleton (F)", () => stage.fitView()), "fit", false);
   const skinLabel = el("label", "skin");
   const skinSelect = document.createElement("select");
   skinSelect.addEventListener("change", () => { session.skin = skinSelect.value || null; session.changed(); });
@@ -106,7 +108,17 @@ export function mountApp(root: HTMLElement): void {
   ];
   const stageTools = el("div", "stage-tools");
   const group = (...children: HTMLElement[]) => { const g = el("div", "group"); g.append(...children); return g; };
-  stageTools.append(group(...toolBtns), group(fitBtn), group(...showBtns));
+  const autoKeyBtn = iconButton(button("Auto Key", "Auto Key: with an animation chosen, a drag on the stage keys it. Off, a drag edits the setup pose instead", () => {
+    stage.autoKey = !stage.autoKey;
+    autoKeyBtn.setAttribute("aria-pressed", String(stage.autoKey));
+    say(stage.autoKey ? "Auto Key on: dragging keys the animation." : "Auto Key off: dragging edits the setup pose.");
+  }), "autoKey");
+  autoKeyBtn.setAttribute("aria-pressed", "true");
+  stageTools.append(group(...toolBtns), group(autoKeyBtn), group(...showBtns));
+  // Fit stays in the panel's top right corner, whatever its size.
+  const fitCorner = el("div", "stage-fit");
+  fitCorner.append(fitBtn);
+  stagePanel.append(fitCorner);
   stagePanel.append(stage.element, hint, stageTools);
   const main = el("main", "dock");
 
@@ -344,6 +356,28 @@ export function mountApp(root: HTMLElement): void {
     hint.append(dev, devNew);
   }
   refresh();
+
+  // Autosave and recovery (E6 step 4a): paused until the browser is asked for an older copy; one
+  // found is offered back, and until it is restored or discarded nothing writes over it.
+  const autosaver = new Autosaver(session, prefs);
+  autosaver.start();
+  void readRecovery().then((r) => {
+    if (!r) { autosaver.paused = false; return; }
+    const offer = el("div", "recovery-bar");
+    offer.setAttribute("role", "alert");
+    const when = new Date(r.savedAt).toLocaleString();
+    const text = el("span", "text");
+    text.textContent = `Unsaved work on ${r.name}.json from ${when} was kept in this browser.`;
+    const done = (m: string) => { offer.remove(); autosaver.paused = false; say(m); };
+    const restore = button("Restore", "Open it, unsaved, as it was", () => {
+      if (session.dirty && !confirm(`${session.name}.json has unsaved changes. Restore the kept copy and lose them?`)) return;
+      void session.restore(sourcesOf(r), r.generated && r.atlas !== null ? { atlasText: r.atlas } : null)
+        .then(() => done(`Restored ${r.name}.json from ${when}: unsaved until you Save it.`), (err) => say(err instanceof Error ? err.message : String(err)));
+    });
+    const discard = button("Discard", "Delete the kept copy", () => { void clearRecovery().then(() => done("The kept copy was discarded.")); });
+    offer.append(text, restore, discard);
+    bar.after(offer);
+  });
 
   /** The stickman fixture; without its skeleton, a new skeleton on its atlas. */
   async function openStickman(withSkeleton = true): Promise<void> {
