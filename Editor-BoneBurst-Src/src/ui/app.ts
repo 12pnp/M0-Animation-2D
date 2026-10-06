@@ -266,6 +266,11 @@ export function mountApp(root: HTMLElement): void {
     stage.onion = p.onion ? { before: p.onionBefore, after: p.onionAfter, keyedOnly: p.onionKeyedOnly, colour: p.onionColour } : null;
     stage.grid = p.grid ? p.gridSize : null;
     stage.look = lookOf(p);
+    // The panel tabs' colours: "auto" leaves the theme's.
+    const rootStyle = document.documentElement.style;
+    for (const [name, value] of [["--tab-bar-bg", p.tabBarColour], ["--tab-active-bg", p.tabActiveColour]] as const) {
+      if (value === "auto") rootStyle.removeProperty(name); else rootStyle.setProperty(name, value);
+    }
     stage.snap = p.snap ? { grid: p.snapGrid, guides: p.snapGuides, bones: p.snapBones, pixels: p.snapPixels, gridSize: p.gridSize } : null;
     stage.redraw();
     session.undoSteps = p.undoSteps;

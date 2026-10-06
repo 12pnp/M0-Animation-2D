@@ -39,6 +39,9 @@ export interface PreferenceValues {
   readonly axisXColour: string;
   readonly axisYColour: string;
   readonly axisThickness: number;
+  /** The panel tabs' colours ("#rrggbb", or "auto" for the theme's): the bar behind the tabs, and the tab shown. */
+  readonly tabBarColour: string;
+  readonly tabActiveColour: string;
   readonly gridSize: number;
   readonly snap: boolean;
   readonly snapGrid: boolean;
@@ -48,7 +51,7 @@ export interface PreferenceValues {
 }
 
 export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
-  grid: false, checker: true, axes: true, checkerColour: "auto", gridColour: "auto", gridThickness: 1, axisXColour: "#e64d4d", axisYColour: "#4dcc66", axisThickness: 1, gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
+  grid: false, checker: true, axes: true, checkerColour: "auto", gridColour: "auto", gridThickness: 1, axisXColour: "#303030", axisYColour: "#303030", axisThickness: 1, tabBarColour: "#201f24", tabActiveColour: "auto", gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
 export const GRID_RANGE = [1, 1000] as const;
 export const THICKNESS_RANGE = [0.5, 8] as const;
 export const ONION_RANGE = [0, 10] as const;
@@ -94,6 +97,8 @@ export function readPreferences(text: string | null): PreferenceValues {
     axisXColour: colour("axisXColour", DEFAULTS.axisXColour),
     axisYColour: colour("axisYColour", DEFAULTS.axisYColour),
     axisThickness: num("axisThickness", THICKNESS_RANGE[0], THICKNESS_RANGE[1], DEFAULTS.axisThickness),
+    tabBarColour: colour("tabBarColour", DEFAULTS.tabBarColour),
+    tabActiveColour: colour("tabActiveColour", DEFAULTS.tabActiveColour),
     gridSize: num("gridSize", GRID_RANGE[0], GRID_RANGE[1], DEFAULTS.gridSize),
     snap: bool("snap", DEFAULTS.snap),
     snapGrid: bool("snapGrid", DEFAULTS.snapGrid),

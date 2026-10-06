@@ -207,7 +207,7 @@ export class Renderer {
     return t;
   }
 
-  /** The centre axes through the origin: x red, y green, one screen pixel wide, over the checkerboard. */
+  /** The centre axes through the origin, each in its own colour (dark grey unless set), over the checkerboard. */
   private centreAxes(cam: Camera, size: Size, look: StageLook): void {
     const gl = this.gl;
     const halfW = size.width / 2 / cam.zoom, halfH = size.height / 2 / cam.zoom, h = look.axisPx / 2 / cam.zoom;

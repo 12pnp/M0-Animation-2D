@@ -20,7 +20,7 @@ export interface StageLook {
   readonly gridPx: number;
 }
 
-export const NO_LOOK: StageLook = { checker: null, checkerColour: null, axes: false, axisX: [0.9, 0.3, 0.3], axisY: [0.3, 0.8, 0.4], axisPx: 1, gridColour: null, gridPx: 1 };
+export const NO_LOOK: StageLook = { checker: null, checkerColour: null, axes: false, axisX: [0.188, 0.188, 0.188], axisY: [0.188, 0.188, 0.188], axisPx: 1, gridColour: null, gridPx: 1 };
 
 /** `#rrggbb` as channels; null for "auto" or anything that is not a colour. */
 export function rgbOf(hex: string): Rgb | null {

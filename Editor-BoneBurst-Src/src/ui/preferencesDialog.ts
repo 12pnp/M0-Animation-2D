@@ -1,3 +1,4 @@
+import { pickColour } from "./colourPopup";
 import { AUTOSAVE_RANGE, DEFAULTS, GRID_RANGE, ONION_RANGE, type Preferences, type PreferenceValues, THICKNESS_RANGE, type Theme, UNDO_RANGE } from "./preferences";
 
 /**
@@ -56,6 +57,10 @@ export class PreferencesDialog {
         colourPicker("X axis colour", p.axisXColour, (c) => this.prefs.set({ axisXColour: c }), false),
         colourPicker("Y axis colour", p.axisYColour, (c) => this.prefs.set({ axisYColour: c }), false),
         number(`Axis line thickness (pixels, ${range})`, p.axisThickness, 0.5, (n) => this.prefs.set({ axisThickness: n })),
+      ],
+      tabs: [
+        colourPicker("Tab bar colour (behind the tabs)", p.tabBarColour, (c) => this.prefs.set({ tabBarColour: c }), true),
+        colourPicker("Shown tab colour", p.tabActiveColour, (c) => this.prefs.set({ tabActiveColour: c }), true),
       ],
       grid: [
         number(`Grid spacing (units, ${GRID_RANGE[0]}–${GRID_RANGE[1]})`, p.gridSize, 1, (n) => this.prefs.set({ gridSize: n })),
@@ -158,6 +163,7 @@ const KEYS: Readonly<Record<string, readonly (keyof PreferenceValues)[]>> = {
   files: ["autosave", "autosaveSeconds"],
   display: ["rulers", "bones", "constraints"],
   background: ["checker", "checkerColour", "gridColour", "gridThickness", "axes", "axisXColour", "axisYColour", "axisThickness"],
+  tabs: ["tabBarColour", "tabActiveColour"],
   grid: ["gridSize"],
   onion: ["onion", "onionBefore", "onionAfter", "onionKeyedOnly", "onionColour"],
 };
@@ -168,6 +174,7 @@ interface NavNode { readonly id: string; readonly label: string; readonly childr
 const NAV: readonly NavNode[] = [
   { id: "application", label: "Application", children: [{ id: "general", label: "General" }, { id: "files", label: "Files" }] },
   { id: "viewport", label: "Viewport", children: [{ id: "display", label: "Display" }, { id: "background", label: "Background" }, { id: "grid", label: "Grid" }] },
+  { id: "interface", label: "User interface", children: [{ id: "tabs", label: "Panel tabs" }] },
   { id: "behavior", label: "Behavior", children: [{ id: "onion", label: "Onion skin" }] },
 ];
 
@@ -199,16 +206,18 @@ function check(label: string, value: boolean, onChange: (on: boolean) => void): 
   return r;
 }
 
-/** A colour picker; with `canAuto`, an Auto button puts back the colour that shows on the background. */
+/** A colour swatch that opens the picker popup (Apply, Close); with `canAuto`, an Auto button puts back the colour that shows on the background. */
 function colourPicker(label: string, value: string, onChange: (c: string) => void, canAuto: boolean): HTMLLabelElement {
   const box = document.createElement("span");
   box.className = "colour";
-  const input = document.createElement("input");
-  input.type = "color";
-  input.value = /^#[0-9a-f]{6}$/i.test(value) ? value : "#888888";
-  input.classList.toggle("auto", value === "auto");
-  input.addEventListener("input", () => onChange(input.value));
-  box.append(input);
+  const swatch = document.createElement("button");
+  swatch.type = "button";
+  swatch.className = "swatch";
+  swatch.title = "Choose a colour";
+  swatch.style.background = /^#[0-9a-f]{6}$/i.test(value) ? value : "";
+  swatch.classList.toggle("auto", value === "auto");
+  swatch.addEventListener("click", (e) => { e.preventDefault(); pickColour(swatch, value, onChange); });
+  box.append(swatch);
   if (canAuto) {
     const auto = document.createElement("button");
     auto.type = "button";

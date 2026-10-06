@@ -57,3 +57,4 @@ files.
 | `search.svg` | `icons/search.svg` | the rig panel's search field |
 | `arrow-left.svg` | `icons/arrow-left.svg` | the rig panel's Back |
 | `arrow-right.svg` | `icons/arrow-right.svg` | the rig panel's Forward |
+| `pipette.svg` | `icons/pipette.svg` | the colour picker's eyedropper |
