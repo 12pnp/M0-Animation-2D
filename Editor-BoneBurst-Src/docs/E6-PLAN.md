@@ -1,12 +1,12 @@
 # E6 — parity with the old editor, then cutover — plan
 
-**Status:** in progress, 2026-10-06. Step 1 (the oracle harness, round-trip parity) done: v2 writes
-all 17 corpus rigs back exactly; the old editor changes every one, and poses one differently.
-Step 2 (edit-script parity) done: both scripts agree once each known difference is taken out
-(0.007 and 0 px); `set_keys`' named eases now are version 1's curves. Step 3 (the gap list) done: walked in the old editor, decided by the owner. Step 4 (the gaps
-chosen, built in v2) in progress: 4a (autosave and recovery) done; 4b (events on the
-timeline) done; 4c (copy and paste, multiple selection) done; 4d (onion skin) done; 4e (snapping and a grid) done; 4f (the weight brush) done; 4g (the curve graph) done; 4i (the document's frame rate) next, the last of step 4. 4h (the axes) moved to the other
-session (its owner's request; the Shear tool was already there).
+**Status:** in progress, 2026-10-06. Steps 1–4 done: the oracle harness (v2 writes the corpus
+back exactly; the old editor rewrites every rig, and poses one differently), edit-script parity
+(both agree once each known difference is taken out; `set_keys`' eases made version 1's), the gap
+list decided by the owner, and the chosen gaps built: autosave and recovery, events on the
+timeline, copy and paste with multiple selection, onion skin, snapping and a grid, the weight
+brush, the curve graph, the frame rate (4h, the axes, done by the other session). Step 5 (docs
+migrated) next.
 
 E6 makes v2 the editor people use. The old editor (`../../Animation-BoneBurst-Src/`, AGPL, the
 Animo fork) is the **behavioural oracle**: it is run, never read, and v2 has to agree with it on
@@ -619,4 +619,50 @@ flowchart LR
    stepped intervals not drawn as steps); the first passed the browser test until it checked
    where the handle went, not only that a curve exists.
 4. Seen: the hips' translate y bouncing, rotate and translate x flat, with the playhead.
+
+### 4i — the document's frame rate
+
+```mermaid
+flowchart LR
+    NONE["nothing selected"] --> FORM["Properties ▸ Skeleton:<br/>Frame rate (fps), hash, Spine version"]
+    FORM --> EDIT["updateHeader: header.fps"]
+    EDIT --> KEYS["keys keep their times (seconds)"]
+    KEYS --> NOTE["status: how many keys now<br/>fall between frames"]
+```
+
+#### Decisions
+
+- **Where**: Properties with nothing selected shows the skeleton: **Frame rate** (editable, 1–240
+  frames a second), and its hash and Spine version (read only).
+- **What changes**: the header's `fps` only, one undo step. Spine's file keeps key times in
+  seconds and its frame rate is nonessential (the editor's grid), so keys keep their times: the
+  animation plays exactly as before; the timeline shows frames at the new rate. Keys that fall
+  between frames at the new rate are counted in the status (the old editor re-times keys
+  instead, which step 2 measured as moving them).
+- The default stays 30 (Spine's), written only when set.
+
+#### Steps
+
+1. `edit/header.ts` (`updateHeader`, `keysOffFrame`); the inspector's skeleton form.
+2. Tests: the edit (the range, keys untouched, back to the default); the count of keys off the
+   grid; a browser test (the stickman from 24 to 30 fps: the timeline's rate and length in
+   frames change, the keys' times do not; undo).
+
+#### 4i results
+
+1. `src/edit/header.ts` (`setFps`, 1–240 whole frames, `undefined` back to the default;
+   `keysOffFrame`); Properties with nothing selected shows **Skeleton**: Frame rate (editable),
+   hash and Spine version; setting the rate says how many keys fall between frames at the new
+   rate.
+2. Tests: `tests/header.test.ts` (3: only the header changes, back to the default leaves it out;
+   the range; keys off the grid counted); `e2e/frameRate.spec.ts` (the stickman's `run` from 24 to
+   30 fps: 17 frames become 21, the keys' times unchanged, one undo). Three planted faults fail
+   them.
+
+### Step 4 results
+
+All nine gaps chosen in step 3 are in v2: 4a–4g and 4i here, 4h by the other session (Local,
+Parent and World axes for Move, Scale and Shear, in its own commits). Each with unit tests, a
+browser test and planted faults. Left for after cutover, as decided: the history panel and the
+shortcuts sheet.
 

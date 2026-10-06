@@ -5,6 +5,7 @@ import { type ConstraintPatch, type ConstraintRef, findConstraint, IK_SCALE_Y, P
   ROTATE_MODES, SPACING_MODES, TRANSFORM_PROPERTIES, updateConstraint } from "@/edit/constraints";
 import { CONSTRAINT_KEYS, keyConstraint, keyPhysicsReset } from "@/edit/constraintKeys";
 import { defineEvent, renameEvent } from "@/edit/events";
+import { keysOffFrame, setFps } from "@/edit/header";
 import { type Edit, EditRefused } from "@/edit/history";
 import { regionToMesh, retriangulate, verticesOutside } from "@/edit/mesh";
 import { type BoneWorlds, decodeBinds, frameFor, isWeighted, positions } from "@/edit/meshLayout";
@@ -13,7 +14,7 @@ import { moveAttachment, renameSkin, setSkinMember } from "@/edit/skins";
 import { BLEND_MODES, renameSlot, updateSlot } from "@/edit/slots";
 import { BONE_DEFAULTS, boneInherit, boneNumber, type BoneNumber, CONSTRAINT_DEFAULTS, constraintValue, DEPENDENT_DEFAULTS, TRANSFORM_MIXES, transformTargets } from "@/model/defaults";
 import { type Attachment, attachmentType, type Constraint, type Skeleton, type TransformFrom } from "@/model/skeleton";
-import { timeFrame } from "@/model/timelines";
+import { DEFAULT_FPS, timeFrame } from "@/model/timelines";
 import type { Selection, Session } from "../session";
 import { brush, BRUSH_STRENGTH } from "../stage/weightBrush";
 import { animatedLocal, constraintNow, localUnder, Poser } from "../stage/posed";
@@ -62,7 +63,8 @@ export class Inspector {
   private update(force = false): void {
     const s = this.session, doc = s.doc, sel = s.selected, anim = s.animation;
     // The selected object changes exactly when its values do; the frame matters in Animate mode.
-    const target = doc && sel ? selectedObject(doc, sel) : undefined;
+    // Nothing selected: the skeleton itself (its header), E6 step 4i.
+    const target = doc && sel ? selectedObject(doc, sel) : doc && !sel ? doc.header ?? doc : undefined;
     const key = JSON.stringify([!!doc, sel, anim ? [anim.name, s.frame, s.history?.revision] : null, s.vertex, s.weightBone, this.binding]) + (target ? identity(target) : "");
     if (this.shown === key) return;
     // Not under a field being typed in, nor while playing: it shows the document once that ends.
@@ -72,6 +74,13 @@ export class Inspector {
     if (!force && (typing || s.playing)) return;
     this.shown = key;
     this.inputs.clear();
+    if (doc && !sel) {
+      const form = document.createElement("div");
+      form.className = "fields";
+      this.skeletonForm(form, doc);
+      this.element.replaceChildren(heading("Skeleton"), form, empty("Select a bone, slot, attachment, skin, constraint or event to see its properties."));
+      return;
+    }
     if (!doc || !sel || !target) {
       this.element.replaceChildren(heading("Properties"), empty(doc ? "Select a bone, slot, attachment, skin, constraint or event." : "Nothing open."));
       return;
@@ -147,6 +156,19 @@ export class Inspector {
       const frames = (anim.events ?? []).filter((k) => k.name === name).map((k) => timeFrame(k.time ?? 0, s.fps));
       form.append(readOnly(`In ${anim.name}`, frames.length ? `frame ${frames.join(", ")}` : "not keyed: Key (K) fires it at the playhead"));
     }
+  }
+
+  /** The skeleton (E6 step 4i): its frame rate, its hash and Spine version. */
+  private skeletonForm(form: HTMLElement, doc: Skeleton): void {
+    const s = this.session;
+    form.append(this.textField("fps", "Frame rate", String(s.fps), (v) => {
+      const n = Number(v);
+      return setFps(v.trim() === "" || n === DEFAULT_FPS && doc.header?.fps === undefined ? undefined : n);
+    }, (v) => `Set the frame rate to ${v} fps`, () => {
+      const off = keysOffFrame(s.doc!, s.fps);
+      this.onStatus(`${s.fps} frames a second; keys keep their times${off ? `, and ${off} key${off === 1 ? " now falls" : "s now fall"} between frames` : ""}.`);
+    }, "decimal"));
+    form.append(readOnly("Hash", doc.header?.hash ?? "—"), readOnly("Spine", doc.header?.spine ?? "—"));
   }
 
   private skinForm(form: HTMLElement, doc: Skeleton, name: string): void {
