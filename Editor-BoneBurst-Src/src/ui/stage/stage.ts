@@ -41,6 +41,8 @@ interface Drag {
   shearY: number;
   /** Animate mode: the animation and time the drag keys at. */
   key: { animation: string; time: number } | null;
+  /** Auto Key off in an animation: the drag poses the bone without writing the document. */
+  unkeyed: boolean;
   /** The keys as the file had them (absent: undefined), for an axis that ends where it began. */
   written: Dragged;
 }
@@ -57,7 +59,7 @@ type Dragged = { [K in "x" | "y" | "rotation" | "scaleX" | "scaleY" | "shearX" |
 export class Stage {
   readonly element: HTMLDivElement;
   tool: Tool = "move";
-  /** With an animation chosen: a drag keys it (on), or edits the setup pose (off). */
+  /** With an animation chosen: a drag keys it (on), or poses the bone unkeyed until Key (off). */
   autoKey = true;
   camera: Camera = { x: 0, y: 0, zoom: 1 };
   /** The pointer's world position, for the status line. */
@@ -613,7 +615,7 @@ export class Stage {
     const p = this.session.pose()!, index = p.bones.get(name)!;
     const b = this.session.doc!.bones!.find((x) => x.name === name)!;
     const at = toWorld(this.camera, this.size, sx, sy), parent = parentMatrix(p, index);
-    const anim = this.autoKey ? this.session.animation?.name ?? null : null;
+    const anim = this.session.animation?.name ?? null, unkeyed = anim !== null && !this.autoKey;
     // Animate mode starts from the pose at the playhead; setup mode from the setup values.
     const from = anim !== null ? animatedLocal(p, index) : {
       x: boneNumber(b, "x"), y: boneNumber(b, "y"), rotation: boneNumber(b, "rotation"),
@@ -626,8 +628,10 @@ export class Stage {
       sign: turnSign(parent, boneInherit(b), p.rig.scaleX * p.rig.scaleY < 0),
       inherit: boneInherit(b),
       written: { x: b.x, y: b.y, rotation: b.rotation, scaleX: b.scaleX, scaleY: b.scaleY, shearX: b.shearX, shearY: b.shearY },
-      key: anim !== null ? { animation: anim, time: this.session.keyTime } : null,
+      key: anim !== null && !unkeyed ? { animation: anim, time: this.session.keyTime } : null,
+      unkeyed,
     };
+    if (unkeyed) { this.onStatus(`Unkeyed pose of ${name}: press Key (K) to key it; moving the playhead drops it.`); return; }
     this.session.history!.begin(anim !== null
       ? `Key ${KEYED[this.tool]} of ${name} at frame ${this.session.frame}`
       : `${LABEL[this.tool]} bone ${name}`);
@@ -677,7 +681,9 @@ export class Stage {
       patch = { scaleX: tidy(d.scaleX * fx, 3), scaleY: tidy(d.scaleY * fy, 3) };
     }
     try {
-      if (d.key) {
+      if (d.unkeyed) {
+        this.session.setUnkeyed(d.bone, { x: d.x, y: d.y, rotation: d.rotation, scaleX: d.scaleX, scaleY: d.scaleY, shearX: d.shearX, shearY: d.shearY, ...patch } as LocalPose);
+      } else if (d.key) {
         const local = { x: d.x, y: d.y, rotation: d.rotation, scaleX: d.scaleX, scaleY: d.scaleY, shearX: d.shearX, shearY: d.shearY, ...patch };
         h.apply("step", keyBone(d.key.animation, d.bone, [KEYED[d.tool]], local as LocalPose, d.key.time));
       } else {
@@ -703,9 +709,10 @@ export class Stage {
       this.redraw();
     }
     if (this.drag || this.vertexDrag) {
+      const unkeyed = this.drag?.unkeyed ?? false;
       this.drag = null;
       this.vertexDrag = null;
-      this.session.history?.end();
+      if (!unkeyed) this.session.history?.end();
       this.session.changed();
     }
   }

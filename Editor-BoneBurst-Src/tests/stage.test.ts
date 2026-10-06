@@ -10,7 +10,7 @@ import { atlasImages } from "@/engine/regions";
 import { fit, pan, toScreen, toWorld, zoomAt } from "@/ui/stage/camera";
 import { baseName, pickFiles } from "@/ui/files";
 import { asWritten, localRotation, moveDelta, pickBone, scaleFactors, shearDelta, tidy, turn, turnSign } from "@/ui/stage/gizmo";
-import { boneMatrix, bounds, parentMatrix, poseSetup } from "@/ui/stage/posed";
+import { boneMatrix, bounds, parentMatrix, Poser, poseSetup } from "@/ui/stage/posed";
 import { STICKMAN } from "./fixtures/rigs";
 
 const stickman = () => ({
@@ -184,5 +184,20 @@ describe("shearDelta", () => {
   it("keeps only the larger axis when locked", () => {
     expect(shearDelta(0, 10, 4, true)).toEqual([5, 0]);
     expect(shearDelta(0, 2, -8, true)).toEqual([0, -4]);
+  });
+});
+
+describe("an unkeyed pose", () => {
+  it("moves the posed bone and leaves the document alone", () => {
+    const { doc, images } = stickman();
+    const name = doc.bones![1]!.name, poser = new Poser(doc, images);
+    const base = poser.pose(null, null, 0), i = base.bones.get(name)!;
+    const before = [...boneMatrix(base, i)];
+    const l = base.local, o = i * 7;
+    const held = new Map([[name, { x: l[o]! + 10, y: l[o + 1]!, rotation: l[o + 2]!, scaleX: l[o + 3]!, scaleY: l[o + 4]!, shearX: l[o + 5]!, shearY: l[o + 6]! }]]);
+    const moved = poser.pose(null, null, 0, "none", held);
+    expect(moved.local[o]).toBe(l[o]! + 10);
+    expect(boneMatrix(moved, i)).not.toEqual(before);
+    expect([...boneMatrix(poser.pose(null, null, 0), i)]).toEqual(before);
   });
 });

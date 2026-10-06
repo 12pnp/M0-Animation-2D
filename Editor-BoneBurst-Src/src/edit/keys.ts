@@ -11,8 +11,11 @@ import { EditRefused, type Edit } from "./history";
  * its shape when keys around it move. These are the edits the agent tools call too (E5).
  */
 
-/** One key: its list and its time. */
-export interface KeyRef { readonly path: TimelinePath; readonly time: number }
+/**
+ * One key: its list and its time; on the events list also the event it fires (several events may
+ * fire on one frame, so a time alone names them all).
+ */
+export interface KeyRef { readonly path: TimelinePath; readonly time: number; readonly name?: string }
 
 /** The value keys a key may set (anything but `time`, `curve` and `extra`). */
 export type KeyFields = { -readonly [K in Exclude<keyof Key, "time" | "curve" | "extra">]?: Key[K] };
@@ -57,7 +60,7 @@ export function deleteKeys(animation: string, refs: readonly KeyRef[]): Edit<Ske
     let out = a;
     for (const [, group] of byPath(refs)) {
       out = withList(out, group.path, (keys) => {
-        const kept = keys.map((k, i) => [k, i] as const).filter(([k]) => !group.times.some((t) => sameTime(t, keyTime(k))));
+        const kept = keys.map((k, i) => [k, i] as const).filter(([k]) => !group.hits.some((h) => h(k)));
         if (kept.length === keys.length) return null;
         return { keys: kept.map(([k]) => k), origin: kept.map(([, i]) => i) };
       });
@@ -73,7 +76,7 @@ export function moveKeys(animation: string, refs: readonly KeyRef[], frames: num
     let out = a;
     for (const [, group] of byPath(refs)) {
       out = withList(out, group.path, (keys) => {
-        const moving = (k: Key) => group.times.some((t) => sameTime(t, keyTime(k)));
+        const moving = (k: Key) => group.hits.some((h) => h(k));
         const placed = keys.map((k, i) => {
           if (!moving(k)) return { k, i, t: keyTime(k) };
           const t = frameTime(timeFrame(keyTime(k), fps) + frames, fps);
@@ -81,8 +84,9 @@ export function moveKeys(animation: string, refs: readonly KeyRef[], frames: num
           const { time: _, ...rest } = k;
           return { k: (t !== 0 ? { ...rest, time: t } : rest) as Key, i, t };
         });
+        // Events may share a frame; other keys may not.
         for (const p of placed) {
-          if (moving(keys[p.i]!) && placed.some((q) => q !== p && sameTime(q.t, p.t))) {
+          if (group.path.section !== "events" && moving(keys[p.i]!) && placed.some((q) => q !== p && sameTime(q.t, p.t))) {
             throw new EditRefused(`There is already a key at frame ${timeFrame(p.t, fps)} on that timeline.`);
           }
         }
@@ -168,12 +172,14 @@ function onAnimation(name: string, f: (a: Animation) => Animation): Edit<Skeleto
   };
 }
 
-function byPath(refs: readonly KeyRef[]): Map<string, { path: TimelinePath; times: number[] }> {
-  const out = new Map<string, { path: TimelinePath; times: number[] }>();
+function byPath(refs: readonly KeyRef[]): Map<string, { path: TimelinePath; times: number[]; hits: ((k: Key) => boolean)[] }> {
+  const out = new Map<string, { path: TimelinePath; times: number[]; hits: ((k: Key) => boolean)[] }>();
   for (const r of refs) {
     const id = pathId(r.path);
-    const g = out.get(id) ?? { path: r.path, times: [] };
+    const g = out.get(id) ?? { path: r.path, times: [], hits: [] };
     g.times.push(r.time);
+    // A key the ref names: at its time, and firing its event when it names one.
+    g.hits.push((k) => sameTime(r.time, keyTime(k)) && (r.name === undefined || k.name === r.name));
     out.set(id, g);
   }
   return out;

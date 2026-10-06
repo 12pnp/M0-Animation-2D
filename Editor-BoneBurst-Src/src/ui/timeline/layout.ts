@@ -14,6 +14,8 @@ export interface Row {
   readonly depth: 0 | 1;
   /** The bone this row is, for selection from the timeline. */
   readonly bone?: string;
+  /** The event this row is (E6 step 4b): its keys are the events list's keys firing it. */
+  readonly event?: string;
   readonly lists: readonly PathKeys[];
   readonly expandable: boolean;
   readonly expanded: boolean;
@@ -24,10 +26,11 @@ export interface Mark { readonly frame: number; readonly refs: readonly KeyRef[]
 
 /**
  * One row per bone, slot and constraint the animation keys, in the skeleton's order, plus the
- * selected bone; then draw order and events. An expanded row is followed by one row per
- * timeline. Deform and sequence keys go with their slot.
+ * selected bone; then draw order; then a row per event the animation fires (the skeleton's order,
+ * then any it does not define), and the selected event. An expanded row is followed by one row
+ * per timeline. Deform and sequence keys go with their slot.
  */
-export function buildRows(doc: Skeleton, anim: Animation, selected: string | null, expanded: ReadonlySet<string>): Row[] {
+export function buildRows(doc: Skeleton, anim: Animation, selected: string | null, expanded: ReadonlySet<string>, selectedEvent: string | null = null): Row[] {
   const lists = keyLists(anim);
   const rows: Row[] = [];
   const add = (id: string, label: string, mine: PathKeys[], sub: (p: TimelinePath) => string, bone?: string) => {
@@ -53,9 +56,13 @@ export function buildRows(doc: Skeleton, anim: Animation, selected: string | nul
   for (const [owner, mine] of owners) {
     add(`constraint/${owner}`, owner === "" ? "physics (all)" : owner, mine, (p) => ("timeline" in p ? p.timeline : p.section));
   }
-  for (const section of ["drawOrder", "events"] as const) {
-    const mine = lists.filter((l) => l.path.section === section);
-    if (mine.length) rows.push({ id: section, label: section === "drawOrder" ? "draw order" : "events", depth: 0, lists: mine, expandable: false, expanded: false });
+  const order = lists.filter((l) => l.path.section === "drawOrder");
+  if (order.length) rows.push({ id: "drawOrder", label: "draw order", depth: 0, lists: order, expandable: false, expanded: false });
+  const fired = lists.find((l) => l.path.section === "events")?.keys ?? [];
+  const names = [...(doc.events ?? []).map((e) => e.name), ...fired.map((k) => String(k.name ?? ""))].filter((n, i, all) => all.indexOf(n) === i);
+  for (const name of names) {
+    const keys = fired.filter((k) => k.name === name);
+    if (keys.length || name === selectedEvent) rows.push({ id: `event/${name}`, label: name, depth: 0, lists: [{ path: { section: "events" }, keys }], expandable: false, expanded: false, event: name });
   }
   return rows;
 }
@@ -67,7 +74,7 @@ export function marks(row: Row, fps: number): Mark[] {
     for (const k of l.keys) {
       const f = timeFrame(keyTime(k), fps);
       const m = by.get(f) ?? { refs: [], stepped: false, eased: false };
-      m.refs.push({ path: l.path, time: keyTime(k) });
+      m.refs.push({ path: l.path, time: keyTime(k), ...(l.path.section === "events" ? { name: String(k.name ?? "") } : {}) });
       if (k.curve === "stepped") m.stepped = true;
       else if (Array.isArray(k.curve)) m.eased = true;
       by.set(f, m);
@@ -114,7 +121,7 @@ export function labelStep(frameWidth: number): number {
 
 /** A key's identity in the selection. */
 export function refId(r: KeyRef, fps: number): string {
-  return `${pathId(r.path)}@${timeFrame(r.time, fps)}`;
+  return `${pathId(r.path)}${r.name !== undefined ? `/${r.name}` : ""}@${timeFrame(r.time, fps)}`;
 }
 
 /**
@@ -122,5 +129,5 @@ export function refId(r: KeyRef, fps: number): string {
  * file stores, which may be a float32 step off the frame's own), at the frame's time after one.
  */
 export function shiftedRefs(refs: readonly KeyRef[], applied: number, fps: number): KeyRef[] {
-  return refs.map((r) => (applied === 0 ? r : { path: r.path, time: frameTime(timeFrame(r.time, fps) + applied, fps) }));
+  return refs.map((r) => (applied === 0 ? r : { ...r, time: frameTime(timeFrame(r.time, fps) + applied, fps) }));
 }

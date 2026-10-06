@@ -108,10 +108,10 @@ export function mountApp(root: HTMLElement): void {
   ];
   const stageTools = el("div", "stage-tools");
   const group = (...children: HTMLElement[]) => { const g = el("div", "group"); g.append(...children); return g; };
-  const autoKeyBtn = iconButton(button("Auto Key", "Auto Key: with an animation chosen, a drag on the stage keys it. Off, a drag edits the setup pose instead", () => {
+  const autoKeyBtn = iconButton(button("Auto Key", "Auto Key: with an animation chosen, a drag on the stage keys it. Off, a drag poses the bone without keying until you press Key", () => {
     stage.autoKey = !stage.autoKey;
     autoKeyBtn.setAttribute("aria-pressed", String(stage.autoKey));
-    say(stage.autoKey ? "Auto Key on: dragging keys the animation." : "Auto Key off: dragging edits the setup pose.");
+    say(stage.autoKey ? "Auto Key on: dragging keys the animation." : "Auto Key off: dragging poses the bone unkeyed; press Key (K) to key it.");
   }), "autoKey");
   autoKeyBtn.setAttribute("aria-pressed", "true");
   stageTools.append(group(...toolBtns), group(autoKeyBtn), group(...showBtns));

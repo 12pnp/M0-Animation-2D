@@ -8,6 +8,7 @@ import { Rig } from "@/engine/rig";
 import { readRig } from "@/engine/rigData";
 import type { AnimationData, RigData } from "@/engine/rigTypes";
 import { localFromWorld } from "@/engine/bones";
+import type { LocalPose } from "@/edit/boneKeys";
 import { type Matrix, tidy } from "./gizmo";
 
 /**
@@ -42,9 +43,10 @@ export class Poser {
   /**
    * Pose `animation` (null: the setup pose) at `time` seconds with `skin` shown. Physics steps
    * only with "update" (playback, after `rig.update(dt)`) or starts over with "reset"; "none"
-   * poses without it, so a frame looks the same however it was reached.
+   * poses without it, so a frame looks the same however it was reached. `unkeyed` bones take those
+   * local values over the animation's.
    */
-  pose(skin: string | null, animation: string | null, time: number, physics: PhysicsMode = "none"): Posed {
+  pose(skin: string | null, animation: string | null, time: number, physics: PhysicsMode = "none", unkeyed: ReadonlyMap<string, LocalPose> = new Map()): Posed {
     const rig = this.rig;
     rig.setSkins(skin ? [skin] : []);
     rig.setupPose();
@@ -52,6 +54,11 @@ export class Poser {
     if (anim) {
       rig.apply(anim, time, false);
       rig.settleAttachments();
+    }
+    // Poses dragged with Auto Key off: held over the animation's, never written to the document.
+    for (const [name, v] of unkeyed) {
+      const i = this.bones.get(name);
+      if (i !== undefined) rig.local.set([v.x, v.y, v.rotation, v.scaleX, v.scaleY, v.shearX, v.shearY], i * 7);
     }
     const local = rig.local.slice();
     rig.updateWorld(physics);

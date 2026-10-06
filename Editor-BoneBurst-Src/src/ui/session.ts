@@ -5,6 +5,7 @@ import { EMPTY_SIDECAR, type Sidecar } from "@/model/sidecar";
 import type { Page } from "@/io/pack";
 import { readSkeleton } from "@/io/skeletonRead";
 import { writeSkeleton } from "@/io/skeletonWrite";
+import type { LocalPose } from "@/edit/boneKeys";
 import { History } from "@/edit/history";
 import type { BoneWorlds } from "@/edit/meshLayout";
 import { newSkeleton } from "@/edit/newSkeleton";
@@ -98,6 +99,9 @@ export class Session {
   private step: PhysicsMode = "none";
   private poser: { doc: Skeleton; value: Poser } | null = null;
   private posed: { key: string; value: Posed } | null = null;
+  /** Poses dragged with Auto Key off (by bone): shown over the animation, in no document, until keyed or the playhead moves. */
+  private readonly unkeyed = new Map<string, LocalPose>();
+  private unkeyedRev = 0;
   private setup: { key: string; value: BoneWorlds } | null = null;
   private readonly listeners = new Set<() => void>();
 
@@ -255,8 +259,23 @@ export class Session {
     this.seek(0);
   }
 
+  get hasUnkeyed(): boolean { return this.unkeyed.size > 0; }
+
+  /** Hold `local` as `bone`'s pose over the animation, unkeyed. */
+  setUnkeyed(bone: string, local: LocalPose): void {
+    this.unkeyed.set(bone, local);
+    this.unkeyedRev++;
+  }
+
+  /** Drop the unkeyed pose of `bone`, or of every bone. */
+  clearUnkeyed(bone?: string): void {
+    if (bone === undefined ? this.unkeyed.size > 0 : this.unkeyed.delete(bone)) this.unkeyedRev++;
+    if (bone === undefined) this.unkeyed.clear();
+  }
+
   /** Stop and put the playhead on `frame`. */
   seek(frame: number): void {
+    this.clearUnkeyed();
     this.playing = false;
     this.step = "none";
     this.time = Math.fround(frameTime(Math.max(0, Math.round(frame)), this.fps));
@@ -265,6 +284,7 @@ export class Session {
 
   play(): void {
     if (!this.animation) return;
+    this.clearUnkeyed();
     const end = animationDuration(this.animation);
     if (!this.loop && this.time >= end) this.time = 0;
     this.playing = true;
@@ -307,8 +327,8 @@ export class Session {
     if (!poser) return null;
     const anim = this.animation?.name ?? null;
     const step = this.playing ? this.step : "none";
-    const key = `${this.history!.revision}|${this.skin}|${anim}|${this.time}|${this.tick}|${step}`;
-    if (this.posed?.key !== key) this.posed = { key, value: poser.pose(this.skin, anim, this.time, step) };
+    const key = `${this.history!.revision}|${this.skin}|${anim}|${this.time}|${this.tick}|${step}|${this.unkeyedRev}`;
+    if (this.posed?.key !== key) this.posed = { key, value: poser.pose(this.skin, anim, this.time, step, this.unkeyed) };
     return this.posed.value;
   }
 
@@ -450,6 +470,7 @@ export class Session {
     this.weightBone = null;
     this.setup = null;
     this.shown = null;
+    this.clearUnkeyed();
     this.time = 0;
     this.playing = false;
     this.poser = null;

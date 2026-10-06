@@ -117,7 +117,8 @@ export class Timeline {
     const i = p.bones.get(bone);
     if (i === undefined) return;
     this.session.pause();
-    this.apply(`Key ${bone} at frame ${this.session.frame}`, keyBone(a.name, bone, BONE_PROPERTIES.filter((x) => x !== "shear"), animatedLocal(p, i), this.session.keyTime));
+    this.apply(`Key ${bone} at frame ${this.session.frame}`, keyBone(a.name, bone, this.session.hasUnkeyed ? BONE_PROPERTIES : BONE_PROPERTIES.filter((x) => x !== "shear"), animatedLocal(p, i), this.session.keyTime));
+    this.session.clearUnkeyed(bone);
   }
 
   private apply(label: string, edit: Edit<Skeleton>): boolean {
