@@ -21,6 +21,7 @@ import { DIVIDER, MenuBar } from "./menubar";
 import { iconButton } from "./icons";
 import { ExportRefused, exportToUnity } from "./unityExport";
 import { Autosaver, clearRecovery, readRecovery, sourcesOf } from "./recovery";
+import { clipboard, copyPose, pastePoseHere } from "./clipboard";
 import { isPanelId, PANEL_ICONS, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
 import { type PanelContent, Workspace } from "./workspace/workspace";
 
@@ -148,6 +149,12 @@ export function mountApp(root: HTMLElement): void {
     { label: "Edit", items: () => [
       { label: "Undo", keys: "⌘Z", disabled: !session.history?.canUndo, run: () => undoBtn.click() },
       { label: "Redo", keys: "⇧⌘Z", disabled: !session.history?.canRedo, run: () => redoBtn.click() },
+      DIVIDER,
+      { label: "Copy Keys", keys: "⌘C", disabled: !timeline.hasSelection, run: () => say(timeline.copySelected()) },
+      { label: "Paste Keys", keys: "⌘V", disabled: !clipboard.keys || !session.animation, run: () => say(timeline.paste()) },
+      { label: "Select All Keys", keys: "⌘A", disabled: !session.animation, run: () => timeline.selectAll() },
+      { label: "Copy Pose", keys: "⌥⌘C", disabled: !session.doc, run: () => say(copyPose(session)) },
+      { label: "Paste Pose", keys: "⌥⌘V", disabled: !clipboard.pose || !session.doc, run: () => say(pastePoseHere(session)) },
       DIVIDER,
       { label: "Preferences…", keys: "⌘,", run: () => prefsDialog.open() },
     ] },
@@ -410,6 +417,10 @@ export function mountApp(root: HTMLElement): void {
     if (mod && (key === "," || e.code === "Comma")) { e.preventDefault(); prefsDialog.open(); return; }
     if (isTyping(e)) return;
     if (mod && key === "z") { e.preventDefault(); (e.shiftKey ? redoBtn : undoBtn).click(); return; }
+    // Copy and paste (E6 step 4c): keys with ⌘C/⌘V, a pose with ⌥⌘C/⌥⌘V; e.code, as ⌥ changes e.key.
+    if (mod && e.code === "KeyC") { e.preventDefault(); say(e.altKey ? copyPose(session) : timeline.copySelected()); return; }
+    if (mod && e.code === "KeyV") { e.preventDefault(); say(e.altKey ? pastePoseHere(session) : timeline.paste()); return; }
+    if (mod && key === "a" && session.animation) { e.preventDefault(); timeline.selectAll(); return; }
     if (mod && key === "y") { e.preventDefault(); redoBtn.click(); return; }
     if (mod || e.altKey) return;
     if (key === "escape") {

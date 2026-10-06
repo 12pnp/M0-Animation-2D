@@ -5,7 +5,7 @@ all 17 corpus rigs back exactly; the old editor changes every one, and poses one
 Step 2 (edit-script parity) done: both scripts agree once each known difference is taken out
 (0.007 and 0 px); `set_keys`' named eases now are version 1's curves. Step 3 (the gap list) done: walked in the old editor, decided by the owner. Step 4 (the gaps
 chosen, built in v2) in progress: 4a (autosave and recovery) done; 4b (events on the
-timeline) done; 4c (copy and paste, multiple selection) next.
+timeline) done; 4c (copy and paste, multiple selection) done; 4d (onion skin) next.
 
 E6 makes v2 the editor people use. The old editor (`../../Animation-BoneBurst-Src/`, AGPL, the
 Animo fork) is the **behavioural oracle**: it is run, never read, and v2 has to agree with it on
@@ -358,4 +358,58 @@ flowchart LR
    fired event on the stage during playback.
 5. `edit/keys.ts` and `ui/timeline/layout.ts` landed in 3f9f3af (the other session's Auto Key
    commit, made before the two sessions agreed to stage only their own changes).
+
+### 4c — copy and paste of keys and poses, with multiple selection
+
+```mermaid
+flowchart LR
+    SEL["timeline: click, Shift-click,<br/>drag a box, ⌘A"] --> CK["⌘C copy keys<br/>(times kept relative)"]
+    CK --> PK["⌘V paste at the playhead:<br/>same timelines, keys there replaced,<br/>eases kept; any animation"]
+    BONE["a bone selected (or none)"] --> CP["⌥⌘C copy pose:<br/>that bone and the bones under it"]
+    CP --> PP["⌥⌘V paste pose: keyed at the playhead<br/>(what differs), or the setup pose"]
+```
+
+#### Decisions
+
+- **Selecting keys**: as now (click, Shift-click), plus a box dragged over the track (a press on
+  empty track that moves more than a few pixels; a plain click still moves the playhead and
+  clears), Shift-box adding to the selection, and **Select All Keys** (⌘A) for the shown animation.
+- **Copy and paste keys** (⌘C, ⌘V; Edit menu): the selected keys with their times relative to the
+  first; pasted with the first at the playhead, onto the same timelines (by bone, slot,
+  constraint or event name), in the shown animation, which may be another one. A key already on
+  a pasted frame is replaced; an event is added beside other events on its frame. Eases come
+  along as shapes and fit the new interval; a hold stays a hold. Timelines whose owner the rig
+  does not have are skipped, and the status says which. One undo step.
+- **Copy and paste a pose** (⌥⌘C, ⌥⌘V, as the old editor's Copy and Paste Properties): the
+  selected bone and the bones under it (every bone with none selected, or the root), their local
+  pose at the playhead; pasted onto the bones of the same names: in an animation, keyed at the
+  playhead for each property that differs from what is there; in the setup pose, set. One undo
+  step.
+- **The clipboard** is the page's own (one for keys, one for a pose), not the system's: nothing
+  to grant, and a key's meaning needs the rig anyway.
+
+#### Steps
+
+1. `edit/paste.ts` (copy and paste of keys and poses, pure), `ui/clipboard.ts`, the timeline's box
+   and ⌘A, the Edit menu and shortcuts.
+2. Tests: the edits (relative times, replacing, eases refitted, events beside, unknown owners
+   skipped; a pose keyed where it differs, set in setup); a browser test.
+
+#### 4c results
+
+1. `src/edit/paste.ts` (`copyKeys`, `pasteKeys`, `pastePose`), `src/ui/clipboard.ts` (the page's
+   two clips; `copyPose`, `pastePoseHere`), the timeline's box selection (a press on empty track
+   that moves 4 px; a click still moves the playhead and clears), `selectAll`, `copySelected`,
+   `paste` (the pasted keys come back selected); the Edit menu (Copy Keys ⌘C, Paste Keys ⌘V,
+   Select All Keys ⌘A, Copy Pose ⌥⌘C, Paste Pose ⌥⌘V) and their shortcuts in `app.ts` (agreed
+   with the other session, which was not editing it).
+2. Tests: `tests/paste.test.ts` (3: spacing kept, a key replaced, the ease's shape refitted to its
+   new interval, in another animation; an event beside another on its frame; an owner the rig
+   lacks skipped and named; a pose keyed only where it differs, and set as the setup pose);
+   `e2e/copyPaste.spec.ts` (a box over a row's first keys, ⌘C, ⌘V at frame 20 with the spacing,
+   one ⌘Z; ⌘A; the head's pose copied from `run` frame 3 and pasted into `dance` frame 10, posed
+   exactly so). Four planted faults each fail at least one of them (offsets dropped; eases not
+   refitted; a pose keyed where it is the same; the box selecting nothing).
+3. **Found while testing**: a box started near a key's diamond grabs the key (the diamond's 6 px
+   reach wins); start a box on empty track.
 

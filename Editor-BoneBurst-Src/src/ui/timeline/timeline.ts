@@ -4,9 +4,11 @@ import { PRESETS, type Shape } from "@/edit/curves";
 import { type Edit, EditRefused } from "@/edit/history";
 import { keyEvent } from "@/edit/events";
 import { deleteKeys, type KeyRef, moveKeys, setCurve } from "@/edit/keys";
+import { copyKeys, pasteKeys } from "@/edit/paste";
 import type { Skeleton } from "@/model/skeleton";
-import { animationDuration, timeFrame } from "@/model/timelines";
+import { animationDuration, frameTime, timeFrame } from "@/model/timelines";
 import { CONSTRAINT_ICONS, icon, iconButton, type IconName, setIcon } from "../icons";
+import { clipboard } from "../clipboard";
 import type { Session } from "../session";
 import { animatedLocal } from "../stage/posed";
 import {
@@ -23,7 +25,12 @@ const CURVES: ReadonlyArray<{ label: string; title: string; icon: IconName; curv
 
 type Drag =
   | { kind: "scrub" }
-  | { kind: "keys"; from: number; applied: number; refs: KeyRef[] };
+  | { kind: "keys"; from: number; applied: number; refs: KeyRef[] }
+  /** A press on empty track: a click (playhead, selection cleared) until it moves; then a box (E6 step 4c). */
+  | { kind: "box"; x0: number; y0: number; x1: number; y1: number; moved: boolean; add: boolean; base: Map<string, KeyRef> };
+
+/** How far a press on empty track moves before it is a box rather than a click. */
+const BOX_SLOP = 4;
 
 /**
  * The timeline (SPEC §7): the animation list and transport, a ruler in frames at the skeleton's
@@ -100,6 +107,39 @@ export class Timeline {
 
   /** Keys are selected, so Delete is the timeline's. */
   get hasSelection(): boolean { return this.selected.size > 0; }
+
+  /** Select every key of the shown animation (⌘A). */
+  selectAll(): void {
+    const fps = this.session.fps;
+    this.selected.clear();
+    for (const r of this.rows) for (const m of marks(r, fps)) for (const ref of m.refs) this.selected.set(refId(ref, fps), ref);
+    this.session.changed();
+  }
+
+  /** Copy the selected keys (⌘C); what it says. */
+  copySelected(): string {
+    const a = this.session.animation;
+    if (!a || !this.selected.size) return "Select keys to copy (click, Shift-click, drag a box, or ⌘A).";
+    clipboard.keys = copyKeys(a, [...this.selected.values()], this.session.fps);
+    return `Copied ${clipboard.keys.keys.length} key${clipboard.keys.keys.length === 1 ? "" : "s"}.`;
+  }
+
+  /** Paste the copied keys with the first at the playhead (⌘V), the pasted keys selected; what it says. */
+  paste(): string {
+    const a = this.session.animation, clip = clipboard.keys, doc = this.session.doc, fps = this.session.fps;
+    if (!clip) return "Copy keys first (⌘C).";
+    if (!a || !doc) return "Choose an animation to paste the keys into.";
+    this.session.pause();
+    const frame = this.session.frame, p = pasteKeys(a.name, clip, frame, fps), skipped = p.skipped(doc);
+    if (!this.apply(`Paste ${clip.keys.length} key${clip.keys.length === 1 ? "" : "s"} at frame ${frame}`, p.edit)) return "";
+    this.selected.clear();
+    for (const k of clip.keys) {
+      const ref: KeyRef = { path: k.path, time: frameTime(frame + k.offset, fps), ...(k.path.section === "events" ? { name: String(k.fields.name) } : {}) };
+      this.selected.set(refId(ref, fps), ref);
+    }
+    this.session.changed();
+    return `Pasted at frame ${frame}${skipped.length ? `; skipped (not in this rig): ${skipped.join(", ")}` : ""}.`;
+  }
 
   togglePlay(): void {
     if (this.session.playing) this.session.pause(); else this.session.play();
@@ -311,6 +351,16 @@ export class Timeline {
         if (m.eased) { g.strokeStyle = on ? accent : text; g.beginPath(); g.arc(x, y, k + 2.5, 0, Math.PI * 2); g.stroke(); }
       }
     });
+    // The selection box.
+    const d = this.drag;
+    if (d?.kind === "box" && d.moved) {
+      g.strokeStyle = accent;
+      g.fillStyle = accent;
+      g.globalAlpha = 0.12;
+      g.fillRect(Math.min(d.x0, d.x1), Math.min(d.y0, d.y1), Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
+      g.globalAlpha = 1;
+      g.strokeRect(Math.min(d.x0, d.x1) + 0.5, Math.min(d.y0, d.y1) + 0.5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
+    }
     // Playhead.
     const px = Math.round(frameX(v, s.time * fps)) + 0.5;
     g.strokeStyle = col("--playhead");
@@ -332,7 +382,7 @@ export class Timeline {
     const i = rowAt(y, this.rows.length);
     const mark: Mark | null = i >= 0 ? markAt(this.view, marks(this.rows[i]!, s.fps), x) : null;
     if (!mark) {
-      if (!e.shiftKey && y >= RULER) this.selected.clear();
+      if (y >= RULER) { this.drag = { kind: "box", x0: x, y0: y, x1: x, y1: y, moved: false, add: e.shiftKey, base: new Map(this.selected) }; return; }
       this.drag = { kind: "scrub" };
       s.seek(xFrame(this.view, x));
       return;
@@ -357,8 +407,15 @@ export class Timeline {
   private move(e: PointerEvent): void {
     const d = this.drag, s = this.session, a = s.animation;
     if (!d || !a) return;
-    const [x] = this.local(e);
+    const [x, y] = this.local(e);
     if (d.kind === "scrub") { s.seek(xFrame(this.view, x)); return; }
+    if (d.kind === "box") {
+      d.x1 = x; d.y1 = y;
+      if (!d.moved && Math.hypot(x - d.x0, y - d.y0) < BOX_SLOP) return;
+      d.moved = true;
+      this.boxSelect(d);
+      return;
+    }
     const by = Math.round(xFrame(this.view, x)) - d.from;
     if (by === d.applied) return;
     const fps = s.fps;
@@ -376,8 +433,28 @@ export class Timeline {
 
   private up(e: PointerEvent): void {
     if (this.canvas.hasPointerCapture(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId);
-    if (this.drag?.kind === "keys") { this.session.history?.end(); this.session.changed(); }
+    const d = this.drag;
+    if (d?.kind === "keys") { this.session.history?.end(); this.session.changed(); }
+    // A click on empty track: the playhead goes there; without Shift the selection is cleared.
+    if (d?.kind === "box" && !d.moved) {
+      if (!d.add) this.selected.clear();
+      this.session.seek(xFrame(this.view, d.x0));
+    }
     this.drag = null;
+    if (d?.kind === "box") this.redraw();
+  }
+
+  /** The keys inside the box (rows it crosses, frames it spans), added to what was selected with Shift. */
+  private boxSelect(d: Extract<Drag, { kind: "box" }>): void {
+    const fps = this.session.fps, f0 = xFrame(this.view, Math.min(d.x0, d.x1)), f1 = xFrame(this.view, Math.max(d.x0, d.x1));
+    const r0 = Math.floor((Math.min(d.y0, d.y1) - RULER) / ROW), r1 = Math.floor((Math.max(d.y0, d.y1) - RULER) / ROW);
+    this.selected.clear();
+    if (d.add) for (const [k, v] of d.base) this.selected.set(k, v);
+    this.rows.forEach((r, i) => {
+      if (i < r0 || i > r1) return;
+      for (const m of marks(r, fps)) if (m.frame >= f0 && m.frame <= f1) for (const ref of m.refs) this.selected.set(refId(ref, fps), ref);
+    });
+    this.session.changed();
   }
 
   private wheel(e: WheelEvent): void {
