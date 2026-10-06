@@ -4,7 +4,8 @@
 all 17 corpus rigs back exactly; the old editor changes every one, and poses one differently.
 Step 2 (edit-script parity) done: both scripts agree once each known difference is taken out
 (0.007 and 0 px); `set_keys`' named eases now are version 1's curves. Step 3 (the gap list) done: walked in the old editor, decided by the owner. Step 4 (the gaps
-chosen, built in v2) next.
+chosen, built in v2) in progress: 4a (autosave and recovery) done; 4b (events on the
+timeline) next.
 
 E6 makes v2 the editor people use. The old editor (`../../Animation-BoneBurst-Src/`, AGPL, the
 Animo fork) is the **behavioural oracle**: it is run, never read, and v2 has to agree with it on
@@ -231,4 +232,71 @@ the timeline (keys, eases, play, loop), docking and popouts, preferences, the AI
    Reference, Poses) and its preferences (General, Interface, Stage, Grid & Rulers, Snapping,
    Selection & Gizmos, Timeline & Onion, Shortcuts), seen in Playwright's browser on the
    stickman; each item looked for in v2's `src/ui`.
+
+## Step 4 — the gaps chosen, built
+
+One sub-step per item, in the owner's order, each with its own decisions, tests and results:
+**4a** autosave and recovery · **4b** events on the timeline · **4c** copy and paste of keys and
+poses, with multiple selection · **4d** onion skin · **4e** snapping and a grid · **4f** the weight
+brush · **4g** the curve graph · **4h** a Shear tool with Local, Parent and World axes · **4i** the
+document's frame rate. Each item is built from Spine's format and v2's own model; the old editor
+is run to see what the feature does for an artist, never read.
+
+### 4a — autosave and recovery
+
+```mermaid
+stateDiagram-v2
+    [*] --> Start: page opens
+    Start --> Offer: a recovery copy is stored
+    Start --> Watching: none
+    Offer --> Watching: Restore (opened, unsaved) or Discard (cleared)
+    Watching --> Watching: every N s while unsaved and changed: copy written
+    Watching --> Watching: Save, or nothing unsaved: copy cleared
+```
+
+#### Decisions
+
+- **What is kept**: one recovery copy for the browser (as the old editor: "a single recovery copy
+  inside this browser"): the skeleton as Spine JSON, its atlas text and pages (exact pixels, as
+  PNG), the sidecar, the name, the time, and whether the atlas was made by the editor (a PSD
+  import not saved yet), so a restored rig saves its atlas and pages as the original would have.
+  Kept in IndexedDB (pages are too big for `localStorage`); the editor's one database
+  (`ui/idb.ts`) holds it beside Export to Unity's folder.
+- **When**: every N seconds (Preferences: on by default, 30 s, 5–600) while the document is
+  unsaved and has changed since the last copy; and when the page is hidden or closed. Saving, or
+  nothing left unsaved, clears it. The undo history is not kept: a restored rig starts a new one.
+- **Offered back**: when the editor opens and a copy is there, a bar under the toolbar says what
+  and when, with **Restore** and **Discard**. Until one is chosen, nothing writes over the copy
+  (a file opened meanwhile is not autosaved yet).
+- **Restored**: through the same open path as files (`Session.open`), then marked unsaved.
+
+#### Steps
+
+1. `ui/idb.ts` (Export to Unity moved onto it), `ui/recovery.ts` (the record, the files it
+   opens as, the autosaver), the preferences, the bar; `Session.restore`.
+2. Tests: the record's files picked as an opened rig's; the preferences' range; a browser test
+   (an edit, the copy written, a reload, Restore gives the edit back unsaved; Save clears it;
+   Discard clears it; a PSD rig restored saves its atlas and pages).
+
+#### 4a results
+
+1. `src/ui/idb.ts` (the editor's one database, version 2: `handles` for Export to Unity's folder,
+   moved onto it, and `recovery`); `src/ui/recovery.ts` (`RecoveryRecord`, `recordOf`,
+   `sourcesOf`, `Autosaver`); `Session.restore`; Preferences: **Keep a recovery copy of unsaved
+   work**, **Every (seconds)** (on, 30, 5–600); the bar under the toolbar, **Restore** /
+   **Discard**.
+2. **Found while testing**: after a reload, Restore and Save, the copy stayed: the autosaver
+   cleared only copies it had written itself. It now treats a copy from before the page as its
+   own to clear once nothing is unsaved, and starts paused until the browser has been asked for
+   an older copy, so a document opened in that moment cannot clear one not yet offered.
+3. Tests: `tests/recovery.test.ts` (2: a record's files are picked as an opened rig's);
+   `tests/preferences.test.ts` (the new values and their range); `e2e/recovery.spec.ts` (nothing
+   kept while nothing is unsaved; an edit kept within the interval; a reload offers it; Restore
+   gives it back unsaved; Save clears the copy; Discard clears it; the figure PSD restored still
+   saves its atlas and page). Three planted faults fail it (Restore marking the rig saved; a copy
+   from before the page never cleared; the restored PSD's atlas not written by Save).
+4. **Not kept**: the undo history (a restored rig starts a new one), and reference pictures (the
+   sidecar keeps where they go; their files are reopened as before).
+5. Another session was building the editor's menu bar, activity bar and stage tool strip in the
+   same working tree while this ran; nothing of theirs is in this step's changes.
 
