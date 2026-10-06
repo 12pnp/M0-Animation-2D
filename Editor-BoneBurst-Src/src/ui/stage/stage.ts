@@ -15,7 +15,9 @@ import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point,
 import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix, type Posed } from "./posed";
 import { constraintShapes, hitConstraint } from "./constraintShapes";
 import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
+import { movePathPoint, movePathVertex } from "@/edit/path";
 import { boneColourOf } from "../boneLook";
+import { hitPath, type PathView, pathView, toSlot } from "./pathView";
 import { boneHalfWidth, jointRadius } from "./boneScale";
 import { NO_LOOK, type StageLook } from "./look";
 import { type Backdrop, Renderer } from "./renderer";
@@ -116,6 +118,7 @@ export class Stage {
   /** Mesh mode: the vertex being dragged. The selected one is the session's. */
   /** A guide being dragged (out of a ruler, or moved), by its index in the sidecar. */
   private guideDrag: { index: number; overRuler: boolean } | null = null;
+  private pathDrag: { view: PathView; index: number } | null = null;
   private vertexDrag: { view: MeshView; index: number; time?: number; animation?: string } | null = null;
   private panning: { x: number; y: number } | null = null;
   /** The chosen reference being moved, or sized by a corner (E4 step 13); `from` is where it was. */
@@ -174,9 +177,10 @@ export class Stage {
       this.session.setSidecar(updateReference(this.session.sidecar, rd.index, rd.from));
       return true;
     }
-    if (!this.drag && !this.vertexDrag) return false;
+    if (!this.drag && !this.vertexDrag && !this.pathDrag) return false;
     this.drag = null;
     this.vertexDrag = null;
+    this.pathDrag = null;
     this.session.history?.cancel();
     this.session.changed();
     return true;
@@ -238,6 +242,8 @@ export class Stage {
     if (sel >= 0 && boneMatrix(p, sel).every(Number.isFinite)) this.drawGizmo(g, sel, this.selectedBoneColour ?? selected);
     const mesh = this.meshMode();
     if (mesh) this.drawMesh(g, mesh, selected, bone);
+    const path = this.pathMode();
+    if (path) this.drawPath(g, path, this.selectedBoneColour ?? selected);
     this.drawGuides(g, css.getPropertyValue("--guide").trim() || "#36c2d9");
     if (this.snapped && (this.drag || this.vertexDrag)) this.drawSnapped(g, this.snapped, selected);
     this.drawChosenReference(g, selected);
@@ -452,6 +458,85 @@ export class Stage {
     // Animate mode: the mesh where its vertices are at the playhead, when its slot shows it (step 11).
     if (s.animation) return animatedMeshView(doc, p, sel, s.skin).view;
     return meshView(doc, p, sel);
+  }
+
+  /**
+   * Path mode (docs/PATH-PLAN.md): the selected attachment is a path and the setup pose is shown. Its
+   * points and handles are dragged on the stage; in Animate mode the path's curve is drawn as a
+   * constraint shows it and the bone tools stay.
+   */
+  private pathMode(): PathView | null {
+    const s = this.session, sel = s.selected, doc = s.doc;
+    if (sel?.kind !== "attachment" || !doc || s.animation) return null;
+    const p = s.pose();
+    return p ? pathView(doc, p, sel) : null;
+  }
+
+  private pathScreen(view: PathView): number[] {
+    const out: number[] = [];
+    for (let i = 0; i < view.world.length; i += 2) out.push(...toScreen(this.camera, this.size, view.world[i]!, view.world[i + 1]!));
+    return out;
+  }
+
+  /** The path: its curve, the handles on lines from their points, the points as discs; the chosen vertex in `accent`. */
+  private drawPath(g: CanvasRenderingContext2D, view: PathView, accent: string): void {
+    const sp = this.pathScreen(view), n = sp.length / 2, points = Math.floor(n / 3), chosen = this.session.pathVertex;
+    const at = (i: number): [number, number] => [sp[i * 2]!, sp[i * 2 + 1]!];
+    g.save();
+    g.strokeStyle = accent;
+    g.fillStyle = accent;
+    g.lineWidth = 2;
+    g.globalAlpha = 0.9;
+    const segments = view.closed ? points : points - 1;
+    g.beginPath();
+    for (let c = 0; c < segments; c++) {
+      const j = (c + 1) % points, [x0, y0] = at(c * 3 + 1), [x1, y1] = at(c * 3 + 2), [x2, y2] = at(j * 3), [x3, y3] = at(j * 3 + 1);
+      g.moveTo(x0, y0);
+      g.bezierCurveTo(x1, y1, x2, y2, x3, y3);
+    }
+    g.stroke();
+    g.lineWidth = 1;
+    g.globalAlpha = 0.7;
+    for (let p = 0; p < points; p++) {
+      const [px, py] = at(p * 3 + 1);
+      for (const k of [0, 2]) { const [hx, hy] = at(p * 3 + k); g.beginPath(); g.moveTo(px, py); g.lineTo(hx, hy); g.stroke(); }
+    }
+    g.globalAlpha = 1;
+    for (let i = 0; i < n; i++) {
+      const [x, y] = at(i), isPoint = i % 3 === 1, on = i === chosen;
+      g.fillStyle = on ? "#ffffff" : accent;
+      g.strokeStyle = on ? accent : "#000000";
+      g.lineWidth = on ? 3 : 1;
+      g.beginPath();
+      if (isPoint) g.arc(x, y, on ? 6 : 5, 0, Math.PI * 2); else g.rect(x - 3.5, y - 3.5, 7, 7);
+      g.fill();
+      g.stroke();
+    }
+    g.restore();
+  }
+
+  /** A press in path mode: on a point or handle selects and drags it. False when the press is off them. */
+  private pathDown(view: PathView, sx: number, sy: number): boolean {
+    const i = hitPath(this.pathScreen(view), sx, sy);
+    if (i < 0) return false;
+    this.session.pathVertex = i;
+    const h = this.session.history!;
+    h.begin(i % 3 === 1 ? `Move point ${Math.floor(i / 3)} of ${view.ref.key}` : `Move handle ${i} of ${view.ref.key}`);
+    this.pathDrag = { view, index: i };
+    this.session.changed();
+    return true;
+  }
+
+  /** One step of a path drag: the point (with its handles) or the handle goes where the pointer is, in the slot bone's space. */
+  private pathTo(at: Point): void {
+    const d = this.pathDrag!, [x, y] = toSlot(d.view, at), bones = this.session.setupBones() ?? undefined;
+    try {
+      this.session.history!.apply("step", d.index % 3 === 1 ? movePathPoint(d.view.ref, Math.floor(d.index / 3), x, y, bones) : movePathVertex(d.view.ref, d.index, x, y, bones));
+    } catch (err) {
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+    }
+    this.session.changed();
   }
 
   /** The selected vertex of `view`, or -1. */
@@ -713,6 +798,8 @@ export class Stage {
       return;
     }
     if (this.show.rulers && rulerAt(sx, sy) && this.guideDown(sx, sy)) return;
+    const path = this.pathMode();
+    if (path && this.pathDown(path, sx, sy)) return;
     const mesh = this.meshMode();
     if (mesh && this.brushDown(mesh, sx, sy, e.altKey)) return;
     if (mesh && this.meshDown(mesh, sx, sy)) return;
@@ -785,6 +872,8 @@ export class Stage {
       this.redraw();
     } else if (this.drag) {
       this.dragTo(this.pointer, e.shiftKey);
+    } else if (this.pathDrag) {
+      this.pathTo(this.pointer);
     } else if (this.vertexDrag) {
       this.vertexTo(this.pointer, e.altKey);
     } else if (this.guideDrag) {
@@ -874,11 +963,12 @@ export class Stage {
       this.redraw();
     }
     if (this.stroke) { this.stroke = null; this.session.history?.end(); this.session.changed(); }
-    if (this.drag || this.vertexDrag) {
+    if (this.drag || this.vertexDrag || this.pathDrag) {
       this.snapped = null;
       const unkeyed = this.drag?.unkeyed ?? false;
       this.drag = null;
       this.vertexDrag = null;
+      this.pathDrag = null;
       if (!unkeyed) this.session.history?.end();
       this.session.changed();
     }

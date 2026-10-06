@@ -23,6 +23,7 @@ import { AskAi } from "./panels/askAi";
 import { showContextMenu } from "./contextMenu";
 import { DocumentTabs } from "./documentTabs";
 import { stageMenu } from "./stageMenu";
+import { PathPanel } from "./stage/pathPanel";
 import { TransformStrip } from "./stage/transformStrip";
 import { lookOf } from "./stage/look";
 import { DIVIDER, MenuBar, type MenuItem } from "./menubar";
@@ -173,7 +174,9 @@ export function mountApp(root: HTMLElement): void {
     session.showAnimation(pick);
   }), "bone");
   modeBtn.classList.add("mode");
-  stageTools.append(crumb, group(modeBtn), transform.element, group(...spaceBtns), group(...showBtns, autoKeyBtn));
+  // The path window: the selected path attachment's vertices, by number (docs/PATH-PLAN.md).
+  const pathPanel = new PathPanel(session, (m) => say(m));
+  stageTools.append(crumb, group(modeBtn), pathPanel.element, transform.element, group(...spaceBtns), group(...showBtns, autoKeyBtn));
   // Fit stays in the panel's top right corner, whatever its size.
   const fitCorner = el("div", "stage-fit");
   fitCorner.append(fitBtn);

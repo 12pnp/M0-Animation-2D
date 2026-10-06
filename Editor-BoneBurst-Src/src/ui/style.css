@@ -578,3 +578,18 @@ dialog.open-project .op-buttons { flex: none; display: flex; justify-content: ce
 /* The Skins and Animations panels: a button row over a list that borrows History's rows. */
 .list-bar { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 6px; }
 .list-bar button:disabled { opacity: 0.5; }
+
+/* The path window: the selected path's vertex by number, in Local or World. */
+.stage-tools .group.path-panel { min-width: 200px; gap: 6px; }
+.path-panel[hidden] { display: none; }
+.p-row { display: flex; align-items: center; gap: 6px; }
+.p-row.head { justify-content: space-between; font-weight: 600; }
+.p-row.head > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 130px; }
+.p-row.pick { justify-content: space-between; }
+.p-row.pick > span { flex: 1; text-align: center; font-size: 12px; }
+.p-row.xy label { display: flex; align-items: center; gap: 4px; flex: 1; }
+.p-row.xy .cell { width: 64px; flex: 1; min-width: 0; background: var(--bb-field-bg, var(--panel)); color: var(--text); border: 1px solid var(--bb-field-border, var(--line)); border-radius: 3px; padding: 3px 6px; text-align: right; font-family: var(--font-mono); font-size: 12px; }
+.p-row.buttons button { flex: 1; font-size: 12px; }
+.p-row.flags { gap: 12px; font-size: 12px; }
+.p-row.flags .flag { display: flex; align-items: center; gap: 4px; }
+.path-panel .note { margin: 0; color: var(--muted); font-size: 11px; max-width: 220px; }

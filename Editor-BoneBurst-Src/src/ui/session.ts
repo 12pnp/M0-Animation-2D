@@ -61,6 +61,8 @@ export class Session {
   selected: Selection | null = null;
   /** Mesh mode: the selected vertex of the selected mesh, and the bone whose weights the stage colours. */
   vertex: number | null = null;
+  /** A path attachment's selected vertex (docs/PATH-PLAN.md): a handle or a point, by index. */
+  pathVertex: number | null = null;
   /** The reference image chosen to move on the stage (E4 step 13), by index in the sidecar; null: none. */
   reference: number | null = null;
   weightBone: string | null = null;
@@ -123,6 +125,7 @@ export class Session {
     if (sameSelection(sel, this.selected)) return;
     this.selected = sel;
     this.vertex = null;
+    this.pathVertex = null;
     // Choosing something in the rig lets go of a reference.
     if (sel) this.reference = null;
     this.changed();

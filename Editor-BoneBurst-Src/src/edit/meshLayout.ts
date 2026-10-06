@@ -15,7 +15,11 @@ export type BoneWorlds = readonly (readonly number[])[];
 /** One bone's hold on a vertex: the vertex in that bone's space, and its weight. */
 export interface Bind { readonly bone: number; readonly x: number; readonly y: number; readonly w: number }
 
-export const isWeighted = (a: Attachment) => !!a.vertices && !!a.uvs && a.vertices.length !== a.uvs.length;
+/**
+ * Weighted: `vertices` is longer than one x, y pair for each vertex (a mesh's uvs, a path's
+ * `vertexCount`), because each vertex lists the bones that hold it.
+ */
+export const isWeighted = (a: Attachment) => !!a.vertices && (a.uvs ? a.vertices.length !== a.uvs.length : a.vertexCount !== undefined && a.vertices.length !== a.vertexCount * 2);
 
 /** A weighted `vertices` array as each vertex's binds. */
 export function decodeBinds(v: readonly number[]): Bind[][] {
