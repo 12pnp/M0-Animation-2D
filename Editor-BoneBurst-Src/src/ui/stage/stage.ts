@@ -4,7 +4,8 @@ import { EditRefused } from "@/edit/history";
 import { findAttachment } from "@/edit/attachments";
 import { deformWithVertexAt, keyDeform } from "@/edit/deformKeys";
 import { addHullVertex, addVertex, deleteVertex, moveVertex } from "@/edit/mesh";
-import { addGuide, moveGuide, removeGuide } from "@/edit/sidecar";
+import { addGuide, moveGuide, removeGuide, updateReference } from "@/edit/sidecar";
+import type { Reference } from "@/model/sidecar";
 import { axisOf, guideScreen, hitGuide, RULER, rulerAt, rulerOf, tickStep } from "./guides";
 import { boneInherit, boneNumber } from "@/model/defaults";
 import type { Session } from "../session";
@@ -14,7 +15,7 @@ import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix, type Posed } 
 import { constraintShapes, hitConstraint } from "./constraintShapes";
 import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
 import { type Backdrop, Renderer } from "./renderer";
-import { referenceQuad } from "./references";
+import { hitReference, movedReference, type Placed, referenceCorner, referenceQuad, scaledReference } from "./references";
 
 /** How far from the selected bone's origin a press still grabs it, in pixels (the gizmo's ring). */
 const GRAB = 56;
@@ -76,6 +77,10 @@ export class Stage {
   private guideDrag: { index: number; overRuler: boolean } | null = null;
   private vertexDrag: { view: MeshView; index: number; time?: number; animation?: string } | null = null;
   private panning: { x: number; y: number } | null = null;
+  /** The chosen reference being moved, or sized by a corner (E4 step 13); `from` is where it was. */
+  private refDrag: { index: number; from: Reference; start: Point; corner: boolean } | null = null;
+  /** The last left press hit nothing: a double-click there may choose a reference. */
+  private emptyPress = false;
   private queued = false;
   private fitted = false;
 
@@ -98,6 +103,7 @@ export class Stage {
     this.overlay.addEventListener("pointerleave", () => { this.pointer = null; this.onPointer(""); });
     this.overlay.addEventListener("wheel", (e) => this.wheel(e), { passive: false });
     this.overlay.addEventListener("contextmenu", (e) => e.preventDefault());
+    this.overlay.addEventListener("dblclick", (e) => this.chooseReference(e));
     session.onChange(() => this.redraw());
   }
 
@@ -121,6 +127,12 @@ export class Stage {
 
   /** Abandon a drag in progress (Escape): the bone goes back, nothing recorded. */
   cancel(): boolean {
+    const rd = this.refDrag;
+    if (rd) {
+      this.refDrag = null;
+      this.session.setSidecar(updateReference(this.session.sidecar, rd.index, rd.from));
+      return true;
+    }
     if (!this.drag && !this.vertexDrag) return false;
     this.drag = null;
     this.vertexDrag = null;
@@ -181,7 +193,73 @@ export class Stage {
     const mesh = this.meshMode();
     if (mesh) this.drawMesh(g, mesh, selected, bone);
     this.drawGuides(g, css.getPropertyValue("--guide").trim() || "#36c2d9");
+    this.drawChosenReference(g, selected);
     if (this.show.rulers) this.drawRulers(g, css);
+  }
+
+  /** Each reference with its picture's size; null where the picture is missing. */
+  private placed(): (Placed | null)[] {
+    return this.session.sidecar.references.map((r) => {
+      const b = this.session.referenceImages.get(r.path);
+      return b ? { r, width: b.width, height: b.height } : null;
+    });
+  }
+
+  /** The chosen reference and its picture's size, when it has one. */
+  private chosenReference(): Placed | null {
+    const i = this.session.reference;
+    return i === null ? null : this.placed()[i] ?? null;
+  }
+
+  /** The chosen reference's outline and corner handles, over the skeleton. */
+  private drawChosenReference(g: CanvasRenderingContext2D, color: string): void {
+    const p = this.chosenReference();
+    if (!p) return;
+    const { xy } = referenceQuad(p.r, p.width, p.height);
+    const pts = [0, 1, 2, 3].map((k) => toScreen(this.camera, this.size, xy[k * 2]!, xy[k * 2 + 1]!));
+    g.save();
+    g.strokeStyle = color;
+    g.fillStyle = color;
+    g.lineWidth = 1.5;
+    g.beginPath();
+    pts.forEach(([x, y], k) => (k ? g.lineTo(x, y) : g.moveTo(x, y)));
+    g.closePath();
+    g.stroke();
+    for (const [x, y] of pts) g.fillRect(x - 4, y - 4, 8, 8);
+    g.restore();
+  }
+
+  /** A double-click where a press hit nothing chooses the topmost reference under it. */
+  private chooseReference(e: MouseEvent): void {
+    if (!this.emptyPress || !this.session.history) return;
+    const [sx, sy] = this.local(e as PointerEvent);
+    const [wx, wy] = toWorld(this.camera, this.size, sx, sy);
+    const i = hitReference(this.placed(), wx, wy);
+    if (i < 0) return;
+    this.session.selectReference(i);
+    this.onStatus("Reference chosen: drag it to move it, a corner to size it; Escape while dragging puts it back.");
+  }
+
+  /** A press on the chosen reference's corner (size it) or inside it (move it); false when on neither. */
+  private referenceDown(sx: number, sy: number): boolean {
+    const p = this.chosenReference(), i = this.session.reference;
+    if (!p || i === null) return false;
+    const corner = referenceCorner(p, (x, y) => toScreen(this.camera, this.size, x, y), sx, sy) >= 0;
+    const start = toWorld(this.camera, this.size, sx, sy);
+    if (!corner && hitReference([p], start[0], start[1]) < 0) return false;
+    this.refDrag = { index: i, from: p.r, start, corner };
+    return true;
+  }
+
+  private referenceTo(at: Point): void {
+    const d = this.refDrag!, s = this.session;
+    const patch = d.corner ? { scale: scaledReference(d.from, d.start, at) } : movedReference(d.from, d.start, at);
+    try {
+      s.setSidecar(updateReference(s.sidecar, d.index, patch));
+    } catch (err) {
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+    }
   }
 
   private drawGuides(g: CanvasRenderingContext2D, color: string): void {
@@ -492,6 +570,7 @@ export class Stage {
     this.overlay.focus();
     const [sx, sy] = this.local(e);
     this.overlay.setPointerCapture(e.pointerId);
+    this.emptyPress = false;
     if (e.button === 1 || e.button === 2 || !this.session.history) {
       this.panning = { x: sx, y: sy };
       return;
@@ -517,7 +596,11 @@ export class Stage {
     }
     if (name === null) {
       if (this.constraintDown(sx, sy)) return;
+      // A corner of the chosen reference may lie on a guide: the reference comes first.
+      if (this.referenceDown(sx, sy)) return;
       if (this.guideDown(sx, sy)) return;
+      this.emptyPress = true;
+      this.session.selectReference(null);
       this.session.select(null);
       this.panning = { x: sx, y: sy };
       return;
@@ -560,6 +643,8 @@ export class Stage {
       this.vertexTo(this.pointer, e.altKey);
     } else if (this.guideDrag) {
       this.guideTo(sx, sy);
+    } else if (this.refDrag) {
+      this.referenceTo(this.pointer);
     }
     this.onPointer(`${this.pointer[0].toFixed(1)}, ${this.pointer[1].toFixed(1)}`);
   }
@@ -603,6 +688,7 @@ export class Stage {
   private up(e: PointerEvent): void {
     if (this.overlay.hasPointerCapture(e.pointerId)) this.overlay.releasePointerCapture(e.pointerId);
     this.panning = null;
+    this.refDrag = null;
     const gd = this.guideDrag;
     if (gd) {
       this.guideDrag = null;

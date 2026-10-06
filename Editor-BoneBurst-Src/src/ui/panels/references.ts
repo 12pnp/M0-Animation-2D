@@ -32,10 +32,15 @@ export class References {
       this.picker.value = "";
       if (files.length) void this.session.addReferenceImages(files.map(fileSource), this.centre()).then((m) => {
         this.chosen = this.session.sidecar.references.length - 1;
+        this.session.selectReference(this.chosen);
         this.onStatus(m);
       });
     });
-    session.onChange(() => this.update());
+    session.onChange(() => {
+      // The reference chosen on the stage is the panel's too.
+      if (session.reference !== null) this.chosen = session.reference;
+      this.update();
+    });
     this.update();
   }
 
@@ -52,9 +57,11 @@ export class References {
 
   /** Move the chosen reference by one place; it stays chosen. */
   private move(by: number): void {
-    const i = this.chosen;
-    this.chosen = Math.max(0, Math.min(this.session.sidecar.references.length - 1, i + by));
+    const i = this.chosen, s = this.session;
+    this.chosen = Math.max(0, Math.min(s.sidecar.references.length - 1, i + by));
+    const onStage = s.reference === i;
     this.apply((x) => moveReference(x, i, i + by));
+    if (onStage) s.selectReference(this.chosen);
   }
 
   private update(force = false): void {
@@ -69,8 +76,8 @@ export class References {
     const bar = document.createElement("div");
     bar.className = "outline-bar";
     bar.append(
-      button("Add image…", "Add pictures to rig and animate against; keep the files beside the skeleton", () => this.picker.click()),
-      button("Remove", "Remove the chosen reference (its file is not touched)", () => this.apply((x) => removeReference(x, this.chosen)), !refs.length),
+      button("Add image…", "Add pictures to rig and animate against; keep the files beside the skeleton. The chosen one is dragged on the stage, its corners size it", () => this.picker.click()),
+      button("Remove", "Remove the chosen reference (its file is not touched)", () => { this.session.selectReference(null); this.apply((x) => removeReference(x, this.chosen)); }, !refs.length),
       button("↑", "Draw it earlier (further back)", () => this.move(-1), this.chosen <= 0),
       button("↓", "Draw it later (nearer the skeleton)", () => this.move(1), this.chosen >= refs.length - 1),
       this.picker,
@@ -90,7 +97,7 @@ export class References {
       note.className = "note";
       note.textContent = s.referenceImages.has(r.path) ? `${Math.round(r.opacity * 100)}%` : "missing: drop the file to show it";
       row.append(name, note);
-      row.addEventListener("click", () => { this.chosen = i; this.shown = ""; this.update(true); });
+      row.addEventListener("click", () => { this.chosen = i; this.shown = ""; this.session.selectReference(i); this.update(true); });
       list.append(row);
     });
     if (!refs.length) list.append(empty("No references. Add image…, or drop pictures on the window, to animate against them."));

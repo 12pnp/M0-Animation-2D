@@ -56,6 +56,8 @@ export class Session {
   selected: Selection | null = null;
   /** Mesh mode: the selected vertex of the selected mesh, and the bone whose weights the stage colours. */
   vertex: number | null = null;
+  /** The reference image chosen to move on the stage (E4 step 13), by index in the sidecar; null: none. */
+  reference: number | null = null;
   weightBone: string | null = null;
   /** The skeleton's sidecar (SPEC §3): view, guides, references, notes. Not the document, not undone. */
   sidecar: Sidecar = EMPTY_SIDECAR;
@@ -101,6 +103,16 @@ export class Session {
     if (sameSelection(sel, this.selected)) return;
     this.selected = sel;
     this.vertex = null;
+    // Choosing something in the rig lets go of a reference.
+    if (sel) this.reference = null;
+    this.changed();
+  }
+
+  /** Choose a reference to move on the stage (null: none) and tell the listeners. */
+  selectReference(i: number | null): void {
+    const next = i !== null && this.sidecar.references[i] ? i : null;
+    if (next === this.reference) return;
+    this.reference = next;
     this.changed();
   }
 
@@ -348,6 +360,7 @@ export class Session {
     this.skin = null;
     this.selected = null;
     this.vertex = null;
+    this.reference = null;
     this.weightBone = null;
     this.setup = null;
     this.shown = null;

@@ -908,6 +908,76 @@ flowchart LR
    rig panel kept the previous document's rows when a newly opened one was at the same history
    revision (both 0); it now keys on the document's own history.
 
+## Step 13 — reference images dragged on the stage
+
+A reference picture is placed by hand on the stage, not only by typing X, Y and Scale: chosen,
+it is dragged to move and its corners dragged to size it, as a guide is.
+
+```mermaid
+flowchart LR
+    PICK["Reference panel row,<br/>or double-click on its picture"] -->|"session.reference = i"| SEL["chosen reference:<br/>outlined, corner handles"]
+    SEL -->|"press inside, nothing else hit"| MOVE["drag: x, y follow the pointer"]
+    SEL -->|"press on a corner"| SIZE["drag: scale about its centre"]
+    MOVE & SIZE -->|"edit/sidecar updateReference"| SC["session.sidecar.references"]
+    ESC["Escape"] -->|"back to where it was"| SC
+```
+
+### Decisions
+
+- **Which reference moves**: only the chosen one (`session.reference`). A reference covering the
+  stage must not take every press, or the left button could never pan over it. It is chosen by
+  its row in the Reference panel or by double-clicking its picture on the stage (the topmost
+  picture under the pointer); selecting anything in the rig, or a press on empty stage, lets it
+  go.
+- **Press order**: rulers and guides on the rulers, the mesh, bones and constraints keep their
+  places; then a corner of the chosen reference (within 6 pixels), then inside its picture,
+  then guides, then panning. The middle and right buttons always pan.
+- **Moving**: x, y follow the pointer by the world distance moved since the press (to two
+  decimals, as typed). **Sizing**: a corner scales the picture about its centre, by the ratio of
+  the pointer's distance from the centre now to at the press; the scale stays above 0.
+- **Drawn**: the chosen reference outlined in the accent colour with a square at each corner,
+  over the skeleton (the picture itself stays behind it).
+- **Like typed changes**, a drag changes the sidecar: not an undo step, but the document needs
+  saving. Escape during a drag puts the reference back where it was.
+- **Not in this step:** rotating a reference; snapping it to guides (parked with snapping, E4.5).
+
+### Steps
+
+1. `ui/stage/references.ts` (pure): `hitReference` (the topmost picture under a screen point),
+   `referenceCorner` (a corner within the radius), `movedReference`, `scaledReference`. Tests:
+   the topmost wins, a missing picture is never hit, corners, moving and sizing (about the
+   centre, never to 0).
+2. Session: `reference` (the chosen one) and `selectReference`; the Reference panel follows and
+   sets it. Stage: the outline and corners; double-click chooses; press moves or sizes; Escape.
+3. On screen: the stickman's reference chosen by double-click, dragged and sized; Escape mid-drag;
+   the panel's X, Y and Scale following; saved and opened again.
+
+### Step 13 results
+
+1. `ui/stage/references.ts`: `hitReference`, `referenceCorner`, `movedReference`,
+   `scaledReference` (pure). `tests/sidecar.test.ts`, 3 tests: the topmost picture wins, a
+   missing one is never hit, scale counts; the nearest corner within the radius; moving by the
+   pointer's travel, sizing about the centre, never to 0. Two planted bugs: searching bottom
+   first fails them; measuring from the origin instead of the centre passed at first (every
+   picture in the tests sat at 0, 0), so a test with an off-centre picture was **added**, and it
+   fails the bug.
+2. Session: `reference` and `selectReference` (choosing in the rig, a press on empty stage or
+   opening a document lets go). The Reference panel's row, Add image…, ↑ ↓ and Remove set it, and
+   it follows the stage. Stage: the chosen picture outlined in the accent colour with corner
+   squares; a double-click where a press hit nothing chooses the topmost picture; a press on a
+   corner or inside it, after bones and constraints and before guides, sizes or moves it;
+   Escape (and a cancelled pointer) puts it back.
+3. On screen (the stickman, a 300×400 sketch): chosen by double-click (outline, corners, the
+   status line saying what to do); dragged 50 screenshot pixels, moved 126.7 units each way at
+   that zoom; its bottom-right corner dragged out, scale 1 to 1.5323 with its centre unchanged;
+   the panel's X, Y and Scale following; the document marked as needing saving. Escape mid-drag
+   (synthetic pointer events): back to where it was, later moves ignored. Saved and opened again
+   with the picture: at (555.72, −100.05), scale 1.9114, nothing to save, not chosen. **Not
+   explained:** once, between two checks, the camera's zoom went from 0.6 to 0.49 and the chosen
+   reference was let go and resized, with no drag of mine in between (step 11 saw a zoom change
+   like it). With every stage event logged, the same drags and tab clicks gave no wheel event and
+   no change; the likeliest cause is input on the shared browser pane from outside the session.
+
 ## Wrap-up (owner decisions, 2026-10-06)
 
 E4 finishes with three more steps and one closing verification; two items are parked, not

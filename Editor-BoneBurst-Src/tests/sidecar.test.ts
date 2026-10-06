@@ -6,7 +6,7 @@ import { readSkeleton } from "@/io/skeletonRead";
 import { writeSkeleton } from "@/io/skeletonWrite";
 import { readSidecar, sidecarName, writeSidecar } from "@/io/sidecar";
 import { axisOf, guideScreen, hitGuide, rulerAt, rulerOf, tickStep } from "@/ui/stage/guides";
-import { matchReferences, referenceFile, referenceQuad } from "@/ui/stage/references";
+import { hitReference, matchReferences, movedReference, referenceCorner, referenceFile, referenceQuad, scaledReference } from "@/ui/stage/references";
 import { STICKMAN } from "./fixtures/rigs";
 import type { Json } from "@/model/json";
 import { EMPTY_SIDECAR, type Sidecar } from "@/model/sidecar";
@@ -131,5 +131,34 @@ describe("reference images", () => {
     const m = matchReferences(["refs/Run.png", "walk.png", "hero.png"], ["run.PNG", "hero.png", "extra.png"], ["hero.png"]);
     expect([...m.found]).toEqual([["refs/Run.png", "run.PNG"]]);
     expect(m.missing).toEqual(["walk.png", "hero.png"]);
+  });
+});
+
+describe("references dragged on the stage (E4 step 13)", () => {
+  const ref = (x: number, y: number, scale = 1) => ({ path: "a.png", x, y, scale, opacity: 0.5 });
+  it("picks the topmost picture under the point, never a missing one", () => {
+    const placed = [{ r: ref(0, 0), width: 100, height: 100 }, null, { r: ref(40, 0, 0.5), width: 100, height: 100 }];
+    expect(hitReference(placed, 30, 10)).toBe(2);
+    expect(hitReference(placed, -40, 0)).toBe(0);
+    expect(hitReference(placed, 0, 51)).toBe(-1);
+    expect(hitReference([null], 0, 0)).toBe(-1);
+    // Scale counts: half size reaches 25 either side of 40.
+    expect(hitReference(placed, 66, 0)).toBe(-1);
+  });
+  it("finds a corner within the radius, the nearest", () => {
+    const p = { r: ref(0, 0, 2), width: 10, height: 20 };
+    // y up in the world, down on screen.
+    const screen = (x: number, y: number): [number, number] => [x + 100, 100 - y];
+    expect(referenceCorner(p, screen, 90, 80)).toBe(0);
+    expect(referenceCorner(p, screen, 112, 122)).toBe(2);
+    expect(referenceCorner(p, screen, 100, 100)).toBe(-1);
+  });
+  it("moves by the pointer's travel and scales about its centre, never to 0", () => {
+    expect(movedReference(ref(5, 5), [10, 10], [13, 6])).toEqual({ x: 8, y: 1 });
+    expect(scaledReference(ref(0, 0, 0.5), [10, 0], [0, 20])).toBe(1);
+    expect(scaledReference(ref(0, 0, 0.5), [10, 0], [0, 0])).toBe(0.005);
+    expect(scaledReference(ref(0, 0, 0.5), [0, 0], [5, 5])).toBe(0.5);
+    // About its own centre, not the origin.
+    expect(scaledReference(ref(100, 50, 1), [110, 50], [100, 80])).toBe(3);
   });
 });

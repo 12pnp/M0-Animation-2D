@@ -75,8 +75,10 @@ The app (E4 step 8) opens the sidecar named after the skeleton with it, puts bac
 keeps (camera, skin, animation), and saves it beside the skeleton when it holds guides,
 references or notes or was opened, and its text changed. Guides are dragged out of the stage's
 rulers. Reference images (step 9) draw behind the skeleton; their pictures are the image files
-opened with the skeleton, or dropped on it later, matched by file name. Sidecar changes are not
-undo steps.
+opened with the skeleton, or dropped on it later, matched by file name. The chosen one (its
+row in the Reference panel, or a double-click on its picture) is dragged on the stage to move it
+and by a corner to size it (step 13); only the chosen one takes presses, so the stage still pans
+over the others. Sidecar changes are not undo steps.
 
 ## 4. Editing and history
 

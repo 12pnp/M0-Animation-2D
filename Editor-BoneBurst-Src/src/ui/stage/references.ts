@@ -31,3 +31,44 @@ export function matchReferences(paths: readonly string[], images: readonly strin
   }
   return { found, missing };
 }
+
+/** A reference with its picture's size in pixels (a reference whose picture is missing has none). */
+export interface Placed { readonly r: Reference; readonly width: number; readonly height: number }
+
+type ToScreen = (x: number, y: number) => [number, number];
+
+/** The topmost reference whose picture holds world (`wx`, `wy`): its index in `placed`, or -1. Later ones draw on top. */
+export function hitReference(placed: readonly (Placed | null)[], wx: number, wy: number): number {
+  for (let i = placed.length - 1; i >= 0; i--) {
+    const p = placed[i];
+    if (!p) continue;
+    if (Math.abs(wx - p.r.x) <= (p.width * p.r.scale) / 2 && Math.abs(wy - p.r.y) <= (p.height * p.r.scale) / 2) return i;
+  }
+  return -1;
+}
+
+/** The corner (0–3, as `referenceQuad` lists them) within `radius` screen pixels of (`sx`, `sy`), or -1. */
+export function referenceCorner(p: Placed, screen: ToScreen, sx: number, sy: number, radius = 6): number {
+  const { xy } = referenceQuad(p.r, p.width, p.height);
+  let best = -1, bestD = radius;
+  for (let k = 0; k < 4; k++) {
+    const [x, y] = screen(xy[k * 2]!, xy[k * 2 + 1]!), d = Math.hypot(sx - x, sy - y);
+    if (d <= bestD) { best = k; bestD = d; }
+  }
+  return best;
+}
+
+/** Where `from` goes when dragged from world `start` to `now`. */
+export function movedReference(from: Reference, start: readonly [number, number], now: readonly [number, number]): { x: number; y: number } {
+  return { x: from.x + now[0] - start[0], y: from.y + now[1] - start[1] };
+}
+
+/**
+ * `from`'s scale when a corner is dragged from world `start` to `now`: scaled about its centre by
+ * how much farther from the centre the pointer is. Never below a hundredth of the start's scale.
+ */
+export function scaledReference(from: Reference, start: readonly [number, number], now: readonly [number, number]): number {
+  const d0 = Math.hypot(start[0] - from.x, start[1] - from.y), d1 = Math.hypot(now[0] - from.x, now[1] - from.y);
+  if (!(d0 > 0)) return from.scale;
+  return Math.round(Math.max(from.scale / 100, (from.scale * d1) / d0) * 1e4) / 1e4;
+}
