@@ -17,6 +17,7 @@ import { AiBridge, DEFAULT_BRIDGE } from "./agent/bridge";
 import { ChatClient } from "./agent/chat";
 import { sessionContext } from "./agent/context";
 import { AskAi } from "./panels/askAi";
+import { DIVIDER, MenuBar } from "./menubar";
 import { type IconName, iconButton } from "./icons";
 import { ExportRefused, exportToUnity } from "./unityExport";
 import { isPanelId, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
@@ -111,9 +112,36 @@ export function mountApp(root: HTMLElement): void {
   // The activity bar: one button per built panel, pressed while the panel is open.
   const activity = el("nav", "activity");
   activity.setAttribute("aria-label", "Panels");
+  const menubar = new MenuBar([
+    { label: "File", items: () => [
+      { label: "Open…", keys: "⌘O", run: () => fileInput.click() },
+      { label: "Save", keys: "⌘S", disabled: !session.doc, run: () => void save() },
+      { label: "Export to Unity…", disabled: !session.doc, run: () => void toUnity(false) },
+      { label: "Export to Unity, another folder…", disabled: !session.doc, run: () => void toUnity(true) },
+    ] },
+    { label: "Edit", items: () => [
+      { label: "Undo", keys: "⌘Z", disabled: !session.history?.canUndo, run: () => undoBtn.click() },
+      { label: "Redo", keys: "⇧⌘Z", disabled: !session.history?.canRedo, run: () => redoBtn.click() },
+      DIVIDER,
+      { label: "Preferences…", keys: "⌘,", run: () => prefsDialog.open() },
+    ] },
+    { label: "View", items: () => [
+      ...TOOLS.map((t) => ({ label: t.label, keys: t.key, checked: stage.tool === t.tool, run: () => setTool(t.tool) })),
+      DIVIDER,
+      { label: "Fit to skeleton", keys: "F", run: () => stage.fitView() },
+    ] },
+    { label: "Window", items: () => [
+      ...workspace.built.map((id) => ({ label: PANEL_TITLES[id], checked: workspace.isOpen(id), run: () => workspace.toggle(id) })),
+      DIVIDER,
+      { label: "Reset layout", run: () => workspace.reset() },
+    ] },
+    { label: "Help", items: () => [
+      { label: `About ${EDITOR_NAME}`, run: () => say(`${EDITOR_NAME} — Spine ${SPINE_VERSION}, MIT.`) },
+    ] },
+  ]);
   const body = el("div", "body");
   body.append(activity, main);
-  root.replaceChildren(bar, body, status, issuesList);
+  root.replaceChildren(menubar.element, bar, body, status, issuesList);
 
   // The docking shell (D6): every panel is a Dockview panel.
   const workspace = new Workspace(main, new Map<PanelId, PanelContent>([
