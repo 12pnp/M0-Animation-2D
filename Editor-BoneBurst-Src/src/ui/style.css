@@ -579,6 +579,8 @@ dialog.open-project .op-buttons { flex: none; display: flex; justify-content: ce
 /* The Skins and Animations panels: a button row over a list that borrows History's rows. */
 .list-bar { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 6px; }
 .list-bar button:disabled { opacity: 0.5; }
+/* .outline clips; these panels are one long list, so the whole panel scrolls (Skins, Animations, History). */
+.panel.list-panel, .panel.history { overflow-y: auto; overflow-x: hidden; }
 
 /* The path window: the selected path's vertex by number, in Local or World. */
 .path-panel[hidden] { display: none; }
@@ -603,6 +605,8 @@ dialog.open-project .op-buttons { flex: none; display: flex; justify-content: ce
 .lp-body canvas { display: block; }
 .lp-note { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 16px; margin: 0; }
 .lp-note[hidden] { display: none; }
+.history-step.folder { font-weight: 600; }
+.list-bar label { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); cursor: pointer; }
 
 /* The path window inside the Local Path panel: under the canvas, a strip of its own. */
 .local-path .path-panel { flex: none; gap: 6px; padding: 8px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: var(--panel); box-shadow: none; }
