@@ -119,6 +119,31 @@ export function setWeight(r: AttachmentRef, v: number, bone: string, w: number, 
   };
 }
 
+/**
+ * Set `bone`'s weight on many vertices at once (the weight brush, E6 step 4f), each as
+ * `setWeight` would, in one rebind. A vertex where that is impossible (the bone is its only one,
+ * or no other bone holds it to take the rest) keeps its weights.
+ */
+export function setWeights(r: AttachmentRef, bone: string, weights: ReadonlyMap<number, number>, bones: BoneWorlds): Edit<Skeleton> {
+  return (s) => {
+    const a = editableMesh(s, r);
+    if (!isWeighted(a)) throw new EditRefused(`"${r.key}" is not bound to bones; bind it first.`);
+    const i = boneIndex(s, bone), binds = decodeBinds(a.vertices!);
+    const next = new Map<number, { bone: number; w: number }[]>();
+    for (const [v, w0] of weights) {
+      const mine = binds[v];
+      if (!mine) continue;
+      const w = Math.min(1, Math.max(0, w0)), others = mine.filter((b) => b.bone !== i), rest = others.reduce((n, b) => n + b.w, 0);
+      if ((w === 0 && !others.length) || (w < 1 && !(rest > 0))) continue;
+      next.set(v, normaliseWeights([...(w > 0 ? [{ bone: i, w }] : []), ...others.map((b) => ({ bone: b.bone, w: (b.w / rest) * (1 - w) }))]));
+    }
+    if (!next.size) return s;
+    const f = frameFor(s, r, a, bones)!;
+    const out = rebind(s, r, a, f, (n, _x, _y, old) => next.get(n) ?? old!.map((b) => ({ bone: b.bone, w: b.w })));
+    return sameVertices(out, s, r) ? s : out;
+  };
+}
+
 /** Whether the mesh at `r` has the same vertices in both documents (an edit that changed nothing). */
 function sameVertices(a: Skeleton, b: Skeleton, r: AttachmentRef): boolean {
   const x = editableMesh(a, r).vertices!, y = editableMesh(b, r).vertices!;

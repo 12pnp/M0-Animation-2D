@@ -15,6 +15,7 @@ import { BONE_DEFAULTS, boneInherit, boneNumber, type BoneNumber, CONSTRAINT_DEF
 import { type Attachment, attachmentType, type Constraint, type Skeleton, type TransformFrom } from "@/model/skeleton";
 import { timeFrame } from "@/model/timelines";
 import type { Selection, Session } from "../session";
+import { brush, BRUSH_STRENGTH } from "../stage/weightBrush";
 import { animatedLocal, constraintNow, localUnder, Poser } from "../stage/posed";
 import { empty, heading } from "./outline";
 
@@ -413,6 +414,28 @@ export class Inspector {
     show.value = s.weightBone && follows.includes(s.weightBone) ? s.weightBone : "";
     show.addEventListener("change", () => { s.weightBone = show.value || null; s.changed(); });
     form.append(field("Show weights", show));
+    // The weight brush (E6 step 4f): the shown bone's weights painted on the stage; the person's setting, not the document's.
+    const paint = document.createElement("input");
+    paint.type = "checkbox";
+    paint.checked = brush.on;
+    paint.addEventListener("change", () => {
+      brush.on = paint.checked;
+      this.onStatus(brush.on ? (s.weightBone ? `Paint ${s.weightBone}'s weights: drag on the stage (Alt takes away; [ and ] size the brush).` : "Choose the bone to paint in Show weights.") : "Weight brush off.");
+      s.changed();
+    });
+    const paintRow = field("Paint weights", paint);
+    paintRow.classList.add("check");
+    form.append(paintRow);
+    const strength = document.createElement("input");
+    strength.value = format(brush.strength);
+    strength.inputMode = "decimal";
+    strength.classList.add("number");
+    strength.addEventListener("change", () => {
+      const n = Number(strength.value);
+      if (Number.isFinite(n)) brush.strength = Math.min(BRUSH_STRENGTH[1], Math.max(BRUSH_STRENGTH[0], n));
+      strength.value = format(brush.strength);
+    });
+    form.append(field("Brush strength", strength));
     form.append(this.action("Auto weights", "Weight every vertex again by its distance to the bones the mesh follows", () => autoWeights(r, bones), `Weight ${r.key} by distance`));
     form.append(this.action("Unbind", "Free the mesh from its bones; every vertex stays where it is", () => unbindMesh(r, bones), `Unbind ${r.key}`));
     const v = s.vertex, binds = decodeBinds(a.vertices!);

@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { type AttachmentRef, findAttachment } from "@/edit/attachments";
 import { addHullVertex, addVertex, deleteVertex, moveVertex, normaliseWeights, regionToMesh } from "@/edit/mesh";
 import { type BoneWorlds, decodeBinds, frameFor, isWeighted, positions } from "@/edit/meshLayout";
-import { autoWeights, bindMesh, distanceWeights, meshBones, setMeshBone, setWeight, unbindMesh } from "@/edit/weights";
+import { autoWeights, bindMesh, distanceWeights, meshBones, setMeshBone, setWeight, setWeights, unbindMesh } from "@/edit/weights";
 import { readAtlas } from "@/io/atlas";
 import { readSkeleton } from "@/io/skeletonRead";
 import { writeSkeleton } from "@/io/skeletonWrite";
@@ -155,6 +155,23 @@ describe("weights", () => {
       sound(s, atlas);
     }
   });
+  it("set many vertices' weights at once (the weight brush): as one setWeight per vertex; a vertex it cannot change keeps its weights", () => {
+    const { doc, images } = sample("spineboy-pro", "spineboy-pro.json");
+    const r = weightedWithDeform(doc), bones = setupBones(doc, images), a = findAttachment(doc, r)!;
+    const binds = decodeBinds(a.vertices!), bone = binds.find((b) => b.length >= 2)![0]!.bone, name = doc.bones![bone]!.name;
+    const vs = binds.map((b, i) => [b, i] as const).filter(([b]) => b.length >= 2 && b.some((x) => x.bone === bone)).slice(0, 3).map(([, i]) => i);
+    expect(vs.length).toBe(3);
+    const ws = new Map(vs.map((v, k) => [v, [0.2, 0.55, 0.9][k]!]));
+    const one = vs.reduce((d, v) => setWeight(r, v, name, ws.get(v)!, bones)(d), doc);
+    const batch = setWeights(r, name, ws, bones)(doc);
+    expect(findAttachment(batch, r)!.vertices).toEqual(findAttachment(one, r)!.vertices);
+    // A vertex held by one bone only (made so: the painted bone at 1): taken to 0 it would hold to nothing, so it stays; a part of it renormalises to all of it.
+    const solo = setWeight(r, vs[0]!, name, 1, bones)(doc);
+    expect(decodeBinds(findAttachment(solo, r)!.vertices!)[vs[0]!]!.length).toBe(1);
+    expect(setWeights(r, name, new Map([[vs[0]!, 0]]), bones)(solo)).toBe(solo);
+    expect(setWeights(r, name, new Map([[vs[0]!, 0.3]]), bones)(solo)).toBe(solo);
+  });
+
   it("set a vertex's weight: the others share the rest, the vertex and its deform offsets stay; other vertices untouched", () => {
     const { doc, atlas, images } = sample("spineboy-pro", "spineboy-pro.json");
     const r = weightedWithDeform(doc), bones = setupBones(doc, images), a = findAttachment(doc, r)!;

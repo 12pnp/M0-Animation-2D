@@ -5,7 +5,7 @@ all 17 corpus rigs back exactly; the old editor changes every one, and poses one
 Step 2 (edit-script parity) done: both scripts agree once each known difference is taken out
 (0.007 and 0 px); `set_keys`' named eases now are version 1's curves. Step 3 (the gap list) done: walked in the old editor, decided by the owner. Step 4 (the gaps
 chosen, built in v2) in progress: 4a (autosave and recovery) done; 4b (events on the
-timeline) done; 4c (copy and paste, multiple selection) done; 4d (onion skin) done; 4e (snapping and a grid) done; 4f (the weight brush) next. 4h (the axes) moved to the other
+timeline) done; 4c (copy and paste, multiple selection) done; 4d (onion skin) done; 4e (snapping and a grid) done; 4f (the weight brush) done; 4g (the curve graph) next. 4h (the axes) moved to the other
 session (its owner's request; the Shear tool was already there).
 
 E6 makes v2 the editor people use. The old editor (`../../Animation-BoneBurst-Src/`, AGPL, the
@@ -513,4 +513,54 @@ flowchart LR
    not snapped; guide axes swapped; the grid not drawn; the reach in units, not pixels).
 3. **4h** (Local, Parent and World axes) is now the other session's, at its owner's request; it
    edits the Move drag beside this step's snapping lines, which feed its axis lock.
+
+### 4f — the weight brush
+
+```mermaid
+flowchart LR
+    SEL["a weighted mesh selected,<br/>Show weights: a bone"] --> ON["Properties: Paint weights<br/>(strength; size with [ and ])"]
+    ON --> STROKE["drag on the stage: vertices<br/>under the brush"]
+    STROKE --> W["brushWeights: + strength × falloff<br/>(Alt: −)"]
+    W --> E["setWeights: one rebind,<br/>the others share the rest"]
+    E --> H["one undo step per stroke"]
+```
+
+#### Decisions
+
+- **When**: mesh mode on a weighted mesh, in the setup pose (weights are setup data), with a bone
+  chosen in **Show weights**: that bone's weights are painted, the heat colours showing them as
+  the stroke goes. **Paint weights** (Properties, under the weights) turns the brush on; while it
+  is on, a press on the stage paints instead of moving a vertex.
+- **The brush**: a circle of a size in screen pixels (40 by default; `[` and `]` change it, 5–300)
+  and a strength (0.1 by default, 0.01–1). Each pointer step adds `strength × falloff` of what is
+  left to reach 1 (Alt: takes as much of the weight away), the falloff smooth from 1 at the centre
+  to 0 at the edge. Each vertex's other bones share the rest in their old proportion
+  (`setWeight`'s rule); a vertex whose only bone is the painted one, or that no other bone holds
+  when taking weight away, keeps its weights.
+- **One undo step per stroke**; one rebind per step (`setWeights`, a batch of `setWeight`).
+- **Settings are the person's**, kept in the page (`weightBrush.ts`), not in a document.
+
+#### Steps
+
+1. `edit/weights.ts` `setWeights`; `ui/stage/weightBrush.ts` (`brushWeights`, pure, and the
+   settings); the stage's stroke and circle; Properties' Paint weights and strength; `[` and `]`.
+2. Tests: the batch edit (equal to one `setWeight` per vertex; impossible vertices left); the
+   brush (falloff, add, take away, the edge); a browser test (a stroke over vertices raises their
+   weight for the bone, one undo takes it back).
+
+#### 4f results
+
+1. `src/edit/weights.ts` `setWeights` (a batch of `setWeight` in one rebind); `src/ui/stage/weightBrush.ts`
+   (the settings, `falloff`, `brushWeights`, `resizeBrush`); the stage: with the brush on, a press
+   in mesh mode starts a stroke (one undo step until let go), each pointer step re-weights the
+   vertices under the circle, the circle drawn at the pointer (dashed when the brush cannot paint
+   there, and the status says why: no bones bound, an animation shown, no bone chosen);
+   Properties ▸ **Paint weights** and **Brush strength** under Show weights; `[` and `]` size it.
+2. Tests: `tests/weights.test.ts` (the batch equals one `setWeight` per vertex; a vertex held by one
+   bone stays, taken to 0 or to a part); `tests/weightBrush.test.ts` (4: the falloff, adding,
+   taking away, the size's range); `e2e/weightBrush.spec.ts` (spineboy-pro: a stroke over a
+   vertex raises the shown bone's weight, an Alt stroke lowers it, two undos give it back).
+   Four planted faults fail them (the press not painting; Alt ignored; a stroke not one undo step;
+   a lone bone taken to 0); the last first passed, as the test's case renormalised to the same
+   weights, until the test took the bone to 0.
 

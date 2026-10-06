@@ -23,6 +23,7 @@ import { icon, iconButton } from "./icons";
 import { ExportRefused, exportToUnity } from "./unityExport";
 import { Autosaver, clearRecovery, readRecovery, sourcesOf } from "./recovery";
 import { clipboard, copyPose, pastePoseHere } from "./clipboard";
+import { brush, resizeBrush } from "./stage/weightBrush";
 import { isPanelId, PANEL_ICONS, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
 import { type PanelContent, Workspace } from "./workspace/workspace";
 
@@ -115,11 +116,13 @@ export function mountApp(root: HTMLElement): void {
   ];
   const stageTools = el("div", "stage-tools");
   const group = (...children: HTMLElement[]) => { const g = el("div", "group"); g.append(...children); return g; };
-  const autoKeyBtn = iconButton(button("Auto Key", "Auto Key: with an animation chosen, a drag on the stage keys it. Off, a drag poses the bone without keying until you press Key", () => {
+  /** Auto Key on or off, from the stage strip's button or the View menu. */
+  const toggleAutoKey = () => {
     stage.autoKey = !stage.autoKey;
     autoKeyBtn.setAttribute("aria-pressed", String(stage.autoKey));
     say(stage.autoKey ? "Auto Key on: dragging keys the animation." : "Auto Key off: dragging poses the bone unkeyed; press Key (K) to key it.");
-  }), "autoKey");
+  };
+  const autoKeyBtn = iconButton(button("Auto Key", "Auto Key: with an animation chosen, a drag on the stage keys it. Off, a drag poses the bone without keying until you press Key", toggleAutoKey), "autoKey");
   autoKeyBtn.setAttribute("aria-pressed", "true");
   const SPACES: ReadonlyArray<{ space: Space; label: string; tip: string }> = [
     { space: "local", label: "Local", tip: "Move, scale or shear along the bone's own axes" },
@@ -189,6 +192,7 @@ export function mountApp(root: HTMLElement): void {
     ] },
     { label: "View", items: () => [
       ...TOOLS.map((t) => ({ label: t.label, keys: t.key, checked: stage.tool === t.tool, run: () => setTool(t.tool) })),
+      { label: "Auto Key", checked: stage.autoKey, run: toggleAutoKey },
       DIVIDER,
       { label: "Fit to skeleton", keys: "F", run: () => stage.fitView() },
       { label: "Onion Skin", checked: prefs.values.onion, run: () => prefs.set({ onion: !prefs.values.onion }) },
@@ -474,6 +478,8 @@ export function mountApp(root: HTMLElement): void {
       return;
     }
     if (key === "f") { stage.fitView(); return; }
+    // The weight brush's size (E6 step 4f), while it is on.
+    if ((key === "[" || key === "]") && brush.on) { say(`Brush ${resizeBrush(key === "]" ? 1 : -1)} px.`); stage.redraw(); return; }
     if (e.code === "Space") { e.preventDefault(); timeline.togglePlay(); return; }
     if (key === "," || key === ".") { e.preventDefault(); session.seek(session.frame + (key === "," ? -1 : 1)); return; }
     if (key === "home") { e.preventDefault(); session.seek(0); return; }

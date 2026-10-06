@@ -4,6 +4,7 @@ import { EditRefused } from "@/edit/history";
 import { findAttachment } from "@/edit/attachments";
 import { deformWithVertexAt, keyDeform } from "@/edit/deformKeys";
 import { addHullVertex, addVertex, deleteVertex, moveVertex } from "@/edit/mesh";
+import { setWeights } from "@/edit/weights";
 import { addGuide, moveGuide, removeGuide, updateReference } from "@/edit/sidecar";
 import type { Reference } from "@/model/sidecar";
 import { axisOf, guideScreen, hitGuide, RULER, rulerAt, rulerOf, tickStep } from "./guides";
@@ -17,6 +18,7 @@ import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } 
 import { type Backdrop, Renderer } from "./renderer";
 import { ghostsFor, type OnionOptions } from "./onion";
 import { type SnapOptions, type Snapped, type SnapTargets, snapPoint } from "./snap";
+import { brush, brushWeights } from "./weightBrush";
 import { hitReference, movedReference, type Placed, referenceCorner, referenceQuad, scaledReference } from "./references";
 
 /** How far from the selected bone's origin a press still grabs it, in pixels (the gizmo's ring). */
@@ -85,6 +87,9 @@ export class Stage {
   grid: number | null = null;
   /** What the drag snapped to this step, drawn until the drag ends. */
   private snapped: Snapped | null = null;
+  /** A weight-brush stroke under way (E6 step 4f), and where the pointer is on screen for the circle. */
+  private stroke: { takeAway: boolean } | null = null;
+  private brushAt: [number, number] | null = null;
   /** A message for the status line (a refused edit). */
   onStatus: (message: string) => void = () => {};
   /** The pointer's world position or the zoom, for the status line's corner. */
@@ -474,7 +479,50 @@ export class Stage {
       g.strokeStyle = accent;
       g.beginPath(); g.rect(x - r, y - r, r * 2, r * 2); g.fill(); g.stroke();
     }
+    // The weight brush's circle where the pointer is (E6 step 4f).
+    if (brush.on && this.brushAt) {
+      g.strokeStyle = accent;
+      g.lineWidth = 1.5;
+      g.setLineDash(this.brushBlocked(view) ? [3, 3] : []);
+      g.beginPath(); g.arc(this.brushAt[0], this.brushAt[1], brush.radius, 0, Math.PI * 2); g.stroke();
+      g.setLineDash([]);
+    }
     g.restore();
+  }
+
+  /** Why the weight brush cannot paint `view` now, or null when it can. */
+  private brushBlocked(view: MeshView): string | null {
+    if (!view.binds) return "Bind the mesh to bones first (Properties ▸ Bind); then its weights can be painted.";
+    if (view.animated) return "Weights are the setup pose's: choose Setup pose in the timeline to paint them.";
+    if (this.session.weightBone === null) return "Choose the bone to paint in Properties ▸ Show weights.";
+    return null;
+  }
+
+  /** A press with the weight brush on (E6 step 4f): a stroke begins, one undo step until let go. */
+  private brushDown(view: MeshView, sx: number, sy: number, takeAway: boolean): boolean {
+    if (!brush.on) return false;
+    const why = this.brushBlocked(view);
+    if (why) { this.onStatus(why); return true; }
+    this.session.history!.begin(`${takeAway ? "Take" : "Paint"} ${this.session.weightBone}'s weights on ${view.ref.key}`);
+    this.stroke = { takeAway };
+    this.brushStep([sx, sy]);
+    return true;
+  }
+
+  /** One step of the stroke at screen point `at`: the vertices under the brush, re-weighted. */
+  private brushStep(at: readonly [number, number]): void {
+    const view = this.meshMode(), bone = this.session.weightBone, doc = this.session.doc;
+    if (!view || bone === null || !doc || !this.stroke) return;
+    const index = (doc.bones ?? []).findIndex((b) => b.name === bone), sp = this.screenOf(view);
+    const changes = brushWeights(sp.length / 2, (v) => [sp[v * 2]!, sp[v * 2 + 1]!], (v) => weightOf(view, v, index), at, brush, this.stroke.takeAway);
+    if (!changes.size) return;
+    try {
+      this.session.history!.apply("step", setWeights(view.ref, bone, changes, this.session.setupBones()!));
+    } catch (err) {
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+    }
+    this.session.changed();
   }
 
   /** Delete the selected mesh vertex (Delete on the stage); false when none is selected. */
@@ -639,6 +687,7 @@ export class Stage {
     }
     if (this.show.rulers && rulerAt(sx, sy) && this.guideDown(sx, sy)) return;
     const mesh = this.meshMode();
+    if (mesh && this.brushDown(mesh, sx, sy, e.altKey)) return;
     if (mesh && this.meshDown(mesh, sx, sy)) return;
     const screenBones = this.screenBones();
     let name = pickBone(screenBones, sx, sy, 6, this.session.selectedBone);
@@ -701,6 +750,8 @@ export class Stage {
   private move(e: PointerEvent): void {
     const [sx, sy] = this.local(e);
     this.pointer = toWorld(this.camera, this.size, sx, sy);
+    if (brush.on) { this.brushAt = [sx, sy]; if (!this.stroke) this.redraw(); }
+    if (this.stroke) { this.brushStep([sx, sy]); this.onPointer(`${this.pointer[0].toFixed(1)}, ${this.pointer[1].toFixed(1)}`); return; }
     if (this.panning) {
       this.camera = pan(this.camera, sx - this.panning.x, sy - this.panning.y);
       this.panning = { x: sx, y: sy };
@@ -789,6 +840,7 @@ export class Stage {
       if (gd.overRuler) this.session.setSidecar(removeGuide(this.session.sidecar, gd.index));
       this.redraw();
     }
+    if (this.stroke) { this.stroke = null; this.session.history?.end(); this.session.changed(); }
     if (this.drag || this.vertexDrag) {
       this.snapped = null;
       const unkeyed = this.drag?.unkeyed ?? false;
