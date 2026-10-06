@@ -39,8 +39,9 @@ not proof.
 ```bash
 npm run dev        # Vite on :5185
 npm test           # vitest run
+npm run e2e        # Playwright: popout windows (once: npx playwright install chromium)
 npm run build      # tsc --noEmit && vite build
-npm run check      # all of it, plus the licence guards
+npm run check      # all of it (e2e too), plus the licence guards
 ```
 
 ## How code is written here

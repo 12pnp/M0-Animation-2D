@@ -11,6 +11,15 @@ if echo "$out" | grep -qE 'Tests +0 passed|No test files found'; then
   echo "error: no tests ran" >&2; exit 1
 fi
 
+# The browser tests (E4 step 15): popout windows, which only a real browser shows. Playwright's
+# Chromium is installed once per machine.
+if ! node -e 'require("fs").accessSync(require("@playwright/test").chromium.executablePath())' 2>/dev/null; then
+  echo "error: Playwright's Chromium is not installed: run npx playwright install chromium" >&2; exit 1
+fi
+out=$(npx playwright test 2>&1) || { echo "$out"; exit 1; }
+echo "$out" | tail -2
+if ! echo "$out" | grep -qE '[1-9][0-9]* passed'; then echo "error: no browser tests ran" >&2; exit 1; fi
+
 # Spine's official runtimes are under the Spine Runtimes License: dev-only
 # oracles at most, never imported by the app.
 if grep -rnE 'from "@esotericsoftware/|require\("@esotericsoftware/' src/; then

@@ -1,12 +1,17 @@
 # Editor v2 — from scratch, MIT, no Animo code — plan
 
-**Status:** E0–E3 done 2026-10-06. `../Editor-BoneBurst-Src/`: MIT licence, notices, spec,
+**Status:** E0–E4 done 2026-10-06. `../Editor-BoneBurst-Src/`: MIT licence, notices, spec,
 clean-room rules; the document model, Spine JSON, atlas and sidecar in and out, undo (E1); the
 runtime lifted as its engine after the provenance pass, and a stage that edits the setup pose
 (E2); a timeline that keys, eases, moves and plays animations, a walk keyed on the stickman and
 read back alike by the engine and spine-core (E3, `Editor-BoneBurst-Src/docs/E3-PLAN.md`). The
 agent criterion moved from E3 to E5 (owner, 2026-10-06). spine-core knowledge in the runtime's
-solvers stays an open legal question (its SPEC §6). Next: E4 (authoring surfaces).
+solvers stays an open legal question (its SPEC §6). E4 (authoring surfaces) done 2026-10-06:
+panels and docking on Dockview, the rig's structure, skins, constraints, mesh geometry and
+weights, PSD import and re-import, the sidecar, guides, reference images, preferences, icons,
+constraint and deform keys, every surface seen in a browser, popouts kept checked by Playwright
+(`Editor-BoneBurst-Src/docs/E4-PLAN.md`); the weight brush and guide snapping parked for after
+E5. Next: E5 (the AI layer re-bound; `auto_rig` → `apply_motion` → `check_preview` via MCP).
 
 **Owner decision 2026-10-05:** replace the Animo-fork editor with a new editor
 that contains **no Animo code**, licensed **MIT** from its first commit. The

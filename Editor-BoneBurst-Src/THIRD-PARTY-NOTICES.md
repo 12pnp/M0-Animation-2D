@@ -9,7 +9,7 @@ flowchart LR
     PSD["ag-psd 31.0.2 (MIT)<br/>+ base64-js · pako"] --> DIST
     FONTS["public/vendor/fonts<br/>Inter · JetBrains Mono (OFL)"] --> DIST
     ICONS["public/vendor/icons<br/>Lucide (ISC) · Godot editor icons,<br/>restyled (MIT)"] --> DIST
-    DEV["dev tools: TypeScript, Vite, Vitest<br/>spine-core (test oracle)"] -.->|"build and test only"| DIST
+    DEV["dev tools: TypeScript, Vite, Vitest, Playwright<br/>spine-core (test oracle)"] -.->|"build and test only"| DIST
 ```
 
 ## Shipped
@@ -41,4 +41,5 @@ each set's `MANIFEST.md` names its pinned commit and every file's origin (`tests
 | [Vite](https://vite.dev) | MIT | dev server and build |
 | [Vitest](https://vitest.dev) | MIT | tests |
 | [@types/node](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT | Node types for the tests and the Vite config |
+| [@playwright/test](https://playwright.dev) 1.63.0 (exact), with its Chromium | Apache-2.0 | the browser tests (`e2e/`, `npm run e2e`, part of `npm run check`): popout windows (E4 step 15) |
 | [@esotericsoftware/spine-core](https://github.com/EsotericSoftware/spine-runtimes) 4.3.13 | Spine Runtimes License | the engine's test oracle (`tests/engineOracle.test.ts`) only; `scripts/check.sh` fails if `src/` imports it or `dist/` carries it |

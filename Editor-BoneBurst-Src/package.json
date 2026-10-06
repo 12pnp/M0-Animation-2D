@@ -10,10 +10,12 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "test": "vitest run",
+    "e2e": "playwright test",
     "check": "scripts/check.sh"
   },
   "devDependencies": {
     "@esotericsoftware/spine-core": "^4.3.13",
+    "@playwright/test": "1.63.0",
     "@types/node": "^22.20.5",
     "typescript": "^5.8.3",
     "vite": "^6.3.5",

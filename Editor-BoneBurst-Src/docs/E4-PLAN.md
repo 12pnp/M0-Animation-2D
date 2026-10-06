@@ -1,31 +1,18 @@
 # E4 — authoring surfaces — plan
 
-**Status:** in progress, 2026-10-06. Step 1 (the Dockview shell, D6) done except one check:
-**popout windows are not verified on screen** (the built-in browser pane loads a popout's page in
-place of the app; Claude in Chrome was not connected). Every other acceptance point holds, and
-`npm run check` passes (249 tests). Step 2 (the rig's structure) done: a rig built from an empty
-skeleton on screen, saved and read back alike by both runtimes. Step 3 (skins) done: a
-mix-and-match outfit duplicated and changed on screen, posed alike by both runtimes. Step 4
-(constraints) done: a transform constraint added, raised, reordered and made skin-required on
-screen, the file saved and posed alike by both runtimes. Step 5 (mesh geometry) done: the
-stickman's torso turned into a mesh and shaped on the stage, saved, posed alike by both
-runtimes. Step 6 (weights) done: the torso mesh bound to three bones on screen, reshaped and
-reweighted, saved, posed alike by both runtimes through its animations. Step 7 (PSD import)
-done: a layered PSD dropped on the editor, shown, saved with its atlas and page, read back.
-Step 8 (the sidecar in the app, guides) done: guides made on the stickman, saved with the view,
-opened again with everything back. Step 9 (the reference panel) done: a reference picture added to the stickman, placed and
-faded, saved, opened again missing and then with its file. Step 10 (preferences) done: each
-preference changed in the dialog and seen, kept through a reload, reset. Step 11 (keying
-constraints and deforms) done: an IK mix keyed and the torso mesh deformed at two frames on
-the stickman, played, saved, posed alike by both runtimes. Steps 12–15 planned (wrap-up, owner
-decisions 2026-10-06); step 12 (constraints drawn on the stage) done: Stretchyman's paths, IK
-and transforms drawn, a path picked on the stage; steps 13–15 to come; weight brush and guide
-snapping parked for after E5. `npm run check`: 322 tests.
+**Status:** **done**, 2026-10-06. Every authoring surface is built and has been seen working in
+a browser, popout windows included (step 15, the last unverified point since step 1), and a
+permanent Playwright test keeps popouts checked on every `npm run check` (343 tests: 341 in
+vitest, 2 in the browser). Steps 1–15 below each record their result. **Left, by owner decision
+(2026-10-06):** the weight brush and snapping to guides are parked for after E5 (E4.5, see the
+wrap-up); the `auto_rig` → `apply_motion` → `check_preview` flow is E5's primary criterion.
 
 E4 makes the editor author a rig, not only animate one: panels and docking (D6), slots,
 attachments, draw order, skins, constraints, mesh editing, PSD import and preferences. It is
-done when the `auto_rig` → `apply_motion` → `check_preview` flow runs end to end
-(`../../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md` ▸ E4). It starts with the shell every
+done when every authoring surface is built and seen working in the browser, popout windows
+included, with a permanent Playwright regression for popouts
+(`../../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md` ▸ E4, amended by the owner on
+2026-10-06; the agent flow moved to E5). It starts with the shell every
 later surface lives in.
 
 ```mermaid
@@ -1176,6 +1163,87 @@ flowchart LR
    old pixels on the stage; redo: the new. Saved (files captured): `figure.json`,
    `figure.atlas.txt`, a 652 × 164 `figure.png`; opened again from them: the same skeleton text
    and atlas, no notes, nothing to save.
+
+## Step 15 — the closing browser session, and a popout regression
+
+E4 closes with one session in real browsers: popout windows on screen (unverified since step 1:
+the in-app browser pane cannot open a second window), and what has not been seen live since
+step 2 (skins, mesh editing; constraint drawing was seen in step 12 and is looked at again).
+Then a Playwright test opens a panel in a new window and checks it draws, so popouts are checked
+on every `npm run check` from now on.
+
+```mermaid
+flowchart LR
+    CHK["npm run check"] --> VT["vitest (tests/)"]
+    CHK --> PW["playwright test (e2e/)"]
+    PW -->|"webServer: vite :5185"| APP["the editor, stickman fixture"]
+    APP -->|"tab menu: Pop out"| POP["page.waitForEvent('popup')"]
+    POP --> RIG["Rig panel in the window:<br/>rows, icons, a click selects"]
+    POP --> STG["Stage in the window:<br/>WebGL draws the stickman"]
+    PANE["in-app browser pane"] --> LIVE["skins · mesh editing ·<br/>constraint drawing, by hand"]
+```
+
+### Decisions
+
+- **Playwright** (`@playwright/test`, exact pin, Apache-2.0) is a dev dependency only, listed
+  under "Build and test only" in THIRD-PARTY-NOTICES; it never reaches `dist/`, and the runtime
+  dependency guard is unchanged. Chromium only (the browser Dockview's popouts were built
+  against); its browser is installed once with `npx playwright install chromium`, and the check
+  says so when it is missing.
+- **The test** (`e2e/popout.spec.ts`) drives the editor as a person would: opens the stickman
+  fixture, right-clicks a tab, chooses Pop out, and waits for the window with
+  `page.waitForEvent('popup')`. In the window: the Rig panel lists the bones with their icons
+  drawn (masked by their files, the editor's styles present), a click on a row selects that bone
+  in the main window; the Stage popped out draws the skeleton (pixels that are not the
+  background, read from a screenshot of its canvas), and a press on a bone selects it. Closing
+  the window puts the panel back in the main window.
+- **Where it runs**: `npm run e2e`, and as part of `npm run check`. Vite is started by
+  Playwright's `webServer` on 5185, or the running dev server is reused.
+- **The session**: the popout screenshots from the test (headed run kept as files in the
+  scratchpad, not committed); skins switched, a region turned into a mesh, a vertex added and
+  dragged, weights shown, constraints drawn, all in the in-app browser.
+
+### Steps
+
+1. `@playwright/test` installed exact; Chromium; `playwright.config.ts`; `e2e/popout.spec.ts`;
+   `npm run e2e`; `check.sh` runs it; notices row.
+2. A planted break (popout windows without the editor's styles, or a panel left empty there)
+   fails the test.
+3. The live session: popouts (from the test's screenshots), skins, mesh editing, constraints.
+4. E4 closed: the plan's status, the v2 plan's E4 row, the root CLAUDE.md status line.
+
+### Step 15 results
+
+1. `@playwright/test` 1.63.0 installed exact (dev only; Apache-2.0, a "Build and test only"
+   notices row), its Chromium installed once (`npx playwright install chromium`).
+   `playwright.config.ts` (Chromium, `webServer` on 5185 reusing a running dev server),
+   `npm run e2e`; `scripts/check.sh` runs it after vitest, says how to install the browser when
+   it is missing, and fails when no browser test ran. `tsconfig.json` type-checks `e2e/` and the
+   config.
+2. `e2e/popout.spec.ts`, 2 tests, each opening the stickman and choosing **Open in New Window**
+   from a tab's menu (`page.waitForEvent('popup')`): the Rig panel in its window (rows, the bone
+   icon masked by its file at its size, a click selecting the bone in the main window, closing
+   the window bringing the panel back); the Stage in its window (the WebGL canvas alone, the
+   overlay hidden, has drawn pixels; a right-drag pans the main window's camera; the canvas
+   redraws after the pan; E pressed there picks the Rotate tool; closing brings it back). Four
+   planted breaks: the window's styles removed (fails), its panels emptied (fails), keys not
+   heard in the window (fails), and WebGL not drawing in the window, which **passed at first**:
+   an element screenshot is what is on screen, so the overlay's bones counted as drawing. The
+   test now hides the overlay for its pictures and requires a new picture after the pan; the
+   break fails it.
+3. The session. Popouts (Playwright, Chromium, screenshots kept in the scratchpad, not
+   committed): the Stage and the Rig each in their own window at once, the stickman drawn with
+   its IK rings, a bone clicked in the Rig window selected in the Stage window (its gizmo) and in
+   the main window's Properties. **Seen:** a popped-out stage keeps the main window's camera, so
+   the skeleton may sit off centre until Fit. In the in-app browser, by hand: the Skins view,
+   `alt` shown (its extra attachment drawn, the toolbar's Skin following); the torso region
+   turned into a mesh from Properties, a vertex added inside and dragged, a vertex added on the
+   outline and dragged out (6 vertices, 5 on the outline, 5 triangles), bound to the torso bone
+   and then chest, the chest's weights coloured on the vertices; the IK rings drawn throughout.
+   **Not a bug:** one screenshot showed Undo greyed after the vertex drags while the history had
+   the step; the live button was enabled with its label, and the next screenshot showed it so (a
+   frame taken before the repaint).
+4. E4 closed: this plan's status, the v2 plan's status, the root CLAUDE.md status line.
 
 ## Wrap-up (owner decisions, 2026-10-06)
 
