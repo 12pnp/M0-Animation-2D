@@ -17,6 +17,10 @@ import type { PhysicsMode } from "@/engine/physics";
 import { atlasImages, NO_IMAGES, type AtlasImages } from "@/engine/regions";
 import { baseName, pickFiles } from "./files";
 import { importPsd } from "./psdImport";
+import { planReimport, rebuildAtlas, ReimportRefused } from "./psdReimport";
+import { decodePng, type PngImage } from "@/io/png";
+import { readPsdLayers } from "@/io/psd";
+import { writeAtlas } from "@/io/atlas";
 import { matchReferences, referenceFile } from "./stage/references";
 import { boneMatrix, Poser, type Posed } from "./stage/posed";
 
@@ -75,6 +79,10 @@ export class Session {
   generated: { atlasText: string; pages: readonly Page[] } | null = null;
   /** What reading found, and pages the atlas names that were not given. */
   issues: Issue[] = [];
+  /** Each page's exact pixels, read when first needed (E4 step 14): from its file, or as the editor made it. */
+  private pageData = new Map<string, () => Promise<PngImage>>();
+  /** Re-imports (E4 step 14): the atlas before and after each, swapped as undo and redo cross its step. */
+  private reimports: { before: Skeleton; after: Skeleton; old: AtlasState; next: AtlasState }[] = [];
   /** The document as last opened or saved: undo returns the very object, so undoing back to it is clean. */
   private saved: Skeleton | null = null;
   /** The animation shown and keyed, or null for the setup pose (see `animation`). */
@@ -152,7 +160,71 @@ export class Session {
     return () => this.listeners.delete(f);
   }
 
-  changed(): void { for (const f of this.listeners) f(); }
+  changed(): void {
+    this.followReimports();
+    for (const f of this.listeners) f();
+  }
+
+  /** The atlas as it is now, to keep with a re-import. */
+  private atlasState(): AtlasState {
+    return { atlas: this.atlas, images: this.images, pages: this.pages, pageData: this.pageData, generated: this.generated };
+  }
+
+  private takeAtlas(a: AtlasState): void {
+    this.atlas = a.atlas; this.images = a.images; this.pages = a.pages; this.pageData = a.pageData; this.generated = a.generated;
+    this.poser = null; this.posed = null; this.setup = null;
+  }
+
+  /** Undo or redo crossed a re-import's step: the atlas, pages and files to save go with it. */
+  private followReimports(): void {
+    const doc = this.history?.doc;
+    for (const r of this.reimports) {
+      if (doc === r.before && this.atlas !== r.old.atlas) this.takeAtlas(r.old);
+      else if (doc === r.after && this.atlas !== r.next.atlas) this.takeAtlas(r.next);
+    }
+  }
+
+  /**
+   * Bring a Photoshop file into the open rig (E4-PLAN step 14): matched layers' new pixels and
+   * places, new layers as slots, everything else kept; one undo step. Returns what happened, for
+   * the status line; refused (nothing changed) with the reason.
+   */
+  async reimportPsd(f: Source): Promise<string> {
+    const h = this.history, atlas = this.atlas, bones = this.setupBones();
+    if (!h || !bones) throw new ReimportRefused("Open the rig first, then drop its PSD on it.");
+    if (!atlas) throw new ReimportRefused("The rig has no atlas to bring the layers into; open it with its atlas and pages.");
+    const psd = readPsdLayers(new Uint8Array(await (await f.blob()).arrayBuffer()), f.name);
+    const plan = planReimport(h.doc, bones, this.images.regions, psd, f.name);
+    // Every page, exactly: the kept regions are copied from them, and they are saved again if the step is undone.
+    const old = new Map<string, PngImage>();
+    for (const p of atlas.pages) {
+      const read = this.pageData.get(p.name);
+      if (!read) throw new ReimportRefused(`The page "${p.name}" was not opened with the rig; open the rig with all its pages, then re-import.`);
+      old.set(p.name, await read());
+    }
+    const made = rebuildAtlas(plan, atlas, old, this.name);
+    const pages = new Map<string, ImageBitmap>(), pageData = new Map<string, () => Promise<PngImage>>();
+    for (const p of made.pages) {
+      pages.set(p.name, await createImageBitmap(new ImageData(new Uint8ClampedArray(p.pixels), p.width, p.height), { premultiplyAlpha: "premultiply" }));
+      pageData.set(p.name, async () => p);
+    }
+    const before = this.atlasState();
+    const was: AtlasState = { ...before, generated: { atlasText: writeAtlas(atlas), pages: atlas.pages.map((p) => ({ name: p.name, ...old.get(p.name)! })) } };
+    const next: AtlasState = { atlas: made.atlas, images: atlasImages(made.atlas), pages, pageData, generated: { atlasText: writeAtlas(made.atlas), pages: made.pages } };
+    const docBefore = h.doc;
+    // Always a step, even when only pixels changed, so undo takes the new pixels back too.
+    h.apply(`Re-import ${f.name}`, (d) => ({ ...plan.edit(d) }));
+    this.reimports.push({ before: docBefore, after: h.doc, old: was, next });
+    this.takeAtlas(next);
+    this.issues = [...plan.issues];
+    this.changed();
+    const parts = [
+      `${plan.updated.length} layer${plan.updated.length === 1 ? "" : "s"} updated${plan.moved.length ? ` (${plan.moved.length} moved)` : ""}`,
+      ...(plan.added.length ? [`${plan.added.length} added (${plan.added.join(", ")})`] : []),
+      ...(plan.kept.length ? [`${plan.kept.length} kept from before`] : []),
+    ];
+    return `Re-imported ${f.name}: ${parts.join(", ")}. Undo takes it back; Save writes the new atlas and pages.`;
+  }
 
   /** The animation shown, if the document still has it (an undo can take it away). */
   get animation(): Animation | null {
@@ -259,7 +331,7 @@ export class Session {
     const fileName = picked.skeleton?.name ?? `${picked.atlas!.name.replace(/\.atlas(\.txt)?$/i, "")}.json`;
     const all: Issue[] = [...issues, ...profileIssues(skeleton)];
     let atlas: Atlas | null = null;
-    const pages = new Map<string, ImageBitmap>();
+    const pages = new Map<string, ImageBitmap>(), pageData = new Map<string, () => Promise<PngImage>>();
     if (picked.atlas) {
       atlas = readAtlas(await picked.atlas.text());
       for (const p of atlas.pages) {
@@ -268,6 +340,7 @@ export class Session {
         // Premultiplied on upload unless the atlas says the page already is.
         const pma = p.fields.some((f) => f.key === "pma" && f.values[0] === "true");
         pages.set(p.name, await createImageBitmap(await img.blob(), { premultiplyAlpha: pma ? "none" : "premultiply" }));
+        pageData.set(p.name, async () => decodePng(new Uint8Array(await (await img.blob()).arrayBuffer()), p.name));
       }
     } else {
       all.push({ where: fileName, message: "no atlas was given; the bones are shown without images" });
@@ -279,6 +352,7 @@ export class Session {
       all.push(...read.issues.map((i) => ({ where: `${picked.sidecar!.name}: ${i.where}`, message: i.message })));
     }
     this.replace(skeleton, picked.skeleton !== null, baseName(fileName), atlas, pages, all);
+    this.pageData = pageData;
     if (picked.sidecar) {
       this.takeSidecar(sidecar);
       // The references' pictures: opened images the atlas does not use, by file name.
@@ -337,11 +411,16 @@ export class Session {
     }
     this.replace(im.skeleton, false, im.name, im.atlas, pages, [...im.issues, ...profileIssues(im.skeleton)]);
     this.generated = { atlasText: im.atlasText, pages: im.pages };
+    this.pageData = new Map(im.pages.map((p) => [p.name, async () => p]));
   }
 
   /** Start over on a new document. */
   private replace(skeleton: Skeleton, fromFile: boolean, name: string, atlas: Atlas | null, pages: Map<string, ImageBitmap>, all: Issue[]): void {
-    for (const b of this.pages.values()) b.close();
+    const keep = new Set<ImageBitmap>();
+    for (const r of this.reimports) for (const st of [r.old, r.next]) for (const b of st.pages.values()) keep.add(b);
+    for (const b of [...this.pages.values(), ...keep]) b.close();
+    this.reimports = [];
+    this.pageData = new Map();
     this.generated = null;
     this.sidecar = EMPTY_SIDECAR;
     this.sidecarFromFile = false;
@@ -380,6 +459,15 @@ export class Session {
     this.changed();
     return text;
   }
+}
+
+/** An atlas with what goes with it: its regions in numbers, page images, exact pixels, the files Save writes. */
+interface AtlasState {
+  readonly atlas: Atlas | null;
+  readonly images: AtlasImages;
+  readonly pages: Map<string, ImageBitmap>;
+  readonly pageData: Map<string, () => Promise<PngImage>>;
+  readonly generated: { atlasText: string; pages: readonly Page[] } | null;
 }
 
 /** A random 11-character hash for a new skeleton's header, like the Spine Editor's. */

@@ -1,4 +1,4 @@
-import type { Atlas, AtlasPage } from "@/model/atlas";
+import type { Atlas, AtlasField, AtlasPage } from "@/model/atlas";
 
 /**
  * Images packed into atlas pages (E4-PLAN step 7): tallest first, left to right on shelves, a new
@@ -9,7 +9,14 @@ import type { Atlas, AtlasPage } from "@/model/atlas";
 export const PAGE_MAX = 2048;
 export const PAD = 2;
 
-export interface PackImage { readonly name: string; readonly width: number; readonly height: number; readonly pixels: Uint8ClampedArray }
+export interface PackImage {
+  readonly name: string;
+  readonly width: number;
+  readonly height: number;
+  readonly pixels: Uint8ClampedArray;
+  /** Atlas fields the region keeps after its bounds (a re-import's kept `offsets` and `index`). */
+  readonly fields?: readonly AtlasField[];
+}
 
 export interface Placed { readonly name: string; readonly page: number; readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 
@@ -56,7 +63,7 @@ export function pack(images: readonly PackImage[], name: string, max = PAGE_MAX)
   const atlasPages: AtlasPage[] = pages.map((pg, p) => ({
     name: pg.name,
     fields: [{ key: "size", values: [String(pg.width), String(pg.height)] }, { key: "filter", values: ["Linear", "Linear"] }],
-    regions: placed.filter((x) => x.page === p).map((x) => ({ name: x.name, fields: [{ key: "bounds", values: [x.x, x.y, x.width, x.height].map(String) }] })),
+    regions: placed.flatMap((x, i) => (x.page === p ? [{ name: x.name, fields: [{ key: "bounds", values: [x.x, x.y, x.width, x.height].map(String) }, ...(images[i]!.fields ?? [])] }] : [])),
   }));
   return { pages, atlas: { header: [], pages: atlasPages }, placed };
 }

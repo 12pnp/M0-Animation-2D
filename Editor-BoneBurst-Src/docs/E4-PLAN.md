@@ -1062,6 +1062,121 @@ flowchart LR
    Dockview's popout replaced the tab itself instead of opening a window, so this goes to step
    15's popout session and its Playwright test.
 
+## Step 14 — re-importing a PSD into an existing rig
+
+The artist repaints, moves and adds layers in Photoshop after the rig is built. Dropping the PSD
+on the open rig brings that in: each layer the rig already has gets its new pixels and place,
+new layers become new slots, and nothing the rig built on them (bones, slots, meshes, weights,
+constraints, skins, animations) is lost. One undo step takes it all back.
+
+```mermaid
+flowchart LR
+    PSD[".psd dropped on the open rig"] -->|"io/psd readPsdLayers"| L["layers: canvas place, pixels"]
+    RIG["the rig: atlas regions,<br/>attachments, setup-pose bones"] --> M
+    L -->|"ui/psdReimport (pure):<br/>match by region name"| M["matched · new · kept"]
+    M -->|"region: new size + place"| E["one edit: History step<br/>'Re-import figure.psd'"]
+    M -->|"mesh: pixels cropped<br/>to its picture's rect"| E
+    M -->|"new: slot + region,<br/>drawn above its PSD neighbour"| E
+    PAGES["old pages (io/png, exact)"] -->|"kept regions' pixels"| PK["io/pack: new atlas + pages"]
+    M --> PK
+    E & PK -->|"session: atlas follows<br/>undo and redo of the step"| OUT["stage · Save writes json,<br/>atlas, pages (io/png)"]
+```
+
+### Decisions
+
+- **Matching**: a PSD layer belongs to the rig's atlas region of the same name: its name made
+  safe and unique exactly as the first import made it (`safeName`, `unique`, bottom first). An
+  attachment shows a region when its `path`, or else its name, is that region's name; every
+  attachment in every skin that shows it follows the layer.
+- **Where the canvas is in the rig**: the canvas's bottom centre was the origin at import; if
+  the rig has moved since (the root dragged), the offset most matched layers share between where
+  they show now and where the PSD has them is taken as the canvas's place (none shared: the
+  origin). Positions are the setup pose's, constraints applied, as the stage shows it.
+- **A region attachment** gets the layer's trimmed pixels, its centre where the layer is now
+  (through its bone's setup-pose world transform), and its width and height scaled by how much
+  the trimmed image grew or shrank, so a region the artist scaled stays scaled; its rotation,
+  colour and scale are kept.
+- **A mesh** (and a linked mesh, through its source) keeps its vertices, triangles, UVs and
+  weights. Its picture's rectangle on the canvas is found from its setup-pose vertices and UVs;
+  the layer's new pixels are cut to that rectangle (anything painted outside it is cut and
+  reported with what to do: redo the mesh's outline). A mesh turned or scaled against its
+  picture, or whose region is whitespace-stripped, keeps its old pixels and is reported.
+- **New layers** become a slot and region on the root, placed like the first import, drawn just
+  above the slot of the nearest layer under it in the PSD that the rig has (none: at the back);
+  names made unique against the rig's slots and regions.
+- **Kept**: regions no visible PSD layer matches (deleted or hidden in Photoshop, or never from
+  it) keep their pixels and are listed. Nothing is deleted.
+- **The atlas** is packed again from all regions (new, updated, kept) as the first import packs
+  (`io/pack`), its pages named after the skeleton. Kept regions keep their `offsets` and
+  `index` fields. Refused, with the reason, when the atlas is premultiplied or a region that
+  would be copied is packed turned (`rotate`): the rig's file is not changed.
+- **Exact pixels (new, `io/png`)**: page PNGs are decoded and encoded by the editor itself (the
+  browser's streams for deflate), not through a canvas, which rounds semi-transparent colours.
+  Kept regions are copied bit for bit; Save writes pages through it too (also for a first
+  import). 8-bit RGBA, RGB, grey, grey+alpha and palette PNGs are read; others are refused.
+- **Undo**: the skeleton change is one History step; the atlas, pages and the files Save writes
+  follow it: undoing the step brings the old atlas back (and Save writes it again, so files on
+  disk always match the skeleton), redoing brings the new one.
+- **How**: dropping a `.psd` on an open document re-imports it into that document; Open… with a
+  `.psd` still starts a new rig. The status line and notes say what was updated, moved, added,
+  kept and cut.
+- **Not in this step:** layers becoming bones, matching renamed layers, re-importing into a
+  skeleton without an atlas.
+
+### Steps
+
+1. `io/png.ts` (`decodePng`, `encodePng`) with tests (round trip, every colour type read, the
+   stickman page, refusals); Save writes pages with it.
+2. `edit/reimport.ts` (pure): the plan of a re-import from the rig, its setup-pose bone
+   matrices, the atlas's region sizes and the PSD's layers: the edit, the images to pack, the
+   report. Tests on `figure.psd` and variants written in the test: moved, repainted larger,
+   added, hidden; a meshed and weighted layer; a keyed animation; the root moved; refusals.
+3. Session and app: re-import on drop, the atlas following undo and redo, Save.
+4. On screen: the figure imported, a layer meshed and weighted, an animation keyed; a changed
+   PSD dropped: updated, added, kept; undo and redo; saved and read back.
+
+### Step 14 results
+
+1. `io/png.ts` (`decodePng`, `encodePng`, `PngRefused`): 8-bit grey, RGB, palette, grey + alpha
+   and RGBA, with `tRNS`; every chunk's CRC checked; deflate through `CompressionStream` and
+   `DecompressionStream` (browser and Node alike). `tests/png.test.ts`, 5 tests on PNGs written
+   in the test with Node's zlib (independent of the encoder): each colour type, each row filter
+   (Paeth's tie included), a bit-exact round trip with semi-transparent and fully transparent
+   colours, the stickman's page at its atlas size, the refusals. Planted bugs (Average without
+   its halving; Paeth's second tie broken the other way) fail them. **Found while planting:**
+   changing Paeth's first comparison from `<=` to `<` is not a bug (a tie there means the
+   predictors are equal), so the tie test targets the second. Save now writes pages through it.
+2. **Changed from the plan:** the planner is `ui/psdReimport.ts`, not `edit/reimport.ts`: it reads
+   `io/psd`'s layers and the import's naming (`ui/psdImport`: `layerNames`, `layerBlend`,
+   `layerCentre`, now shared), which the `edit` layer may not import; it is pure all the same
+   (`planReimport`, `rebuildAtlas`, `meshPicture`, `cutLayer`). `io/pack` takes extra fields per
+   image (a kept region's `offsets`, `index`). `tests/fixtures/psd.ts` now builds the figure from
+   `figureLayers()` and `writeFigure()` (the committed file unchanged, byte for byte).
+   `tests/psdReimport.test.ts`, 6 tests: the same file changes nothing (skeleton text and pixels
+   equal); a moved head on a turned bone lands where its layer is now, its slot's bone and the
+   animation untouched; a body repainted larger about its centre is resized, not moved; a new belt
+   is drawn just above the body and a hat above the head; a layer hidden in the file is kept bit
+   for bit; a meshed, weighted leg keeps its geometry and weights, its new pixels cut to its
+   picture, the painted pixels past it reported; with the root moved, nothing moves back and a new
+   layer lands where the import would put it; premultiplied atlases and kept turned regions are
+   refused; the mesh picture fit and the cut. Four planted bugs fail them (the canvas offset
+   ignored; the mesh rectangle's top not flipped; new slots appended last, which passed until a
+   new layer in the middle of the stack was added to the test; kept pixels copied with x and y
+   swapped).
+3. Session: `reimportPsd`; each page's exact pixels kept (`pageData`, from its file or as made);
+   the atlas, pages and the files Save owes swap as undo and redo cross the re-import's step (a
+   step even when only pixels changed). A PSD dropped on an open rig re-imports; Open… with a PSD
+   still starts a new rig.
+4. On screen: `figure.psd` imported; hip and knee bones added, the left leg made a weighted mesh,
+   the head put on a turned neck bone, an animation keyed. The changed figure (head moved, body
+   larger, a belt, a hat, the left leg repainted green and longer, the right arm hidden) dropped
+   on the window: "6 layers updated (1 moved), 2 added (belt, hat), 1 kept from before"; draw
+   order shadow, leg L, leg R, body, belt, arm L, arm R, head, hat; the mesh and the animation
+   unchanged; a note for the 28 leg pixels cut. Undo: the very skeleton and atlas before, the
+   old pixels on the stage; redo: the new. Saved (files captured): `figure.json`,
+   `figure.atlas.txt`, a 652 × 164 `figure.png`; opened again from them: the same skeleton text
+   and atlas, no notes, nothing to save.
+
 ## Wrap-up (owner decisions, 2026-10-06)
 
 E4 finishes with three more steps and one closing verification; two items are parked, not

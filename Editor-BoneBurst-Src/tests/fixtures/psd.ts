@@ -19,17 +19,25 @@ function blob(w: number, h: number, rgb: readonly number[], round = true) {
   return { width: w, height: h, data };
 }
 
-const part = (name: string, left: number, top: number, w: number, h: number, rgb: readonly number[], more: Partial<Layer> = {}, round = true): Layer =>
+export const part = (name: string, left: number, top: number, w: number, h: number, rgb: readonly number[], more: Partial<Layer> = {}, round = true): Layer =>
   ({ name, left, top, right: left + w, bottom: top + h, imageData: blob(w, h, rgb, round), ...more });
 
-export function figurePsd(): Uint8Array {
-  const W = 300, H = 400;
-  return writePsdUint8Array({ width: W, height: H, imageData: { width: W, height: H, data: new Uint8ClampedArray(W * H * 4) }, children: [
+/** The figure's layers (bottom first, groups as Photoshop nests them), for a test to change and write again. */
+export function figureLayers(): Layer[] {
+  return [
     part("shadow", 90, 370, 120, 24, [0, 0, 0], { opacity: 0.4, blendMode: "multiply" }),
     { name: "legs", children: [part("leg L", 115, 250, 30, 130, [60, 70, 140]), part("leg R", 155, 250, 30, 130, [60, 70, 140])] },
     part("body", 100, 120, 100, 150, [200, 80, 70], {}, false),
     { name: "arms", children: [part("arm L", 60, 130, 40, 120, [230, 190, 160]), part("arm R", 200, 130, 40, 120, [230, 190, 160])] },
     part("head", 105, 20, 90, 100, [240, 200, 170]),
     part("sketch", 0, 0, 50, 50, [255, 0, 255], { hidden: true }),
-  ] }, { generateThumbnail: false });
+  ];
 }
+
+/** A 300 × 400 PSD of `layers`. */
+export function writeFigure(layers: Layer[]): Uint8Array {
+  const W = 300, H = 400;
+  return writePsdUint8Array({ width: W, height: H, imageData: { width: W, height: H, data: new Uint8ClampedArray(W * H * 4) }, children: layers }, { generateThumbnail: false });
+}
+
+export const figurePsd = (): Uint8Array => writeFigure(figureLayers());

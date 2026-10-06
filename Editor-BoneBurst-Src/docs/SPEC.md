@@ -183,7 +183,12 @@ Weights (step 6): meshes bind to bones by distance and are reweighted on the set
 (`edit/weights`, `edit/meshLayout`), whose bone matrices the session gives the edits as data. A
 Photoshop file (step 7) opens as a new rig: `io/psd` reads its layers with `ag-psd` (D7),
 `io/pack` packs them into atlas pages, `edit/layerRig` makes a slot and region per layer, and
-the first save writes the atlas and pages beside the skeleton (`ui/psdImport`).
+the first save writes the atlas and pages beside the skeleton (`ui/psdImport`). Dropped on the
+open rig (step 14), the PSD is re-imported (`ui/psdReimport`, pure): layers match atlas regions by
+the import's names; regions take the new pixels, place and size; meshes keep their geometry and
+weights and take the new pixels cut to their picture; new layers become slots; the rest is kept.
+The atlas is packed again and follows the re-import's undo step. Page PNGs are decoded and
+encoded by `io/png` (exact; no canvas), for re-imports and every save of pages.
 
 **Docking (D6, E4):** the window is the toolbar and status line around a Dockview dock
 (`dockview-core`; with `ag-psd`, D7, the npm runtime dependencies). Every panel is a Dockview panel, under an id

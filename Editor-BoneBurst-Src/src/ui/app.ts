@@ -12,6 +12,7 @@ import type { Tool } from "./stage/gizmo";
 import { isTyping, Stage } from "./stage/stage";
 import { Timeline } from "./timeline/timeline";
 import { animationDuration, timeFrame } from "@/model/timelines";
+import { encodePng } from "@/io/png";
 import { iconButton } from "./icons";
 import { isPanelId, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
 import { type PanelContent, Workspace } from "./workspace/workspace";
@@ -49,7 +50,7 @@ export function mountApp(root: HTMLElement): void {
   fileInput.multiple = true;
   fileInput.accept = ".json,.atlas,.txt,.png,.jpg,.jpeg,.webp,.psd";
   fileInput.hidden = true;
-  const openBtn = iconButton(button("Open…", "Open a skeleton with its atlas and images, or a Photoshop file to start a rig from (⌘O)", () => fileInput.click()), "open");
+  const openBtn = iconButton(button("Open…", "Open a skeleton with its atlas and images, or a Photoshop file to start a rig from (⌘O). Drop a PSD on an open rig to bring its changes in", () => fileInput.click()), "open");
   const saveBtn = iconButton(button("Save", "Save the skeleton JSON, with the atlas and pages of an imported PSD (⌘S)", () => void save()), "save");
   const undoBtn = iconButton(button("Undo", "", () => { session.history?.undo(); session.changed(); }), "undo");
   const redoBtn = iconButton(button("Redo", "", () => { session.history?.redo(); session.changed(); }), "redo");
@@ -152,9 +153,19 @@ export function mountApp(root: HTMLElement): void {
   }
   setTool("move");
 
-  async function open(files: readonly Source[]): Promise<void> {
+  async function open(files: readonly Source[], dropped = false): Promise<void> {
     // Images alone, onto an open document: references (E4 step 9), not a new document.
     const picked = pickFiles(files);
+    // A PSD dropped on an open rig brings its changes in (E4 step 14); Open… with one starts a new rig.
+    if (dropped && session.doc && picked.psd && !picked.skeleton && !picked.atlas) {
+      try {
+        say(await session.reimportPsd(picked.psd));
+        stage.redraw();
+      } catch (err) {
+        say(err instanceof Error ? err.message : String(err));
+      }
+      return;
+    }
     if (session.doc && picked.images.size && !picked.skeleton && !picked.atlas && !picked.psd && !picked.sidecar) {
       say(await session.addReferenceImages([...picked.images.values()], [stage.camera.x, stage.camera.y]));
       return;
@@ -193,13 +204,9 @@ export function mountApp(root: HTMLElement): void {
     say(`Saved ${session.name}.json${also}, ${session.name}.atlas.txt and ${made.pages.map((p) => p.name).join(", ")}.`);
   }
 
-  /** An atlas page as a PNG file. */
+  /** An atlas page as a PNG file, written exactly (io/png: no canvas rounding semi-transparent colours). */
   async function png(p: Page): Promise<Blob> {
-    const c = document.createElement("canvas");
-    c.width = p.width;
-    c.height = p.height;
-    c.getContext("2d")!.putImageData(new ImageData(new Uint8ClampedArray(p.pixels), p.width, p.height), 0, 0);
-    return new Promise((done, fail) => c.toBlob((b) => (b ? done(b) : fail(new Error("The page could not be encoded."))), "image/png"));
+    return new Blob([await encodePng(p) as BlobPart], { type: "image/png" });
   }
 
   function refresh(): void {
@@ -267,7 +274,7 @@ export function mountApp(root: HTMLElement): void {
     e.preventDefault();
     main.classList.remove("dropping");
     const files = [...(e.dataTransfer?.files ?? [])];
-    if (files.length) void open(files.map(fileSource));
+    if (files.length) void open(files.map(fileSource), true);
   });
   window.addEventListener("beforeunload", (e) => { if (session.dirty) e.preventDefault(); });
 
