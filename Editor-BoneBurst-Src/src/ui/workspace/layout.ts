@@ -29,9 +29,9 @@ const DEFAULTS: Readonly<Record<PanelId, readonly Placement[]>> = {
   ai: [{ referencePanel: "properties", direction: "within" }, { direction: "right" }],
   // Behind the rig panel: the default layout looks as before (E7 step 1).
   history: [{ referencePanel: "rigTree", direction: "within" }, { direction: "left" }],
-  // Behind the rig panel and the timeline: the default layout looks as before.
+  // Behind the rig panel: the default layout looks as before. (Behind the timeline resized its group and squashed the stage.)
   skins: [{ referencePanel: "rigTree", direction: "within" }, { direction: "left" }],
-  animations: [{ referencePanel: "timeline", direction: "within" }, { direction: "below" }],
+  animations: [{ referencePanel: "rigTree", direction: "within" }, { direction: "left" }],
 };
 
 /** The order the default layout adds the panels in. */
