@@ -1,7 +1,5 @@
 import { EDITOR_NAME, titleFor } from "@/about";
 import { Inspector } from "./panels/inspector";
-import type { Page } from "@/io/pack";
-import { sidecarName } from "@/io/sidecar";
 import { pickFiles, spineFolderProblems } from "./files";
 import { Outline } from "./panels/outline";
 import { type PreferenceValues, Preferences } from "./preferences";
@@ -9,14 +7,13 @@ import { PreferencesDialog } from "./preferencesDialog";
 import { HistoryPanel } from "./panels/history";
 import { References } from "./panels/references";
 import { droppedFiles } from "./dropFiles";
-import { fileSource, Session, type Source } from "./session";
+import { fileSource, type ProjectFile, Session, type Source } from "./session";
 import type { Space, Tool } from "./stage/gizmo";
 import { keysOf, matching, type ShortcutId } from "./shortcuts";
 import { ShortcutsSheet } from "./shortcutsSheet";
 import { isTyping, Stage } from "./stage/stage";
 import { Timeline } from "./timeline/timeline";
 import { animationDuration, timeFrame } from "@/model/timelines";
-import { encodePng } from "@/io/png";
 import { AiBridge, DEFAULT_BRIDGE } from "./agent/bridge";
 import { ChatClient } from "./agent/chat";
 import { sessionContext } from "./agent/context";
@@ -28,7 +25,9 @@ import { TransformStrip } from "./stage/transformStrip";
 import { lookOf } from "./stage/look";
 import { DIVIDER, MenuBar } from "./menubar";
 import { icon, iconButton } from "./icons";
-import { ExportRefused, exportToUnity } from "./unityExport";
+import type { View } from "@/edit/sidecar";
+import { download, saveProject } from "./project";
+import { ExportRefused, exportFiles, exportToUnity } from "./unityExport";
 import { Autosaver, clearRecovery, readRecovery, sourcesOf } from "./recovery";
 import { clipboard, copyPose, pastePoseHere } from "./clipboard";
 import { brush, resizeBrush } from "./stage/weightBrush";
@@ -68,15 +67,15 @@ export function mountApp(root: HTMLElement): void {
   const fileInput = document.createElement("input");
   fileInput.type = "file";
   fileInput.multiple = true;
-  fileInput.accept = ".json,.atlas,.txt,.png,.jpg,.jpeg,.webp,.psd";
+  fileInput.accept = ".bbdata,.json,.atlas,.txt,.png,.jpg,.jpeg,.webp,.psd";
   fileInput.hidden = true;
   // File ▸ Import Spine Folder…: a whole export folder (skeleton .json, .atlas, page images) at once.
   const folderInput = document.createElement("input");
   folderInput.type = "file";
   folderInput.webkitdirectory = true;
   folderInput.hidden = true;
-  const openBtn = iconButton(button("Open…", `Open a skeleton with its atlas and images, or a Photoshop file to start a rig from (${keysOf("open")}). Drop a PSD on an open rig to bring its changes in`, () => fileInput.click()), "open");
-  const saveBtn = iconButton(button("Save", `Save the skeleton JSON, with the atlas and pages of an imported PSD (${keysOf("save")})`, () => void save()), "save");
+  const openBtn = iconButton(button("Open…", `Open a project (.bbdata), a Spine skeleton with its atlas and images, or a Photoshop file to start a rig from (${keysOf("open")}). Drop a PSD on an open rig to bring its changes in`, () => void openNative()), "open");
+  const saveBtn = iconButton(button("Save", `Save the project (.bbdata): the rig, its atlas and pages, guides and references (${keysOf("save")}). Spine JSON and Unity go through File ▸ Export`, () => void save()), "save");
   // Export to Unity (E5 step 8): into the folder chosen once; Shift-click chooses another.
   const unityBtn = button("Export to Unity…", "Export to Unity…: write the skeleton, atlas and pages into your Unity folder, where the BoneBurst import rebakes them (Shift-click: choose another folder)", () => {});
   unityBtn.setAttribute("aria-label", "Export to Unity…");
@@ -195,9 +194,11 @@ export function mountApp(root: HTMLElement): void {
   const menubar = new MenuBar([
     { label: "File", items: () => [
       { label: "Import Spine Folder…", run: () => folderInput.click() },
-      { label: "Open Files…", keys: keysOf("open"), run: () => fileInput.click() },
-      { label: "Save", keys: keysOf("save"), disabled: !session.doc, run: () => void save() },
+      { label: "Open…", keys: keysOf("open"), run: () => void openNative() },
+      { label: "Save Project", keys: keysOf("save"), disabled: !session.doc, run: () => void save() },
+      { label: "Save Project As…", disabled: !session.doc, run: () => void save(true) },
       { label: "Close File", disabled: !session.doc, run: () => tabs.closeCurrent() },
+      { label: "Export Spine JSON…", disabled: !session.doc, run: () => void exportSpine() },
       { label: "Export to Unity…", disabled: !session.doc, run: () => void toUnity(false) },
       { label: "Export to Unity, another folder…", disabled: !session.doc, run: () => void toUnity(true) },
     ] },
@@ -353,7 +354,7 @@ export function mountApp(root: HTMLElement): void {
   }
   setTool("move");
 
-  async function open(files: readonly Source[], dropped = false): Promise<void> {
+  async function open(files: readonly Source[], dropped = false, project: ProjectFile | null = null): Promise<void> {
     // Images alone, onto an open document: references (E4 step 9), not a new document.
     const picked = pickFiles(files);
     // A PSD dropped on an open rig brings its changes in (E4 step 14); Open… with one starts a new rig.
@@ -374,6 +375,7 @@ export function mountApp(root: HTMLElement): void {
     const parked = tabs.park();
     try {
       await session.open(files);
+      session.projectFile = project;
       stage.opened();
       say(`Opened ${session.name}.`);
     } catch (err) {
@@ -382,28 +384,40 @@ export function mountApp(root: HTMLElement): void {
     }
   }
 
-  function download(name: string, blob: Blob): void {
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = name;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  /** The view a project keeps: the camera, the skin and the animation shown. */
+  const viewNow = (): View => ({ camera: stage.camera, ...(session.skin ? { skin: session.skin } : {}), ...(session.animation ? { animation: session.animation.name } : {}) });
+
+  /** ⌘S: the project, to its file (File ▸ Save Project As… picks another). */
+  async function save(again = false): Promise<void> {
+    if (!session.history) return;
+    try {
+      const file = await saveProject(session, viewNow(), again);
+      say(file === null ? "Save cancelled." : `Saved ${file}.`);
+    } catch (err) {
+      say(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
-  /** The skeleton; with it, once, an atlas and pages the editor made (a PSD import). */
-  async function save(): Promise<void> {
-    if (!session.history) return;
-    const made = session.generated;
-    download(`${session.name}.json`, new Blob([session.save()], { type: "application/json" }));
-    // The sidecar beside it, when it holds something and changed (E4 step 8).
-    const side = session.sidecarToSave({ camera: stage.camera, ...(session.skin ? { skin: session.skin } : {}), ...(session.animation ? { animation: session.animation.name } : {}) });
-    if (side !== null) download(sidecarName(`${session.name}.json`), new Blob([side], { type: "application/json" }));
-    const also = side !== null ? `, ${sidecarName(`${session.name}.json`)}` : "";
-    if (!made) { say(`Saved ${session.name}.json${also}.`); return; }
-    download(`${session.name}.atlas.txt`, new Blob([made.atlasText], { type: "text/plain" }));
-    for (const p of made.pages) download(p.name, await png(p));
-    session.generated = null;
-    say(`Saved ${session.name}.json${also}, ${session.name}.atlas.txt and ${made.pages.map((p) => p.name).join(", ")}.`);
+  /** File ▸ Export Spine JSON…: the skeleton, atlas and pages as Spine reads them, not marked saved. */
+  async function exportSpine(): Promise<void> {
+    try {
+      const files = await exportFiles(session);
+      for (const f of files) download(f.name, new Blob([f.data as BlobPart], { type: typeof f.data === "string" ? "text/plain" : "image/png" }));
+      say(`Exported ${files.map((f) => f.name).join(", ")}.`);
+    } catch (err) {
+      say(err instanceof ExportRefused ? err.message : `Export failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /** Open… with the browser's file picker where it has one, so a project it opens is saved back to the same file. */
+  async function openNative(): Promise<void> {
+    const pick = (window as unknown as { showOpenFilePicker?: (o: { multiple: boolean }) => Promise<(ProjectFile & { getFile(): Promise<File> })[]> }).showOpenFilePicker;
+    if (!pick || navigator.webdriver) { fileInput.click(); return; }
+    let handles: Awaited<ReturnType<typeof pick>>;
+    try { handles = await pick.call(window, { multiple: true }); } catch { return; }
+    const files = await Promise.all(handles.map((h) => h.getFile()));
+    const project = handles.length === 1 && /\.bbdata$/i.test(files[0]!.name) ? handles[0]! : null;
+    await open(files.map(fileSource), false, project);
   }
 
   async function toUnity(choose: boolean): Promise<void> {
@@ -413,11 +427,6 @@ export function mountApp(root: HTMLElement): void {
     } catch (err) {
       say(err instanceof ExportRefused ? err.message : `Export failed: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }
-
-  /** An atlas page as a PNG file, written exactly (io/png: no canvas rounding semi-transparent colours). */
-  async function png(p: Page): Promise<Blob> {
-    return new Blob([await encodePng(p) as BlobPart], { type: "image/png" });
   }
 
   function refresh(): void {
@@ -536,7 +545,7 @@ export function mountApp(root: HTMLElement): void {
   // Every shortcut is a row of `SHORTCUTS` (E7 step 2); a handler returns false when it does not
   // apply here, and the next matching row is tried.
   const shortcuts: Record<ShortcutId, () => boolean | void> = {
-    open: () => fileInput.click(),
+    open: () => void openNative(),
     save: () => void save(),
     preferences: () => prefsDialog.open(),
     undo: () => undoBtn.click(),

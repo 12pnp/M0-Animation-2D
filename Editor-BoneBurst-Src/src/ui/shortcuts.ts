@@ -38,8 +38,8 @@ const cmd = (keys: string | readonly string[], extra: Partial<Chord> = {}): Chor
 const plain = (keys: string | readonly string[], extra: Partial<Chord> = {}): Chord => ({ mod: false, alt: false, keys: typeof keys === "string" ? [keys] : keys, ...extra });
 
 export const SHORTCUTS = [
-  { id: "open", keys: "⌘O", group: "File", what: "Open a skeleton, an atlas with its images, or a PSD", chord: cmd("o"), whileTyping: true },
-  { id: "save", keys: "⌘S", group: "File", what: "Save", chord: cmd("s"), whileTyping: true },
+  { id: "open", keys: "⌘O", group: "File", what: "Open a project, a skeleton with its atlas and images, or a PSD", chord: cmd("o"), whileTyping: true },
+  { id: "save", keys: "⌘S", group: "File", what: "Save the project", chord: cmd("s"), whileTyping: true },
   { id: "preferences", keys: "⌘,", group: "Edit", what: "Preferences", chord: { mod: true, keys: [","], code: "Comma" }, whileTyping: true },
   { id: "undo", keys: "⌘Z", group: "Edit", what: "Undo", chord: cmd("z", { shift: false }) },
   { id: "redo", keys: "⇧⌘Z", group: "Edit", what: "Redo", chord: cmd("z", { shift: true }) },

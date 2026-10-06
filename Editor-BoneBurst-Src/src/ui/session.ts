@@ -1,10 +1,10 @@
 import { readAtlas } from "@/io/atlas";
+import { unpackBbdata } from "@/io/bbdata";
 import { readSidecar, writeSidecar } from "@/io/sidecar";
-import { addReference, hasContent, type View, viewOf, withView } from "@/edit/sidecar";
+import { addReference, type View, viewOf, withView } from "@/edit/sidecar";
 import { EMPTY_SIDECAR, type Sidecar } from "@/model/sidecar";
 import type { Page } from "@/io/pack";
 import { readSkeleton } from "@/io/skeletonRead";
-import { writeSkeleton } from "@/io/skeletonWrite";
 import type { LocalPose } from "@/edit/boneKeys";
 import { History } from "@/edit/history";
 import type { BoneWorlds } from "@/edit/meshLayout";
@@ -66,14 +66,17 @@ export class Session {
   weightBone: string | null = null;
   /** The skeleton's sidecar (SPEC §3): view, guides, references, notes. Not the document, not undone. */
   sidecar: Sidecar = EMPTY_SIDECAR;
-  /** Whether the sidecar came from a file (then it is saved even when empty), and its text as last read or written. */
-  private sidecarFromFile = false;
+  /** The sidecar's content as last read or written: what tells it changed. */
   private sidecarWritten = "";
   /** Preferences the session takes (E4 step 10): undo steps for the next document, new references' opacity. */
   undoSteps = 500;
   referenceOpacity = 0.5;
   /** Reference pictures by reference path; a reference without one is missing (its file not given). */
   referenceImages = new Map<string, ImageBitmap>();
+  /** The files those pictures came from, kept as given to be written into the project. */
+  referenceBlobs = new Map<string, Blob>();
+  /** The project file this document was opened from or saved to: ⌘S writes to it again (File System Access). */
+  projectFile: ProjectFile | null = null;
   /** The camera the opened sidecar asked for, for the stage to take once. */
   openedCamera: View["camera"] | null = null;
   /** An atlas and its pages the editor made (a PSD import), to be written with the next save. */
@@ -142,22 +145,6 @@ export class Session {
     this.changed();
   }
 
-  /**
-   * The sidecar's text to save beside the skeleton, with `view` taken now; null when there is
-   * nothing to save (no content and none was opened) or it is what was last written.
-   */
-  sidecarToSave(view: View): string | null {
-    if (!hasContent(this.sidecar) && !this.sidecarFromFile) return null;
-    const next = withView(this.sidecar, view);
-    const text = writeSidecar(next);
-    if (text === this.lastSidecarText) return null;
-    this.sidecar = next;
-    this.lastSidecarText = text;
-    this.sidecarWritten = contentText(next);
-    this.changed();
-    return text;
-  }
-  private lastSidecarText = "";
 
   onChange(f: () => void): () => void {
     this.listeners.add(f);
@@ -357,6 +344,12 @@ export class Session {
 
   /** Open a skeleton, its atlas and its pages from the given files. Throws when there is no skeleton. */
   async open(files: readonly Source[]): Promise<void> {
+    // A project file holds the same files an export folder does: open those.
+    const project = files.find((f) => /\.bbdata$/i.test(f.name));
+    if (project) {
+      await this.open(unpackBbdata(new Uint8Array(await (await project.blob()).arrayBuffer())).map(sourceOf));
+      return;
+    }
     const picked = pickFiles(files);
     if (picked.psd && !picked.skeleton) { await this.openPsd(picked.psd); return; }
     if (!picked.skeleton && !picked.atlas) throw new Error("Choose a Spine skeleton (.json) with its .atlas and page images, or an atlas with its images to start a new skeleton.");
@@ -398,7 +391,11 @@ export class Session {
       this.takeSidecar(sidecar);
       // The references' pictures: opened images the atlas does not use, by file name.
       const { found, missing } = matchReferences(sidecar.references.map((r) => r.path), [...picked.images.keys()], atlas?.pages.map((p) => p.name) ?? []);
-      for (const [path, image] of found) this.referenceImages.set(path, await createImageBitmap(await picked.images.get(image)!.blob(), { premultiplyAlpha: "premultiply" }));
+      for (const [path, image] of found) {
+        const blob = await picked.images.get(image)!.blob();
+        this.referenceImages.set(path, await createImageBitmap(blob, { premultiplyAlpha: "premultiply" }));
+        this.referenceBlobs.set(path, blob);
+      }
       for (const path of missing) this.issues.push({ where: picked.sidecar.name, message: `reference "${path}" was not given; kept, not shown` });
       this.changed();
     }
@@ -415,11 +412,12 @@ export class Session {
       const bitmap = await createImageBitmap(await f.blob(), { premultiplyAlpha: "premultiply" });
       const name = f.name.toLowerCase();
       const missing = this.sidecar.references.find((r) => referenceFile(r.path).toLowerCase() === name && !this.referenceImages.has(r.path));
-      if (missing) { this.referenceImages.set(missing.path, bitmap); filled.push(f.name); continue; }
+      if (missing) { this.referenceImages.set(missing.path, bitmap); this.referenceBlobs.set(missing.path, await f.blob()); filled.push(f.name); continue; }
       const path = f.name;
       this.referenceImages.get(path)?.close();
       this.sidecar = addReference(this.sidecar, { path, x: centre[0], y: centre[1], scale: 1, opacity: this.referenceOpacity });
       this.referenceImages.set(path, bitmap);
+      this.referenceBlobs.set(path, await f.blob());
       added.push(f.name);
     }
     this.changed();
@@ -430,9 +428,7 @@ export class Session {
   /** The opened sidecar, and the view it keeps: skin and animation now, the camera for the stage. */
   private takeSidecar(s: Sidecar): void {
     this.sidecar = s;
-    this.sidecarFromFile = true;
     this.sidecarWritten = contentText(s);
-    this.lastSidecarText = writeSidecar(s);
     const v = viewOf(s), doc = this.doc!;
     if (v.skin !== undefined && doc.skins?.some((k) => k.name === v.skin)) this.skin = v.skin === "default" ? null : v.skin;
     if (v.animation !== undefined && doc.animations?.some((a) => a.name === v.animation)) this.shown = v.animation;
@@ -466,12 +462,12 @@ export class Session {
     this.pageData = new Map();
     this.generated = null;
     this.sidecar = EMPTY_SIDECAR;
-    this.sidecarFromFile = false;
     this.sidecarWritten = contentText(EMPTY_SIDECAR);
-    this.lastSidecarText = "";
     this.openedCamera = null;
     for (const b of this.referenceImages.values()) b.close();
     this.referenceImages = new Map();
+    this.referenceBlobs = new Map();
+    this.projectFile = null;
     this.history = new History(skeleton, this.undoSteps);
     // A skeleton started from an atlas or a PSD is new: unsaved until saved.
     this.saved = fromFile ? this.history.doc : null;
@@ -551,14 +547,36 @@ export class Session {
     return !!s.history && (s.history.doc !== s.saved || contentText(s.sidecar) !== s.sidecarWritten);
   }
 
-  /** The document as Spine JSON text; marks it saved. */
-  save(): string {
+  /** The document is saved (a project written): undoing back to it is clean again. */
+  markSaved(): void {
     if (!this.history) throw new Error("Nothing is open.");
-    const text = writeSkeleton(this.history.doc);
     this.saved = this.history.doc;
     this.changed();
+  }
+
+  /**
+   * The sidecar's text for a project, with `view` taken now; always written (a project keeps its
+   * view). Marks the sidecar written.
+   */
+  projectSidecar(view: View): string {
+    const next = withView(this.sidecar, view);
+    const text = writeSidecar(next);
+    this.sidecar = next;
+    this.sidecarWritten = contentText(next);
     return text;
   }
+}
+
+/** A file kept for the project: a handle the browser lets the editor write again without asking. */
+export interface ProjectFile {
+  readonly name: string;
+  createWritable(): Promise<{ write(data: Blob | Uint8Array): Promise<void>; close(): Promise<void> }>;
+}
+
+/** A project's file as the Source the open path reads. */
+function sourceOf(f: { name: string; data: Uint8Array }): Source {
+  const blob = () => new Blob([f.data as BlobPart]);
+  return { name: f.name, text: async () => new TextDecoder().decode(f.data), blob: async () => blob() };
 }
 
 /** A document set aside by `Session.capture`: opaque to everything but the session. */

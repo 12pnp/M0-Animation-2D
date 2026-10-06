@@ -71,8 +71,8 @@ test("autosave keeps unsaved work; after a reload Restore gives it back unsaved;
   await expect(page).toHaveTitle(/^• Stickman_IK\.json/);
 
   // Saved: nothing unsaved, the copy cleared.
-  const [download] = await Promise.all([page.waitForEvent("download"), menuItem(page, "File", "Save")]);
-  expect(download.suggestedFilename()).toBe("Stickman_IK.json");
+  const [download] = await Promise.all([page.waitForEvent("download"), menuItem(page, "File", "Save Project(?! As)")]);
+  expect(download.suggestedFilename()).toBe("Stickman_IK.bbdata");
   await expect.poll(() => kept(page), { timeout: 8000 }).toBeNull();
   await page.reload();
   await page.waitForTimeout(500);
@@ -88,7 +88,7 @@ test("autosave keeps unsaved work; after a reload Restore gives it back unsaved;
   await expect(page.locator(".recovery-bar")).toHaveCount(0);
   expect(await kept(page)).toBeNull();
 
-  // A PSD rig (unsaved from the start) restored: Save still writes its atlas and pages.
+  // A PSD rig (unsaved from the start) restored: Save Project still keeps its atlas and pages.
   await page.locator("input[type=file]:not([webkitdirectory])").setInputFiles(FIGURE);
   await expect(page.locator(".outline .row", { hasText: "arm L" })).toBeVisible();
   await expect.poll(() => kept(page), { timeout: 8000 }).toMatch(/^figure:/);
@@ -98,6 +98,6 @@ test("autosave keeps unsaved work; after a reload Restore gives it back unsaved;
   expect(await page.evaluate(() => (window as unknown as Live).boneburst.session.generated?.pages.length ?? 0)).toBe(1);
   const names: string[] = [];
   page.on("download", (d) => names.push(d.suggestedFilename()));
-  await menuItem(page, "File", "Save");
-  await expect.poll(() => names.slice().sort()).toEqual(["figure.atlas.txt", "figure.json", "figure.png"]);
+  await menuItem(page, "File", "Save Project(?! As)");
+  await expect.poll(() => names).toEqual(["figure.bbdata"]);
 });

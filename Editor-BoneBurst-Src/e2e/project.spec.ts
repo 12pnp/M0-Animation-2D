@@ -1,0 +1,55 @@
+import { mkdtempSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { expect, type Page, test } from "@playwright/test";
+
+/** The project file (docs/BBDATA-PLAN.md): ⌘S writes one .bbdata; opening it gives the same rig; Export writes the Spine files. */
+
+type Live = { boneburst: { session: { doc: { bones: { name: string; x?: number }[] } | null; dirty: boolean } } };
+
+const hipsX = (page: Page) => page.evaluate(() => (window as unknown as Live).boneburst.session.doc?.bones.find((b) => b.name === "hips")?.x ?? null);
+const dirty = (page: Page) => page.evaluate(() => (window as unknown as Live).boneburst.session.dirty);
+
+async function menuItem(page: Page, menu: string, item: string): Promise<void> {
+  await page.getByRole("button", { name: menu, exact: true }).click();
+  await page.getByRole("menuitem", { name: new RegExp(`^${item}`) }).click();
+}
+
+test("Save Project writes one .bbdata that opens as the same rig; Export Spine JSON writes the three Spine files", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  const before = await hipsX(page);
+  await page.evaluate(() => {
+    const s = (window as unknown as { boneburst: { session: { history: { apply(l: string, f: (d: unknown) => unknown): void }; changed(): void } } }).boneburst.session;
+    s.history.apply("Move hips", (d) => {
+      const doc = d as { bones: { name: string; x?: number }[] };
+      return { ...doc, bones: doc.bones.map((b) => (b.name === "hips" ? { ...b, x: (b.x ?? 0) + 41 } : b)) };
+    });
+    s.changed();
+  });
+  await expect.poll(() => hipsX(page)).toBe((before ?? 0) + 41);
+  expect(await dirty(page)).toBe(true);
+
+  const [saved] = await Promise.all([page.waitForEvent("download"), menuItem(page, "File", "Save Project(?! As)")]);
+  expect(saved.suggestedFilename()).toBe("Stickman_IK.bbdata");
+  const path = join(mkdtempSync(join(tmpdir(), "bbdata-")), "Stickman_IK.bbdata");
+  await saved.saveAs(path);
+  expect(await dirty(page)).toBe(false);
+
+  // Reload, open the project alone: the edit is there, nothing else was given.
+  await page.reload();
+  await page.locator('input[type=file][accept*=".bbdata"]').setInputFiles(path);
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  await expect.poll(() => hipsX(page)).toBe((before ?? 0) + 41);
+  expect(await dirty(page)).toBe(false);
+  expect(readFileSync(path).subarray(0, 8).toString()).toBe("BBDATA1\n");
+
+  // Export writes the Spine files.
+  const names: string[] = [];
+  page.on("download", (d) => names.push(d.suggestedFilename()));
+  await menuItem(page, "File", "Export Spine JSON");
+  await expect.poll(() => names.slice().sort()).toEqual(["Stickman_IK.atlas.txt", "Stickman_IK.json", "Stickman_IK_tex.png"]);
+});

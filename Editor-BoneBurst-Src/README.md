@@ -7,7 +7,8 @@ BoneBurst in Unity. **MIT.**
 ```mermaid
 flowchart LR
     PSD["a PSD"] -->|"import"| ED["BoneBurst Editor"]
-    JSON["name.json · name.atlas.txt · pages"] <-->|"open · Save"| ED
+    BB["name.bbdata<br/>the project"] <-->|"open · Save (⌘S)"| ED
+    JSON["name.json · name.atlas.txt · pages"] <-->|"open · Export Spine JSON…"| ED
     SIDE["name.bb.json<br/>view, guides, references"] <--> ED
     AI["an AI: Claude Code, Claude Desktop, Ask AI"] -->|"MCP · mcp/bridge.mjs"| ED
     ED -->|"Export to Unity…"| UNITY["Unity folder → BoneBurst rebake"]
@@ -25,7 +26,7 @@ npm start
 the AI bridge if none is running, and opens the browser; Ctrl+C stops it. Use Chrome or Edge
 (Export to Unity uses the browser's folder picker, which Safari and Firefox do not have). Working
 on the editor itself: `npm run dev` (the same address, so preferences and recovery copies are
-shared; stop one before starting the other). Open a skeleton with its atlas and page images,
+shared; stop one before starting the other). ⌘S saves a project (`.bbdata`, one file with the rig, atlas, pages, guides and references); Spine JSON and Unity go through File ▸ Export. Open a project, or a skeleton with its atlas and page images,
 drop a PSD to start a rig from its layers, or drop a PSD on an open rig to bring in its changes.
 
 ## What it does
