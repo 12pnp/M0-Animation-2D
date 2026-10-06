@@ -120,6 +120,18 @@ export function duplicateSkin(from: string, to: string): Edit<Skeleton> {
   };
 }
 
+/** A skin's colour in Spine's editor (rrggbbaa; undefined: Spine's default). Nonessential: runtimes do not read it. */
+export function setSkinColor(skin: string, color: string | undefined): Edit<Skeleton> {
+  return (s) => {
+    const k = skinOf(s, skin);
+    if (color !== undefined && !/^[0-9a-f]{8}$/i.test(color)) throw new EditRefused("A colour is 8 hex digits, rrggbbaa.");
+    if (k.color === color) return s;
+    const { color: _, ...rest } = k;
+    const next: Skin = color === undefined ? rest : { ...rest, color };
+    return { ...s, skins: s.skins!.map((x) => (x.name === skin ? next : x)) };
+  };
+}
+
 /** Turn a bone or constraint on or off for a skin (the skin's `bones`, `ik`, … lists). */
 export function setSkinMember(skin: string, list: SkinList, name: string, on: boolean): Edit<Skeleton> {
   return (s) => {

@@ -68,3 +68,19 @@ export function atlasImages(atlas: Atlas): AtlasImages {
   }
   return { pages, regions };
 }
+
+/**
+ * A region's alpha at its original size, rows top first (the trimmed pixels put back where they
+ * were), from its page's pixels (RGBA); null for a region the packer turned.
+ */
+export function regionAlpha(r: ImageRegion, page: { width: number; height: number; pixels: ArrayLike<number> }): { width: number; height: number; alpha: Uint8Array } | null {
+  if (r.degrees !== 0) return null;
+  const W = r.originalWidth, H = r.originalHeight, alpha = new Uint8Array(W * H);
+  const top = H - r.offsetY - r.height;
+  for (let y = 0; y < r.height; y++) for (let x = 0; x < r.width; x++) {
+    const px = r.x + x, py = r.y + y, ox = r.offsetX + x, oy = top + y;
+    if (px >= page.width || py >= page.height || ox < 0 || oy < 0 || ox >= W || oy >= H) continue;
+    alpha[oy * W + ox] = page.pixels[(py * page.width + px) * 4 + 3]!;
+  }
+  return { width: W, height: H, alpha };
+}

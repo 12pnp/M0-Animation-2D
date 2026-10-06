@@ -62,7 +62,14 @@ export interface AgentContext {
   /** A reference's picture as base64 PNG, or null when its file was not given. */
   referencePicture(path: string): Promise<string | null>;
   render(request: RenderRequest): Promise<RenderResult>;
+  /** An atlas image's alpha at its original size, rows top first; null when its page's pixels are not to hand. */
+  pixels(image: string): Promise<ImageAlpha | null>;
+  /** Write the rig into the Unity folder chosen in the editor (Export to Unity…); refuses, saying what to press, when none is chosen or allowed. */
+  exportToUnity(): Promise<{ folder: string; files: readonly string[] }>;
 }
+
+/** Alpha per pixel (0–255), `width` × `height`, rows top first. */
+export interface ImageAlpha { readonly width: number; readonly height: number; readonly alpha: Uint8Array }
 
 /** A tool's value may carry pictures under this key; the bridge sends them as images. */
 export const IMAGES_KEY = "__images";

@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { updateBone } from "@/edit/bones";
 import { History } from "@/edit/history";
 import { newSkeleton } from "@/edit/newSkeleton";
-import { AgentRefused, callTool } from "@/agent/host";
+import { AgentRefused, builtTools, callTool, CONTRACT } from "@/agent/host";
 import { schemaProblem } from "@/agent/schema";
 import type { Skeleton } from "@/model/skeleton";
 import { testContext } from "./fixtures/agentContext";
@@ -22,13 +22,21 @@ describe("the agent host (E5 step 2)", () => {
     expect(h.doc.bones![0]!.x).toBe(10);
     expect(c.told).toBe(2);
   });
-  it("refuses what the model can fix: no document, unknown tools, arguments the schema does not allow, tools not built", async () => {
+  it("refuses what the model can fix: no document, unknown tools, arguments the schema does not allow", async () => {
     expect(await refused(callTool("undo", {}, ctx(null)))).toMatch(/Nothing is open/);
     expect(await refused(callTool("set_cycle", {}, ctx(null)))).toBe('There is no tool "set_cycle" in contract version 2.');
     const c = ctx(new History(newSkeleton("h")));
     expect(await refused(callTool("undo", { steps: 0 }, c))).toBe("undo: arguments.steps must be at least 1.");
     expect(await refused(callTool("undo", { step: 2 }, c))).toBe("undo: arguments.step is not an argument here (it takes steps).");
-    expect(await refused(callTool("add_skin", { name: "x" }, c))).toBe("add_skin is in the contract but not built in this editor yet.");
+  });
+  it("builds every tool of the contract (E5 step 8), and none it does not have", () => {
+    expect(builtTools().sort()).toEqual(CONTRACT.tools.map((t) => t.name).sort());
+  });
+  it("export_to_unity asks the editor to export, and needs a document", async () => {
+    const c = ctx(new History(newSkeleton("h")));
+    expect(await callTool("export_to_unity", {}, c)).toMatchObject({ folder: "Unity", files: ["rig.json"] });
+    expect(c.exports).toBe(1);
+    expect(await refused(callTool("export_to_unity", {}, ctx(null)))).toMatch(/Nothing is open/);
   });
   it("checks arguments the way the contract's schemas say", () => {
     const ease = { oneOf: [{ type: "string", enum: ["linear", "in"] }, { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4 }] };

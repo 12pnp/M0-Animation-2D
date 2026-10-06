@@ -16,6 +16,7 @@ import { encodePng } from "@/io/png";
 import { AiBridge } from "./agent/bridge";
 import { sessionContext } from "./agent/context";
 import { iconButton } from "./icons";
+import { ExportRefused, exportToUnity } from "./unityExport";
 import { isPanelId, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
 import { type PanelContent, Workspace } from "./workspace/workspace";
 
@@ -54,6 +55,11 @@ export function mountApp(root: HTMLElement): void {
   fileInput.hidden = true;
   const openBtn = iconButton(button("Open…", "Open a skeleton with its atlas and images, or a Photoshop file to start a rig from (⌘O). Drop a PSD on an open rig to bring its changes in", () => fileInput.click()), "open");
   const saveBtn = iconButton(button("Save", "Save the skeleton JSON, with the atlas and pages of an imported PSD (⌘S)", () => void save()), "save");
+  // Export to Unity (E5 step 8): into the folder chosen once; Shift-click chooses another.
+  const unityBtn = button("Export to Unity…", "Export to Unity…: write the skeleton, atlas and pages into your Unity folder, where the BoneBurst import rebakes them (Shift-click: choose another folder)", () => {});
+  unityBtn.setAttribute("aria-label", "Export to Unity…");
+  iconButton(unityBtn, "exportUnity", false);
+  unityBtn.addEventListener("click", (e) => void toUnity(e.shiftKey));
   const undoBtn = iconButton(button("Undo", "", () => { session.history?.undo(); session.changed(); }), "undo");
   const redoBtn = iconButton(button("Redo", "", () => { session.history?.redo(); session.changed(); }), "redo");
   const toolBtns = TOOLS.map((t) => {
@@ -77,7 +83,7 @@ export function mountApp(root: HTMLElement): void {
   aiBtn.classList.add("ai-button");
   aiBtn.dataset.state = "off";
   ai.onState((state, detail) => { aiBtn.dataset.state = state; aiBtn.title = detail; message.textContent = detail; });
-  bar.append(openBtn, saveBtn, sep(), undoBtn, redoBtn, sep(), ...toolBtns, sep(), fitBtn, skinLabel, sep(), panelsMenu, aiBtn, prefsBtn, title, fileInput, prefsDialog.element);
+  bar.append(openBtn, saveBtn, unityBtn, sep(), undoBtn, redoBtn, sep(), ...toolBtns, sep(), fitBtn, skinLabel, sep(), panelsMenu, aiBtn, prefsBtn, title, fileInput, prefsDialog.element);
 
   // The stage panel: the canvas, with the hint over it while nothing is open.
   const stagePanel = el("section", "stage-panel");
@@ -214,6 +220,15 @@ export function mountApp(root: HTMLElement): void {
     say(`Saved ${session.name}.json${also}, ${session.name}.atlas.txt and ${made.pages.map((p) => p.name).join(", ")}.`);
   }
 
+  async function toUnity(choose: boolean): Promise<void> {
+    try {
+      const out = await exportToUnity(session, true, choose);
+      say(`Exported to ${out.folder}: ${out.files.join(", ")}. Unity rebakes the folder on its next refresh.`);
+    } catch (err) {
+      say(err instanceof ExportRefused ? err.message : `Export failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   /** An atlas page as a PNG file, written exactly (io/png: no canvas rounding semi-transparent colours). */
   async function png(p: Page): Promise<Blob> {
     return new Blob([await encodePng(p) as BlobPart], { type: "image/png" });
@@ -224,6 +239,7 @@ export function mountApp(root: HTMLElement): void {
     document.title = titleFor(doc ? `${session.name}.json` : null, session.dirty);
     title.textContent = doc ? `${session.dirty ? "• " : ""}${session.name}.json` : "";
     saveBtn.disabled = !doc;
+    unityBtn.disabled = !doc;
     undoBtn.disabled = !h?.canUndo;
     redoBtn.disabled = !h?.canRedo;
     undoBtn.title = h?.undoLabel ? `Undo ${h.undoLabel} (⌘Z)` : "Undo (⌘Z)";

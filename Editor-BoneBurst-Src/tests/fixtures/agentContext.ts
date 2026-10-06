@@ -1,6 +1,7 @@
 import type { AgentContext, AgentReference, AgentView, RenderRequest } from "@/agent/context";
 import type { History } from "@/edit/history";
-import { NO_IMAGES, type AtlasImages } from "@/engine/regions";
+import { NO_IMAGES, type AtlasImages, regionAlpha } from "@/engine/regions";
+import type { Page } from "@/io/pack";
 import type { Skeleton } from "@/model/skeleton";
 import { posedBones, poserCache } from "@/ui/agent/context";
 import { constraintNow } from "@/ui/stage/posed";
@@ -10,13 +11,14 @@ import { constraintNow } from "@/ui/stage/posed";
  * `Poser`, the view kept in memory, references as given, and render requests recorded (the
  * picture itself needs a browser: the on-screen check draws it).
  */
-export type TestContext = AgentContext & { told: number; shown: AgentView[]; renders: RenderRequest[] };
+export type TestContext = AgentContext & { told: number; shown: AgentView[]; renders: RenderRequest[]; exports: number };
 
-export function testContext(history: History<Skeleton> | null, images: AtlasImages = NO_IMAGES, references: AgentReference[] = []): TestContext {
+/** `pages`: the atlas's pages with their pixels (a PSD import's), for `pixels`; without them every image has none. */
+export function testContext(history: History<Skeleton> | null, images: AtlasImages = NO_IMAGES, references: AgentReference[] = [], pages: readonly Page[] = []): TestContext {
   const poser = poserCache(), other = poserCache();
   let view: AgentView = { animation: null, frame: 0, skin: null };
   const c: TestContext = {
-    history, told: 0, shown: [], renders: [], images,
+    history, told: 0, shown: [], renders: [], exports: 0, images,
     changed() { c.told++; },
     view: () => view,
     show: (v) => { view = v; c.shown.push(v); },
@@ -33,6 +35,12 @@ export function testContext(history: History<Skeleton> | null, images: AtlasImag
       c.renders.push(req);
       return { png: "png", width: 400, height: 300, scale: 0.5, origin: [200, 250] as const, bones: [{ name: "root", joint: [200, 250] as const, tip: [200, 250] as const }] };
     },
+    pixels: async (image) => {
+      const r = images.regions.find((x) => x.name === image), page = r && pages.find((p) => p.name === r.page.name);
+      return r && page ? regionAlpha(r, page) : null;
+    },
+    // The folder and its writing are the browser's (tests/unityExport.test.ts, e2e): here only the call is counted.
+    exportToUnity: async () => { c.exports++; return { folder: "Unity", files: ["rig.json"] }; },
   };
   return c;
 }

@@ -1,7 +1,8 @@
-import type { AgentContext, AgentReference, PosedBone, RenderRequest, RenderResult } from "@/agent/context";
-import type { AtlasImages } from "@/engine/regions";
+import { type AgentContext, type AgentReference, AgentRefused, type PosedBone, type RenderRequest, type RenderResult } from "@/agent/context";
+import { type AtlasImages, regionAlpha } from "@/engine/regions";
 import type { Skeleton } from "@/model/skeleton";
 import type { Session } from "../session";
+import { ExportRefused, exportToUnity } from "../unityExport";
 import { type Camera, fit, type Size, toScreen } from "../stage/camera";
 import { drawnVertices } from "@/engine/draw";
 import { boneMatrix, boneTip, bounds, constraintNow, type Posed, Poser } from "../stage/posed";
@@ -75,6 +76,19 @@ export function sessionContext(session: Session): AgentContext {
       return base64(c);
     },
     render: async (req) => render(session, pose(req.skin, req.animation, req.time), req),
+    pixels: async (image) => {
+      const r = session.images.regions.find((x) => x.name === image);
+      const page = r ? await session.pagePixels(r.page.name) : null;
+      return r && page ? regionAlpha(r, page) : null;
+    },
+    exportToUnity: async () => {
+      try {
+        return await exportToUnity(session, false);
+      } catch (err) {
+        if (err instanceof ExportRefused) throw new AgentRefused(err.message);
+        throw err;
+      }
+    },
   };
 }
 

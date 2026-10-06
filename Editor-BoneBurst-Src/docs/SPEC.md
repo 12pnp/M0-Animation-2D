@@ -296,6 +296,13 @@ fresh runtime through the context's `poseOf`), frame by frame; above 0.01 pixels
 not play as shown. It also reports a loop's seam. v1 compared against a Preview panel's runtime;
 in v2 the stage is that runtime (a meaning change in the version note).
 
+**The rest of the contract (E5 step 8).** `agent/looks.ts` (skins and tints), `agent/sequences.ts`
+(numbered atlas images as Spine sequences, and their keys), `agent/meshes.ts` (meshes from the
+image's opaque outline, `edit/trace.ts`; bound by the editor's Bind; linked meshes),
+`agent/unity.ts` with `ui/unityExport.ts` (Export to Unity: a folder picked once with the
+browser's folder picker, kept in IndexedDB; the atlas and pages, then the skeleton). Every tool of
+contract version 2 is built; `tests/agentHost.test.ts` holds the two lists equal.
+
 ## 9. Verification
 
 - `scripts/check.sh`: typecheck and build, the tests (zero tests is a failure), no Spine runtime

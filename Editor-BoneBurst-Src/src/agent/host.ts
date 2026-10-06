@@ -5,9 +5,13 @@ import type { Contract, Tool } from "./contract";
 import { BUILD_TOOLS } from "./build";
 import { CHECK_TOOLS } from "./check";
 import { KEY_TOOLS } from "./keys";
+import { LOOK_TOOLS } from "./looks";
+import { MESH_TOOLS } from "./meshes";
 import { MOTION_TOOLS } from "./motion";
 import { READ_TOOLS } from "./read";
 import { schemaProblem } from "./schema";
+import { SEQUENCE_TOOLS } from "./sequences";
+import { UNITY_TOOLS } from "./unity";
 import contract from "./tools.json";
 
 /**
@@ -43,7 +47,7 @@ function step(dir: "undo" | "redo"): ToolFn {
   };
 }
 
-/** The tools built so far; the rest of the contract answers that it is coming (steps 3–8). */
+/** Every tool of the contract (a test holds the two lists equal). */
 const TOOLS: Record<string, ToolFn> = {
   undo: step("undo"),
   redo: step("redo"),
@@ -52,6 +56,10 @@ const TOOLS: Record<string, ToolFn> = {
   ...BUILD_TOOLS,
   ...MOTION_TOOLS,
   ...CHECK_TOOLS,
+  ...LOOK_TOOLS,
+  ...SEQUENCE_TOOLS,
+  ...MESH_TOOLS,
+  ...UNITY_TOOLS,
 };
 
 /** Run the tool `name` with `args` on the editor's document. */

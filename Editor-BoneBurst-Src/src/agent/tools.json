@@ -37,27 +37,27 @@
       {
         "tool": "set_skin_image",
         "change": "meaning",
-        "what": "`layer` names a slot."
+        "what": "`layer` names a slot and `image` an atlas image. A slot's displays are its attachment keys, the default skin's first. In a mesh's place the skin's image is a linked mesh of it (it bends with the mesh)."
       },
       {
         "tool": "make_sequence",
         "change": "meaning",
-        "what": "`layer` names a slot."
+        "what": "`layer` names a slot; its images are the atlas images numbered like its own (fire_01, fire_02, …)."
       },
       {
         "tool": "key_sequence",
         "change": "meaning",
-        "what": "`layer` names a slot."
+        "what": "`layer` names a slot (the sequence is its setup image, else its first)."
       },
       {
         "tool": "link_mesh",
         "change": "meaning",
-        "what": "`layer` names a slot."
+        "what": "`layer` names a slot; the mesh followed is the slot's own (its setup image when that is a mesh, else its first mesh). Unlinked, the image becomes a region where the mesh drew it."
       },
       {
         "tool": "set_tint",
         "change": "meaning",
-        "what": "`layer` names a slot."
+        "what": "`layer` names a slot; the attachment tinted is the one the editor shows there (the shown skin's, else the default skin's)."
       },
       {
         "tool": "key_properties",
@@ -113,6 +113,26 @@
         "tool": "check_preview",
         "change": "meaning",
         "what": "Compares the editor's pose with the pose of the file as Save writes it (Spine 4.3 JSON written, read back, posed by a fresh runtime); v1 compared it with the Preview panel's runtime. No panel is needed; `seam` is reported for every animation."
+      },
+      {
+        "tool": "make_mesh",
+        "change": "meaning",
+        "what": "`images` names atlas images; every attachment showing one becomes a mesh. Without the page's pixels the outline is the image's rectangle, and the answer says so."
+      },
+      {
+        "tool": "bind_mesh",
+        "change": "meaning",
+        "what": "Each point follows up to four of the bones, weighted by its distance to each bone (the editor's Bind); v1 used the two nearest."
+      },
+      {
+        "tool": "set_skin_members",
+        "change": "meaning",
+        "what": "A bone or constraint put in a skin is also made skin-required (Spine's `skin: true`), or a skin's list would turn nothing off; out of the last skin listing it, it is no longer required."
+      },
+      {
+        "tool": "export_to_unity",
+        "change": "meaning",
+        "what": "The folder is the one chosen with the toolbar's Export to Unity… (the button after Save; Shift-click chooses another); the AI cannot choose it. The atlas and pages are written first, the skeleton last."
       }
     ]
   },
@@ -497,7 +517,7 @@
     },
     {
       "name": "export_to_unity",
-      "description": "Export the document into its Unity folder (the one File › Export to Unity… chose; the user must have done that once in this browser): the skeleton JSON, the .atlas.txt and the page images, the skeleton written last. Unity's BoneBurst import package rebakes a folder it has baked before on its next refresh, so a change made here reaches the game's baked asset. Returns the folder and the files written.",
+      "description": "Export the document into its Unity folder (the one the toolbar's Export to Unity… chose; the user must have done that once in this browser): the skeleton JSON, the .atlas.txt and the page images, the skeleton written last. Unity's BoneBurst import package rebakes a folder it has baked before on its next refresh, so a change made here reaches the game's baked asset. Returns the folder and the files written.",
       "input_schema": {
         "type": "object",
         "properties": {},
@@ -1202,7 +1222,7 @@
     },
     {
       "name": "set_skin_image",
-      "description": "What a skin shows in a layer's place, in one undoable step: `image` is a library image (null: the layer's own image again). `display` picks which of the layer's displays (default 0). `only_in_skins` true leaves that display empty in the default skin, so only skins fill it (Spine's skin placeholder). The image is placed about the same relative point as the layer's own.",
+      "description": "What a skin shows in a layer's place, in one undoable step: `image` is an atlas image (null: the layer's own image again). `display` picks which of the layer's displays (default 0). `only_in_skins` true leaves that display empty in the default skin, so only skins fill it (Spine's skin placeholder). The image is placed about the same relative point as the layer's own.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -1260,7 +1280,7 @@
     },
     {
       "name": "make_sequence",
-      "description": "Make a picture layer a frame-by-frame sequence (Spine's region sequence), in one undoable step: the library images named like its image with the numbers around it (fire_01, fire_02, …), all one size. Then key_sequence picks how they play.",
+      "description": "Make a picture layer a frame-by-frame sequence (Spine's region sequence), in one undoable step: the atlas images named like its image with the numbers around it (fire_01, fire_02, …), all one size. Then key_sequence picks how they play.",
       "input_schema": {
         "type": "object",
         "properties": {

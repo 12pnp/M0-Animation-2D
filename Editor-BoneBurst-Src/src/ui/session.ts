@@ -165,6 +165,13 @@ export class Session {
     for (const f of this.listeners) f();
   }
 
+  /** A page's exact pixels, or null when its file was not given (or is not a PNG). */
+  async pagePixels(name: string): Promise<PngImage | null> {
+    const read = this.pageData.get(name);
+    if (!read) return null;
+    try { return await read(); } catch { return null; }
+  }
+
   /** The atlas as it is now, to keep with a re-import. */
   private atlasState(): AtlasState {
     return { atlas: this.atlas, images: this.images, pages: this.pages, pageData: this.pageData, generated: this.generated };

@@ -45,3 +45,4 @@ files.
 | `scissors.svg` | `icons/scissors.svg` | a clipping attachment |
 | `layers.svg` | `icons/layers.svg` | draw order keys |
 | `bot.svg` | `icons/bot.svg` | the AI button (E5) |
+| `folder-output.svg` | `icons/folder-output.svg` | Export to Unity… (E5) |

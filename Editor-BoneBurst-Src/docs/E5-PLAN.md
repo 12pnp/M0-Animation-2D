@@ -8,7 +8,8 @@ tools) done: all eleven, and a walk keyed on the stickman by an AI over MCP. Ste
 tools) done: the thirteen, and the figure PSD rigged by an AI with `auto_rig` over MCP and waving.
 Step 6 (motion) done: the motion library on v2, AnimatedDrawings' captures (AD-3) included.
 Step 7 (`check_preview`) done: the owner's flow `auto_rig` → `apply_motion` → `check_preview`
-ran end to end over MCP on the figure PSD. Step 8 (the remaining tools) next.
+ran end to end over MCP on the figure PSD. Step 8 (the rest of the contract) done: every tool of contract version 2 is built (skins, tints,
+sequences, meshes, Export to Unity). Step 9 (Ask AI) next.
 
 E5 puts the AI tools onto v2's model: an MCP client (Claude Code, Claude Desktop, any agent) and
 the in-app Ask AI drive the open rig through the tool contract, each edit one undo step. It is
@@ -619,3 +620,119 @@ flowchart LR
    `apply_motion idle_front` as `idle` (60 frames, `matches`, largest difference 0.001);
    `check_preview idle` (61 frames, largest difference 0, `matches`, no seam); `show idle 10`. The
    done-when's flow works; step 10 makes it a permanent end-to-end test.
+
+## Step 8 — the rest of the contract
+
+The eleven tools still answering "not built": skins and tints, sequences, meshes, and the export
+to Unity. After this step every tool of contract version 2 is built; what version 1 had and v2
+does not is in the version note.
+
+```mermaid
+flowchart LR
+    subgraph EDIT["pure edits (src/edit)"]
+        SK["skins.ts<br/>addSkin · setSkinMember"]
+        AT["attachments.ts<br/>add · update · delete"]
+        ME["mesh.ts · weights.ts<br/>bindMesh"]
+        TR["trace.ts (new)<br/>outline from alpha"]
+        KE["keys.ts setKey<br/>(attachments section)"]
+    end
+    subgraph AG["src/agent: looks · sequences · meshes · unity"]
+        A1["add_skin · set_skin_image<br/>set_skin_color · set_skin_members<br/>set_tint"]
+        A2["make_sequence · key_sequence"]
+        A3["make_mesh · bind_mesh · link_mesh"]
+        A4["export_to_unity"]
+    end
+    A1 --> SK & AT
+    A2 --> AT & KE
+    A3 --> TR & ME & AT
+    A4 -->|"ctx.exportToUnity"| UI["ui: Export to Unity…<br/>a folder chosen once<br/>(File System Access, IndexedDB)"]
+    A3 -->|"ctx.pixels"| PX["session pageData<br/>(exact pixels)"]
+```
+
+### Decisions
+
+- **Words.** `layer` names a slot (as before). A slot's **displays** are its attachments in the
+  default skin, in document order (`display` 0 is the first). An **image** is an atlas image, as
+  in `attach`; `make_mesh`, `bind_mesh` and `link_mesh` find the attachments showing it (its
+  `path`, else its `name`, else its key).
+- **Skins.** `add_skin` adds an empty skin and shows it. `set_skin_image` writes, in the skin, an
+  attachment under the display's key showing `image`, placed about the same centre, rotation and
+  scale as the default skin's (a mesh display is refused: re-mesh in the skin is not a tool);
+  `image` null removes the skin's entry; `only_in_skins` removes the default skin's entry for
+  that key, so only skins fill it (Spine's placeholder). `set_skin_color` sets the skin's colour,
+  `set_skin_members` its bones and constraints (by name; the constraint's kind found).
+- **`set_tint`**: the attachment's `color`. Spine multiplies it in; it can only darken.
+- **Sequences.** `make_sequence` finds the atlas images named like the slot's image with the
+  number around it (`fire_01`, `fire_02` …: same prefix, same digit count, consecutive), all one
+  size, and gives the attachment `path` = the prefix and `sequence {count, start, digits, setup}`
+  (setup: the image it showed). `key_sequence` keys the attachment's `sequence` timeline (mode,
+  index, delay in seconds = `delay` frames / fps); `delete` removes the key.
+- **`make_mesh`.** The outline is traced from the image's opaque pixels (alpha ≥ 1/8 of full,
+  the largest piece, one pixel out), walked at `spacing` image pixels, plus a grid of points
+  inside, triangulated as the mesh editor does. The context gains `pixels(image)`: the image's
+  alpha at its original size from the page's exact pixels, or null when the page was not given;
+  then the image's rectangle is the outline and the answer says so. Positions follow the region
+  exactly (its centre, rotation, scale), so the mesh draws as the region did.
+- **`bind_mesh`**: the editor's own Bind (`edit/weights.ts`): weights by distance to each bone's
+  segment, up to four per point (v1: the two nearest). **Meaning** line in the version note.
+- **`link_mesh`**: the image's attachment in the slot becomes a `linkedmesh` with `source` the
+  slot's mesh and `timelines` = `deform`; `linked` false turns it back into a region at the
+  mesh's place (an affine fit of its setup positions against its UVs).
+- **`export_to_unity`**: v2 gets **Export to Unity…** (toolbar): a folder picked once with the
+  browser's folder picker (Chromium's File System Access), its handle kept in IndexedDB. It
+  writes `<name>.json`, `<name>.atlas.txt` and the pages exactly, the skeleton last (Unity's
+  `BoneBurstRebakeOnChange` rebakes a folder it baked before). The tool asks the editor to do the
+  same; with no folder chosen it refuses, saying to use the button once. Permission is the
+  browser's: if it lapsed, the tool refuses and says so.
+
+### Steps
+
+1. Skins and tint, with tests (`tests/agentMore.test.ts`).
+2. Sequences, with tests (a sequence posed by the runtime shows the keyed frame).
+3. Meshes: `edit/trace.ts` (table tests: a disc, a ring's outer edge, an L), the tools; the mesh
+   draws where the region drew; bind and link.
+4. Export to Unity: the button, the folder handle, the tool; a Playwright test with the folder
+   picker stubbed by an in-memory directory.
+5. Every contract tool built: a test that `builtTools()` covers the contract.
+6. On screen: a skin, a sequence or a mesh made by an AI over MCP on the figure.
+
+### Step 8 results
+
+1. **Where it landed** (changed from the plan's one `more.ts`, one job per file): `agent/looks.ts`
+   (`add_skin`, `set_skin_image`, `set_skin_color`, `set_skin_members`, `set_tint`),
+   `agent/sequences.ts` (`make_sequence`, `key_sequence`), `agent/meshes.ts` (`make_mesh`,
+   `bind_mesh`, `link_mesh`), `agent/unity.ts` (`export_to_unity`), and `agent/where.ts` (finding
+   slots, displays, the attachments showing an image, colours). New edit: `edit/skins.ts`
+   `setSkinColor`; new pure geometry: `edit/trace.ts` (the outline from alpha, Douglas–Peucker to a
+   pixel, the inner grid); `engine/regions.ts` `regionAlpha`. The context gains `pixels` (from the
+   session's exact page pixels, `Session.pagePixels`) and `exportToUnity`.
+2. **Export to Unity** (`ui/unityExport.ts`): the toolbar button after Save, icon-only (Lucide
+   `folder-output`, vendored at the pinned commit) so the toolbar does not grow; Shift-click picks
+   another folder. The folder is kept in memory for the page and in IndexedDB across visits. Files:
+   `<name>.atlas.txt`, the pages (exact pixels re-encoded), then `<name>.json`. Not Save: the
+   document stays unsaved.
+3. **Found while testing**: a skin's bone list alone turns nothing off: the bone (or constraint)
+   must be skin-required too, so `set_skin_members` sets Spine's `skin: true` and clears it when no
+   skin lists it any more. A sequence key's delay rounded to 1e-6 s landed a frame early (the
+   runtime counts `elapsed / delay`); it is written as the shortest float32 now. In a mesh's place a
+   skin's image is a linked mesh of it.
+4. Version note: meaning lines for `make_mesh`, `bind_mesh` (up to four bones, the editor's Bind),
+   `set_skin_members` (skin-required), `export_to_unity`, and the slot-word lines of
+   `set_skin_image`, `make_sequence`, `key_sequence`, `link_mesh`, `set_tint` made precise.
+5. Tests: `tests/agentLooks.test.ts` (6: skins drawn by the runtime, members switched on and off,
+   colours, tints, the numbered run, sequence keys played by the runtime, mixed sizes refused),
+   `tests/agentMeshes.test.ts` (9: a disc, a ring, an L, two pieces, the point spacing; the mesh
+   drawing each point where the region drew it, its outline around every opaque pixel; the
+   rectangle without pixels; binding; linking and unlinking; a skin's image over a mesh),
+   `tests/agentHost.test.ts` (every contract tool built; the export delegated),
+   `e2e/unityExport.spec.ts` (the folder picker answered with a real folder handle, the three
+   files written skeleton last, the page's pixels exact, the second export without the picker).
+   Ten planted faults fail them (one, the hole's loop taken for the outline, passed until the
+   ring was added). **Not tested**: reading the folder back from IndexedDB after a reload;
+   Playwright's Chromium closes the page when a private-file-system handle is read back from
+   there.
+6. On screen, this session as the AI through MCP on the figure PSD: `auto_rig`; `make_mesh` of
+   both arms and the body (outlines traced); `bind_mesh` of the left arm to its two bones; a keyed
+   elbow bend, the arm bending smoothly (checked by eye); `add_skin blue`, its own image in the
+   head's place, tinted; `export_to_unity` refused with no folder chosen, saying what to press.
+
