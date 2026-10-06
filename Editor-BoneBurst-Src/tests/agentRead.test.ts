@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { AgentRefused, callTool, IMAGES_KEY } from "@/agent/host";
 import { addAnimation } from "@/edit/animations";
 import { keyBone } from "@/edit/boneKeys";
+import { AI_EASES } from "@/agent/eases";
 import { PRESETS } from "@/edit/curves";
 import { History } from "@/edit/history";
 import { setCurve } from "@/edit/keys";
@@ -63,13 +64,16 @@ describe("the read tools (E5 step 3)", () => {
     expect(anim.bones.hips[0]).toMatchObject({ frame: 0, y: boneNumber(hb, "y") - 4, rotation: boneNumber(hb, "rotation") - 4, ease: "linear" });
     expect(anim.bones.hips[1]).toMatchObject({ frame: 2, y: boneNumber(hb, "y") - 10 });
     expect(anim.cycle).toBe(anim.seam.length === 0);
-    // Eases: the presets read back by name; stepped as hold.
+    // Eases: the contract's read back by name (v1's curves, E6 step 2); stepped as hold.
     // The hips' y changes from frame 0 to 2 (x stays put, a flat channel shows no ease); its rotate holds.
-    let doc = setCurve("run", [{ path: { section: "bones", owner: "hips", timeline: "translate" }, time: 0 }], PRESETS.easeIn)(doc0);
+    let doc = setCurve("run", [{ path: { section: "bones", owner: "hips", timeline: "translate" }, time: 0 }], AI_EASES.in)(doc0);
     doc = setCurve("run", [{ path: { section: "bones", owner: "hips", timeline: "rotate" }, time: 0 }], "stepped")(doc);
     const eased = await call("get_animation", { animation: "run" }, ctxOf(doc));
     expect(eased.bones.hips[0]).toMatchObject({ ease: "linear", eases: { y: "in", rotation: "hold" } });
     expect(eased.bones.hips[0].eases.x).toBeUndefined();
+    // The editor's own ease-in button (CSS's curve) is not the contract's "in": it reads back as its numbers.
+    const css = setCurve("run", [{ path: { section: "bones", owner: "hips", timeline: "translate" }, time: 0 }], PRESETS.easeIn)(doc0);
+    expect((await call("get_animation", { animation: "run" }, ctxOf(css))).bones.hips[0].eases.y).toEqual([0.42, 0, 1, 1]);
     // A walk keyed differently at its two ends has a seam there; keyed alike, it is a cycle.
     const local = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1, shearX: 0, shearY: 0 };
     let w = addAnimation("w")(doc0);

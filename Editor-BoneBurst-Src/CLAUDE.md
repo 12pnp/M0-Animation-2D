@@ -43,7 +43,8 @@ npm run e2e        # Playwright: popout windows (once: npx playwright install ch
 npm run build      # tsc --noEmit && vite build
 npm run check      # all of it (e2e too), plus the licence guards
 node mcp/bridge.mjs  # the AI bridge (MCP on stdio, the editor's AI button on :5191)
-npx vite-node scripts/oracle-parity.ts  # E6: the old editor as oracle (both run, exports compared)
+npx vite-node scripts/oracle-parity.ts  # E6: the old editor as oracle: round trips compared
+npx vite-node scripts/oracle-edits.ts   # E6: the same edits through both editors' bridges, posed
 ```
 
 An MCP client starts the bridge itself, e.g. Claude Code:

@@ -61,6 +61,23 @@ describe("the key tools (E5 step 4)", () => {
     expect(await refused(call(c, "set_keys", { animation: "walk", keys: [{ bone: "hips", frame: 0 }] }))).toMatch(/sets nothing/);
   });
 
+  it("set_keys' named eases are version 1's curves (E6 step 2, measured by running the old editor): handles at thirds", async () => {
+    const c = ctxOf();
+    await call(c, "new_animation", { name: "e", frames: 30 });
+    await call(c, "set_keys", { animation: "e", keys: [
+      { bone: "head", frame: 0, rotation: 0, ease: "in" }, { bone: "head", frame: 12, rotation: 30, ease: "out" },
+      { bone: "head", frame: 24, rotation: 0, ease: "inout" }, { bone: "head", frame: 36, rotation: 30 },
+    ] });
+    const keys = c.history!.doc.animations!.find((a) => a.name === "e")!.bones!.find((g) => g.name === "head")!.timelines[0]!.keys;
+    const setup = boneNumber(stick.doc.bones!.find((b) => b.name === "head")!, "rotation");
+    // Each curve as a share of its interval: [x1, y1, x2, y2].
+    const shape = (i: number) => {
+      const k = keys[i]!, n = keys[i + 1]!, t0 = k.time ?? 0, t1 = n.time!, v0 = (k.value ?? 0) + setup, v1 = (n.value ?? 0) + setup, cv = k.curve as number[];
+      return [(cv[0]! - t0) / (t1 - t0), (cv[1]! + setup - v0) / (v1 - v0), (cv[2]! - t0) / (t1 - t0), (cv[3]! + setup - v0) / (v1 - v0)].map((x) => Math.round(x * 1000) / 1000);
+    };
+    expect([shape(0), shape(1), shape(2)]).toEqual([[0.333, 0, 0.667, 0.333], [0.333, 0.667, 0.667, 1], [0.333, 0, 0.667, 1]]);
+  });
+
   it("set_keys between existing keys keeps what the animation had there; delete_keys and key_properties", async () => {
     const c = ctxOf();
     const before = (await call(c, "get_pose", { animation: "run", frame: 3, bones: ["hips"] })).bones.hips;

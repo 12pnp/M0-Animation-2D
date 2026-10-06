@@ -2,7 +2,8 @@
 
 **Status:** in progress, 2026-10-06. Step 1 (the oracle harness, round-trip parity) done: v2 writes
 all 17 corpus rigs back exactly; the old editor changes every one, and poses one differently.
-Step 2 (edit-script parity) next.
+Step 2 (edit-script parity) done: both scripts agree once each known difference is taken out
+(0.007 and 0 px); `set_keys`' named eases now are version 1's curves. Step 3 (the gap list) next.
 
 E6 makes v2 the editor people use. The old editor (`../../Animation-BoneBurst-Src/`, AGPL, the
 Animo fork) is the **behavioural oracle**: it is run, never read, and v2 has to agree with it on
@@ -96,4 +97,69 @@ flowchart LR
    round trip is exact, so for unchanged rigs v2 is ahead and nothing in v2 changes. The
    spineboy-pro difference is the old editor's (its export against the source); under D1 it may
    take a fix, but as the fork is going oracle-only it is recorded, not fixed (owner call).
+
+## Step 2 — edit-script parity
+
+The same edits made in both editors through their AI bridges (the shared contract), each result
+written out, and the two compared by pose.
+
+```mermaid
+sequenceDiagram
+    participant H as scripts/oracle-edits.ts
+    participant B1 as v1 bridge (5190)
+    participant E1 as v1 (5181, AI ▸ Connect to AI)
+    participant B2 as v2 bridge (own port)
+    participant E2 as v2 (5185, ?bridge=)
+    H->>E1: import the rig (Import PSD as Layers… / Open Spine…), fps 30
+    H->>E2: open the rig (file input)
+    H->>B1: the script, v1's coordinates
+    H->>B2: the script, v2's coordinates
+    H->>E1: Export to Folder…
+    H->>E2: Save
+    H->>H: both files posed: every bone both have, every frame
+```
+
+### Decisions
+
+- **Scripts**: (a) the owner's flow on the figure PSD: `auto_rig` with the joints, `apply_motion
+  idle_front`; (b) a walk keyed with `set_keys` on the stickman (hips, chest, arms, the IK
+  targets of the feet, eased). Both use only the flow's tools, whose names and shapes v1 and v2
+  share.
+- **Coordinates**: v1 places a PSD with its top-left corner at the origin (y up); v2 with its
+  bottom centre at the origin. The script's points are v2's; v1 gets them moved by the
+  measured offset (+150, −400 for the figure), and the comparison takes the same offset out.
+  Spine files open at the same place in both.
+- **Frame rate**: v1's documents start at 24 fps, v2's at 30; v1's is set to 30 first, so a
+  frame is the same time in both.
+- **Compared**: the bones both files have, by name, posed at every frame (30 fps) of the
+  animation the script made; within 0.5 px is agreement for a retarget sampled frame by frame,
+  within 0.01 for keys given exactly. JSON is not compared (step 1: v1 rewrites its keys).
+
+### Step 2 results
+
+1. `scripts/oracle-edits.ts` (`npx vite-node scripts/oracle-edits.ts [filter]`), on the shared
+   `scripts/oracle/editors.ts` (both editors driven, both bridges started as an MCP client starts
+   them, `poseGap`; `oracle-parity.ts` moved onto it). v1 is connected with **AI ▸ Connect to AI**;
+   its bridge must be on 5190, v2's gets a port of its own.
+2. **Found, and fixed in v2**: `set_keys`' named eases were the editor's CSS curves
+   (`[0.42, 0, 0.58, 1]` for `inout`); version 1's, measured by running it, have their handles at
+   thirds: `in` [⅓, 0, ⅔, ⅓], `out` [⅓, ⅔, ⅔, 1], `inout` [⅓, 0, ⅔, 1]. A flow tool keeps
+   version 1's meaning, so the AI's eases are now those (`src/agent/eases.ts`, used by `set_keys`
+   and read back by `get_animation`); the editor's own curve buttons keep the CSS curves. Guard:
+   `tests/agentKeys.test.ts` (planting the CSS `inout` back fails it; the harness then leaves
+   2.6 px on the walk).
+3. **Results**, each with its known difference measured, not assumed (the script changes v2's
+   result the old editor's way and compares again):
+
+   | script | as made | the known difference | after taking it out |
+   |---|---|---|---|
+   | figure PSD: `auto_rig` → `apply_motion idle_front` | 1.76 px (thighs) | knees bent the other way: v1 writes `bendPositive: false` for legs drawn straight; v2 bends them forward for the facing (E5 step 5) | 0.007 px |
+   | stickman: a walk keyed with `set_keys` into `run` | 18.4 px (head, frame 29) | v1 turns the rig's own keys between equal values into holds, and they stay holds when keyed between; Spine's format has them linear, as v2 keeps them | 0 px |
+
+4. **Also measured, not differences of pose**: the two editors place a PSD at different origins
+   (v1 its top-left corner, v2 its bottom centre: v1 = v2 + (150, −400)), and each roots its
+   skeleton at its own origin; v1 gives IK target bones a length of 20, v2 of 0; v1 starts a
+   document at 24 fps and changing the rate re-times its keys (so the harness sets 30 on the
+   empty document before importing). `poseGap` compares tips at the first file's bone lengths.
+5. Not in `npm run check` (it needs the old editor's folder); the eases' unit test is.
 

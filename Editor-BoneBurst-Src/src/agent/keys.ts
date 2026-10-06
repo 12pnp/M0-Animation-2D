@@ -2,7 +2,7 @@ import { addAnimation } from "@/edit/animations";
 import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { updateBone } from "@/edit/bones";
 import { CONSTRAINT_KEYS, keyConstraint } from "@/edit/constraintKeys";
-import { PRESETS, type Shape } from "@/edit/curves";
+import type { Shape } from "@/edit/curves";
 import { drawOrderAt, offsetsFor, reorderFront } from "@/edit/drawOrder";
 import { defineEvent, deleteEvent, deleteEventKeys, type EventOverrides, type EventPatch, keyEvent, renameEvent } from "@/edit/events";
 import type { Edit } from "@/edit/history";
@@ -11,6 +11,7 @@ import { boneNumber } from "@/model/defaults";
 import type { ConstraintType, Skeleton } from "@/model/skeleton";
 import { animationDuration, frameTime, keyLists, keyTime, timeFrame, type TimelinePath } from "@/model/timelines";
 import { applyEdit } from "./apply";
+import { AI_EASES } from "./eases";
 import { type AgentContext, AgentRefused } from "./context";
 import { animationOf, docOf, fpsOf } from "./read";
 
@@ -35,9 +36,9 @@ const CHANNEL_PROPS: Record<string, readonly Prop[]> = {
 function shapeOf(e: Ease | undefined): Shape | null | "stepped" {
   if (e === undefined || e === "linear") return null;
   if (e === "hold" || e === "stepped") return "stepped";
-  if (e === "in") return PRESETS.easeIn;
-  if (e === "out") return PRESETS.easeOut;
-  if (e === "inout" || e === "smooth") return PRESETS.easeInOut;
+  if (e === "in") return AI_EASES.in;
+  if (e === "out") return AI_EASES.out;
+  if (e === "inout" || e === "smooth") return AI_EASES.inout;
   return e as unknown as Shape;
 }
 

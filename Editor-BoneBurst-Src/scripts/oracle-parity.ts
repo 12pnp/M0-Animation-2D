@@ -6,28 +6,18 @@
  *
  * Run: npx vite-node scripts/oracle-parity.ts [filter]   (starts either dev server if it is not up)
  */
-import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
-import { type Browser, chromium, type Page } from "@playwright/test";
-import { poseDifference } from "../src/agent/check";
-import { atlasImages, type AtlasImages } from "../src/engine/regions";
+import { basename, join } from "node:path";
+import { chromium } from "@playwright/test";
+import { atlasImages } from "../src/engine/regions";
 import { readAtlas } from "../src/io/atlas";
 import { parseJson } from "../src/io/json";
-import type { Json } from "../src/model/json";
 import { readSkeleton } from "../src/io/skeletonRead";
-import type { Skeleton } from "../src/model/skeleton";
-import { animationDuration } from "../src/model/timelines";
-import { posedBones } from "../src/ui/agent/context";
-import { Poser } from "../src/ui/stage/posed";
+import type { Json } from "../src/model/json";
+import { NewEditor, OldEditor, poseGap, ROOT, serve, V1, V1_URL, V2_URL } from "./oracle/editors";
 
-const HERE = dirname(fileURLToPath(import.meta.url));
-const ROOT = join(HERE, "..");
-const V1 = join(ROOT, "..", "Animation-BoneBurst-Src");
 const SAMPLES = join(ROOT, "..", "Packages", "com.module.ta-creator-boneburst", "Tests", "Editor", "Data~", "samples");
 const OUT = join(ROOT, "node_modules", ".cache", "oracle-parity");
-const V1_URL = "http://localhost:5181/", V2_URL = "http://localhost:5185/";
 
 /** A rig to open: its skeleton, atlas and pages. */
 interface Rig { readonly name: string; readonly skeleton: string; readonly atlas: string; readonly pages: string[] }
@@ -45,82 +35,6 @@ function corpus(): Rig[] {
   add(join(ROOT, "tests", "fixtures", "stickman"), "stickman");
   for (const d of readdirSync(SAMPLES, { withFileTypes: true })) if (d.isDirectory()) add(join(SAMPLES, d.name), d.name);
   return rigs;
-}
-
-async function up(url: string): Promise<boolean> {
-  return fetch(url).then((r) => r.ok, () => false);
-}
-
-async function serve(url: string, cwd: string): Promise<ChildProcess | null> {
-  if (await up(url)) return null;
-  const p = spawn("npm", ["run", "dev"], { cwd, stdio: "ignore" });
-  for (let i = 0; i < 100 && !(await up(url)); i++) await new Promise((r) => setTimeout(r, 200));
-  if (!(await up(url))) throw new Error(`${url} did not start (${cwd}).`);
-  return p;
-}
-
-/** The old editor: Open Spine…, then Export to Folder… into a recording folder; the written files. */
-async function v1Export(browser: Browser, rig: Rig): Promise<Map<string, Uint8Array>> {
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 } });
-  await ctx.addInitScript(() => {
-    const w = window as unknown as Record<string, unknown> & { __written: Record<string, number[]> };
-    w.__written = {};
-    const bytes = async (d: unknown): Promise<Uint8Array> => (d instanceof Blob ? new Uint8Array(await d.arrayBuffer())
-      : typeof d === "string" ? new TextEncoder().encode(d)
-        : d instanceof ArrayBuffer ? new Uint8Array(d) : new Uint8Array((d as ArrayBufferView).buffer));
-    const file = (name: string) => ({
-      kind: "file", name,
-      async createWritable() {
-        const parts: Uint8Array[] = [];
-        return {
-          async write(d: unknown) { parts.push(await bytes(d)); },
-          async close() { w.__written[name] = parts.flatMap((p) => Array.from(p)); },
-        };
-      },
-      async queryPermission() { return "granted"; }, async requestPermission() { return "granted"; },
-    });
-    const dir = (name: string): unknown => ({
-      kind: "directory", name,
-      async getFileHandle(n: string) { return file(n); }, async getDirectoryHandle(n: string) { return dir(n); },
-      async queryPermission() { return "granted"; }, async requestPermission() { return "granted"; },
-      async *values() { /* empty */ }, async *entries() { /* empty */ },
-    });
-    w.showDirectoryPicker = async () => dir("Out");
-  });
-  const p = await ctx.newPage();
-  p.on("dialog", (d) => void d.dismiss());
-  await p.goto(V1_URL);
-  await p.getByText("File", { exact: true }).first().click();
-  const [chooser] = await Promise.all([p.waitForEvent("filechooser"), p.getByText("Open Spine…", { exact: true }).click()]);
-  await chooser.setFiles([rig.skeleton, rig.atlas, ...rig.pages]);
-  await p.waitForTimeout(1500);
-  await p.getByText("File", { exact: true }).first().click();
-  await p.getByText("Export to Folder…", { exact: true }).click();
-  const written = await waitFor(p, () => (window as unknown as { __written: Record<string, number[]> }).__written, (w) => Object.keys(w).some((k) => k.endsWith(".json")));
-  await ctx.close();
-  return new Map(Object.entries(written).map(([k, v]) => [k, Uint8Array.from(v)]));
-}
-
-/** v2: the files given to its file input, then Save; the skeleton it downloads. */
-async function v2Export(browser: Browser, rig: Rig): Promise<string> {
-  const ctx = await browser.newContext({ viewport: { width: 1400, height: 900 }, acceptDownloads: true });
-  const p = await ctx.newPage();
-  await p.goto(V2_URL);
-  await p.locator("header input[type=file]").setInputFiles([rig.skeleton, rig.atlas, ...rig.pages]);
-  await p.waitForFunction(() => document.title.includes(".json"));
-  const [download] = await Promise.all([p.waitForEvent("download"), p.getByRole("button", { name: "Save" }).click()]);
-  const text = readFileSync(await download.path(), "utf8");
-  await ctx.close();
-  return text;
-}
-
-async function waitFor<T>(p: Page, read: () => T, done: (v: T) => boolean, ms = 10_000): Promise<T> {
-  const end = Date.now() + ms;
-  for (;;) {
-    const v = await p.evaluate(read);
-    if (done(v) || Date.now() > end) return v;
-    await new Promise((r) => setTimeout(r, 200));
-  }
 }
 
 /** Every path where two JSON values differ (numbers equal as float32), up to `max`. */
@@ -157,25 +71,6 @@ function differences(a: Json, b: Json, max = 100000): string[] {
   return out;
 }
 
-/** The largest distance between the two files' poses: every animation, every frame at 30 fps, the default skin and each other. */
-function poseGap(a: Skeleton, b: Skeleton, images: AtlasImages): { distance: number; at: string } {
-  const pa = new Poser(a, images), pb = new Poser(b, images);
-  let worst = { distance: 0, at: "" };
-  const skins = [null, ...(a.skins ?? []).map((k) => k.name).filter((n) => n !== "default")].slice(0, 4);
-  for (const skin of skins) {
-    for (const anim of [null, ...(a.animations ?? []).map((x) => x.name)]) {
-      if (anim && !b.animations?.some((x) => x.name === anim)) { worst = { distance: Infinity, at: `${anim} missing` }; continue; }
-      const end = anim ? animationDuration(a.animations!.find((x) => x.name === anim)!) : 0;
-      for (let f = 0; f <= Math.round(end * 30); f++) {
-        const t = Math.fround(f / 30);
-        const d = poseDifference(posedBones(pa.pose(skin, anim, t)), posedBones(pb.pose(skin, anim, t)));
-        if (d.distance > worst.distance) worst = { distance: d.distance, at: `${skin ?? "default"} ${anim ?? "setup"} frame ${f} ${d.bone}` };
-      }
-    }
-  }
-  return worst;
-}
-
 /** Differences grouped by kind and place (names and indices folded): the shape of what an editor changes. */
 function kinds(diffs: readonly string[]): Map<string, number> {
   const out = new Map<string, number>();
@@ -208,10 +103,15 @@ async function main(): Promise<void> {
       const images = atlasImages(readAtlas(readFileSync(rig.atlas, "utf8")));
       const row: Record<string, unknown> = { rig: rig.name };
       try {
-        const v2 = await v2Export(browser, rig);
-        const v1Files = await v1Export(browser, rig);
-        const v1Name = [...v1Files.keys()].find((k) => k.endsWith(".json"))!;
-        const v1 = new TextDecoder().decode(v1Files.get(v1Name)!);
+        const two2 = await NewEditor.open(browser);
+        await two2.open([rig.skeleton, rig.atlas, ...rig.pages]);
+        const v2 = await two2.save();
+        await two2.close();
+        const old = await OldEditor.open(browser);
+        await old.openSpine([rig.skeleton, rig.atlas, ...rig.pages]);
+        const v1Files = await old.exportFolder();
+        await old.close();
+        const v1 = new TextDecoder().decode(v1Files.get([...v1Files.keys()].find((k) => k.endsWith(".json"))!)!);
         writeFileSync(join(OUT, `${rig.name.replace(/[/ ]/g, "_")}.v1.json`), v1);
         const src = readSkeleton(source).skeleton, one = readSkeleton(v1), two = readSkeleton(v2).skeleton;
         const v1Diffs = differences(parseJson(source), parseJson(v1));

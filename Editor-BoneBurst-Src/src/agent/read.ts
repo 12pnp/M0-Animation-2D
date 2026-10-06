@@ -1,8 +1,9 @@
-import { PRESETS, type Shape } from "@/edit/curves";
+import type { Shape } from "@/edit/curves";
 import { orderOf } from "@/edit/drawOrder";
 import { boneNumber } from "@/model/defaults";
 import { type Animation, type Attachment, attachmentType, type Key, type Skeleton } from "@/model/skeleton";
 import { animationDuration, DEFAULT_FPS, frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
+import { AI_EASES } from "./eases";
 import { type AgentContext, AgentRefused, IMAGES_KEY, type PosedBone } from "./context";
 
 /**
@@ -123,7 +124,7 @@ const CHANNELS: Record<string, readonly { prop: string; field: "value" | "x" | "
   sheary: [{ prop: "shearY", field: "value", setup: "shearY" }],
 };
 
-const NAMED: readonly [string, Shape][] = [["in", PRESETS.easeIn], ["out", PRESETS.easeOut], ["inout", PRESETS.easeInOut]];
+const NAMED: readonly [string, Shape][] = Object.entries(AI_EASES);
 
 /** The ease of channel `c` from key `k` to `next`: a name `set_keys` takes, or a normalised cubic. */
 export function easeOf(k: Key, next: Key | undefined, c: number, stored: (key: Key) => number): string | number[] {
@@ -135,7 +136,7 @@ export function easeOf(k: Key, next: Key | undefined, c: number, stored: (key: K
   const dt = t1 - t0, dv = v1 - v0;
   // A flat channel shows no ease, whatever its handles say.
   if (!(dt > 0) || dv === 0) return "linear";
-  const shape = [(b[0]! - t0) / dt, dv ? (b[1]! - v0) / dv : 0, (b[2]! - t0) / dt, dv ? (b[3]! - v0) / dv : 1].map((n) => Math.round(n * 1000) / 1000);
+  const shape = [(b[0]! - t0) / dt, dv ? (b[1]! - v0) / dv : 0, (b[2]! - t0) / dt, dv ? (b[3]! - v0) / dv : 1].map((n) => Math.round(n * 1000) / 1000 || 0);
   if (Math.abs(shape[0]! - shape[1]!) < 0.005 && Math.abs(shape[2]! - shape[3]!) < 0.005) return "linear";
   const named = NAMED.find(([, p]) => p.every((v, i) => Math.abs(v - shape[i]!) < 0.01));
   return named ? named[0] : shape;
