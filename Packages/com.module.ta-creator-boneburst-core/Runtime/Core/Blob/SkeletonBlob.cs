@@ -466,6 +466,8 @@ namespace BoneBurst.Blob
     public sealed unsafe class SkeletonBlob : IDisposable
     {
         public readonly BlobContent Content;
+        private readonly BlobView m_External;
+        private readonly bool m_HasExternal;
         public NativeArray<int> AnimationBones;
         public NativeArray<AnimationBlob> Animations;
         public NativeArray<AttachmentBlob> Attachments;
@@ -494,6 +496,18 @@ namespace BoneBurst.Blob
         public NativeArray<int> Triangles;
         public NativeArray<float> Uvs;
         public NativeArray<float> Vertices;
+
+        /// <summary>
+        ///     A blob whose arrays are owned elsewhere (an Entities BlobAsset): <see cref="View" /> returns
+        ///     <paramref name="view" /> and nothing is copied or freed. The caller keeps the data alive for as long as
+        ///     this object and every instance made from it are in use.
+        /// </summary>
+        public SkeletonBlob(BlobContent content, in BlobView view)
+        {
+            Content = content ?? throw new ArgumentNullException(nameof(content));
+            m_External = view;
+            m_HasExternal = true;
+        }
 
         public SkeletonBlob(BlobContent content)
         {
@@ -532,10 +546,14 @@ namespace BoneBurst.Blob
         public int PageCount => Content.PageCount;
         public int BoneCount => Content.BoneSetups.Length;
         public int SlotCount => Content.SlotSetups.Length;
-        public bool IsCreated => BoneSetups.IsCreated;
+        public bool IsCreated => m_HasExternal || BoneSetups.IsCreated;
 
-        public BlobView View => new()
+        public BlobView View => m_HasExternal ? m_External : ViewOfArrays();
+
+        private BlobView ViewOfArrays()
         {
+            return new BlobView
+            {
             Bones = (BoneSetup*)BoneSetups.GetUnsafeReadOnlyPtr(),
             Slots = (SlotSetup*)SlotSetups.GetUnsafeReadOnlyPtr(),
             Attachments = (AttachmentBlob*)Attachments.GetUnsafeReadOnlyPtr(),
@@ -580,7 +598,8 @@ namespace BoneBurst.Blob
             ClipPolygonMax = Content.ClipPolygonMax,
             RenderVerticesMax = Content.RenderVerticesMax,
             RenderTrianglesMax = Content.RenderTrianglesMax
-        };
+            };
+        }
 
         /// <summary>
         ///     The file's skins, in file order.
@@ -589,7 +608,7 @@ namespace BoneBurst.Blob
 
         public void Dispose()
         {
-            if (!IsCreated) return;
+            if (m_HasExternal || !BoneSetups.IsCreated) return;
 
             BoneSetups.Dispose();
             SlotSetups.Dispose();

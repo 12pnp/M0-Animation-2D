@@ -1,5 +1,3 @@
-using BoneBurst.Anim;
-using BoneBurst.Constraints;
 using BoneBurst.Instance;
 using Unity.Burst;
 using Unity.Collections;
@@ -35,12 +33,7 @@ namespace BoneBurst.Jobs
         /// </summary>
         public static void Pose(in InstanceHeader h)
         {
-            if ((h.Flags & InstanceFlags.NeedsSetupPose) != 0)
-                PoseMath.SetupPose(h.Blob.Bones, h.Local, h.Blob.BoneCount);
-
-            *h.EventCount = 0;
-            TimelineApply.ApplyAll(h);
-            SkeletonUpdate.UpdateWorldTransform(h, h.Physics);
+            PoseStep.Run(h);
         }
     }
 }

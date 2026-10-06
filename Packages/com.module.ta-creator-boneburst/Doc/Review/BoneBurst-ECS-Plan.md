@@ -1,6 +1,6 @@
 # BoneBurst ECS port: Plan
 
-**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 onward not started.**
+**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 onward not started.**
 
 BoneBurst's pose, constraint, timeline and mesh code (`Module.PA.BoneBurst.Core`) is already Burst-friendly pointer code with no `UnityEngine`. The port keeps that code unchanged and replaces only the managed shell around it (`BoneBurstSystem`, `BoneBurstSkeleton`, `BoneBurstAsset`, `BoneAnimationState`, the GPU and fetch buffers) with Entities 6.7 systems, bakers and Entities Graphics. The result is a new package in `M0-25DPlatformer-ECS/Packages`.
 
@@ -242,3 +242,27 @@ Built in `M0-25DPlatformer-ECS/Packages/com.module.ta-creator-boneburst-ecs/` (c
 | Subscene bake | PASS, checked by script, not an automated test: two `BoneBurstAuthoring` skeletons (spineboy-pro, "walk" and "run") baked to two entities sharing one blob (65 bones, 53 slots, 11 animations, skin 0, animations 10 and 7). Scripts: `Tests/Tools~/MakeBakeScene.cs`, `QueryBake.cs`. Entities' `BakingUtility` is internal, so an in-test bake needs reflection; deferred. |
 
 **Not done / next:** the authoring has no atlas pages, shader or material yet (P5); `BoneBurstInitial` is baked but nothing consumes it yet (P3 creates the instance from it). The ECS package depends on `com.unity.entities` 6.7.0, which the 25D alpha provides and this repo's 6000.6 does not, so it cannot be opened in M0.
+
+## 11. P3 result (2026-10-07): instance memory and pose system
+
+**What was built** (25D repo commit `8a5f283`; Core change in this repo):
+
+*   **Decision D-ECS-2 = A in practice.** `InstanceData`, Core's per-instance native block, is reused as it is rather than re-written unmanaged: `BoneBurstInstanceStore` (managed, owned by `BoneBurstInstanceSystem`) holds one per entity; the entity carries `BoneBurstInstanceHandle`, an `ICleanupComponentData`, so destroying the entity frees the block. One `SkeletonBlob` per distinct asset reads the **ECS blob** through the new Core constructor `SkeletonBlob(content, in BlobView)` (nothing copied), and the managed `BlobContent` (skins and names, for creation and later skin changes) is rebuilt once per asset from the entity's `BoneBurstSkeletonSource` (`UnityObjectRef<TextAsset>`, baked by the baker).
+*   `BoneBurstInstanceSystem` creates instances for baked skeletons that have none (initial skin from `BoneBurstInitial`), frees those of destroyed entities, and marks entities without data `BoneBurstInstanceFailed` after one loud error.
+*   `BoneBurstPoseSystem` builds every header on the main thread and runs **`PoseStep.Run`** in one `[BurstCompile(FloatMode.Strict)]` job. `PoseStep` is new in Core (`Core/Instance/PoseStep.cs`); the Unity front's `PoseJob.Pose` now calls it, so the pose order lives in one place.
+*   Commands reach an instance through `BoneBurstInstanceStore.Stage(index, CommandBuffer)`, which copies them into the instance's native lists as `BoneBurstSkeleton.Header` does. Today they come from the managed `BoneAnimationState`; P4 replaces that source.
+
+**Gates:**
+
+| Gate | Result |
+|---|---|
+| Setup pose equals `ManagedPose` (bones world and local, slot attachments, colours, draw order) over 24 fixtures, tolerance 1e-4 as the other Burst-versus-managed suites | PASS |
+| Animations equal the managed reference every frame: three animations per fixture (first, middle, last), 24 frames each, a fresh instance per animation, including the physics and path fixtures (celestial-circus, cloud-pot, sack, snowglobe, synthetic constraints) | PASS |
+| Two entities of one asset share one `SkeletonBlob` and pose independently; destroying an entity frees its instance and removes the cleanup component; no-data entity fails once, loudly | PASS |
+| 25D `Module.TA.BoneBurstEcs.Tests.Editor` | 125 of 125 |
+| A deliberate bug must fail the test | PASS: clearing the staged commands failed 24 of 125. A first attempt (`ApplyRan = false`) changed nothing and was discarded: that flag only gates end-of-apply bookkeeping, so it proved nothing. |
+| Core change guards in M0: `parity-harness` 215/215, 0 values not bit-exact; Editor compile clean; `Module.TA.BoneBurst.Tests.Editor` 210/212 (the one failure, `BoneBurstPageReferenceTests`, is the missing baked demo data of §9); PlayMode `Module.TA.BoneBurst.Tests` 37/37 | PASS as before |
+
+**Found while testing:** a setup-pose reset (`NeedsSetupPose`) restores bones only; slots, deform and constraints keep what an earlier animation left. That is how the MonoBehaviour runtime behaves too, so tests use a fresh instance per animation; P6's skin and attachment changes must not assume a reset cleans slots.
+
+**Not done / next:** the pose job completes inside the system, because tests read the results at once; P5 will let it overlap the frame. No colour, flip or `LocalTransform` input yet (the header uses white and scale 1; the pose does not read them), no events leave the instance yet (P4). Managed header building per instance stays on the main thread, as in the MonoBehaviour runtime (2.5 ms for 2000 skeletons there); measure in P7 before changing it.
