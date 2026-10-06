@@ -15,7 +15,7 @@ export class AnimationsPanel extends ListPanel {
       duplicate: (n) => this.duplicate(n),
       rename: (n) => this.rename(n),
       remove: (n) => this.remove(n),
-    });
+    }, "bb.animations.nest");
     this.update();
   }
 

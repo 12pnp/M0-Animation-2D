@@ -580,7 +580,6 @@ dialog.open-project .op-buttons { flex: none; display: flex; justify-content: ce
 .list-bar button:disabled { opacity: 0.5; }
 
 /* The path window: the selected path's vertex by number, in Local or World. */
-.stage-tools .group.path-panel { min-width: 200px; gap: 6px; }
 .path-panel[hidden] { display: none; }
 .p-row { display: flex; align-items: center; gap: 6px; }
 .p-row.head { justify-content: space-between; font-weight: 600; }
@@ -596,10 +595,17 @@ dialog.open-project .op-buttons { flex: none; display: flex; justify-content: ce
 
 /* The Local Path panel: a header with the bone and Local | World, the trail's canvas under it. */
 .local-path { display: flex; flex-direction: column; overflow: hidden; }
-.lp-head { display: flex; align-items: center; gap: 6px; padding: 4px 8px; height: 30px; flex: none; border-bottom: 1px solid var(--line); }
-.lp-head > span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.lp-head { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; padding: 4px 8px; min-height: 30px; flex: none; border-bottom: 1px solid var(--line); }
+.lp-head > span { flex: 1 1 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
 .lp-head button { padding: 1px 10px; font-size: 12px; }
 .lp-body { position: relative; flex: 1; min-height: 0; }
 .lp-body canvas { display: block; }
 .lp-note { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 16px; margin: 0; }
 .lp-note[hidden] { display: none; }
+
+/* The path window inside the Local Path panel: under the canvas, a strip of its own. */
+.local-path .path-panel { flex: none; gap: 6px; padding: 8px; border: 0; border-top: 1px solid var(--line); border-radius: 0; background: var(--panel); box-shadow: none; }
+.local-path .path-panel .note { max-width: none; }
+.local-path .p-row.xy .cell { width: 72px; }
+.lp-body canvas { cursor: grab; touch-action: none; }
+.lp-fit { position: absolute; top: 6px; right: 6px; z-index: 1; padding: 3px 6px; }

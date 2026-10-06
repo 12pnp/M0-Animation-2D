@@ -14,7 +14,7 @@ export class SkinsPanel extends ListPanel {
       duplicate: (n) => this.duplicate(n),
       rename: (n) => this.rename(n),
       remove: (n) => this.remove(n),
-    });
+    }, "bb.skins.nest");
     this.update();
   }
 

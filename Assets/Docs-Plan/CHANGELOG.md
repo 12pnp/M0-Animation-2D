@@ -13,6 +13,10 @@ flowchart LR
 
 ## 2026-10-06
 
+- **BoneBurst Editor v2: Skins and Animations panels scroll, and nest by "/"** (`Editor-BoneBurst-Src/`).
+  - **Scroll**: `.outline` clipped long lists; the list panels and History now scroll vertically (`style.css`).
+  - **Nest**: a "/" in a skin or animation name makes folders (fold by click, all open by default); a "Nest by /" checkbox per panel (`bb.skins.nest`, `bb.animations.nest`) turns it off. In `listPanel.ts`; the names are unchanged.
+  - **Not verified**: `tsc --noEmit` passes; not looked at in a browser, no e2e test for it.
 - **BoneBurst Editor v2, E9 planned (fast on production-size rigs); step 1: measured** (`Editor-BoneBurst-Src/`).
   - **The charter**: E9 is a new phase, chosen by the owner. E10 is the AnimatedDrawings sidecar, moved there by the owner.
   - **`scripts/perf.ts`** (headless, every corpus rig and a doubled mix-and-match) and **`e2e-perf/perf.spec.ts`** with `playwright.perf.config.ts` (Chromium: open, the parts of a drag step, a real drag at 60 Hz, playback, Export to Unity, memory), both by hand.

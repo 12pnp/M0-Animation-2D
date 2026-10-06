@@ -34,8 +34,14 @@ export abstract class ListPanel {
   /** The rows as last drawn, as text (null: not drawn yet), so a change tick that changed nothing redraws nothing. */
   private shown: string | null = null;
   private chosen: string | null = null;
+  /** The rows last drawn, kept so toggling Nest or a folder redraws without asking the subclass. */
+  private drawn: ListRow[] | null = null;
+  private nest: boolean;
+  private readonly folded = new Set<string>();
 
-  protected constructor(protected readonly session: Session, title: string, private readonly none: string, private readonly actions: ListActions) {
+  /** `nestKey`: when set, a "/" in a row's label makes folders, and the Nest toggle (kept under that key) turns that off. */
+  protected constructor(protected readonly session: Session, title: string, private readonly none: string, private readonly actions: ListActions, nestKey?: string) {
+    this.nest = nestKey ? readNest(nestKey) : false;
     this.element = document.createElement("div");
     this.element.className = "panel outline list-panel";
     this.list.className = "history-list";
@@ -56,6 +62,20 @@ export abstract class ListPanel {
       rename: make("Rename…", "Rename the chosen row", () => { if (this.chosen !== null) this.actions.rename(this.chosen); }),
       del: make("Delete", "Delete the chosen row; undo brings it back", () => { if (this.chosen !== null) this.actions.remove(this.chosen); }),
     };
+    if (nestKey) {
+      const label = document.createElement("label");
+      label.title = 'Group rows into folders by the "/" in their names';
+      const box = document.createElement("input");
+      box.type = "checkbox";
+      box.checked = this.nest;
+      box.addEventListener("change", () => {
+        this.nest = box.checked;
+        try { localStorage.setItem(nestKey, this.nest ? "1" : "0"); } catch { /* storage blocked: kept for this session only */ }
+        this.draw();
+      });
+      label.append(box, " Nest by /");
+      bar.append(label);
+    }
     this.body.append(this.list);
     this.element.append(heading(title), bar, this.body);
     session.onChange(() => this.update());
@@ -73,18 +93,65 @@ export abstract class ListPanel {
     this.chosen = cur?.label ?? null;
     for (const b of Object.values(this.buttons)) b.disabled = !cur;
     if (!rows) { this.body.replaceChildren(empty(this.none)); return; }
-    this.list.replaceChildren(...rows.map((r) => {
+    this.drawn = rows;
+    this.draw();
+  }
+
+  private draw(): void {
+    const rows = this.drawn;
+    if (!rows) return;
+    const item = (r: ListRow, text: string, depth: number): HTMLLIElement => {
       const li = document.createElement("li");
       const b = document.createElement("button");
       b.type = "button";
       b.className = "history-step";
-      b.textContent = r.note ? `${r.label}  ·  ${r.note}` : r.label;
+      b.style.paddingLeft = `${12 + depth * 14}px`;
+      b.textContent = r.note ? `${text}  ·  ${r.note}` : text;
+      b.title = r.label;
       if (r.current) b.setAttribute("aria-current", "step");
       b.addEventListener("click", () => r.choose());
       li.append(b);
       return li;
-    }));
+    };
+    const items: HTMLLIElement[] = [];
+    if (!this.nest) {
+      for (const r of rows) items.push(item(r, r.label, 0));
+    } else {
+      // A folder shows once, where its first row sits; its rows follow, hidden while it is folded.
+      const seen = new Set<string>();
+      for (const r of rows) {
+        const parts = r.label.split("/");
+        let hidden = false;
+        for (let d = 0; d < parts.length - 1; d++) {
+          const path = parts.slice(0, d + 1).join("/");
+          if (!seen.has(path)) {
+            seen.add(path);
+            if (!hidden) items.push(this.folder(path, parts[d] ?? path, d));
+          }
+          if (this.folded.has(path)) hidden = true;
+        }
+        if (!hidden) items.push(item(r, parts[parts.length - 1] ?? r.label, parts.length - 1));
+      }
+    }
+    this.list.replaceChildren(...items);
     this.body.replaceChildren(this.list);
+  }
+
+  private folder(path: string, name: string, depth: number): HTMLLIElement {
+    const li = document.createElement("li");
+    const b = document.createElement("button");
+    const open = !this.folded.has(path);
+    b.type = "button";
+    b.className = "history-step folder";
+    b.style.paddingLeft = `${12 + depth * 14}px`;
+    b.textContent = `${open ? "▾" : "▸"} ${name}`;
+    b.title = `${open ? "Fold" : "Unfold"} ${path}`;
+    b.addEventListener("click", () => {
+      if (open) this.folded.add(path); else this.folded.delete(path);
+      this.draw();
+    });
+    li.append(b);
+    return li;
   }
 
   /** Run an edit as one undo step; false (and said) when the edit refuses. */
@@ -101,4 +168,8 @@ export abstract class ListPanel {
       return false;
     }
   }
+}
+
+function readNest(key: string): boolean {
+  try { return localStorage.getItem(key) !== "0"; } catch { return true; }
 }
