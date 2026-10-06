@@ -1,6 +1,6 @@
 # BoneBurst ECS port: Plan
 
-**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 (CPU route, skins, tint black, Lit2D) done 2026-10-07 except the vertex-fetch route, rim light and a player build (§15); P7 not started.**
+**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 (CPU route, skins, tint black, Lit2D) done 2026-10-07 except the vertex-fetch route, rim light and a player build (§15); P7 (physics input, followers, idle skipping, benchmark) done 2026-10-07 except the visibility mode, the steady shortcut and the sorting question (§16).**
 
 BoneBurst's pose, constraint, timeline and mesh code (`Module.PA.BoneBurst.Core`) is already Burst-friendly pointer code with no `UnityEngine`. The port keeps that code unchanged and replaces only the managed shell around it (`BoneBurstSystem`, `BoneBurstSkeleton`, `BoneBurstAsset`, `BoneAnimationState`, the GPU and fetch buffers) with Entities 6.7 systems, bakers and Entities Graphics. The result is a new package in `M0-25DPlatformer-ECS/Packages`.
 
@@ -353,3 +353,51 @@ P5 is split in two because the render side needs a shader, Entities Graphics reg
 | Seen on screen (25D Editor, URP 2D Renderer): spineboy "walk" and "run" now draw (CPU route) beside "idle" (GPU route); four spineboys of one asset under a Global and a warm Point Light 2D: the Lit2D ones are darker, and the lit walking one (CPU route) takes the point light | PASS, by eye |
 
 **Left open:** the vertex-fetch route (a shared vertex buffer, instancing for CPU-skinned skeletons: the CPU route draws one mesh and one draw call per skeleton), rim light and the Lit2D rim masks, a player build (shader variants, subscene loading) and the 3D renderer's pass of both shaders, a Lit2D unit test (checked by eye only), and a skeleton's sorting layer and order (§14).
+
+## 16. P7 result (2026-10-07): physics input, followers, idle skipping, benchmark
+
+**Built** (25D repo, commits `d119953` and the benchmark one):
+
+*   **Physics input.** Requests `PhysicsTranslate`, `PhysicsRotate`, `ResetPhysics`; `BoneBurstPhysicsInput` (inheritance and limits, optional) and the inheritance of the entity's movement from its `LocalToWorld` in the skeleton's own space, with the clamp before the factor as in the MonoBehaviour front. The entity's `LocalToWorld` is read as the transform system last wrote it, so physics reacts to a move one transform update later than the MonoBehaviour front, which reads the live transform.
+*   **Bone followers.** `BoneBurstBoneFollower` and `BoneBurstFollowerSystem`: the bone's world transform in the skeleton's space goes into the follower's `LocalTransform` (parent the follower to the skeleton).
+*   **Idle skipping.** An instance with no animation entry, no physics, nothing pending and nothing staged is neither stepped, posed, recorded nor meshed; it keeps its pose, record and mesh. A request wakes it.
+*   **Events** (the `BoneBurstTrackEvent` buffer) were done in P4.
+
+| Gate | Result |
+|---|---|
+| Physics requests equal the managed reference every frame over 150 frames (celestial-circus "swing": translate, rotate, reset), within 1e-3 | PASS |
+| Physics follows the entity's movement and turn, in its own space under a 0.01 scale, equal to the reference given the same translation and rotation | PASS |
+| A follower's transform equals its bone's world transform every frame | PASS |
+| Idle: a resting instance is posed only on its first frame and keeps its pose; a request wakes it | PASS |
+| 25D `Module.TA.BoneBurstEcs.Tests.Editor` | 309 of 309 |
+| Deliberate bugs: physics translate a no-op failed 2; idle skipping never skipping failed 1; follower rotation axes swapped failed 1 | PASS |
+
+### The benchmark
+
+`Assets/BoneBurstEcsBenchmark` in the 25D project mirrors the MonoBehaviour front's `BoneBenchmark` (M0-Animation-2D): the same export (the M2 `mix-and-match-pro`, scale 0.01, skin `full-skins/girl`, the demo's atlas page), grid, camera, seeded start times and the same animation-switch sequence (copied hash), all on screen, vSync off and uncapped, 60 warm-up frames then 600 measured, 1920×1080, the asset's 0.2 s mix. One configuration per process. The Bouncer demo that the project starts in every player is removed by the benchmark before it spawns (its config entity stays: destroying it crashed the demo's input system). The runner `Tests/Tools~/ecs_vs_mono_bench.py` alternates the four runtimes (reversed in the second repeat) and prints the median of the runs' medians; the raw runs are in `Tests/Results~/`.
+
+**Conditions that differ, and why the comparison is only partly fair:**
+*   The ECS player is built by Unity **7000.0.0a7**, which offers macOS **CoreCLR** players only (no IL2CPP, no Mono); the MonoBehaviour player is the existing **IL2CPP** release player built with 6000.6.4f1 on 2026-10-05 (`Build/macOS_BoneBenchmark_IL2CPP_2`, not rebuilt). Burst code is identical in both; the managed parts (header building, request handling, the Entities systems) are not.
+*   Both ran on the same machine (Apple M5 Pro, Metal), alternating, but not quiet: three `vitest` workers of another session used about three cores throughout, and the load average rose from 6 to 16 in the second half of the suite. One mono run (GPU, 2000 switch, repeat 1) produced no result and its repeat 2 is used.
+*   The ECS CPU route draws one mesh per skeleton; the mono CPU route uses the shared vertex-fetch buffer.
+
+Median frame time (ms, lower is better), release players, `Tests/Results~/2026-10-07_macOS-Metal_ecs-vs-mono_runs.csv`. ECS is the build before the lookup change:
+
+| Animation × count | MonoCpu | MonoGpu | EcsGpu | EcsCpu |
+|---|---|---|---|---|
+| idle × 2000 | 3.95 | 3.49 | 3.67 | 4.19 |
+| walk × 2000 | 4.04 | 3.46 | 3.74 | 4.41 |
+| switch × 2000 | 5.95 | 5.58 | 5.75 | 5.55 |
+| switch × 500 | 1.20 | 1.15 | 2.34 | 2.10 |
+| switch × 100 | 0.40 | 0.31 | 0.70 | 0.70 |
+
+**Reading it.** At 2000 skeletons the ECS port is level with the MonoBehaviour runtime (EcsGpu 3.67 against MonoGpu 3.49 idle, 5.75 against 5.58 switching; EcsCpu is between MonoCpu and MonoGpu while switching). At 500 and below it is slower in absolute terms: idle on the GPU route, ECS against mono, is 0.60 against 0.30 ms at 100, 1.70 against 1.00 at 500, 2.30 against 1.80 at 1000. The marginal cost per skeleton is lower for ECS (about 1.3 µs against 1.7) but it carries a fixed cost of about 0.1 ms plus 0.2–0.5 ms of per-frame shell. Disabling systems one at a time in a 500-idle player showed the shell (animation, pose, after-animation, GPU records, render) at about 1.5 ms of the 1.8 ms, each 0.2–0.4 ms, with Entities Graphics itself about 0.3 ms: per-entity `EntityManager` calls in main-thread loops.
+
+**Optimisation from that measurement.** The animation, after-animation and render systems now use `ComponentLookup` and `BufferLookup` over arrays instead of per-entity `EntityManager` calls, skip the after-animation step of unstepped instances and write render bounds only when they changed. Alternating A/B (ABBA, same session, release player, build before against build after), idle on the GPU route: **100 skeletons 0.602 → 0.505 ms (−16%), 500: 1.75 → 1.50 (−14%), 2000: 3.90 → 3.74 (−4%, inside the noise)**; the mono GPU player read 0.30, 1.00, 3.41 in the same session. The remaining gap is the pose header building (about 0.8 µs per instance, `InstanceData.Header` on the main thread, as in the MonoBehaviour runtime), the staging copies and Entities Graphics' own cost; a chunk-level rewrite of those loops is the next step if small counts matter.
+
+**Left open:**
+*   The visibility mode (`UpdateWhenInvisible`): needs culling results; not done.
+*   The steady animation shortcut (`TryAdvanceSteady`): the measurement says the shell, not the animation maths, is what is left; not done.
+*   Sorting layer and order of a skeleton (§14): still the Default layer at order 0. Entities Graphics has no field for it.
+*   A like-for-like backend comparison (IL2CPP on both) is impossible with this Editor; rerun when the ECS package can be built with IL2CPP.
+*   Instance creation cost at spawn (2000 managed `InstanceData` blocks in one frame) was not measured separately.

@@ -11,6 +11,9 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-07 — **ECS port P7 recorded: physics input, followers, idle skipping and the benchmark** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
+- [BoneBurst-ECS-Plan](Review/BoneBurst-ECS-Plan.md) §16: physics requests and movement inheritance, bone followers and idle skipping, each against the managed reference (309 tests; three deliberate bugs failed 2, 1 and 1). A benchmark player mirroring `BoneBenchmark` (same content, grid, seeds and switch sequence) ran alternating against the existing IL2CPP BoneBurst players: level at 2000 skeletons (ECS GPU 3.67 against mono GPU 3.49 ms idle), slower at 500 and below (1.70 against 1.00 at 500 idle) because of main-thread shell cost, which a lookup-based pass cut by 14–16% at 100–500. The backends differ (CoreCLR against IL2CPP) and the machine was not quiet; both are stated in the plan. Core is unchanged by this step.
+
 ### 2026-10-07 — **ECS port P6 recorded: CPU route, skin requests, tint black, Lit2D** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
 - [BoneBurst-ECS-Plan](Review/BoneBurst-ECS-Plan.md) §15: skeletons the GPU route cannot skin (deform, clipping) get a per-instance mesh on a CPU route that equals `ManagedPose.BuildMesh` frame by frame (48 fixture runs); skin and attachment requests, tint black on both routes, and a `BoneBurstEcs/Lit2D` shader seen lit by Light 2D. Four deliberate bugs failed 23, 6, 22 and 2 tests. **Not done:** vertex fetch, rim light, a player build. Core is unchanged by this step.
 
