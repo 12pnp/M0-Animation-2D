@@ -1,7 +1,7 @@
 import { frameTime } from "@/model/timelines";
-import { boneMatrix, boneTip, parentMatrix, type Poser } from "./posed";
+import { boneMatrix, boneTip, parentMatrix, type Posed, type Poser } from "./posed";
 
-/** The space a trail is measured in: the bone's parent (Local), or the skeleton (World). */
+/** The space a trail is measured in: from the bone's parent's joint (Local), or the skeleton's origin (World); both with the world's orientation. */
 export type TrailSpace = "local" | "world";
 
 /**
@@ -19,12 +19,14 @@ export interface BoneTrail {
 /** The most frames a trail covers; a longer animation is cut here. */
 export const MAX_TRAIL_FRAMES = 2000;
 
-/** A world point in the space of the matrix `m` ([a, b, c, d, x, y]); NaN when `m` has no inverse. */
-export function inSpaceOf(m: readonly number[], x: number, y: number): [number, number] {
-  const [a, b, c, d, tx, ty] = m as [number, number, number, number, number, number], det = a * d - b * c;
-  if (!Number.isFinite(det) || Math.abs(det) < 1e-12) return [Number.NaN, Number.NaN];
-  const dx = x - tx, dy = y - ty;
-  return [(d * dx - b * dy) / det, (a * dy - c * dx) / det];
+/**
+ * A world point as Local shows it: the skeleton's own orientation (a rotated bone looks as it does
+ * in the world), but from the bone's parent's joint, so the parent's movement is not in it. The
+ * root's "parent" is the skeleton's own origin.
+ */
+export function fromParent(p: Posed, bone: number, x: number, y: number): [number, number] {
+  const m = parentMatrix(p, bone);
+  return [x - m[4], y - m[5]];
 }
 
 /**
@@ -39,7 +41,7 @@ export function boneTrail(poser: Poser, skin: string | null, animation: string, 
     if (i === undefined) return null;
     const m = boneMatrix(p, i), [tx, ty] = boneTip(p, i);
     let j: [number, number] = [m[4], m[5]], t: [number, number] = [tx, ty];
-    if (space === "local") { const parent = parentMatrix(p, i); j = inSpaceOf(parent, j[0], j[1]); t = inSpaceOf(parent, t[0], t[1]); }
+    if (space === "local") { j = fromParent(p, i, j[0], j[1]); t = fromParent(p, i, t[0], t[1]); }
     joint.set(j, f * 2);
     tip.set(t, f * 2);
   }

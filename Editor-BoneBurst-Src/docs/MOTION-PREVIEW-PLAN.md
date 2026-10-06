@@ -75,3 +75,11 @@ trails. Each could follow.
 ## Result
 
 (filled in when built)
+
+## Local and World, as built
+
+- **World:** the Stage's own place: the skeleton's origin and orientation.
+- **Local:** the world's *orientation* (a bone looks turned as it does on the Stage) measured *from the
+  bone's parent's joint*, so the parent's own movement is not in the picture. Not the parent's frame:
+  no rotation or scale of the parent is taken out. (The owner's note, 2026-10-06: "Local must start
+  with the rotation the same as World, but not relative to the parent".)

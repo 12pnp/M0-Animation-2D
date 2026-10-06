@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 
 /** Path attachments (docs/PATH-PLAN.md): make one from the path window, drag a point on the stage, type a vertex in Local or World, one undo each. */
 
-type Live = { boneburst: { session: { select(s: unknown): void; doc: { skins: { attachments: { slot: string; entries: { key: string; attachment: { vertices: number[]; vertexCount: number } }[] }[] }[] }; history: { undo(): void; apply(l: string, e: unknown): void }; changed(): void; pathVertex: number | null; pose(): unknown }; stage: { camera: { x: number; y: number; zoom: number }; size: { width: number; height: number }; fitView(): void }; workspace: { api: { getPanel(id: string): { api: { maximize(): void } } } } } };
+type Live = { boneburst: { session: { select(s: unknown): void; doc: { skins: { attachments: { slot: string; entries: { key: string; attachment: { vertices: number[]; vertexCount: number } }[] }[] }[] }; history: { undo(): void; apply(l: string, e: unknown): void }; changed(): void; pathVertex: number | null; pose(): unknown }; stage: { camera: { x: number; y: number; zoom: number }; size: { width: number; height: number }; fitView(): void }; workspace: { api: { getPanel(id: string): { api: { maximize(): void; exitMaximized(): void } } } } } };
 
 const vertices = (page: import("@playwright/test").Page) => page.evaluate(() => {
   const att = (window as unknown as Live).boneburst.session.doc.skins[0]!.attachments.flatMap((sl) => sl.entries).find((e) => (e.attachment as { type?: string }).type === "path");
@@ -15,7 +15,8 @@ test("a path's point dragged on the stage, typed in Local and World, undone in o
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
-  // No path yet: select a bone, and the path window offers to make one on a new slot of it.
+  // No path yet: select a bone, and the path window (in the Local Path panel) offers to make one on a new slot of it.
+  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
   expect(await vertices(page)).toEqual([]);
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "hips" }));
   await expect(page.locator(".path-panel")).toBeVisible();
@@ -44,6 +45,9 @@ test("a path's point dragged on the stage, typed in Local and World, undone in o
   // The point's two handles went with it, by the same amount.
   expect(dragged[6]! - before[6]!).toBeCloseTo(dragged[8]! - before[8]!, 2);
   expect(dragged[10]! - before[10]!).toBeCloseTo(dragged[8]! - before[8]!, 2);
+  // The stage was maximized for the drag: back to the panels, with the Local Path tab in front.
+  await page.evaluate(() => (window as unknown as Live).boneburst.workspace.api.getPanel("stage").api.exitMaximized());
+  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
   // One undo for the whole drag.
   await page.keyboard.press("ControlOrMeta+z");
   expect(await vertices(page)).toEqual(before);
@@ -77,6 +81,8 @@ test("Add Path Here in the stage's right-click menu puts a path where the pointe
   await page.mouse.click(box.x + box.width * 0.25, box.y + box.height * 0.3, { button: "right" });
   await page.getByRole("menuitem", { name: "Add Path Here" }).click();
   await expect.poll(async () => (await vertices(page)).length).toBe(12);
+  await page.evaluate(() => (window as unknown as Live).boneburst.workspace.api.getPanel("stage").api.exitMaximized());
+  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
   await expect(page.locator(".path-panel")).toBeVisible();
   const slots = () => page.evaluate(() => ((window as unknown as { boneburst: { session: { doc: { slots: { name: string }[] } } } }).boneburst.session.doc.slots).map((x) => x.name));
   expect((await slots()).some((n) => n.endsWith("-path"))).toBe(true);

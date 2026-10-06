@@ -125,7 +125,7 @@ export function mountApp(root: HTMLElement): void {
   const stagePanel = el("section", "stage-panel");
   const hint = el("div", "hint");
   // The stage's tools, floating over its foot: the bone tools and fit, then what the stage draws.
-  const showBtn = (label: string, tip: string, key: "bones" | "constraints" | "rulers") => {
+  const showBtn = (label: string, tip: string, key: "bones" | "constraints" | "rulers" | "onion") => {
     const b = button(label, tip, () => prefs.set({ [key]: !prefs.values[key] }));
     b.dataset.show = key;
     return b;
@@ -134,6 +134,7 @@ export function mountApp(root: HTMLElement): void {
     showBtn("Bones", "Draw the bones", "bones"),
     showBtn("Constraints", "Draw the constraints", "constraints"),
     showBtn("Rulers", "Show the rulers and their guides", "rulers"),
+    showBtn("Onion", "Onion skin: the poses before (red) and after (green) the playhead, behind the skeleton (View ▸ Onion Skin)", "onion"),
   ];
   const stageTools = el("div", "stage-tools");
   let crumb: HTMLElement;
@@ -175,9 +176,9 @@ export function mountApp(root: HTMLElement): void {
     session.showAnimation(pick);
   }), "bone");
   modeBtn.classList.add("mode");
-  // The path window: the selected path attachment's vertices, by number (docs/PATH-PLAN.md).
+  // The path window: the selected path attachment's vertices, by number (docs/PATH-PLAN.md); it sits in the Local Path panel.
   const pathPanel = new PathPanel(session, (m) => say(m));
-  stageTools.append(crumb, group(modeBtn), pathPanel.element, transform.element, group(...spaceBtns), group(...showBtns, autoKeyBtn));
+  stageTools.append(crumb, group(modeBtn), transform.element, group(...spaceBtns), group(...showBtns, autoKeyBtn));
   // Fit stays in the panel's top right corner, whatever its size.
   const fitCorner = el("div", "stage-fit");
   fitCorner.append(fitBtn);
@@ -198,6 +199,8 @@ export function mountApp(root: HTMLElement): void {
   const references = new References(session);
   const history = new HistoryPanel(session);
   const localPath = new LocalPathPanel(session);
+  // The path window (+ New Path, a path's vertices) is part of the Local Path panel.
+  localPath.addTools(pathPanel.element);
   const skinsPanel = new SkinsPanel(session);
   const animationsPanel = new AnimationsPanel(session);
   // Ask AI (E5 step 9): the bridge's model with the editor's tools; sending connects the AI button.
@@ -323,9 +326,12 @@ export function mountApp(root: HTMLElement): void {
     else document.documentElement.dataset.theme = p.theme;
     workspace.refreshTheme();
     stage.show = { rulers: p.rulers, bones: p.bones, constraints: p.constraints };
+    localPath.onion = () => ({ before: prefs.values.onionBefore, after: prefs.values.onionAfter, keyedOnly: prefs.values.onionKeyedOnly, colour: prefs.values.onionColour });
     stage.onion = p.onion ? { before: p.onionBefore, after: p.onionAfter, keyedOnly: p.onionKeyedOnly, colour: p.onionColour } : null;
     stage.grid = p.grid ? p.gridSize : null;
     stage.look = lookOf(p);
+    localPath.background = () => ({ look: lookOf(prefs.values), grid: prefs.values.grid ? prefs.values.gridSize : null });
+    localPath.refresh();
     stage.boneColour = p.boneColour === "auto" ? null : p.boneColour;
     if (session.boneSize !== p.boneSize) { session.boneSize = p.boneSize; session.changed(); }
     stageTools.hidden = !p.stagePanels;
@@ -340,7 +346,7 @@ export function mountApp(root: HTMLElement): void {
     session.undoSteps = p.undoSteps;
     session.referenceOpacity = p.referenceOpacity;
     aiBtn.setAttribute("aria-pressed", String(p.ai));
-    for (const b of showBtns) b.setAttribute("aria-pressed", String(p[b.dataset.show as "bones" | "constraints" | "rulers"]));
+    for (const b of showBtns) b.setAttribute("aria-pressed", String(p[b.dataset.show as "bones" | "constraints" | "rulers" | "onion"]));
     if (p.ai) ai.start(); else if (ai.state !== "off") ai.stop();
   };
   applyPrefs(prefs.values);

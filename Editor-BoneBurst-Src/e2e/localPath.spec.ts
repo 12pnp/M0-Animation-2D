@@ -4,6 +4,15 @@ import { expect, test } from "@playwright/test";
 
 type Live = { boneburst: { session: { select(s: unknown): void; showAnimation(n: string | null): void; frame: number } } };
 
+/** How many pixels of Local Path's canvas are drawn in: not the stage background, nor its faint checkerboard, grid or axes. */
+const drawnPixels = (page: import("@playwright/test").Page) => page.evaluate(() => {
+  const panel = document.querySelector(".local-path")!, cv = panel.querySelector("canvas") as HTMLCanvasElement, d = cv.getContext("2d")!.getImageData(0, 0, cv.width, cv.height).data;
+  const bg = parseInt(getComputedStyle(panel).getPropertyValue("--stage-bg").trim().slice(1), 16), br = (bg >> 16) & 255, bgn = (bg >> 8) & 255, bb = bg & 255;
+  let n = 0;
+  for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i]! - br) + Math.abs(d[i + 1]! - bgn) + Math.abs(d[i + 2]! - bb) > 90) n++;
+  return n;
+});
+
 test("Local Path shows the selected bone's path over the animation, Local or World; a click on a mark seeks", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
@@ -32,4 +41,179 @@ test("Local Path shows the selected bone's path over the animation, Local or Wor
     return false;
   });
   expect(moved).toBe(true);
+});
+
+test("Local Path's Image, Bone and Path buttons show and hide each layer, and are remembered", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  await page.locator(".stage-tools button.mode").click();
+  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head_art" }));
+  const panel = page.locator(".local-path");
+  for (const name of ["Image", "Bone", "Path"]) await expect(panel.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true");
+  const drawn = () => drawnPixels(page);
+  await expect.poll(drawn).toBeGreaterThan(20000);
+  const all = await drawn();
+  await panel.getByRole("button", { name: "Image", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Image", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(drawn).toBeLessThan(all / 2);
+  // Remembered across a reload (the panel's buttons keep what was set).
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await page.locator(".stage-tools button.mode").click();
+  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
+  await expect(page.locator(".local-path").getByRole("button", { name: "Image", exact: true })).toHaveAttribute("aria-pressed", "false");
+});
+
+test("Local Path in Pose mode shows the bone and its image on the setup pose, the buttons toggle, nothing drags", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
+  const panel = page.locator(".local-path");
+  await expect(panel.locator(".lp-note")).toContainText("Select a bone");
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head_art" }));
+  await expect(panel.locator(".lp-head span")).toHaveText("head_art · Local · Pose");
+  await expect(panel.locator(".lp-note")).toBeHidden();
+  const drawn = () => drawnPixels(page);
+  await expect.poll(drawn).toBeGreaterThan(20000);
+  const all = await drawn();
+  await panel.getByRole("button", { name: "Image", exact: true }).click();
+  await expect.poll(drawn).toBeLessThan(all / 2);
+  await panel.getByRole("button", { name: "World", exact: true }).click();
+  await expect(panel.locator(".lp-head span")).toHaveText("head_art · World · Pose");
+  // A press on the canvas changes nothing: no seek, no edit.
+  const state = () => page.evaluate(() => { const s = (window as unknown as { boneburst: { session: { frame: number; history: { canUndo: boolean } } } }).boneburst.session; return [s.frame, s.history.canUndo]; });
+  const before = await state();
+  const box = (await panel.locator("canvas").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 40, { steps: 4 });
+  await page.mouse.up();
+  expect(await state()).toEqual(before);
+});
+
+test("Onion: a button on the Stage turns onion skin on and off, and Local Path's Onion shows the bone before (red) and after (green) the playhead", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  const stageOnion = page.locator(".stage-tools").getByRole("button", { name: "Onion", exact: true });
+  await expect(stageOnion).toHaveAttribute("aria-pressed", "false");
+  await stageOnion.click();
+  await expect(stageOnion).toHaveAttribute("aria-pressed", "true");
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("boneburst.preferences") ?? "{}").onion)).toBe(true);
+  await stageOnion.click();
+  await expect(stageOnion).toHaveAttribute("aria-pressed", "false");
+
+  await page.locator(".stage-tools button.mode").click();
+  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
+  await page.evaluate(() => { const s = (window as unknown as Live).boneburst.session; s.select({ kind: "bone", name: "arm_near_fore" }); });
+  const tints = () => page.evaluate(() => {
+    const cv = document.querySelector(".local-path canvas") as HTMLCanvasElement, d = cv.getContext("2d")!.getImageData(0, 0, cv.width, cv.height).data;
+    let red = 0, green = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i]!, g = d[i + 1]!, b = d[i + 2]!;
+      if (r > g + 60 && r > b + 60) red++;
+      if (g > r + 40 && g > b + 40) green++;
+    }
+    return { red, green };
+  });
+  await page.evaluate(() => (window as unknown as { boneburst: { session: { seek(f: number): void } } }).boneburst.session.seek(10));
+  await page.waitForTimeout(300);
+  const off = await tints();
+  await page.locator(".local-path").getByRole("button", { name: "Onion", exact: true }).click();
+  await expect.poll(async () => (await tints()).red).toBeGreaterThan(off.red + 50);
+  expect((await tints()).green).toBeGreaterThan(off.green + 50);
+});
+
+test("Local Path zooms with the wheel, pans by dragging, and Fit (top right) shows it whole again", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  await page.locator(".stage-tools button.mode").click();
+  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "arm_near_fore" }));
+  const panel = page.locator(".local-path"), canvas = panel.locator("canvas");
+  const picture = () => canvas.evaluate((c) => (c as HTMLCanvasElement).toDataURL());
+  await expect(panel.locator(".lp-note")).toBeHidden();
+  await page.waitForTimeout(300);
+  const whole = await picture();
+  const box = (await canvas.boundingBox())!;
+  // The Fit button sits at the canvas's top right.
+  const fit = await panel.locator(".lp-fit").boundingBox();
+  expect(fit!.x + fit!.width).toBeGreaterThan(box.x + box.width - 14);
+  expect(fit!.y).toBeLessThan(box.y + 14);
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, -400);
+  await expect.poll(picture).not.toBe(whole);
+  const zoomed = await picture();
+  // A drag on empty canvas pans.
+  await page.mouse.move(box.x + 20, box.y + box.height - 20);
+  await page.mouse.down();
+  await page.mouse.move(box.x + 70, box.y + box.height - 60, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(picture).not.toBe(zoomed);
+  await panel.locator(".lp-fit").click();
+  await expect.poll(picture).toBe(whole);
+});
+
+test("Local Path's Children button shows every bone under the selected one, with their images", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  await page.locator(".stage-tools button.mode").click();
+  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
+  // The chest has no image of its own; its children (arms, head) do.
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "chest" }));
+  const panel = page.locator(".local-path"), children = panel.getByRole("button", { name: "Children", exact: true });
+  await expect(children).toHaveAttribute("aria-pressed", "false");
+  const drawn = () => drawnPixels(page);
+  await page.waitForTimeout(300);
+  const alone = await drawn();
+  await children.click();
+  await expect(children).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(drawn).toBeGreaterThan(alone * 2);
+  await children.click();
+  await expect(children).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(drawn).toBeLessThan(alone * 1.5);
+});
+
+test("Local Path has the Stage's backdrop: the stage background, checkerboard, grid and centre axes, from the same settings", async ({ page }) => {
+  const colours = () => page.evaluate(() => {
+    const cv = document.querySelector(".local-path canvas") as HTMLCanvasElement, d = cv.getContext("2d")!.getImageData(0, 0, cv.width, cv.height).data, seen = new Set<string>();
+    for (let y = 0; y < cv.height; y += 7) for (let x = 0; x < cv.width; x += 7) { const i = (y * cv.width + x) * 4; seen.add(`${d[i]},${d[i + 1]},${d[i + 2]},${d[i + 3]}`); }
+    return { seen: seen.size, corner: [...d.slice((cv.height - 4) * cv.width * 4 + (cv.width - 4) * 4, (cv.height - 4) * cv.width * 4 + (cv.width - 4) * 4 + 3)], stage: getComputedStyle(document.querySelector(".local-path")!).getPropertyValue("--stage-bg").trim() };
+  });
+  const open = async (prefs: object) => {
+    await page.goto("/");
+    await page.evaluate((p) => localStorage.setItem("boneburst.preferences", JSON.stringify({ version: 1, ...p })), prefs);
+    await page.reload();
+    await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+    await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+    await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
+    await page.waitForTimeout(400);
+  };
+  // Everything off: the stage background alone, one colour.
+  await open({ checker: false, axes: false, grid: false });
+  const plain = await colours();
+  expect(plain.seen).toBe(1);
+  const bg = parseInt(plain.stage.slice(1), 16);
+  expect(plain.corner).toEqual([(bg >> 16) & 255, (bg >> 8) & 255, bg & 255]);
+  // The Stage's defaults (checkerboard, centre axes): more than one colour on the canvas.
+  await open({});
+  expect((await colours()).seen).toBeGreaterThan(1);
+  // The grid, from its setting.
+  await open({ checker: false, axes: false, grid: true, gridSize: 10 });
+  expect((await colours()).seen).toBeGreaterThan(1);
 });
