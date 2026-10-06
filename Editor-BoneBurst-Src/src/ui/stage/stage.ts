@@ -657,10 +657,16 @@ export class Stage {
       g.beginPath(); g.arc(ox, oy, GRAB - 8, 0, Math.PI * 2); g.stroke();
     } else {
       // The axes of the chosen space on screen (y up in the world, so the screen y is flipped).
-      const [u, v] = spaceAxes(this.tool === "move" || this.space !== "parent" ? this.space : "local", m, parentMatrix(p, bone));
+      // Scale and Shear in the Parent space still work along the bone's own axes, and are labelled so.
+      const shown: Space = this.tool === "move" || this.space !== "parent" ? this.space : "local";
+      const [u, v] = spaceAxes(shown, m, parentMatrix(p, bone));
       const ax = Math.atan2(-u[1], u[0]), ay = Math.atan2(-v[1], v[0]);
-      for (const [angle, len] of [[ax, GRAB - 12], [ay, GRAB - 24]] as const) {
+      g.font = `10px "JetBrains Mono", monospace`;
+      g.textAlign = "center";
+      g.textBaseline = "middle";
+      for (const [angle, len, name] of [[ax, GRAB - 12, "x"], [ay, GRAB - 24, "y"]] as const) {
         const ex = ox + Math.cos(angle) * len, ey = oy + Math.sin(angle) * len;
+        g.fillText(`${name} ${shown}`, ex + Math.cos(angle) * 22, ey + Math.sin(angle) * 12);
         g.beginPath(); g.moveTo(ox, oy); g.lineTo(ex, ey); g.stroke();
         if (this.tool === "scale") g.fillRect(ex - 4, ey - 4, 8, 8);
         else if (this.tool === "shear") { g.beginPath(); g.moveTo(ex, ey - 5); g.lineTo(ex + 5, ey); g.lineTo(ex, ey + 5); g.lineTo(ex - 5, ey); g.closePath(); g.fill(); }
