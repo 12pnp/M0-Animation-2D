@@ -13,6 +13,11 @@ flowchart LR
 
 ## 2026-10-06
 
+- **BoneBurst Editor v2: ⌘S saves a project file (`.bbdata`); Spine JSON and Unity are File ▸ Export** (`Editor-BoneBurst-Src/`).
+  - One file holds the rig, atlas, page images, sidecar (view, guides, notes) and reference pictures, so reopening needs nothing beside it. Open… reads it; Save Project overwrites the file it was opened from or saved to (Chrome/Edge file pickers; a download elsewhere). File ▸ Export Spine JSON… writes the `.json`, atlas and pages without marking the document saved. The old JSON Save and `sidecarToSave` are deleted.
+  - Plan: [BBDATA-PLAN.md](../../Editor-BoneBurst-Src/docs/BBDATA-PLAN.md).
+  - **Guard**: `tests/bbdata.test.ts` (round trip, each refusal); `e2e/project.spec.ts` (save, reopen as the same rig, export the three files); `e2e/recovery.spec.ts` updated. **Not verified**: the native save/open pickers (Playwright cannot drive them).
+
 - **BoneBurst Editor v2, E7 step 6: the daily driver end to end, and BoneBurst's C# runtime plays what it exports as v2 does** (`Editor-BoneBurst-Src/`).
   - **`e2e/dailyDriver.spec.ts`**: the figure PSD through Open…, rigged and animated by an AI over MCP (`auto_rig`, `apply_motion idle_front`), and a key by hand (Rig panel, frame 5, K). Then Export to Unity. The export opens again with no notes, and exporting it again writes the same bytes.
   - **`scripts/daily-driver.ts`**: BoneBurst's C# reader and runtime (`run.sh --dump`, the bake's own reader) pose that export frame by frame against v2. 60 frames agree, worst 0.0002.
