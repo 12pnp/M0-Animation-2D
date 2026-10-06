@@ -7,7 +7,8 @@ reaches the open rig (`undo`, `redo` built; every argument checked). Step 3 (the
 tools) done: all eleven, and a walk keyed on the stickman by an AI over MCP. Step 5 (the building
 tools) done: the thirteen, and the figure PSD rigged by an AI with `auto_rig` over MCP and waving.
 Step 6 (motion) done: the motion library on v2, AnimatedDrawings' captures (AD-3) included.
-Step 7 (`check_preview`) next.
+Step 7 (`check_preview`) done: the owner's flow `auto_rig` → `apply_motion` → `check_preview`
+ran end to end over MCP on the figure PSD. Step 8 (the remaining tools) next.
 
 E5 puts the AI tools onto v2's model: an MCP client (Claude Code, Claude Desktop, any agent) and
 the in-app Ask AI drive the open rig through the tool contract, each edit one undo step. It is
@@ -566,3 +567,55 @@ flowchart LR
    `list_motions` (12 clips, the front roles guessed right), `apply_motion wave_hello` (210
    frames at 30 fps, `matches` within 0.007, the feet at the ground), `render_frame` at frame 100
    with both hands' paths (checked by eye), `show`; played in the editor.
+
+## Step 7 — `check_preview`
+
+The last tool of the owner's flow: after `auto_rig` and `apply_motion`, an AI asks whether the
+file will play as the editor shows it.
+
+```mermaid
+flowchart LR
+    DOC["the document in memory"] -->|"ctx.pose"| A["the editor's pose<br/>(the stage's runtime)"]
+    DOC -->|"io writeSkeleton → readSkeleton<br/>(what Save writes)"| FILE["the file, read back"]
+    FILE -->|"ctx.poseOf: a fresh runtime"| B["the file's pose"]
+    A & B -->|"every bone, every frame asked"| CMP["largest difference (pixels);<br/>seam for a loop"]
+```
+
+### Decisions
+
+- **What it compares** — **meaning** (version note): v1 compared the editor's own pose with the
+  Preview panel's Spine runtime. In v2 the stage is that runtime, so the check compares the
+  editor's pose with the pose of the file as Save writes it: the document written as Spine 4.3
+  JSON, read back, and posed by a fresh runtime, at each frame asked (default every frame up to
+  120). A difference above 0.01 pixels means the file would not play as the editor shows it. No
+  Preview panel is needed.
+- **What it returns**: the largest difference and where (bone, frame), `matches`, the frames
+  checked, and for a looping animation (its last frame equal to frame 0 in v1's sense: v2 has no
+  flag, so for every animation) `seam`, the bones whose last frame differs from frame 0.
+- The context gains `poseOf(document, …)`: the stage's `Poser` on another document.
+
+### Steps
+
+1. `agent/check.ts`, the context's `poseOf`; tests: the stickman's and spineboy-pro's animations
+   match; the seam; a planted fault in the writer (a curve dropped) caught by the tool.
+2. On screen: the flow end to end over MCP on the figure PSD: `auto_rig` → `apply_motion` →
+   `check_preview`.
+
+### Step 7 results
+
+1. `agent/check.ts` (`check_preview`, `poseDifference`: per active bone the larger of the joint's
+   and the tip's distance, so a bone turned about its joint counts). The context's `poseOf`: the
+   stage's `Poser` cache on another document, posed at float32 time. `tools.json`: the meaning
+   line in the version note and the new description; the gate passes.
+2. `tests/agentCheck.test.ts`, 3 tests: the stickman's `run` and `dance` and six spineboy-pro
+   animations match (spineboy's one-frame `aim` checked at its default frames); the seam of a
+   loop whose last frame differs; `poseDifference` catches a turn about the joint. **Changed from
+   the plan**: the planted fault is in the writer's number formatting (numbers rounded to 0.1),
+   caught. A fault planted in the reader is not caught, and cannot be by this test: the test
+   documents are themselves read with that reader, so both sides carry it. The reader is guarded
+   by the IO round-trip tests instead.
+3. On screen, this session as the AI through MCP (a stand-in client driving `mcp/bridge.mjs`): the
+   figure PSD dropped, AI pressed; `auto_rig` (11 bones, 6 pictures on bones, IK on both shins);
+   `apply_motion idle_front` as `idle` (60 frames, `matches`, largest difference 0.001);
+   `check_preview idle` (61 frames, largest difference 0, `matches`, no seam); `show idle 10`. The
+   done-when's flow works; step 10 makes it a permanent end-to-end test.

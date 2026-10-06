@@ -13,7 +13,7 @@ import { constraintNow } from "@/ui/stage/posed";
 export type TestContext = AgentContext & { told: number; shown: AgentView[]; renders: RenderRequest[] };
 
 export function testContext(history: History<Skeleton> | null, images: AtlasImages = NO_IMAGES, references: AgentReference[] = []): TestContext {
-  const poser = poserCache();
+  const poser = poserCache(), other = poserCache();
   let view: AgentView = { animation: null, frame: 0, skin: null };
   const c: TestContext = {
     history, told: 0, shown: [], renders: [], images,
@@ -22,6 +22,7 @@ export function testContext(history: History<Skeleton> | null, images: AtlasImag
     show: (v) => { view = v; c.shown.push(v); },
     // At the float32 time, as the editor's context poses (keys are stored as float32).
     pose: (skin, animation, time) => posedBones(poser(history!.doc, images).pose(skin, animation, Math.fround(time))),
+    poseOf: (doc, skin, animation, time) => posedBones(other(doc, images).pose(skin, animation, Math.fround(time))),
     constraintNow: (skin, animation, time, type, name) => {
       const p = poser(history!.doc, images).pose(skin, animation, Math.fround(time)), i = p.rig.data.constraints.findIndex((k) => k.kind === type && k.name === name);
       return i < 0 ? null : constraintNow(p, i);

@@ -3,6 +3,7 @@ import type { Skeleton } from "@/model/skeleton";
 import { type AgentContext, AgentRefused } from "./context";
 import type { Contract, Tool } from "./contract";
 import { BUILD_TOOLS } from "./build";
+import { CHECK_TOOLS } from "./check";
 import { KEY_TOOLS } from "./keys";
 import { MOTION_TOOLS } from "./motion";
 import { READ_TOOLS } from "./read";
@@ -50,6 +51,7 @@ const TOOLS: Record<string, ToolFn> = {
   ...KEY_TOOLS,
   ...BUILD_TOOLS,
   ...MOTION_TOOLS,
+  ...CHECK_TOOLS,
 };
 
 /** Run the tool `name` with `args` on the editor's document. */

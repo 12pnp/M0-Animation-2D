@@ -108,6 +108,11 @@
         "tool": "add_bones",
         "change": "meaning",
         "what": "A skeleton has one root: a bone given no parent goes under the root bone (its `from`/`to` still in skeleton space)."
+      },
+      {
+        "tool": "check_preview",
+        "change": "meaning",
+        "what": "Compares the editor's pose with the pose of the file as Save writes it (Spine 4.3 JSON written, read back, posed by a fresh runtime); v1 compared it with the Preview panel's runtime. No panel is needed; `seam` is reported for every animation."
       }
     ]
   },
@@ -468,7 +473,7 @@
     },
     {
       "name": "check_preview",
-      "description": "Play the animation in the real Spine runtime (the Preview panel, what a game will show) at the given frames and compare every bone with the editor's pose. Returns the largest difference in pixels; anything above 0.01 means the file would not play as the editor shows it. Needs the Preview panel open. For a cycle it also reports `seam`: the bones whose last frame does not match frame 0.",
+      "description": "Check that the file plays as the editor shows it: the skeleton is written as Save writes it (Spine 4.3 JSON), read back, posed by a fresh Spine runtime at the given frames, and every bone compared with the editor's pose. Returns the largest difference in pixels; anything above 0.01 means the file would not play as the editor shows it. Also reports `seam`: the bones whose last frame does not match frame 0, where a loop would hitch.",
       "input_schema": {
         "type": "object",
         "properties": {

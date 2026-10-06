@@ -40,6 +40,7 @@ function base64(c: HTMLCanvasElement): string {
 
 export function sessionContext(session: Session): AgentContext {
   const poser = poserCache();
+  const other = poserCache();
   // Posed at the float32 time, as the playhead is: keys are stored as float32, and a frame's
   // float64 time can fall just before the key written at it.
   const pose = (skin: string | null, animation: string | null, time: number) => poser(session.doc!, session.images).pose(skin, animation, Math.fround(time));
@@ -58,6 +59,7 @@ export function sessionContext(session: Session): AgentContext {
       session.seek(v.frame);
     },
     pose: (skin, animation, time) => posedBones(pose(skin, animation, time)),
+    poseOf: (doc, skin, animation, time) => posedBones(other(doc, session.images).pose(skin, animation, Math.fround(time))),
     constraintNow: (skin, animation, time, type, name) => {
       const p = pose(skin, animation, time), i = p.rig.data.constraints.findIndex((k) => k.kind === type && k.name === name);
       return i < 0 ? null : constraintNow(p, i);

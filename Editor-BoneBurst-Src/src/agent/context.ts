@@ -54,6 +54,8 @@ export interface AgentContext {
   show(view: AgentView): void;
   /** Every bone posed: `animation` (null: setup) at `time` seconds, `skin` shown. */
   pose(skin: string | null, animation: string | null, time: number): readonly PosedBone[];
+  /** The same for another document (check_preview: the file as written and read back). */
+  poseOf(doc: Skeleton, skin: string | null, animation: string | null, time: number): readonly PosedBone[];
   /** A constraint's animatable values in force at `time` of `animation` (null: setup), named as its keys name them; null when the rig has no such constraint. */
   constraintNow(skin: string | null, animation: string | null, time: number, type: ConstraintType, name: string): Record<string, number | boolean> | null;
   references(): readonly AgentReference[];

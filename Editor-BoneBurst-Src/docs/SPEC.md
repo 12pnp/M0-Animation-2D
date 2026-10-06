@@ -290,6 +290,12 @@ in Spine's y-up matrices, its answers equal to v1's to 1e-13 on twelve rigs and 
 an oracle; three kept in `tests/fixtures/retarget-v1.json`). An IK chain's bend is the
 constraint's own `bendPositive` (v1 read it off the pose, unknown for a limb drawn straight).
 
+**Checking (E5 step 7).** `agent/check.ts`: `check_preview` compares the editor's pose with the
+pose of the file as Save writes it (the document written as Spine 4.3 JSON, read back, posed by a
+fresh runtime through the context's `poseOf`), frame by frame; above 0.01 pixels the file would
+not play as shown. It also reports a loop's seam. v1 compared against a Preview panel's runtime;
+in v2 the stage is that runtime (a meaning change in the version note).
+
 ## 9. Verification
 
 - `scripts/check.sh`: typecheck and build, the tests (zero tests is a failure), no Spine runtime
