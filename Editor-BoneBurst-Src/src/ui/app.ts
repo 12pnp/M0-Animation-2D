@@ -14,6 +14,7 @@ import { Timeline } from "./timeline/timeline";
 import { animationDuration, timeFrame } from "@/model/timelines";
 import { encodePng } from "@/io/png";
 import { AiBridge } from "./agent/bridge";
+import { sessionContext } from "./agent/context";
 import { iconButton } from "./icons";
 import { isPanelId, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
 import { type PanelContent, Workspace } from "./workspace/workspace";
@@ -71,7 +72,7 @@ export function mountApp(root: HTMLElement): void {
   const prefsBtn = iconButton(button("⚙", "Preferences: theme, rulers, bones, undo steps (⌘,)", () => prefsDialog.open()), "settings", false);
   prefsBtn.setAttribute("aria-label", "Preferences");
   // The AI bridge (E5 step 2): an MCP client or Ask AI works on the open rig through it.
-  const ai = new AiBridge({ get history() { return session.history; }, changed: () => session.changed() });
+  const ai = new AiBridge(sessionContext(session));
   const aiBtn = iconButton(button("AI", "Connect to the AI bridge, so an MCP client (Claude Code, Claude Desktop) or Ask AI can work on the open rig", () => prefs.set({ ai: !prefs.values.ai })), "ai");
   aiBtn.classList.add("ai-button");
   aiBtn.dataset.state = "off";

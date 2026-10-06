@@ -2,7 +2,9 @@
 
 **Status:** in progress, 2026-10-06. Step 1 (provenance and the contract) done: v2's `tools.json`
 with its version note, the gate in `npm run check`. Step 2 (the bridge) done: an MCP client's call
-reaches the open rig (`undo`, `redo` built; every argument checked). Step 3 (the read tools) next.
+reaches the open rig (`undo`, `redo` built; every argument checked). Step 3 (the read tools) done:
+`get_rig`, `get_animation`, `get_pose`, `get_reference`, `show`, `render_frame`. Step 4 (the key
+tools) next.
 
 E5 puts the AI tools onto v2's model: an MCP client (Claude Code, Claude Desktop, any agent) and
 the in-app Ask AI drive the open rig through the tool contract, each edit one undo step. It is
@@ -200,3 +202,92 @@ sequenceDiagram
    bridge's status first and turns green at once (1.5 s after a reload with the bridge up). The
    bridge stopped: amber, the start command in the status line; the button pressed again: grey,
    "Disconnected", the preference off.
+
+## Step 3 — the read tools
+
+An AI can see the rig: its structure, its animations' keys, where bones are at any frame, the
+reference pictures, and a picture of the skeleton; and it can show the user what it means.
+`get_rig`, `get_animation`, `get_pose`, `get_reference`, `show` and `render_frame`.
+
+```mermaid
+flowchart LR
+    H["agent/host"] --> R["agent/read.ts (pure)"]
+    R -->|"doc, atlas regions"| RIG["get_rig · get_animation"]
+    R -->|"ctx.pose(skin, animation, time)"| POSE["get_pose · seams · paths"]
+    R -->|"ctx.show(view)"| SHOW["show"]
+    R -->|"ctx.references()"| REF["get_reference"]
+    R -->|"ctx.render(request)"| RF["render_frame"]
+    CTX["ui/agent/context.ts:<br/>session, Poser, an offscreen<br/>Renderer + 2D canvas"] -.->|"implements"| R
+```
+
+### Decisions
+
+- **The host's context grows** (all as data or functions the editor provides, so `src/agent`
+  stays pure): the atlas's regions, the view (animation, frame, skin, frame rate), `show`,
+  `pose` (each bone's world matrix, local pose and length at a skin, animation and time, from
+  the stage's `Poser`), the references (the sidecar's, with their pictures' sizes and PNGs), and
+  `render`.
+- **Values follow the contract's words**: keys and setup poses are local and absolute (a key's
+  stored offset added to the setup value, its factor multiplied for scale); world values are y
+  up, degrees counter-clockwise. Eases read back as the names `set_keys` takes (`linear`,
+  `hold`, `in`, `out`, `inout`, for the editor's presets) or a normalised `[x1, y1, x2, y2]`;
+  a key whose properties ease differently gives `eases` per property.
+- **`get_rig`**: bones (parent, length, setup pose, world position and rotation on the setup
+  pose); slots with what they show — for a region its image, size, the pivot pixel (the bone's
+  origin in the picture's pixels), the pivot in skeleton space and the picture's world
+  rotation, as the contract's formula reads them; every constraint (kind, name, bones, target or
+  source); the atlas's images with their sizes (in place of v1's library); skins; animations
+  with their lengths; the frame rate; what the editor shows; the references.
+- **`get_animation`**: per bone, the frames it is keyed at with its local values there and the
+  ease that starts there; its length in frames; `seam`, the bones whose pose at the last frame
+  differs from frame 0, and `cycle` when there is none (v2 has no cycle flag: D5 dropped
+  `set_cycle`).
+- **`get_pose`**: world x, y, rotation, scaleX, scaleY per bone, as the runtime poses it,
+  constraints applied, on the skin the editor shows.
+- **`show`** sets the editor's animation, frame and skin. **Meaning change** (in the version
+  note): the stage shows one skin over the default, so `skins` takes none or one (more is
+  refused with the reason), and showing is view state, not an undo step.
+- **`get_reference`**: **meaning change** (in the version note): a v2 reference is a still
+  picture placed in skeleton space and shown at every frame (the sidecar's, E4 step 9), not a
+  per-frame sequence of an animation. It returns each reference's place, size and the
+  pixel-to-skeleton formula, and with `frames` its pictures (once each, whatever the frames).
+- **`render_frame`**: the skeleton drawn by the stage's renderer into a picture of at most
+  768 px, fitted to the pose and the references, the references at half strength when asked,
+  every active bone drawn from joint to tip and named (blue for names with far or right,
+  magenta otherwise), each bone's joint and tip in pixels, and the mapping
+  (skeleton (x, y) is at pixel (ox + x·s, oy − y·s)). `paths`: each named bone's tip at every
+  frame of the animation, joined, its keyed frames as rings.
+
+### Steps
+
+1. `agent/read.ts` with tests on the stickman and spineboy-pro (through a context built on the
+   stage's `Poser`): each answer's values against the document and the pose, the absolute key
+   values, eases by name, a seam, refusals; the version note's two lines.
+2. `ui/agent/context.ts`: the context from the session; the offscreen render.
+3. On screen: an MCP client reads the stickman, renders a frame (the picture checked by eye),
+   and shows an animation at a frame on the stage.
+
+### Step 3 results
+
+1. `agent/read.ts`; the context's types moved to `agent/context.ts` (the host and the tools both
+   need them; one module, no import cycle). `tests/agentRead.test.ts`, 6 tests on the stickman
+   through a test context posed by the stage's `Poser` (`tests/fixtures/agentContext.ts`):
+   `get_rig`'s bones, world places, every region's picture centre landing where the runtime puts
+   it through its pivot and rotation, images, skins, animations, constraints, what is shown;
+   `get_animation`'s absolute values (setup plus the stored offset), eases read back by name
+   (`in` for the preset, `hold` for stepped, per property under `eases`), a seam found and gone;
+   `get_pose` against the pose; `show`'s skin rules and frame limit; `get_reference`'s placement
+   formula, a missing picture, pictures on request; `render_frame`'s request with a bone's tip
+   path over every frame and its keyed frames. Four planted bugs fail them (offsets read as
+   values; the pivot's v sign; in and out swapped; no seam ever). **Changed while testing:** the
+   test first assumed `run` is 16 frames; its last key (on another bone) is at 17, so the length is
+   now taken from the document. The version note gained `show` and `get_reference` (meaning).
+2. `ui/agent/context.ts` (`sessionContext`, `posedBones`, `poserCache`, the offscreen render).
+3. On screen, through a stand-in MCP client over stdio: `get_rig` (27 bones, 11 slots, 7 images,
+   `shin_far`'s pivot at pixel (11, 30), world (405.63, −473.55), −105°); `get_animation run`
+   (17 frames, a cycle, hips y −404 = setup −400 + stored −4); `get_pose`; `render_frame` with
+   `head`'s path (picture checked by eye); `show run` at frame 6 with `alt` (the stage and the
+   timeline followed); two skins refused. **Changed on screen:** the first pictures were framed
+   on every bone, the stickman's root at the origin included, so the figure took a third of the
+   picture; they are now framed on the drawn pictures and the bones on them (scale 1.29 → 2.26
+   pixels per unit), a bone outside the picture marked `outside`.

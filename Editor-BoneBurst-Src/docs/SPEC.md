@@ -244,6 +244,16 @@ message the model reads. Lifted from v1's `mcp/boneburst-bridge.mjs` after its p
 version note in `initialize`, and a settable call timeout changed; the old `AMINO_*` aliases and
 key file dropped.
 
+**Reading (E5 step 3).** `agent/read.ts`: `get_rig`, `get_animation`, `get_pose`, `get_reference`,
+`show`, `render_frame`, over the context's data and functions (`agent/context.ts`): the atlas's
+regions, the view, `show`, `pose` (the stage's `Poser`), the references, `render`. Keys and setup
+poses read local and absolute (stored offsets added, scale factors multiplied); eases by the
+names `set_keys` takes or a normalised cubic; `seam` and `cycle` from the poses at frame 0 and the
+last frame. `ui/agent/context.ts` builds the context from the session; `render_frame` draws with an
+offscreen copy of the stage's renderer, framed on the drawn pictures and the bones on them. Two
+meaning changes are in the version note: `show` takes one skin (view state, not an undo step) and
+`get_reference` returns v2's still references.
+
 ## 9. Verification
 
 - `scripts/check.sh`: typecheck and build, the tests (zero tests is a failure), no Spine runtime

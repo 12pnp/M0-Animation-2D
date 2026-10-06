@@ -2,14 +2,12 @@ import { describe, expect, it } from "vitest";
 import { updateBone } from "@/edit/bones";
 import { History } from "@/edit/history";
 import { newSkeleton } from "@/edit/newSkeleton";
-import { AgentRefused, callTool, type AgentContext } from "@/agent/host";
+import { AgentRefused, callTool } from "@/agent/host";
 import { schemaProblem } from "@/agent/schema";
 import type { Skeleton } from "@/model/skeleton";
+import { testContext } from "./fixtures/agentContext";
 
-const ctx = (history: History<Skeleton> | null): AgentContext & { told: number } => {
-  const c = { history, told: 0, changed() { c.told++; } };
-  return c;
-};
+const ctx = (history: History<Skeleton> | null) => testContext(history);
 const refused = async (p: Promise<unknown>) => { try { await p; return ""; } catch (e) { expect(e).toBeInstanceOf(AgentRefused); return (e as Error).message; } };
 
 describe("the agent host (E5 step 2)", () => {
@@ -30,7 +28,7 @@ describe("the agent host (E5 step 2)", () => {
     const c = ctx(new History(newSkeleton("h")));
     expect(await refused(callTool("undo", { steps: 0 }, c))).toBe("undo: arguments.steps must be at least 1.");
     expect(await refused(callTool("undo", { step: 2 }, c))).toBe("undo: arguments.step is not an argument here (it takes steps).");
-    expect(await refused(callTool("show", { animation: "walk" }, c))).toBe("show is in the contract but not built in this editor yet.");
+    expect(await refused(callTool("set_keys", { animation: "walk", keys: [{ bone: "root", frame: 0 }] }, c))).toBe("set_keys is in the contract but not built in this editor yet.");
   });
   it("checks arguments the way the contract's schemas say", () => {
     const ease = { oneOf: [{ type: "string", enum: ["linear", "in"] }, { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4 }] };

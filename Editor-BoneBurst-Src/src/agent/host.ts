@@ -1,29 +1,19 @@
 import type { History } from "@/edit/history";
 import type { Skeleton } from "@/model/skeleton";
+import { type AgentContext, AgentRefused } from "./context";
 import type { Contract, Tool } from "./contract";
+import { READ_TOOLS } from "./read";
 import { schemaProblem } from "./schema";
 import contract from "./tools.json";
 
 /**
  * Where an AI's tool calls land (E5-PLAN step 2): the contract's tool by name, its arguments
- * checked against its schema, then the tool itself. Pure: the editor gives the document's
- * history and a way to say it changed. A refusal is an `AgentRefused`, whose message the model
- * reads and can act on; anything else that throws is the editor's fault and says so.
+ * checked against its schema, then the tool itself. Pure: the editor gives a context
+ * (`./context.ts`). A refusal is an `AgentRefused`, whose message the model reads and can act
+ * on; anything else that throws is the editor's fault and says so.
  */
 
-/** A call the model can fix: its message says what was wrong. */
-export class AgentRefused extends Error {}
-
-/** What the editor gives the tools. */
-export interface AgentContext {
-  /** The open document's history; null when nothing is open. */
-  readonly history: History<Skeleton> | null;
-  /** Tell the editor the document or the view changed. */
-  changed(): void;
-}
-
-/** A tool's value may carry pictures under this key; the bridge sends them as images. */
-export const IMAGES_KEY = "__images";
+export * from "./context";
 
 type ToolFn = (args: Record<string, unknown>, ctx: AgentContext) => unknown | Promise<unknown>;
 
@@ -53,6 +43,7 @@ function step(dir: "undo" | "redo"): ToolFn {
 const TOOLS: Record<string, ToolFn> = {
   undo: step("undo"),
   redo: step("redo"),
+  ...READ_TOOLS,
 };
 
 /** Run the tool `name` with `args` on the editor's document. */

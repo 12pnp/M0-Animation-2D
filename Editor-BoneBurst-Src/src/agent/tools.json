@@ -63,13 +63,23 @@
         "tool": "key_properties",
         "change": "meaning",
         "what": "`layers` names slots."
+      },
+      {
+        "tool": "show",
+        "change": "meaning",
+        "what": "`skins` takes none or one skin: the editor shows one skin over the default at a time. Showing is view state, not an undo step."
+      },
+      {
+        "tool": "get_reference",
+        "change": "meaning",
+        "what": "A reference is a still picture placed in skeleton space and shown at every frame (the sidecar's), not a per-frame sequence of one animation; `frames` returns each reference's picture once."
       }
     ]
   },
   "tools": [
     {
       "name": "get_rig",
-      "description": "The skeleton being edited: its bones (parent, length, setup pose), slots (a picture's slot also gives its image, size in pixels, pivot pixel, and where that pivot is in skeleton space with its world rotation: pixel (u, v) of an unturned picture is at at + (u - pivot[0], pivot[1] - v)), IK constraints, the library's pictures, skins, animations and frame rate, and which animation, frame and skins the editor shows. Call this first. Values use Spine's conventions: x right, y UP, rotation in degrees counter-clockwise, all local to the parent bone.",
+      "description": "The skeleton being edited: its bones (parent, length, setup pose, and world position and rotation on the setup pose), slots (a region's slot also gives its image, size in pixels, pivot pixel, and where that pivot is in skeleton space with the picture's world rotation: pixel (u, v) of an unturned picture is at at + (u - pivot[0], pivot[1] - v)), constraints, the atlas's images and their sizes, skins, animations and frame rate, which animation, frame and skin the editor shows, and the reference pictures. Call this first. Values use Spine's conventions: x right, y UP, rotation in degrees counter-clockwise, all local to the parent bone.",
       "input_schema": {
         "type": "object",
         "properties": {},
@@ -78,7 +88,7 @@
     },
     {
       "name": "get_animation",
-      "description": "Every key of one animation, per bone: frame, local x, y, rotation, scaleX, scaleY and the ease of the interval that starts at the key (with `eases` for properties that follow their own). Also its length in frames, whether it loops, and whether it is a cycle (its last frame is frame 0 again); for a cycle, `seam` lists every bone whose pose at that last frame differs from frame 0, where the loop would hitch. Keys set by other tools (constraints, meshes, events) are not listed.",
+      "description": "Every key of one animation, per bone: frame, local x, y, rotation, scaleX, scaleY (and shearX, shearY when keyed) and the ease of the interval that starts at the key (with `eases` for properties that follow their own). Also its length in frames, and `seam`: every bone whose pose at the last frame differs from frame 0, where a loop would hitch (`cycle` is true when there is none). Keys set by other tools (constraints, meshes, events) are not listed.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -367,7 +377,7 @@
     },
     {
       "name": "show",
-      "description": "Show an animation at a frame in the editor, so the user sees it (the stage, the timeline and the Preview follow). `skins` picks which of the rig's skins (get_rig lists them) are shown, combined over the default skin; [] shows the default skin only. Choosing skins is one undoable step.",
+      "description": "Show an animation at a frame in the editor, so the user sees it (the stage and the timeline follow). `skins` picks the skin shown over the default skin (get_rig lists them): [] shows the default skin only; the editor shows one skin at a time. Showing is not an undo step.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -456,7 +466,7 @@
     },
     {
       "name": "get_reference",
-      "description": "The animation's reference: pictures the user added to animate against, frame by frame (get_rig lists which animations have one). Returns how its images sit in time (which frames each shows) and in the skeleton's space (where an image pixel lands), and the images at the frames you ask for, at most 6 at a time. Look at the reference's key poses before keying.",
+      "description": "The reference pictures the user placed to animate against (get_rig lists them): still pictures in the skeleton's space, shown at every frame. Returns where each sits and how a picture pixel maps to skeleton space; with `frames` (any frame numbers), the pictures themselves. Look at the reference before keying.",
       "input_schema": {
         "type": "object",
         "properties": {
