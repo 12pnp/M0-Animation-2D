@@ -13,6 +13,14 @@ flowchart LR
 
 ## 2026-10-06
 
+- **BoneBurst Editor v2, E8 closed: the truth up to the bake** (`Editor-BoneBurst-Src/`).
+  - **The done-when, part by part**: an edit that breaks the file says so at once, naming what (live notes); nothing is drawn as nothing without a note (missing regions, the engine's named skips, bones without a pose); v2's export goes through Unity's real bake, first bake and rebake on change, and reads back as exported.
+  - **One rule, one place**: `edit/bones.ts` uses `meshLayout.isWeighted` (paths included since d081362) instead of its own copy.
+  - **Docs**: SPEC §5–§7, §9 and §10; the README; the editor's `CLAUDE.md`; the charter's status and E8 row; root `CLAUDE.md`.
+  - **Open for the owner**: the AssetSystem cache's stale rows (pb-creator-base), stock spine-unity's auto-import of exports under `Assets/`, and the Unity version in `CLAUDE.md` (6000.6.4f1 here).
+  - Plan: [E8-PLAN.md](../../Editor-BoneBurst-Src/docs/E8-PLAN.md) ▸ Step 4.
+  - **Guard**: `npm run check` passes (696 vitest, 25 browser tests and 1 build browser test). `scripts/unity-parity.ts`: 17 rigs agree.
+
 - **BoneBurst Editor v2, E8 step 3: v2's export through the real Unity bake, first bake and rebake on change, read back alike** (`Editor-BoneBurst-Src/`).
   - **First bake** in the Unity Editor (`BoneBurstBake.FindSource`/`SettingsFor`/`Bake`, as the popup does) of the daily driver's export, in a scratch folder outside SmartAddresser's targets. Read back: the same bones, slots, skins, constraints and animations as exported, and the baked data posed by BoneBurst's runtime in Unity as v2 poses the export: 60 frames, worst 0.0010.
   - **Rebake on change**: a second export (one more key) written over the first is rebaked by `BoneBurstRebakeOnChange` on its own, the GUIDs kept; it matches the second export and no longer the first.

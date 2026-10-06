@@ -1,6 +1,6 @@
 # Editor v2 — from scratch, MIT, no Animo code — plan
 
-**Status:** E0–E7 done 2026-10-06 (moved here from the old editor's `docs/` at E6 step 7). This folder (`Editor-BoneBurst-Src/`): MIT licence, notices, spec,
+**Status:** E0–E8 done 2026-10-06 (moved here from the old editor's `docs/` at E6 step 7). This folder (`Editor-BoneBurst-Src/`): MIT licence, notices, spec,
 clean-room rules; the document model, Spine JSON, atlas and sidecar in and out, undo (E1); the
 runtime lifted as its engine after the provenance pass, and a stage that edits the setup pose
 (E2); a timeline that keys, eases, moves and plays animations, a walk keyed on the stickman and
@@ -22,6 +22,9 @@ E7 (the daily driver) done 2026-10-06 (`E7-PLAN.md`): the History panel, one sho
 sheet, `npm start` with a split build, and a robustness pass (edits fuzzed, hostile files, the owner's
 flow end to end into BoneBurst's C# runtime) that found and fixed fourteen problems; the Unity
 Editor bake itself not run (owner's choice).
+E8 (the truth up to the bake) done 2026-10-06 (`E8-PLAN.md`): the notes live and naming their thing,
+bones without a pose named and not drawn, and v2's export through Unity's real bake, first bake and
+rebake on change, read back as v2 exported it.
 
 **Owner decision 2026-10-05:** replace the Animo-fork editor with a new editor
 that contains **no Animo code**, licensed **MIT** from its first commit. The
@@ -138,7 +141,7 @@ undo, onion skins — these are ideas every editor shares. The rules:
 | E5 | **AI layer re-bind**: `tools.json` onto the new model per D5 (layer → slot names, sidecar-backed tools, or a versioned contract), Ask AI, bridge, AnimatedDrawings sidecar tools | **E5 is done when `auto_rig` → `apply_motion` → `check_preview` runs end to end via MCP on a fixture rig, against the tools contract as versioned by D5 — with the flow's own tools (`auto_rig`, `apply_motion`, `check_preview`, `set_keys`, `show`, `get_pose`) keeping their v1 names and argument shapes** *(owner, 2026-10-06: moved from E4 and made E5's primary criterion; worded so on the same day, replacing "against the unmodified tools contract", which contradicted D5)*. Every tool D5 drops or renames is listed in the contract's version note in the same commit, and `npm run check` fails on an unlisted breaking change; also every tool `tests/agentApi.test.ts` exercises passes against v2, or is listed as dropped in the contract's version note; an AI keys a walk on a fixture rig via MCP (`set_keys`, `show`, `get_pose`, moved from E3); the AD-0..AD-4 plans execute against v2 *(at E5's close, 2026-10-06: AD-3 runs on v2; AD-0..2 and AD-4 need the detection sidecar, which waits on the owner's install decision and runs on neither editor)* |
 | E6 | **Parity + cutover**: side-by-side with the old editor as oracle; same rigs edited → same exports; docs migrated; the AGPL folder demoted to oracle-only, then archived | v2 is the daily driver; the fork takes no new features |
 | E7 | **The daily driver** *(owner, 2026-10-06)*: the History panel and a shortcuts sheet (from E6's later list), running without the dev server (`npm start`, a code-split build), and a robustness pass (edits fuzzed, hostile files, the owner's flow end to end into Unity) — `E7-PLAN.md` | an artist starts it with one command, sees and reaches every undo step and shortcut, and the fuzzed edits, hostile files and the end-to-end flow find nothing left unfixed *(done 2026-10-06; the asset bake in the Unity Editor not run, the owner's choice)* |
-| E8 | **The truth up to the bake** *(owner, 2026-10-06)*: the notes live as the rig is edited, each naming its thing (profile, missing regions, what the engine skips, bones left without a pose); v2's export baked by the real Unity bake, first bake and rebake on change, read back in Unity — `E8-PLAN.md` | an edit that breaks the file says so at once, naming what; nothing is drawn as nothing without a note; the bake takes v2's export and its asset reads back as v2 exported it |
+| E8 | **The truth up to the bake** *(owner, 2026-10-06)*: the notes live as the rig is edited, each naming its thing (profile, missing regions, what the engine skips, bones left without a pose); v2's export baked by the real Unity bake, first bake and rebake on change, read back in Unity — `E8-PLAN.md` | an edit that breaks the file says so at once, naming what; nothing is drawn as nothing without a note; the bake takes v2's export and its asset reads back as v2 exported it *(done 2026-10-06)* |
 
 ## Licence handling
 

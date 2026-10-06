@@ -2,6 +2,7 @@ import type { Attachment, Bone, Constraint, Skeleton, Skin } from "@/model/skele
 import { EditRefused, type Edit } from "./history";
 import { removeSlots, slotUsers } from "./slots";
 import { refuseNonFinite } from "./finite";
+import { isWeighted } from "./meshLayout";
 
 /** The fields of a bone an edit may set; `undefined` removes the key (the default then applies). */
 export type BonePatch = { -readonly [K in Exclude<keyof Bone, "name" | "extra">]?: Bone[K] | undefined };
@@ -181,12 +182,6 @@ export function reparentBone(name: string, parent: string, local: BonePatch = {}
   };
 }
 
-/** Whether an attachment's vertices are weighted: per vertex its bones, not one x,y pair. */
-function weighted(a: Attachment): boolean {
-  const count = a.uvs ? a.uvs.length / 2 : a.vertexCount;
-  return !!a.vertices && count !== undefined && a.vertices.length !== count * 2;
-}
-
 /**
  * The skeleton with its bones in the order `next` (E7-PLAN step 4). Weighted vertices name their
  * bones by index, so each weighted attachment's indices follow their bones by name; one that names
@@ -199,7 +194,7 @@ function withBoneOrder(s: Skeleton, next: readonly Bone[], deleting?: string): S
   const map = before.map((b) => at.get(b.name));
   const same = map.every((m, i) => m === i);
   const remap = (a: Attachment, where: string): Attachment => {
-    if (same || !weighted(a)) return a;
+    if (same || !isWeighted(a)) return a;
     const v = a.vertices!, out = [...v];
     let changed = false;
     for (let i = 0; i < v.length;) {

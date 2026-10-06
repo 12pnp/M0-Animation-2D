@@ -51,6 +51,7 @@ npx vite-node scripts/oracle-parity.ts  # E6: the old editor as oracle: round tr
 npx vite-node scripts/oracle-edits.ts   # E6: the same edits through both editors' bridges, posed
 npx vite-node scripts/unity-parity.ts   # the engine against BoneBurst's C# runtime (needs Unity's .NET SDK)
 npx vite-node scripts/daily-driver.ts   # E7: e2e/dailyDriver.spec.ts's export, posed by the C# runtime
+npx vite-node scripts/bake-check.ts …   # E8: an export against Unity's bake of it (scripts/unity/BakeCheck.cs through the unity CLI's run_script; E8-PLAN step 3)
 FUZZ_STEPS=1000 FUZZ_SEED=3 npx vitest run tests/fuzzEdits.test.ts       # E7: longer edit fuzzing
 HOSTILE_STEPS=150 HOSTILE_SEED=3 npx vitest run tests/hostileFiles.test.ts  # E7: longer hostile-file runs
 ```

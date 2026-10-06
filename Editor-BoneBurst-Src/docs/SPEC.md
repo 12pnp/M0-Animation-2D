@@ -117,6 +117,10 @@ over the others. Sidecar changes are not undo steps.
   slots, no slot twice, no two to one place) and hex colours; `engine/atlasCheck.missingRegions`
   names attachments whose regions the atlas lacks. A page image the browser cannot decode opens
   without that page, said.
+- **The notes are live (E8)**: what reading the files said stays as `Session.issues`; everything
+  about the document as it is now is `Session.notes()` (`ui/notes.ts`): the profile, the regions the
+  atlas lacks, what the engine skips, and the bones the pose shown leaves without one, worked out
+  again after every change, each with the thing it is about (a click selects it).
 - **Round-trip test:** every sample skeleton the format specs' tests use, read then written,
   equals the original after normalisation: numbers compared as float32, `nonessential` fields as
   the file has them, key order per the spec.
@@ -132,6 +136,10 @@ one posing path, so the stage cannot disagree with the preview.
   regions (`engine/regions.atlasImages` over the model's atlas: one atlas reader, `io/atlas`).
 - **`Rig`** holds one posed instance: `setupPose`, `apply(animation, time)`, `updateWorld`;
   `drawList` says what to draw, in order, with clipping. `Track` plays and crossfades (E3).
+- **What it skips, it names (E8)**: `RigData.skipped`, each `{ message, subject }` (the
+  constraint, attachment or animation, and what it lacks), where it said a category before. A path
+  with no whole curve (fewer than 6 vertices open, 3 closed, or not three a point) is left alone.
+  Bones a degenerate rig poses to NaN are not drawn or picked on the stage, and named.
 - **Broken data is posed, not thrown (E7)**: lists skip entries that are not objects, number lists
   take numbers only (`rigJson.list`, `nums`), a malformed weighted stream or triangle list draws
   nothing, and a draw-order key keeps a slot's first move. Valid files pose exactly as before
@@ -232,7 +240,8 @@ origin; `tests/icons.test.ts` guards files, manifests, styling and licences.
 **Keys and the History (E7)**: every keyboard shortcut is a row of `ui/shortcuts.ts` (its keys,
 group, what it does and how a key event matches); `app.ts` dispatches from it into handlers typed
 by its ids, and the menus, titles and messages show its keys. Help ▸ Keyboard Shortcuts (or `?`)
-lists it. The History panel lists the undo steps; a click goes there.
+lists it. The History panel lists the undo steps; a click goes there. The status line's notes (E8)
+are buttons: a note about a thing selects it; Properties says so for a selected bone without a pose.
 
 **Running it (E7)**: `npm start` (`scripts/start.mjs`) builds `dist/` when stale and serves it on
 the dev server's origin (localhost:5185), starting the AI bridge when none answers. Dockview loads
@@ -357,11 +366,16 @@ real bridge drives the editor in a browser through `auto_rig` → `apply_motion`
   `HOSTILE_*`); the owner's flow end to end (`e2e/dailyDriver.spec.ts`). By hand, with Unity's
   .NET SDK: `scripts/unity-parity.ts` (the corpus) and `scripts/daily-driver.ts` (the flow's
   export), both through `scripts/oracle/csharp.ts`.
+- **The bake (E8)**, by hand with the Unity Editor: `scripts/unity/BakeCheck.cs` (run with the
+  `unity` CLI's `run_script`) bakes an export as the popup does, reads the asset back and poses its
+  data with BoneBurst's runtime; `scripts/bake-check.ts` compares that with the export (names, and
+  every bone at every frame through `comparePoses`).
 - Fixtures: `../Packages/com.module.ta-creator-boneburst/Tests/Editor/Data~/samples/`.
 
 ## 10. Plan
 
 E0 this charter · E1 model and IO, headless · E2 stage · E3 timeline and playback ·
 E4 authoring surfaces · E5 AI tools · E6 parity with the old editor and cutover · E7 the daily
-driver (history, shortcuts, `npm start`, robustness)
+driver (history, shortcuts, `npm start`, robustness) · E8 the truth up to the bake (live notes, the
+real bake)
 (`EDITOR-V2-PLAN.md` ▸ Phases).

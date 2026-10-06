@@ -1,6 +1,10 @@
 # E8 — the editor tells the truth up to the bake — plan
 
-**Status:** in progress, 2026-10-06; steps 1 (live notes), 2 (a bone with no pose) and 3 (the bake) done. Scope chosen by the owner ("go E8" on the recommendation): what
+**Status:** **done**, 2026-10-06. The notes are live and name their thing (step 1); a bone the pose
+leaves without one is named and not drawn (step 2); v2's export goes through Unity's real bake, first bake
+and rebake on change, and reads back as exported (step 3). Not run: a player build. For the owner
+(step 3): the AssetSystem cache's stale rows, stock spine-unity's auto-import, the Unity version in
+`CLAUDE.md`.
 the editor cannot show, it says, as you edit, naming the thing; and v2's export baked by the real
 Unity bake, first bake and rebake on change, checked by reading the result in Unity.
 
@@ -161,3 +165,41 @@ flowchart LR
    Spine assets (M2, which removed stock Spine, does not).
 7. Not run: a player build (§5's check of the AssetSystem path), as planned: the export was not in an
    addressable folder.
+
+## Step 4 — close
+
+### Decisions
+
+- **The done-when, part by part**, against what steps 1–3 showed, into the status.
+- **One rule in one place**: `edit/bones.ts` kept its own `weighted()` (E7 step 4) beside
+  `meshLayout.isWeighted`, which since d081362 reads a path's `vertexCount` too, so both say the
+  same; `bones.ts` uses `isWeighted` and its copy goes (root `CLAUDE.md` §4).
+- **Docs** where E8 changed the shape: SPEC §5–§7 and §9 (live notes; the engine's named skips;
+  bones without a pose; the bake check); README; the editor's `CLAUDE.md` (the bake check's run);
+  the charter's status and E8 row; root `CLAUDE.md`.
+- **The owner's three questions from step 3** stay in the plan's results and the reply, not decided
+  here: the AssetSystem cache's stale rows (pb-creator-base), stock spine-unity's auto-import, the
+  Unity version in `CLAUDE.md`.
+
+### Steps
+
+1. `bones.ts` on `isWeighted`; the fuzz and finding tests.
+2. The docs.
+3. `npm run check`, `unity-parity`; status.
+
+### Step 4 results
+
+1. **The done-when** (`EDITOR-V2-PLAN.md` ▸ E8):
+   - *an edit that breaks the file says so at once, naming what*: `e2e/notes.spec.ts` (an attachment's
+     path set to a region the atlas lacks: its note at once, naming it; undo clears it);
+   - *nothing is drawn as nothing without a note*: regions the atlas lacks, what the engine skips
+     (named), and bones without a pose (`e2e/unposed.spec.ts`) all say so;
+   - *the bake takes v2's export and its asset reads back as v2 exported it*: step 3, first bake and
+     rebake on change, names and every frame (worst 0.0010).
+2. **`edit/bones.ts` on `meshLayout.isWeighted`**: its own copy removed (one rule, one place). The
+   fuzz, findings and weights tests pass (67).
+3. **Docs**: SPEC §5 (live notes), §6 (named skips, paths without a curve, bones without a pose), §7
+   (notes as buttons; Properties), §9 (the bake check), §10 (E8); the README; the editor's
+   `CLAUDE.md`; the charter's status and E8 row; root `CLAUDE.md`.
+4. `npm run check`: 696 vitest, 25 browser tests, 1 build browser test, all pass;
+   `scripts/unity-parity.ts`: 17 rigs agree, worst 0.0067.
