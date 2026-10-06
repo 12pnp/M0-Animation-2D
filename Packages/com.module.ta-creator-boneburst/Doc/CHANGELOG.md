@@ -11,6 +11,9 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-07 — **ECS port P5 recorded: GPU skeletons drawn through Entities Graphics** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
+- [BoneBurst-ECS-Plan](Review/BoneBurst-ECS-Plan.md) §13 and §14: a DOTS-instanced shader derived from `BoneBurst/Unlit`, one render entity per submesh, materials per page and blend. Seen drawing on the URP 2D Renderer; 31 render entities gave 1 draw command (Entities Graphics' own counters); sorting against sprites works as Default layer, order 0, with no way yet to give a skeleton its own layer or order. **Not verified:** a player build and the 3D renderer's pass. Core is unchanged by this step.
+
 ### 2026-10-07 — **`RangeAllocator` moves to Core, and Core's internals open to the ECS assembly** (P5 step 1 of [BoneBurst-ECS-Plan](Review/BoneBurst-ECS-Plan.md))
 - `RangeAllocator` moved from `Runtime/Gpu/BoneBurstGpu.cs` (Module.PB.BoneBurst.Unity) to `com.module.ta-creator-boneburst-core/Runtime/Core/Gpu/RangeAllocator.cs` (namespace unchanged) so the ECS GPU buffers share it; Core's `AssemblyInfo` lists `Module.PB.BoneBurst.Ecs` for `InternalsVisibleTo` (the instance's GPU fields). **Why:** one allocator, not a copy in each runtime. Behaviour unchanged: parity harness 215/215 and 0 values not bit-exact, tier check clean, `Module.TA.BoneBurst.Tests.Editor` 210/212 (the one failing test needs the demo's baked data, absent from this checkout), PlayMode 37/37. The ECS side's 229 tests in `M0-25DPlatformer-ECS` compare the GPU records, meshes and bounds with `ManagedPose.GpuFrame` frame by frame.
 
