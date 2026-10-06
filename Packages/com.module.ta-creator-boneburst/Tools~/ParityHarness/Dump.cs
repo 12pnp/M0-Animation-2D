@@ -15,7 +15,8 @@ namespace BoneBurst.ParityHarness
     ///     <c>run.sh --dump &lt;in&gt; &lt;out&gt;</c>: poses every Spine 4.3 export in <c>in</c> (<c>name.json</c> with
     ///     <c>name.atlas</c>) through BoneBurst's managed runtime and writes <c>out/name.poses.json</c>, for the
     ///     BoneBurst Editor to compare with its own engine (<c>Editor-BoneBurst-Src/scripts/unity-parity.ts</c>; the old
-    ///     editor's <c>tests/boneburstUnity.test.ts</c> reads the same files; pipeline plan R2).
+    ///     editor's <c>tests/boneburstUnity.test.ts</c>, archived at the tag <c>old-editor-final</c>, read the same files;
+    ///     pipeline plan R2).
     ///     Files go across, never code.
     /// </summary>
     /// <remarks>

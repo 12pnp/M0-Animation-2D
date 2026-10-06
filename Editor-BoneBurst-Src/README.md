@@ -61,13 +61,14 @@ first shows the server failed, and the first keeps the editor. To run two, give 
 ```bash
 npm run check                               # types, tests, browser tests, licence guards
 npx vite-node scripts/unity-parity.ts       # v2's engine against BoneBurst's C# runtime (needs Unity's .NET SDK)
-npx vite-node scripts/oracle-parity.ts      # the old editor as oracle: round trips (needs its folder)
+npx vite-node scripts/oracle-parity.ts      # the old editor as oracle: round trips (taken from its tag)
 npx vite-node scripts/oracle-edits.ts       # the old editor as oracle: the same edits through both bridges
 ```
 
 - [docs/SPEC.md](docs/SPEC.md): the architecture.
+- [docs/EDITOR-V2-PLAN.md](docs/EDITOR-V2-PLAN.md): why v2 exists, its phases and the owner's decisions (D1–D8).
 - [docs/E6-PLAN.md](docs/E6-PLAN.md): parity with the old editor and the cutover; the earlier
   phases in `docs/E1-PLAN.md` … `docs/E5-PLAN.md`.
 
-It succeeds `Animation-BoneBurst-Src`, a fork of Animo by Morenoise, and contains none of its
-code. Spine is a trademark of Esoteric Software; this project is not affiliated with it.
+It succeeds `Animation-BoneBurst-Src` (archived at the git tag `old-editor-final`), a fork of
+Animo by Morenoise, and contains none of its code. Spine is a trademark of Esoteric Software; this project is not affiliated with it.

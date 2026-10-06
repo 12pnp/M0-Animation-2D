@@ -11,7 +11,7 @@ E4 makes the editor author a rig, not only animate one: panels and docking (D6),
 attachments, draw order, skins, constraints, mesh editing, PSD import and preferences. It is
 done when every authoring surface is built and seen working in the browser, popout windows
 included, with a permanent Playwright regression for popouts
-(`../../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md` ▸ E4, amended by the owner on
+(`EDITOR-V2-PLAN.md` ▸ E4, amended by the owner on
 2026-10-06; the agent flow moved to E5). It starts with the shell every
 later surface lives in.
 

@@ -11,6 +11,9 @@ flowchart LR
 
 ## 0.1.0 (2026-10-05)
 
+### 2026-10-06 — **the rebake's comment: the old editor archived at the tag `old-editor-final`** (comment only)
+- `Editor/BoneBurstRebakeOnChange.cs`: its summary names only the BoneBurst Editor's (v2) Export to Unity. Its link to the pipeline plan now says the plan is at the git tag `old-editor-final`, because the old editor left `main` at E6 step 7 (`Editor-BoneBurst-Src/docs/E6-PLAN.md`, D8). Nothing compiles differently.
+
 ### 2026-10-06 — **the rebake's comment names the BoneBurst Editor (v2)** (comment only)
 - `Editor/BoneBurstRebakeOnChange.cs`: its summary names `Editor-BoneBurst-Src/`'s Export to Unity as the export it rebakes (the old editor's File › Export to Unity still works the same way). Why: E6 step 5 moves the docs to v2 (`Editor-BoneBurst-Src/docs/E6-PLAN.md`). Nothing compiles differently.
 

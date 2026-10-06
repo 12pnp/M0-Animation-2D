@@ -6,7 +6,7 @@
  *
  * Run: npx vite-node scripts/oracle-parity.ts [filter]   (starts either dev server if it is not up)
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
 import { chromium } from "@playwright/test";
 import { atlasImages } from "../src/engine/regions";
@@ -14,7 +14,7 @@ import { readAtlas } from "../src/io/atlas";
 import { parseJson } from "../src/io/json";
 import { readSkeleton } from "../src/io/skeletonRead";
 import type { Json } from "../src/model/json";
-import { NewEditor, OldEditor, poseGap, ROOT, serve, V1, V1_URL, V2_URL } from "./oracle/editors";
+import { NewEditor, OldEditor, oldEditor, poseGap, ROOT, serve, V1_URL, V2_URL } from "./oracle/editors";
 
 const SAMPLES = join(ROOT, "..", "Packages", "com.module.ta-creator-boneburst", "Tests", "Editor", "Data~", "samples");
 const OUT = join(ROOT, "node_modules", ".cache", "oracle-parity");
@@ -91,9 +91,8 @@ function kinds(diffs: readonly string[]): Map<string, number> {
 const r3 = (n: number) => (Number.isFinite(n) ? Math.round(n * 1000) / 1000 : n);
 
 async function main(): Promise<void> {
-  if (!existsSync(V1)) throw new Error(`The old editor is not at ${V1}.`);
   const filter = process.argv[2];
-  const servers = [await serve(V1_URL, V1), await serve(V2_URL, ROOT)];
+  const servers = [await serve(V1_URL, oldEditor()), await serve(V2_URL, ROOT)];
   const browser = await chromium.launch();
   mkdirSync(OUT, { recursive: true });
   const report: Record<string, unknown>[] = [];

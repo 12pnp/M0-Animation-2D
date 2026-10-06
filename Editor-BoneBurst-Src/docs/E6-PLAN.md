@@ -1,20 +1,20 @@
 # E6 — parity with the old editor, then cutover — plan
 
-**Status:** steps 1–6 done, 2026-10-06; step 7 (archive, D8) is the owner's call. The oracle
-harness (v2 writes the corpus back exactly; the old editor rewrites every rig, and poses one
-differently), edit-script parity (both agree once each known difference is taken out; `set_keys`'
-eases made version 1's), the gap list decided by the owner, the chosen gaps built (autosave and
-recovery, events on the timeline, copy and paste with multiple selection, onion skin, snapping and
-a grid, the weight brush, the curve graph, the frame rate; 4h, the axes, by the other session), the
-docs moved (v2 held to BoneBurst's C# runtime by `scripts/unity-parity.ts`, 17 rigs agree), and the
-cutover: v2 is the editor in use, the repository's `.mcp.json` starts its bridge, the old editor's
-docs say oracle-only.
+**Status:** **done**, 2026-10-06. Steps 1–7: the oracle harness (v2 writes the corpus back exactly;
+the old editor rewrites every rig, and poses one differently), edit-script parity (both agree once
+each known difference is taken out; `set_keys`' eases made version 1's), the gap list decided by
+the owner, the chosen gaps built (autosave and recovery, events on the timeline, copy and paste
+with multiple selection, onion skin, snapping and a grid, the weight brush, the curve graph, the
+frame rate; 4h, the axes, by the other session), the docs moved (v2 held to BoneBurst's C# runtime
+by `scripts/unity-parity.ts`, 17 rigs agree), the cutover (v2 in use, the repository's `.mcp.json`
+starts its bridge), and the archive (D8): the old editor is the tag `old-editor-final`, no longer
+in `main`, and the oracle scripts extract it from the tag when they run. Nothing left.
 
-E6 makes v2 the editor people use. The old editor (`../../Animation-BoneBurst-Src/`, AGPL, the
+E6 makes v2 the editor people use. The old editor (`../../Animation-BoneBurst-Src/`, archived at step 7 to the tag `old-editor-final`; AGPL, the
 Animo fork) is the **behavioural oracle**: it is run, never read, and v2 has to agree with it on
 the same rigs, the same edits and their exports. Then the docs move to v2, the fork becomes
 oracle-only, and later it is archived. It is **done when** v2 is the daily driver and the fork
-takes no new features (`../../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md` ▸ E6).
+takes no new features (`EDITOR-V2-PLAN.md` ▸ E6).
 
 ```mermaid
 flowchart LR
@@ -780,3 +780,87 @@ flowchart LR
 
 What a session needs: Claude Code reads `.mcp.json` when it starts, so a session already running
 gets the server on its next start, after approving it once.
+
+## Step 7 — archive (D8)
+
+The owner's decision (D8, 2026-10-06): **tag, remove, oracle on demand.** The old editor's last
+state gets a tag; its folder leaves `main`; v2's oracle scripts take it from the tag when they run.
+
+```mermaid
+flowchart LR
+    TAG["tag old-editor-final<br/>(the last commit with the folder)"] -->|"git archive … Animation-BoneBurst-Src"| EX[".oracle-v1/Animation-BoneBurst-Src<br/>(ignored; npm install once)"]
+    EX -->|"npm run dev :5181 · bridge :5190"| OR["scripts/oracle-parity.ts<br/>scripts/oracle-edits.ts"]
+    MAIN["main"] -.->|"git rm -r"| GONE["Animation-BoneBurst-Src/"]
+    PLAN["docs/EDITOR-V2-PLAN.md<br/>(moved: v2's charter, D1–D8)"] --> MAIN
+```
+
+### Decisions
+
+- **The tag**: `old-editor-final`, annotated, on the commit before the removal (43b6a98: the folder
+  as it stands, with its oracle-only note), pushed with the removal. Its history stays in `main`'s
+  log and the tag keeps the whole source one checkout away: AGPL's source offer holds.
+- **Oracle on demand**: `scripts/oracle/editors.ts` gets `oldEditor()`. When
+  `.oracle-v1/Animation-BoneBurst-Src` is missing or was taken from another commit, it extracts the
+  folder from the tag (`git archive`, so only that folder, without the rest of the repository
+  and its LFS files), runs `npm ci` there, and stamps the tag's commit. Otherwise it reuses the
+  folder. The folder is at the repository's root, ignored, outside v2's own folder so v2's vitest
+  never collects the old editor's tests. Same port (5181), so its pages keep their saved
+  browser storage.
+  An extracted folder, not a git worktree: the scripts need the files, not a branch to commit on,
+  and a worktree checks out the whole repository.
+- **What moves out first**: `docs/EDITOR-V2-PLAN.md` is v2's charter (D1–D5, the phases), written by
+  us in v2's commits only; it moves to `Editor-BoneBurst-Src/docs/` (`git mv`, history kept), with
+  D8 recorded in it, and every link to it follows. Its relative links are fixed to its new place.
+- **What stays only in the tag**: everything else, including `BONEBURST-PIPELINE-PLAN.md`; the two
+  package files that name it (`BoneBurstRebakeOnChange.cs` comment, the BoneBurst profile's note)
+  say "at tag `old-editor-final`". `Dump.cs`'s mention of the old editor's
+  `tests/boneburstUnity.test.ts` and root `CLAUDE.md` §5 the same.
+- **Repository plumbing**: `.gitignore` and `.gitattributes` lose the old folder's lines and
+  ignore `.oracle-v1/`; `.claude/launch.json`'s `editor-v1-oracle` serves the extracted folder.
+- **Disk**: after `git rm`, the old folder holds only ignored files (`node_modules/`, `dist/`,
+  a local `.claude/launch.json`, `.DS_Store`); all of it is deleted, so nothing is left that would
+  show as untracked once the ignore lines are gone. (Planned first: move `node_modules/` across;
+  dropped, since `npm ci` replaces it anyway and a cold start is the case worth testing.)
+- **Root `CLAUDE.md`**: the old editor's bullet says archived at the tag, oracle on demand.
+  `AGENTS.md` names neither editor.
+
+### Steps
+
+1. Tag `old-editor-final` locally (pushed at commit).
+2. `git mv` `EDITOR-V2-PLAN.md`, fix its links, record D8; every link to it follows.
+3. `oldEditor()` in `scripts/oracle/editors.ts`, used by both oracle scripts; `.gitignore`,
+   `.gitattributes`, `launch.json`.
+4. `git rm -r Animation-BoneBurst-Src`; its ignored files moved or deleted as above.
+5. Docs: root `CLAUDE.md`, v2's `CLAUDE.md`, `SPEC.md`, the E-plans' links, the package comments
+   and notes.
+6. Checks: `npm run check`; `oracle-parity.ts` and `oracle-edits.ts` run from the tag, from a
+   cold start (no `.oracle-v1/`) and warm; a planted fault: a wrong stamp must re-extract.
+
+### Step 7 results
+
+1. **The tag**: `old-editor-final`, annotated, on 43b6a98 (the last commit with the folder; the
+   other session had committed after b637f14, the folder unchanged). Pushed with the removal.
+2. **`EDITOR-V2-PLAN.md` moved** to `docs/` (`git mv`, history kept): its status E0–E6 done, D8
+   recorded, its links made relative to its new place, the old editor's `REFACTOR-PLAN.md` named
+   at the tag. Every link to it follows (E1, E2, E4, E5 and E6 plans, `SPEC.md`, `CLAUDE.md`,
+   root `CLAUDE.md`); the README lists it.
+3. **Oracle on demand**: `oldEditor()` in `scripts/oracle/editors.ts` resolves the tag, extracts
+   `Animation-BoneBurst-Src` with `git archive` into `.oracle-v1/` when the stamp's commit differs
+   or the folder is missing (everything but `node_modules/` cleared first), runs `npm ci` when
+   `node_modules/` is missing or the lockfile's hash differs, and stamps both
+   (`.oracle-v1/stamp.json`). `oracle-parity.ts` and `oracle-edits.ts` call it (its bridge too);
+   `launch.json`'s `editor-v1-oracle` serves the copy.
+4. **Removed**: `git rm -r Animation-BoneBurst-Src` (497 files after the move); its ignored files
+   deleted. `.gitignore` ignores `.oracle-v1/` instead of the old folder's lines; `.gitattributes`
+   loses its LFS exception.
+5. **Docs**: root `CLAUDE.md` (the old editor archived at the tag, the oracle on demand, E6 done;
+   §5 names the old editor's test at the tag); v2's `CLAUDE.md` (clean room: the extracted copy and
+   the tag count as the fork), `README.md`, `SPEC.md`; `BoneBurstRebakeOnChange.cs` and `Dump.cs`
+   comments and the BoneBurst profile's note name the tag.
+6. **Checks**: `npm run check` (449 vitest, 13 browser tests). `oracle-parity.ts` from a cold
+   start (no `.oracle-v1/`: extracted and installed, 1 min 18 s in all): every rig as at step 1
+   (v2: 0 differences, pose 0 on all 17; the old editor rewrites every rig, spineboy-pro posed
+   28.7 px off); warm, no extraction. `oracle-edits.ts`: both scripts agree once the known
+   difference is taken out (0.007 px, 0 px), as at step 2. Planted fault: a stamp naming another
+   commit re-extracts (a file planted in the copy is gone, `node_modules/` kept, no `npm ci` as the
+   lockfile is the same); a second run does nothing.

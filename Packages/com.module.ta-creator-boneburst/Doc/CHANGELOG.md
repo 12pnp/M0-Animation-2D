@@ -11,6 +11,9 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-06 — **the old editor archived at the tag `old-editor-final`: the profile's note, the dump's comment** (docs and comments only)
+- `Doc/Format/BoneBurst-Profile.md`: its 2026-10-06 note adds that the old editor and its pipeline plan are archived at the git tag `old-editor-final`. `Tools~/ParityHarness/Dump.cs`: the comment says the old editor's `tests/boneburstUnity.test.ts`, which reads the same dump, is at that tag. Why: E6 step 7 removed `Animation-BoneBurst-Src/` from `main` (`Editor-BoneBurst-Src/docs/E6-PLAN.md`, D8). Guard: v2's `scripts/unity-parity.ts` still reads the dump. Nothing compiles differently.
+
 ### 2026-10-06 — **the editor side is the BoneBurst Editor (v2): the profile's note, the dump's comments** (docs and comments only)
 - `Doc/Format/BoneBurst-Profile.md`: a dated note that the editor side is now `Editor-BoneBurst-Src/` (the JSON itself, read and written exactly, held to this runtime by its `scripts/unity-parity.ts`); the diagram and the editor column describe the old editor. `Tools~/ParityHarness/Dump.cs` and `run.sh`: their comments name v2's script beside the old editor's test, both reading the same dump. Why: E6 step 5 (`Editor-BoneBurst-Src/docs/E6-PLAN.md`). Guard: v2's `scripts/unity-parity.ts` on the dump, all 17 corpus rigs agree. Nothing compiles differently.
 

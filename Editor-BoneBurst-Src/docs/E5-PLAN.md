@@ -12,7 +12,7 @@ the in-app Ask AI drive the open rig through the tool contract, each edit one un
 **done when** `auto_rig` → `apply_motion` → `check_preview` runs end to end via MCP on a fixture
 rig, against the tools contract as versioned by D5 — the flow's own tools (`auto_rig`,
 `apply_motion`, `check_preview`, `set_keys`, `show`, `get_pose`) keeping their v1 names and
-argument shapes (`../../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md` ▸ E5, worded by the owner
+argument shapes (`EDITOR-V2-PLAN.md` ▸ E5, worded by the owner
 on 2026-10-06). Also: every tool v1's `tests/agentApi.test.ts` exercises passes on v2 or is in the
 version note; an AI keys a walk on a fixture rig via MCP; the AnimatedDrawings plan's motion half
 (AD-3) runs on v2.

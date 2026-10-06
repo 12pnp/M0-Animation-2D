@@ -73,9 +73,8 @@ crashlytics-build.properties
 # macOS
 .DS_Store
 
-# The BoneBurst editor (Animation-BoneBurst-Src/, its own npm project)
-/Animation-BoneBurst-Src/node_modules/
-/Animation-BoneBurst-Src/dist/
+# The old BoneBurst editor, extracted from the tag old-editor-final by v2's oracle scripts (E6 step 7)
+/.oracle-v1/
 # The BoneBurst Editor v2 (Editor-BoneBurst-Src/, MIT, its own npm project)
 /Editor-BoneBurst-Src/node_modules/
 /Editor-BoneBurst-Src/dist/

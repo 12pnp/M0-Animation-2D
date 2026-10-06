@@ -9,7 +9,7 @@ phases): animation on the stage (E3), editing anything but bones (E4), the sidec
 E2 puts the document on screen: a canvas showing the skeleton's setup pose, posed by our own
 runtime, with a bone overlay, selection, transform gizmos, zoom and pan, and every edit going
 through the history. It is done when the stickman fixture is inspectable and editable on screen
-(`../../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md` ▸ E2). The runtime comes from the old
+(`EDITOR-V2-PLAN.md` ▸ E2). The runtime comes from the old
 editor's folder, after the provenance pass the plan and CLAUDE.md ▸ Clean room require; of the
 rest of the old editor, only the lines that tie the runtime to it are opened, to cut them.
 

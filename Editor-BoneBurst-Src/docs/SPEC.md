@@ -1,7 +1,7 @@
 # BoneBurst Editor — architecture spec
 
 **Status:** E3 done, E4 started, 2026-10-06 (E1: model and IO; E2: engine and stage; E3: timeline and playback; E4 step 1: the Dockview shell). Written before any implementation, from the v2 plan
-(`../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md`, decisions D1–D5), the BoneBurst format
+(`EDITOR-V2-PLAN.md`, decisions D1–D8), the BoneBurst format
 specs (`../Packages/com.module.ta-creator-boneburst/Doc/Format/`, ours) and Spine 4.3's public
 JSON format. Not from the Animo-fork editor's code or its architecture document (CLAUDE.md ▸
 Clean room).
@@ -105,7 +105,7 @@ over the others. Sidecar changes are not undo steps.
 
 ## 6. Engine
 
-Posing is the BoneBurst runtime, lifted in E2 from `Animation-BoneBurst-Src/src/core/boneburst/runtime/`
+Posing is the BoneBurst runtime, lifted in E2 from `Animation-BoneBurst-Src/src/core/boneburst/runtime/` (the old editor, archived at the tag `old-editor-final`)
 after the plan's provenance pass. The stage and the preview pose with the same engine: there is
 one posing path, so the stage cannot disagree with the preview.
 

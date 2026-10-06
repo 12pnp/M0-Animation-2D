@@ -15,7 +15,7 @@ import type { Skeleton } from "../src/model/skeleton";
 import { keyLists, keyTime, pathId, type TimelinePath } from "../src/model/timelines";
 import { EditRefused } from "../src/edit/history";
 import { setCurve } from "../src/edit/keys";
-import { Bridge, NewEditor, OldEditor, poseGap, ROOT, serve, V1, V1_BRIDGE_PORT, V1_URL, V2_URL } from "./oracle/editors";
+import { Bridge, NewEditor, OldEditor, oldEditor, poseGap, ROOT, serve, V1_BRIDGE_PORT, V1_URL, V2_URL } from "./oracle/editors";
 
 const OUT = join(ROOT, "node_modules", ".cache", "oracle-edits");
 const FIGURE = join(ROOT, "tests", "fixtures", "psd", "figure.psd");
@@ -118,9 +118,10 @@ const SCRIPTS: Script[] = [
 async function main(): Promise<void> {
   const filter = process.argv[2];
   mkdirSync(OUT, { recursive: true });
-  const servers = [await serve(V1_URL, V1), await serve(V2_URL, ROOT)];
+  const v1 = oldEditor();
+  const servers = [await serve(V1_URL, v1), await serve(V2_URL, ROOT)];
   const v2Port = 58000 + Math.floor(Math.random() * 1000);
-  const oldBridge = await Bridge.start(join(V1, "mcp", "boneburst-bridge.mjs"), V1_BRIDGE_PORT);
+  const oldBridge = await Bridge.start(join(v1, "mcp", "boneburst-bridge.mjs"), V1_BRIDGE_PORT);
   const newBridge = await Bridge.start(join(ROOT, "mcp", "bridge.mjs"), v2Port);
   const browser = await chromium.launch();
   const report: Record<string, unknown>[] = [];

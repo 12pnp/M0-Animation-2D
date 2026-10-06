@@ -2,14 +2,16 @@
 
 Guidance for agents working in `Editor-BoneBurst-Src/`: the BoneBurst Editor, a Spine 4.3
 animation editor, **MIT**, written from scratch. Its document is the Spine JSON file
-(docs/SPEC.md). It replaced `../Animation-BoneBurst-Src/`, an AGPL fork of Animo, on 2026-10-06 (E6 step 6); the fork
-stays as the behavioural oracle and takes bug fixes only (`../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md`,
-D1–D5).
+(docs/SPEC.md). It replaced the old editor, `Animation-BoneBurst-Src/`, an AGPL fork of Animo, on 2026-10-06 (E6
+step 6). The fork is archived at the git tag `old-editor-final` (D8) and is no longer in `main`; it
+is the behavioural oracle, which `scripts/oracle/editors.ts` extracts from the tag into the
+repository's ignored `.oracle-v1/` when an oracle script runs. Decisions D1–D8:
+`docs/EDITOR-V2-PLAN.md`.
 
 ```mermaid
 flowchart LR
     SPEC["docs/SPEC.md<br/>+ Doc/Format specs<br/>+ Spine's public format"] -->|"written from"| V2["Editor-BoneBurst-Src<br/>(MIT)"]
-    V1["Animation-BoneBurst-Src<br/>(AGPL, Animo fork)"] -.->|"run it, compare outputs<br/>never read or port its code"| V2
+    V1["old-editor-final tag<br/>(AGPL, Animo fork)"] -.->|"run it, compare outputs<br/>never read or port its code"| V2
     RT["v1 runtime (ours)"] -->|"provenance pass, E2"| V2
 ```
 
@@ -20,7 +22,8 @@ describe updates it first.
 
 1. **Never open the fork's sources while working here**, nor its `docs/ARCHITECTURE.md`. Not as a
    template, not "for the structure", not to check a name. The fork may be **run**: its exports,
-   screenshots and behaviour are fair to compare against.
+   screenshots and behaviour are fair to compare against. The copy the oracle scripts extract into
+   `../.oracle-v1/` is the fork too, and so is the `old-editor-final` tag: run them, never read them.
 2. **No pasting, porting or file-by-file translation** from the fork, by anyone, AI included.
 3. **What to work from:** docs/SPEC.md, `../Packages/com.module.ta-creator-boneburst/Doc/Format/`
    (ours), Spine's public JSON format, and the plan.

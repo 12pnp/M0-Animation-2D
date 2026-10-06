@@ -4,8 +4,9 @@
  * they write, by pose. Shared by `scripts/oracle-parity.ts` (round trips) and
  * `scripts/oracle-edits.ts` (edit scripts).
  */
-import { type ChildProcess, spawn } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { type ChildProcess, execFileSync, execSync, spawn } from "node:child_process";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -19,7 +20,37 @@ import { posedBones } from "../../src/ui/agent/context";
 import { Poser } from "../../src/ui/stage/posed";
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
-export const V1 = join(ROOT, "..", "Animation-BoneBurst-Src");
+/** The tag the old editor is archived at (E6-PLAN step 7, D8): it is no longer in `main`. */
+export const V1_TAG = "old-editor-final";
+const REPO = join(ROOT, "..");
+/** Where the oracle scripts keep it, extracted from the tag (ignored). */
+const V1_HOME = join(REPO, ".oracle-v1");
+export const V1 = join(V1_HOME, "Animation-BoneBurst-Src");
+
+/**
+ * The old editor's folder, ready to run: extracted from its tag when it is missing or was taken
+ * from another commit, its packages installed when they are missing or its lockfile changed.
+ * Only that folder is extracted (`git archive`), not the rest of the repository.
+ */
+export function oldEditor(): string {
+  const commit = execFileSync("git", ["rev-parse", `${V1_TAG}^{commit}`], { cwd: REPO, encoding: "utf8" }).trim();
+  const stampFile = join(V1_HOME, "stamp.json");
+  const stamp = existsSync(stampFile) ? JSON.parse(readFileSync(stampFile, "utf8")) as { commit?: string; lock?: string } : {};
+  if (stamp.commit !== commit || !existsSync(join(V1, "package.json"))) {
+    console.log(`Extracting the old editor from ${V1_TAG} (${commit.slice(0, 7)}) into ${V1}…`);
+    mkdirSync(V1, { recursive: true });
+    // Everything but its packages, so a file the tag no longer has does not linger.
+    for (const name of readdirSync(V1)) if (name !== "node_modules") rmSync(join(V1, name), { recursive: true, force: true });
+    execSync(`git archive --format=tar ${commit} Animation-BoneBurst-Src | tar -x -C "${V1_HOME}"`, { cwd: REPO, stdio: ["ignore", "ignore", "inherit"] });
+  }
+  const lock = createHash("sha256").update(readFileSync(join(V1, "package-lock.json"))).digest("hex");
+  if (stamp.lock !== lock || !existsSync(join(V1, "node_modules"))) {
+    console.log("Installing its packages (npm ci)…");
+    execFileSync("npm", ["ci", "--no-audit", "--no-fund"], { cwd: V1, stdio: ["ignore", "ignore", "inherit"] });
+  }
+  writeFileSync(stampFile, JSON.stringify({ commit, lock }));
+  return V1;
+}
 export const V1_URL = "http://localhost:5181/", V2_URL = "http://localhost:5185/";
 /** The old editor's page talks to its bridge on this port only. */
 export const V1_BRIDGE_PORT = 5190;

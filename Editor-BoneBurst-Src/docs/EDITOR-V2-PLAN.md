@@ -1,22 +1,23 @@
 # Editor v2 — from scratch, MIT, no Animo code — plan
 
-**Status:** E0–E5 done 2026-10-06. `../Editor-BoneBurst-Src/`: MIT licence, notices, spec,
+**Status:** E0–E6 done 2026-10-06 (moved here from the old editor's `docs/` at E6 step 7). This folder (`Editor-BoneBurst-Src/`): MIT licence, notices, spec,
 clean-room rules; the document model, Spine JSON, atlas and sidecar in and out, undo (E1); the
 runtime lifted as its engine after the provenance pass, and a stage that edits the setup pose
 (E2); a timeline that keys, eases, moves and plays animations, a walk keyed on the stickman and
-read back alike by the engine and spine-core (E3, `Editor-BoneBurst-Src/docs/E3-PLAN.md`). The
+read back alike by the engine and spine-core (E3, `E3-PLAN.md`). The
 agent criterion moved from E3 to E5 (owner, 2026-10-06). spine-core knowledge in the runtime's
 solvers stays an open legal question (its SPEC §6). E4 (authoring surfaces) done 2026-10-06:
 panels and docking on Dockview, the rig's structure, skins, constraints, mesh geometry and
 weights, PSD import and re-import, the sidecar, guides, reference images, preferences, icons,
 constraint and deform keys, every surface seen in a browser, popouts kept checked by Playwright
-(`Editor-BoneBurst-Src/docs/E4-PLAN.md`); the weight brush and guide snapping parked for after
+(`E4-PLAN.md`); the weight brush and guide snapping parked for after
 E5. E5 (the AI layer) done 2026-10-06: the tool contract versioned per D5 (46 tools, its
 version note gated by `npm run check`), the MCP bridge, every tool built on v2's model, Ask AI;
 `auto_rig` → `apply_motion` → `check_preview` over MCP on the figure PSD is a permanent browser
-test (`Editor-BoneBurst-Src/docs/E5-PLAN.md`). AnimatedDrawings: AD-3 (motion) runs on v2; AD-0..2
+test (`E5-PLAN.md`). AnimatedDrawings: AD-3 (motion) runs on v2; AD-0..2
 and AD-4 need the detection sidecar, not installed (the owner's install decision), on either
-editor. Next: E6 (parity with the old editor, then cutover).
+editor. E6 (parity with the old editor, then cutover) done 2026-10-06 (`E6-PLAN.md`): v2 is the editor in use,
+and the old editor is archived at the tag `old-editor-final` (D8), run from there as the oracle.
 
 **Owner decision 2026-10-05:** replace the Animo-fork editor with a new editor
 that contains **no Animo code**, licensed **MIT** from its first commit. The
@@ -152,7 +153,7 @@ undo, onion skins — these are ideas every editor shares. The rules:
   takes bug fixes and data-format work only, all new features go to v2
   (owner call; the alternative — freeze fully — risks stalling daily work).
   If v2 goes ahead, the policy should start now: v1 had a large refactor on
-  2026-10-06 (docs/REFACTOR-PLAN.md), and more of that is effort v2 replaces.
+  2026-10-06 (the old editor's docs/REFACTOR-PLAN.md, at tag `old-editor-final`), and more of that is effort v2 replaces.
 - **Feature-parity long tail** (docking UX, PSD edge cases, themes): E4 is
   where the tail hides; keep a "v2 gap list" and cut v1 features nobody here
   uses rather than porting habits.
@@ -196,10 +197,15 @@ undo, onion skins — these are ideas every editor shares. The rules:
       tests and E6's side-by-side. The layout persists and restores on reload; a saved layout
       naming a panel this build lacks is ignored quietly and applied when the panel arrives. The
       old editor's docking and styling are not a template: Dockview's own patterns are the
-      reference. Executed in `Editor-BoneBurst-Src/docs/E4-PLAN.md` step 1.
+      reference. Executed in `E4-PLAN.md` step 1.
 - [x] D7 PSD reader: **Decided 2026-10-06 (owner): `ag-psd`**, pinned exactly (31.0.2), MIT, with
       its two dependencies `base64-js` (MIT) and `pako` (MIT and Zlib); all three ship and are in
       THIRD-PARTY-NOTICES. This amends D6's "only runtime dependency": v2's npm runtime
       dependencies are exactly `dockview-core` and `ag-psd`, each pinned, and the check script
       holds that. Chosen over a reader of our own for the files artists actually make (groups,
-      RLE, 16-bit, blend modes). Executed in `Editor-BoneBurst-Src/docs/E4-PLAN.md` step 7.
+      RLE, 16-bit, blend modes). Executed in `E4-PLAN.md` step 7.
+- [x] D8 Archiving the old editor: **Decided 2026-10-06 (owner): tag, remove, oracle on demand.** Its
+      last state is the annotated tag `old-editor-final`; the folder left `main` (its history and the
+      tag keep the source, AGPL's offer included); this plan moved here first. v2's oracle scripts
+      extract the folder from the tag into the ignored `.oracle-v1/` when they run. Executed in
+      `E6-PLAN.md` step 7.

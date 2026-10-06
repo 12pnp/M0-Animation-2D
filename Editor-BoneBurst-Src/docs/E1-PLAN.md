@@ -7,7 +7,7 @@ guards hold. Not done here (later phases): edits beyond bones, the engine (E2).
 E1 gives the editor a document it can hold, read, write and undo, with no screen yet: the Spine
 4.3 skeleton as typed immutable data (SPEC §2), the atlas and the sidecar (SPEC §3), Spine JSON
 in and out (SPEC §5), and the history (SPEC §4). It is done when every sample skeleton and atlas
-the format specs' tests use reads and writes back with zero differences (`../../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md` ▸ E1).
+the format specs' tests use reads and writes back with zero differences (`EDITOR-V2-PLAN.md` ▸ E1).
 Sources: SPEC.md, `Format-Json-Atlas.md` and `BoneBurst-Profile.md`
 (`../../Packages/com.module.ta-creator-boneburst/Doc/Format/`). Clean room: the fork's code is not
 opened (CLAUDE.md).

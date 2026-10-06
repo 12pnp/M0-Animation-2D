@@ -19,7 +19,7 @@ flowchart LR
 
 Status 2026-10-05: written for R1 of the editor's pipeline plan (`Animation-BoneBurst-Src/docs/BONEBURST-PIPELINE-PLAN.md`); since R2 both runtimes are held to the same poses on the same files (§6).
 
-Status 2026-10-06: the editor side is now the BoneBurst Editor (`Editor-BoneBurst-Src/`, MIT, written from scratch), whose document is the Spine 4.3 JSON itself: it reads and writes a file exactly as it was (no import or export step), checks it with its own `src/model/profile.ts` (`profileIssues`), and is held to BoneBurst's C# runtime by its `scripts/unity-parity.ts` on the same dump. The diagram above and the "BoneBurst editor" column below describe the old editor (`Animation-BoneBurst-Src/`), which stays as v2's oracle (`Editor-BoneBurst-Src/docs/E6-PLAN.md`).
+Status 2026-10-06: the editor side is now the BoneBurst Editor (`Editor-BoneBurst-Src/`, MIT, written from scratch), whose document is the Spine 4.3 JSON itself: it reads and writes a file exactly as it was (no import or export step), checks it with its own `src/model/profile.ts` (`profileIssues`), and is held to BoneBurst's C# runtime by its `scripts/unity-parity.ts` on the same dump. The diagram above and the "BoneBurst editor" column below describe the old editor (`Animation-BoneBurst-Src/`), which stays as v2's oracle (`Editor-BoneBurst-Src/docs/E6-PLAN.md`). Since E6 step 7 (same day) the old editor and its pipeline plan are archived at the git tag `old-editor-final`.
 
 ## 1. Rules for every file
 
