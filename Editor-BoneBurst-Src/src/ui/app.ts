@@ -6,6 +6,7 @@ import { pickFiles } from "./files";
 import { Outline } from "./panels/outline";
 import { type PreferenceValues, Preferences } from "./preferences";
 import { PreferencesDialog } from "./preferencesDialog";
+import { HistoryPanel } from "./panels/history";
 import { References } from "./panels/references";
 import { fileSource, Session, type Source } from "./session";
 import type { Space, Tool } from "./stage/gizmo";
@@ -158,6 +159,7 @@ export function mountApp(root: HTMLElement): void {
   status.append(message, pointer, issuesBtn);
   const timeline = new Timeline(session);
   const references = new References(session);
+  const history = new HistoryPanel(session);
   // Ask AI (E5 step 9): the bridge's model with the editor's tools; sending connects the AI button.
   const askAi = new AskAi(new ChatClient(ai.url), ai, () => { if (!prefs.values.ai) prefs.set({ ai: true }); });
   // The activity bar: one button per built panel, pressed while the panel is open.
@@ -230,6 +232,7 @@ export function mountApp(root: HTMLElement): void {
     ["properties", { element: inspector.element }],
     ["reference", { element: references.element }],
     ["ai", { element: askAi.element }],
+    ["history", { element: history.element }],
   ]), (w) => w.addEventListener("keydown", onKey));
   const activityBtns = workspace.built.map((id) => {
     const b = iconButton(button(PANEL_TITLES[id], `${PANEL_TITLES[id]}: show or hide the panel`, () => workspace.toggle(id)), PANEL_ICONS[id], false);

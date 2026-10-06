@@ -171,6 +171,11 @@ export class Session {
     for (const f of this.listeners) f();
   }
 
+  /** Undo or redo to `done` steps (the History panel, E7 step 1): each step followed as the buttons' are. */
+  goToStep(done: number): void {
+    if (this.history?.goTo(done, () => this.followReimports())) this.changed();
+  }
+
   /** A page's exact pixels, or null when its file was not given (or is not a PNG). */
   async pagePixels(name: string): Promise<PngImage | null> {
     const read = this.pageData.get(name);

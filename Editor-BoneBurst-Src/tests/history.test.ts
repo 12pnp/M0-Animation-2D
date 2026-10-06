@@ -99,3 +99,53 @@ describe("renameBone", () => {
     }
   });
 });
+
+describe("History entries and goTo (E7 step 1)", () => {
+  const three = () => {
+    const h = new History(doc());
+    const docs = [h.doc];
+    for (const x of [11, 12, 13]) { h.apply(`Move hip to ${x}`, updateBone("hip", { x })); docs.push(h.doc); }
+    return { h, docs };
+  };
+  it("lists the done steps then the undone ones, oldest first", () => {
+    const { h } = three();
+    h.undo();
+    expect(h.entries).toEqual({ labels: ["Move hip to 11", "Move hip to 12", "Move hip to 13"], done: 2, dropped: 0 });
+  });
+  it("goes to any step through every step between, to the very documents, and back", () => {
+    const { h, docs } = three();
+    let steps = 0;
+    expect(h.goTo(0, () => steps++)).toBe(true);
+    expect(h.doc).toBe(docs[0]);
+    expect(steps).toBe(3);
+    expect(h.entries).toEqual({ labels: ["Move hip to 11", "Move hip to 12", "Move hip to 13"], done: 0, dropped: 0 });
+    expect(h.goTo(2, () => steps++)).toBe(true);
+    expect(h.doc).toBe(docs[2]);
+    expect(steps).toBe(5);
+    // The redo step after it is still there: nothing is lost until a new edit.
+    expect(h.entries.labels).toHaveLength(3);
+    expect(h.goTo(3)).toBe(true);
+    expect(h.doc).toBe(docs[3]);
+  });
+  it("refuses out of range, the current step, and inside a gesture", () => {
+    const { h, docs } = three();
+    expect(h.goTo(-1)).toBe(false);
+    expect(h.goTo(4)).toBe(false);
+    expect(h.goTo(3)).toBe(false);
+    h.begin("Drag");
+    expect(h.goTo(0)).toBe(false);
+    h.cancel();
+    expect(h.doc).toBe(docs[3]);
+  });
+  it("a new edit after going back drops the steps after it", () => {
+    const { h } = three();
+    h.goTo(1);
+    h.apply("Rename", renameBone("leg", "shin"));
+    expect(h.entries).toEqual({ labels: ["Move hip to 11", "Rename"], done: 2, dropped: 0 });
+  });
+  it("counts the steps the limit let go of", () => {
+    const h = new History(doc(), 2);
+    for (const x of [11, 12, 13, 14]) h.apply(`x ${x}`, updateBone("hip", { x }));
+    expect(h.entries).toEqual({ labels: ["x 13", "x 14"], done: 2, dropped: 2 });
+  });
+});

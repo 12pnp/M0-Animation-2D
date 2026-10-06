@@ -58,3 +58,4 @@ files.
 | `arrow-left.svg` | `icons/arrow-left.svg` | the rig panel's Back |
 | `arrow-right.svg` | `icons/arrow-right.svg` | the rig panel's Forward |
 | `pipette.svg` | `icons/pipette.svg` | the colour picker's eyedropper |
+| `rotate-ccw-clock.svg` | `icons/rotate-ccw-clock.svg` | the History panel |

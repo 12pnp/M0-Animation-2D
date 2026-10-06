@@ -398,6 +398,7 @@ dialog.preferences .actions { display: flex; justify-content: flex-end; gap: 8px
 dialog.preferences .colour { display: flex; gap: 8px; align-items: center; }
 dialog.preferences .swatch { width: 44px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 6px; }
 dialog.preferences .swatch.auto { background: repeating-linear-gradient(45deg, var(--panel) 0 6px, var(--hover) 6px 12px); }
+dialog.preferences .swatch.auto.with-colour { background-image: repeating-linear-gradient(45deg, transparent 0 6px, rgb(0 0 0 / 0.25) 6px 12px); }
 /* The colour popup: saturation and value square, hue slider, hex, Apply and Close. */
 .colour-popup { position: fixed; z-index: 10; width: 220px; padding: 10px; display: flex; flex-direction: column; gap: 8px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; }
 .colour-popup .sv { position: relative; height: 130px; border-radius: 4px; cursor: crosshair; touch-action: none; }
@@ -484,3 +485,11 @@ dialog.preferences .swatch.auto { background: repeating-linear-gradient(45deg, v
 dialog.preferences h3 .reset { padding: 1px 10px; font-size: 12px; font-weight: 400; }
 .colour-popup .dropper { padding: 3px 6px; display: flex; align-items: center; }
 .colour-popup .dropper .icon { width: 16px; height: 16px; }
+
+/* The History panel (E7 step 1). */
+.history-list { list-style: none; margin: 0; padding: 0 0 8px; }
+.history-step { display: block; width: 100%; text-align: left; padding: 3px 12px; border: 0; background: none; color: inherit; font: inherit; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.history-step:hover { background: var(--hover); }
+.history-step.start { font-style: italic; }
+.history-step.undone { color: var(--muted); }
+.history-step[aria-current] { background: var(--accent); color: var(--accent-text); }

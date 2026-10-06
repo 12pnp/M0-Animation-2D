@@ -27,10 +27,12 @@ const DEFAULTS: Readonly<Record<PanelId, readonly Placement[]>> = {
   preview: [{ referencePanel: "stage", direction: "right" }, { direction: "right" }],
   reference: [{ referencePanel: "properties", direction: "within" }, { direction: "right" }],
   ai: [{ referencePanel: "properties", direction: "within" }, { direction: "right" }],
+  // Behind the rig panel: the default layout looks as before (E7 step 1).
+  history: [{ referencePanel: "rigTree", direction: "within" }, { direction: "left" }],
 };
 
 /** The order the default layout adds the panels in. */
-export const DEFAULT_ORDER: readonly PanelId[] = ["rigTree", "stage", "properties", "timeline", "preview", "reference", "ai"];
+export const DEFAULT_ORDER: readonly PanelId[] = ["rigTree", "stage", "properties", "timeline", "preview", "reference", "ai", "history"];
 
 /** The default place for `id`, given the panels already in the dock. */
 export function defaultPlacement(id: PanelId, present: ReadonlySet<string>): Placement {

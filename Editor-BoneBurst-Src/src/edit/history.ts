@@ -17,6 +17,8 @@ export class History<D> {
   private readonly past: Entry<D>[] = [];
   private future: Entry<D>[] = [];
   private gesture: { label: string; start: D } | null = null;
+  /** Steps dropped from the start for the limit: the oldest kept step is not the first one made. */
+  private droppedSteps = 0;
   /** Bumped on every change, so a view can tell whether it is stale. */
   revision = 0;
 
@@ -29,6 +31,27 @@ export class History<D> {
   get canRedo(): boolean { return this.future.length > 0 && !this.gesture; }
   get undoLabel(): string | undefined { return this.past.at(-1)?.label; }
   get redoLabel(): string | undefined { return this.future.at(-1)?.label; }
+
+  /**
+   * Every step, oldest first: the done steps, then the undone ones a redo would bring back.
+   * `done` is how many are done (0: back at the start); `dropped`, how many older steps the limit
+   * let go of.
+   */
+  get entries(): { readonly labels: readonly string[]; readonly done: number; readonly dropped: number } {
+    return { labels: [...this.past.map((e) => e.label), ...this.future.map((e) => e.label).reverse()], done: this.past.length, dropped: this.droppedSteps };
+  }
+
+  /**
+   * Undo or redo until `done` steps are done: one step at a time, as the buttons do, calling
+   * `step` after each (what follows the document, such as a re-import's atlas, sees every step).
+   * Returns false when nothing moved (out of range, or inside a gesture).
+   */
+  goTo(done: number, step: () => void = () => {}): boolean {
+    if (this.gesture || done < 0 || done > this.past.length + this.future.length || done === this.past.length) return false;
+    while (this.past.length > done && this.undo()) step();
+    while (this.past.length < done && this.redo()) step();
+    return true;
+  }
 
   /**
    * Apply one edit as one undo step. Returns false, and records nothing, when the edit changed
@@ -84,7 +107,7 @@ export class History<D> {
 
   private record(label: string, before: D, after: D): void {
     this.past.push({ label, before, after });
-    if (this.past.length > this.limit) this.past.shift();
+    if (this.past.length > this.limit) { this.past.shift(); this.droppedSteps++; }
     this.future = [];
   }
 
