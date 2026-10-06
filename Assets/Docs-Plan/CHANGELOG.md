@@ -13,6 +13,10 @@ flowchart LR
 
 ## 2026-10-06
 
+- **BoneBurst Editor v2: the Open dialog's + works in browsers without a persistent folder picker** (`Editor-BoneBurst-Src/`).
+  - + said "This browser cannot keep folders" and stopped, where the picker was missing or the page was automated. It now uses `showDirectoryPicker` when there is one (the folder is kept across visits), and otherwise a plain folder input: the folder's `.bbdata` projects are listed and open, held until the page closes (Save then asks where to write). `src/ui/openDialog.ts`.
+  - **Guard**: `e2e/project.spec.ts` picks a folder through the input and opens its project. `npm run check` passes (24 browser tests plus the build). **Not verified**: the persistent picker path (Playwright cannot drive it), and the person's own browser.
+
 - **BoneBurst Editor v2, E8 step 2: a bone the pose leaves without one is named, and not drawn as garbage** (`Editor-BoneBurst-Src/`).
   - **The stage and Properties**: the stage leaves such a bone out of what it draws and picks, with no gizmo; Properties says "Pose: none here" for it; the notes (step 1) name it.
   - **The fixture**: `tests/fixtures/unposed/unposed.json` (a two-bone IK on an arm scaled to 0 in y), where BoneBurst's C# runtime agrees the bone has no pose.

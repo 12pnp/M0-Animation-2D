@@ -67,3 +67,25 @@ test("New Project opens a blank rig in its own tab, clean until edited, and the 
   expect(await dirty(page)).toBe(false);
   await expect(page).toHaveTitle(/^untitled/);
 });
+
+test("Open dialog: + works where the browser cannot keep folders: the folder's projects are listed and one opens", async ({ page }) => {
+  await page.addInitScript(() => { (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker = undefined; });
+  // A folder holding one project: the stickman, saved as .bbdata by the editor itself.
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  const [saved] = await Promise.all([page.waitForEvent("download"), menuItem(page, "File", "Save Project(?! As)")]);
+  const dir = mkdtempSync(join(tmpdir(), "bbfolder-"));
+  await saved.saveAs(join(dir, "Stickman_IK.bbdata"));
+
+  await page.reload();
+  await menuItem(page, "File", "Open…");
+  const [chooser] = await Promise.all([page.waitForEvent("filechooser"), page.getByRole("button", { name: "+", exact: true }).click()]);
+  await chooser.setFiles(dir);
+  await expect(page.locator("dialog.open-project .op-list").first().getByRole("button", { name: "Stickman_IK" })).toBeVisible();
+  await page.locator("dialog.open-project .op-list").first().getByRole("button", { name: "Stickman_IK" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  await expect(page.locator("dialog.open-project")).not.toBeVisible();
+});

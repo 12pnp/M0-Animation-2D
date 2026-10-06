@@ -5,7 +5,7 @@ import type { ProjectFile } from "./session";
  * The Open dialog: a helper before the browser's own file picker. Files lists the recent projects,
  * or the projects of the folder picked on the right; Folders keeps the folders the person added
  * (starred ones first); Browse goes on to the browser's picker. Chrome and Edge only keep handles,
- * so elsewhere the lists are empty and Browse is the way in.
+ * so elsewhere Recent is empty, a folder added with + is held until the page closes, and Browse is the way in.
  */
 
 export interface OpenHost {
@@ -17,13 +17,17 @@ export interface OpenHost {
 
 type Row = { name: string; open(): Promise<void> };
 
+/** A folder picked where the browser cannot keep one: its files, until the page closes. */
+interface LooseFolder { readonly name: string; readonly files: readonly File[] }
+
 export class OpenDialog {
   private readonly dialog = document.createElement("dialog");
   private readonly files = document.createElement("div");
   private readonly folderList = document.createElement("div");
   private readonly filter = document.createElement("input");
   private readonly note = document.createElement("p");
-  private shown: ProjectFolder | null = null;
+  private shown: ProjectFolder | LooseFolder | null = null;
+  private readonly loose: LooseFolder[] = [];
   private rows: Row[] = [];
 
   constructor(private readonly host: OpenHost) {
@@ -138,6 +142,15 @@ export class OpenDialog {
     this.drawFiles();
   }
 
+  private showLoose(f: LooseFolder): void {
+    this.shown = f;
+    const found = f.files.filter((x) => /\.bbdata$/i.test(x.name)).sort((a, b) => a.name.localeCompare(b.name));
+    this.rows = found.map((file) => ({ name: file.name.replace(/\.bbdata$/i, ""), open: async () => { await this.host.openFile(file, null); } }));
+    this.note.textContent = found.length ? "This browser cannot keep folders: this one stays until the page closes, and Save asks where to put the file." : `No .bbdata projects in ${f.name}.`;
+    this.drawFiles();
+    this.drawFolders();
+  }
+
   private async openRecent(r: Recent): Promise<void> {
     await this.host.openFile(await readRecent(r), r.handle);
   }
@@ -195,17 +208,41 @@ export class OpenDialog {
       line.append(star, del);
       rows.push(line);
     }
+    for (const f of this.loose) rows.push(row(f.name, this.shown === f, () => this.showLoose(f)));
     this.folderList.replaceChildren(...rows);
   }
 
   private async addFolder(): Promise<void> {
     const pick = (window as unknown as { showDirectoryPicker?: (o: { id: string }) => Promise<FolderHandle> }).showDirectoryPicker;
-    if (!pick || navigator.webdriver) { this.note.textContent = "This browser cannot keep folders (use Chrome or Edge)."; return; }
-    try {
-      await folders.add(await pick.call(window, { id: "boneburst-projects" }));
-    } catch { return; }
-    this.shown = null;
-    this.showRecent();
+    if (pick) {
+      try {
+        await folders.add(await pick.call(window, { id: "boneburst-projects" }));
+        this.shown = null;
+        this.showRecent();
+        return;
+      } catch (err) {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        // Refused or unsupported here: the plain folder input below.
+      }
+    }
+    this.chooseLoose();
+  }
+
+  /** Where the browser has no folder picker that keeps access: a folder input, its files held for this page. */
+  private chooseLoose(): void {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.webkitdirectory = true;
+    input.addEventListener("change", () => {
+      const files = [...(input.files ?? [])];
+      if (!files.length) return;
+      const name = files[0]!.webkitRelativePath.split("/")[0] || "Folder";
+      const folder: LooseFolder = { name, files };
+      const at = this.loose.findIndex((f) => f.name === name);
+      if (at >= 0) this.loose[at] = folder; else this.loose.push(folder);
+      this.showLoose(folder);
+    });
+    input.click();
   }
 }
 
