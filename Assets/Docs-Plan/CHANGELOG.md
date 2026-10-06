@@ -13,6 +13,13 @@ flowchart LR
 
 ## 2026-10-07
 
+- **BoneBurst Editor v2: the Stage's tool panels reworked, axis-locked gizmo arrows, new hotkeys, snap and arrow-key step settings** (`Editor-BoneBurst-Src/`).
+  - **Transform panel:** each row has a head cell that keys the property (red when keyed) and the tool's label; no padding, 1 px light-gray lines, rounded corners; the grip is a small rectangle on the corner (drag to move, click to fold). Pose/Animate is a text tab at the stage's bottom right; Auto Key and Onion moved to the Timeline bar.
+  - **Gizmo:** the move, scale and shear arrows are Godot's red (x) and green (y), and a press on one drags along that axis only; the Rotate ring has a radius line with the Rotation value.
+  - **Keys:** F centres the view on the selected bone, Z cycles Local/Parent/World with a 0.4 s label, T Translate, R Rotate, S Scale, H Shear, Q and W step frames, arrow keys nudge the chosen tool's value by Preferences ▸ Grid's steps (0.35 by default, 0.01 for Scale, Shift ×10).
+  - **Settings:** snapping and snap size in Properties and in Preferences ▸ Grid.
+  - Guarded by `e2e/gizmoAxes.spec.ts`, `e2e/pairedFields.spec.ts`, `tests/shortcuts.test.ts`; 706 unit tests passed on the staged tree and 47 browser tests on the working tree; the corners, colours and spacing were judged from screenshots of one theme each, not by hand.
+
 - **BoneBurst Editor v2: timeline keys and the playhead tag on the same pixel column as the ticks** (`Editor-BoneBurst-Src/`).
   - Keys and the green frame tag were drawn on the unrounded x, up to half a pixel off the tick and the line; both now use the rounded column (`timeline.ts`).
   - **Not verified**: `tsc --noEmit` passes; not looked at in the browser (the pane kept reloading), no test.

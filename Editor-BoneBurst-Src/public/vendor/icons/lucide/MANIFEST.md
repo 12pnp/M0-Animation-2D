@@ -54,6 +54,7 @@ files.
 | `film.svg` | `icons/film.svg` | the activity bar's Timeline button |
 | `shear.svg` | `icons/shear.svg` | the Shear tool (drawn in Lucide style) |
 | `key-round.svg` | `icons/key-round.svg` | the Auto Key button |
+| `ghost.svg` | `icons/ghost.svg` | the Onion skin button |
 | `layout-panel-left.svg` | `icons/layout-panel-left.svg` | the activity bar's panel picker |
 | `search.svg` | `icons/search.svg` | the rig panel's search field |
 | `arrow-left.svg` | `icons/arrow-left.svg` | the rig panel's Back |

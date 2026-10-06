@@ -1,6 +1,5 @@
 /**
- * The stage's tool panels as floating cards: each gets a grip bar to drag it by and a fold
- * button, and where it was left is remembered. A card keeps its place in the centred row; the
+ * The stage's tool panels as floating cards: each gets a small grip button on its corner to drag it by (a click folds it), and where it was left is remembered. A card keeps its place in the centred row; the
  * drag only offsets it from there (CSS `translate`), so the default layout is untouched.
  */
 const KEY = "bb.stageGroups";
@@ -47,7 +46,7 @@ export function floatGroups(bounds: HTMLElement, groups: Readonly<Record<string,
   for (const [id, el] of Object.entries(groups)) {
     const grip = document.createElement("div");
     grip.className = "grip";
-    grip.title = "Drag to move this panel; the arrow folds it";
+    grip.title = "Drag to move this panel; click to fold it";
     const fold = document.createElement("span");
     fold.className = "fold";
     fold.textContent = "▾";

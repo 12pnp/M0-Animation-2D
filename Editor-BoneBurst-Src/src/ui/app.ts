@@ -29,12 +29,13 @@ import { PathPanel } from "./stage/pathPanel";
 import { TransformStrip } from "./stage/transformStrip";
 import { lookOf } from "./stage/look";
 import { DIVIDER, MenuBar, type MenuItem } from "./menubar";
-import { icon, iconButton, setIcon } from "./icons";
+import { icon, iconButton } from "./icons";
 import type { View } from "@/edit/sidecar";
 import { download, saveProject } from "./project";
 import { OpenDialog } from "./openDialog";
 import { folders, type Recent, recent, type RecentHandle, readRecent } from "./recent";
 import { ExportRefused, exportFiles, exportToUnity } from "./unityExport";
+import { snapFields } from "./snapFields";
 import { Autosaver, clearRecovery, readRecovery, sourcesOf } from "./recovery";
 import { floatGroups } from "./stage/floatingGroups";
 import { clipboard, copyPose, pastePoseHere } from "./clipboard";
@@ -145,6 +146,7 @@ export function mountApp(root: HTMLElement): void {
     showBtn("Hide IK", "In animation mode, hide the bones an IK constraint drives: they are not animated, so only the targets and the free bones show", "hideIkBones"),
     showBtn("Onion", "Onion skin: the poses before (red) and after (green) the playhead, behind the skeleton (View ▸ Onion Skin)", "onion"),
   ];
+  iconButton(showBtns.find((b) => b.dataset.show === "onion")!, "onion", false);
   const rulersBtn = iconButton(showBtns.find((b) => b.dataset.show === "rulers")!, "ruler", false);
   const stageTools = el("div", "stage-tools");
   let crumb: HTMLElement;
@@ -155,19 +157,20 @@ export function mountApp(root: HTMLElement): void {
     autoKeyBtn.setAttribute("aria-pressed", String(stage.autoKey));
     say(stage.autoKey ? "Auto Key on: dragging keys the animation." : `Auto Key off: dragging poses the bone unkeyed; press Key (${keysOf("key")}) to key it.`);
   };
-  const autoKeyBtn = iconButton(button("Auto Key", "Auto Key: with an animation chosen, a drag on the stage keys it. Off, a drag poses the bone without keying until you press Key", toggleAutoKey), "autoKey");
+  const autoKeyBtn = iconButton(button("Auto Key", "Auto Key: with an animation chosen, a drag on the stage keys it. Off, a drag poses the bone without keying until you press Key", toggleAutoKey), "autoKey", false);
   autoKeyBtn.setAttribute("aria-pressed", "true");
   const SPACES: ReadonlyArray<{ space: Space; label: string; tip: string }> = [
     { space: "local", label: "Local", tip: "Move, scale or shear along the bone's own axes" },
     { space: "parent", label: "Parent", tip: "Move, scale and shear freely, as dragged" },
     { space: "world", label: "World", tip: "Move, scale or shear along the world's axes" },
   ];
-  const spaceBtns = SPACES.map((x) => {
-    const b = button(x.label, x.tip, () => {
-      stage.space = x.space;
-      for (const o of spaceBtns) o.setAttribute("aria-pressed", String(o === b));
-      stage.redraw();
-    });
+  const setSpace = (space: Space): void => {
+    stage.space = space;
+    SPACES.forEach((x, i) => spaceBtns[i]?.setAttribute("aria-pressed", String(x.space === space)));
+    stage.redraw();
+  };
+  const spaceBtns: HTMLButtonElement[] = SPACES.map((x) => {
+    const b = button(x.label, x.tip, () => setSpace(x.space));
     b.setAttribute("aria-pressed", String(x.space === stage.space));
     return b;
   });
@@ -177,17 +180,18 @@ export function mountApp(root: HTMLElement): void {
   crumb = el("div", "stage-crumb");
   // Pose / Animate: one button for the mode. Pose edits the setup pose (no animation shown); Animate
   // shows the last animation used, or the first, and what is done there is keyed.
-  const modeBtn = iconButton(button("Pose", "", () => {
+  const modeBtn = button("Pose", "", () => {
     if (session.animation) { session.showAnimation(null); return; }
     if (!session.enterAnimate()) say("No animations yet: New… in the Timeline adds one.");
-  }), "bone");
-  modeBtn.classList.add("mode");
+  });
+  // Text only, fixed at the stage's foot, in the middle.
+  modeBtn.classList.add("mode", "stage-mode");
   // The path window: the selected path attachment's vertices, by number (docs/PATH-PLAN.md); it sits in the Local Path panel.
   const pathPanel = new PathPanel(session, (m) => say(m));
-  const modeGroup = group(modeBtn), spaceGroup = group(...spaceBtns), showGroup = group(...showBtns.filter((b) => b !== rulersBtn), autoKeyBtn);
-  stageTools.append(crumb, modeGroup, transform.element, spaceGroup, showGroup);
+  const spaceGroup = group(...spaceBtns), showGroup = group(...showBtns.filter((b) => b !== rulersBtn && b.dataset.show !== "onion"));
+  stageTools.append(crumb, transform.element, spaceGroup, showGroup);
   // Each panel can be dragged by its grip and folded; the corner button shows or hides all of them.
-  const resetPanels = floatGroups(stagePanel, { mode: modeGroup, transform: transform.element, space: spaceGroup, show: showGroup });
+  const resetPanels = floatGroups(stagePanel, { transform: transform.element, space: spaceGroup, show: showGroup });
   // Fit stays in the panel's top right corner, whatever its size.
   const fitCorner = el("div", "stage-fit");
   const panelsBtn = iconButton(button("Panels", "Show or hide the tool panels over the stage (View ▸ Stage Panels); double-click to put them back where they started", () => prefs.set({ stagePanels: !prefs.values.stagePanels })), "panels", false);
@@ -196,7 +200,7 @@ export function mountApp(root: HTMLElement): void {
   // Two small buttons in the stage's bottom-left corner, stacked upward: show or hide the panels, then the rulers.
   const rulerTools = el("div", "stage-ruler-tools");
   rulerTools.append(panelsBtn, rulersBtn);
-  stagePanel.append(rulerTools);
+  stagePanel.append(rulerTools, modeBtn);
   stagePanel.append(fitCorner);
   // "Automatic" text labels: hidden while the stage is narrow.
   new ResizeObserver(() => stageTools.classList.toggle("narrow", stagePanel.clientWidth < 560)).observe(stagePanel);
@@ -213,6 +217,8 @@ export function mountApp(root: HTMLElement): void {
   issuesList.hidden = true;
   status.append(message, pointer, issuesBtn);
   const timeline = new Timeline(session);
+  // Auto Key and Onion work on the animation: they sit at the timeline bar's end.
+  timeline.addTools(autoKeyBtn, showBtns.find((b) => b.dataset.show === "onion")!);
   const references = new References(session);
   const history = new HistoryPanel(session);
   const localPath = new LocalPathPanel(session);
@@ -405,6 +411,7 @@ export function mountApp(root: HTMLElement): void {
   stage.onPointer = (t) => { pointer.textContent = t; };
   inspector.onStatus = say;
   inspector.onBoneSize = (n) => prefs.set({ boneSize: n });
+  inspector.snapFields = (owner) => snapFields(prefs, owner);
   outline.onStatus = say;
   skinsPanel.onStatus = say;
   animationsPanel.onStatus = say;
@@ -574,8 +581,7 @@ export function mountApp(root: HTMLElement): void {
     hint.hidden = !!doc;
     // The mode button says what is shown now, and what a click switches to.
     const animating = !!session.animation;
-    modeBtn.querySelector(".label")!.textContent = animating ? "Animate" : "Pose";
-    setIcon(modeBtn, animating ? "key" : "bone");
+    modeBtn.textContent = animating ? "Animate" : "Pose";
     modeBtn.title = animating ? `Animate: editing ${session.animation!.name}. Click for the setup pose (Pose)` : "Pose: editing the setup pose. Click to animate";
     modeBtn.disabled = !doc;
     workspace.setMode(animating ? "animate" : "pose");
@@ -686,7 +692,16 @@ export function mountApp(root: HTMLElement): void {
       if (!stage.cancel() && session.playing) session.pause();
       else session.select(null);
     },
-    fit: () => stage.fitView(),
+    fit: () => stage.focusSelected(),
+    nudgeLeft: (e?: KeyboardEvent) => nudge("left", e),
+    nudgeRight: (e?: KeyboardEvent) => nudge("right", e),
+    nudgeDown: (e?: KeyboardEvent) => nudge("down", e),
+    nudgeUp: (e?: KeyboardEvent) => nudge("up", e),
+    cycleSpace: () => {
+      const next = SPACES[(SPACES.findIndex((x) => x.space === stage.space) + 1) % SPACES.length]!;
+      setSpace(next.space);
+      stage.flash(next.label);
+    },
     // The weight brush's size (E6 step 4f), while it is on.
     brushSmaller: () => { if (!brush.on) return false; say(`Brush ${resizeBrush(-1)} px.`); stage.redraw(); },
     brushLarger: () => { if (!brush.on) return false; say(`Brush ${resizeBrush(1)} px.`); stage.redraw(); },
@@ -710,6 +725,12 @@ export function mountApp(root: HTMLElement): void {
     toolScale: () => setTool("scale"),
     toolShear: () => setTool("shear"),
     shortcuts: () => sheet.open(),
+  };
+
+  // An arrow key nudges the chosen tool's value, unless a list or menu has it (a select moves its choice on arrows).
+  const nudge = (dir: "left" | "right" | "up" | "down", e?: KeyboardEvent): boolean | void => {
+    if ((e?.target as HTMLElement | null)?.tagName === "SELECT") return false;
+    transform.nudge(stage.tool, dir, !!e?.shiftKey, { step: prefs.values.nudgeStep, scaleStep: prefs.values.nudgeScaleStep, bigFactor: prefs.values.nudgeBigFactor });
   };
 
   window.addEventListener("keydown", onKey);

@@ -1,5 +1,5 @@
 import { pickColour } from "./colourPopup";
-import { AUTOSAVE_RANGE, BONE_SIZE_RANGE, DEFAULTS, GRID_RANGE, ONION_RANGE, DEFAULT_FPS_RANGE, type FontSize, type Preferences, type PreferenceValues, ROW_HEIGHT_RANGE, TREE_INDENT_RANGE, type ToolbarLabels, type ToolbarPosition, THICKNESS_RANGE, type Theme, UI_SCALE_RANGE, UNDO_RANGE } from "./preferences";
+import { AUTOSAVE_RANGE, BONE_SIZE_RANGE, DEFAULTS, GRID_RANGE, NUDGE_FACTOR_RANGE, NUDGE_RANGE, ONION_RANGE, DEFAULT_FPS_RANGE, type FontSize, type Preferences, type PreferenceValues, ROW_HEIGHT_RANGE, TREE_INDENT_RANGE, type ToolbarLabels, type ToolbarPosition, THICKNESS_RANGE, type Theme, UI_SCALE_RANGE, UNDO_RANGE } from "./preferences";
 import { toStyle } from "./pageScale";
 
 /**
@@ -95,8 +95,16 @@ export class PreferencesDialog {
         colourPicker("Other tabs' text colour", p.tabDimTextColour, (c) => this.prefs.set({ tabDimTextColour: c }), true, themeColour("--muted")),
       ],
       grid: [
-        number(`Grid spacing (units, ${GRID_RANGE[0]}–${GRID_RANGE[1]})`, p.gridSize, 1, (n) => this.prefs.set({ gridSize: n })),
-        note("View ▸ Grid shows it; View ▸ Snapping and its Snap to… items choose what a dragged bone or vertex snaps to."),
+        number(`Grid spacing and snap size (units, ${GRID_RANGE[0]}–${GRID_RANGE[1]})`, p.gridSize, 1, (n) => this.prefs.set({ gridSize: n })),
+        check("Snapping", p.snap, (on) => this.prefs.set({ snap: on })),
+        check("Snap to grid", p.snapGrid, (on) => this.prefs.set({ snapGrid: on })),
+        check("Snap to guides", p.snapGuides, (on) => this.prefs.set({ snapGuides: on })),
+        check("Snap to bones", p.snapBones, (on) => this.prefs.set({ snapBones: on })),
+        check("Snap to pixels", p.snapPixels, (on) => this.prefs.set({ snapPixels: on })),
+        number(`Arrow-key step (degrees or units, ${NUDGE_RANGE[0]}–${NUDGE_RANGE[1]})`, p.nudgeStep, 0.1, (n) => this.prefs.set({ nudgeStep: n })),
+        number("Arrow-key step for Scale", p.nudgeScaleStep, 0.01, (n) => this.prefs.set({ nudgeScaleStep: n })),
+        number(`Shift multiplies the arrow-key step by (${NUDGE_FACTOR_RANGE[0]}–${NUDGE_FACTOR_RANGE[1]})`, p.nudgeBigFactor, 1, (n) => this.prefs.set({ nudgeBigFactor: n })),
+        note("View ▸ Grid shows the grid; what a dragged bone or vertex snaps to is set here, in View ▸ Snapping, and in Properties."),
       ],
       onion: [
         check("Onion skin (View ▸ Onion Skin)", p.onion, (on) => this.prefs.set({ onion: on })),
@@ -199,7 +207,7 @@ const KEYS: Readonly<Record<string, readonly (keyof PreferenceValues)[]>> = {
   display: ["rulers", "rulerColour", "rulerOpacity", "rulerTextColour", "stagePanels", "bones", "boneColour", "boneSize", "selectedBoneColour", "constraints"],
   background: ["checker", "checkerColour", "gridColour", "gridThickness", "axes", "axisXColour", "axisYColour", "axisThickness"],
   tabs: ["tabBarColour", "tabActiveColour", "tabTextColour", "tabDimTextColour"],
-  grid: ["gridSize"],
+  grid: ["gridSize", "nudgeStep", "nudgeScaleStep", "nudgeBigFactor", "snap", "snapGrid", "snapGuides", "snapBones", "snapPixels"],
   onion: ["onion", "onionBefore", "onionAfter", "onionKeyedOnly", "onionColour"],
 };
 

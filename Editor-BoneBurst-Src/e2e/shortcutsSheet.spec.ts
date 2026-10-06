@@ -42,9 +42,9 @@ test("the shortcuts sheet lists and filters the table; Escape closes it; the key
   await sheet.getByRole("button", { name: "Close" }).click();
   await expect(sheet).toBeHidden();
 
-  // Keys from the table: E picks Rotate; ⌘Z undoes an edit; Space plays and pauses.
+  // Keys from the table: R picks Rotate; ⌘Z undoes an edit; Space plays and pauses.
   await page.locator("body").click({ position: { x: 5, y: 5 } });
-  await page.keyboard.press("e");
+  await page.keyboard.press("r");
   await expect(page.locator('[data-tool="rotate"]')).toHaveAttribute("aria-pressed", "true");
   const x0 = await page.evaluate(() => (window as unknown as Live).boneburst.session.doc.bones.find((b: { name: string }) => b.name === "hips").x ?? 0);
   await page.evaluate(async () => {

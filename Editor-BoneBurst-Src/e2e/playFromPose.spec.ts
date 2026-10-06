@@ -11,7 +11,7 @@ test("the Timeline's Play, in Pose mode, changes to Animate and plays; Pause sto
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
-  const mode = page.locator(".stage-tools button.mode"), play = page.locator(".timeline").getByRole("button", { name: /^Play/ });
+  const mode = page.locator(".stage-panel button.mode"), play = page.locator(".timeline").getByRole("button", { name: /^Play/ });
   await expect(mode).toHaveText("Pose");
   expect((await state(page)).animation).toBeNull();
   // Play is there in Pose mode.

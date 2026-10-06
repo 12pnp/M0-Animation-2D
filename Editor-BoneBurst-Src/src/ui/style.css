@@ -531,7 +531,8 @@ dialog.shortcuts .actions { display: flex; justify-content: flex-end; }
 .stage-crumb[hidden] { display: none; }
 .stage-crumb > span { background: var(--bb-header-bg, var(--panel)); border: 1px solid var(--bb-field-border, var(--line)); border-radius: 6px; padding: 2px 8px; font-size: 13px; }
 .stage-crumb > .sep { background: none; border: 0; padding: 0; color: var(--muted); }
-.stage-tools .group.transform { gap: 4px; }
+.stage-tools .group.transform { gap: 0; }
+.stage-tools .group.transform .t-row + .t-row { margin-top: -1px; }
 .t-row { display: flex; align-items: stretch; gap: 0; border: 1px solid var(--bb-field-border, var(--line)); border-radius: 3px; overflow: hidden; background: var(--hover); }
 .t-row > button:first-child { width: 96px; border: 0; border-radius: 0; border-right: 1px solid var(--bb-field-border, var(--line)); }
 .t-values { display: flex; flex: 1; min-width: 0; }
@@ -674,3 +675,66 @@ dialog.preferences .slider input[type="number"] { width: 64px; }
 .t-values .axis-box:last-child { border-right: 0; }
 .t-values .axis-box > .cell { border: 0; background: transparent; }
 .t-values .axis-box:focus-within { border-color: var(--bb-field-border, var(--line)); box-shadow: inset 0 0 0 1px var(--accent); }
+.stage-flash { position: absolute; transform: translateX(-50%); z-index: 4; padding: 2px 8px; border-radius: 4px; background: var(--panel); border: 1px solid var(--line); color: var(--text); font-size: 12px; pointer-events: none; white-space: nowrap; }
+.inspector .snap-fields { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.stage-mode { position: absolute; right: 0; bottom: 0; z-index: 1; min-width: 96px; padding: 3px 14px; text-align: center; border-radius: 6px 0 0 0; border: 1px solid var(--line); border-bottom: 0; border-right: 0; background: var(--bb-header-bg, var(--panel)); }
+.stage-mode[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.stage-mode:disabled { opacity: 0.5; }
+
+/* The transform panel, compact: a head cell (the key toggle, red when keyed), the tool's label, then the values. */
+.stage-tools .group { padding: 3px; gap: 3px; }
+.t-row > button:first-child { width: 26px; flex: none; padding: 0; border: 0; border-radius: 0; border-right: 1px solid var(--bb-field-border, var(--line)); display: flex; align-items: center; justify-content: center; background: var(--hover); color: var(--text); text-align: center; }
+.t-row > button:first-child:disabled { opacity: 0.4; }
+.t-row > button:first-child.keyed { background: #d6322b; color: #fff; }
+.t-row > button:first-child .icon { width: 14px; height: 14px; margin: 0; }
+.t-row > button:nth-child(2) { width: 62px; flex: none; padding: 2px 6px; border: 0; border-radius: 0; border-right: 1px solid var(--bb-field-border, var(--line)); text-align: left; }
+.stage-tools[data-labels="hide"] .t-row > button:nth-child(2), .stage-tools[data-labels="auto"].narrow .t-row > button:nth-child(2) { width: 10px; padding: 0; }
+.t-values .cell { padding: 2px 6px; }
+.t-values .axis-tag { width: 18px; font-size: 12px; }
+/* The grip: a small round button on the panel's bottom-left corner. Drag to move the panel, click to fold it. */
+.stage-tools .group > .grip { position: absolute; left: -6px; bottom: -6px; z-index: 3; width: 14px; height: 14px; margin: 0; padding: 0; border-radius: 50%; border: 1px solid var(--line); background: var(--panel) radial-gradient(circle, var(--muted) 1px, transparent 1.4px) center / 4px 4px; opacity: 0.8; }
+.stage-tools .group > .grip:hover { opacity: 1; }
+.stage-tools .group > .grip .fold { display: none; }
+
+
+/* No padding round what a panel holds: its rows and buttons are the panel; the border is the only outline. */
+.stage-tools .group { padding: 0; gap: 0; border-radius: 6px; }
+.stage-tools .group:not(.transform) button { border-radius: 0; margin-top: -1px; }
+.stage-tools .group:not(.transform) button:first-of-type { margin-top: 0; border-radius: 5px 5px 0 0; }
+.stage-tools .group:not(.transform) button:last-of-type { border-radius: 0 0 5px 5px; }
+.t-row { border-radius: 0; border-width: 0 0 1px; }
+.stage-tools .group.transform .t-row + .t-row { margin-top: 0; }
+.stage-tools .group.transform .t-row:last-of-type { border-bottom: 0; }
+.stage-tools .group.transform .t-row:first-of-type { border-radius: 5px 5px 0 0; }
+/* Folded: just the grip. */
+.stage-tools .group.folded { width: 14px; height: 14px; min-width: 0; min-height: 0; border: 0; background: none; box-shadow: none; }
+.stage-tools .group.folded > .grip { left: 0; bottom: 0; }
+/* The value cells a little lighter than the panel, so they show against it. */
+.t-values .axis-box, .t-values > .cell { background: color-mix(in srgb, var(--panel) 90%, white); }
+.t-values .axis-box > .cell { background: transparent; }
+.t-values .cell:disabled { color: var(--muted); }
+/* The panels' edge line and the lines between their cells: 1 px, light gray. */
+.stage-tools { --bb-field-border: color-mix(in srgb, var(--text) 40%, var(--panel)); }
+.stage-tools .group { border-width: 1px; }
+.stage-tools .group.folded { border-width: 0; }
+.stage-tools .group > .grip { border-color: var(--bb-field-border); }
+/* The transform panel's colours: the letter cells light gray, the value fields and the panel dark gray (corners too). */
+.stage-tools .group.transform { --t-dark: color-mix(in srgb, var(--panel) 78%, black); --t-light: color-mix(in srgb, var(--text) 30%, var(--panel)); background: var(--t-dark); }
+.t-row { background: var(--t-dark, var(--hover)); }
+.t-values .axis-box, .t-values > .cell { background: var(--t-dark); }
+.t-values .axis-box > .cell { background: transparent; }
+.axis-tag { background: var(--t-light, var(--line)); }
+.stage-tools .group.transform .t-row:last-of-type { border-radius: 0 0 5px 5px; }
+/* Rounder panel corners: the outline and what sits in the corners share one radius. */
+.stage-tools .group { border-radius: 12px; }
+.stage-tools .group.transform .t-row:first-of-type { border-radius: 11px 11px 0 0; }
+.stage-tools .group.transform .t-row:last-of-type { border-radius: 0 0 11px 11px; }
+.stage-tools .group:not(.transform) button:first-of-type { border-radius: 11px 11px 0 0; }
+.stage-tools .group:not(.transform) button:last-of-type { border-radius: 0 0 11px 11px; }
+/* The grip is the group's first child, so the first row is the one after it. */
+.stage-tools .group.transform > .grip + .t-row { border-radius: 11px 11px 0 0; }
+/* The grip: a small rectangle, not a dot. */
+.stage-tools .group > .grip { width: 18px; height: 10px; border-radius: 3px; left: -4px; bottom: -4px; }
+.stage-tools .group.folded { width: 18px; height: 10px; }
+/* The value fields take the tool label cell's colour. */
+.stage-tools .group.transform .t-values .axis-box, .stage-tools .group.transform .t-values > .cell { background: var(--hover); }

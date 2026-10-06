@@ -79,6 +79,10 @@ export interface PreferenceValues {
   readonly tabTextColour: string;
   readonly tabDimTextColour: string;
   readonly gridSize: number;
+  /** What an arrow key adds to the chosen tool's value: degrees or units, Scale's own step, and the factor Shift multiplies by. */
+  readonly nudgeStep: number;
+  readonly nudgeScaleStep: number;
+  readonly nudgeBigFactor: number;
   readonly snap: boolean;
   readonly snapGrid: boolean;
   readonly snapGuides: boolean;
@@ -91,7 +95,7 @@ export const UI_SCALE_RANGE = [60, 140] as const;
 /** 95: a twentieth smaller than the browser's own size; a browser under automation (the browser tests) keeps 100, so what they measure is in the pixels they see. */
 const DEFAULT_UI_SCALE = typeof navigator !== "undefined" && navigator.webdriver ? 100 : 95;
 export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, uiScale: DEFAULT_UI_SCALE, fontSize: "medium", toolbarLabels: "auto", toolbarPosition: "center", rowHeight: 22, fewerTicks: false, defaultFps: 30, treeColours: true, treeIndent: 14, stagePanels: true, boneColour: "auto", boneSize: 1, selectedBoneColour: "auto", bones: true, constraints: true, hideIkBones: false, rulerColour: "auto", rulerOpacity: 0, rulerTextColour: "auto", undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
-  grid: false, checker: true, axes: true, checkerColour: "auto", gridColour: "auto", gridThickness: 1, axisXColour: "#303030", axisYColour: "#303030", axisThickness: 1, tabBarColour: "#201f24", tabActiveColour: "auto", tabTextColour: "auto", tabDimTextColour: "auto", gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
+  grid: false, nudgeStep: 0.35, nudgeScaleStep: 0.01, nudgeBigFactor: 10, checker: true, axes: true, checkerColour: "auto", gridColour: "auto", gridThickness: 1, axisXColour: "#303030", axisYColour: "#303030", axisThickness: 1, tabBarColour: "#201f24", tabActiveColour: "auto", tabTextColour: "auto", tabDimTextColour: "auto", gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
 export { BONE_SIZE_RANGE } from "./stage/boneScale";
 import { BONE_SIZE_RANGE } from "./stage/boneScale";
 export type FontSize = "small" | "medium" | "large";
@@ -102,6 +106,8 @@ export const ROW_HEIGHT_RANGE = [16, 40] as const;
 export const DEFAULT_FPS_RANGE = [1, 240] as const;
 export const TREE_INDENT_RANGE = [6, 40] as const;
 export const GRID_RANGE = [1, 1000] as const;
+export const NUDGE_RANGE = [0.001, 1000] as const;
+export const NUDGE_FACTOR_RANGE = [1, 1000] as const;
 export const THICKNESS_RANGE = [0.5, 8] as const;
 export const ONION_RANGE = [0, 10] as const;
 export const AUTOSAVE_RANGE = [5, 600] as const;
@@ -169,6 +175,9 @@ export function readPreferences(text: string | null): PreferenceValues {
     tabTextColour: colour("tabTextColour", DEFAULTS.tabTextColour),
     tabDimTextColour: colour("tabDimTextColour", DEFAULTS.tabDimTextColour),
     gridSize: num("gridSize", GRID_RANGE[0], GRID_RANGE[1], DEFAULTS.gridSize),
+    nudgeStep: num("nudgeStep", NUDGE_RANGE[0], NUDGE_RANGE[1], DEFAULTS.nudgeStep),
+    nudgeScaleStep: num("nudgeScaleStep", NUDGE_RANGE[0], NUDGE_RANGE[1], DEFAULTS.nudgeScaleStep),
+    nudgeBigFactor: num("nudgeBigFactor", NUDGE_FACTOR_RANGE[0], NUDGE_FACTOR_RANGE[1], DEFAULTS.nudgeBigFactor),
     snap: bool("snap", DEFAULTS.snap),
     snapGrid: bool("snapGrid", DEFAULTS.snapGrid),
     snapGuides: bool("snapGuides", DEFAULTS.snapGuides),
@@ -217,6 +226,9 @@ export class Preferences {
       rowHeight: Number.isFinite(merged.rowHeight) ? clamp(Math.round(merged.rowHeight), ROW_HEIGHT_RANGE[0], ROW_HEIGHT_RANGE[1]) : this.current.rowHeight,
       defaultFps: Number.isFinite(merged.defaultFps) ? clamp(Math.round(merged.defaultFps), DEFAULT_FPS_RANGE[0], DEFAULT_FPS_RANGE[1]) : this.current.defaultFps,
       treeIndent: Number.isFinite(merged.treeIndent) ? clamp(Math.round(merged.treeIndent), TREE_INDENT_RANGE[0], TREE_INDENT_RANGE[1]) : this.current.treeIndent,
+      nudgeStep: Number.isFinite(merged.nudgeStep) ? clamp(merged.nudgeStep, NUDGE_RANGE[0], NUDGE_RANGE[1]) : this.current.nudgeStep,
+      nudgeScaleStep: Number.isFinite(merged.nudgeScaleStep) ? clamp(merged.nudgeScaleStep, NUDGE_RANGE[0], NUDGE_RANGE[1]) : this.current.nudgeScaleStep,
+      nudgeBigFactor: Number.isFinite(merged.nudgeBigFactor) ? clamp(merged.nudgeBigFactor, NUDGE_FACTOR_RANGE[0], NUDGE_FACTOR_RANGE[1]) : this.current.nudgeBigFactor,
       gridSize: Number.isFinite(merged.gridSize) ? clamp(merged.gridSize, GRID_RANGE[0], GRID_RANGE[1]) : this.current.gridSize,
     }));
     if (writePreferences(next) === writePreferences(this.current)) return;

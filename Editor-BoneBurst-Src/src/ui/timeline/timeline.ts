@@ -58,6 +58,7 @@ export class Timeline {
   private readonly select: HTMLSelectElement;
   private readonly playBtn: HTMLButtonElement;
   private readonly loopBtn: HTMLButtonElement;
+  private readonly bar: HTMLElement;
   private readonly frameOut: HTMLOutputElement;
   private readonly animButtons: HTMLButtonElement[];
   private readonly curveButtons: HTMLButtonElement[];
@@ -116,6 +117,7 @@ export class Timeline {
       this.update();
     });
     this.graphBtn.setAttribute("aria-pressed", "false");
+    this.bar = bar;
     bar.append(this.select, newBtn, ...this.animButtons, sep(), startBtn, this.playBtn, this.loopBtn, this.frameOut, sep(), this.keyBtn, sep(), ...this.curveButtons, sep(), this.graphBtn);
 
     this.body = document.createElement("div");
@@ -147,6 +149,11 @@ export class Timeline {
     this.canvas.addEventListener("wheel", (e) => this.wheel(e), { passive: false });
     session.onChange(() => this.update());
     this.update();
+  }
+
+  /** Buttons the app puts at the bar's end (Auto Key, Onion): they act on what the timeline shows. */
+  addTools(...buttons: HTMLElement[]): void {
+    this.bar.append(sep(), ...buttons);
   }
 
   /** The names column's width: dragged at the splitter, kept in this browser. */

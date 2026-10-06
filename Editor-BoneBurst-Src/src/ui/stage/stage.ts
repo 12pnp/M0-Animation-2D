@@ -30,6 +30,8 @@ import { keysOf } from "../shortcuts";
 
 /** How far from the selected bone's origin a press still grabs it, in pixels (the gizmo's ring). */
 const GRAB = 56;
+/** The gizmo arrows' colours, after Godot's: x red, y green. */
+const AXIS_X = "#f53352", AXIS_Y = "#87d603";
 /** A Scale drag that began nearer than this to the bone's origin (pixels) scales nothing: its ratio would jump. */
 const MIN_SCALE_START = 12;
 const LABEL: Record<Tool, string> = { move: "Move", rotate: "Rotate", scale: "Scale", shear: "Shear" };
@@ -160,6 +162,32 @@ export class Stage {
     this.camera = fit(this.size, p ? bounds(p) : null);
     this.redraw();
   }
+
+  /** Centre the view on the selected bone, at the zoom it has; with no bone selected, show the whole skeleton. */
+  focusSelected(): void {
+    const i = this.selectedIndex(), p = this.session.pose();
+    if (!p || i < 0) { this.fitView(); return; }
+    const m = boneMatrix(p, i);
+    this.camera = { ...this.camera, x: m[4], y: m[5] };
+    this.redraw();
+  }
+
+  /** A short label by the selected bone (the stage's middle with none), gone after 0.4 s. */
+  flash(text: string): void {
+    const i = this.selectedIndex(), p = this.session.pose();
+    let x = this.size.width / 2, y = this.size.height / 2;
+    if (p && i >= 0) { const m = boneMatrix(p, i); [x, y] = toScreen(this.camera, this.size, m[4], m[5]); }
+    this.flashEl?.remove();
+    const el = document.createElement("div");
+    el.className = "stage-flash";
+    el.textContent = text;
+    el.style.left = `${x}px`;
+    el.style.top = `${y - 28}px`;
+    this.element.append(el);
+    this.flashEl = el;
+    setTimeout(() => { if (this.flashEl === el) this.flashEl = null; el.remove(); }, 400);
+  }
+  private flashEl: HTMLElement | null = null;
 
   /** A new document: fit it once the stage has a size. */
   opened(): void {
@@ -770,6 +798,16 @@ export class Stage {
     return p && s !== null ? p.bones.get(s) ?? -1 : -1;
   }
 
+  /** The move, scale and shear gizmo's two arrows on screen: direction, length, letter, colour. Scale and Shear in the Parent space work along the bone's own axes, so they show those. */
+  private gizmoArrows(p: Posed, bone: number): { angle: number; len: number; name: "x" | "y"; colour: string }[] {
+    const m = boneMatrix(p, bone), shown: Space = this.tool === "move" || this.space !== "parent" ? this.space : "local";
+    const [u, v] = spaceAxes(shown, m, parentMatrix(p, bone));
+    return [
+      { angle: Math.atan2(-u[1], u[0]), len: GRAB - 12, name: "x", colour: AXIS_X },
+      { angle: Math.atan2(-v[1], v[0]), len: GRAB - 24, name: "y", colour: AXIS_Y },
+    ];
+  }
+
   private drawGizmo(g: CanvasRenderingContext2D, bone: number, color: string): void {
     const p = this.session.pose()!;
     const m = boneMatrix(p, bone);
@@ -780,25 +818,32 @@ export class Stage {
     g.lineWidth = 1.5;
     if (this.tool === "rotate") {
       g.beginPath(); g.arc(ox, oy, GRAB - 8, 0, Math.PI * 2); g.stroke();
-    } else {
-      // The axes of the chosen space on screen (y up in the world, so the screen y is flipped).
-      // Scale and Shear in the Parent space still work along the bone's own axes, and are labelled so.
-      const shown: Space = this.tool === "move" || this.space !== "parent" ? this.space : "local";
-      const [u, v] = spaceAxes(shown, m, parentMatrix(p, bone));
-      const ax = Math.atan2(-u[1], u[0]), ay = Math.atan2(-v[1], v[0]);
+      // A radius to the ring along the bone's own direction, so the angle can be seen, with its value (the Rotation field's) above its middle, in white.
+      const r = GRAB - 8, angle = Math.atan2(-m[1], m[0]), ex = ox + Math.cos(angle) * r, ey = oy + Math.sin(angle) * r;
+      g.beginPath(); g.moveTo(ox, oy); g.lineTo(ex, ey); g.stroke();
+      g.beginPath(); g.arc(ex, ey, 4, 0, Math.PI * 2); g.fill();
       g.font = `10px "JetBrains Mono", monospace`;
       g.textAlign = "center";
       g.textBaseline = "middle";
-      for (const [angle, len, name] of [[ax, GRAB - 12, "x"], [ay, GRAB - 24, "y"]] as const) {
+      g.fillStyle = "#ffffff";
+      g.fillText(String(Math.round(animatedLocal(p, bone).rotation * 10) / 10), (ox + ex) / 2, (oy + ey) / 2 - 10);
+    } else {
+      // The two arrows, in Godot's colours (x red, y green), no letters; a press on one drags along it only.
+      for (const { angle, len, colour } of this.gizmoArrows(p, bone)) {
         const ex = ox + Math.cos(angle) * len, ey = oy + Math.sin(angle) * len;
-        g.fillText(`${name} ${shown}`, ex + Math.cos(angle) * 22, ey + Math.sin(angle) * 12);
+        g.strokeStyle = colour;
+        g.fillStyle = colour;
+        g.lineWidth = 2;
+        g.lineCap = "round";
         g.beginPath(); g.moveTo(ox, oy); g.lineTo(ex, ey); g.stroke();
         if (this.tool === "scale") g.fillRect(ex - 4, ey - 4, 8, 8);
         else if (this.tool === "shear") { g.beginPath(); g.moveTo(ex, ey - 5); g.lineTo(ex + 5, ey); g.lineTo(ex, ey + 5); g.lineTo(ex - 5, ey); g.closePath(); g.fill(); }
         else arrowHead(g, ex, ey, angle);
       }
+      g.fillStyle = color;
     }
-    g.beginPath(); g.arc(ox, oy, 3, 0, Math.PI * 2); g.fill();
+    // The arrows meet at the origin without a dot over the join; the rotate ring keeps its centre dot.
+    if (this.tool === "rotate") { g.beginPath(); g.arc(ox, oy, 3, 0, Math.PI * 2); g.fill(); }
     g.restore();
   }
 
@@ -829,6 +874,16 @@ export class Stage {
     if (name !== null && name !== this.session.selectedBone) {
       const b = screenBones.find((x) => x.name === name)!;
       if (Math.hypot(sx - b.x0, sy - b.y0) > 6 && this.constraintDown(sx, sy)) return;
+    }
+    // A press on one of the gizmo's arrows drags along that axis only.
+    let armed: 0 | 1 | null = null;
+    if (this.tool !== "rotate" && this.selectedIndex() >= 0 && this.session.selectedBone !== null) {
+      const sel = this.selectedIndex(), pose = this.session.pose()!, m = boneMatrix(pose, sel);
+      const [ox, oy] = toScreen(this.camera, this.size, m[4], m[5]);
+      this.gizmoArrows(pose, sel).forEach((a, k) => {
+        const ex = ox + Math.cos(a.angle) * (a.len + 8), ey = oy + Math.sin(a.angle) * (a.len + 8);
+        if (armed === null && Math.hypot(sx - ox, sy - oy) > 10 && distToSegment(sx, sy, ox, oy, ex, ey) <= 8) { armed = k as 0 | 1; name = this.session.selectedBone; }
+      });
     }
     if (name === null) {
       const sel = this.selectedIndex();
@@ -871,8 +926,9 @@ export class Stage {
       unkeyed,
       // The bone and the bones under it move together: they are not targets.
       targets: this.tool === "move" ? this.snapTargets(new Set(subtree(this.session.doc!, name))) : { points: [], guides: [] },
-      space: this.space,
-      lock: null,
+      // Pressed on an arrow in the Parent space, Scale and Shear work along the bone's own axes, as the arrows show.
+      space: armed !== null && this.tool !== "move" && this.space === "parent" ? "local" : this.space,
+      lock: armed,
     };
     if (unkeyed) { this.onStatus(`Unkeyed pose of ${name}: press Key (${keysOf("key")}) to key it; moving the playhead drops it.`); return; }
     this.session.history!.begin(anim !== null
@@ -911,7 +967,7 @@ export class Stage {
       // The origin's new place, snapped; the pointer moved by as much.
       const o: Point = [d.matrix[4] + at[0] - d.start[0], d.matrix[5] + at[1] - d.start[1]], to = this.snapAt(o, d.targets);
       at = [at[0] + to[0] - o[0], at[1] + to[1] - o[1]];
-      if (d.space !== "parent") {
+      if (d.space !== "parent" || d.lock !== null) {
         const held = lockToAxis([at[0] - d.start[0], at[1] - d.start[1]], spaceAxes(d.space, d.matrix, d.parent), d.lock, 4 / this.camera.zoom);
         d.lock = held.lock;
         at = [d.start[0] + held.delta[0], d.start[1] + held.delta[1]];
@@ -1034,6 +1090,12 @@ function heat(w: number): string {
   const t = Math.max(0, Math.min(1, w));
   const hue = 240 * (1 - t);
   return `hsl(${hue}, 90%, ${t === 0 ? 30 : 50}%)`;
+}
+
+function distToSegment(px: number, py: number, x0: number, y0: number, x1: number, y1: number): number {
+  const dx = x1 - x0, dy = y1 - y0, len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((px - x0) * dx + (py - y0) * dy) / len2));
+  return Math.hypot(px - (x0 + t * dx), py - (y0 + t * dy));
 }
 
 function arrowHead(g: CanvasRenderingContext2D, x: number, y: number, angle: number): void {

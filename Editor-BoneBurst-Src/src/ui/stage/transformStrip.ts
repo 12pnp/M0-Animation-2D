@@ -3,7 +3,6 @@ import { updateBone } from "@/edit/bones";
 import { EditRefused } from "@/edit/history";
 import { BONE_DEFAULTS, boneNumber, type BoneNumber } from "@/model/defaults";
 import { keysAt } from "@/model/timelines";
-import { icon } from "../icons";
 import { tagged } from "../pairs";
 import type { Session } from "../session";
 import type { Tool } from "./gizmo";
@@ -27,7 +26,7 @@ const ROWS: readonly Row[] = [
 
 /**
  * The stage's transform panel (after Spine's): a row for each of rotate, translate, scale and shear,
- * with the tool's button (the chosen tool lit), the selected bone's values to type into, and a key
+ * with a head cell that keys the property at the playhead (red where it already has a key there), the tool's label (the chosen tool lit), the selected bone's values to type into, and a key
  * button that keys the property at the playhead (red where it already has a key there). Values show
  * the pose at the playhead in an animation, the setup pose otherwise.
  */
@@ -42,7 +41,17 @@ export class TransformStrip {
     for (const row of ROWS) {
       const r = document.createElement("div");
       r.className = "t-row";
-      r.append(tools.get(row.tool)!);
+      // The head cell is the key toggle (its colour says whether the property is keyed here); the label picks the tool.
+      const toolBtn = tools.get(row.tool)!, head = document.createElement("button");
+      head.type = "button";
+      head.className = "t-head";
+      head.title = `Key ${row.property} at the playhead`;
+      head.setAttribute("aria-label", `Key ${row.property}`);
+      const toolIcon = toolBtn.querySelector(".icon");
+      if (toolIcon) head.append(toolIcon);
+      head.addEventListener("click", () => this.key(row));
+      this.keyButtons.set(row.property, head);
+      r.append(head, toolBtn);
       const values = document.createElement("div");
       values.className = "t-values";
       for (const key of row.fields) {
@@ -63,19 +72,26 @@ export class TransformStrip {
         if (row.fields.length === 2) values.append(tagged(input, key.endsWith("Y") || key === "y" ? "y" : "x", row.property === "scale" ? 0.01 : 1));
         else values.append(tagged(input, "r", 1));
       }
-      const keyBtn = document.createElement("button");
-      keyBtn.type = "button";
-      keyBtn.className = "t-key";
-      keyBtn.title = `Key ${row.property} at the playhead`;
-      keyBtn.setAttribute("aria-label", `Key ${row.property}`);
-      keyBtn.append(icon("key"));
-      keyBtn.addEventListener("click", () => this.key(row));
-      this.keyButtons.set(row.property, keyBtn);
-      r.append(values, keyBtn);
+      r.append(values);
       this.element.append(r);
     }
     session.onChange(() => this.update());
     this.update();
+  }
+
+  /**
+   * An arrow key's nudge for the chosen tool: left and right change its first value, up and down its
+   * second (Rotate has one: right and up add, left and down take away). A step is 1 (0.01 for Scale),
+   * ten times that with Shift.
+   */
+  nudge(tool: Tool, dir: "left" | "right" | "up" | "down", big: boolean, steps: { step: number; scaleStep: number; bigFactor: number }): void {
+    const row = ROWS.find((r) => r.tool === tool), at = this.local();
+    if (!row || !at) return;
+    const horizontal = dir === "left" || dir === "right";
+    const key = row.fields.length === 1 ? row.fields[0]! : row.fields[horizontal ? 0 : 1]!;
+    const sign = dir === "right" || dir === "up" ? 1 : -1;
+    const step = (tool === "scale" ? steps.scaleStep : steps.step) * (big ? steps.bigFactor : 1);
+    this.set(row, key, String(Math.round((at.pose[key as keyof LocalPose] + sign * step) * 1e4) / 1e4));
   }
 
   /** The pose the cells show for the selected bone: the animation at the playhead, or the setup pose. */

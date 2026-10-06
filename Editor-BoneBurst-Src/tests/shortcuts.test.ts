@@ -39,10 +39,11 @@ describe("the shortcuts table", () => {
       [ev(":", { cmd: true, shift: true }, "Semicolon"), "snapping"], [ev(";", { cmd: true }, "Semicolon"), undefined],
       [ev("Escape"), "escape"], [ev("f"), "fit"], [ev("F", { shift: true }), "fit"], [ev("f", { alt: true }), undefined],
       [ev("["), "brushSmaller"], [ev("]"), "brushLarger"], [ev(" ", {}, "Space"), "play"],
-      [ev(","), "prevFrame"], [ev("."), "nextFrame"], [ev("Home"), "firstFrame"], [ev("End"), "lastFrame"],
+      [ev(","), "prevFrame"], [ev("."), "nextFrame"], [ev("q"), "prevFrame"], [ev("Q", { shift: true }), "prevFrame"], [ev("w"), "nextFrame"], [ev("Home"), "firstFrame"], [ev("End"), "lastFrame"],
       [ev("k"), "key"], [ev("Delete"), "delete"], [ev("Backspace"), "delete"],
-      [ev("w"), "toolMove"], [ev("W", { shift: true }), "toolMove"], [ev("e"), "toolRotate"], [ev("r"), "toolScale"], [ev("t"), "toolShear"],
-      [ev("w", { cmd: true }), undefined], [ev("w", { alt: true }), undefined], [ev("x"), undefined],
+      [ev("t"), "toolMove"], [ev("T", { shift: true }), "toolMove"], [ev("r"), "toolRotate"], [ev("s"), "toolScale"], [ev("h"), "toolShear"],
+      [ev("z"), "cycleSpace"],
+      [ev("t", { cmd: true }), undefined], [ev("t", { alt: true }), undefined], [ev("x"), undefined],
       [ev("?", { shift: true }, "Slash"), "shortcuts"],
     ];
     for (const [e, id] of table) expect(first(e), JSON.stringify(e)).toBe(id);
@@ -52,7 +53,7 @@ describe("the shortcuts table", () => {
     expect(first(ev("o", { cmd: true }), true)).toBe("open");
     expect(first(ev("s", { cmd: true }), true)).toBe("save");
     expect(first(ev(",", { cmd: true }), true)).toBe("preferences");
-    for (const e of [ev("z", { cmd: true }), ev("c", { cmd: true }, "KeyC"), ev("a", { cmd: true }), ev("w"), ev(" ", {}, "Space"), ev("Backspace"), ev("?", { shift: true })]) {
+    for (const e of [ev("z", { cmd: true }), ev("c", { cmd: true }, "KeyC"), ev("a", { cmd: true }), ev("t"), ev(" ", {}, "Space"), ev("Backspace"), ev("?", { shift: true })]) {
       expect(matching(e, true), JSON.stringify(e)).toEqual([]);
     }
   });

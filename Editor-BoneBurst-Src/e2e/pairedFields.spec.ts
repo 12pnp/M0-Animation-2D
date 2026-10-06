@@ -59,3 +59,26 @@ test("the Stage's transform panel: x / y letters on Translate, Scale and Shear; 
   await page.mouse.up();
   await expect(cell).toHaveValue(String(before + 10));
 });
+
+test("Snapping settings sit in Properties (nothing selected) and in Preferences ▸ Grid, and are the preferences", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select(null));
+  const stored = () => page.evaluate(() => JSON.parse(localStorage.getItem("boneburst.preferences") ?? "{}"));
+  const size = page.locator(".inspector").getByRole("textbox", { name: "Snap size" });
+  await size.fill("25");
+  await size.press("Enter");
+  await expect.poll(async () => (await stored()).gridSize).toBe(25);
+  const guides = page.locator(".inspector").getByRole("checkbox", { name: "Snap to guides" });
+  const was = await guides.isChecked();
+  await guides.click();
+  await expect.poll(async () => (await stored()).snapGuides).toBe(!was);
+  await page.locator(".app-icon").click();
+  const dialog = page.locator("dialog.preferences");
+  await dialog.getByText("Grid", { exact: true }).first().click();
+  await expect(dialog.getByRole("spinbutton", { name: /^Grid spacing and snap size/ })).toHaveValue("25");
+  await expect(dialog.getByRole("checkbox", { name: "Snap to guides" })).toBeChecked({ checked: !was });
+});

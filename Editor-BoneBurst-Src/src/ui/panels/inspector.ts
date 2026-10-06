@@ -53,6 +53,8 @@ export class Inspector {
   onStatus: (message: string) => void = () => {};
   /** The person set the bone size (the app keeps it as a preference). */
   onBoneSize: (size: number) => void = () => {};
+  /** The snapping fields shown with the skeleton's own (set by the app: they are the preferences). */
+  snapFields: (owner: HTMLElement) => HTMLElement = () => document.createElement("div");
   /** What the panel shows, as a key; undefined until it first draws. */
   private shown: string | undefined;
   private inputs = new Map<string, HTMLInputElement | HTMLSelectElement>();
@@ -193,6 +195,7 @@ export class Inspector {
     size.addEventListener("change", () => { const n = Number(size.value); if (size.value.trim() !== "" && Number.isFinite(n)) this.onBoneSize(n); size.value = format(s.boneSize); });
     form.append(field("Bone size", size));
     form.append(readOnly("Hash", doc.header?.hash ?? "—"));
+    form.append(this.snapFields(this.element));
   }
 
   private skinForm(form: HTMLElement, doc: Skeleton, name: string): void {

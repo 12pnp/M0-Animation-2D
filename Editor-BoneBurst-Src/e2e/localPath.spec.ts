@@ -20,7 +20,7 @@ test("Local Path shows the selected bone's path over the animation, Local or Wor
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   // In Animate; the panel is a tab behind Properties.
-  await page.locator(".stage-tools button.mode").click();
+  await page.locator(".stage-panel button.mode").click();
   await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
   const panel = page.locator(".local-path");
   await expect(panel.locator(".lp-note")).toContainText("Select a bone");
@@ -49,7 +49,7 @@ test("Local Path's Image, Bone and Path buttons show and hide each layer, and ar
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
-  await page.locator(".stage-tools button.mode").click();
+  await page.locator(".stage-panel button.mode").click();
   await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head_art" }));
   const panel = page.locator(".local-path");
@@ -63,7 +63,7 @@ test("Local Path's Image, Bone and Path buttons show and hide each layer, and ar
   // Remembered across a reload (the panel's buttons keep what was set).
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
-  await page.locator(".stage-tools button.mode").click();
+  await page.locator(".stage-panel button.mode").click();
   await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
   await expect(page.locator(".local-path").getByRole("button", { name: "Image", exact: true })).toHaveAttribute("aria-pressed", "false");
 });
@@ -98,13 +98,13 @@ test("Local Path in Pose mode shows the bone and its image on the setup pose, th
   expect(await state()).toEqual(before);
 });
 
-test("Onion: a button on the Stage turns onion skin on and off, and Local Path's Onion shows the bone before (red) and after (green) the playhead", async ({ page }) => {
+test("Onion: a button on the Timeline bar turns onion skin on and off, and Local Path's Onion shows the bone before (red) and after (green) the playhead", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
-  const stageOnion = page.locator(".stage-tools").getByRole("button", { name: "Onion", exact: true });
+  const stageOnion = page.locator(".timeline-bar").getByRole("button", { name: /^Onion skin/ });
   await expect(stageOnion).toHaveAttribute("aria-pressed", "false");
   await stageOnion.click();
   await expect(stageOnion).toHaveAttribute("aria-pressed", "true");
@@ -112,7 +112,7 @@ test("Onion: a button on the Stage turns onion skin on and off, and Local Path's
   await stageOnion.click();
   await expect(stageOnion).toHaveAttribute("aria-pressed", "false");
 
-  await page.locator(".stage-tools button.mode").click();
+  await page.locator(".stage-panel button.mode").click();
   await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
   await page.evaluate(() => { const s = (window as unknown as Live).boneburst.session; s.select({ kind: "bone", name: "arm_near_fore" }); });
   const tints = () => page.evaluate(() => {
@@ -139,7 +139,7 @@ test("Local Path zooms with the wheel, pans by dragging, and Fit (top right) sho
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
-  await page.locator(".stage-tools button.mode").click();
+  await page.locator(".stage-panel button.mode").click();
   await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "arm_near_fore" }));
   const panel = page.locator(".local-path"), canvas = panel.locator("canvas");
@@ -172,7 +172,7 @@ test("Local Path's Children button shows every bone under the selected one, with
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
-  await page.locator(".stage-tools button.mode").click();
+  await page.locator(".stage-panel button.mode").click();
   await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
   // The chest has no image of its own; its children (arms, head) do.
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "chest" }));

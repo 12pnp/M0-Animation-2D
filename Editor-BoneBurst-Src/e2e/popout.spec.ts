@@ -77,9 +77,9 @@ test("the Stage in a new window: WebGL draws the skeleton, a drag pans, keys rea
   // moved into the window keeps its last frame, so one picture alone proves nothing).
   await expect.poll(async () => Buffer.compare(await glShot(), first) !== 0, { message: "the stage redrew after panning" }).toBe(true);
   expect(await drawnShare(await glShot())).toBeGreaterThan(0.01);
-  // A key pressed in the window reaches the editor: E picks the Rotate tool.
+  // A key pressed in the window reaches the editor: R picks the Rotate tool.
   await popup.locator(".stage canvas.overlay").focus();
-  await popup.keyboard.press("e");
+  await popup.keyboard.press("r");
   await expect.poll(() => page.evaluate(() => (window as unknown as Live).boneburst.stage.tool)).toBe("rotate");
   await popup.close();
   await expect(page.locator(".stage canvas.overlay")).toBeVisible();
