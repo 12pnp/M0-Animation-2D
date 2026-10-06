@@ -8,6 +8,7 @@ import { type PreferenceValues, Preferences } from "./preferences";
 import { PreferencesDialog } from "./preferencesDialog";
 import { HistoryPanel } from "./panels/history";
 import { References } from "./panels/references";
+import { droppedFiles } from "./dropFiles";
 import { fileSource, Session, type Source } from "./session";
 import type { Space, Tool } from "./stage/gizmo";
 import { keysOf, matching, type ShortcutId } from "./shortcuts";
@@ -478,8 +479,8 @@ export function mountApp(root: HTMLElement): void {
   window.addEventListener("drop", (e) => {
     e.preventDefault();
     main.classList.remove("dropping");
-    const files = [...(e.dataTransfer?.files ?? [])];
-    if (files.length) void open(files.map(fileSource), true);
+    if (!e.dataTransfer) return;
+    void droppedFiles(e.dataTransfer).then((files) => { if (files.length) void open(files.map(fileSource), true); });
   });
   window.addEventListener("beforeunload", (e) => { if (tabs.anyDirty) e.preventDefault(); });
 

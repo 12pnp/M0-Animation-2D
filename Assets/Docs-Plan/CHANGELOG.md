@@ -13,6 +13,10 @@ flowchart LR
 
 ## 2026-10-06
 
+- **BoneBurst Editor v2: dropping a folder on the editor opens it** (`Editor-BoneBurst-Src/`).
+  - A dropped folder reached `open` as one empty directory entry, so no skeleton or atlas was found and nothing opened. `src/ui/dropFiles.ts` walks the drop's entries (`webkitGetAsEntry`, two levels of subfolders) and `app.ts` opens the files it finds. Seen with `Assets/Samples Custom/BoneBurstDemo/mix-and-match-pro`.
+  - **Not verified**: a real folder drop cannot be synthesised in Playwright; `tsc --noEmit` passes, and Import Spine Folder… on the same folder opens it.
+
 - **BoneBurst Editor v2, E7 step 3: `npm start` runs the built editor, and the startup bundle is half its size** (`Editor-BoneBurst-Src/`).
   - **`scripts/start.mjs`**: builds `dist/` when it is missing or older than its sources, then serves it on localhost:5185, the dev server's address, so preferences, layouts and recovery copies carry over. It serves nothing outside `dist/`, refuses a taken port with the reason, starts the AI bridge when none answers, and opens the browser.
   - **Dockview from its ES module**: its styles are taken from the pinned package at build time (`vite.config.ts` ▸ `dockviewStyles`, as `virtual:dockview.css`), so nothing is copied, and the build fails if the styles are not found. This also restores `main`'s typecheck: 7e1be68 had taken in this step's staged removal of `dockview-umd.d.ts` early.
