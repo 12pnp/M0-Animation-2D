@@ -100,6 +100,9 @@ export class Stage {
   private stroke: { takeAway: boolean } | null = null;
   private brushAt: [number, number] | null = null;
   /** A message for the status line (a refused edit). */
+  /** A right click without a drag (a drag pans): where, the world point there, and the bone under it. */
+  onContextMenu: (client: Point, world: Point, bone: string | null) => void = () => {};
+  private rightDown: { x: number; y: number } | null = null;
   onStatus: (message: string) => void = () => {};
   /** The pointer's world position or the zoom, for the status line's corner. */
   onPointer: (text: string) => void = () => {};
@@ -697,6 +700,7 @@ export class Stage {
   private down(e: PointerEvent): void {
     this.overlay.focus();
     const [sx, sy] = this.local(e);
+    this.rightDown = e.button === 2 ? { x: e.clientX, y: e.clientY } : null;
     this.overlay.setPointerCapture(e.pointerId);
     this.emptyPress = false;
     if (e.button === 1 || e.button === 2 || !this.session.history) {
@@ -849,6 +853,12 @@ export class Stage {
 
   private up(e: PointerEvent): void {
     if (this.overlay.hasPointerCapture(e.pointerId)) this.overlay.releasePointerCapture(e.pointerId);
+    const right = this.rightDown;
+    this.rightDown = null;
+    if (e.button === 2 && right && Math.hypot(e.clientX - right.x, e.clientY - right.y) < 4) {
+      const [sx, sy] = this.local(e);
+      this.onContextMenu([e.clientX, e.clientY], toWorld(this.camera, this.size, sx, sy), pickBone(this.screenBones(), sx, sy));
+    }
     this.panning = null;
     this.refDrag = null;
     const gd = this.guideDrag;

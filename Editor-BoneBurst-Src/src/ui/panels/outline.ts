@@ -33,6 +33,8 @@ export class Outline {
   private readonly closed = new Set<string>();
   private readonly opened = new Set<string>();
   private rendered = "";
+  /** The selection last shown, so a new one is revealed and flashed once. */
+  private shownSel = "";
   private readonly rows = new Map<string, HTMLElement>();
   private readonly list: HTMLDivElement;
   /** What the search field holds, lower-cased: only rows whose name has it are listed. */
@@ -320,6 +322,18 @@ export class Outline {
 
   private update(): void {
     const s = this.session, doc = s.doc;
+    // A new selection is revealed in the tree (its parents opened) and flashed once.
+    const selId = s.selected ? JSON.stringify(s.selected) : "";
+    const fresh = selId !== this.shownSel;
+    this.shownSel = selId;
+    if (fresh && doc && s.selected) {
+      const owner = s.selected.kind === "bone" ? s.selected.name : s.selected.kind === "slot" ? doc.slots?.find((x) => x.name === (s.selected as { name: string }).name)?.bone
+        : s.selected.kind === "attachment" ? doc.slots?.find((x) => x.name === (s.selected as { slot: string }).slot)?.bone : undefined;
+      for (let n = owner === undefined ? undefined : doc.bones?.find((b) => b.name === owner)?.parent, guard = 0; n !== undefined && guard < 200; guard++) {
+        this.closed.delete(`bone/${n}`);
+        n = doc.bones?.find((b) => b.name === n)?.parent;
+      }
+    }
     this.follow();
     const sig = JSON.stringify([this.query, this.view, s.skin, [...this.closed], [...this.opened], s.selected?.kind === "attachment" ? s.selected.slot : null, this.view === "events" ? s.animation?.name ?? null : null]);
     // The document's own history, not only its revision: a newly opened one starts at 0 again.
@@ -340,6 +354,15 @@ export class Outline {
       const regions = [...new Set(s.images.regions.map((r) => r.name))], chosen = this.regionPick.value;
       this.regionPick.replaceChildren(...(regions.length ? regions.map((n) => new Option(n, n)) : [new Option("no atlas", "")]));
       if (regions.includes(chosen)) this.regionPick.value = chosen;
+    }
+    if (fresh && selId) {
+      const row = this.rows.get(selId);
+      if (row) {
+        row.classList.remove("ping");
+        void row.offsetWidth;
+        row.classList.add("ping");
+        setTimeout(() => row.classList.remove("ping"), 1200);
+      }
     }
     for (const [id, row] of this.rows) {
       const on = s.selected !== null && id === JSON.stringify(s.selected);

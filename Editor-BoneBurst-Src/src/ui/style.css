@@ -170,10 +170,10 @@ html .dockview-theme-light {
   --dv-activegroup-hiddenpanel-tab-background-color: var(--tab-bar-bg, var(--bg));
   --dv-inactivegroup-visiblepanel-tab-background-color: var(--tab-active-bg, var(--panel));
   --dv-inactivegroup-hiddenpanel-tab-background-color: var(--tab-bar-bg, var(--bg));
-  --dv-activegroup-visiblepanel-tab-color: var(--text);
-  --dv-activegroup-hiddenpanel-tab-color: var(--muted);
-  --dv-inactivegroup-visiblepanel-tab-color: var(--muted);
-  --dv-inactivegroup-hiddenpanel-tab-color: var(--muted);
+  --dv-activegroup-visiblepanel-tab-color: var(--tab-text, var(--text));
+  --dv-activegroup-hiddenpanel-tab-color: var(--tab-dim-text, var(--muted));
+  --dv-inactivegroup-visiblepanel-tab-color: var(--tab-text, var(--muted));
+  --dv-inactivegroup-hiddenpanel-tab-color: var(--tab-dim-text, var(--muted));
   --dv-separator-border: var(--line);
   --dv-paneview-header-border-color: var(--line);
   --dv-tab-divider-color: var(--line);
@@ -216,16 +216,19 @@ html .dockview-theme-light {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  /* The top of the stage: the panels sit at its foot and must not cover what is here. */
+  justify-content: flex-start;
   gap: 6px;
   color: var(--muted);
   pointer-events: none;
   text-align: center;
-  padding: 16px;
+  padding: 8% 16px 16px;
 }
 .hint p { margin: 0; }
 .hint p:first-child { color: var(--text); font-weight: 600; }
 .hint button { pointer-events: auto; margin-top: 8px; }
+.hint .dev { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 22px; opacity: 0.55; }
+.hint .dev button { margin: 0; padding: 1px 8px; font-size: 11px; }
 
 .panel h2 {
   font-size: 11px;
@@ -509,3 +512,37 @@ dialog.shortcuts dt, dialog.shortcuts dd { margin: 0; }
 dialog.shortcuts kbd { font: 12px var(--font-mono); padding: 1px 6px; border: 1px solid var(--line); border-radius: 4px; background: var(--panel); }
 dialog.shortcuts .actions { display: flex; justify-content: flex-end; }
 .menubar > .ai-button { margin-left: auto; padding: 1px 8px; font-size: 12px; align-self: center; }
+
+/* The stage's panels, after Spine's: each group in a dark frame, buttons flat, the chosen one lit. */
+.stage-tools { align-items: flex-end; }
+.stage-tools .group { background: var(--bb-header-bg, var(--panel)); border: 1px solid var(--bb-field-border, var(--line)); border-radius: 8px; padding: 6px; flex-direction: column; gap: 4px; }
+.stage-tools .group button { border-radius: 3px; background: var(--hover); border: 1px solid var(--bb-field-border, var(--line)); text-align: left; }
+.stage-tools .group button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.stage-crumb { flex: 0 0 100%; display: flex; justify-content: center; align-items: center; gap: 8px; pointer-events: none; }
+.stage-crumb[hidden] { display: none; }
+.stage-crumb > span { background: var(--bb-header-bg, var(--panel)); border: 1px solid var(--bb-field-border, var(--line)); border-radius: 6px; padding: 2px 8px; font-size: 13px; }
+.stage-crumb > .sep { background: none; border: 0; padding: 0; color: var(--muted); }
+.stage-tools .group.transform { gap: 4px; }
+.t-row { display: flex; align-items: stretch; gap: 0; border: 1px solid var(--bb-field-border, var(--line)); border-radius: 3px; overflow: hidden; background: var(--hover); }
+.t-row > button:first-child { width: 96px; border: 0; border-radius: 0; border-right: 1px solid var(--bb-field-border, var(--line)); }
+.t-values { display: flex; flex: 1; min-width: 0; }
+.t-values .cell { width: 64px; flex: 1; min-width: 0; background: var(--bb-field-bg, var(--panel)); color: var(--text); border: 0; border-right: 1px solid var(--bb-field-border, var(--line)); border-radius: 0; padding: 3px 6px; text-align: right; font-family: var(--font-mono); font-size: 12px; }
+.t-values .cell:last-child { border-right: 0; }
+.t-values .cell:disabled { color: var(--muted); }
+.t-key { width: 28px; border: 0; border-left: 1px solid var(--bb-field-border, var(--line)); border-radius: 0; padding: 0; display: flex; align-items: center; justify-content: center; background: var(--hover); color: var(--muted); }
+.t-key.keyed { background: #d6322b; color: #fff; }
+.t-key:disabled { opacity: 0.4; }
+.t-key .icon { width: 14px; height: 14px; }
+
+/* The way back up from the selected bone (Properties), and the flash a row gets in the rig panel when it is selected. */
+.bone-path { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 4px; padding: 0 0 6px; font-size: 12px; }
+.bone-path button { padding: 1px 6px; font-size: 12px; background: var(--bb-field-bg, var(--hover)); border: 1px solid var(--bb-field-border, var(--line)); border-radius: var(--bb-radius-button, 4px); color: var(--bb-text-dim, var(--muted)); }
+.bone-path button:hover { color: var(--bb-text, var(--text)); }
+.bone-path .sep { color: var(--muted); }
+.bone-path .here { font-weight: 600; color: var(--text); padding: 1px 4px; }
+/* A long name is cut short with an ellipsis; the tooltip has the whole of it. */
+.bone-path button, .bone-path .here { max-width: 120px; min-width: 3.5em; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.stage-crumb > span:not(.sep) { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.outline .row.ping { animation: row-ping 1.1s ease-out; }
+@keyframes row-ping { 0% { box-shadow: inset 0 0 0 2px var(--accent); background: color-mix(in srgb, var(--accent) 35%, transparent); } 100% { box-shadow: inset 0 0 0 2px transparent; } }
+.context-menu { position: fixed; z-index: 30; top: 0; left: 0; }

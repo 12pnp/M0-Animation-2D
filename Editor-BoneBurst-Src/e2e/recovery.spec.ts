@@ -89,7 +89,7 @@ test("autosave keeps unsaved work; after a reload Restore gives it back unsaved;
   expect(await kept(page)).toBeNull();
 
   // A PSD rig (unsaved from the start) restored: Save still writes its atlas and pages.
-  await page.locator("input[type=file]").setInputFiles(FIGURE);
+  await page.locator("input[type=file]:not([webkitdirectory])").setInputFiles(FIGURE);
   await expect(page.locator(".outline .row", { hasText: "arm L" })).toBeVisible();
   await expect.poll(() => kept(page), { timeout: 8000 }).toMatch(/^figure:/);
   await page.reload();

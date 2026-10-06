@@ -33,7 +33,8 @@ async function drag(page: Page, from: readonly [number, number], by: readonly [n
 
 test("a bone dragged near a guide snaps onto it; with Snapping off it does not; View ▸ Grid draws", async ({ page }) => {
   await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
+  // The stage panels off: on this small stage they would cover the bone being dragged.
+  await page.evaluate(() => localStorage.setItem("boneburst.preferences", JSON.stringify({ version: 1, stagePanels: false })));
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();

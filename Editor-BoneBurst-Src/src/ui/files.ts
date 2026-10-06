@@ -20,6 +20,19 @@ export interface Picked<F> {
 
 const IMAGE = /\.(png|jpe?g|webp)$/i;
 
+/**
+ * What a folder is missing to be a Spine export the editor can open: the skeleton .json, the
+ * .atlas and at least one page image, by file name. Empty when it has all three.
+ */
+export function spineFolderProblems(names: readonly string[]): string[] {
+  const picked = pickFiles(names.map((name) => ({ name })));
+  const missing: string[] = [];
+  if (!picked.skeleton) missing.push("the skeleton (.json)");
+  if (!picked.atlas) missing.push("the atlas (.atlas)");
+  if (!picked.images.size) missing.push("a page image (.png)");
+  return missing;
+}
+
 export function pickFiles<F extends { name: string }>(files: readonly F[]): Picked<F> {
   const out: Picked<F> = { skeleton: null, atlas: null, sidecar: null, psd: null, images: new Map(), ignored: [] };
   const sidecars: F[] = [];

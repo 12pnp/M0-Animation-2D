@@ -31,6 +31,15 @@ export function asWritten<P extends Record<string, number | undefined>>(
   return out as P;
 }
 
+/** A world point in the space of `parent` (a bone's matrix [a, b, c, d, x, y]): the local x and y that put a bone there. */
+export function toLocal(parent: Matrix, world: Point): Point {
+  const [a, b, c, d, tx, ty] = parent;
+  const det = a * d - b * c;
+  if (Math.abs(det) < 1e-12) return [world[0] - tx, world[1] - ty];
+  const dx = world[0] - tx, dy = world[1] - ty;
+  return [tidy((d * dx - b * dy) / det, 2), tidy((a * dy - c * dx) / det, 2)];
+}
+
 /** The space the Move tool works in: the bone's own axes, its parent's, or the world's. */
 export type Space = "local" | "parent" | "world";
 

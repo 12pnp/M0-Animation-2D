@@ -46,9 +46,10 @@ const weight = (page: Page, ref: any, v: number, bone: string) => page.evaluate(
 
 test("Paint weights: a stroke over a vertex raises the shown bone's weight there; Alt takes it away; one undo per stroke", async ({ page }) => {
   await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
+  // The stage panels off: on this small stage they would cover the vertex being painted.
+  await page.evaluate(() => localStorage.setItem("boneburst.preferences", JSON.stringify({ version: 1, stagePanels: false })));
   await page.reload();
-  await page.locator("input[type=file]").setInputFiles(["spineboy-pro.json", "spineboy-pro.atlas.txt", "spineboy-pro.png"].map((f) => join(SPINEBOY, f)));
+  await page.locator("input[type=file]:not([webkitdirectory])").setInputFiles(["spineboy-pro.json", "spineboy-pro.atlas.txt", "spineboy-pro.png"].map((f) => join(SPINEBOY, f)));
   await page.waitForFunction(() => document.title.includes("spineboy-pro"));
   const t = (await target(page))!;
   expect(t).not.toBeNull();

@@ -103,6 +103,7 @@ export class Inspector {
 
   private boneForm(form: HTMLElement, doc: Skeleton, name: string): void {
     const s = this.session, bone = doc.bones!.find((b) => b.name === name)!, anim = s.animation;
+    form.append(this.bonePath(doc, name));
     form.append(this.textField("name", "Name", bone.name, (v) => (v === name ? null : renameBone(name, v)), (v) => `Rename bone ${name} to ${v}`,
       (v) => s.select({ kind: "bone", name: v })));
     const p = anim ? s.pose() : null, index = p?.bones.get(name);
@@ -173,7 +174,7 @@ export class Inspector {
       const off = keysOffFrame(s.doc!, s.fps);
       this.onStatus(`${s.fps} frames a second; keys keep their times${off ? `, and ${off} key${off === 1 ? " now falls" : "s now fall"} between frames` : ""}.`);
     }, "decimal"));
-    form.append(readOnly("Hash", doc.header?.hash ?? "—"), readOnly("Spine", doc.header?.spine ?? "—"));
+    form.append(readOnly("Hash", doc.header?.hash ?? "—"));
   }
 
   private skinForm(form: HTMLElement, doc: Skeleton, name: string): void {
@@ -554,6 +555,30 @@ export class Inspector {
     select.addEventListener("change", () => this.commit(labelFor(select.value), () => edit(select.value), after && (() => after(select.value))));
     this.inputs.set(key, select);
     return field(label, select);
+  }
+
+  /**
+   * The way back up from the selected bone: each ancestor, root first, as a button that selects it
+   * (the rig panel follows and flashes its row), ending with the bone itself.
+   */
+  private bonePath(doc: Skeleton, name: string): HTMLElement {
+    const chain: string[] = [];
+    for (let n: string | undefined = name; n !== undefined && chain.length < 200; n = doc.bones?.find((b) => b.name === n)?.parent) chain.unshift(n);
+    const row = document.createElement("nav");
+    row.className = "bone-path";
+    row.setAttribute("aria-label", "Parents of the selected bone");
+    chain.forEach((n, i) => {
+      if (i) row.append(Object.assign(document.createElement("span"), { className: "sep", textContent: "▸" }));
+      if (i === chain.length - 1) { row.append(Object.assign(document.createElement("span"), { className: "here", textContent: n, title: n })); return; }
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = n;
+      // A long name is cut with an ellipsis in the row; the tooltip has all of it.
+      b.title = i === chain.length - 2 ? `Select the parent, ${n}` : `Select ${n}`;
+      b.addEventListener("click", () => this.session.select({ kind: "bone", name: n }));
+      row.append(b);
+    });
+    return row;
   }
 
   /** A bone's colour: a swatch that opens the picker (Apply, Close), and Auto to give it back to the default. */

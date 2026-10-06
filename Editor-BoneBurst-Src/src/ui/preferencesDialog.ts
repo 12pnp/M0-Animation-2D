@@ -45,6 +45,7 @@ export class PreferencesDialog {
       ],
       display: [
         check("Show rulers on the stage", p.rulers, (on) => this.prefs.set({ rulers: on })),
+        check("Show the tool panels over the stage (View ▸ Stage Panels)", p.stagePanels, (on) => this.prefs.set({ stagePanels: on })),
         check("Show bones on the stage", p.bones, (on) => this.prefs.set({ bones: on })),
         colourPicker("Default bone colour", p.boneColour, (c) => this.prefs.set({ boneColour: c }), true, themeColour("--bone")),
         colourPicker("Selected bone colour", p.selectedBoneColour, (c) => this.prefs.set({ selectedBoneColour: c }), true, themeColour("--accent")),
@@ -64,6 +65,8 @@ export class PreferencesDialog {
       tabs: [
         colourPicker("Tab bar colour (behind the tabs)", p.tabBarColour, (c) => this.prefs.set({ tabBarColour: c }), true),
         colourPicker("Shown tab colour", p.tabActiveColour, (c) => this.prefs.set({ tabActiveColour: c }), true),
+        colourPicker("Tab text colour (the shown tab)", p.tabTextColour, (c) => this.prefs.set({ tabTextColour: c }), true, themeColour("--text")),
+        colourPicker("Other tabs' text colour", p.tabDimTextColour, (c) => this.prefs.set({ tabDimTextColour: c }), true, themeColour("--muted")),
       ],
       grid: [
         number(`Grid spacing (units, ${GRID_RANGE[0]}–${GRID_RANGE[1]})`, p.gridSize, 1, (n) => this.prefs.set({ gridSize: n })),
@@ -164,9 +167,9 @@ export class PreferencesDialog {
 const KEYS: Readonly<Record<string, readonly (keyof PreferenceValues)[]>> = {
   general: ["theme", "undoSteps", "referenceOpacity"],
   files: ["autosave", "autosaveSeconds"],
-  display: ["rulers", "bones", "boneColour", "selectedBoneColour", "constraints"],
+  display: ["rulers", "stagePanels", "bones", "boneColour", "selectedBoneColour", "constraints"],
   background: ["checker", "checkerColour", "gridColour", "gridThickness", "axes", "axisXColour", "axisYColour", "axisThickness"],
-  tabs: ["tabBarColour", "tabActiveColour"],
+  tabs: ["tabBarColour", "tabActiveColour", "tabTextColour", "tabDimTextColour"],
   grid: ["gridSize"],
   onion: ["onion", "onionBefore", "onionAfter", "onionKeyedOnly", "onionColour"],
 };

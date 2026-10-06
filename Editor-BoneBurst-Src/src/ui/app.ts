@@ -1,8 +1,8 @@
-import { EDITOR_NAME, SPINE_VERSION, titleFor } from "@/about";
+import { EDITOR_NAME, titleFor } from "@/about";
 import { Inspector } from "./panels/inspector";
 import type { Page } from "@/io/pack";
 import { sidecarName } from "@/io/sidecar";
-import { pickFiles } from "./files";
+import { pickFiles, spineFolderProblems } from "./files";
 import { Outline } from "./panels/outline";
 import { type PreferenceValues, Preferences } from "./preferences";
 import { PreferencesDialog } from "./preferencesDialog";
@@ -21,7 +21,10 @@ import { AiBridge, DEFAULT_BRIDGE } from "./agent/bridge";
 import { ChatClient } from "./agent/chat";
 import { sessionContext } from "./agent/context";
 import { AskAi } from "./panels/askAi";
+import { showContextMenu } from "./contextMenu";
 import { DocumentTabs } from "./documentTabs";
+import { stageMenu } from "./stageMenu";
+import { TransformStrip } from "./stage/transformStrip";
 import { lookOf } from "./stage/look";
 import { DIVIDER, MenuBar } from "./menubar";
 import { icon, iconButton } from "./icons";
@@ -36,7 +39,7 @@ import { type PanelContent, Workspace } from "./workspace/workspace";
 const STICKMAN = ["Stickman_IK.json", "Stickman_IK.atlas.txt", "Stickman_IK_tex.png"];
 
 const TOOLS: ReadonlyArray<{ tool: Tool; label: string; shortcut: ShortcutId }> = [
-  { tool: "move", label: "Move", shortcut: "toolMove" },
+  { tool: "move", label: "Translate", shortcut: "toolMove" },
   { tool: "rotate", label: "Rotate", shortcut: "toolRotate" },
   { tool: "scale", label: "Scale", shortcut: "toolScale" },
   { tool: "shear", label: "Shear", shortcut: "toolShear" },
@@ -67,6 +70,11 @@ export function mountApp(root: HTMLElement): void {
   fileInput.multiple = true;
   fileInput.accept = ".json,.atlas,.txt,.png,.jpg,.jpeg,.webp,.psd";
   fileInput.hidden = true;
+  // File ▸ Import Spine Folder…: a whole export folder (skeleton .json, .atlas, page images) at once.
+  const folderInput = document.createElement("input");
+  folderInput.type = "file";
+  folderInput.webkitdirectory = true;
+  folderInput.hidden = true;
   const openBtn = iconButton(button("Open…", `Open a skeleton with its atlas and images, or a Photoshop file to start a rig from (${keysOf("open")}). Drop a PSD on an open rig to bring its changes in`, () => fileInput.click()), "open");
   const saveBtn = iconButton(button("Save", `Save the skeleton JSON, with the atlas and pages of an imported PSD (${keysOf("save")})`, () => void save()), "save");
   // Export to Unity (E5 step 8): into the folder chosen once; Shift-click chooses another.
@@ -123,6 +131,7 @@ export function mountApp(root: HTMLElement): void {
     showBtn("Rulers", "Show the rulers and their guides", "rulers"),
   ];
   const stageTools = el("div", "stage-tools");
+  let crumb: HTMLElement;
   const group = (...children: HTMLElement[]) => { const g = el("div", "group"); g.append(...children); return g; };
   /** Auto Key on or off, from the stage strip's button or the View menu. */
   const toggleAutoKey = () => {
@@ -146,7 +155,11 @@ export function mountApp(root: HTMLElement): void {
     b.setAttribute("aria-pressed", String(x.space === stage.space));
     return b;
   });
-  stageTools.append(group(...toolBtns), group(...spaceBtns), group(autoKeyBtn), group(...showBtns));
+  // The transform panel after Spine's: a row per property, with its tool, values and key button.
+  const transform = new TransformStrip(session, new Map(TOOLS.map((t, i) => [t.tool, toolBtns[i]!] as const)), { autoKey: () => stage.autoKey, status: (m) => say(m) });
+  // What is selected, as a path above the panels: bone, then slot, then attachment.
+  crumb = el("div", "stage-crumb");
+  stageTools.append(crumb, transform.element, group(...spaceBtns), group(...showBtns, autoKeyBtn));
   // Fit stays in the panel's top right corner, whatever its size.
   const fitCorner = el("div", "stage-fit");
   fitCorner.append(fitBtn);
@@ -181,7 +194,8 @@ export function mountApp(root: HTMLElement): void {
   });
   const menubar = new MenuBar([
     { label: "File", items: () => [
-      { label: "Open…", keys: keysOf("open"), run: () => fileInput.click() },
+      { label: "Import Spine Folder…", run: () => folderInput.click() },
+      { label: "Open Files…", keys: keysOf("open"), run: () => fileInput.click() },
       { label: "Save", keys: keysOf("save"), disabled: !session.doc, run: () => void save() },
       { label: "Close File", disabled: !session.doc, run: () => tabs.closeCurrent() },
       { label: "Export to Unity…", disabled: !session.doc, run: () => void toUnity(false) },
@@ -202,6 +216,7 @@ export function mountApp(root: HTMLElement): void {
     { label: "View", items: () => [
       ...TOOLS.map((t) => ({ label: t.label, keys: keysOf(t.shortcut), checked: stage.tool === t.tool, run: () => setTool(t.tool) })),
       { label: "Auto Key", checked: stage.autoKey, run: toggleAutoKey },
+      { label: "Stage Panels", checked: prefs.values.stagePanels, run: () => prefs.set({ stagePanels: !prefs.values.stagePanels }) },
       DIVIDER,
       { label: "Fit to skeleton", keys: keysOf("fit"), run: () => stage.fitView() },
       { label: "Onion Skin", checked: prefs.values.onion, run: () => prefs.set({ onion: !prefs.values.onion }) },
@@ -228,14 +243,14 @@ export function mountApp(root: HTMLElement): void {
     { label: "Help", items: () => [
       { label: "Keyboard Shortcuts", keys: keysOf("shortcuts"), run: () => sheet.open() },
       DIVIDER,
-      { label: `About ${EDITOR_NAME}`, run: () => say(`${EDITOR_NAME} — Spine ${SPINE_VERSION}, MIT.`) },
+      { label: `About ${EDITOR_NAME}`, run: () => say(`${EDITOR_NAME}, MIT licence.`) },
     ] },
   ]);
   const body = el("div", "body");
   body.append(activity, main);
   menubar.element.prepend(prefsBtn);
   menubar.element.append(tabs.element);
-  root.replaceChildren(menubar.element, body, status, issuesList, fileInput, prefsDialog.element, sheet.element);
+  root.replaceChildren(menubar.element, body, status, issuesList, fileInput, folderInput, prefsDialog.element, sheet.element);
   menubar.element.append(aiBtn);
 
   // The docking shell (D6): every panel is a Dockview panel.
@@ -284,10 +299,11 @@ export function mountApp(root: HTMLElement): void {
     stage.grid = p.grid ? p.gridSize : null;
     stage.look = lookOf(p);
     stage.boneColour = p.boneColour === "auto" ? null : p.boneColour;
+    stageTools.hidden = !p.stagePanels;
     stage.selectedBoneColour = p.selectedBoneColour === "auto" ? null : p.selectedBoneColour;
     // The panel tabs' colours: "auto" leaves the theme's.
     const rootStyle = document.documentElement.style;
-    for (const [name, value] of [["--tab-bar-bg", p.tabBarColour], ["--tab-active-bg", p.tabActiveColour]] as const) {
+    for (const [name, value] of [["--tab-bar-bg", p.tabBarColour], ["--tab-active-bg", p.tabActiveColour], ["--tab-text", p.tabTextColour], ["--tab-dim-text", p.tabDimTextColour]] as const) {
       if (value === "auto") rootStyle.removeProperty(name); else rootStyle.setProperty(name, value);
     }
     stage.snap = p.snap ? { grid: p.snapGrid, guides: p.snapGuides, bones: p.snapBones, pixels: p.snapPixels, gridSize: p.gridSize } : null;
@@ -303,6 +319,17 @@ export function mountApp(root: HTMLElement): void {
 
   const say = (m: string) => { message.textContent = m; };
   stage.onStatus = say;
+  // Right-click on the stage (a drag still pans): what acts on the bone there, add a bone, the pose, the view.
+  stage.onContextMenu = ([x, y], world, bone) => showContextMenu(x, y, stageMenu({
+    session, status: say, keySelected: () => timeline.keySelected(), deleteSelected: () => outline.deleteSelected(),
+    copyPose: () => say(copyPose(session)), pastePose: () => say(pastePoseHere(session)), canPastePose: () => !!clipboard.pose,
+    fit: () => stage.fitView(),
+    toggles: [
+      { label: "Grid", checked: prefs.values.grid, run: () => prefs.set({ grid: !prefs.values.grid }) },
+      { label: "Snapping", checked: prefs.values.snap, run: () => prefs.set({ snap: !prefs.values.snap }) },
+      { label: "Stage Panels", checked: prefs.values.stagePanels, run: () => prefs.set({ stagePanels: !prefs.values.stagePanels }) },
+    ],
+  }, world, bone));
   timeline.onStatus = say;
   stage.onPointer = (t) => { pointer.textContent = t; };
   inspector.onStatus = say;
@@ -419,19 +446,32 @@ export function mountApp(root: HTMLElement): void {
     issuesBtn.textContent = `${notes.length} note${notes.length === 1 ? "" : "s"}`;
     issuesList.replaceChildren(...notes.map((n) => Object.assign(document.createElement("li"), { textContent: n })));
     hint.hidden = !!doc;
+    // The path of what is selected.
+    const sel = session.selected, parts: string[] = [];
+    if (doc && sel) {
+      const slotBone = (slot: string) => doc.slots?.find((x) => x.name === slot)?.bone;
+      if (sel.kind === "bone") parts.push(sel.name);
+      else if (sel.kind === "slot") parts.push(slotBone(sel.name) ?? "", sel.name);
+      else if (sel.kind === "attachment") parts.push(slotBone(sel.slot) ?? "", sel.slot, sel.key);
+      else parts.push(sel.name);
+    }
+    crumb.hidden = !parts.length;
+    crumb.replaceChildren(...parts.filter(Boolean).flatMap((p, i) => [...(i ? [Object.assign(document.createElement("span"), { className: "sep", textContent: "▸" })] : []), Object.assign(document.createElement("span"), { textContent: p, title: p })]));
   }
   session.onChange(refresh);
 
   hint.append(
-    Object.assign(document.createElement("p"), { textContent: `${EDITOR_NAME} — Spine ${SPINE_VERSION}` }),
-    Object.assign(document.createElement("p"), { textContent: "Drop a skeleton .json with its .atlas and page images here, or use Open… An atlas with its images alone starts a new skeleton." }),
+    Object.assign(document.createElement("p"), { textContent: EDITOR_NAME }),
   );
   if (import.meta.env.DEV) {
     // For inspecting the live editor from the browser console; not in a build.
     (window as unknown as { boneburst: unknown }).boneburst = { session, stage, get workspace() { return workspace; } };
     const dev = button("Open the stickman fixture", "Dev only: tests/fixtures/stickman", () => void openStickman());
     const devNew = button("New skeleton on the stickman's atlas", "Dev only: tests/fixtures/stickman, atlas and image", () => void openStickman(false));
-    hint.append(dev, devNew);
+    // Kept apart and quiet: they are for developing the editor, not for opening a rig.
+    const devRow = el("div", "dev");
+    devRow.append(dev, devNew);
+    hint.append(devRow);
   }
   refresh();
 
@@ -470,6 +510,15 @@ export function mountApp(root: HTMLElement): void {
   if (devOpen === "stickman") void openStickman();
   else if (devOpen === "stickman-atlas") void openStickman(false);
 
+  folderInput.addEventListener("change", () => {
+    const all = [...(folderInput.files ?? [])];
+    folderInput.value = "";
+    if (!all.length) return;
+    const problems = spineFolderProblems(all.map((f) => f.name));
+    const folder = all[0]!.webkitRelativePath.split("/")[0] || "That folder";
+    if (problems.length) { say(`${folder} is not a Spine export folder: it is missing ${problems.join(" and ")}.`); return; }
+    void open(all.map(fileSource));
+  });
   fileInput.addEventListener("change", () => {
     if (fileInput.files?.length) void open([...fileInput.files].map(fileSource));
     fileInput.value = "";

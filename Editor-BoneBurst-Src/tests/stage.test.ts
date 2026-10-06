@@ -8,8 +8,8 @@ import { boneInherit, boneNumber } from "@/model/defaults";
 import type { Skeleton } from "@/model/skeleton";
 import { atlasImages } from "@/engine/regions";
 import { fit, pan, toScreen, toWorld, zoomAt } from "@/ui/stage/camera";
-import { baseName, pickFiles } from "@/ui/files";
-import { asWritten, localRotation, lockToAxis, scaleAlong, shearAlong, spaceAxes, moveDelta, pickBone, scaleFactors, shearDelta, tidy, turn, turnSign } from "@/ui/stage/gizmo";
+import { baseName, pickFiles, spineFolderProblems } from "@/ui/files";
+import { asWritten, localRotation, lockToAxis, scaleAlong, shearAlong, toLocal, spaceAxes, moveDelta, pickBone, scaleFactors, shearDelta, tidy, turn, turnSign } from "@/ui/stage/gizmo";
 import { boneMatrix, bounds, parentMatrix, Poser, poseSetup } from "@/ui/stage/posed";
 import { STICKMAN } from "./fixtures/rigs";
 
@@ -263,5 +263,31 @@ describe("Shear along an axis of a space", () => {
     expect(r.lock).toBe(1);
     expect(r.delta[1]).toBe(0);
     expect(Math.abs(r.delta[0])).toBeGreaterThan(0);
+  });
+});
+
+describe("a Spine export folder", () => {
+  it("is ready with a skeleton, an atlas and a page image", () => {
+    expect(spineFolderProblems(["hero.json", "hero.atlas", "hero.png"])).toEqual([]);
+    expect(spineFolderProblems(["hero.json", "hero.atlas.txt", "page2.png", "hero.bb.json", "notes.md"])).toEqual([]);
+  });
+  it("says what it lacks", () => {
+    expect(spineFolderProblems(["hero.json", "hero.png"])).toEqual(["the atlas (.atlas)"]);
+    expect(spineFolderProblems(["hero.atlas", "hero.png"])).toEqual(["the skeleton (.json)"]);
+    expect(spineFolderProblems(["hero.json", "hero.atlas"])).toEqual(["a page image (.png)"]);
+    expect(spineFolderProblems(["readme.md"])).toHaveLength(3);
+  });
+  it("does not take a .bb.json sidecar for the skeleton", () => {
+    expect(spineFolderProblems(["hero.bb.json", "hero.atlas", "hero.png"])).toEqual(["the skeleton (.json)"]);
+  });
+});
+
+describe("a world point in a bone's space", () => {
+  it("is where a bone with that local x and y would sit", () => {
+    expect(toLocal([1, 0, 0, 1, 10, 20], [15, 27])).toEqual([5, 7]);
+    // A parent turned a quarter turn (its x up the world), at the origin: world (0, 5) is local (5, 0).
+    expect(toLocal([0, -1, 1, 0, 0, 0], [0, 5])).toEqual([5, 0]);
+    // Scaled by 2: half the distance.
+    expect(toLocal([2, 0, 0, 2, 0, 0], [10, 4])).toEqual([5, 2]);
   });
 });

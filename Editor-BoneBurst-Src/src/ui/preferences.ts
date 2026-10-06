@@ -9,6 +9,8 @@ export type Theme = "system" | "light" | "dark";
 export interface PreferenceValues {
   readonly theme: Theme;
   readonly rulers: boolean;
+  /** The transform, space and show panels over the stage's foot. */
+  readonly stagePanels: boolean;
   /** The colour bones are drawn in on the stage ("#rrggbb", or "auto" for the theme's); a bone with a colour of its own keeps it. */
   readonly boneColour: string;
   /** The highlight of the selected bone and its gizmo ("#rrggbb", or "auto" for the theme's accent). */
@@ -46,6 +48,9 @@ export interface PreferenceValues {
   /** The panel tabs' colours ("#rrggbb", or "auto" for the theme's): the bar behind the tabs, and the tab shown. */
   readonly tabBarColour: string;
   readonly tabActiveColour: string;
+  /** The tab text ("#rrggbb", or "auto" for the theme's): the shown tab's, and the other tabs'. */
+  readonly tabTextColour: string;
+  readonly tabDimTextColour: string;
   readonly gridSize: number;
   readonly snap: boolean;
   readonly snapGrid: boolean;
@@ -54,8 +59,8 @@ export interface PreferenceValues {
   readonly snapPixels: boolean;
 }
 
-export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, boneColour: "auto", selectedBoneColour: "auto", bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
-  grid: false, checker: true, axes: true, checkerColour: "auto", gridColour: "auto", gridThickness: 1, axisXColour: "#303030", axisYColour: "#303030", axisThickness: 1, tabBarColour: "#201f24", tabActiveColour: "auto", gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
+export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, stagePanels: true, boneColour: "auto", selectedBoneColour: "auto", bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
+  grid: false, checker: true, axes: true, checkerColour: "auto", gridColour: "auto", gridThickness: 1, axisXColour: "#303030", axisYColour: "#303030", axisThickness: 1, tabBarColour: "#201f24", tabActiveColour: "auto", tabTextColour: "auto", tabDimTextColour: "auto", gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
 export const GRID_RANGE = [1, 1000] as const;
 export const THICKNESS_RANGE = [0.5, 8] as const;
 export const ONION_RANGE = [0, 10] as const;
@@ -95,6 +100,7 @@ export function readPreferences(text: string | null): PreferenceValues {
     grid: bool("grid", DEFAULTS.grid),
     checker: bool("checker", DEFAULTS.checker),
     axes: bool("axes", DEFAULTS.axes),
+    stagePanels: bool("stagePanels", DEFAULTS.stagePanels),
     boneColour: colour("boneColour", DEFAULTS.boneColour),
     selectedBoneColour: colour("selectedBoneColour", DEFAULTS.selectedBoneColour),
     checkerColour: colour("checkerColour", DEFAULTS.checkerColour),
@@ -105,6 +111,8 @@ export function readPreferences(text: string | null): PreferenceValues {
     axisThickness: num("axisThickness", THICKNESS_RANGE[0], THICKNESS_RANGE[1], DEFAULTS.axisThickness),
     tabBarColour: colour("tabBarColour", DEFAULTS.tabBarColour),
     tabActiveColour: colour("tabActiveColour", DEFAULTS.tabActiveColour),
+    tabTextColour: colour("tabTextColour", DEFAULTS.tabTextColour),
+    tabDimTextColour: colour("tabDimTextColour", DEFAULTS.tabDimTextColour),
     gridSize: num("gridSize", GRID_RANGE[0], GRID_RANGE[1], DEFAULTS.gridSize),
     snap: bool("snap", DEFAULTS.snap),
     snapGrid: bool("snapGrid", DEFAULTS.snapGrid),
