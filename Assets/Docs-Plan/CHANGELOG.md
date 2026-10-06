@@ -13,6 +13,7 @@ flowchart LR
 
 ## 2026-10-06
 
+- **BoneBurst Editor v2: the Default bone colour swatch shows the theme's colour while on Auto** (`Editor-BoneBurst-Src/`). On Auto the swatch is the theme's `--bone` colour under stripes (not an empty striped box), and the picker opens from it. Its `.with-colour` rule in `style.css` landed earlier, inside the History panel commit. Guarded by `npm test` (468); seen in a browser (dark theme).
 - **BoneBurst Editor v2, E7 planned and step 1 done: the History panel** (`Editor-BoneBurst-Src/`). E7 is a new phase, "the daily driver" (the owner's scope): the History panel and a shortcuts sheet, running without the dev server, and a robustness pass. Its plan is [E7-PLAN.md](../../Editor-BoneBurst-Src/docs/E7-PLAN.md), and it has its own row in the charter (`EDITOR-V2-PLAN.md`).
   - **History logic** (`edit/history.ts`): `History` gains `entries` (the steps, the current position, and the steps the undo limit let go of) and `goTo`, which undoes or redoes one step at a time. `Session.goToStep` follows each step as the Undo and Redo buttons do, so a jump across a PSD re-import keeps the right atlas.
   - **The panel** (`ui/panels/history.ts`): it lists "Opened name.json" and then every step, with the current one marked and the redo steps greyed; a click goes there. It sits behind the Rig panel's tab by default and is in the Window menu and on the activity bar. Lucide's `rotate-ccw-clock` icon is vendored for it.

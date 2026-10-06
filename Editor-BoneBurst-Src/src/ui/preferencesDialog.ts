@@ -46,7 +46,7 @@ export class PreferencesDialog {
       display: [
         check("Show rulers on the stage", p.rulers, (on) => this.prefs.set({ rulers: on })),
         check("Show bones on the stage", p.bones, (on) => this.prefs.set({ bones: on })),
-        colourPicker("Default bone colour", p.boneColour, (c) => this.prefs.set({ boneColour: c }), true),
+        colourPicker("Default bone colour", p.boneColour, (c) => this.prefs.set({ boneColour: c }), true, themeColour("--bone")),
         note("A bone can have a colour and an icon of its own: select it and see Properties."),
         check("Show constraints on the stage", p.constraints, (on) => this.prefs.set({ constraints: on })),
       ],
@@ -208,17 +208,26 @@ function check(label: string, value: boolean, onChange: (on: boolean) => void): 
   return r;
 }
 
+/** A colour the theme defines (a CSS variable on the page), as #rrggbb; undefined when it is not one. */
+function themeColour(variable: string): string | undefined {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(variable).trim();
+  return /^#[0-9a-f]{6}$/i.test(v) ? v : undefined;
+}
+
 /** A colour swatch that opens the picker popup (Apply, Close); with `canAuto`, an Auto button puts back the colour that shows on the background. */
-function colourPicker(label: string, value: string, onChange: (c: string) => void, canAuto: boolean): HTMLLabelElement {
+function colourPicker(label: string, value: string, onChange: (c: string) => void, canAuto: boolean, autoColour?: string): HTMLLabelElement {
   const box = document.createElement("span");
   box.className = "colour";
   const swatch = document.createElement("button");
   swatch.type = "button";
   swatch.className = "swatch";
   swatch.title = "Choose a colour";
-  swatch.style.background = /^#[0-9a-f]{6}$/i.test(value) ? value : "";
+  // Auto shows the theme's own colour when there is one (striped, so it reads as "not chosen").
+  const shown = /^#[0-9a-f]{6}$/i.test(value) ? value : autoColour ?? "";
+  swatch.style.backgroundColor = shown;
   swatch.classList.toggle("auto", value === "auto");
-  swatch.addEventListener("click", (e) => { e.preventDefault(); pickColour(swatch, value, onChange); });
+  if (value === "auto" && autoColour) swatch.classList.add("with-colour");
+  swatch.addEventListener("click", (e) => { e.preventDefault(); pickColour(swatch, shown || value, onChange); });
   box.append(swatch);
   if (canAuto) {
     const auto = document.createElement("button");
