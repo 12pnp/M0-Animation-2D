@@ -53,3 +53,4 @@ files.
 | `film.svg` | `icons/film.svg` | the activity bar's Timeline button |
 | `shear.svg` | `icons/shear.svg` | the Shear tool (drawn in Lucide style) |
 | `key-round.svg` | `icons/key-round.svg` | the Auto Key button |
+| `layout-panel-left.svg` | `icons/layout-panel-left.svg` | the activity bar's panel picker |

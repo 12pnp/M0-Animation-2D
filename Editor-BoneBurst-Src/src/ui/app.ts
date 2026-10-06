@@ -18,7 +18,7 @@ import { ChatClient } from "./agent/chat";
 import { sessionContext } from "./agent/context";
 import { AskAi } from "./panels/askAi";
 import { DIVIDER, MenuBar } from "./menubar";
-import { iconButton } from "./icons";
+import { icon, iconButton } from "./icons";
 import { ExportRefused, exportToUnity } from "./unityExport";
 import { Autosaver, clearRecovery, readRecovery, sourcesOf } from "./recovery";
 import { clipboard, copyPose, pastePoseHere } from "./clipboard";
@@ -81,8 +81,14 @@ export function mountApp(root: HTMLElement): void {
   const title = el("span", "title");
   const panelsMenu = document.createElement("select");
   panelsMenu.title = "Show a panel, or put the panels back where they started";
-  const prefsBtn = iconButton(button("⚙", "Preferences: theme, rulers, bones, undo steps (⌘,)", () => prefsDialog.open()), "settings", false);
+  // The app icon at the menu bar's left: the Preferences button.
+  const prefsBtn = button("", "Preferences: theme, rulers, bones, undo steps (⌘,)", () => prefsDialog.open());
+  prefsBtn.className = "app-icon";
   prefsBtn.setAttribute("aria-label", "Preferences");
+  const appMark = document.createElement("span");
+  appMark.className = "icon";
+  appMark.style.setProperty("--icon", `url("${import.meta.env.BASE_URL}vendor/app-icon.svg")`);
+  prefsBtn.append(appMark);
   // The AI bridge (E5 step 2): an MCP client or Ask AI works on the open rig through it.
   // `?bridge=<port>` talks to a bridge on another local port (tests, or two bridges at once).
   const port = new URLSearchParams(location.search).get("bridge");
@@ -91,7 +97,7 @@ export function mountApp(root: HTMLElement): void {
   aiBtn.classList.add("ai-button");
   aiBtn.dataset.state = "off";
   ai.onState((state, detail) => { aiBtn.dataset.state = state; aiBtn.title = detail; message.textContent = detail; });
-  bar.append(openBtn, saveBtn, unityBtn, sep(), undoBtn, redoBtn, sep(), skinLabel, sep(), panelsMenu, aiBtn, prefsBtn, title, fileInput, prefsDialog.element);
+  bar.append(openBtn, saveBtn, unityBtn, sep(), undoBtn, redoBtn, sep(), skinLabel, aiBtn, title, fileInput, prefsDialog.element);
 
   // The stage panel: the canvas, with the hint over it while nothing is open.
   const stagePanel = el("section", "stage-panel");
@@ -139,6 +145,9 @@ export function mountApp(root: HTMLElement): void {
   // The activity bar: one button per built panel, pressed while the panel is open.
   const activity = el("nav", "activity");
   activity.setAttribute("aria-label", "Panels");
+  // The panel picker at the bar's top: an icon over the native select, which opens on a click.
+  const picker = el("div", "panel-picker");
+  picker.append(icon("panels"), panelsMenu);
   const menubar = new MenuBar([
     { label: "File", items: () => [
       { label: "Open…", keys: "⌘O", run: () => fileInput.click() },
@@ -174,6 +183,7 @@ export function mountApp(root: HTMLElement): void {
   ]);
   const body = el("div", "body");
   body.append(activity, main);
+  menubar.element.prepend(prefsBtn);
   root.replaceChildren(menubar.element, bar, body, status, issuesList);
 
   // The docking shell (D6): every panel is a Dockview panel.
@@ -193,7 +203,7 @@ export function mountApp(root: HTMLElement): void {
   const syncActivity = () => { for (const b of activityBtns) b.setAttribute("aria-pressed", String(workspace.isOpen(b.dataset.panel as PanelId))); };
   workspace.api.onDidLayoutChange(syncActivity);
   syncActivity();
-  activity.append(...activityBtns);
+  activity.append(picker, ...activityBtns);
   const refreshPanels = () => {
     panelsMenu.replaceChildren(
       new Option("Panels…", ""),
