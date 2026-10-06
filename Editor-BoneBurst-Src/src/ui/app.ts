@@ -12,6 +12,7 @@ import type { Tool } from "./stage/gizmo";
 import { isTyping, Stage } from "./stage/stage";
 import { Timeline } from "./timeline/timeline";
 import { animationDuration, timeFrame } from "@/model/timelines";
+import { iconButton } from "./icons";
 import { isPanelId, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
 import { type PanelContent, Workspace } from "./workspace/workspace";
 
@@ -48,16 +49,16 @@ export function mountApp(root: HTMLElement): void {
   fileInput.multiple = true;
   fileInput.accept = ".json,.atlas,.txt,.png,.jpg,.jpeg,.webp,.psd";
   fileInput.hidden = true;
-  const openBtn = button("Open…", "Open a skeleton with its atlas and images, or a Photoshop file to start a rig from (⌘O)", () => fileInput.click());
-  const saveBtn = button("Save", "Save the skeleton JSON, with the atlas and pages of an imported PSD (⌘S)", () => void save());
-  const undoBtn = button("Undo", "", () => { session.history?.undo(); session.changed(); });
-  const redoBtn = button("Redo", "", () => { session.history?.redo(); session.changed(); });
+  const openBtn = iconButton(button("Open…", "Open a skeleton with its atlas and images, or a Photoshop file to start a rig from (⌘O)", () => fileInput.click()), "open");
+  const saveBtn = iconButton(button("Save", "Save the skeleton JSON, with the atlas and pages of an imported PSD (⌘S)", () => void save()), "save");
+  const undoBtn = iconButton(button("Undo", "", () => { session.history?.undo(); session.changed(); }), "undo");
+  const redoBtn = iconButton(button("Redo", "", () => { session.history?.redo(); session.changed(); }), "redo");
   const toolBtns = TOOLS.map((t) => {
-    const b = button(t.label, `${t.label} (${t.key})`, () => setTool(t.tool));
+    const b = iconButton(button(t.label, `${t.label} (${t.key})`, () => setTool(t.tool)), t.tool);
     b.dataset.tool = t.tool;
     return b;
   });
-  const fitBtn = button("Fit", "Show the whole skeleton (F)", () => stage.fitView());
+  const fitBtn = iconButton(button("Fit", "Show the whole skeleton (F)", () => stage.fitView()), "fit");
   const skinLabel = el("label", "skin");
   const skinSelect = document.createElement("select");
   skinSelect.addEventListener("change", () => { session.skin = skinSelect.value || null; session.changed(); });
@@ -65,7 +66,7 @@ export function mountApp(root: HTMLElement): void {
   const title = el("span", "title");
   const panelsMenu = document.createElement("select");
   panelsMenu.title = "Show a panel, or put the panels back where they started";
-  const prefsBtn = button("⚙", "Preferences: theme, rulers, bones, undo steps (⌘,)", () => prefsDialog.open());
+  const prefsBtn = iconButton(button("⚙", "Preferences: theme, rulers, bones, undo steps (⌘,)", () => prefsDialog.open()), "settings", false);
   prefsBtn.setAttribute("aria-label", "Preferences");
   bar.append(openBtn, saveBtn, sep(), undoBtn, redoBtn, sep(), ...toolBtns, sep(), fitBtn, skinLabel, sep(), panelsMenu, prefsBtn, title, fileInput, prefsDialog.element);
 

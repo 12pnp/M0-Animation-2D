@@ -195,6 +195,13 @@ storage (view-only state of the app); a saved layout naming a panel the build la
 Themes are Dockview's dark and light, coloured through `--dv-*` variables; text is Inter and
 numbers JetBrains Mono, vendored woff2 files, so every machine renders the same text.
 
+**Icons (E4 step 13a)** are vendored SVG files, never an npm package: Lucide (ISC) for the
+general ones and the domain glyphs it has, and a subset of Godot's editor icons (MIT), redrawn as
+one-path `currentColor` outlines, for those it lacks (constraint kinds, mesh, bounding box, key
+kinds, curves). `ui/icons.ts` names them; an icon is a span masked by its file, so it takes the
+text's colour in either theme. Each set's `MANIFEST.md` names its pinned commit and every file's
+origin; `tests/icons.test.ts` guards files, manifests, styling and licences.
+
 **Preferences (E4 step 10)** are the person's, not the document's: theme, rulers, bones, undo
 steps, new references' opacity, kept in the browser's storage (`boneburst.preferences`,
 versioned, unreadable values taken as the defaults) like the dock layout (`ui/preferences`).

@@ -2,6 +2,7 @@ import { EditRefused } from "@/edit/history";
 import { moveReference, type ReferencePatch, removeReference, updateReference } from "@/edit/sidecar";
 import type { Sidecar } from "@/model/sidecar";
 import { fileSource, type Session } from "../session";
+import { iconButton } from "../icons";
 import { referenceFile } from "../stage/references";
 import { empty, heading } from "./outline";
 
@@ -76,10 +77,10 @@ export class References {
     const bar = document.createElement("div");
     bar.className = "outline-bar";
     bar.append(
-      button("Add image…", "Add pictures to rig and animate against; keep the files beside the skeleton. The chosen one is dragged on the stage, its corners size it", () => this.picker.click()),
-      button("Remove", "Remove the chosen reference (its file is not touched)", () => { this.session.selectReference(null); this.apply((x) => removeReference(x, this.chosen)); }, !refs.length),
-      button("↑", "Draw it earlier (further back)", () => this.move(-1), this.chosen <= 0),
-      button("↓", "Draw it later (nearer the skeleton)", () => this.move(1), this.chosen >= refs.length - 1),
+      iconButton(button("Add image…", "Add pictures to rig and animate against; keep the files beside the skeleton. The chosen one is dragged on the stage, its corners size it", () => this.picker.click()), "addImage"),
+      iconButton(button("Remove", "Remove the chosen reference (its file is not touched)", () => { this.session.selectReference(null); this.apply((x) => removeReference(x, this.chosen)); }, !refs.length), "delete"),
+      iconButton(button("↑", "Draw it earlier (further back)", () => this.move(-1), this.chosen <= 0), "up", false),
+      iconButton(button("↓", "Draw it later (nearer the skeleton)", () => this.move(1), this.chosen >= refs.length - 1), "down", false),
       this.picker,
     );
     const list = document.createElement("div");

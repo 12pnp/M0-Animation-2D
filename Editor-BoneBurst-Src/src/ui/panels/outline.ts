@@ -1,10 +1,11 @@
-import { addRegion, deleteAttachment } from "@/edit/attachments";
+import { addRegion, deleteAttachment, findAttachment } from "@/edit/attachments";
 import { addBone, deleteBone } from "@/edit/bones";
 import { deleteConstraint, moveConstraint } from "@/edit/constraints";
 import { type Edit, EditRefused } from "@/edit/history";
 import { addSkin, deleteSkin, duplicateSkin } from "@/edit/skins";
 import { addSlot, deleteSlot, moveSlot, updateSlot } from "@/edit/slots";
-import { CONSTRAINT_TYPES, type ConstraintType, type Skeleton } from "@/model/skeleton";
+import { attachmentType, CONSTRAINT_TYPES, type ConstraintType, type Skeleton } from "@/model/skeleton";
+import { CONSTRAINT_ICONS, icon, iconButton, type IconName } from "../icons";
 import { type Selection, sameSelection, type Session } from "../session";
 import { newConstraint } from "./newConstraint";
 
@@ -14,7 +15,7 @@ type View = "tree" | "order" | "skins" | "constraints";
 const KIND_LABELS: Record<ConstraintType, string> = { ik: "IK", transform: "Transform", path: "Path", physics: "Physics", slider: "Slider" };
 
 /** One row of the rig tree. */
-interface Item { readonly sel: Selection; readonly label: string; readonly depth: number; readonly kind: Selection["kind"]; readonly toggle?: string; readonly open?: boolean; readonly note?: string }
+interface Item { readonly sel: Selection; readonly label: string; readonly depth: number; readonly kind: Selection["kind"]; readonly toggle?: string; readonly open?: boolean; readonly note?: string; readonly icon?: IconName }
 
 /**
  * The rig: bones as a tree, each with its slots, each slot with its attachments (the shown skin's
@@ -57,9 +58,9 @@ export class Outline {
       bone: button("+ Bone", "Add a bone under the selected one", () => this.addBone()),
       slot: button("+ Slot", "Add a slot on the selected bone", () => this.addSlot()),
       region: button("+ Region", "Add the chosen atlas region to the selected slot (or a new slot on the selected bone)", () => { if (this.regionPick.value) this.addRegion(this.regionPick.value); }),
-      del: button("Delete", "Delete what is selected (Undo brings it back)", () => this.deleteSelected()),
-      up: button("↑", "Bring the selected slot forward; apply the selected constraint earlier", () => this.moveSelected(1)),
-      down: button("↓", "Send the selected slot back; apply the selected constraint later", () => this.moveSelected(-1)),
+      del: iconButton(button("Delete", "Delete what is selected (Undo brings it back)", () => this.deleteSelected()), "delete"),
+      up: iconButton(button("↑", "Bring the selected slot forward; apply the selected constraint earlier", () => this.moveSelected(1)), "up", false),
+      down: iconButton(button("↓", "Send the selected slot back; apply the selected constraint later", () => this.moveSelected(-1)), "down", false),
     };
     bar.append(this.buttons.tree, this.buttons.order, this.buttons.skins, this.buttons.constraints, sep(), this.buttons.bone, this.buttons.slot, this.buttons.region, this.regionPick,
       this.buttons.skin, this.buttons.dup, this.kindPick, this.buttons.constraint, this.buttons.del, this.buttons.up, this.buttons.down);
@@ -207,18 +208,18 @@ export class Outline {
     const slots = doc.slots ?? [];
     if (this.view === "skins") {
       return (doc.skins ?? []).map((k): Item => ({
-        sel: { kind: "skin", name: k.name }, label: k.name, depth: 0, kind: "skin",
+        sel: { kind: "skin", name: k.name }, label: k.name, depth: 0, kind: "skin", icon: "skin",
         note: [(s.skin ?? "default") === k.name ? "shown" : "", k.bones?.length ? `${k.bones.length} bones` : ""].filter(Boolean).join(" · "),
       }));
     }
     if (this.view === "constraints") {
       return (doc.constraints ?? []).map((c): Item => ({
-        sel: { kind: "constraint", type: c.type, name: c.name }, label: c.name, depth: 0, kind: "constraint",
+        sel: { kind: "constraint", type: c.type, name: c.name }, label: c.name, depth: 0, kind: "constraint", icon: CONSTRAINT_ICONS[c.type],
         note: [KIND_LABELS[c.type], c.skin ? "skin" : ""].filter(Boolean).join(" · "),
       }));
     }
     if (this.view === "order") {
-      return [...slots].reverse().map((x): Item => ({ sel: { kind: "slot", name: x.name }, label: x.name, depth: 0, kind: "slot", note: x.bone }));
+      return [...slots].reverse().map((x): Item => ({ sel: { kind: "slot", name: x.name }, label: x.name, depth: 0, kind: "slot", icon: "slot", note: x.bone }));
     }
     const skins = [s.skin, "default"].filter((k, i, a): k is string => k !== null && a.indexOf(k) === i);
     const children = new Map<string, string[]>();
@@ -227,16 +228,17 @@ export class Outline {
       const mine = slots.filter((x) => x.bone === bone);
       const kids = children.get(bone) ?? [];
       const id = `bone/${bone}`, open = !this.closed.has(id);
-      out.push({ sel: { kind: "bone", name: bone }, label: bone, depth, kind: "bone", ...(mine.length || kids.length ? { toggle: id, open } : {}) });
+      out.push({ sel: { kind: "bone", name: bone }, label: bone, depth, kind: "bone", icon: "bone", ...(mine.length || kids.length ? { toggle: id, open } : {}) });
       if (!open) return;
       for (const slot of mine) {
         const entries = skins.flatMap((skin) => (doc.skins?.find((k) => k.name === skin)?.attachments?.find((ss) => ss.slot === slot.name)?.entries ?? []).map((e) => ({ skin, key: e.key })));
         const sid = `slot/${slot.name}`, sopen = this.opened.has(sid) || (s.selected?.kind === "attachment" && s.selected.slot === slot.name);
-        out.push({ sel: { kind: "slot", name: slot.name }, label: slot.name, depth: depth + 1, kind: "slot", ...(entries.length ? { toggle: sid, open: sopen } : {}) });
+        out.push({ sel: { kind: "slot", name: slot.name }, label: slot.name, depth: depth + 1, kind: "slot", icon: "slot", ...(entries.length ? { toggle: sid, open: sopen } : {}) });
         if (sopen) {
           for (const e of entries) {
             out.push({
               sel: { kind: "attachment", skin: e.skin, slot: slot.name, key: e.key }, label: e.key, depth: depth + 2, kind: "attachment",
+              icon: attachmentIcon(doc, { skin: e.skin, slot: slot.name, key: e.key }),
               note: [e.key === slot.attachment ? "shown" : "", e.skin !== "default" ? e.skin : ""].filter(Boolean).join(" · "),
             });
           }
@@ -317,6 +319,7 @@ export class Outline {
       pad.className = "twisty-gap";
       row.append(pad);
     }
+    if (it.icon) row.append(icon(it.icon));
     const name = document.createElement("span");
     name.className = "name";
     name.textContent = it.label;
@@ -350,6 +353,15 @@ function historyId(h: object): number {
 export function unique(base: string, taken: readonly string[]): string {
   if (!taken.includes(base)) return base;
   for (let i = 2; ; i++) if (!taken.includes(`${base}${i}`)) return `${base}${i}`;
+}
+
+const ATTACHMENT_ICONS: Readonly<Record<string, IconName>> = {
+  region: "region", mesh: "mesh", linkedmesh: "linkedmesh", boundingbox: "boundingbox", path: "path", point: "point", clipping: "clipping",
+};
+
+function attachmentIcon(doc: Skeleton, r: { skin: string; slot: string; key: string }): IconName {
+  const a = findAttachment(doc, r);
+  return (a && ATTACHMENT_ICONS[attachmentType(a)]) ?? "region";
 }
 
 function button(text: string, title: string, onClick: () => void): HTMLButtonElement {

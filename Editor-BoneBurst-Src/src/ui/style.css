@@ -105,6 +105,20 @@ button {
 button:hover:not(:disabled) { background: var(--hover); }
 button:disabled { opacity: 0.45; cursor: default; }
 button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+/* Icons (E4 step 13a): the file is a mask, the colour is the text's. */
+.icon {
+  display: inline-block;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  vertical-align: -3px;
+  background-color: currentColor;
+  -webkit-mask: var(--icon) center / contain no-repeat;
+  mask: var(--icon) center / contain no-repeat;
+}
+button:has(> .icon) { display: inline-flex; align-items: center; gap: 5px; }
+button.icon-only { padding-left: 6px; padding-right: 6px; }
+.outline-bar button .icon { width: 14px; height: 14px; }
 button:focus-visible, input:focus-visible, select:focus-visible, .overlay:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
@@ -214,11 +228,9 @@ html .dockview-theme-light {
 .outline .row:hover { background: var(--hover); }
 .outline .row .name { overflow: hidden; text-overflow: ellipsis; }
 .outline .row .note { margin-left: auto; color: var(--muted); font-size: 11px; }
-.outline .row.slot .name::before { content: "▣ "; color: var(--muted); }
-.outline .row.attachment .name::before { content: "▫ "; color: var(--muted); }
-.outline .row.constraint .name::before { content: "⌁ "; color: var(--muted); }
+.outline .row > .icon, .timeline-labels .row > .icon { width: 14px; height: 14px; color: var(--muted); }
 .outline .row.selected { background: var(--accent); color: var(--accent-text); }
-.outline .row.selected .note, .outline .row.selected .name::before { color: inherit; }
+.outline .row.selected .note, .outline .row.selected > .icon { color: inherit; }
 .outline .twisty { border: 0; background: transparent; padding: 0; width: 16px; font-size: 10px; color: inherit; }
 .outline .twisty-gap { display: inline-block; width: 16px; }
 

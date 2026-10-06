@@ -978,6 +978,90 @@ flowchart LR
    like it). With every stage event logged, the same drags and tab clicks gave no wheel event and
    no change; the likeliest cause is input on the shared browser pane from outside the session.
 
+## Step 13a — icons (owner, 2026-10-06)
+
+The interface gets icons: Lucide for the general chrome, and a small subset of Godot's editor
+icons, restyled, for the animation glyphs Lucide lacks. Both are vendored as SVG files (no npm
+icon package; the runtime dependencies stay ag-psd and dockview-core) and theme through
+`currentColor`.
+
+```mermaid
+flowchart LR
+    LU["Lucide 1.52.0<br/>@ 500620a2 (ISC)"] -->|"copied unmodified"| VL["public/vendor/icons/lucide/<br/>+ LICENSE-lucide.txt · MANIFEST.md"]
+    GO["Godot 4.7.2-stable<br/>@ ed1daf0b editor/icons (MIT)"] -->|"restyled: 24×24, one path,<br/>2px currentColor stroke"| VG["public/vendor/icons/godot/<br/>+ LICENSE-godot-icons.txt · MANIFEST.md"]
+    VL & VG --> IC["ui/icons.ts<br/>icon(name): a CSS-masked span"]
+    IC --> UI["toolbar · rig rows · constraint kinds ·<br/>timeline transport and curves · reference panel"]
+    T["tests/icons.test.ts"] -.->|"guards"| VL & VG
+```
+
+### Decisions
+
+- **Sources, pinned**: Lucide `1.52.0` (commit `500620a2e8123f8d1db191538886dc0c223f69a9`) and
+  Godot `4.7.2-stable` (commit `ed1daf0bf001b61586d9930840f2f1394092c079`), files taken from
+  those commits only. Godot's `COPYRIGHT.txt` puts `editor/icons/` under its MIT (Expat) licence;
+  only `misc/logo/` is CC-BY, and nothing is taken from it.
+- **Lucide first.** Where Lucide has the glyph it is used, including domain ones it happens to
+  have: bone, skull (skeleton), shirt (skin), layers (draw order), image (region), spline (path
+  attachment), crosshair (point), scissors (clipping), diamond (a key), paintbrush (weights).
+  **Godot fills the rest** (16): the five constraint kinds (IK ← ChainIK3D, transform ←
+  RemoteTransform2D, path ← PathFollow2D, physics ← SpringBoneSimulator3D, slider ← HSlider), mesh
+  ← MeshInstance2D, bounding box ← CollisionPolygon2D, key kinds (translate ← KeyTrackPosition,
+  rotate ← KeyTrackRotation, scale ← KeyTrackScale, deform ← KeyTrackBlendShape), and the five
+  curves (linear, stepped ← CurveConstant, ease in, ease out, ease in-out). Godot has no skin
+  icon in 4.7.2; Lucide's shirt is used.
+- **Restyling**: Godot's icons are 16×16 filled, coloured shapes. Each is redrawn after its
+  original as one `<path>`, viewBox `0 0 24 24`, `fill="none"`, `stroke="currentColor"`,
+  `stroke-width="2"`, round caps and joins (Lucide's own attributes). A redrawn file is a
+  derivative and keeps Godot's MIT notice; the manifest names its original and the commit.
+- **Provenance files**: `public/vendor/icons/godot/` holds the restyled files only, with
+  `LICENSE-godot-icons.txt` (Godot's `LICENSE.txt` at that commit) and `MANIFEST.md` (file ←
+  original name, commit); `public/vendor/icons/lucide/` the same for Lucide (its `LICENSE`,
+  which includes Feather's MIT for the icons derived from it). Two rows in
+  THIRD-PARTY-NOTICES.md. Never an icon from the old editor.
+- **Drawing**: `ui/icons.ts` maps names to files; `icon(name)` is a span whose CSS mask is the
+  file and whose background is `currentColor`, so icons follow the text colour, the theme
+  (`--dv-*` palette included) and the selected row's colour, in popout windows too.
+- **Where**: the toolbar (Open, Save, Undo, Redo, the three tools, Fit, Preferences); the rig
+  rows (bone, slot, each attachment's kind, skin, constraint kinds); the timeline (to start,
+  play/pause, loop, key, the five curves); the reference panel (add, remove, up, down). Buttons
+  keep their words beside the icon where they had words; ⚙ ↑ ↓ ⏮ ▶ become icons with an
+  `aria-label`.
+- **Guard** (`tests/icons.test.ts`): every name in `ui/icons.ts` has its file; every vendored
+  SVG is in its manifest and every manifest row has its file; each Godot file is 24×24, one
+  path, `currentColor` stroke 2, no other colour; both licences present; the manifests name the
+  pinned commits.
+
+### Steps
+
+1. Vendor Lucide's files; redraw the 16 Godot icons; licences, manifests, notices rows.
+2. `ui/icons.ts`, the CSS, and the icons in place; `tests/icons.test.ts`.
+3. On screen: light and dark themes, a selected row, a popout window's panel.
+
+### Step 13a results
+
+1. Lucide `1.52.0` (`500620a2`): 27 files copied unmodified (`plus` fetched and then left out,
+   nothing used it). Godot `4.7.2-stable` (`ed1daf0b`): 16 icons redrawn by
+   `scripts/godot-icons.py` (kept, so the redraw can be repeated and read); `CurveConstant` is
+   drawn as a step, which reads as "stepped" where a flat line would read as a minus. Godot has
+   no skin icon at that commit, so Lucide's shirt is used. Licences (Godot's `LICENSE.txt`,
+   Lucide's `LICENSE` with Feather's MIT), a `MANIFEST.md` per set (with a diagram), two notices
+   rows. Each redraw was compared with its original side by side at 56 px and at 16 px.
+2. `ui/icons.ts` (`icon`, `setIcon`, `iconButton`, `ICON_FILES`, `CONSTRAINT_ICONS`), the CSS
+   mask, and the icons in the toolbar, the rig rows (bone, slot, each attachment's kind, skin,
+   each constraint's kind; the old ▣ ▫ ⌁ glyphs gone), the timeline (transport, Key, the curves,
+   Delete; a row's owner, and translate, rotate, scale and deform timelines), and the reference
+   panel. `tests/icons.test.ts`, 5 tests; three planted faults (a colour in a Godot file, a
+   manifest row removed, an icon named with no file) each fail one.
+   **Changed on screen:** with icons, the curve buttons wrapped the timeline's bar onto two lines;
+   they are icons only now, their name leading the tooltip and as the accessible name.
+3. On screen: the stickman (64–79 icons, every one masked by its file, none missing); light
+   theme with Stretchyman: the five constraint kinds each with its own icon (a physics and a
+   slider constraint added for it), attachments as mesh, path and region, the selected row's icon
+   in the row's text colour. **Fixed on screen:** `icon()` made a span `setIcon` did not
+   recognise, so no icon drew at first. **Not verified:** a popout window. In the browser pane
+   Dockview's popout replaced the tab itself instead of opening a window, so this goes to step
+   15's popout session and its Playwright test.
+
 ## Wrap-up (owner decisions, 2026-10-06)
 
 E4 finishes with three more steps and one closing verification; two items are parked, not

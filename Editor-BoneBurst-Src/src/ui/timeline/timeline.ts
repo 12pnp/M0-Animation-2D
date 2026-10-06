@@ -5,18 +5,19 @@ import { type Edit, EditRefused } from "@/edit/history";
 import { deleteKeys, type KeyRef, moveKeys, setCurve } from "@/edit/keys";
 import type { Skeleton } from "@/model/skeleton";
 import { animationDuration, timeFrame } from "@/model/timelines";
+import { CONSTRAINT_ICONS, icon, iconButton, type IconName, setIcon } from "../icons";
 import type { Session } from "../session";
 import { animatedLocal } from "../stage/posed";
 import {
   buildRows, shiftedRefs, frameX, labelStep, type Mark, markAt, marks, refId, ROW, type Row, rowAt, RULER, type View, xFrame,
 } from "./layout";
 
-const CURVES: ReadonlyArray<{ label: string; title: string; curve: "linear" | "stepped" | Shape }> = [
-  { label: "Linear", title: "Straight from each selected key to the next", curve: "linear" },
-  { label: "Stepped", title: "Hold each selected key until the next", curve: "stepped" },
-  { label: "Ease in", title: "Start slow", curve: PRESETS.easeIn },
-  { label: "Ease out", title: "End slow", curve: PRESETS.easeOut },
-  { label: "Ease in-out", title: "Start and end slow", curve: PRESETS.easeInOut },
+const CURVES: ReadonlyArray<{ label: string; title: string; icon: IconName; curve: "linear" | "stepped" | Shape }> = [
+  { label: "Linear", icon: "curveLinear", title: "Straight from each selected key to the next", curve: "linear" },
+  { label: "Stepped", icon: "curveStepped", title: "Hold each selected key until the next", curve: "stepped" },
+  { label: "Ease in", icon: "curveEaseIn", title: "Start slow", curve: PRESETS.easeIn },
+  { label: "Ease out", icon: "curveEaseOut", title: "End slow", curve: PRESETS.easeOut },
+  { label: "Ease in-out", icon: "curveEaseInOut", title: "Start and end slow", curve: PRESETS.easeInOut },
 ];
 
 type Drag =
@@ -60,15 +61,20 @@ export class Timeline {
     this.select.addEventListener("change", () => session.showAnimation(this.select.value || null));
     const newBtn = button("New…", "Add an animation", () => this.newAnimation());
     const renameBtn = button("Rename…", "Rename this animation", () => this.renameAnimation());
-    const deleteBtn = button("Delete", "Delete this animation", () => this.deleteAnimation());
+    const deleteBtn = iconButton(button("Delete", "Delete this animation", () => this.deleteAnimation()), "delete");
     this.animButtons = [renameBtn, deleteBtn];
-    const startBtn = button("⏮", "To the first frame (Home)", () => session.seek(0));
-    this.playBtn = button("▶", "Play (Space)", () => this.togglePlay());
-    this.loopBtn = button("Loop", "Loop playback", () => { session.loop = !session.loop; session.changed(); });
+    const startBtn = iconButton(button("⏮", "To the first frame (Home)", () => session.seek(0)), "start", false);
+    this.playBtn = iconButton(button("▶", "Play (Space)", () => this.togglePlay()), "play", false);
+    this.loopBtn = iconButton(button("Loop", "Loop playback", () => { session.loop = !session.loop; session.changed(); }), "loop");
     this.frameOut = document.createElement("output");
     this.frameOut.className = "frame";
-    this.keyBtn = button("Key", "Key the selected bone's rotate, translate and scale here (K)", () => this.keySelectedBone());
-    this.curveButtons = CURVES.map((c) => button(c.label, c.title, () => this.applyCurve(c.curve)));
+    this.keyBtn = iconButton(button("Key", "Key the selected bone's rotate, translate and scale here (K)", () => this.keySelectedBone()), "key");
+    // Icons only, so the bar stays one line; the name leads the tooltip and is the accessible name.
+    this.curveButtons = CURVES.map((c) => {
+      const b = button(c.label, `${c.label}: ${c.title.toLowerCase()}`, () => this.applyCurve(c.curve));
+      b.setAttribute("aria-label", c.label);
+      return iconButton(b, c.icon, false);
+    });
     bar.append(this.select, newBtn, ...this.animButtons, sep(), startBtn, this.playBtn, this.loopBtn, this.frameOut, sep(), this.keyBtn, sep(), ...this.curveButtons);
 
     this.body = document.createElement("div");
@@ -166,8 +172,9 @@ export class Timeline {
     for (const b of this.curveButtons) b.disabled = !a || !this.selected.size;
     this.keyBtn.disabled = !a || s.selectedBone === null;
     this.playBtn.disabled = !a;
-    this.playBtn.textContent = s.playing ? "⏸" : "▶";
+    setIcon(this.playBtn, s.playing ? "pause" : "play");
     this.playBtn.title = s.playing ? "Pause (Space)" : "Play (Space)";
+    this.playBtn.setAttribute("aria-label", this.playBtn.title);
     this.loopBtn.setAttribute("aria-pressed", String(s.loop));
     const end = a ? timeFrame(animationDuration(a), s.fps) : 0;
     this.frameOut.textContent = a ? `frame ${s.frame} / ${end} · ${s.fps} fps` : "";
@@ -205,6 +212,8 @@ export class Timeline {
         t.className = "twisty";
         el.append(t);
       }
+      const kind = rowIcon(r);
+      if (kind) el.append(icon(kind));
       const name = document.createElement("span");
       name.textContent = r.label;
       el.append(name);
@@ -369,6 +378,22 @@ export class Timeline {
     } else return;
     this.redraw();
   }
+}
+
+const TIMELINE_ICONS: Readonly<Record<string, IconName>> = {
+  translate: "keyTranslate", translatex: "keyTranslate", translatey: "keyTranslate",
+  rotate: "keyRotate", scale: "keyScale", scalex: "keyScale", scaley: "keyScale", deform: "keyDeform",
+};
+
+/** A row's icon: what owns it (a bone, a slot, a constraint's kind, the draw order), or for a timeline its kind. */
+function rowIcon(r: Row): IconName | null {
+  const p = r.lists[0]?.path;
+  if (r.depth === 1) return p && "timeline" in p ? TIMELINE_ICONS[p.timeline] ?? null : null;
+  if (r.bone !== undefined) return "bone";
+  if (r.id.startsWith("slot/")) return "slot";
+  if (r.id === "drawOrder") return "drawOrder";
+  if (p && p.section in CONSTRAINT_ICONS) return CONSTRAINT_ICONS[p.section as keyof typeof CONSTRAINT_ICONS];
+  return null;
 }
 
 function button(text: string, title: string, onClick: () => void): HTMLButtonElement {
