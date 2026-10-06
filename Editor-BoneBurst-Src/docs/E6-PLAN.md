@@ -3,7 +3,8 @@
 **Status:** in progress, 2026-10-06. Step 1 (the oracle harness, round-trip parity) done: v2 writes
 all 17 corpus rigs back exactly; the old editor changes every one, and poses one differently.
 Step 2 (edit-script parity) done: both scripts agree once each known difference is taken out
-(0.007 and 0 px); `set_keys`' named eases now are version 1's curves. Step 3 (the gap list) next.
+(0.007 and 0 px); `set_keys`' named eases now are version 1's curves. Step 3 (the gap list) done: walked in the old editor, decided by the owner. Step 4 (the gaps
+chosen, built in v2) next.
 
 E6 makes v2 the editor people use. The old editor (`../../Animation-BoneBurst-Src/`, AGPL, the
 Animo fork) is the **behavioural oracle**: it is run, never read, and v2 has to agree with it on
@@ -162,4 +163,72 @@ sequenceDiagram
    document at 24 fps and changing the rate re-times its keys (so the harness sets 30 on the
    empty document before importing). `poseGap` compares tips at the first file's bone lengths.
 5. Not in `npm run check` (it needs the old editor's folder); the eases' unit test is.
+
+## Step 3 — the gap list
+
+Walked in the old editor (run in Playwright's browser: every menu, submenu, panel and the
+preferences, on the stickman), each item checked against v2's code, not memory.
+
+```mermaid
+flowchart LR
+    V1["the old editor's menus · panels · prefs"] --> G{"in v2?"}
+    G -->|"yes"| OK["no gap"]
+    G -->|"no Spine home (D4, D5) or replaced"| CUT["cut"]
+    G -->|"an animator's tool"| ASK["build in step 4 (owner)"]
+```
+
+### In v2 already (no gap)
+
+Open a Spine skeleton with its atlas (v1: Open Spine…), Save, Export to Unity, PSD import and
+re-import, undo and redo, the Move, Rotate and Scale tools, auto-keying while posing in an
+animation, Fit, the skin picker, rulers and guides, reference images, the rig tree, draw order,
+skins, constraints (all five kinds, keyed), mesh editing and weights, bounding boxes and points,
+the timeline (keys, eases, play, loop), docking and popouts, preferences, the AI panel and bridge.
+
+### Gaps: an animator's tools (proposed: build, the owner decides)
+
+| v1 has | v2 now | proposal |
+|---|---|---|
+| Events on the timeline (define, key, see them) | only through the AI tools | build: a Spine feature artists key by hand |
+| Copy and paste of keys and poses; selecting several keys or frames (Edit ▸ Copy/Paste, Paste and Overwrite Frames, Select All Frames) | one key at a time | build |
+| Onion skin (View ▸ Onion Skin, its options) | none | build |
+| Autosave with recovery (Preferences ▸ Files) | none | build: work lost in a crash is the costliest gap |
+| The document's frame rate (Properties ▸ FPS) | read, not editable | build (small) |
+| Snapping: grid, guides, objects, stage edges, whole pixels; a grid | guides without snapping | build (parked from E4, with the weight brush) |
+| A weight brush | weights by number and by bind | build (parked from E4) |
+| The curve graph (Graph tab) | curve presets per key | proposed later; **owner: build** |
+| A Shear tool; Local, Parent, World axes for the tools | shear by number | proposed later; **owner: build** |
+| History panel (the undo list, Revert) | undo and redo | later |
+| Keyboard shortcuts sheet (Help) | none | later (small) |
+
+### Cut: no home in Spine's file, or replaced (proposed: cut)
+
+| v1 has | why cut |
+|---|---|
+| Symbols, groups, masks, the Library, Convert to Symbol, Swap Instance | D4: v2 is Spine-native, no nested symbols |
+| Bone paths, the Local Path and World Path panels, Show Bone Paths | D5: dropped from the contract; Spine has no bone paths |
+| The Preview panel | v2's stage is the runtime |
+| The Poses panel (frames marked for the AI to animate between) | no contract tool uses it in v2; the AI keys with `set_keys` and `apply_motion` |
+| Document size and background (Document Settings…) | not in Spine's file; v2 keeps its view in the sidecar |
+| Export Spine… (a zip) and Export Settings… | Save and Export to Unity write the files |
+| Binary skeletons (`.skel.bytes`) | v2's document is the JSON (D4); BoneBurst bakes JSON |
+| Import Images… as loose pictures, New Layer, Bind to Bone | v2 works from an atlas or a PSD; `attach` binds |
+
+### Step 3 results
+
+1. **Owner's decisions, 2026-10-06** (asked once, recorded here):
+   - **Build in step 4**, in this order of need: autosave with recovery; events on the
+     timeline; copy and paste of keys and poses with multiple selection; onion skin; snapping
+     and a grid; the weight brush; the curve graph; a Shear tool with Local, Parent and World
+     axes. And the document's frame rate in Properties (small, proposed and kept).
+   - **Later** (after cutover, not blocking it): the history panel, the keyboard shortcuts sheet.
+   - **Cut, all as listed**: symbols, groups, masks and the Library; bone paths and their
+     panels; the Preview panel; the Poses panel; document size and background; the zip export
+     and export settings; binary skeletons; loose image import, New Layer, Bind to Bone.
+2. The walk: every menu and submenu of the old editor (File, Edit, View with Snap To and Onion
+   Skin Options, Modify with Attachments and Draw Order, Window, AI, Help), its panels (Library,
+   Tree, Animations, Skins, Sub Tree, Preview, Local and World Path, History, Timeline, Graph,
+   Reference, Poses) and its preferences (General, Interface, Stage, Grid & Rulers, Snapping,
+   Selection & Gizmos, Timeline & Onion, Shortcuts), seen in Playwright's browser on the
+   stickman; each item looked for in v2's `src/ui`.
 
