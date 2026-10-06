@@ -1096,13 +1096,27 @@ namespace BoneBurst.Data
             return t;
         }
 
-        // §8.12
+        // §8.12. The guards are the JSON reader's (SkeletonJsonReader.DrawOrder): each slot at most once, in slot
+        // order, inside the list, no two to one place; the algorithm runs past its arrays otherwise.
         private int[] ReadDrawOrder(int size)
         {
             int changeCount = VarInt();
             if (changeCount == 0) return null;
 
             if (changeCount > size) throw Error($"draw order changes {changeCount} of {size} items");
+
+            int[] indices = new int[changeCount], offsets = new int[changeCount];
+            for (int i = 0; i < changeCount; i++)
+            {
+                int index = indices[i] = VarInt();
+                offsets[i] = VarInt();
+                if (index < 0 || index >= size) throw Error($"draw order names slot {index} of {size}");
+
+                if (i > 0 && index <= indices[i - 1])
+                    throw Error(index == indices[i - 1]
+                        ? $"draw order moves slot {index} twice"
+                        : $"draw order lists slot {index} after a slot that follows it");
+            }
 
             int[] order = new int[size];
             for (int i = 0; i < size; i++) order[i] = -1;
@@ -1111,10 +1125,15 @@ namespace BoneBurst.Data
             int original = 0, u = 0;
             for (int i = 0; i < changeCount; i++)
             {
-                int index = VarInt();
-                while (original != index) unchanged[u++] = original++;
+                while (original != indices[i]) unchanged[u++] = original++;
 
-                order[original + VarInt()] = original++;
+                int target = original + offsets[i];
+                if (target < 0 || target >= size) throw Error($"draw order offset moves past {size} items");
+
+                if (order[target] != -1)
+                    throw Error($"draw order moves slot {indices[i]} to a place another slot takes");
+
+                order[target] = original++;
             }
 
             while (original < size) unchanged[u++] = original++;

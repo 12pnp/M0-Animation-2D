@@ -75,15 +75,24 @@ namespace BoneBurst.Data
             return root;
         }
 
+        /// <summary>
+        ///     The deepest nesting of objects and arrays <see cref="Parse" /> reads. The parser recurses once per
+        ///     level, so without a limit a hostile file overflows the stack, which kills the process (in Unity, the
+        ///     Editor) instead of throwing. A real export nests under 10; 1000 is the BoneBurst Editor's limit too.
+        /// </summary>
+        public const int MaxDepth = 1000;
+
         private struct Parser
         {
             private readonly string m_Text;
             private int m_At;
+            private int m_Depth;
 
             public Parser(string text)
             {
                 m_Text = text;
                 m_At = 0;
+                m_Depth = 0;
             }
 
             public bool AtEnd => m_At >= m_Text.Length;
@@ -121,7 +130,7 @@ namespace BoneBurst.Data
 
             private JsonNode Object()
             {
-                m_At++;
+                Enter();
                 JsonNode node = new()
                 {
                     Kind = Type.Object, Items = new List<JsonNode>(), Keys = new List<string>(),
@@ -135,6 +144,7 @@ namespace BoneBurst.Data
                     if (m_Text[m_At] == '}')
                     {
                         m_At++;
+                        m_Depth--;
                         return node;
                     }
 
@@ -162,7 +172,7 @@ namespace BoneBurst.Data
 
             private JsonNode Array()
             {
-                m_At++;
+                Enter();
                 JsonNode node = new() { Kind = Type.Array, Items = new List<JsonNode>() };
                 while (true)
                 {
@@ -172,6 +182,7 @@ namespace BoneBurst.Data
                     if (m_Text[m_At] == ']')
                     {
                         m_At++;
+                        m_Depth--;
                         return node;
                     }
 
@@ -179,6 +190,13 @@ namespace BoneBurst.Data
                     SkipSpace();
                     if (!AtEnd && m_Text[m_At] == ',') m_At++;
                 }
+            }
+
+            private void Enter()
+            {
+                if (++m_Depth > MaxDepth) throw Error($"nested deeper than {MaxDepth} levels");
+
+                m_At++;
             }
 
             private string StringToken()

@@ -1175,12 +1175,24 @@ namespace BoneBurst.Data
             return t;
         }
 
-        // §11.11
+        // §11.11. The offsets must name each slot at most once, in slot order, and move no two to one place: the
+        // algorithm (stock's) runs past its arrays otherwise, so each of those is refused, all positions first.
         private int[] DrawOrder(JsonNode offsets, int size, Func<string, int> positionOf)
         {
             if (offsets == null) return null;
 
             if (offsets.Count > size) throw Error($"draw order changes {offsets.Count} of {size} items");
+
+            int[] positions = new int[offsets.Count];
+            for (int i = 0; i < offsets.Count; i++)
+            {
+                string slot = ReqStr(offsets[i], "slot");
+                positions[i] = positionOf(slot);
+                if (i > 0 && positions[i] <= positions[i - 1])
+                    throw Error(positions[i] == positions[i - 1]
+                        ? $"draw order moves slot {slot} twice"
+                        : $"draw order lists slot {slot} after a slot that follows it");
+            }
 
             int[] order = new int[size];
             for (int i = 0; i < size; i++) order[i] = -1;
@@ -1188,11 +1200,12 @@ namespace BoneBurst.Data
             int original = 0, u = 0;
             for (int i = 0; i < offsets.Count; i++)
             {
-                JsonNode change = offsets[i];
-                int position = positionOf(ReqStr(change, "slot"));
-                while (original != position) unchanged[u++] = original++;
-                int target = original + ReqInt(change, "offset");
+                while (original != positions[i]) unchanged[u++] = original++;
+                int target = original + ReqInt(offsets[i], "offset");
                 if (target < 0 || target >= size) throw Error($"draw order offset moves past {size} items");
+                if (order[target] != -1)
+                    throw Error($"draw order moves slot {Str(offsets[i], "slot")} to a place another slot takes");
+
                 order[target] = original++;
             }
 
