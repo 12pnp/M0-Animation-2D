@@ -265,7 +265,8 @@ html .dockview-theme-light {
 .outline-search .nav button { width: 32px; height: 32px; padding: 0; display: flex; align-items: center; justify-content: center; background: var(--bb-field-bg); color: var(--bb-text-dim); border: 1px solid var(--bb-field-border); border-radius: var(--bb-radius-button); }
 .outline-search .nav button:hover:not(:disabled) { color: var(--bb-text); }
 .outline-search .nav button .icon { width: 16px; height: 16px; }
-.outline .rows { display: flex; flex-direction: column; padding: 4px 0 8px; flex: 1; min-height: 0; overflow-y: auto; }
+/* One column as wide as the widest row (never narrower than the panel), so a deep tree scrolls sideways instead of clipping. */
+.outline .rows { display: grid; grid-template-columns: minmax(max-content, 1fr); align-content: start; padding: 4px 0 8px; flex: 1; min-height: 0; overflow: auto; }
 .outline .row {
   display: flex;
   align-items: center;
@@ -609,3 +610,11 @@ dialog.open-project .op-buttons { flex: none; display: flex; justify-content: ce
 .local-path .p-row.xy .cell { width: 72px; }
 .lp-body canvas { cursor: grab; touch-action: none; }
 .lp-fit { position: absolute; top: 6px; right: 6px; z-index: 1; padding: 3px 6px; }
+
+/* Thin scrollbars everywhere (12 px); the thumb is lit as below. */
+*::-webkit-scrollbar { width: 12px; height: 12px; }
+*::-webkit-scrollbar-track, *::-webkit-scrollbar-corner { background: transparent; }
+*::-webkit-scrollbar-thumb { background: var(--line); border-radius: 6px; border: 3px solid transparent; background-clip: content-box; }
+/* Lit while the mouse is anywhere in the scrolling panel (class set by scrollbars.ts, since :hover on a scrollbar is unreliable); brighter on the thumb itself. */
+.scroll-hot::-webkit-scrollbar-thumb { background: var(--muted); background-clip: content-box; }
+*::-webkit-scrollbar-thumb:hover { background: var(--accent); background-clip: content-box; }
