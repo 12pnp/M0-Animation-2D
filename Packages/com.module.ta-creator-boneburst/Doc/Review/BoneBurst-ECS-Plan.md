@@ -1,6 +1,6 @@
 # BoneBurst ECS port: Plan
 
-**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 (CPU route, skins, tint black, Lit2D) done 2026-10-07 except the vertex-fetch route, rim light and a player build (§15); P7 (physics input, followers, idle skipping, benchmark) done 2026-10-07 except the visibility mode, the steady shortcut and the sorting question (§16).**
+**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 (CPU route, skins, tint black, Lit2D) done 2026-10-07 except the vertex-fetch route, rim light and a player build (§15); P7 (physics input, followers, idle skipping, benchmark) done 2026-10-07 except the visibility mode, the steady shortcut and the sorting question (§16). P8 (shell overhead at small counts) in progress (§17).**
 
 BoneBurst's pose, constraint, timeline and mesh code (`Module.PA.BoneBurst.Core`) is already Burst-friendly pointer code with no `UnityEngine`. The port keeps that code unchanged and replaces only the managed shell around it (`BoneBurstSystem`, `BoneBurstSkeleton`, `BoneBurstAsset`, `BoneAnimationState`, the GPU and fetch buffers) with Entities 6.7 systems, bakers and Entities Graphics. The result is a new package in `M0-25DPlatformer-ECS/Packages`.
 
@@ -401,3 +401,22 @@ Median frame time (ms, lower is better), release players, `Tests/Results~/2026-1
 *   Sorting layer and order of a skeleton (§14): still the Default layer at order 0. Entities Graphics has no field for it.
 *   A like-for-like backend comparison (IL2CPP on both) is impossible with this Editor; rerun when the ECS package can be built with IL2CPP.
 *   Instance creation cost at spawn (2000 managed `InstanceData` blocks in one frame) was not measured separately.
+
+## 17. P8 plan (2026-10-07): cut the shell overhead at small counts
+
+**Status: in progress.** §16 measured the ECS port level with the MonoBehaviour runtime at 2000 skeletons but 0.2–0.7 ms slower at 100–500, with the shell (the managed per-entity work around Core's jobs) at about 1.5 ms of 1.8 ms at 500 idle. Goal: shrink that shell without touching Core's maths.
+
+```mermaid
+flowchart LR
+    M["per-system stopwatch<br/>BoneBurstShellTimer<br/>(off = no cost)"] --> B["benchmark prints<br/>ms per system per frame"]
+    B --> T{"largest share"}
+    T --> A["fewer passes per entity<br/>and fewer API calls"]
+    T --> C["stage commands in place,<br/>not by copy"]
+    T --> H["cheaper header build"]
+    A & C & H --> AB["ABBA A/B in a release player<br/>100 · 500 · 2000 idle and switch"]
+    AB --> G["tests green<br/>(309 EditMode)"]
+```
+
+**Steps.** (1) A static timer that each system wraps its `OnUpdate` in, enabled by the benchmark after warm-up, with the per-system milliseconds written into its result row. (2) Rank the systems and change the largest first, one change at a time, keeping a change only when an alternating A/B in a release player shows it. (3) Correctness: the 309 EditMode tests, with a deliberate bug where a change touches a path no test reaches.
+
+**Gate.** An alternating (ABBA) release-player run at 100, 500 and 2000 skeletons, idle and switching, before against after, on the same machine in the same session; frame time lower at 100 and 500 and not worse at 2000; all tests green.
