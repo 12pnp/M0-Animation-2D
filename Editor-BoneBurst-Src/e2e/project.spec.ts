@@ -53,3 +53,17 @@ test("Save Project writes one .bbdata that opens as the same rig; Export Spine J
   await menuItem(page, "File", "Export Spine JSON");
   await expect.poll(() => names.slice().sort()).toEqual(["Stickman_IK.atlas.txt", "Stickman_IK.json", "Stickman_IK_tex.png"]);
 });
+
+test("New Project opens a blank rig in its own tab, clean until edited, and the open rig stays in its tab", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  await menuItem(page, "File", "New Project");
+  await expect(page.locator(".doc-tab")).toHaveCount(2);
+  await expect(page.locator(".outline .row", { hasText: "root" })).toBeVisible();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toHaveCount(0);
+  expect(await dirty(page)).toBe(false);
+  await expect(page).toHaveTitle(/^untitled/);
+});

@@ -1,6 +1,7 @@
 import { type BbFile, packBbdata } from "@/io/bbdata";
 import type { View } from "@/edit/sidecar";
 import { sidecarName } from "@/io/sidecar";
+import { recent, type RecentHandle } from "./recent";
 import { referenceFile } from "./stage/references";
 import type { ProjectFile, Session } from "./session";
 import { exportFiles } from "./unityExport";
@@ -66,6 +67,7 @@ export async function saveProject(session: Session, view: View, again = false): 
     await w.write(bytes);
     await w.close();
     session.projectFile = file;
+    void recent.add(file as RecentHandle);
     session.markSaved();
     session.generated = null;
     return file.name;

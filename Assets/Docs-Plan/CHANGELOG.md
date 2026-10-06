@@ -13,6 +13,12 @@ flowchart LR
 
 ## 2026-10-06
 
+- **BoneBurst Editor v2: New Project, Recent projects, an Open dialog, and dedicated Skins and Animations panels** (`Editor-BoneBurst-Src/`).
+  - **File ▸ New Project** opens a blank rig (a root bone, no atlas) in its own tab, clean until edited. **File ▸ Recent / name** and **Open…** use `src/ui/recent.ts`: the `.bbdata` files and folders this browser opened or saved through the File System Access pickers, kept as handles in IndexedDB (Chrome and Edge; elsewhere the lists are empty and Browse is the way in).
+  - **Open…** (⌘O, toolbar, menu) shows `src/ui/openDialog.ts` first: Files (recent, or the projects of a chosen folder), Folders (added with +, starred ones first), Filter, Browse (the browser's picker), Cancel. It is draggable by its title and resizable, 560×620 by default.
+  - **Skins** and **Animations** panels (`src/ui/panels/skinsPanel.ts`, `animationsPanel.ts`, one `listPanel.ts` base): the skins, or the setup pose and animations with their lengths; a click shows one; New, Duplicate, Rename, Delete, each one undo step. Tabbed behind Rig and Timeline by default, movable like any panel. New edit `duplicateAnimation`.
+  - **Guard**: `tests/recent.test.ts` (list rules), `tests/animations.test.ts` (duplicate), `e2e/project.spec.ts` (New Project). 678 vitest tests and `tsc` pass on the committed files alone. **Not verified**: the native pickers and the folder list (Playwright cannot drive them); the panels' New/Duplicate/Rename/Delete buttons (they use prompt dialogs) were not clicked through, and the Playwright suite was not re-run.
+
 - **BoneBurst Editor v2, E8 planned; step 1: the notes are live and name their thing** (`Editor-BoneBurst-Src/`).
   - **E8** is a new phase, "the truth up to the bake" (the owner's scope): live notes, a bone with no pose said, and the real Unity bake of v2's export. Plan: [E8-PLAN.md](../../Editor-BoneBurst-Src/docs/E8-PLAN.md); charter row added.
   - **Live**: the notes were worked out once at open and went stale as soon as the rig was edited. `Session.notes()` (`src/ui/notes.ts`) now works out the profile, the regions the atlas lacks, what the engine skips and the bones the pose shown leaves without one, again after every change (0.78 ms on mix-and-match).

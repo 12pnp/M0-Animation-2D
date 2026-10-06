@@ -373,6 +373,13 @@ export class Session {
     return this.setup.value;
   }
 
+  /** A new project: a skeleton with only a root bone and no atlas, clean until edited, saved with Save Project. */
+  newProject(): void {
+    this.replace(newSkeleton(randomHash()), false, "untitled", null, new Map(), []);
+    this.saved = this.history!.doc;
+    this.changed();
+  }
+
   /** Open a skeleton, its atlas and its pages from the given files. Throws when there is no skeleton. */
   async open(files: readonly Source[]): Promise<void> {
     // A project file holds the same files an export folder does: open those.

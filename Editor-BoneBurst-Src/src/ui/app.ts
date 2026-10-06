@@ -4,7 +4,9 @@ import { pickFiles, spineFolderProblems } from "./files";
 import { Outline } from "./panels/outline";
 import { type PreferenceValues, Preferences } from "./preferences";
 import { PreferencesDialog } from "./preferencesDialog";
+import { AnimationsPanel } from "./panels/animationsPanel";
 import { HistoryPanel } from "./panels/history";
+import { SkinsPanel } from "./panels/skinsPanel";
 import { References } from "./panels/references";
 import { droppedFiles } from "./dropFiles";
 import { fileSource, type ProjectFile, Session, type Source } from "./session";
@@ -23,10 +25,12 @@ import { DocumentTabs } from "./documentTabs";
 import { stageMenu } from "./stageMenu";
 import { TransformStrip } from "./stage/transformStrip";
 import { lookOf } from "./stage/look";
-import { DIVIDER, MenuBar } from "./menubar";
+import { DIVIDER, MenuBar, type MenuItem } from "./menubar";
 import { icon, iconButton, setIcon } from "./icons";
 import type { View } from "@/edit/sidecar";
 import { download, saveProject } from "./project";
+import { OpenDialog } from "./openDialog";
+import { folders, type Recent, recent, type RecentHandle, readRecent } from "./recent";
 import { ExportRefused, exportFiles, exportToUnity } from "./unityExport";
 import { Autosaver, clearRecovery, readRecovery, sourcesOf } from "./recovery";
 import { clipboard, copyPose, pastePoseHere } from "./clipboard";
@@ -74,7 +78,7 @@ export function mountApp(root: HTMLElement): void {
   folderInput.type = "file";
   folderInput.webkitdirectory = true;
   folderInput.hidden = true;
-  const openBtn = iconButton(button("Open…", `Open a project (.bbdata), a Spine skeleton with its atlas and images, or a Photoshop file to start a rig from (${keysOf("open")}). Drop a PSD on an open rig to bring its changes in`, () => void openNative()), "open");
+  const openBtn = iconButton(button("Open…", `Open a project (.bbdata), a Spine skeleton with its atlas and images, or a Photoshop file to start a rig from (${keysOf("open")}). Drop a PSD on an open rig to bring its changes in`, () => openDialog.open()), "open");
   const saveBtn = iconButton(button("Save", `Save the project (.bbdata): the rig, its atlas and pages, guides and references (${keysOf("save")}). Spine JSON and Unity go through File ▸ Export`, () => void save()), "save");
   // Export to Unity (E5 step 8): into the folder chosen once; Shift-click chooses another.
   const unityBtn = button("Export to Unity…", "Export to Unity…: write the skeleton, atlas and pages into your Unity folder, where the BoneBurst import rebakes them (Shift-click: choose another folder)", () => {});
@@ -189,6 +193,8 @@ export function mountApp(root: HTMLElement): void {
   const timeline = new Timeline(session);
   const references = new References(session);
   const history = new HistoryPanel(session);
+  const skinsPanel = new SkinsPanel(session);
+  const animationsPanel = new AnimationsPanel(session);
   // Ask AI (E5 step 9): the bridge's model with the editor's tools; sending connects the AI button.
   const askAi = new AskAi(new ChatClient(ai.url), ai, () => { if (!prefs.values.ai) prefs.set({ ai: true }); });
   // The activity bar: one button per built panel, pressed while the panel is open.
@@ -205,7 +211,9 @@ export function mountApp(root: HTMLElement): void {
   const menubar = new MenuBar([
     { label: "File", items: () => [
       { label: "Import Spine Folder…", run: () => folderInput.click() },
-      { label: "Open…", keys: keysOf("open"), run: () => void openNative() },
+      { label: "New Project", run: () => newProject() },
+      { label: "Open…", keys: keysOf("open"), run: () => openDialog.open() },
+      ...(recent.list.length ? [DIVIDER, ...recent.list.map((r): MenuItem => ({ label: `Recent / ${r.name}`, run: () => void openRecent(r) })), { label: "Clear Recent", run: () => void recent.clear() }, DIVIDER] : []),
       { label: "Save Project", keys: keysOf("save"), disabled: !session.doc, run: () => void save() },
       { label: "Save Project As…", disabled: !session.doc, run: () => void save(true) },
       { label: "Close File", disabled: !session.doc, run: () => tabs.closeCurrent() },
@@ -274,6 +282,8 @@ export function mountApp(root: HTMLElement): void {
     ["reference", { element: references.element }],
     ["ai", { element: askAi.element }],
     ["history", { element: history.element }],
+    ["skins", { element: skinsPanel.element }],
+    ["animations", { element: animationsPanel.element }],
   ]), (w) => w.addEventListener("keydown", onKey));
   const activityBtns = workspace.built.map((id) => {
     const b = iconButton(button(PANEL_TITLES[id], `${PANEL_TITLES[id]}: show or hide the panel`, () => workspace.toggle(id)), PANEL_ICONS[id], false);
@@ -348,6 +358,8 @@ export function mountApp(root: HTMLElement): void {
   inspector.onStatus = say;
   inspector.onBoneSize = (n) => prefs.set({ boneSize: n });
   outline.onStatus = say;
+  skinsPanel.onStatus = say;
+  animationsPanel.onStatus = say;
   references.onStatus = say;
   references.centre = () => [stage.camera.x, stage.camera.y];
 
@@ -422,6 +434,25 @@ export function mountApp(root: HTMLElement): void {
     }
   }
 
+  void recent.load();
+  void folders.load();
+  /** Open… shows this helper first: recent projects and folders; Browse goes on to the browser's picker. */
+  const openDialog = new OpenDialog({
+    browse: () => void openNative(),
+    openFile: async (file, handle) => {
+      await open([fileSource(file)], false, handle);
+      if (handle && session.projectFile === handle) void recent.add(handle as RecentHandle);
+    },
+  });
+
+  /** File ▸ New Project: a blank skeleton in its own tab (the shown one is set aside, as Open does). */
+  function newProject(): void {
+    tabs.park();
+    session.newProject();
+    stage.opened();
+    say("New project. Add bones, or drop an atlas with its images to build from; Save Project keeps it.");
+  }
+
   /** Open… with the browser's file picker where it has one, so a project it opens is saved back to the same file. */
   async function openNative(): Promise<void> {
     const pick = (window as unknown as { showOpenFilePicker?: (o: { multiple: boolean }) => Promise<(ProjectFile & { getFile(): Promise<File> })[]> }).showOpenFilePicker;
@@ -431,6 +462,20 @@ export function mountApp(root: HTMLElement): void {
     const files = await Promise.all(handles.map((h) => h.getFile()));
     const project = handles.length === 1 && /\.bbdata$/i.test(files[0]!.name) ? handles[0]! : null;
     await open(files.map(fileSource), false, project);
+    if (project && session.projectFile === project) void recent.add(project as RecentHandle);
+  }
+
+  /** File ▸ Recent / name: the project file again, from its kept handle. */
+  async function openRecent(r: Recent): Promise<void> {
+    try {
+      const file = await readRecent(r);
+      await open([fileSource(file)], false, r.handle);
+      if (session.projectFile === r.handle) void recent.add(r.handle);
+    } catch (err) {
+      // Moved or deleted: dropped from the list.
+      if (err instanceof DOMException && err.name === "NotFoundError") { void recent.remove(r); say(`${r.name} is no longer where it was; removed from Recent.`); return; }
+      say(err instanceof Error ? err.message : String(err));
+    }
   }
 
   async function toUnity(choose: boolean): Promise<void> {
@@ -578,7 +623,7 @@ export function mountApp(root: HTMLElement): void {
   // Every shortcut is a row of `SHORTCUTS` (E7 step 2); a handler returns false when it does not
   // apply here, and the next matching row is tried.
   const shortcuts: Record<ShortcutId, () => boolean | void> = {
-    open: () => void openNative(),
+    open: () => openDialog.open(),
     save: () => void save(),
     preferences: () => prefsDialog.open(),
     undo: () => undoBtn.click(),

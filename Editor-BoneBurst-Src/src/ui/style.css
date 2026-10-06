@@ -551,3 +551,30 @@ dialog.shortcuts .actions { display: flex; justify-content: flex-end; }
 /* A note about a thing selects it (E8 step 1). */
 .issue-list li > button { all: unset; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 2px; }
 .issue-list li > button:hover { color: var(--accent); }
+
+/* The Open dialog: recent projects and folders before the browser's picker. */
+dialog.open-project { position: fixed; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--text); padding: 0; width: 560px; height: 620px; max-width: calc(100vw - 20px); max-height: calc(100vh - 20px); min-width: 380px; min-height: 320px; resize: both; font: 13px var(--font-ui); overflow: hidden; }
+dialog.open-project[open] { display: flex; flex-direction: column; }
+dialog.open-project::backdrop { background: rgb(0 0 0 / 0.35); }
+dialog.open-project .op-title { flex: none; cursor: grab; user-select: none; touch-action: none; background: var(--panel); border-bottom: 1px solid var(--line); }
+dialog.open-project .op-title span { display: inline-block; padding: 6px 34px 6px 14px; background: var(--accent); color: var(--accent-text); font-size: 14px; font-weight: 600; clip-path: polygon(0 0, 100% 0, calc(100% - 18px) 100%, 0 100%); }
+dialog.open-project .op-title:active { cursor: grabbing; }
+dialog.open-project .op-columns { display: flex; flex: 1; min-height: 0; gap: 12px; padding: 10px 12px 0; }
+dialog.open-project .op-col { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+dialog.open-project h3 { display: flex; align-items: center; justify-content: space-between; margin: 0 0 6px; font-size: 14px; font-weight: 500; }
+dialog.open-project .op-add { padding: 0 8px; line-height: 20px; }
+dialog.open-project .op-list { flex: 1; min-height: 0; overflow-y: auto; background: var(--panel); border-radius: 6px; padding: 4px; }
+dialog.open-project .op-row { display: flex; align-items: center; width: 100%; box-sizing: border-box; padding: 0; border: 0; border-radius: 4px; background: none; color: inherit; text-align: left; font: inherit; }
+dialog.open-project .op-row:hover { background: var(--hover); }
+dialog.open-project .op-row[aria-current="true"] { background: var(--accent); color: var(--accent-text); }
+dialog.open-project .op-row > button:first-child, dialog.open-project button.op-row { flex: 1; min-width: 0; padding: 5px 8px; border: 0; background: none; color: inherit; font: inherit; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+dialog.open-project .op-star { border: 0; background: none; color: inherit; cursor: pointer; padding: 2px 6px; opacity: 0.7; }
+dialog.open-project .op-star:hover { opacity: 1; }
+dialog.open-project .op-note { flex: none; margin: 6px 12px 0; min-height: 16px; color: var(--muted); font-size: 12px; }
+dialog.open-project .op-filter { flex: none; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 8px 12px; }
+dialog.open-project .op-filter input { width: 200px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; font: inherit; }
+dialog.open-project .op-buttons { flex: none; display: flex; justify-content: center; gap: 8px; padding: 8px 12px 12px; border-top: 1px solid var(--line); }
+
+/* The Skins and Animations panels: a button row over a list that borrows History's rows. */
+.list-bar { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 6px; }
+.list-bar button:disabled { opacity: 0.5; }

@@ -38,3 +38,14 @@ export function renameAnimation(from: string, to: string): Edit<Skeleton> {
     };
   };
 }
+
+/** Add a copy of an animation, after the others, under a new name. */
+export function duplicateAnimation(from: string, to: string): Edit<Skeleton> {
+  return (s) => {
+    const a = s.animations?.find((x) => x.name === from);
+    if (!a) throw new EditRefused(`There is no animation "${from}".`);
+    if (!to.trim()) throw new EditRefused("An animation needs a name.");
+    if (s.animations!.some((x) => x.name === to)) throw new EditRefused(`There is already an animation "${to}".`);
+    return { ...s, animations: [...s.animations!, { ...a, name: to, extra: new Map(a.extra) }] };
+  };
+}
