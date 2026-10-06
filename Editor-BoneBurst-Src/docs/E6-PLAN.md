@@ -5,7 +5,7 @@ all 17 corpus rigs back exactly; the old editor changes every one, and poses one
 Step 2 (edit-script parity) done: both scripts agree once each known difference is taken out
 (0.007 and 0 px); `set_keys`' named eases now are version 1's curves. Step 3 (the gap list) done: walked in the old editor, decided by the owner. Step 4 (the gaps
 chosen, built in v2) in progress: 4a (autosave and recovery) done; 4b (events on the
-timeline) done; 4c (copy and paste, multiple selection) done; 4d (onion skin) done; 4e (snapping and a grid) done; 4f (the weight brush) done; 4g (the curve graph) next. 4h (the axes) moved to the other
+timeline) done; 4c (copy and paste, multiple selection) done; 4d (onion skin) done; 4e (snapping and a grid) done; 4f (the weight brush) done; 4g (the curve graph) done; 4i (the document's frame rate) next, the last of step 4. 4h (the axes) moved to the other
 session (its owner's request; the Shear tool was already there).
 
 E6 makes v2 the editor people use. The old editor (`../../Animation-BoneBurst-Src/`, AGPL, the
@@ -563,4 +563,60 @@ flowchart LR
    Four planted faults fail them (the press not painting; Alt ignored; a stroke not one undo step;
    a lone bone taken to 0); the last first passed, as the test's case renormalised to the same
    weights, until the test took the bone to 0.
+
+### 4g — the curve graph
+
+```mermaid
+flowchart LR
+    BAR["Timeline ▸ Graph"] --> LISTS["the selected keys' timelines,<br/>else the selected bone's"]
+    LISTS --> SEG["graph.ts: each channel's intervals<br/>(linear · stepped · bezier) and handles"]
+    SEG --> DRAW["drawn over the frames,<br/>values fitted to the height"]
+    DRAW --> EDIT["drag a handle: setChannelCurve<br/>drag a key: its value (setKey) and frame (moveKeys)"]
+```
+
+#### Decisions
+
+- **Where**: a **Graph** toggle in the timeline's bar; on, the track draws curves instead of key
+  rows, over the same frames (scrub, zoom and the playhead as before). The labels list the
+  channels shown, each with its colour: the timelines of the selected keys, or with none
+  selected, every timeline of the selected bone (or constraint row's owner).
+- **What is drawn**: each channel's value over time, as the file stores it (offsets from the setup
+  pose for bones), linear, stepped or bezier exactly as Spine interpolates them; keys as points;
+  each interval's two handles (its bezier's, or for a straight interval the points at its
+  thirds, to grab). Values are fitted to the height with a margin; the fit holds still during a
+  drag.
+- **Editing**: dragging a handle sets that channel's curve on that interval (`setChannelCurve`,
+  new in `edit/keys.ts`: a straight interval becomes a bezier, the key's other channels keep their
+  shapes; handle times stay within the interval); dragging a key changes its value (the channel's
+  field, by `setKey`) and, by whole frames, its time (`moveKeys`, every channel with it). One undo
+  step per drag. Colour channels (slots) show their curves and take handle drags; their values
+  are set in the inspector.
+
+#### Steps
+
+1. `edit/keys.ts` `setChannelCurve`; `ui/timeline/graph.ts` (the intervals, handles, the fit, the
+   field a channel writes; pure); the timeline's graph mode.
+2. Tests: the intervals and handles; `setChannelCurve` (a straight interval made a curve, the
+   other channels kept, handles clamped); a browser test (a handle dragged changes the curve and
+   the pose between the keys; a key dragged up changes its value; one undo each).
+
+#### 4g results
+
+1. `src/ui/timeline/graph.ts` (`channelsOf`, `intervals`, `fitValues`, `valueY`/`yValue`,
+   `channelField`, `channelId`); `setChannelCurve` in `src/edit/keys.ts`; the timeline's **Graph**
+   toggle: the labels list the channels with their colours, the track draws each channel's
+   intervals (straight, stepped, bezier) and handles over the frames, keys as squares; a handle
+   dragged reshapes its interval (a straight one becomes a curve), a key dragged changes its value
+   and, by whole frames, its time; one undo step per drag; the value range held still while
+   dragging.
+2. **Found while testing**: the graph first fitted itself to the track's full height (as tall as
+   the key rows), drawing below the visible timeline; it now uses the body's visible height.
+3. Tests: `tests/graph.test.ts` (3: channels, labels, intervals and handles; the fit; the curve
+   edit with its clamp and the other channels kept); `e2e/graph.spec.ts` (the stickman's hips in
+   `run`: a straight interval's handle dragged up becomes a curve with that handle higher, one
+   undo; a key dragged up takes a larger value on its frame, one undo). Four planted faults fail
+   them (the handle not written; the press not reaching the graph; a key's value not written;
+   stepped intervals not drawn as steps); the first passed the browser test until it checked
+   where the handle went, not only that a curve exists.
+4. Seen: the hips' translate y bouncing, rotate and translate x flat, with the playhead.
 

@@ -3,10 +3,11 @@ import { BONE_PROPERTIES, keyBone } from "@/edit/boneKeys";
 import { PRESETS, type Shape } from "@/edit/curves";
 import { type Edit, EditRefused } from "@/edit/history";
 import { keyEvent } from "@/edit/events";
-import { deleteKeys, type KeyRef, moveKeys, setCurve } from "@/edit/keys";
+import { deleteKeys, type KeyRef, moveKeys, sameTime, setChannelCurve, setCurve, setKey } from "@/edit/keys";
 import { copyKeys, pasteKeys } from "@/edit/paste";
 import type { Skeleton } from "@/model/skeleton";
-import { animationDuration, frameTime, timeFrame } from "@/model/timelines";
+import { animationDuration, channelValues, frameTime, keyLists, keyTime, pathId, timeFrame } from "@/model/timelines";
+import { type Channel, channelField, channelId, channelsOf, fitValues, intervals, valueY, yValue } from "./graph";
 import { CONSTRAINT_ICONS, icon, iconButton, type IconName, setIcon } from "../icons";
 import { clipboard } from "../clipboard";
 import type { Session } from "../session";
@@ -56,6 +57,15 @@ export class Timeline {
   private readonly expanded = new Set<string>();
   private readonly selected = new Map<string, KeyRef>();
   private drag: Drag | null = null;
+  /** The curve graph (E6 step 4g): on, the track draws the chosen channels' curves. */
+  private graph = false;
+  private readonly graphBtn: HTMLButtonElement;
+  /** The value range, held still while a curve is dragged. */
+  private graphFit: { min: number; max: number } | null = null;
+  private graphDrag:
+    | { kind: "handle"; id: string; at: number; which: 0 | 1 }
+    | { kind: "key"; id: string; time: number; from: number; applied: number }
+    | null = null;
   private queued = false;
   private labelSig = "";
 
@@ -83,7 +93,14 @@ export class Timeline {
       b.setAttribute("aria-label", c.label);
       return iconButton(b, c.icon, false);
     });
-    bar.append(this.select, newBtn, ...this.animButtons, sep(), startBtn, this.playBtn, this.loopBtn, this.frameOut, sep(), this.keyBtn, sep(), ...this.curveButtons);
+    this.graphBtn = button("Graph", "Show the curves of the selected keys' timelines, or of the selected bone: drag keys and handles", () => {
+      this.graph = !this.graph;
+      this.graphBtn.setAttribute("aria-pressed", String(this.graph));
+      this.labelSig = "";
+      this.update();
+    });
+    this.graphBtn.setAttribute("aria-pressed", "false");
+    bar.append(this.select, newBtn, ...this.animButtons, sep(), startBtn, this.playBtn, this.loopBtn, this.frameOut, sep(), this.keyBtn, sep(), ...this.curveButtons, sep(), this.graphBtn);
 
     this.body = document.createElement("div");
     this.body.className = "timeline-body";
@@ -237,13 +254,33 @@ export class Timeline {
     const live = new Set(this.rows.flatMap((r) => marks(r, s.fps).flatMap((m) => m.refs.map((x) => refId(x, s.fps)))));
     for (const id of [...this.selected.keys()]) if (!live.has(id)) this.selected.delete(id);
     // The labels are DOM: rebuilt only when the rows or the selected bone change, not every frame.
-    const sig = `${a?.name}|${s.selectedBone}|${s.selected?.kind === "event" ? s.selected.name : ""}|${!!doc}|${this.rows.map((r) => `${r.id}:${r.expandable}:${r.expanded}`).join(",")}`;
+    const sig = `${this.graph ? `graph:${this.graphChannels().map(channelId).join(",")}` : ""}|${a?.name}|${s.selectedBone}|${s.selected?.kind === "event" ? s.selected.name : ""}|${!!doc}|${this.rows.map((r) => `${r.id}:${r.expandable}:${r.expanded}`).join(",")}`;
     if (sig !== this.labelSig) { this.labelSig = sig; this.renderLabels(); }
     this.redraw();
   }
 
   private renderLabels(): void {
     const s = this.session;
+    if (this.graph && s.animation) {
+      const chs = this.graphChannels();
+      const head = document.createElement("div");
+      head.className = "ruler-gap";
+      const rows = chs.map((ch, i) => {
+        const el = document.createElement("div");
+        el.className = "row depth0 channel";
+        const swatch = document.createElement("span");
+        swatch.className = "swatch";
+        // Inline: a swatch the size of the text's x-height, beside the label.
+        Object.assign(swatch.style, { display: "inline-block", width: "10px", height: "10px", borderRadius: "2px", marginRight: "6px", flex: "none", background: CHANNEL_COLOURS[i % CHANNEL_COLOURS.length]! });
+        const name = document.createElement("span");
+        name.textContent = ch.label;
+        el.append(swatch, name);
+        return el;
+      });
+      if (!rows.length) rows.push(Object.assign(document.createElement("p"), { className: "empty", textContent: "Select keys, or a bone with keys, to see their curves." }));
+      this.labels.replaceChildren(head, ...rows);
+      return;
+    }
     if (!s.animation) {
       this.labels.replaceChildren(Object.assign(document.createElement("p"), {
         className: "empty",
@@ -291,7 +328,8 @@ export class Timeline {
     const c = this.canvas, parent = c.parentElement!;
     const view = this.element.ownerDocument.defaultView ?? window;
     const dpr = view.devicePixelRatio || 1;
-    const width = Math.max(1, parent.clientWidth), height = Math.max(parent.clientHeight, RULER + this.rows.length * ROW);
+    // The graph fills what is in view; the rows run as long as they need.
+    const width = Math.max(1, parent.clientWidth), height = this.graph ? this.graphHeight() : Math.max(parent.clientHeight, RULER + this.rows.length * ROW);
     if (c.width !== Math.round(width * dpr) || c.height !== Math.round(height * dpr)) {
       c.width = Math.round(width * dpr);
       c.height = Math.round(height * dpr);
@@ -306,8 +344,8 @@ export class Timeline {
     const s = this.session, a = s.animation;
     if (!a) return;
     const v = this.view, fps = s.fps, end = timeFrame(animationDuration(a), fps);
-    // Rows, alternating.
-    this.rows.forEach((_, i) => {
+    // Rows, alternating (not under the graph).
+    if (!this.graph) this.rows.forEach((_, i) => {
       if (i % 2) { g.fillStyle = col("--hover"); g.fillRect(0, RULER + i * ROW, width, ROW); }
     });
     // Past the end, dimmed.
@@ -334,6 +372,7 @@ export class Timeline {
         g.globalAlpha = 1;
       }
     }
+    if (this.graph) { this.paintGraph(g, width, height, col); return; }
     // Keys.
     const accent = col("--accent"), text = col("--text");
     this.rows.forEach((r, i) => {
@@ -379,6 +418,7 @@ export class Timeline {
     if (!a || e.button !== 0) return;
     const [x, y] = this.local(e);
     this.canvas.setPointerCapture(e.pointerId);
+    if (this.graph && y >= RULER && this.graphDown(x, y)) return;
     const i = rowAt(y, this.rows.length);
     const mark: Mark | null = i >= 0 ? markAt(this.view, marks(this.rows[i]!, s.fps), x) : null;
     if (!mark) {
@@ -406,6 +446,7 @@ export class Timeline {
 
   private move(e: PointerEvent): void {
     const d = this.drag, s = this.session, a = s.animation;
+    if (this.graphDrag && a) { const [gx, gy] = this.local(e); this.graphMove(gx, gy); return; }
     if (!d || !a) return;
     const [x, y] = this.local(e);
     if (d.kind === "scrub") { s.seek(xFrame(this.view, x)); return; }
@@ -433,6 +474,7 @@ export class Timeline {
 
   private up(e: PointerEvent): void {
     if (this.canvas.hasPointerCapture(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId);
+    if (this.graphDrag) { this.graphDrag = null; this.graphFit = null; this.session.history?.end(); this.session.changed(); return; }
     const d = this.drag;
     if (d?.kind === "keys") { this.session.history?.end(); this.session.changed(); }
     // A click on empty track: the playhead goes there; without Shift the selection is cleared.
@@ -457,6 +499,130 @@ export class Timeline {
     this.session.changed();
   }
 
+  /** The channels the graph shows: the selected keys' timelines, else the selected bone's or constraint's. */
+  private graphChannels(): Channel[] {
+    const s = this.session, a = s.animation;
+    if (!a) return [];
+    const lists = keyLists(a), sel = s.selected;
+    const picked = new Set([...this.selected.values()].map((r) => pathId(r.path)));
+    const chosen = picked.size ? lists.filter((l) => picked.has(pathId(l.path)))
+      : sel?.kind === "bone" ? lists.filter((l) => l.path.section === "bones" && l.path.owner === sel.name)
+        : sel?.kind === "constraint" ? lists.filter((l) => l.path.section === sel.type && "owner" in l.path && l.path.owner === sel.name) : [];
+    return channelsOf(chosen);
+  }
+
+  /** The graph's height: the timeline body as seen (it does not scroll in graph mode). */
+  private graphHeight(): number {
+    if (this.body.scrollTop) this.body.scrollTop = 0;
+    return Math.max(RULER + 60, this.body.clientHeight);
+  }
+
+  /** The band the curves are drawn in. */
+  private graphBand(height: number): [number, number] { return [RULER + 10, Math.max(RULER + 40, height - 10)]; }
+
+  private paintGraph(g: CanvasRenderingContext2D, width: number, height: number, col: (n: string) => string): void {
+    const fps = this.session.fps, v = this.view, chs = this.graphChannels(), [top, bottom] = this.graphBand(height);
+    const fit = this.graphFit ?? fitValues(chs), y = (val: number) => valueY(fit, top, bottom, val), x = (t: number) => frameX(v, t * fps);
+    // Zero, when it is in view.
+    if (fit.min < 0 && fit.max > 0) { g.strokeStyle = col("--line"); g.beginPath(); g.moveTo(0, Math.round(y(0)) + 0.5); g.lineTo(width, Math.round(y(0)) + 0.5); g.stroke(); }
+    chs.forEach((ch, n) => {
+      const colour = CHANNEL_COLOURS[n % CHANNEL_COLOURS.length]!;
+      const ivs = intervals(ch);
+      g.strokeStyle = colour;
+      g.lineWidth = 1.5;
+      g.beginPath();
+      if (!ivs.length && ch.keys.length) { const k = ch.keys[0]!, kv = channelValues(ch.path, k, "start")[ch.c]!; g.moveTo(x(keyTime(k)), y(kv)); g.lineTo(width, y(kv)); }
+      for (const iv of ivs) {
+        g.moveTo(x(iv.t0), y(iv.v0));
+        if (iv.kind === "stepped") { g.lineTo(x(iv.t1), y(iv.v0)); g.lineTo(x(iv.t1), y(iv.v1)); }
+        else if (iv.kind === "bezier") g.bezierCurveTo(x(iv.h[0]), y(iv.h[1]), x(iv.h[2]), y(iv.h[3]), x(iv.t1), y(iv.v1));
+        else g.lineTo(x(iv.t1), y(iv.v1));
+      }
+      g.stroke();
+      // Handles: thin lines from the keys, small rings; a straight interval's faint, at its thirds.
+      g.lineWidth = 1;
+      for (const iv of ivs) {
+        if (iv.kind === "stepped") continue;
+        g.globalAlpha = iv.kind === "bezier" ? 0.9 : 0.4;
+        g.beginPath(); g.moveTo(x(iv.t0), y(iv.v0)); g.lineTo(x(iv.h[0]), y(iv.h[1])); g.moveTo(x(iv.t1), y(iv.v1)); g.lineTo(x(iv.h[2]), y(iv.h[3])); g.stroke();
+        for (const [ht, hv] of [[iv.h[0], iv.h[1]], [iv.h[2], iv.h[3]]] as const) { g.beginPath(); g.arc(x(ht), y(hv), 3, 0, Math.PI * 2); g.stroke(); }
+        g.globalAlpha = 1;
+      }
+      g.fillStyle = colour;
+      for (const k of ch.keys) {
+        const kx = x(keyTime(k)), ky = y(channelValues(ch.path, k, "start")[ch.c]!);
+        g.beginPath(); g.rect(kx - 3.5, ky - 3.5, 7, 7); g.fill();
+      }
+    });
+    // Playhead.
+    const px = Math.round(frameX(v, this.session.time * fps)) + 0.5;
+    g.strokeStyle = col("--playhead");
+    g.lineWidth = 1.5;
+    g.beginPath(); g.moveTo(px, 0); g.lineTo(px, height); g.stroke();
+    g.lineWidth = 1;
+  }
+
+  /** A press on the graph: on a handle or a key, a drag begins (one undo step); false when on neither. */
+  private graphDown(px: number, py: number): boolean {
+    const s = this.session, fps = s.fps, chs = this.graphChannels(), height = this.graphHeight();
+    const [top, bottom] = this.graphBand(height), fit = fitValues(chs);
+    const x = (t: number) => frameX(this.view, t * fps), y = (v: number) => valueY(fit, top, bottom, v), near = (a: number, b: number) => Math.hypot(a - px, b - py) <= 6;
+    for (const ch of chs) {
+      for (const iv of intervals(ch)) {
+        if (iv.kind === "stepped") continue;
+        for (const which of [0, 1] as const) {
+          if (!near(x(iv.h[which * 2]!), y(iv.h[which * 2 + 1]!))) continue;
+          this.graphFit = fit;
+          this.graphDrag = { kind: "handle", id: channelId(ch), at: iv.t0, which };
+          s.pause();
+          s.history?.begin(`Shape ${ch.label} after frame ${timeFrame(iv.t0, fps)}`);
+          return true;
+        }
+      }
+    }
+    for (const ch of chs) {
+      for (const k of ch.keys) {
+        if (!near(x(keyTime(k)), y(channelValues(ch.path, k, "start")[ch.c]!))) continue;
+        this.graphFit = fit;
+        this.graphDrag = { kind: "key", id: channelId(ch), time: keyTime(k), from: timeFrame(keyTime(k), fps), applied: 0 };
+        s.pause();
+        s.history?.begin(`Move ${ch.label} key at frame ${timeFrame(keyTime(k), fps)}`);
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /** One step of a graph drag: a handle reshapes its interval; a key takes the value under the pointer and moves by whole frames. */
+  private graphMove(px: number, py: number): void {
+    const d = this.graphDrag!, s = this.session, a = s.animation!, fps = s.fps, h = s.history!;
+    const ch = this.graphChannels().find((c) => channelId(c) === d.id);
+    if (!ch || !this.graphFit) return;
+    const [top, bottom] = this.graphBand(this.graphHeight());
+    const value = yValue(this.graphFit, top, bottom, py), time = xFrame(this.view, px) / fps;
+    try {
+      if (d.kind === "handle") {
+        const iv = intervals(ch).find((i) => sameTime(i.t0, d.at));
+        if (!iv) return;
+        const hs: [number, number, number, number] = d.which === 0 ? [time, value, iv.h[2], iv.h[3]] : [iv.h[0], iv.h[1], time, value];
+        h.apply("step", setChannelCurve(a.name, { path: ch.path, time: d.at }, ch.c, hs));
+      } else {
+        const field = channelField(ch.path, ch.c);
+        if (field) h.apply("step", setKey(a.name, ch.path, d.time, { [field]: Math.round(value * 1000) / 1000 }));
+        const by = Math.round(xFrame(this.view, px)) - d.from;
+        if (by !== d.applied) {
+          h.apply("step", moveKeys(a.name, [{ path: ch.path, time: d.time }], by - d.applied, fps));
+          d.applied = by;
+          d.time = frameTime(d.from + by, fps);
+        }
+      }
+    } catch (err) {
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+    }
+    s.changed();
+  }
+
   private wheel(e: WheelEvent): void {
     const [x] = this.local(e);
     if (e.ctrlKey || e.metaKey) {
@@ -471,6 +637,9 @@ export class Timeline {
     this.redraw();
   }
 }
+
+/** The graph's channel colours, in order. */
+const CHANNEL_COLOURS = ["#e5484d", "#30a46c", "#3e63dd", "#f76b15", "#8e4ec6", "#12a594", "#d6409f"];
 
 const TIMELINE_ICONS: Readonly<Record<string, IconName>> = {
   translate: "keyTranslate", translatex: "keyTranslate", translatey: "keyTranslate",

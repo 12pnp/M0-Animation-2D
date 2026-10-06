@@ -1,6 +1,6 @@
 import type { Animation, Key, KeyList, Skeleton, TimelineGroup } from "@/model/skeleton";
 import {
-  channelCount, channelValues, frameTime, keyTime, pathId, timeFrame, type TimelinePath,
+  channelCount, channelValues, frameTime, keyTime, pathId, shortFloat, timeFrame, type TimelinePath,
 } from "@/model/timelines";
 import { remapCurve, type Segment, type Shape, shapeCurve } from "./curves";
 import { EditRefused, type Edit } from "./history";
@@ -148,6 +148,28 @@ export function setKeyCurve(animation: string, ref: KeyRef, curve: "stepped" | r
       }
       next = { ...rest, curve: out } as Key;
     }
+    return { keys: keys.map((x, j) => (j === i ? next : x)), origin: keys.map((_, j) => j), settled: true };
+  }));
+}
+
+/**
+ * Set channel `c`'s bezier on the interval from the key at `ref` (the curve graph, E6 step 4g):
+ * handles [time1, value1, time2, value2], absolute, their times kept within the interval. A
+ * straight or stepped interval becomes a curve, its other channels straight.
+ */
+export function setChannelCurve(animation: string, ref: KeyRef, c: number, handles: readonly [number, number, number, number]): Edit<Skeleton> {
+  return onAnimation(animation, (a) => withList(a, ref.path, (keys) => {
+    const i = keys.findIndex((k) => sameTime(keyTime(k), ref.time));
+    if (i < 0) throw new EditRefused(`There is no key at ${ref.time}s on ${pathId(ref.path)}.`);
+    const k = keys[i]!, after = keys[i + 1], n = channelCount(ref.path);
+    if (!after) throw new EditRefused("The last key has no interval after it to shape.");
+    if (!(c >= 0 && c < n)) throw new EditRefused(`${pathId(ref.path)} has no channel ${c}.`);
+    const seg = segment(ref.path, k, after);
+    const base = Array.isArray(k.curve) && k.curve.length === n * 4 ? [...k.curve]
+      : Array.from({ length: n }, (_, j) => shapeCurve(LINEAR, { t0: seg.t0, t1: seg.t1, v0: [seg.v0[j]!], v1: [seg.v1[j]!] })).flat();
+    const clamp = (t: number) => Math.min(seg.t1, Math.max(seg.t0, t));
+    base.splice(c * 4, 4, shortFloat(clamp(handles[0])), shortFloat(handles[1]), shortFloat(clamp(handles[2])), shortFloat(handles[3]));
+    const next = { ...k, curve: base } as Key;
     return { keys: keys.map((x, j) => (j === i ? next : x)), origin: keys.map((_, j) => j), settled: true };
   }));
 }
