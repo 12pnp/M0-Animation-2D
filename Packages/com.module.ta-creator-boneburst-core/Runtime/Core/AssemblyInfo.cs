@@ -1,6 +1,7 @@
 using System.Runtime.CompilerServices;
 
 [assembly: InternalsVisibleTo("Module.PB.BoneBurst.Unity")]
+[assembly: InternalsVisibleTo("Module.PB.BoneBurst.Ecs")]
 [assembly: InternalsVisibleTo("Module.TA.BoneBurst.Tests.Editor")]
 [assembly: InternalsVisibleTo("Module.TA.BoneBurst.Tests.SpineCsharp")]
 [assembly: InternalsVisibleTo("Module.TA.BoneBurst.Tests")]

@@ -1,6 +1,6 @@
 # BoneBurst ECS port: Plan
 
-**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 onward not started.**
+**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) in progress: its GPU data path is done, see §13; render entities, shader and the visual checks are not. P6 onward not started.**
 
 BoneBurst's pose, constraint, timeline and mesh code (`Module.PA.BoneBurst.Core`) is already Burst-friendly pointer code with no `UnityEngine`. The port keeps that code unchanged and replaces only the managed shell around it (`BoneBurstSystem`, `BoneBurstSkeleton`, `BoneBurstAsset`, `BoneAnimationState`, the GPU and fetch buffers) with Entities 6.7 systems, bakers and Entities Graphics. The result is a new package in `M0-25DPlatformer-ECS/Packages`.
 
@@ -288,3 +288,27 @@ Built in `M0-25DPlatformer-ECS/Packages/com.module.ta-creator-boneburst-ecs/` (c
 **Left out on purpose:** the managed `TryAdvanceSteady` shortcut (a lone track-0 entry at alpha 1 becomes one Fast command, a perf optimisation with the same output); P7 measures first. Skipping idle instances (no entries, no physics) is also P7. The port has no Burst compile step yet: the systems run it on the main thread, as the MonoBehaviour front does with the managed class.
 
 **Next:** P5, the Entities Graphics route: the shared pose buffer, a DOTS-instanced shader derived from the BoneBurst ones, bounds, and the batching and sorting checks S0 left open.
+
+## 13. P5 progress (2026-10-07): the GPU data path
+
+P5 is split in two because the render side needs a shader, Entities Graphics registration and a visual check. **Step 1, the data path, is done:**
+
+*   `BoneBurstGpuBuffers` (per store): the shared pose records and the per-asset vertex influences as ranges of one array each, with a first-fit `RangeAllocator` (moved into Core, `Core/Gpu/RangeAllocator.cs`, so both runtimes share it) and uploads of the touched span to two GraphicsBuffers, `_BoneBurstEcsPose` and `_BoneBurstEcsInfluences` (own names, so the MonoBehaviour runtime's shaders cannot collide in a project that has both).
+*   `BoneBurstGpuRecordJob` (classify, write the pose record, refresh bounds of a reused mesh) and `BoneBurstGpuBuildJob` (the static mesh: local positions, and per vertex the influence start, count, bone and slot record) over Core's `GpuSkin`, both Burst strict-float. Core got `InternalsVisibleTo("Module.PB.BoneBurst.Ecs")` for the instance's GPU fields.
+*   `BoneBurstGpuSystem` (after the animation systems): records for every GPU instance, builds for those classified `NeedsBuild`, and **a cache by topology**: the build's topology signature (slot order, attachments, sequence frames, z spacing, tint black) keys a `BoneBurstGpuMesh`, so instances of one asset with one topology use one `Mesh` (the colour and pose come from the pose buffer, nothing in the mesh is per instance). A skeleton marked `BoneBurstGpuSkinning` gets its range at creation and gives it back when its entity is destroyed.
+*   The store's header now carries the colour space and the asset's premultiplied-alpha flag the way the MonoBehaviour front sets them.
+
+| Gate | Result |
+|---|---|
+| Per frame over 24 fixtures, 36 frames of the first animation: mesh classification equals `ManagedPose.GpuFrame`; pose record equals within 1e-4; bounds equal within 1e-4; when a mesh is built, its vertices (position, uv, colour bytes), influence data and indices equal the reference | PASS (frames where the reference needs the CPU are skipped and counted) |
+| Two instances with different animations write their own records into their own ranges | PASS |
+| Three instances of one topology: three builds classified, one new mesh, reused afterwards; two skins, two meshes; a destroyed entity's pose range is reused first | PASS |
+| 25D `Module.TA.BoneBurstEcs.Tests.Editor` | 229 of 229 |
+| Deliberate bugs: hash constant with topology always "same" failed 6; records written at offset 0 failed 1. Two earlier attempts passed everything and were discarded as the test's fault, not the code's (a hash-only change never reaches the comparison; one instance always starts at offset 0): the two-instance test above was added so the second mutation is caught | PASS |
+| M0 after the `RangeAllocator` move and the new `InternalsVisibleTo`: parity harness 215/215, 0 values not bit-exact; tier check clean; Editor compile clean; `Module.TA.BoneBurst.Tests.Editor` 210/212 (same single failure as §9); PlayMode 37/37 | PASS |
+
+**Found:** the managed reference defaults to linear colour space; a header built without it differs in the colour bytes by a step or more (one fixture by 14%). Every header builder must set `LinearColorSpace` from the project, which the store now does.
+
+**Limits kept for now:** a GPU instance the classifier sends to the CPU (deform, clipping) gets no mesh and no draw until P6; the pose buffer is uploaded once per frame by the system, not by the render step.
+
+**Step 2, still to do:** per instance and submesh a render entity (one `MaterialMeshInfo` draws one mesh, material and submesh; the submesh key is `page × 4 + blend`), a DOTS-instanced shader derived from the BoneBurst ones that reads `_BoneBurstEcsPose` with a `[MaterialProperty]` pose base, materials per (asset, page, blend) from authored page textures, `RenderBounds` from the instance's bounds, and the checks S0 left open: batching and sorting against sprites, and a player build.

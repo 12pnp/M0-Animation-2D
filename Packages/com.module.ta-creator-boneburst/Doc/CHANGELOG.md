@@ -11,6 +11,9 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-07 — **`RangeAllocator` moves to Core, and Core's internals open to the ECS assembly** (P5 step 1 of [BoneBurst-ECS-Plan](Review/BoneBurst-ECS-Plan.md))
+- `RangeAllocator` moved from `Runtime/Gpu/BoneBurstGpu.cs` (Module.PB.BoneBurst.Unity) to `com.module.ta-creator-boneburst-core/Runtime/Core/Gpu/RangeAllocator.cs` (namespace unchanged) so the ECS GPU buffers share it; Core's `AssemblyInfo` lists `Module.PB.BoneBurst.Ecs` for `InternalsVisibleTo` (the instance's GPU fields). **Why:** one allocator, not a copy in each runtime. Behaviour unchanged: parity harness 215/215 and 0 values not bit-exact, tier check clean, `Module.TA.BoneBurst.Tests.Editor` 210/212 (the one failing test needs the demo's baked data, absent from this checkout), PlayMode 37/37. The ECS side's 229 tests in `M0-25DPlatformer-ECS` compare the GPU records, meshes and bounds with `ManagedPose.GpuFrame` frame by frame.
+
 ### 2026-10-07 — **ECS port P4 recorded: the animation state as unmanaged memory** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
 - [BoneBurst-ECS-Plan](Review/BoneBurst-ECS-Plan.md) §12: `BoneTrackState` ports `BoneAnimationState` into pointer-linked unmanaged memory. Guards: 72 seeded fuzz cases (24 fixtures × 3 seeds × 220 frames) give exactly the managed class's commands, modes, hold factors, rotation memory, unkeyed state and events, and three deliberate bugs failed 50, 72 and 67 tests. Core is unchanged; the managed class remains the oracle.
 
