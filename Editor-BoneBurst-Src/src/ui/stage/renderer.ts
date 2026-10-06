@@ -1,6 +1,8 @@
 import { drawnVertices } from "@/engine/draw";
 import type { BlendMode } from "@/engine/rigTypes";
 import type { Camera, Size } from "./camera";
+import type { StageLook } from "./look";
+import { NO_LOOK } from "./look";
 import type { Ghost } from "./onion";
 import type { Posed } from "./posed";
 
@@ -58,6 +60,7 @@ export class Renderer {
   private readonly ibo: WebGLBuffer;
   private readonly textures = new Map<ImageBitmap, WebGLTexture>();
   private readonly white: WebGLTexture;
+  private checkerTex: WebGLTexture | null = null;
 
   constructor(canvas: HTMLCanvasElement) {
     const gl = canvas.getContext("webgl2", { premultipliedAlpha: true, alpha: false, stencil: true, antialias: true });
@@ -95,19 +98,21 @@ export class Renderer {
 
   /** `size` in CSS pixels; the canvas is `size × dpr` device pixels. */
   draw(p: Posed | null, pages: ReadonlyMap<string, ImageBitmap>, cam: Camera, size: Size, dpr: number, background: [number, number, number],
-    references: readonly Backdrop[] = [], ghosts: readonly Ghost[] = [], grid: number | null = null): void {
+    references: readonly Backdrop[] = [], ghosts: readonly Ghost[] = [], grid: number | null = null, look: StageLook = NO_LOOK): void {
     const gl = this.gl;
     gl.viewport(0, 0, Math.round(size.width * dpr), Math.round(size.height * dpr));
     gl.clearColor(background[0], background[1], background[2], 1);
     gl.clearStencil(0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
-    if (!p && !references.length && !grid) return;
+    if (!p && !references.length && !grid && !look.checker && !look.axes) return;
     gl.useProgram(this.program);
     gl.uniform4f(this.view, cam.x, cam.y, (cam.zoom * 2) / size.width, (cam.zoom * 2) / size.height);
     gl.enable(gl.BLEND);
     gl.activeTexture(gl.TEXTURE0);
     // The grid (E6 step 4e): behind everything.
-    if (grid) this.grid(grid, cam, size, background);
+    if (look.checker) this.checker(look.checker, look.checkerColour, cam, size, background);
+    if (grid) this.grid(grid, cam, size, background, look.gridColour, look.gridPx);
+    if (look.axes) this.centreAxes(cam, size, look);
     // Reference images first: behind the skeleton (E4 step 9).
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     for (const r of references) {
@@ -168,23 +173,76 @@ export class Renderer {
   }
 
   /**
+   * A checkerboard of `cell`-unit squares behind everything: one quad over the view, textured with
+   * a repeating 2x2 pattern (nearest filtering), faint, in the colour that shows on the background.
+   * Zoomed far out the cell grows by fives, so a square stays at least 8 pixels.
+   */
+  private checker(cell: number, colour: readonly number[] | null, cam: Camera, size: Size, background: readonly number[]): void {
+    const gl = this.gl;
+    let c = cell;
+    while (c * cam.zoom < 8) c *= 5;
+    const lightBg = background[0]! * 0.3 + background[1]! * 0.59 + background[2]! * 0.11 > 0.5;
+    const tex = (this.checkerTex ??= this.checkerTexture());
+    const [cr, cg, cb] = colour ?? (lightBg ? [0, 0, 0] : [1, 1, 1]);
+    const halfW = size.width / 2 / cam.zoom, halfH = size.height / 2 / cam.zoom;
+    const x0 = cam.x - halfW, x1 = cam.x + halfW, y0 = cam.y - halfH, y1 = cam.y + halfH;
+    const v = (x: number, y: number) => [x, y, x / (2 * c), y / (2 * c), cr!, cg!, cb!, 1, 0, 0, 0];
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([...v(x0, y0), ...v(x1, y0), ...v(x1, y1), ...v(x0, y1)]), gl.STREAM_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, QUAD_FAN, gl.STREAM_DRAW);
+    gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_INT, 0);
+  }
+
+  /** A 2x2 premultiplied texture, repeating: two clear texels and two faint white ones (the vertex colour tints them). */
+  private checkerTexture(): WebGLTexture {
+    const gl = this.gl, a = 18, c = a;
+    const t = gl.createTexture()!;
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 2, 2, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0, c, c, c, a, c, c, c, a, 0, 0, 0, 0]));
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
+    return t;
+  }
+
+  /** The centre axes through the origin: x red, y green, one screen pixel wide, over the checkerboard. */
+  private centreAxes(cam: Camera, size: Size, look: StageLook): void {
+    const gl = this.gl;
+    const halfW = size.width / 2 / cam.zoom, halfH = size.height / 2 / cam.zoom, h = look.axisPx / 2 / cam.zoom;
+    const x0 = cam.x - halfW, x1 = cam.x + halfW, y0 = cam.y - halfH, y1 = cam.y + halfH;
+    const quad = (ax: number, ay: number, bx: number, by: number, r: number, g: number, b: number) => [
+      [ax, ay], [bx, ay], [bx, by], [ax, by]].flatMap(([x, y]) => [x!, y!, 0, 0, r, g, b, 0.7, 0, 0, 0]);
+    // The x axis (y = 0) runs along the view's width; the y axis (x = 0) along its height.
+    const data = new Float32Array([...quad(x0, -h, x1, h, ...look.axisX), ...quad(-h, y0, h, y1, ...look.axisY)]);
+    const idx = new Uint32Array([0, 1, 2, 2, 3, 0, 4, 5, 6, 6, 7, 4]);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.bindTexture(gl.TEXTURE_2D, this.white);
+    gl.bufferData(gl.ARRAY_BUFFER, data, gl.STREAM_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STREAM_DRAW);
+    gl.drawElements(gl.TRIANGLES, 12, gl.UNSIGNED_INT, 0);
+  }
+
+  /**
    * Lines every `spacing` units across the view, one screen pixel wide: every fifth stronger, the
    * axes through the origin strongest; in the colour that shows on the background. Zoomed far
    * out, only every fifth (then every 25th…) is drawn, so lines stay at least 6 pixels apart.
    */
-  private grid(spacing: number, cam: Camera, size: Size, background: readonly number[]): void {
+  private grid(spacing: number, cam: Camera, size: Size, background: readonly number[], colour: readonly number[] | null, thickness: number): void {
     const gl = this.gl;
     let step = spacing;
     while (step * cam.zoom < 6) step *= 5;
-    const halfW = size.width / 2 / cam.zoom, halfH = size.height / 2 / cam.zoom, px = 1 / cam.zoom;
+    const halfW = size.width / 2 / cam.zoom, halfH = size.height / 2 / cam.zoom, px = thickness / cam.zoom;
     const x0 = cam.x - halfW, x1 = cam.x + halfW, y0 = cam.y - halfH, y1 = cam.y + halfH;
     const light = background[0]! * 0.3 + background[1]! * 0.59 + background[2]! * 0.11 > 0.5 ? 0 : 1;
+    const [lr, lg, lb] = colour ?? [light, light, light];
     const quads: number[] = [];
     const line = (ax: number, ay: number, bx: number, by: number, alpha: number) => {
       // A thin quad: x and y lines are one pixel thick across their run.
       const vx = ax === bx, h = px / 2;
       const c = [ax - (vx ? h : 0), ay - (vx ? 0 : h), bx + (vx ? h : 0), by - (vx ? 0 : h), bx + (vx ? h : 0), by + (vx ? 0 : h), ax - (vx ? h : 0), ay + (vx ? 0 : h)];
-      for (let i = 0; i < 4; i++) quads.push(c[i * 2]!, c[i * 2 + 1]!, 0, 0, light, light, light, alpha, light, light, light);
+      for (let i = 0; i < 4; i++) quads.push(c[i * 2]!, c[i * 2 + 1]!, 0, 0, lr!, lg!, lb!, alpha, lr!, lg!, lb!);
     };
     const strength = (v: number) => (Math.abs(v) < step / 2 ? 0.35 : Math.round(v / step) % 5 === 0 ? 0.18 : 0.08);
     for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) line(x, y0, x, y1, strength(x));

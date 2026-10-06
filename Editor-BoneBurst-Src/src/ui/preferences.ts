@@ -29,6 +29,16 @@ export interface PreferenceValues {
   readonly onionColour: boolean;
   /** The grid and snapping (E6 step 4e): the grid shown and its spacing; snapping on, and what it snaps to. */
   readonly grid: boolean;
+  /** The stage behind the skeleton: a checkerboard of grid-sized squares, and the centre x and y axes. */
+  readonly checker: boolean;
+  readonly axes: boolean;
+  /** Colours ("#rrggbb", or "auto" for the one that shows on the background) and thickness (screen pixels) of what the stage draws behind the skeleton. */
+  readonly checkerColour: string;
+  readonly gridColour: string;
+  readonly gridThickness: number;
+  readonly axisXColour: string;
+  readonly axisYColour: string;
+  readonly axisThickness: number;
   readonly gridSize: number;
   readonly snap: boolean;
   readonly snapGrid: boolean;
@@ -38,8 +48,9 @@ export interface PreferenceValues {
 }
 
 export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
-  grid: false, gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
+  grid: false, checker: true, axes: true, checkerColour: "auto", gridColour: "auto", gridThickness: 1, axisXColour: "#e64d4d", axisYColour: "#4dcc66", axisThickness: 1, gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
 export const GRID_RANGE = [1, 1000] as const;
+export const THICKNESS_RANGE = [0.5, 8] as const;
 export const ONION_RANGE = [0, 10] as const;
 export const AUTOSAVE_RANGE = [5, 600] as const;
 export const UNDO_RANGE = [50, 5000] as const;
@@ -57,6 +68,7 @@ export function readPreferences(text: string | null): PreferenceValues {
   if (!o || typeof o !== "object" || (o as { version?: unknown }).version !== PREFERENCES_VERSION) return DEFAULTS;
   const v = o as Record<string, unknown>;
   const num = (k: string, lo: number, hi: number, d: number) => (typeof v[k] === "number" && (v[k] as number) >= lo && (v[k] as number) <= hi ? (v[k] as number) : d);
+  const colour = (k: string, d: string) => (typeof v[k] === "string" && /^(auto|#[0-9a-fA-F]{6})$/.test(v[k] as string) ? (v[k] as string) : d);
   const bool = (k: string, d: boolean) => (typeof v[k] === "boolean" ? (v[k] as boolean) : d);
   return {
     theme: v.theme === "light" || v.theme === "dark" || v.theme === "system" ? v.theme : DEFAULTS.theme,
@@ -74,6 +86,14 @@ export function readPreferences(text: string | null): PreferenceValues {
     onionKeyedOnly: bool("onionKeyedOnly", DEFAULTS.onionKeyedOnly),
     onionColour: bool("onionColour", DEFAULTS.onionColour),
     grid: bool("grid", DEFAULTS.grid),
+    checker: bool("checker", DEFAULTS.checker),
+    axes: bool("axes", DEFAULTS.axes),
+    checkerColour: colour("checkerColour", DEFAULTS.checkerColour),
+    gridColour: colour("gridColour", DEFAULTS.gridColour),
+    gridThickness: num("gridThickness", THICKNESS_RANGE[0], THICKNESS_RANGE[1], DEFAULTS.gridThickness),
+    axisXColour: colour("axisXColour", DEFAULTS.axisXColour),
+    axisYColour: colour("axisYColour", DEFAULTS.axisYColour),
+    axisThickness: num("axisThickness", THICKNESS_RANGE[0], THICKNESS_RANGE[1], DEFAULTS.axisThickness),
     gridSize: num("gridSize", GRID_RANGE[0], GRID_RANGE[1], DEFAULTS.gridSize),
     snap: bool("snap", DEFAULTS.snap),
     snapGrid: bool("snapGrid", DEFAULTS.snapGrid),
@@ -116,6 +136,8 @@ export class Preferences {
       autosaveSeconds: Number.isFinite(merged.autosaveSeconds) ? clamp(Math.round(merged.autosaveSeconds), AUTOSAVE_RANGE[0], AUTOSAVE_RANGE[1]) : this.current.autosaveSeconds,
       onionBefore: Number.isFinite(merged.onionBefore) ? clamp(Math.round(merged.onionBefore), ONION_RANGE[0], ONION_RANGE[1]) : this.current.onionBefore,
       onionAfter: Number.isFinite(merged.onionAfter) ? clamp(Math.round(merged.onionAfter), ONION_RANGE[0], ONION_RANGE[1]) : this.current.onionAfter,
+      gridThickness: Number.isFinite(merged.gridThickness) ? clamp(merged.gridThickness, THICKNESS_RANGE[0], THICKNESS_RANGE[1]) : this.current.gridThickness,
+      axisThickness: Number.isFinite(merged.axisThickness) ? clamp(merged.axisThickness, THICKNESS_RANGE[0], THICKNESS_RANGE[1]) : this.current.axisThickness,
       gridSize: Number.isFinite(merged.gridSize) ? clamp(merged.gridSize, GRID_RANGE[0], GRID_RANGE[1]) : this.current.gridSize,
     }));
     if (writePreferences(next) === writePreferences(this.current)) return;

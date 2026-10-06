@@ -14,7 +14,7 @@ function store(initial: string | null = null, blocked = false): Store & { saved:
 describe("preferences", () => {
   it("start from the defaults, and read back what was written", () => {
     expect(readPreferences(null)).toEqual(DEFAULTS);
-    const p = { theme: "dark" as const, rulers: false, bones: false, constraints: false, undoSteps: 1200, referenceOpacity: 0.3, ai: true, autosave: false, autosaveSeconds: 90, onion: true, onionBefore: 3, onionAfter: 0, onionKeyedOnly: true, onionColour: false, grid: true, gridSize: 12.5, snap: false, snapGrid: false, snapGuides: false, snapBones: false, snapPixels: true };
+    const p = { theme: "dark" as const, rulers: false, bones: false, constraints: false, undoSteps: 1200, referenceOpacity: 0.3, ai: true, autosave: false, autosaveSeconds: 90, onion: true, onionBefore: 3, onionAfter: 0, onionKeyedOnly: true, onionColour: false, grid: true, checker: false, axes: false, checkerColour: "#112233", gridColour: "#445566", gridThickness: 2.5, axisXColour: "#aa0000", axisYColour: "#00aa00", axisThickness: 3, gridSize: 12.5, snap: false, snapGrid: false, snapGuides: false, snapBones: false, snapPixels: true };
     expect(readPreferences(writePreferences(p))).toEqual(p);
   });
   it.each([
@@ -47,5 +47,17 @@ describe("preferences", () => {
     prefs.set({ rulers: false });
     expect(prefs.values.rulers).toBe(false);
     expect(new Preferences(null).values).toEqual(DEFAULTS);
+  });
+});
+
+describe("stage background preferences", () => {
+  it("take the default for a colour that is not #rrggbb or auto, and a thickness out of range", () => {
+    const text = JSON.stringify({ version: 1, checkerColour: "red", axisXColour: "auto", gridThickness: 40, axisThickness: 0 });
+    expect(readPreferences(text)).toMatchObject({ checkerColour: DEFAULTS.checkerColour, axisXColour: "auto", gridThickness: DEFAULTS.gridThickness, axisThickness: DEFAULTS.axisThickness });
+  });
+  it("bring a thickness into range", () => {
+    const prefs = new Preferences(null);
+    prefs.set({ gridThickness: 99, axisThickness: 0.1 });
+    expect(prefs.values).toMatchObject({ gridThickness: 8, axisThickness: 0.5 });
   });
 });

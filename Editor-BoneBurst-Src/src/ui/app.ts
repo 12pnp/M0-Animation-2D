@@ -18,6 +18,7 @@ import { ChatClient } from "./agent/chat";
 import { sessionContext } from "./agent/context";
 import { AskAi } from "./panels/askAi";
 import { DocumentTabs } from "./documentTabs";
+import { lookOf } from "./stage/look";
 import { DIVIDER, MenuBar } from "./menubar";
 import { icon, iconButton } from "./icons";
 import { ExportRefused, exportToUnity } from "./unityExport";
@@ -197,6 +198,8 @@ export function mountApp(root: HTMLElement): void {
       { label: "Fit to skeleton", keys: "F", run: () => stage.fitView() },
       { label: "Onion Skin", checked: prefs.values.onion, run: () => prefs.set({ onion: !prefs.values.onion }) },
       DIVIDER,
+      { label: "Checkerboard", checked: prefs.values.checker, run: () => prefs.set({ checker: !prefs.values.checker }) },
+      { label: "Centre Axes", checked: prefs.values.axes, run: () => prefs.set({ axes: !prefs.values.axes }) },
       { label: "Grid", checked: prefs.values.grid, run: () => prefs.set({ grid: !prefs.values.grid }) },
       { label: "Snapping", keys: "⇧⌘;", checked: prefs.values.snap, run: () => prefs.set({ snap: !prefs.values.snap }) },
       { label: "Snap to Grid", checked: prefs.values.snapGrid, disabled: !prefs.values.snap, run: () => prefs.set({ snapGrid: !prefs.values.snapGrid }) },
@@ -262,6 +265,7 @@ export function mountApp(root: HTMLElement): void {
     stage.show = { rulers: p.rulers, bones: p.bones, constraints: p.constraints };
     stage.onion = p.onion ? { before: p.onionBefore, after: p.onionAfter, keyedOnly: p.onionKeyedOnly, colour: p.onionColour } : null;
     stage.grid = p.grid ? p.gridSize : null;
+    stage.look = lookOf(p);
     stage.snap = p.snap ? { grid: p.snapGrid, guides: p.snapGuides, bones: p.snapBones, pixels: p.snapPixels, gridSize: p.gridSize } : null;
     stage.redraw();
     session.undoSteps = p.undoSteps;

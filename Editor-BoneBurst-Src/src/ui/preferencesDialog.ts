@@ -1,4 +1,4 @@
-import { AUTOSAVE_RANGE, GRID_RANGE, ONION_RANGE, type Preferences, type Theme, UNDO_RANGE } from "./preferences";
+import { AUTOSAVE_RANGE, DEFAULTS, GRID_RANGE, ONION_RANGE, type Preferences, type PreferenceValues, THICKNESS_RANGE, type Theme, UNDO_RANGE } from "./preferences";
 
 /**
  * The Preferences dialog (E4-PLAN step 10): a native `<dialog>`; each change applies at once.
@@ -7,6 +7,9 @@ import { AUTOSAVE_RANGE, GRID_RANGE, ONION_RANGE, type Preferences, type Theme, 
 export class PreferencesDialog {
   readonly element: HTMLDialogElement;
   private readonly form: HTMLFormElement;
+  /** The category or section shown, and the content column (its scroll is kept across redraws). */
+  private selected = "application";
+  private content: HTMLElement | null = null;
 
   constructor(private readonly prefs: Preferences) {
     this.element = document.createElement("dialog");
@@ -25,45 +28,148 @@ export class PreferencesDialog {
 
   private draw(): void {
     const p = this.prefs.values;
-    const title = document.createElement("h2");
-    title.textContent = "Preferences";
-    const theme = select("Theme", [["system", "Follow the system"], ["light", "Light"], ["dark", "Dark"]], p.theme, (v) => this.prefs.set({ theme: v as Theme }));
-    const rulers = check("Show rulers on the stage", p.rulers, (on) => this.prefs.set({ rulers: on }));
-    const bones = check("Show bones on the stage", p.bones, (on) => this.prefs.set({ bones: on }));
-    const constraints = check("Show constraints on the stage", p.constraints, (on) => this.prefs.set({ constraints: on }));
-    const undo = number(`Undo steps kept (${UNDO_RANGE[0]}–${UNDO_RANGE[1]})`, p.undoSteps, 1, (n) => this.prefs.set({ undoSteps: n }));
-    const undoNote = document.createElement("p");
-    undoNote.className = "note";
-    undoNote.textContent = "Takes effect for the next document opened.";
-    const opacity = number("New references' opacity (%)", Math.round(p.referenceOpacity * 100), 1, (n) => this.prefs.set({ referenceOpacity: n / 100 }));
-    const autosave = check("Keep a recovery copy of unsaved work", p.autosave, (on) => this.prefs.set({ autosave: on }));
-    const every = number(`Every (seconds, ${AUTOSAVE_RANGE[0]}–${AUTOSAVE_RANGE[1]})`, p.autosaveSeconds, 1, (n) => this.prefs.set({ autosaveSeconds: n }));
-    const autosaveNote = document.createElement("p");
-    autosaveNote.className = "note";
-    autosaveNote.textContent = "One copy, in this browser. It is not your file: Save writes that.";
-    const onion = check("Onion skin (View ▸ Onion Skin)", p.onion, (on) => this.prefs.set({ onion: on }));
-    const before = number(`Onion frames before (${ONION_RANGE[0]}–${ONION_RANGE[1]})`, p.onionBefore, 1, (n) => this.prefs.set({ onionBefore: n }));
-    const after = number(`Onion frames after (${ONION_RANGE[0]}–${ONION_RANGE[1]})`, p.onionAfter, 1, (n) => this.prefs.set({ onionAfter: n }));
-    const keyedOnly = check("Onion: keyed frames only", p.onionKeyedOnly, (on) => this.prefs.set({ onionKeyedOnly: on }));
-    const colour = check("Onion: colour-coded (past red, future green)", p.onionColour, (on) => this.prefs.set({ onionColour: on }));
-    const gridSize = number(`Grid spacing (units, ${GRID_RANGE[0]}–${GRID_RANGE[1]})`, p.gridSize, 1, (n) => this.prefs.set({ gridSize: n }));
-    const gridNote = document.createElement("p");
-    gridNote.className = "note";
-    gridNote.textContent = "View ▸ Grid shows it; View ▸ Snapping and its Snap to… items choose what a dragged bone or vertex snaps to.";
+    const range = `${THICKNESS_RANGE[0]}–${THICKNESS_RANGE[1]}`;
+    const note = (text: string) => { const n = document.createElement("p"); n.className = "note"; n.textContent = text; return n; };
+    const sections: Record<string, readonly HTMLElement[]> = {
+      general: [
+        select("Theme", [["system", "Follow the system"], ["light", "Light"], ["dark", "Dark"]], p.theme, (v) => this.prefs.set({ theme: v as Theme })),
+        number(`Undo steps kept (${UNDO_RANGE[0]}–${UNDO_RANGE[1]})`, p.undoSteps, 1, (n) => this.prefs.set({ undoSteps: n })),
+        note("Takes effect for the next document opened."),
+        number("New references' opacity (%)", Math.round(p.referenceOpacity * 100), 1, (n) => this.prefs.set({ referenceOpacity: n / 100 })),
+      ],
+      files: [
+        check("Keep a recovery copy of unsaved work", p.autosave, (on) => this.prefs.set({ autosave: on })),
+        number(`Every (seconds, ${AUTOSAVE_RANGE[0]}–${AUTOSAVE_RANGE[1]})`, p.autosaveSeconds, 1, (n) => this.prefs.set({ autosaveSeconds: n })),
+        note("One copy, in this browser. It is not your file: Save writes that."),
+      ],
+      display: [
+        check("Show rulers on the stage", p.rulers, (on) => this.prefs.set({ rulers: on })),
+        check("Show bones on the stage", p.bones, (on) => this.prefs.set({ bones: on })),
+        check("Show constraints on the stage", p.constraints, (on) => this.prefs.set({ constraints: on })),
+      ],
+      background: [
+        check("Checkerboard (View ▸ Checkerboard)", p.checker, (on) => this.prefs.set({ checker: on })),
+        colourPicker("Checkerboard colour", p.checkerColour, (c) => this.prefs.set({ checkerColour: c }), true),
+        colourPicker("Grid line colour", p.gridColour, (c) => this.prefs.set({ gridColour: c }), true),
+        number(`Grid line thickness (pixels, ${range})`, p.gridThickness, 0.5, (n) => this.prefs.set({ gridThickness: n })),
+        check("Centre axes (View ▸ Centre Axes)", p.axes, (on) => this.prefs.set({ axes: on })),
+        colourPicker("X axis colour", p.axisXColour, (c) => this.prefs.set({ axisXColour: c }), false),
+        colourPicker("Y axis colour", p.axisYColour, (c) => this.prefs.set({ axisYColour: c }), false),
+        number(`Axis line thickness (pixels, ${range})`, p.axisThickness, 0.5, (n) => this.prefs.set({ axisThickness: n })),
+      ],
+      grid: [
+        number(`Grid spacing (units, ${GRID_RANGE[0]}–${GRID_RANGE[1]})`, p.gridSize, 1, (n) => this.prefs.set({ gridSize: n })),
+        note("View ▸ Grid shows it; View ▸ Snapping and its Snap to… items choose what a dragged bone or vertex snaps to."),
+      ],
+      onion: [
+        check("Onion skin (View ▸ Onion Skin)", p.onion, (on) => this.prefs.set({ onion: on })),
+        number(`Frames before (${ONION_RANGE[0]}–${ONION_RANGE[1]})`, p.onionBefore, 1, (n) => this.prefs.set({ onionBefore: n })),
+        number(`Frames after (${ONION_RANGE[0]}–${ONION_RANGE[1]})`, p.onionAfter, 1, (n) => this.prefs.set({ onionAfter: n })),
+        check("Keyed frames only", p.onionKeyedOnly, (on) => this.prefs.set({ onionKeyedOnly: on })),
+        check("Colour-coded (past red, future green)", p.onionColour, (on) => this.prefs.set({ onionColour: on })),
+      ],
+    };
+
+    // The title bar: the window's name on an accent tab; it is the handle the dialog is dragged by.
+    const bar = document.createElement("div");
+    bar.className = "pref-title";
+    const tab = document.createElement("span");
+    tab.textContent = "Preferences";
+    bar.append(tab);
+    this.dragBy(bar);
+
+    // The left list: a category shows all of its sections; a section inside it, only that one.
+    const nav = document.createElement("nav");
+    nav.className = "pref-nav";
+    const item = (node: NavNode, child: boolean) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = node.label;
+      b.className = child ? "child" : "";
+      b.setAttribute("aria-current", String(node.id === this.selected));
+      b.addEventListener("click", () => { this.selected = node.id; this.draw(); });
+      return b;
+    };
+    for (const node of NAV) {
+      nav.append(item(node, false));
+      for (const c of node.children ?? []) nav.append(item(c, true));
+    }
+
+    const shown = NAV.flatMap((n) => (n.id === this.selected ? n.children ?? [n] : n.children?.filter((c) => c.id === this.selected) ?? (n.id === this.selected ? [n] : [])));
+    const scroll = this.content?.scrollTop ?? 0;
+    const content = document.createElement("div");
+    content.className = "pref-content";
+    for (const sec of shown) {
+      const h = document.createElement("h3");
+      const name = document.createElement("span");
+      name.textContent = sec.label;
+      // Reset puts back only this section's settings.
+      const keys = KEYS[sec.id] ?? [];
+      const reset = document.createElement("button");
+      reset.type = "button";
+      reset.className = "reset";
+      reset.textContent = "Reset";
+      reset.title = `Put the ${sec.label} settings back to their defaults`;
+      reset.disabled = keys.every((k) => p[k] === DEFAULTS[k]);
+      reset.addEventListener("click", () => this.prefs.set(Object.fromEntries(keys.map((k) => [k, DEFAULTS[k]]))));
+      h.append(name, reset);
+      content.append(h, ...(sections[sec.id] ?? []));
+    }
+    this.content = content;
+
     const actions = document.createElement("div");
     actions.className = "actions";
-    const reset = document.createElement("button");
-    reset.type = "button";
-    reset.textContent = "Reset";
-    reset.title = "Every preference back to its default";
-    reset.addEventListener("click", () => this.prefs.reset());
     const close = document.createElement("button");
     close.textContent = "Close";
     close.value = "close";
-    actions.append(reset, close);
-    this.form.replaceChildren(title, theme, rulers, bones, constraints, undo, undoNote, opacity, autosave, every, autosaveNote, onion, before, after, keyedOnly, colour, gridSize, gridNote, actions);
+    actions.append(close);
+
+    const body = document.createElement("div");
+    body.className = "pref-body";
+    body.append(nav, content);
+    this.form.replaceChildren(bar, body, actions);
+    content.scrollTop = scroll;
+  }
+
+  /** Drag the dialog by `handle`: it leaves the centre on the first move and stays where it was put. */
+  private dragBy(handle: HTMLElement): void {
+    handle.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      const box = this.element.getBoundingClientRect();
+      const dx = e.clientX - box.left, dy = e.clientY - box.top;
+      handle.setPointerCapture(e.pointerId);
+      const move = (m: PointerEvent) => {
+        const left = Math.min(Math.max(0, m.clientX - dx), window.innerWidth - 80);
+        const top = Math.min(Math.max(0, m.clientY - dy), window.innerHeight - 40);
+        this.element.style.margin = "0";
+        this.element.style.left = `${left}px`;
+        this.element.style.top = `${top}px`;
+      };
+      const up = () => { handle.removeEventListener("pointermove", move); handle.removeEventListener("pointerup", up); };
+      handle.addEventListener("pointermove", move);
+      handle.addEventListener("pointerup", up);
+    });
   }
 }
+
+/** The preferences each section holds: what its Reset puts back. */
+const KEYS: Readonly<Record<string, readonly (keyof PreferenceValues)[]>> = {
+  general: ["theme", "undoSteps", "referenceOpacity"],
+  files: ["autosave", "autosaveSeconds"],
+  display: ["rulers", "bones", "constraints"],
+  background: ["checker", "checkerColour", "gridColour", "gridThickness", "axes", "axisXColour", "axisYColour", "axisThickness"],
+  grid: ["gridSize"],
+  onion: ["onion", "onionBefore", "onionAfter", "onionKeyedOnly", "onionColour"],
+};
+
+/** One entry of the left list: a category, or a section inside one. */
+interface NavNode { readonly id: string; readonly label: string; readonly children?: readonly NavNode[] }
+
+const NAV: readonly NavNode[] = [
+  { id: "application", label: "Application", children: [{ id: "general", label: "General" }, { id: "files", label: "Files" }] },
+  { id: "viewport", label: "Viewport", children: [{ id: "display", label: "Display" }, { id: "background", label: "Background" }, { id: "grid", label: "Grid" }] },
+  { id: "behavior", label: "Behavior", children: [{ id: "onion", label: "Onion skin" }] },
+];
 
 function row(label: string, control: HTMLElement): HTMLLabelElement {
   const l = document.createElement("label");
@@ -91,6 +197,28 @@ function check(label: string, value: boolean, onChange: (on: boolean) => void): 
   const r = row(label, box);
   r.classList.add("check");
   return r;
+}
+
+/** A colour picker; with `canAuto`, an Auto button puts back the colour that shows on the background. */
+function colourPicker(label: string, value: string, onChange: (c: string) => void, canAuto: boolean): HTMLLabelElement {
+  const box = document.createElement("span");
+  box.className = "colour";
+  const input = document.createElement("input");
+  input.type = "color";
+  input.value = /^#[0-9a-f]{6}$/i.test(value) ? value : "#888888";
+  input.classList.toggle("auto", value === "auto");
+  input.addEventListener("input", () => onChange(input.value));
+  box.append(input);
+  if (canAuto) {
+    const auto = document.createElement("button");
+    auto.type = "button";
+    auto.textContent = "Auto";
+    auto.title = "The colour that shows on the background";
+    auto.disabled = value === "auto";
+    auto.addEventListener("click", () => onChange("auto"));
+    box.append(auto);
+  }
+  return row(label, box);
 }
 
 function number(label: string, value: number, step: number, onChange: (n: number) => void): HTMLLabelElement {

@@ -15,6 +15,7 @@ import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point,
 import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix, type Posed } from "./posed";
 import { constraintShapes, hitConstraint } from "./constraintShapes";
 import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
+import { NO_LOOK, type StageLook } from "./look";
 import { type Backdrop, Renderer } from "./renderer";
 import { ghostsFor, type OnionOptions } from "./onion";
 import { type SnapOptions, type Snapped, type SnapTargets, snapPoint } from "./snap";
@@ -85,6 +86,8 @@ export class Stage {
   snap: SnapOptions | null = null;
   /** The grid's spacing in skeleton units, or null when the grid is not shown. */
   grid: number | null = null;
+  /** The checkerboard, centre axes and grid lines' colours and thickness (View and Preferences). */
+  look: StageLook = NO_LOOK;
   /** What the drag snapped to this step, drawn until the drag ends. */
   private snapped: Snapped | null = null;
   /** A weight-brush stroke under way (E6 step 4f), and where the pointer is on screen for the circle. */
@@ -203,7 +206,7 @@ export class Stage {
       const bitmap = this.session.referenceImages.get(r.path);
       if (bitmap) refs.push({ bitmap, ...referenceQuad(r, bitmap.width, bitmap.height), opacity: r.opacity });
     }
-    this.renderer.draw(p, this.session.pages, this.camera, this.size, this.dpr, rgb(css.getPropertyValue("--stage-bg")), refs, ghostsFor(this.session, this.onion), this.grid);
+    this.renderer.draw(p, this.session.pages, this.camera, this.size, this.dpr, rgb(css.getPropertyValue("--stage-bg")), refs, ghostsFor(this.session, this.onion), this.grid, this.look);
     const g = this.overlay.getContext("2d")!;
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     g.clearRect(0, 0, this.size.width, this.size.height);
