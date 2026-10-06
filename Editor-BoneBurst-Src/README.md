@@ -42,7 +42,9 @@ drop a PSD to start a rig from its layers, or drop a PSD on an open rig to bring
 ## Connecting an AI
 
 The editor's AI tools (46, contract version 2: `src/agent/tools.json`) reach the open rig through
-a local bridge. An MCP client starts it itself, for example Claude Code:
+a local bridge. An MCP client starts it itself. In the M0-Animation-2D repository, its `.mcp.json`
+already does it for Claude Code (the server `boneburst-editor`; Claude Code asks once). Elsewhere,
+add it:
 
 ```bash
 claude mcp add boneburst-editor -- node "/path/to/Editor-BoneBurst-Src/mcp/bridge.mjs"
@@ -50,7 +52,9 @@ claude mcp add boneburst-editor -- node "/path/to/Editor-BoneBurst-Src/mcp/bridg
 
 Then press **AI** in the editor's toolbar: the button turns green when the bridge sees the page.
 **Ask AI** (the AI panel) talks to Claude or GLM through the same bridge, with a key the bridge
-keeps on this computer. `?bridge=<port>` in the editor's URL talks to a bridge on another port.
+keeps on this computer. One bridge holds a port (5191): a second Claude session started beside the
+first shows the server failed, and the first keeps the editor. To run two, give one
+`BONEBURST_BRIDGE_PORT` and open the editor with `?bridge=<port>`.
 
 ## How it is checked
 

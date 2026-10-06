@@ -2,8 +2,8 @@
 
 Guidance for agents working in `Editor-BoneBurst-Src/`: the BoneBurst Editor, a Spine 4.3
 animation editor, **MIT**, written from scratch. Its document is the Spine JSON file
-(docs/SPEC.md). It replaces `../Animation-BoneBurst-Src/`, an AGPL fork of Animo, which stays as
-the behavioural oracle and takes bug fixes only (`../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md`,
+(docs/SPEC.md). It replaced `../Animation-BoneBurst-Src/`, an AGPL fork of Animo, on 2026-10-06 (E6 step 6); the fork
+stays as the behavioural oracle and takes bug fixes only (`../Animation-BoneBurst-Src/docs/EDITOR-V2-PLAN.md`,
 D1–D5).
 
 ```mermaid
@@ -48,8 +48,9 @@ npx vite-node scripts/oracle-edits.ts   # E6: the same edits through both editor
 npx vite-node scripts/unity-parity.ts   # the engine against BoneBurst's C# runtime (needs Unity's .NET SDK)
 ```
 
-An MCP client starts the bridge itself, e.g. Claude Code:
-`claude mcp add boneburst-editor -- node "<this folder>/mcp/bridge.mjs"`; then press AI in the
+An MCP client starts the bridge itself: in this repository the root `.mcp.json` does it for Claude
+Code (`boneburst-editor`, guarded by `tests/mcpConfig.test.ts`); elsewhere
+`claude mcp add boneburst-editor -- node "<this folder>/mcp/bridge.mjs"`. Then press AI in the
 editor's toolbar. Ask AI (the AI panel) uses the same bridge with Claude or GLM; `?bridge=<port>` in
 the editor's URL talks to a bridge on another port.
 

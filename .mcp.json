@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "boneburst-editor": {
+      "command": "sh",
+      "args": ["-c", "exec node \"$(git rev-parse --show-toplevel)/Editor-BoneBurst-Src/mcp/bridge.mjs\""]
+    }
+  }
+}

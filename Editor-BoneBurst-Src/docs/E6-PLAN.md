@@ -1,13 +1,14 @@
 # E6 — parity with the old editor, then cutover — plan
 
-**Status:** in progress, 2026-10-06. Steps 1–4 done: the oracle harness (v2 writes the corpus
-back exactly; the old editor rewrites every rig, and poses one differently), edit-script parity
-(both agree once each known difference is taken out; `set_keys`' eases made version 1's), the gap
-list decided by the owner, and the chosen gaps built: autosave and recovery, events on the
-timeline, copy and paste with multiple selection, onion skin, snapping and a grid, the weight
-brush, the curve graph, the frame rate (4h, the axes, done by the other session). Step 5 (docs migrated) done: v2
-held to BoneBurst's C# runtime by `scripts/unity-parity.ts` (17 rigs agree). Step 6 (cutover, the
-owner's) next.
+**Status:** steps 1–6 done, 2026-10-06; step 7 (archive, D8) is the owner's call. The oracle
+harness (v2 writes the corpus back exactly; the old editor rewrites every rig, and poses one
+differently), edit-script parity (both agree once each known difference is taken out; `set_keys`'
+eases made version 1's), the gap list decided by the owner, the chosen gaps built (autosave and
+recovery, events on the timeline, copy and paste with multiple selection, onion skin, snapping and
+a grid, the weight brush, the curve graph, the frame rate; 4h, the axes, by the other session), the
+docs moved (v2 held to BoneBurst's C# runtime by `scripts/unity-parity.ts`, 17 rigs agree), and the
+cutover: v2 is the editor in use, the repository's `.mcp.json` starts its bridge, the old editor's
+docs say oracle-only.
 
 E6 makes v2 the editor people use. The old editor (`../../Animation-BoneBurst-Src/`, AGPL, the
 Animo fork) is the **behavioural oracle**: it is run, never read, and v2 has to agree with it on
@@ -718,3 +719,64 @@ flowchart LR
    editor's pipeline plan; the editor's `CLAUDE.md` lists the new script.
 3. Comments only in C#: nothing compiles differently.
 
+
+## Step 6 — cutover
+
+The owner's go (2026-10-06): v2 is the editor people use. An AI client in this repository starts
+v2's bridge, and the old editor's own docs say it is the oracle and nothing more.
+
+```mermaid
+flowchart LR
+    MCP[".mcp.json (repo root)<br/>boneburst-editor"] -->|"Claude Code starts"| BR["Editor-BoneBurst-Src/mcp/bridge.mjs<br/>:5191"]
+    BR <-->|"AI button"| V2["v2 on :5185"]
+    V1["Animation-BoneBurst-Src<br/>:5181, bridge :5190"] -.->|"oracle only: started by<br/>scripts/oracle-*.ts"| CMP["E6 harness"]
+```
+
+### Decisions
+
+- **Where the MCP setting lives.** No client is set up for either bridge today (none in
+  `~/.claude.json`, the project, or Claude Desktop). The repository gets a checked-in `.mcp.json`
+  with one server, `boneburst-editor`, that starts v2's bridge, so every Claude Code session here
+  has the editor's tools without a step by hand (CLAUDE.md §13: nothing to set up that the tool
+  can do itself). The path is found from git (`git rev-parse --show-toplevel`), because a session
+  may start in a subfolder; nothing names this machine. The old editor's bridge gets no entry: the
+  oracle scripts start it themselves. Claude Code asks once before it starts a project server.
+- **One bridge per port.** Each Claude Code session in this repository starts its own bridge;
+  the bridge exits when its port is taken, so a second session shows the server failed while the
+  first owns the editor. Said in the README; `?bridge=<port>` and `BONEBURST_BRIDGE_PORT` remain
+  for running two at once.
+- **The old editor says oracle-only** at the top of its `CLAUDE.md` and `README.md`: no new
+  features; bug fixes and data-format work only (D1); run by v2's E6 scripts as the behavioural
+  oracle; archiving is step 7 (D8). Nothing else in it changes; its sources stay closed.
+- **The root `CLAUDE.md`** says v2 is the editor in use and the old one oracle-only, and names
+  the `.mcp.json` entry.
+- **Guard**: a test reads the repository's `.mcp.json` (skipped when v2 is not inside this
+  repository), checks the one BoneBurst server starts v2's bridge and no other, starts it exactly
+  as written from a subfolder, and lists the contract's tools through it.
+
+### Steps
+
+1. `.mcp.json` at the repository root.
+2. `tests/mcpConfig.test.ts`; a planted fault: the entry pointed at the old editor's bridge.
+3. The old editor's `CLAUDE.md` and `README.md` notes; root `CLAUDE.md`; v2's `README.md` and
+   `CLAUDE.md` (the entry, one bridge per port).
+4. `npm run check`.
+
+### Step 6 results
+
+1. `.mcp.json` at the repository root: `boneburst-editor`, `sh -c 'exec node "$(git rev-parse
+   --show-toplevel)/Editor-BoneBurst-Src/mcp/bridge.mjs"'`. Found no earlier setting for either
+   bridge, so nothing was replaced.
+2. `tests/mcpConfig.test.ts` (2 tests): one BoneBurst server, named `boneburst-editor`, naming v2's
+   bridge and not the old editor's; started exactly as written from `src/`, it introduces itself as
+   `boneburst-editor` and lists the contract's 46 tools. Planted faults: the entry pointed at the
+   old editor's bridge fails both; the path made relative (no `git rev-parse`) fails the start from
+   a subfolder.
+3. Docs: the old editor's `CLAUDE.md` and `README.md` open with the oracle-only note; root
+   `CLAUDE.md` (the old editor oracle-only, v2 in use, the `.mcp.json` entry, E6 at step 7); v2's
+   `README.md` (the entry; one bridge per port) and `CLAUDE.md` (replaced on 2026-10-06; the entry
+   and its test).
+4. `npm run check`: 449 vitest and 13 browser tests pass.
+
+What a session needs: Claude Code reads `.mcp.json` when it starts, so a session already running
+gets the server on its next start, after approving it once.

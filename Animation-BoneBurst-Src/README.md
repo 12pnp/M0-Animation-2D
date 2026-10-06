@@ -1,5 +1,11 @@
 # BoneBurst
 
+> **Oracle-only since 2026-10-06** (owner's cutover, `../Editor-BoneBurst-Src/docs/E6-PLAN.md` ▸ Step 6).
+> The editor in use is the BoneBurst Editor v2 in `../Editor-BoneBurst-Src/`; this repository's
+> `.mcp.json` starts v2's bridge. This one takes **no new features**: bug fixes and data-format
+> work only (`docs/EDITOR-V2-PLAN.md`, D1). v2's E6 scripts run it (dev server :5181, bridge :5190)
+> as the behavioural oracle. Archiving it is E6 step 7, the owner's call (D8).
+
 A Flash-style animation editor for **Spine 4.3**, built from
 [Animo](https://github.com/justmorenoise/animo) by Morenoise.
 
