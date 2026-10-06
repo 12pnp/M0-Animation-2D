@@ -83,6 +83,31 @@
         "tool": "new_animation",
         "change": "meaning",
         "what": "A Spine animation lasts until its last key, so `frames` is not stored: it is reported back as the frame to key to give the animation that length."
+      },
+      {
+        "tool": "attach",
+        "change": "meaning",
+        "what": "`image` names an atlas image (v1: a library picture); `layer` names a slot, moved onto the bone with its attachments re-expressed so it stays put. `pivot` has no meaning for a slot (a Spine picture turns about its bone)."
+      },
+      {
+        "tool": "draw_order",
+        "change": "meaning",
+        "what": "Orders the slots' setup draw order: a bone stands for the slots on it and under it, kept together; the named children of `parent` move, front first, into the places their slots held."
+      },
+      {
+        "tool": "set_point",
+        "change": "meaning",
+        "what": "x, y and rotation are Spine's own: in the point's bone space, y up, degrees counter-clockwise (v1: the layer's space, y down, clockwise)."
+      },
+      {
+        "tool": "add_attachment",
+        "change": "meaning",
+        "what": "A box on a picture traces the picture's rectangle (v1: its outline from alpha)."
+      },
+      {
+        "tool": "add_bones",
+        "change": "meaning",
+        "what": "A skeleton has one root: a bone given no parent goes under the root bone (its `from`/`to` still in skeleton space)."
       }
     ]
   },
@@ -535,7 +560,7 @@
     },
     {
       "name": "add_bones",
-      "description": "Create bones in the setup pose, all in ONE undoable step. Give each bone its joint `from` and its tip `to` in skeleton space (y up: the space get_pose and render_frame report), or its local x, y, rotation and length under its parent (Spine conventions). A parent is an existing bone or one earlier in the list; omit it for a root. Names must be new. render_frame and get_reference say how a pixel maps to skeleton space, for reading joints off a picture.",
+      "description": "Create bones in the setup pose, all in ONE undoable step. Give each bone its joint `from` and its tip `to` in skeleton space (y up: the space get_pose and render_frame report), or its local x, y, rotation and length under its parent (Spine conventions). A parent is an existing bone or one earlier in the list; omit it to hang the bone on the skeleton's root. Names must be new. render_frame and get_reference say how a pixel maps to skeleton space, for reading joints off a picture.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -598,7 +623,7 @@
     },
     {
       "name": "attach",
-      "description": "Put pictures on bones, all in ONE undoable step: each becomes a slot that moves with its bone. `image` names a library picture (get_rig lists them with their sizes) and adds it; `layer` names artwork already in the skeleton (a slot get_rig lists, e.g. from File ▸ Import PSD as Layers) and moves it onto the bone, staying where it is. `pivot` is the pixel of the picture (from its top-left) it turns about, usually the joint: for a layer it moves only that point, not the artwork. For an image, `at` is where the pivot pixel goes in skeleton space (default: the bone's joint); `rotation` turns the picture counter-clockwise in the world (default 0: upright, as drawn). A new picture draws in front of what the bone already holds; draw_order changes that.",
+      "description": "Put pictures on bones, all in ONE undoable step: each becomes a slot that moves with its bone. `image` names an atlas image (get_rig lists them with their sizes) and adds it as a new slot; `layer` names a slot already in the skeleton (get_rig lists them, e.g. one per layer of a dropped PSD) and moves it onto the bone, staying where it is. For an image, `pivot` is the pixel of the picture (from its top-left) placed at `at` in skeleton space (defaults: the picture's centre, the bone's joint); `rotation` turns the picture counter-clockwise in the world (default 0: upright, as drawn); `scale` sizes it. A new picture draws in front of what the bone already holds; draw_order changes that.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -613,11 +638,11 @@
                 },
                 "image": {
                   "type": "string",
-                  "description": "A library picture to add."
+                  "description": "An atlas image to add."
                 },
                 "layer": {
                   "type": "string",
-                  "description": "Artwork already in the skeleton, to move onto the bone."
+                  "description": "A slot already in the skeleton, to move onto the bone."
                 },
                 "name": {
                   "type": "string",
@@ -630,7 +655,7 @@
                   },
                   "minItems": 2,
                   "maxItems": 2,
-                  "description": "[u, v] in the picture's pixels from its top-left (a new image: default its centre; a layer: default unchanged)."
+                  "description": "[u, v] in the picture's pixels from its top-left (default its centre); not used for a slot."
                 },
                 "at": {
                   "type": "array",
@@ -713,7 +738,7 @@
     },
     {
       "name": "auto_rig",
-      "description": "Build a whole skeleton from a character's joints, in ONE undoable step: bones named hips, torso, head, thigh_near, shin_near, foot_near, upper_arm_near, forearm_near, hand_near… (near/far for a side view, left/right for a front view), each picture layer that is on no bone put on the bone running through it with its joint as the pivot, the drawing order kept as the layers were stacked, and IK on the legs (and arms with armIk). To read the joints: render_frame with no animation shows the pictures and how a pixel maps to skeleton space; give each joint where the body bends, in skeleton space (y up). pelvis and neck are required; a limb stops at its first missing joint (hip defaults to pelvis). Returns which layer went on which bone; look with render_frame and fix what is off with attach, or undo and run it again.",
+      "description": "Build a whole skeleton from a character's joints, in ONE undoable step: bones named hips, torso, head, thigh_near, shin_near, foot_near, upper_arm_near, forearm_near, hand_near… (near/far for a side view, left/right for a front view), each picture on the root bone (a dropped PSD makes one slot per layer) put on the bone running through it, staying where it is, the drawing order kept as the layers were stacked, and IK on the legs (and arms with armIk). To read the joints: render_frame with no animation shows the pictures and how a pixel maps to skeleton space; give each joint where the body bends, in skeleton space (y up). pelvis and neck are required; a limb stops at its first missing joint (hip defaults to pelvis). Returns which slot went on which bone; look with render_frame and fix what is off with attach, or undo and run it again.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -750,7 +775,7 @@
             "items": {
               "type": "string"
             },
-            "description": "The picture layers to rig; default every one on no bone."
+            "description": "The slots to rig; default every one on the root bone."
           },
           "armIk": {
             "type": "boolean",
@@ -818,7 +843,7 @@
     },
     {
       "name": "draw_order",
-      "description": "Reorder what draws in front, in one undoable step: the listed children of `parent` (bones and slots; omit parent for the skeleton's roots) draw in this order, FRONT first, in the places they held; the others keep theirs. A bone carries everything below it, so the near arm goes in front of the torso by ordering the chest's children, e.g. [\"arm_near_up\", \"torso\", \"arm_far_up\"].",
+      "description": "Reorder what draws in front, in one undoable step: the listed children of `parent` (bones and slots; omit parent for the skeleton's roots) draw in this order, FRONT first, in the places their slots held; the others keep theirs. A bone stands for every slot on it and under it, kept together, so the near arm goes in front of the torso by ordering the chest's children, e.g. [\"arm_near_up\", \"torso\", \"arm_far_up\"].",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -1205,7 +1230,7 @@
     },
     {
       "name": "add_attachment",
-      "description": "Add a bounding box (kind box: a hit area, Spine's boundingbox attachment) or a point (kind point: a spawn point such as a muzzle or a hand grip, with a direction), in one undoable step. `on` a picture: in its place, a box tracing its outline; `on` a bone: at the bone's origin, under it (a box a 40-pixel square); omitted: at the origin. Neither draws; the stage outlines them. Move it like any layer.",
+      "description": "Add a bounding box (kind box: a hit area, Spine's boundingbox attachment) or a point (kind point: a spawn point such as a muzzle or a hand grip, with a direction), in one undoable step, as a new slot. `on` a picture's slot: on its bone, a box tracing the picture's rectangle or a point at its centre; `on` a bone: at the bone's origin (a box a 40-pixel square); omitted: on the root, at the origin. Neither draws; the stage outlines them.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -1427,7 +1452,7 @@
     },
     {
       "name": "set_point",
-      "description": "Move a point attachment (add_attachment kind point) away from its layer's origin and turn it, in one undoable step: x and y in the layer's own space (y down), rotation in degrees clockwise, as the stage shows them. Spine's point x, y and rotation. Give any of the three; the others stay.",
+      "description": "Move and turn a point attachment (add_attachment kind point), in one undoable step: x and y in its bone's space (y up), rotation in degrees counter-clockwise, Spine's point values. Give any of the three; the others stay. `point` names the attachment or its slot.",
       "input_schema": {
         "type": "object",
         "properties": {
@@ -1615,7 +1640,7 @@
     },
     {
       "name": "make_path",
-      "description": "Make bones follow a path (Spine's path constraint), in one undoable step: a smooth path through the bones' joints and the last one's tip (a new path layer, edited with the Mesh tool), the bones laid along it by their lengths and turned with it. Key the path's points or its constraint's position to animate (a tail, a snake, a rope).",
+      "description": "Make bones follow a path (Spine's path constraint), in one undoable step: a smooth path through the bones' joints and the last one's tip (a new path slot on the first bone's parent), the bones laid along it by their lengths and turned with it. Key the path's constraint's position to animate (a tail, a snake, a rope).",
       "input_schema": {
         "type": "object",
         "properties": {

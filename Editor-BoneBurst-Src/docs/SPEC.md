@@ -265,6 +265,19 @@ Spine's file and the answer says so. Constraint keys take the values in force fr
 `reorderFront`. Poses for the tools are taken at the float32 time, as the playhead is: keys are
 stored as float32, and a frame's float64 time can fall just before the key written at it.
 
+**Building (E5 step 5).** `agent/build.ts`: `add_bones`, `attach`, `add_ik`, `draw_order`,
+`auto_rig`, `add_transform_constraint`, `map_transform`, `add_physics`, `add_slider`, `make_path`,
+`set_constraint_order`, `set_point`, `add_attachment`. A tool that builds on what it just made runs
+as one History gesture, the rig posed between its parts (`agent/apply.ts` `inStep`); bones are
+placed from joint and tip under the parent's posed world matrix (`localBone`, exact under scale and
+shear); a slot moved onto a bone has its attachments re-expressed so it stays put (`reexpress`).
+`auto_rig` plans with `agent/rig/autoRig.ts`, lifted from v1's (ours; SPEC §8 provenance: its two
+imports replaced by `agent/rig/views.ts`, its old words changed, its nested draw order left out:
+v2's slots keep the PSD's stacking), and settles each IK's bend with the engine (a bent limb as
+drawn, a straight one forward for the facing). v1's `rigPlan.ts` spoke the old model and is
+rewritten in these tools. A transform constraint is made with Spine 4.3's identity property map
+(without one it moves nothing). New edit: `edit/attachments.ts` `addAttachment`.
+
 ## 9. Verification
 
 - `scripts/check.sh`: typecheck and build, the tests (zero tests is a failure), no Spine runtime

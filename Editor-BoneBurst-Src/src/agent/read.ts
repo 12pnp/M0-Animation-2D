@@ -46,7 +46,7 @@ const lastFrame = (a: Animation, fps: number) => timeFrame(animationDuration(a),
 // ── get_rig ──
 
 /** Where a region's picture sits: the bone's origin as a pixel of it, and the picture's world rotation. */
-function regionPlace(a: Attachment, pixels: { width: number; height: number }, bone: PosedBone) {
+export function regionPlace(a: Attachment, pixels: { width: number; height: number }, bone: PosedBone) {
   const W = pixels.width, H = pixels.height;
   const sx = ((a.width ?? W) / W) * (a.scaleX ?? 1), sy = ((a.height ?? H) / H) * (a.scaleY ?? 1);
   const r = ((a.rotation ?? 0) * Math.PI) / 180, x = a.x ?? 0, y = a.y ?? 0;
@@ -97,6 +97,7 @@ function getRig(_args: Args, ctx: AgentContext) {
       const pick = (...ks: string[]) => Object.fromEntries(ks.filter((k) => o[k] !== undefined).map((k) => [k, o[k]]));
       return { type: c.type, name: c.name, ...pick("bones", "target", "source", "slot", "bone", "animation", "skin") };
     }),
+    constraintOrder: (doc.constraints ?? []).map((c) => c.name),
     images: ctx.images.regions.map((r) => ({ name: r.name, size: [r.originalWidth, r.originalHeight] })),
     skins: (doc.skins ?? []).map((k) => k.name),
     animations: (doc.animations ?? []).map((a) => ({ name: a.name, frames: lastFrame(a, fps) })),

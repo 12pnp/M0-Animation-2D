@@ -48,6 +48,21 @@ export function addRegion(r: AttachmentRef, fields: AttachmentPatch & { width: n
   };
 }
 
+/** Add any attachment as it is given (a box, a point, a path: E5 step 5); the default skin is created when missing. */
+export function addAttachment(r: AttachmentRef, a: Attachment): Edit<Skeleton> {
+  return (s0) => {
+    if (!r.key.trim()) throw new EditRefused("An attachment needs a name.");
+    if (!s0.slots?.some((x) => x.name === r.slot)) throw new EditRefused(`There is no slot "${r.slot}".`);
+    let s = s0;
+    if (!s.skins?.some((k) => k.name === r.skin)) {
+      if (r.skin !== "default") throw new EditRefused(`There is no skin "${r.skin}".`);
+      s = { ...s, skins: [{ name: "default", attachments: [], extra: new Map() }, ...(s.skins ?? [])] };
+    }
+    if (findAttachment(s, r)) throw new EditRefused(`"${r.slot}" already has an attachment "${r.key}" in "${r.skin}".`);
+    return onSkinSlot(s, r.skin, r.slot, (entries) => [...entries, { key: r.key, attachment: a }]);
+  };
+}
+
 /** Linked meshes that take `r` as their source. */
 function linkedTo(s: Skeleton, r: AttachmentRef): string[] {
   const out: string[] = [];

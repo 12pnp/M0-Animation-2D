@@ -2,6 +2,7 @@ import type { History } from "@/edit/history";
 import type { Skeleton } from "@/model/skeleton";
 import { type AgentContext, AgentRefused } from "./context";
 import type { Contract, Tool } from "./contract";
+import { BUILD_TOOLS } from "./build";
 import { KEY_TOOLS } from "./keys";
 import { READ_TOOLS } from "./read";
 import { schemaProblem } from "./schema";
@@ -46,6 +47,7 @@ const TOOLS: Record<string, ToolFn> = {
   redo: step("redo"),
   ...READ_TOOLS,
   ...KEY_TOOLS,
+  ...BUILD_TOOLS,
 };
 
 /** Run the tool `name` with `args` on the editor's document. */

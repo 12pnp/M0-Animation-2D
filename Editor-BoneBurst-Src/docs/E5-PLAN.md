@@ -5,7 +5,8 @@ with its version note, the gate in `npm run check`. Step 2 (the bridge) done: an
 reaches the open rig (`undo`, `redo` built; every argument checked). Step 3 (the read tools) done:
 `get_rig`, `get_animation`, `get_pose`, `get_reference`, `show`, `render_frame`. Step 4 (the key
 tools) done: all eleven, and a walk keyed on the stickman by an AI over MCP. Step 5 (the building
-tools) next.
+tools) done: the thirteen, and the figure PSD rigged by an AI with `auto_rig` over MCP and waving.
+Step 6 (motion) next.
 
 E5 puts the AI tools onto v2's model: an MCP client (Claude Code, Claude Desktop, any agent) and
 the in-app Ask AI drive the open rig through the tool contract, each edit one undo step. It is
@@ -385,3 +386,102 @@ flowchart LR
    the ground; `get_animation`: 24 frames, a cycle, no seam; `render_frame` at frame 6 with both
    feet's paths (checked by eye); `show walk 6`. Played in the editor (the timeline's keys, the
    stickman walking); one Undo, "AI: set_keys 19 keys in walk", took every key back.
+
+## Step 5 — the building tools
+
+An AI builds a rig: bones from joints, pictures put on them, IK, drawing order, constraints,
+boxes and points, and `auto_rig`, which does it all from a character's joints in one step.
+`add_bones`, `attach`, `add_ik`, `draw_order`, `auto_rig`, `add_transform_constraint`,
+`map_transform`, `add_physics`, `add_slider`, `make_path`, `set_constraint_order`, `set_point`,
+`add_attachment`.
+
+```mermaid
+flowchart LR
+    J["joints (skeleton space)"] -->|"agent/rig/autoRig.ts<br/>(lifted, pure)"| PLAN["bones · which slot<br/>on which bone · IK"]
+    PLAN --> AB["add_bones: from/to →<br/>local under the parent's<br/>world (posed after each)"]
+    PLAN --> AT["attach: slot onto a bone,<br/>its pictures re-expressed,<br/>staying where they are"]
+    PLAN --> IK["add_ik: chain, target<br/>at the tip"]
+    AB & AT & IK --> STEP["one History step<br/>(a gesture: begin · steps · end)"]
+```
+
+### Decisions
+
+- **One step, posed between**: a tool that builds on what it just made (bones under bones,
+  pictures onto new bones) runs as one History gesture: each part is applied, the rig posed
+  again from the document as it now is, the next part placed from that pose; one undo takes the
+  whole call back, and a refusal anywhere cancels it.
+- **Provenance** (SPEC §8): v1's `core/rig/autoRig.ts` (ours: the "auto_rig" commit, 2026-10-02;
+  imports only the motion views and a point type) is lifted to `agent/rig/autoRig.ts` with the
+  old words in comments and names changed (picture layers → pictures, symbol → skeleton) and its
+  `order` part left out: v2's slots already keep the stacking the PSD gave them when they move
+  onto bones. Its two imports become `agent/rig/views.ts` (the side names per view; step 6's
+  motion library takes it over). v1's `core/rig/rigPlan.ts` speaks the old model (symbols,
+  layers, node ids) and is rewritten.
+- **`add_bones`**: `from`/`to` become local x, y, rotation and length under the parent's world
+  matrix as posed (parents earlier in the list included), exact under a scaled or sheared parent.
+- **`attach`** — **meaning** (version note): `image` names an atlas image (v1: a library
+  picture), added as a new slot on the bone with its pivot pixel at `at`, upright or turned by
+  `rotation`, scaled by `scale`, drawn just in front of the slots already on the bone (else in
+  front of everything). `layer` names a slot, moved onto the bone with every attachment it has
+  in every skin re-expressed so it stays where it is (regions, points, unweighted vertices);
+  `pivot` has no meaning for a slot (a Spine picture turns about its bone) and is reported.
+- **`add_ik`**: a bone under a bone gets the two-bone chain, a root bone one; a chain bone with
+  keys is refused; without `target` a `<bone>_target` bone is made at the tip under the
+  skeleton's root; `scale_y` is the constraint's `scaleY`.
+- **`draw_order`** — **meaning** (version note): the setup draw order is the slots' list; a bone
+  stands for the slots on it and under it, kept together; the named children of `parent` move,
+  front first, into the places their slots held. Through `moveSlot`, so draw order keys keep
+  their meaning.
+- **`add_transform_constraint`**, **`map_transform`**, **`add_physics`**, **`add_slider`**,
+  **`set_constraint_order`**: the model's constraints, as the contract describes (`relative` is
+  Spine's `additive`; offsets are `rotation`, `x`, `y`, `scaleX`, `scaleY`, `shearY`).
+- **`make_path`**: a new slot on the first bone's parent with a path attachment through the
+  bones' joints and the last tip (handles a third of the way to the neighbours), and a path
+  constraint laying the bones along it by their lengths.
+- **`set_point`** — **meaning** (version note): Spine's own point values, in its bone's space
+  (y up, degrees counter-clockwise); v1's were the layer's y-down, clockwise space.
+- **`add_attachment`** — **meaning** (version note): a box on a picture traces the picture's
+  rectangle (v1: its outline from alpha).
+
+### Steps
+
+1. `agent/rig/autoRig.ts` lifted, `agent/rig/views.ts`; the gesture helper; table tests for the
+   plan, the local-from-world placement, re-expression.
+2. `agent/build.ts`, the thirteen tools; tests on the figure PSD's rig and the stickman.
+3. On screen: the figure PSD dropped; an AI (this session through MCP) reads the joints off
+   `render_frame`, runs `auto_rig`, checks it with `render_frame`, keys a few frames.
+
+### Step 5 results
+
+1. **Provenance**: v1's `autoRig.ts` (git: the "auto_rig" commit, 2026-10-02, ours; imports only
+   `./motion`'s side names and a point type; no Animo name; "picture layer" and "symbol" in its
+   words) lifted as `agent/rig/autoRig.ts`: `RigLayer` → `RigPicture`, layers → pictures, its
+   imports replaced by `agent/rig/views.ts`, its `order` part left out. v1's `rigPlan.ts` imports
+   the old document model (symbols, layers, node ids, its matrices) and was not opened further:
+   rewritten. `agent/apply.ts` `inStep`; `edit/attachments.ts` `addAttachment`.
+2. `agent/build.ts`, the thirteen tools; `get_rig` gained `constraintOrder`. Version note:
+   `attach`, `draw_order`, `set_point`, `add_attachment` and **added while testing** `add_bones`
+   (a skeleton has one root: a bone given no parent goes under it; `addBone` refuses a second
+   root). `tests/agentBuild.test.ts`, 8 tests on the figure PSD's rig and the stickman: placement
+   under a turned, scaled, sheared parent and re-expression; `add_bones` with a refusal part-way
+   taking the whole call back; `attach` by pivot and a slot moved staying put; `add_ik` keeping the
+   setup pose, keyed chains refused; `draw_order` with a bone carrying its slots; `auto_rig` on the
+   figure (every picture where it was, IK on the legs, one undo); the IK bend (a knee drawn bent
+   forward or backward stays, a straight one bends forward for either facing); the constraints,
+   path, box and point, written and read back as Spine reads them. Eight planted faults fail them.
+   **Found while testing**:
+   - The bend check measured the "drawn" joint after the IK had solved it, so it never fired
+     and every knee took the facing rule (a bird's backward knee would have been flipped). The
+     joint is now recorded before the IK; a test with a backward knee guards it.
+   - A Spine 4.3 transform constraint without a property map moves nothing (format §7.3).
+     `add_transform_constraint` writes the identity map; a test checks the bone follows.
+3. On screen: the figure PSD dropped; this session as the AI through MCP: `render_frame` of the
+   setup pose, the joints read off the picture by eye (pixel → skeleton by its mapping), `auto_rig`
+   (11 bones, 6 pictures on bones, IK on both shins, the shadow noted as on no bone), `render_frame`
+   checked by eye, then a wave keyed with `set_keys` (11 keys, a cycle), shown at frame 12.
+   **Changed on screen:** the first rig put each one-piece arm picture on its forearm (the
+   picture's centre a hair inside it), so the wave pulled the arm picture away from the shoulder.
+   A limb drawn in one piece now goes on its first bone (a small edge to a thigh or upper arm
+   whose child also runs through the picture); the test's joints are now the ones read on screen,
+   where the forearm fits a little better, and fail without the edge. Run again: arms on the
+   upper arms, the raised arm attached at the shoulder.
