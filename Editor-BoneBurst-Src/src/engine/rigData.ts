@@ -1,6 +1,6 @@
 import type { AtlasImages, ImageRegion } from "./regions";
 import { type Json, num, obj, list, parseColor } from "./rigJson";
-import { type BoneBurstInherit, type TransformProp, type TransformMix, type BoneData, type SlotData, type ConstraintData, type SkinData, type AnimationData, type BlendMode, type IkScaleY, TRANSFORM_PROPS, type PathConstraintData, PHYSICS_PROPS, type PhysicsProp, type MeshData, type AttachmentData, type SliderData, type RigData, type EventFire } from "./rigTypes";
+import { type Skipped, type SkippedSubject, type BoneBurstInherit, type TransformProp, type TransformMix, type BoneData, type SlotData, type ConstraintData, type SkinData, type AnimationData, type BlendMode, type IkScaleY, TRANSFORM_PROPS, type PathConstraintData, PHYSICS_PROPS, type PhysicsProp, type MeshData, type AttachmentData, type SliderData, type RigData, type EventFire } from "./rigTypes";
 import { readMesh, readRegion, readPath, readClipping, readBox, readPoint, linkMesh } from "./rigAttachments";
 import { readAnimation } from "./rigAnimation";
 
@@ -21,7 +21,11 @@ function constraintMixes(k: Json, driven: ReadonlySet<TransformProp>): Transform
 
 export function readRig(json: unknown, atlas: AtlasImages): RigData {
   const file = obj(json);
-  const unsupported = new Set<string>();
+  // Each skipped part once, by its message (E8-PLAN step 1).
+  const skipped = new Map<string, Skipped>();
+  const skip = (message: string, subject?: SkippedSubject) => { if (!skipped.has(message)) skipped.set(message, subject ? { message, subject } : { message }); };
+  /** The names in `names` the skeleton lacks, as a phrase. */
+  const lacking = (names: readonly unknown[]) => names.map(String).filter((n) => !boneIndex.has(n)).map((n) => `"${n}"`).join(", ");
 
   const bones: BoneData[] = [];
   const boneIndex = new Map<string, number>();
@@ -70,7 +74,10 @@ export function readRig(json: unknown, atlas: AtlasImages): RigData {
     if (type === "ik") {
       const bonesOf = (Array.isArray(k.bones) ? k.bones : []).map((n) => boneIndex.get(String(n)));
       const target = boneIndex.get(String(k.target));
-      if (target === undefined || !bonesOf.length || bonesOf.some((b) => b === undefined)) { unsupported.add("IK with unknown bones"); continue; }
+      if (target === undefined || !bonesOf.length || bonesOf.some((b) => b === undefined)) {
+        skip(!bonesOf.length ? `IK "${name}" names no bones; it is not solved` : `IK "${name}" names bones the skeleton lacks (${lacking([...(Array.isArray(k.bones) ? k.bones : []), k.target])}); it is not solved`, { kind: "constraint", type, name });
+        continue;
+      }
       constraintIndex.set(name, constraints.length);
       constraints.push({
         kind: "ik", name, bones: bonesOf as number[], target,
@@ -82,7 +89,10 @@ export function readRig(json: unknown, atlas: AtlasImages): RigData {
     } else if (type === "transform") {
       const bonesOf = (Array.isArray(k.bones) ? k.bones : []).map((n) => boneIndex.get(String(n)));
       const source = boneIndex.get(String(k.source ?? k.target));
-      if (source === undefined || bonesOf.some((b) => b === undefined)) { unsupported.add("transform constraints with unknown bones"); continue; }
+      if (source === undefined || bonesOf.some((b) => b === undefined)) {
+        skip(`transform constraint "${name}" names bones the skeleton lacks (${lacking([...(Array.isArray(k.bones) ? k.bones : []), k.source ?? k.target])}); it is not applied`, { kind: "constraint", type, name });
+        continue;
+      }
       constraintIndex.set(name, constraints.length);
       const props = obj(k.properties);
       const driven = new Set<TransformProp>(Object.values(props).flatMap((f) => Object.keys(obj(obj(f).to)) as TransformProp[]));
@@ -111,7 +121,11 @@ export function readRig(json: unknown, atlas: AtlasImages): RigData {
     } else if (type === "path") {
       const bonesOf = (Array.isArray(k.bones) ? k.bones : []).map((n) => boneIndex.get(String(n)));
       const slot = slotIndex.get(String(k.slot));
-      if (slot === undefined || bonesOf.some((b) => b === undefined)) { unsupported.add("path constraints with unknown bones"); continue; }
+      if (slot === undefined || bonesOf.some((b) => b === undefined)) {
+        const what = slot === undefined ? `the slot "${String(k.slot)}", which the skeleton lacks` : `bones the skeleton lacks (${lacking(Array.isArray(k.bones) ? k.bones : [])})`;
+        skip(`path constraint "${name}" names ${what}; it is not applied`, { kind: "constraint", type, name });
+        continue;
+      }
       constraintIndex.set(name, constraints.length);
       const mixX = num(k.mixX, 1);
       constraints.push({
@@ -125,7 +139,7 @@ export function readRig(json: unknown, atlas: AtlasImages): RigData {
       });
     } else if (type === "physics") {
       const bone = boneIndex.get(String(k.bone));
-      if (bone === undefined) { unsupported.add("physics with unknown bones"); continue; }
+      if (bone === undefined) { skip(`physics "${name}" names a bone the skeleton lacks ("${String(k.bone)}"); it does nothing`, { kind: "constraint", type, name }); continue; }
       constraintIndex.set(name, constraints.length);
       constraints.push({
         kind: "physics", name, bone,
@@ -138,7 +152,7 @@ export function readRig(json: unknown, atlas: AtlasImages): RigData {
       });
     } else if (type === "slider") {
       const bone = typeof k.bone === "string" ? boneIndex.get(k.bone) : undefined;
-      if (typeof k.bone === "string" && bone === undefined) { unsupported.add("sliders with unknown bones"); continue; }
+      if (typeof k.bone === "string" && bone === undefined) { skip(`slider "${name}" names a bone the skeleton lacks ("${k.bone}"); it does nothing`, { kind: "constraint", type, name }); continue; }
       constraintIndex.set(name, constraints.length);
       constraints.push({
         kind: "slider", name, animation: -1, bone: bone ?? -1,
@@ -149,7 +163,7 @@ export function readRig(json: unknown, atlas: AtlasImages): RigData {
       });
       sliderAnimations.set(constraints.length - 1, String(k.animation));
     } else {
-      unsupported.add(`${type} constraints`);
+      skip(`constraint "${name}" is a ${type} constraint, which this editor does not play`, { kind: "constraint", type, name });
     }
   }
 
@@ -158,7 +172,7 @@ export function readRig(json: unknown, atlas: AtlasImages): RigData {
 
   const skins: SkinData[] = [];
   // A linked mesh takes its source's geometry, which may be in a skin read later.
-  const linked: Array<{ mesh: MeshData; a: Json; skin: string; slot: number; sourceSlot: number | undefined }> = [];
+  const linked: Array<{ mesh: MeshData; a: Json; skin: string; slot: number; sourceSlot: number | undefined; at: { skin: string; slot: string; key: string } }> = [];
   for (const sk of list(file.skins)) {
     const skin: SkinData = {
       name: String(sk.name), attachments: new Map(),
@@ -180,7 +194,7 @@ export function readRig(json: unknown, atlas: AtlasImages): RigData {
         if (isLinked) {
           const mesh = readMesh(key, { ...a, vertices: [], uvs: [], triangles: [] }, regions);
           const sourceSlot = typeof a.slot === "string" ? slotIndex.get(a.slot) : slot;
-          linked.push({ mesh, a, skin: typeof a.skin === "string" ? a.skin : "default", slot, sourceSlot });
+          linked.push({ mesh, a, skin: typeof a.skin === "string" ? a.skin : "default", slot, sourceSlot, at: { skin: skin.name, slot: slotName, key } });
           byKey.set(key, mesh);
         } else if (type === "region") byKey.set(key, readRegion(key, a, regions));
         else if (type === "mesh") byKey.set(key, readMesh(key, a, regions));
@@ -188,16 +202,16 @@ export function readRig(json: unknown, atlas: AtlasImages): RigData {
         else if (type === "clipping") byKey.set(key, readClipping(key, a, slotIndex));
         else if (type === "boundingbox") byKey.set(key, readBox(key, a));
         else if (type === "point") byKey.set(key, readPoint(key, a));
-        else if (type === "linkedmesh") unsupported.add("linked meshes without a source");
-        else unsupported.add(`${type} attachments`);
+        else if (type === "linkedmesh") skip(`"${key}" in "${slotName}" of skin "${skin.name}" is a linked mesh without a source; it is not drawn`, { kind: "attachment", skin: skin.name, slot: slotName, key });
+        else skip(`"${key}" in "${slotName}" of skin "${skin.name}" is a ${type} attachment, which this editor does not draw`, { kind: "attachment", skin: skin.name, slot: slotName, key });
       }
       skin.attachments.set(slot, byKey);
     }
     skins.push(skin);
   }
-  for (const { mesh, a, skin, slot, sourceSlot } of linked) {
+  for (const { mesh, a, skin, slot, sourceSlot, at } of linked) {
     const source = sourceSlot === undefined ? undefined : skins.find((s) => s.name === skin)?.attachments.get(sourceSlot)?.get(String(a.source));
-    if (source?.kind !== "mesh") { unsupported.add("linked meshes without their source"); continue; }
+    if (source?.kind !== "mesh") { skip(`"${at.key}" in "${at.slot}" of skin "${at.skin}" links to the mesh "${String(a.source)}", which is not there; it is not drawn`, { kind: "attachment", ...at }); continue; }
     linkMesh(mesh, source, a.timelines !== false);
     // Its source's keys play in this slot too (§9 step 6).
     if (a.timelines !== false && slot !== sourceSlot && !source.timelineSlots.includes(slot)) source.timelineSlots.push(slot);
@@ -214,13 +228,13 @@ export function readRig(json: unknown, atlas: AtlasImages): RigData {
 
   const animations: AnimationData[] = [];
   for (const [name, raw] of Object.entries(obj(file.animations))) {
-    animations.push(readAnimation(name, obj(raw), boneIndex, slotIndex, constraintIndex, slots.length, skins, eventData, unsupported));
+    animations.push(readAnimation(name, obj(raw), boneIndex, slotIndex, constraintIndex, slots.length, skins, eventData, (what) => skip(`animation "${name}": ${what} are not played`, { kind: "animation", name })));
   }
 
   for (const [i, animName] of sliderAnimations) {
     const k = constraints[i] as SliderData;
     k.animation = animations.findIndex((a) => a.name === animName);
-    if (k.animation < 0) { unsupported.add("sliders without their animation"); continue; }
+    if (k.animation < 0) { skip(`slider "${k.name}" plays the animation "${animName}", which is not there; it does nothing`, { kind: "constraint", type: "slider", name: k.name }); continue; }
     k.bones = [...new Set(animations[k.animation]!.timelines.flatMap((t) => (t.kind === "bone" || t.kind === "inherit" ? [t.bone] : [])))];
   }
 
@@ -229,7 +243,7 @@ export function readRig(json: unknown, atlas: AtlasImages): RigData {
     // Absent stays 0, as the runtime leaves it; the timeline shows 30 then (SPEC §2).
     fps: num(obj(file.skeleton).fps, 0),
     referenceScale: num(obj(file.skeleton).referenceScale, 100),
-    unsupported: [...unsupported].sort(),
+    skipped: [...skipped.values()],
   };
 }
 

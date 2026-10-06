@@ -8,7 +8,7 @@ export type BoneBurstInherit =
  * A Spine 4.3 skeleton JSON read into the engine's model (docs/SPEC.md §6).
  * Written from the format, held to spine-core by `tests/engineOracle.test.ts`;
  * nothing here is taken from spine-core's source. Whatever a file holds that
- * the engine does not play is listed in `unsupported`, so the stage can say so
+ * the engine does not play is listed in `skipped`, named, so the editor can say so
  * instead of silently drawing something else.
  */
 
@@ -404,6 +404,18 @@ export interface RigData {
   fps: number;
   /** Pixels per unit physics forces are given in (`skeleton.referenceScale`). */
   referenceScale: number;
-  /** What the file uses that this runtime does not play yet, for the stage to show. */
-  unsupported: string[];
+  /** What the file holds that this runtime skips (does not play, cannot solve), each named, for the editor to say. */
+  skipped: Skipped[];
+}
+
+/** What a skipped part is, for the editor to select it (E8-PLAN step 1). */
+export type SkippedSubject =
+  | { readonly kind: "constraint"; readonly type: string; readonly name: string }
+  | { readonly kind: "attachment"; readonly skin: string; readonly slot: string; readonly key: string }
+  | { readonly kind: "animation"; readonly name: string };
+
+/** One thing the engine skips: what to tell the user, and what it is. */
+export interface Skipped {
+  readonly message: string;
+  readonly subject?: SkippedSubject;
 }

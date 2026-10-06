@@ -11,17 +11,16 @@ import type { BoneWorlds } from "@/edit/meshLayout";
 import { newSkeleton } from "@/edit/newSkeleton";
 import type { Atlas } from "@/model/atlas";
 import type { Issue } from "@/model/issue";
-import { profileIssues } from "@/model/profile";
 import type { Animation, ConstraintType, Skeleton } from "@/model/skeleton";
 import { animationDuration, DEFAULT_FPS, frameTime, timeFrame } from "@/model/timelines";
 import type { PhysicsMode } from "@/engine/physics";
-import { missingRegions } from "@/engine/atlasCheck";
 import { atlasImages, NO_IMAGES, type AtlasImages } from "@/engine/regions";
 import { baseName, pickFiles } from "./files";
 import { decodePng, type PngImage } from "@/io/png";
 import { writeAtlas } from "@/io/atlas";
 import { matchReferences, referenceFile } from "./stage/references";
 import { boneUnitOf } from "./stage/boneScale";
+import { documentNotes, type Note, poseNotes } from "./notes";
 import { bounds, boneMatrix, Poser, type Posed } from "./stage/posed";
 
 /** A selection in the rig: what the rig tree, the stage and the properties panel show. */
@@ -85,8 +84,10 @@ export class Session {
   openedCamera: View["camera"] | null = null;
   /** An atlas and its pages the editor made (a PSD import), to be written with the next save. */
   generated: { atlasText: string; pages: readonly Page[] } | null = null;
-  /** What reading found, and pages the atlas names that were not given. */
+  /** What reading the files found (a field kept as written, a page not given): about the files, not the
+   *  document as it is now, which `notes` says (E8-PLAN step 1). */
   issues: Issue[] = [];
+  private noted: { history: History<Skeleton>; revision: number; images: AtlasImages; skipped: unknown; value: Note[] } | null = null;
   /** Each page's exact pixels, read when first needed (E4 step 14): from its file, or as the editor made it. */
   private pageData = new Map<string, () => Promise<PngImage>>();
   /** Re-imports (E4 step 14): the atlas before and after each, swapped as undo and redo cross its step. */
@@ -330,6 +331,22 @@ export class Session {
   }
 
   /** The document posed as shown: the setup pose, or the animation at the playhead. */
+  /**
+   * Everything the editor tells about the document as it is now (E8-PLAN step 1): the profile, the
+   * regions the atlas lacks and what the engine skips, worked out again when the document or the
+   * atlas changes; and the bones the pose shown leaves without one.
+   */
+  notes(): Note[] {
+    const h = this.history, doc = this.doc;
+    if (!h || !doc) return [];
+    const p = this.pose(), skipped = p?.rig.data.skipped ?? [];
+    if (this.noted?.history !== h || this.noted.revision !== h.revision || this.noted.images !== this.images || this.noted.skipped !== skipped) {
+      this.noted = { history: h, revision: h.revision, images: this.images, skipped, value: documentNotes(doc, this.atlas ? this.images : null, skipped) };
+    }
+    const where = `${this.animation ? `${this.animation.name} frame ${this.frame}` : "setup pose"}${this.skin ? ` (skin ${this.skin})` : ""}`;
+    return [...this.noted.value, ...poseNotes(doc, p, where)];
+  }
+
   pose(): Posed | null {
     const poser = this.poserFor();
     if (!poser) return null;
@@ -370,12 +387,12 @@ export class Session {
     // An atlas alone starts a new skeleton (a root bone) to build a rig from its regions.
     const { skeleton, issues } = picked.skeleton ? readSkeleton(await picked.skeleton.text()) : { skeleton: newSkeleton(randomHash()), issues: [] };
     const fileName = picked.skeleton?.name ?? `${picked.atlas!.name.replace(/\.atlas(\.txt)?$/i, "")}.json`;
-    const all: Issue[] = [...issues, ...profileIssues(skeleton)];
+    // The profile and the atlas's regions are the live notes' (`notes`): they follow every edit.
+    const all: Issue[] = [...issues];
     let atlas: Atlas | null = null;
     const pages = new Map<string, ImageBitmap>(), pageData = new Map<string, () => Promise<PngImage>>();
     if (picked.atlas) {
       atlas = readAtlas(await picked.atlas.text());
-      all.push(...missingRegions(skeleton, atlasImages(atlas)));
       for (const p of atlas.pages) {
         const img = picked.images.get(p.name);
         if (!img) { all.push({ where: picked.atlas.name, message: `page "${p.name}" was not given; its images are not drawn` }); continue; }
@@ -462,7 +479,7 @@ export class Session {
     for (const p of im.pages) {
       pages.set(p.name, await createImageBitmap(new ImageData(new Uint8ClampedArray(p.pixels), p.width, p.height), { premultiplyAlpha: "premultiply" }));
     }
-    this.replace(im.skeleton, false, im.name, im.atlas, pages, [...im.issues, ...profileIssues(im.skeleton)]);
+    this.replace(im.skeleton, false, im.name, im.atlas, pages, [...im.issues]);
     this.generated = { atlasText: im.atlasText, pages: im.pages };
     this.pageData = new Map(im.pages.map((p) => [p.name, async () => p]));
   }

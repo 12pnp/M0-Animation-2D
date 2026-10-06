@@ -87,7 +87,7 @@ const PLAYED_SECTIONS = new Set(["bones", "slots", "ik", "transform", "path", "p
 export function readAnimation(
   name: string, raw: Json, boneIndex: Map<string, number>, slotIndex: Map<string, number>,
   constraintIndex: Map<string, number>, slotCount: number, skins: SkinData[],
-  eventData: Map<string, EventFire>, unsupported: Set<string>): AnimationData {
+  eventData: Map<string, EventFire>, unsupported: (what: string) => void): AnimationData {
   const timelines: Timeline[] = [];
   // Each of the file's timelines is one unit, which may be several of ours
   // (one per value channel); a unit's property ids decide its hold mode.
@@ -128,7 +128,7 @@ export function readAnimation(
         push({ kind: "color", slot, index: 3, channel: channel! });
         seal([`alpha ${slot}`]);
       } else {
-        unsupported.add(`${kind} keys`);
+        unsupported(`${kind} keys`);
       }
     }
   }
@@ -148,7 +148,7 @@ export function readAnimation(
         continue;
       }
       const spec = BONE_TIMELINES[kind];
-      if (!spec) { unsupported.add(`${kind} keys`); continue; }
+      if (!spec) { unsupported(`${kind} keys`); continue; }
       const chans = channels(keys, spec.props.length, (k, i) => num(k[spec.fields[i]!], spec.neutral));
       spec.props.forEach((prop, i) => push({ kind: "bone", bone, prop, channel: chans[i]! }));
       seal(BONE_IDS[kind]!.map((id) => `${id} ${bone}`));
@@ -200,7 +200,7 @@ export function readAnimation(
         });
         push({ kind: "pathMix", constraint, times: rotate!.times, rotate: rotate!, x: x!, y: y! });
         seal([`path mix ${constraint}`]);
-      } else unsupported.add(`path ${kind} keys`);
+      } else unsupported(`path ${kind} keys`);
     }
   }
 
@@ -230,7 +230,7 @@ export function readAnimation(
               delays,
             });
             seal([`sequence ${slot} ${attachmentId(attachment)}`]);
-          } else unsupported.add(`${kind} keys`);
+          } else unsupported(`${kind} keys`);
         }
       }
     }
@@ -238,7 +238,7 @@ export function readAnimation(
 
   // Sections this runtime does not play are said, never dropped silently:
   // 4.3's draw order folders (Timelines.md §3.7) are not played yet.
-  for (const section of Object.keys(raw)) if (!PLAYED_SECTIONS.has(section)) unsupported.add(`${section} keys`);
+  for (const section of Object.keys(raw)) if (!PLAYED_SECTIONS.has(section)) unsupported(`${section} keys`);
 
   const drawOrder = list(raw.drawOrder ?? raw.draworder);
   if (drawOrder.length) {
@@ -271,7 +271,7 @@ export function readAnimation(
     for (const [kind, keysRaw] of Object.entries(obj(groups))) {
       const keys = list(keysRaw);
       if (!keys.length) continue;
-      if (kind !== "time" && kind !== "mix") { unsupported.add(`slider ${kind} keys`); continue; }
+      if (kind !== "time" && kind !== "mix") { unsupported(`slider ${kind} keys`); continue; }
       // Both default to 1 (Format-Json-Atlas.md §11.9; spine-core reads a bare time key as 1).
       const [channel] = channels(keys, 1, (k) => num(k.value, 1));
       push({ kind: kind === "time" ? "sliderTime" : "sliderMix", constraint, times: channel!.times, channel: channel! });
@@ -294,7 +294,7 @@ export function readAnimation(
         const [channel] = channels(keys, 1, (k) => num(k.value, kind === "mix" ? 1 : 0));
         push({ kind: "physics", constraint, prop: kind as PhysicsProp, times: channel!.times, channel: channel! });
         seal([`physics ${kind} ${constraint}`]);
-      } else unsupported.add(`physics ${kind} keys`);
+      } else unsupported(`physics ${kind} keys`);
     }
   }
 

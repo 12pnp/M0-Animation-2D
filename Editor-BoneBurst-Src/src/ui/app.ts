@@ -459,14 +459,25 @@ export function mountApp(root: HTMLElement): void {
     }
     skinSelect.value = session.skin ?? "";
     skinLabel.hidden = skins.length === 0;
-    const unsupported = session.pose()?.rig.data.unsupported ?? [];
-    const notes = [
-      ...session.issues.map((i) => `${i.where}: ${i.message}`),
-      ...unsupported.map((u) => `not drawn yet: ${u}`),
-    ];
+    // What reading the files said, then the notes about the document as it is now (E8-PLAN step 1);
+    // a note about a thing selects it (an animation's, shows it).
+    const notes = [...session.issues.map((i) => ({ text: `${i.where}: ${i.message}`, subject: null })), ...session.notes()];
     issuesBtn.hidden = notes.length === 0;
     issuesBtn.textContent = `${notes.length} note${notes.length === 1 ? "" : "s"}`;
-    issuesList.replaceChildren(...notes.map((n) => Object.assign(document.createElement("li"), { textContent: n })));
+    const shown = notes.map((n) => n.text).join("\n");
+    if (issuesList.dataset.shown !== shown) {
+      issuesList.dataset.shown = shown;
+      issuesList.replaceChildren(...notes.map((n) => {
+        const li = document.createElement("li");
+        const subject = n.subject;
+        if (!subject) { li.textContent = n.text; return li; }
+        li.append(button(n.text, "Select it", () => {
+          if (subject.kind === "animation") session.showAnimation(subject.name);
+          else session.select(subject);
+        }));
+        return li;
+      }));
+    }
     hint.hidden = !!doc;
     // The mode button says what is shown now, and what a click switches to.
     const animating = !!session.animation;
