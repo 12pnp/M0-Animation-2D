@@ -18,10 +18,10 @@ import { ChatClient } from "./agent/chat";
 import { sessionContext } from "./agent/context";
 import { AskAi } from "./panels/askAi";
 import { DIVIDER, MenuBar } from "./menubar";
-import { type IconName, iconButton } from "./icons";
+import { iconButton } from "./icons";
 import { ExportRefused, exportToUnity } from "./unityExport";
 import { Autosaver, clearRecovery, readRecovery, sourcesOf } from "./recovery";
-import { isPanelId, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
+import { isPanelId, PANEL_ICONS, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
 import { type PanelContent, Workspace } from "./workspace/workspace";
 
 /** The stickman the plan names for E2, served by the dev server from the test fixtures. */
@@ -178,10 +178,6 @@ export function mountApp(root: HTMLElement): void {
     ["reference", { element: references.element }],
     ["ai", { element: askAi.element }],
   ]), (w) => w.addEventListener("keydown", onKey));
-  const PANEL_ICONS: Readonly<Record<PanelId, IconName>> = {
-    stage: "panelStage", rigTree: "panelRig", properties: "panelProperties", timeline: "panelTimeline",
-    reference: "addImage", ai: "ai", preview: "play",
-  };
   const activityBtns = workspace.built.map((id) => {
     const b = iconButton(button(PANEL_TITLES[id], `${PANEL_TITLES[id]}: show or hide the panel`, () => workspace.toggle(id)), PANEL_ICONS[id], false);
     b.dataset.panel = id;
@@ -431,7 +427,7 @@ export function mountApp(root: HTMLElement): void {
       if (a) session.seek(timeFrame(animationDuration(a), session.fps));
       return;
     }
-    if (key === "k") { timeline.keySelectedBone(); return; }
+    if (key === "k") { timeline.keySelected(); return; }
     if ((key === "delete" || key === "backspace") && timeline.hasSelection) { e.preventDefault(); timeline.deleteSelected(); return; }
     // On the stage in mesh mode, Delete deletes the selected vertex.
     if ((key === "delete" || key === "backspace") && stage.element.contains(e.target as Node) && stage.deleteVertex()) { e.preventDefault(); return; }

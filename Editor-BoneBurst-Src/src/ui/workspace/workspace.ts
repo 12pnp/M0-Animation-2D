@@ -1,8 +1,9 @@
-import type { DockviewApi, DockviewTheme, IContentRenderer } from "dockview-core";
+import type { DockviewApi, DockviewTheme, IContentRenderer, ITabRenderer } from "dockview-core";
 // The UMD build: it carries Dockview's own styles (the ES module does not), injected on load.
 import { createDockview, themeDark, themeLight } from "dockview-core/dist/dockview-core.js";
 import { arrivalPlacement, DEFAULT_ORDER, type Deferred, defaultPlacement, type Placement, restoreWorkspace, saveWorkspace } from "./layout";
-import { PANEL_TITLES, type PanelId } from "./panelIds";
+import { icon } from "../icons";
+import { PANEL_ICONS, PANEL_TITLES, type PanelId } from "./panelIds";
 
 /** Where the browser keeps the workspace (view-only state of the app, not of a document). */
 export const WORKSPACE_KEY = "boneburst.workspace";
@@ -41,6 +42,8 @@ export class Workspace {
     this.api = createDockview(host, {
       theme: themeFor(prefersDark()),
       createComponent: ({ name }) => this.renderer(name as PanelId),
+      createTabComponent: ({ id }) => tabRenderer(id as PanelId),
+      defaultTabComponent: "tab",
       getTabContextMenuItems: () => ["float", "popout", "maximize", "separator", "close"],
     });
     const scheme = window.matchMedia("(prefers-color-scheme: dark)");
@@ -145,4 +148,26 @@ function prefersDark(): boolean {
 
 function themeFor(dark: boolean): DockviewTheme {
   return dark ? themeDark : themeLight;
+}
+
+/**
+ * A panel's tab: its icon and title, no close button. Middle click closes the panel (Shift+click
+ * too, for a mouse without a middle button); the right-click menu is Dockview's own.
+ */
+function tabRenderer(id: PanelId): ITabRenderer {
+  const element = document.createElement("div");
+  element.className = "panel-tab";
+  const title = document.createElement("span");
+  title.textContent = PANEL_TITLES[id];
+  element.append(icon(PANEL_ICONS[id]), title);
+  return {
+    element,
+    init: ({ api }) => {
+      title.textContent = api.title || PANEL_TITLES[id];
+      // A middle press would start the browser's autoscroll; the close is on its release.
+      element.addEventListener("mousedown", (e) => { if (e.button === 1) e.preventDefault(); });
+      element.addEventListener("auxclick", (e) => { if (e.button === 1) { e.preventDefault(); api.close(); } });
+      element.addEventListener("click", (e) => { if (e.shiftKey) { e.preventDefault(); e.stopPropagation(); api.close(); } }, true);
+    },
+  };
 }

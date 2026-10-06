@@ -1,3 +1,5 @@
+import type { IconName } from "../icons";
+
 /**
  * Every panel the editor has or will have, by the id its layout is saved under (D6). Reserved now
  * so saved layouts and cross-references stay stable; a panel registers only in the phase that
@@ -20,3 +22,9 @@ export const PANEL_TITLES: Readonly<Record<PanelId, string>> = {
 export function isPanelId(id: string): id is PanelId {
   return (PANEL_IDS as readonly string[]).includes(id);
 }
+
+/** Each panel's icon: on its tab and on the activity bar. */
+export const PANEL_ICONS: Readonly<Record<PanelId, IconName>> = {
+  stage: "panelStage", rigTree: "panelRig", properties: "panelProperties", timeline: "panelTimeline",
+  reference: "addImage", ai: "ai", preview: "play",
+};
