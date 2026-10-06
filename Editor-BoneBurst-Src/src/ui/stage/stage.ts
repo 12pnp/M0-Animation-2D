@@ -15,6 +15,7 @@ import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point,
 import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix, type Posed } from "./posed";
 import { constraintShapes, hitConstraint } from "./constraintShapes";
 import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
+import { boneColourOf } from "../boneLook";
 import { NO_LOOK, type StageLook } from "./look";
 import { type Backdrop, Renderer } from "./renderer";
 import { ghostsFor, type OnionOptions } from "./onion";
@@ -88,6 +89,8 @@ export class Stage {
   grid: number | null = null;
   /** The checkerboard, centre axes and grid lines' colours and thickness (View and Preferences). */
   look: StageLook = NO_LOOK;
+  /** The colour bones are drawn in unless they have their own; null: the theme's. */
+  boneColour: string | null = null;
   /** What the drag snapped to this step, drawn until the drag ends. */
   private snapped: Snapped | null = null;
   /** A weight-brush stroke under way (E6 step 4f), and where the pointer is on screen for the circle. */
@@ -213,9 +216,12 @@ export class Stage {
     if (!p) return;
     const bone = css.getPropertyValue("--bone").trim(), selected = css.getPropertyValue("--accent").trim();
     if (this.show.bones) {
+      // A bone with a colour of its own keeps it; the rest take the preference, else the theme's.
+      const own = new Map<string, string>();
+      for (const b of this.session.doc?.bones ?? []) { const c = boneColourOf(b); if (c) own.set(b.name, c); }
       for (const b of this.screenBones()) {
         const on = b.name === this.session.selectedBone;
-        drawBone(g, b, on ? selected : bone, on);
+        drawBone(g, b, on ? selected : own.get(b.name) ?? this.boneColour ?? bone, on);
       }
     }
     if (this.show.constraints) this.drawConstraints(g, p, css, selected);

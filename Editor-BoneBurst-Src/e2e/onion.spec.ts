@@ -1,5 +1,4 @@
 import { expect, type Page, test } from "@playwright/test";
-import { decodePng } from "../src/io/png";
 
 /**
  * Onion skin (E6-PLAN step 4d): View ▸ Onion Skin draws the poses before (red) and after (green)
@@ -8,13 +7,24 @@ import { decodePng } from "../src/io/png";
 
 type Live = { boneburst: { session: { seek(f: number): void } } };
 
-/** The WebGL canvas alone (the bones' overlay hidden), as pixels. */
+/**
+ * The WebGL canvas alone (the bones' overlay is a separate canvas), read straight from its
+ * framebuffer right after a paint. A screenshot goes through the browser's compositor, which can
+ * differ by a level here and there between two identical frames (it did once the rig panel gained a
+ * scrolling list), so exact comparisons read the pixels the renderer drew.
+ */
 async function stagePixels(page: Page): Promise<{ width: number; pixels: Uint8ClampedArray }> {
-  const overlay = page.locator(".stage canvas.overlay");
-  await overlay.evaluate((el) => { (el as HTMLElement).style.visibility = "hidden"; });
-  const png = await page.locator(".stage canvas:not(.overlay)").screenshot();
-  await overlay.evaluate((el) => { (el as HTMLElement).style.visibility = ""; });
-  return decodePng(new Uint8Array(png));
+  const read = await page.evaluate(() => {
+    // `paint` draws now (redraw waits for the next frame, after which the buffer reads back empty).
+    (window as unknown as { boneburst: { stage: { paint(): void } } }).boneburst.stage.paint();
+    const canvas = document.querySelector(".stage canvas:not(.overlay)") as HTMLCanvasElement;
+    const gl = canvas.getContext("webgl2")!;
+    const width = gl.drawingBufferWidth, height = gl.drawingBufferHeight;
+    const px = new Uint8Array(width * height * 4);
+    gl.readPixels(0, 0, width, height, gl.RGBA, gl.UNSIGNED_BYTE, px);
+    return { width, pixels: Array.from(px) };
+  });
+  return { width: read.width, pixels: Uint8ClampedArray.from(read.pixels) };
 }
 
 /** Pixels clearly red (past ghosts) and clearly green (future ones). */

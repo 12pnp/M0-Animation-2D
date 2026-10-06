@@ -8,6 +8,7 @@ import { addSlot, deleteSlot, moveSlot, updateSlot } from "@/edit/slots";
 import { attachmentType, CONSTRAINT_TYPES, type ConstraintType, type Skeleton } from "@/model/skeleton";
 import { CONSTRAINT_ICONS, icon, iconButton, type IconName } from "../icons";
 import { type Selection, sameSelection, type Session } from "../session";
+import { boneColourOf, boneIconOf } from "../boneLook";
 import { newConstraint } from "./newConstraint";
 
 type View = "tree" | "order" | "skins" | "constraints" | "events";
@@ -16,7 +17,7 @@ type View = "tree" | "order" | "skins" | "constraints" | "events";
 const KIND_LABELS: Record<ConstraintType, string> = { ik: "IK", transform: "Transform", path: "Path", physics: "Physics", slider: "Slider" };
 
 /** One row of the rig tree. */
-interface Item { readonly sel: Selection; readonly label: string; readonly depth: number; readonly kind: Selection["kind"]; readonly toggle?: string; readonly open?: boolean; readonly note?: string; readonly icon?: IconName }
+interface Item { readonly sel: Selection; readonly label: string; readonly depth: number; readonly kind: Selection["kind"]; readonly toggle?: string; readonly open?: boolean; readonly note?: string; readonly icon?: IconName; readonly colour?: string }
 
 /**
  * The rig: bones as a tree, each with its slots, each slot with its attachments (the shown skin's
@@ -293,7 +294,8 @@ export class Outline {
       const mine = slots.filter((x) => x.bone === bone);
       const kids = children.get(bone) ?? [];
       const id = `bone/${bone}`, open = !this.closed.has(id);
-      out.push({ sel: { kind: "bone", name: bone }, label: bone, depth, kind: "bone", icon: "bone", ...(mine.length || kids.length ? { toggle: id, open } : {}) });
+      const own = doc.bones?.find((b) => b.name === bone), tint = own ? boneColourOf(own) : null;
+      out.push({ sel: { kind: "bone", name: bone }, label: bone, depth, kind: "bone", icon: own ? boneIconOf(own) : "bone", ...(tint ? { colour: tint } : {}), ...(mine.length || kids.length ? { toggle: id, open } : {}) });
       if (!open) return;
       for (const slot of mine) {
         const entries = skins.flatMap((skin) => (doc.skins?.find((k) => k.name === skin)?.attachments?.find((ss) => ss.slot === slot.name)?.entries ?? []).map((e) => ({ skin, key: e.key })));
@@ -392,7 +394,7 @@ export class Outline {
       pad.className = "twisty-gap";
       row.append(pad);
     }
-    if (it.icon) row.append(icon(it.icon));
+    if (it.icon) { const i = icon(it.icon); if (it.colour) i.style.color = it.colour; row.append(i); }
     const name = document.createElement("span");
     name.className = "name";
     name.textContent = it.label;

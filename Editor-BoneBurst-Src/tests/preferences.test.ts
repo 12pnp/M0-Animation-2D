@@ -14,7 +14,7 @@ function store(initial: string | null = null, blocked = false): Store & { saved:
 describe("preferences", () => {
   it("start from the defaults, and read back what was written", () => {
     expect(readPreferences(null)).toEqual(DEFAULTS);
-    const p = { theme: "dark" as const, rulers: false, bones: false, constraints: false, undoSteps: 1200, referenceOpacity: 0.3, ai: true, autosave: false, autosaveSeconds: 90, onion: true, onionBefore: 3, onionAfter: 0, onionKeyedOnly: true, onionColour: false, grid: true, checker: false, axes: false, checkerColour: "#112233", gridColour: "#445566", gridThickness: 2.5, axisXColour: "#aa0000", axisYColour: "#00aa00", axisThickness: 3, tabBarColour: "#101820", tabActiveColour: "auto", gridSize: 12.5, snap: false, snapGrid: false, snapGuides: false, snapBones: false, snapPixels: true };
+    const p = { theme: "dark" as const, rulers: false, boneColour: "#334455", bones: false, constraints: false, undoSteps: 1200, referenceOpacity: 0.3, ai: true, autosave: false, autosaveSeconds: 90, onion: true, onionBefore: 3, onionAfter: 0, onionKeyedOnly: true, onionColour: false, grid: true, checker: false, axes: false, checkerColour: "#112233", gridColour: "#445566", gridThickness: 2.5, axisXColour: "#aa0000", axisYColour: "#00aa00", axisThickness: 3, tabBarColour: "#101820", tabActiveColour: "auto", gridSize: 12.5, snap: false, snapGrid: false, snapGuides: false, snapBones: false, snapPixels: true };
     expect(readPreferences(writePreferences(p))).toEqual(p);
   });
   it.each([

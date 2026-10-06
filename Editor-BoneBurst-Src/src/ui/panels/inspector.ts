@@ -13,7 +13,9 @@ import { autoWeights, bindMesh, meshBones, setMeshBone, setWeight, unbindMesh } 
 import { moveAttachment, renameSkin, setSkinMember } from "@/edit/skins";
 import { BLEND_MODES, renameSlot, updateSlot } from "@/edit/slots";
 import { BONE_DEFAULTS, boneInherit, boneNumber, type BoneNumber, CONSTRAINT_DEFAULTS, constraintValue, DEPENDENT_DEFAULTS, TRANSFORM_MIXES, transformTargets } from "@/model/defaults";
-import { type Attachment, attachmentType, type Constraint, type Skeleton, type TransformFrom } from "@/model/skeleton";
+import { type Attachment, attachmentType, type Bone, type Constraint, type Skeleton, type TransformFrom } from "@/model/skeleton";
+import { BONE_ICONS, boneColourOf, boneColourToFile, boneIconOf } from "../boneLook";
+import { pickColour } from "../colourPopup";
 import { DEFAULT_FPS, timeFrame } from "@/model/timelines";
 import type { Selection, Session } from "../session";
 import { brush, BRUSH_STRENGTH } from "../stage/weightBrush";
@@ -132,6 +134,8 @@ export class Inspector {
         return reparentBone(name, v, patch as BonePatch);
       }, (v) => `Move bone ${name} under ${v}`));
     }
+    form.append(this.colourField(bone, name), this.selectField("icon", "Icon", [["", "Bone (default)"], ...BONE_ICONS.filter((n) => n !== "bone").map((n): [string, string] => [n, n])], bone.icon && boneIconOf(bone) !== "bone" ? boneIconOf(bone) : "",
+      (v) => updateBone(name, { icon: v === "" ? undefined : v }), (v) => `Set the icon of bone ${name}${v ? ` to ${v}` : " back to the default"}`));
     form.append(readOnly("Inherit", boneInherit(bone)));
     form.append(this.checkField("skin", "Skin required", bone.skin === true, (on) => updateBone(name, { skin: on ? true : undefined }),
       (on) => `${on ? "Make" : "Stop making"} bone ${name} skin-required`));
@@ -549,6 +553,34 @@ export class Inspector {
     select.addEventListener("change", () => this.commit(labelFor(select.value), () => edit(select.value), after && (() => after(select.value))));
     this.inputs.set(key, select);
     return field(label, select);
+  }
+
+  /** A bone's colour: a swatch that opens the picker (Apply, Close), and Auto to give it back to the default. */
+  private colourField(bone: Bone, name: string): HTMLDivElement {
+    const row = document.createElement("div");
+    row.className = "field";
+    const span = document.createElement("span");
+    span.textContent = "Colour";
+    const box = document.createElement("span");
+    box.className = "colour";
+    const own = boneColourOf(bone);
+    const swatch = document.createElement("button");
+    swatch.type = "button";
+    swatch.className = "swatch";
+    swatch.title = "Choose this bone's colour";
+    swatch.setAttribute("aria-label", "Bone colour");
+    swatch.classList.toggle("auto", own === null);
+    if (own) swatch.style.background = own;
+    swatch.addEventListener("click", () => pickColour(swatch, own ?? "#9b9b9b", (hex) => this.commit(`Set the colour of bone ${name}`, () => updateBone(name, { color: boneColourToFile(hex) }))));
+    const auto = document.createElement("button");
+    auto.type = "button";
+    auto.textContent = "Auto";
+    auto.title = "Draw this bone in the default bone colour";
+    auto.disabled = own === null;
+    auto.addEventListener("click", () => this.commit(`Give bone ${name} the default colour`, () => updateBone(name, { color: undefined })));
+    box.append(swatch, auto);
+    row.append(span, box);
+    return row;
   }
 
   private checkField(key: string, label: string, value: boolean, edit: (on: boolean) => Edit<Skeleton> | null, labelFor: (on: boolean) => string): HTMLLabelElement {
