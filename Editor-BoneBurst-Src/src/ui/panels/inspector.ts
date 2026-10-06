@@ -4,6 +4,7 @@ import { type BonePatch, renameBone, reparentBone, subtree, updateBone } from "@
 import { type ConstraintPatch, type ConstraintRef, findConstraint, IK_SCALE_Y, PHYSICS_SCALE_Y, POSITION_MODES, renameConstraint,
   ROTATE_MODES, SPACING_MODES, TRANSFORM_PROPERTIES, updateConstraint } from "@/edit/constraints";
 import { CONSTRAINT_KEYS, keyConstraint, keyPhysicsReset } from "@/edit/constraintKeys";
+import { defineEvent, renameEvent } from "@/edit/events";
 import { type Edit, EditRefused } from "@/edit/history";
 import { regionToMesh, retriangulate, verticesOutside } from "@/edit/mesh";
 import { type BoneWorlds, decodeBinds, frameFor, isWeighted, positions } from "@/edit/meshLayout";
@@ -12,6 +13,7 @@ import { moveAttachment, renameSkin, setSkinMember } from "@/edit/skins";
 import { BLEND_MODES, renameSlot, updateSlot } from "@/edit/slots";
 import { BONE_DEFAULTS, boneInherit, boneNumber, type BoneNumber, CONSTRAINT_DEFAULTS, constraintValue, DEPENDENT_DEFAULTS, TRANSFORM_MIXES, transformTargets } from "@/model/defaults";
 import { type Attachment, attachmentType, type Constraint, type Skeleton, type TransformFrom } from "@/model/skeleton";
+import { timeFrame } from "@/model/timelines";
 import type { Selection, Session } from "../session";
 import { animatedLocal, constraintNow, localUnder, Poser } from "../stage/posed";
 import { empty, heading } from "./outline";
@@ -70,7 +72,7 @@ export class Inspector {
     this.shown = key;
     this.inputs.clear();
     if (!doc || !sel || !target) {
-      this.element.replaceChildren(heading("Properties"), empty(doc ? "Select a bone, slot, attachment, skin or constraint." : "Nothing open."));
+      this.element.replaceChildren(heading("Properties"), empty(doc ? "Select a bone, slot, attachment, skin, constraint or event." : "Nothing open."));
       return;
     }
     const form = document.createElement("div");
@@ -79,9 +81,10 @@ export class Inspector {
     else if (sel.kind === "slot") this.slotForm(form, doc, sel.name);
     else if (sel.kind === "skin") this.skinForm(form, doc, sel.name);
     else if (sel.kind === "constraint") this.constraintForm(form, doc, sel);
+    else if (sel.kind === "event") this.eventForm(form, doc, sel.name);
     else this.attachmentForm(form, doc, sel);
     const title = sel.kind === "bone" ? (anim ? `Bone · keys at frame ${s.frame}` : "Bone") : sel.kind === "slot" ? "Slot" : sel.kind === "skin" ? "Skin"
-      : sel.kind === "constraint" ? `Constraint · ${KIND_TITLES[sel.type]}${anim ? ` · keys at frame ${s.frame}` : ""}` : "Attachment";
+      : sel.kind === "constraint" ? `Constraint · ${KIND_TITLES[sel.type]}${anim ? ` · keys at frame ${s.frame}` : ""}` : sel.kind === "event" ? "Event" : "Attachment";
     this.element.replaceChildren(heading(title), form);
   }
 
@@ -122,6 +125,27 @@ export class Inspector {
     form.append(readOnly("Inherit", boneInherit(bone)));
     form.append(this.checkField("skin", "Skin required", bone.skin === true, (on) => updateBone(name, { skin: on ? true : undefined }),
       (on) => `${on ? "Make" : "Stop making"} bone ${name} skin-required`));
+  }
+
+  /** An event (E6 step 4b): its name, the values it carries, its sound; where the shown animation fires it. */
+  private eventForm(form: HTMLElement, doc: Skeleton, name: string): void {
+    const s = this.session, e = doc.events!.find((x) => x.name === name)!;
+    form.append(this.textField("name", "Name", name, (v) => (v === name ? null : renameEvent(name, v)), (v) => `Rename event ${name} to ${v}`,
+      (v) => s.select({ kind: "event", name: v })));
+    // A value back at its default is left out, as Spine writes it.
+    const num = (key: "int" | "float" | "volume" | "balance", label: string, d: number) => this.textField(key, label, format(e[key] ?? d), (v) => {
+      const n = key === "int" ? Math.round(number(v, label)) : number(v, label);
+      return defineEvent(name, { [key]: n === d ? undefined : n });
+    }, () => `Set ${label.toLowerCase()} of event ${name}`, undefined, "decimal");
+    form.append(num("int", "Int", 0), num("float", "Float", 0));
+    form.append(this.textField("string", "String", e.string ?? "", (v) => defineEvent(name, { string: v === "" ? undefined : v }), () => `Set string of event ${name}`));
+    form.append(this.textField("audio", "Audio", e.audio ?? "", (v) => defineEvent(name, { audio: v.trim() === "" ? undefined : v.trim() }), () => `Set audio of event ${name}`));
+    if (e.audio) form.append(num("volume", "Volume", 1), num("balance", "Balance", 0));
+    const anim = s.animation;
+    if (anim) {
+      const frames = (anim.events ?? []).filter((k) => k.name === name).map((k) => timeFrame(k.time ?? 0, s.fps));
+      form.append(readOnly(`In ${anim.name}`, frames.length ? `frame ${frames.join(", ")}` : "not keyed: Key (K) fires it at the playhead"));
+    }
   }
 
   private skinForm(form: HTMLElement, doc: Skeleton, name: string): void {
@@ -500,6 +524,7 @@ export function selectedObject(doc: Skeleton, sel: Selection): object | undefine
   if (sel.kind === "skin") return doc.skins?.find((k) => k.name === sel.name);
   if (sel.kind === "slot") return doc.slots?.find((x) => x.name === sel.name);
   if (sel.kind === "constraint") return findConstraint(doc, sel);
+  if (sel.kind === "event") return doc.events?.find((e) => e.name === sel.name);
   return findAttachment(doc, sel);
 }
 

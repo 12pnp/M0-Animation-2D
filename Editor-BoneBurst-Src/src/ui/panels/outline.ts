@@ -1,6 +1,7 @@
 import { addRegion, deleteAttachment, findAttachment } from "@/edit/attachments";
 import { addBone, deleteBone } from "@/edit/bones";
 import { deleteConstraint, moveConstraint } from "@/edit/constraints";
+import { defineEvent, deleteEvent } from "@/edit/events";
 import { type Edit, EditRefused } from "@/edit/history";
 import { addSkin, deleteSkin, duplicateSkin } from "@/edit/skins";
 import { addSlot, deleteSlot, moveSlot, updateSlot } from "@/edit/slots";
@@ -9,7 +10,7 @@ import { CONSTRAINT_ICONS, icon, iconButton, type IconName } from "../icons";
 import { type Selection, sameSelection, type Session } from "../session";
 import { newConstraint } from "./newConstraint";
 
-type View = "tree" | "order" | "skins" | "constraints";
+type View = "tree" | "order" | "skins" | "constraints" | "events";
 
 /** The constraint kinds as the + Constraint menu names them. */
 const KIND_LABELS: Record<ConstraintType, string> = { ik: "IK", transform: "Transform", path: "Path", physics: "Physics", slider: "Slider" };
@@ -34,7 +35,7 @@ export class Outline {
   private readonly list: HTMLDivElement;
   private readonly regionPick: HTMLSelectElement;
   private readonly kindPick: HTMLSelectElement;
-  private readonly buttons: Record<"bone" | "slot" | "region" | "del" | "up" | "down" | "tree" | "order" | "skins" | "skin" | "dup" | "constraints" | "constraint", HTMLButtonElement>;
+  private readonly buttons: Record<"bone" | "slot" | "region" | "del" | "up" | "down" | "tree" | "order" | "skins" | "skin" | "dup" | "constraints" | "constraint" | "events" | "event", HTMLButtonElement>;
 
   constructor(private readonly session: Session) {
     this.element = document.createElement("div");
@@ -52,6 +53,8 @@ export class Outline {
       order: button("Draw order", "Slots front to back", () => this.setView("order")),
       skins: button("Skins", "The skins; choosing one shows it", () => this.setView("skins")),
       constraints: button("Constraints", "The constraints, in the order they apply", () => this.setView("constraints")),
+      events: button("Events", "The skeleton's events: select one to key it (K) or edit its values", () => this.setView("events")),
+      event: button("+ Event", "Add an event to the skeleton", () => this.addEvent()),
       constraint: button("+ Constraint", "Add a constraint of the chosen kind to the selected bone (a path: the selected slot)", () => this.addConstraint(this.kindPick.value as ConstraintType)),
       skin: button("+ Skin", "Add an empty skin", () => this.addSkin()),
       dup: button("Duplicate", "Copy the selected skin", () => this.duplicateSkin()),
@@ -62,8 +65,8 @@ export class Outline {
       up: iconButton(button("↑", "Bring the selected slot forward; apply the selected constraint earlier", () => this.moveSelected(1)), "up", false),
       down: iconButton(button("↓", "Send the selected slot back; apply the selected constraint later", () => this.moveSelected(-1)), "down", false),
     };
-    bar.append(this.buttons.tree, this.buttons.order, this.buttons.skins, this.buttons.constraints, sep(), this.buttons.bone, this.buttons.slot, this.buttons.region, this.regionPick,
-      this.buttons.skin, this.buttons.dup, this.kindPick, this.buttons.constraint, this.buttons.del, this.buttons.up, this.buttons.down);
+    bar.append(this.buttons.tree, this.buttons.order, this.buttons.skins, this.buttons.constraints, this.buttons.events, sep(), this.buttons.bone, this.buttons.slot, this.buttons.region, this.regionPick,
+      this.buttons.skin, this.buttons.dup, this.kindPick, this.buttons.constraint, this.buttons.event, this.buttons.del, this.buttons.up, this.buttons.down);
     this.list = document.createElement("div");
     this.list.className = "rows";
     this.list.setAttribute("role", "tree");
@@ -77,7 +80,7 @@ export class Outline {
     const sel = this.session.selected;
     if (!sel) return;
     const edit = sel.kind === "bone" ? deleteBone(sel.name) : sel.kind === "slot" ? deleteSlot(sel.name) : sel.kind === "skin" ? deleteSkin(sel.name)
-      : sel.kind === "constraint" ? deleteConstraint(sel) : deleteAttachment(sel);
+      : sel.kind === "constraint" ? deleteConstraint(sel) : sel.kind === "event" ? deleteEvent(sel.name) : deleteAttachment(sel);
     const label = sel.kind === "attachment" ? `Delete attachment ${sel.key}` : `Delete ${sel.kind} ${sel.name}`;
     if (this.apply(label, edit)) {
       if (sel.kind === "skin" && this.session.skin === sel.name) this.session.skin = null;
@@ -104,7 +107,7 @@ export class Outline {
   /** The bone the selection is on: the bone, a slot's bone, an attachment's slot's bone. */
   private selectedBoneOrOwner(): string | null {
     const sel = this.session.selected, doc = this.session.doc;
-    if (!sel || !doc || sel.kind === "skin" || sel.kind === "constraint") return null;
+    if (!sel || !doc || sel.kind === "skin" || sel.kind === "constraint" || sel.kind === "event") return null;
     if (sel.kind === "bone") return sel.name;
     const slot = sel.kind === "slot" ? sel.name : sel.slot;
     return doc.slots?.find((x) => x.name === slot)?.bone ?? null;
@@ -117,6 +120,15 @@ export class Outline {
     const name = prompt(parent ? `Name of the new bone under "${parent}":` : "Name of the root bone:", unique("bone", (doc.bones ?? []).map((b) => b.name)))?.trim();
     if (!name) return;
     if (this.apply(`Add bone ${name}`, addBone(name, parent))) this.session.select({ kind: "bone", name });
+  }
+
+  private addEvent(): void {
+    const doc = this.session.doc;
+    if (!doc) return;
+    const name = prompt("Name of the new event:", unique("event", (doc.events ?? []).map((e) => e.name)))?.trim();
+    if (!name) return;
+    if ((doc.events ?? []).some((e) => e.name === name)) { this.onStatus(`There is already an event "${name}".`); return; }
+    if (this.apply(`Add event ${name}`, defineEvent(name, {}))) this.session.select({ kind: "event", name });
   }
 
   private addSkin(): void {
@@ -212,6 +224,13 @@ export class Outline {
         note: [(s.skin ?? "default") === k.name ? "shown" : "", k.bones?.length ? `${k.bones.length} bones` : ""].filter(Boolean).join(" · "),
       }));
     }
+    if (this.view === "events") {
+      const a = s.animation;
+      return (doc.events ?? []).map((e): Item => {
+        const fired = a?.events?.filter((k) => k.name === e.name).length ?? 0;
+        return { sel: { kind: "event", name: e.name }, label: e.name, depth: 0, kind: "event", icon: "event", ...(a ? { note: fired ? `${fired} in ${a.name}` : "" } : {}) };
+      });
+    }
     if (this.view === "constraints") {
       return (doc.constraints ?? []).map((c): Item => ({
         sel: { kind: "constraint", type: c.type, name: c.name }, label: c.name, depth: 0, kind: "constraint", icon: CONSTRAINT_ICONS[c.type],
@@ -252,7 +271,7 @@ export class Outline {
 
   private update(): void {
     const s = this.session, doc = s.doc;
-    const sig = JSON.stringify([this.view, s.skin, [...this.closed], [...this.opened], s.selected?.kind === "attachment" ? s.selected.slot : null]);
+    const sig = JSON.stringify([this.view, s.skin, [...this.closed], [...this.opened], s.selected?.kind === "attachment" ? s.selected.slot : null, this.view === "events" ? s.animation?.name ?? null : null]);
     // The document's own history, not only its revision: a newly opened one starts at 0 again.
     const key = doc ? `${historyId(s.history!)}|${s.history!.revision}|${sig}` : "none";
     if (key !== this.rendered) {
@@ -262,7 +281,8 @@ export class Outline {
       else {
         const items = this.items(doc);
         this.list.replaceChildren(...items.map((it) => this.row(it)));
-        if (!items.length) this.list.append(empty(this.view === "order" ? "No slots yet." : this.view === "constraints" ? "No constraints yet: select a bone, choose a kind, + Constraint." : "No bones yet: + Bone adds the root."));
+        if (!items.length) this.list.append(empty(this.view === "order" ? "No slots yet." : this.view === "constraints" ? "No constraints yet: select a bone, choose a kind, + Constraint."
+          : this.view === "events" ? "No events yet: + Event adds one; then select it and press Key (K) to fire it at the playhead." : "No bones yet: + Bone adds the root."));
       }
       const regions = [...new Set(s.images.regions.map((r) => r.name))], chosen = this.regionPick.value;
       this.regionPick.replaceChildren(...(regions.length ? regions.map((n) => new Option(n, n)) : [new Option("no atlas", "")]));
@@ -288,6 +308,9 @@ export class Outline {
     this.buttons.skin.disabled = !doc;
     this.buttons.dup.disabled = sel?.kind !== "skin";
     this.buttons.skins.setAttribute("aria-pressed", String(v === "skins"));
+    this.buttons.events.setAttribute("aria-pressed", String(v === "events"));
+    this.buttons.event.hidden = v !== "events";
+    this.buttons.event.disabled = !doc;
     this.buttons.bone.disabled = !doc;
     this.buttons.slot.disabled = !doc || !this.selectedBoneOrOwner();
     this.regionPick.disabled = !doc || !s.images.regions.length;

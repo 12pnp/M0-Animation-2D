@@ -5,7 +5,7 @@ all 17 corpus rigs back exactly; the old editor changes every one, and poses one
 Step 2 (edit-script parity) done: both scripts agree once each known difference is taken out
 (0.007 and 0 px); `set_keys`' named eases now are version 1's curves. Step 3 (the gap list) done: walked in the old editor, decided by the owner. Step 4 (the gaps
 chosen, built in v2) in progress: 4a (autosave and recovery) done; 4b (events on the
-timeline) next.
+timeline) done; 4c (copy and paste, multiple selection) next.
 
 E6 makes v2 the editor people use. The old editor (`../../Animation-BoneBurst-Src/`, AGPL, the
 Animo fork) is the **behavioural oracle**: it is run, never read, and v2 has to agree with it on
@@ -299,4 +299,63 @@ stateDiagram-v2
    sidecar keeps where they go; their files are reopened as before).
 5. Another session was building the editor's menu bar, activity bar and stage tool strip in the
    same working tree while this ran; nothing of theirs is in this step's changes.
+
+### 4b — events on the timeline
+
+Today v2 keys events only through the AI tools, and the timeline shows all of an animation's
+events as one row, where two events on one frame are one diamond.
+
+```mermaid
+flowchart LR
+    RIG["Rig ▸ Events: + Event, the list"] --> SEL["an event selected"]
+    SEL --> PROP["Properties: name, int, float, string, audio, volume, balance"]
+    SEL --> KEY["Key (K): fires it at the playhead"]
+    KEY --> ROW["timeline: a row per event, its keys"]
+    ROW --> EDIT["select · drag · Delete: that event's keys only"]
+```
+
+#### Decisions
+
+- **Defining**: the Rig panel gets an **Events** tab (the skeleton's events, in file order):
+  **+ Event** names a new one; selecting one shows it in Properties (name, the values it carries:
+  int, float, string, and audio with volume and balance); Delete removes it and its keys
+  (`edit/events.ts` already does each).
+- **Keying**: with an event selected, the timeline's **Key** (K) fires it at the playhead, as Key
+  does for a bone. An event already firing there is not keyed twice.
+- **Seeing**: one timeline row per event (in the skeleton's order), not one for all; clicking its
+  name selects the event. Its keys select, drag and delete like any key, and only that event's:
+  a key reference carries the event's name (`KeyRef.name`), so two events on one frame are two
+  keys. Several events may share a frame (Spine allows it), so moving onto another event's frame
+  is allowed.
+- **Not in this step**: per-key value overrides (the AI's `key_event` sets them), and showing an
+  event's name on the stage as playback passes it.
+
+#### Steps
+
+1. `edit/keys.ts` (`KeyRef.name`), `ui/timeline/layout.ts` (rows per event), the session's
+   `event` selection, the Rig panel's Events tab, the Properties form, Key for an event.
+2. Tests: the edits (two events on a frame, one moved, one deleted), the rows; a browser test
+   (define, key at a frame, see the row, drag, delete).
+
+#### 4b results
+
+1. **Rig ▸ Events** (`ui/panels/outline.ts`): the skeleton's events, each with how often the shown
+   animation fires it; **+ Event**; Delete removes the event and its keys. **Properties ▸ Event**
+   (`ui/panels/inspector.ts`): name (renames its keys too), int, float, string, audio, and volume
+   and balance once it has audio; where the shown animation fires it. `defineEvent` now takes
+   `undefined` to remove a value (back to its default).
+2. **Timeline**: a row per event (`ui/timeline/layout.ts`, the flag icon, Lucide `flag` vendored at
+   the pinned commit); its label selects the event; **Key** (K) fires the selected event at the
+   playhead (`Timeline.keySelected`; an event already firing there is not keyed twice).
+   `KeyRef.name` (`edit/keys.ts`) makes a selection, a drag and a delete take only that event's
+   keys; an event may move onto another's frame.
+3. Tests: `tests/eventsTimeline.test.ts` (2: the rows and their marks; delete and move one of two
+   events on a frame); `e2e/events.spec.ts` (define in the Rig panel, a value in Properties, Key
+   at frame 5, a second event on that frame, drag one to frame 8, delete the other). Three
+   planted faults fail them (refs ignoring the event's name; Key not firing a selected event;
+   marks without names).
+4. Not built here (as planned): per-key overrides (the AI's `key_event` sets them), and showing a
+   fired event on the stage during playback.
+5. `edit/keys.ts` and `ui/timeline/layout.ts` landed in 3f9f3af (the other session's Auto Key
+   commit, made before the two sessions agreed to stage only their own changes).
 

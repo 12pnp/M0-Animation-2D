@@ -46,6 +46,7 @@ files.
 | `layers.svg` | `icons/layers.svg` | draw order keys |
 | `bot.svg` | `icons/bot.svg` | the AI button (E5) |
 | `folder-output.svg` | `icons/folder-output.svg` | Export to Unity… (E5) |
+| `flag.svg` | `icons/flag.svg` | events (E6 step 4b) |
 | `layout-dashboard.svg` | `icons/layout-dashboard.svg` | the activity bar's Stage button |
 | `list-tree.svg` | `icons/list-tree.svg` | the activity bar's Rig button |
 | `sliders-horizontal.svg` | `icons/sliders-horizontal.svg` | the activity bar's Properties button |

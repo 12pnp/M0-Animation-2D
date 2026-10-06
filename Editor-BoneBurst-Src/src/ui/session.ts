@@ -31,7 +31,9 @@ export type Selection =
   | { readonly kind: "slot"; readonly name: string }
   | { readonly kind: "attachment"; readonly skin: string; readonly slot: string; readonly key: string }
   | { readonly kind: "skin"; readonly name: string }
-  | { readonly kind: "constraint"; readonly type: ConstraintType; readonly name: string };
+  | { readonly kind: "constraint"; readonly type: ConstraintType; readonly name: string }
+  /** One of the skeleton's events (E6 step 4b). */
+  | { readonly kind: "event"; readonly name: string };
 
 export function sameSelection(a: Selection | null, b: Selection | null): boolean {
   return JSON.stringify(a) === JSON.stringify(b);

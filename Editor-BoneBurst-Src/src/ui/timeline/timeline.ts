@@ -2,6 +2,7 @@ import { addAnimation, deleteAnimation, renameAnimation } from "@/edit/animation
 import { BONE_PROPERTIES, keyBone } from "@/edit/boneKeys";
 import { PRESETS, type Shape } from "@/edit/curves";
 import { type Edit, EditRefused } from "@/edit/history";
+import { keyEvent } from "@/edit/events";
 import { deleteKeys, type KeyRef, moveKeys, setCurve } from "@/edit/keys";
 import type { Skeleton } from "@/model/skeleton";
 import { animationDuration, timeFrame } from "@/model/timelines";
@@ -68,7 +69,7 @@ export class Timeline {
     this.loopBtn = iconButton(button("Loop", "Loop playback", () => { session.loop = !session.loop; session.changed(); }), "loop");
     this.frameOut = document.createElement("output");
     this.frameOut.className = "frame";
-    this.keyBtn = iconButton(button("Key", "Key the selected bone's rotate, translate and scale here (K)", () => this.keySelectedBone()), "key");
+    this.keyBtn = iconButton(button("Key", "Key the selected bone's rotate, translate and scale here, or fire the selected event here (K)", () => this.keySelected()), "key");
     // Icons only, so the bar stays one line; the name leads the tooltip and is the accessible name.
     this.curveButtons = CURVES.map((c) => {
       const b = button(c.label, `${c.label}: ${c.title.toLowerCase()}`, () => this.applyCurve(c.curve));
@@ -108,6 +109,17 @@ export class Timeline {
     const a = this.session.animation;
     if (!a || !this.selected.size) return;
     if (this.apply(`Delete ${this.selected.size} key${this.selected.size === 1 ? "" : "s"}`, deleteKeys(a.name, [...this.selected.values()]))) this.selected.clear();
+  }
+
+  /** Key what is selected at the playhead: an event fires there (E6 step 4b), a bone is keyed. */
+  keySelected(): void {
+    const a = this.session.animation, sel = this.session.selected;
+    if (sel?.kind !== "event") { this.keySelectedBone(); return; }
+    if (!a) { this.onStatus("Choose an animation to key the event in."); return; }
+    this.session.pause();
+    const time = this.session.keyTime;
+    if ((a.events ?? []).some((k) => k.name === sel.name && Math.abs((k.time ?? 0) - time) <= 1e-5)) { this.onStatus(`${sel.name} already fires at frame ${this.session.frame}.`); return; }
+    this.apply(`Key event ${sel.name} at frame ${this.session.frame}`, keyEvent(a.name, time, sel.name));
   }
 
   /** Key the selected bone's rotate, translate and scale at the playhead. */
@@ -171,7 +183,7 @@ export class Timeline {
     this.select.disabled = !doc;
     for (const b of this.animButtons) b.disabled = !a;
     for (const b of this.curveButtons) b.disabled = !a || !this.selected.size;
-    this.keyBtn.disabled = !a || s.selectedBone === null;
+    this.keyBtn.disabled = !a || (s.selectedBone === null && s.selected?.kind !== "event");
     this.playBtn.disabled = !a;
     setIcon(this.playBtn, s.playing ? "pause" : "play");
     this.playBtn.title = s.playing ? "Pause (Space)" : "Play (Space)";
@@ -180,12 +192,12 @@ export class Timeline {
     const end = a ? timeFrame(animationDuration(a), s.fps) : 0;
     this.frameOut.textContent = a ? `frame ${s.frame} / ${end} · ${s.fps} fps` : "";
 
-    this.rows = doc && a ? buildRows(doc, a, s.selectedBone, this.expanded) : [];
+    this.rows = doc && a ? buildRows(doc, a, s.selectedBone, this.expanded, s.selected?.kind === "event" ? s.selected.name : null) : [];
     // Keys an undo or another edit took away leave the selection.
     const live = new Set(this.rows.flatMap((r) => marks(r, s.fps).flatMap((m) => m.refs.map((x) => refId(x, s.fps)))));
     for (const id of [...this.selected.keys()]) if (!live.has(id)) this.selected.delete(id);
     // The labels are DOM: rebuilt only when the rows or the selected bone change, not every frame.
-    const sig = `${a?.name}|${s.selectedBone}|${!!doc}|${this.rows.map((r) => `${r.id}:${r.expandable}:${r.expanded}`).join(",")}`;
+    const sig = `${a?.name}|${s.selectedBone}|${s.selected?.kind === "event" ? s.selected.name : ""}|${!!doc}|${this.rows.map((r) => `${r.id}:${r.expandable}:${r.expanded}`).join(",")}`;
     if (sig !== this.labelSig) { this.labelSig = sig; this.renderLabels(); }
     this.redraw();
   }
@@ -204,7 +216,7 @@ export class Timeline {
     const rows = this.rows.map((r) => {
       const el = document.createElement("div");
       el.className = `row depth${r.depth}`;
-      if (r.bone !== undefined && r.bone === s.selectedBone && r.depth === 0) el.classList.add("selected");
+      if ((r.bone !== undefined && r.bone === s.selectedBone && r.depth === 0) || (r.event !== undefined && s.selected?.kind === "event" && s.selected.name === r.event)) el.classList.add("selected");
       if (r.expandable) {
         const t = button(r.expanded ? "▾" : "▸", r.expanded ? "Collapse" : "Show each timeline", () => {
           if (this.expanded.has(r.id)) this.expanded.delete(r.id); else this.expanded.add(r.id);
@@ -222,9 +234,10 @@ export class Timeline {
         if ((e.target as HTMLElement).classList.contains("twisty")) return;
         s.selectBone(r.bone!);
       });
+      if (r.event !== undefined) el.addEventListener("click", () => s.select({ kind: "event", name: r.event! }));
       return el;
     });
-    if (!rows.length) rows.push(Object.assign(document.createElement("p"), { className: "empty", textContent: "No keys yet: select a bone and press Key, or drag it on the stage." }));
+    if (!rows.length) rows.push(Object.assign(document.createElement("p"), { className: "empty", textContent: "No keys yet: select a bone (or an event) and press Key, or drag a bone on the stage." }));
     this.labels.replaceChildren(head, ...rows);
   }
 
@@ -334,6 +347,7 @@ export class Timeline {
     }
     const row = this.rows[i]!;
     if (row.bone !== undefined && s.selectedBone !== row.bone) s.selected = { kind: "bone", name: row.bone };
+    if (row.event !== undefined && !(s.selected?.kind === "event" && s.selected.name === row.event)) s.selected = { kind: "event", name: row.event };
     s.pause();
     this.drag = { kind: "keys", from: Math.round(xFrame(this.view, x)), applied: 0, refs: [...this.selected.values()] };
     s.history?.begin(`Move ${this.selected.size} key${this.selected.size === 1 ? "" : "s"}`);
@@ -393,6 +407,7 @@ function rowIcon(r: Row): IconName | null {
   if (r.bone !== undefined) return "bone";
   if (r.id.startsWith("slot/")) return "slot";
   if (r.id === "drawOrder") return "drawOrder";
+  if (r.event !== undefined) return "event";
   if (p && p.section in CONSTRAINT_ICONS) return CONSTRAINT_ICONS[p.section as keyof typeof CONSTRAINT_ICONS];
   return null;
 }

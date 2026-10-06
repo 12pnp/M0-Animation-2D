@@ -7,19 +7,22 @@ import { EditRefused, type Edit } from "./history";
  * frame; they keep the order they were keyed in.
  */
 
-export type EventPatch = { -readonly [K in "int" | "float" | "string" | "audio" | "volume" | "balance"]?: EventDef[K] };
+/** Values to set; `undefined` removes one (back to its default, as Spine writes it). */
+export type EventPatch = { -readonly [K in "int" | "float" | "string" | "audio" | "volume" | "balance"]?: EventDef[K] | undefined };
 export type EventOverrides = { -readonly [K in "int" | "float" | "string" | "volume" | "balance"]?: Key[K] };
 
 const sameTime = (a: number, b: number) => Math.abs(a - b) <= 1e-5;
 
-/** Add the event `name`, or change the values given (a value left out is unchanged). */
+/** Add the event `name`, or change the values given (a value left out is unchanged; one given as undefined is removed). */
 export function defineEvent(name: string, patch: EventPatch): Edit<Skeleton> {
   return (s) => {
     if (!name.trim()) throw new EditRefused("An event needs a name.");
     if (patch.volume !== undefined && !(patch.volume >= 0 && patch.volume <= 1)) throw new EditRefused("Volume is from 0 to 1.");
     if (patch.balance !== undefined && !(patch.balance >= -1 && patch.balance <= 1)) throw new EditRefused("Balance is from -1 to 1.");
     const all = s.events ?? [], i = all.findIndex((e) => e.name === name);
-    const next = { ...(i >= 0 ? all[i]! : { name, extra: new Map() }), ...patch } as EventDef;
+    const merged: Record<string, unknown> = { ...(i >= 0 ? all[i]! : { name, extra: new Map() }), ...patch };
+    for (const k of Object.keys(patch)) if (merged[k] === undefined) delete merged[k];
+    const next = merged as unknown as EventDef;
     return { ...s, events: i >= 0 ? all.map((e, j) => (j === i ? next : e)) : [...all, next] };
   };
 }
