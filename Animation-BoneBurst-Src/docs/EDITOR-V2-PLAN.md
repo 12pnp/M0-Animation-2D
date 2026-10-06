@@ -1,6 +1,6 @@
 # Editor v2 — from scratch, MIT, no Animo code — plan
 
-**Status:** E0–E4 done 2026-10-06. `../Editor-BoneBurst-Src/`: MIT licence, notices, spec,
+**Status:** E0–E5 done 2026-10-06. `../Editor-BoneBurst-Src/`: MIT licence, notices, spec,
 clean-room rules; the document model, Spine JSON, atlas and sidecar in and out, undo (E1); the
 runtime lifted as its engine after the provenance pass, and a stage that edits the setup pose
 (E2); a timeline that keys, eases, moves and plays animations, a walk keyed on the stickman and
@@ -11,7 +11,12 @@ panels and docking on Dockview, the rig's structure, skins, constraints, mesh ge
 weights, PSD import and re-import, the sidecar, guides, reference images, preferences, icons,
 constraint and deform keys, every surface seen in a browser, popouts kept checked by Playwright
 (`Editor-BoneBurst-Src/docs/E4-PLAN.md`); the weight brush and guide snapping parked for after
-E5. Next: E5 (the AI layer re-bound; `auto_rig` → `apply_motion` → `check_preview` via MCP).
+E5. E5 (the AI layer) done 2026-10-06: the tool contract versioned per D5 (46 tools, its
+version note gated by `npm run check`), the MCP bridge, every tool built on v2's model, Ask AI;
+`auto_rig` → `apply_motion` → `check_preview` over MCP on the figure PSD is a permanent browser
+test (`Editor-BoneBurst-Src/docs/E5-PLAN.md`). AnimatedDrawings: AD-3 (motion) runs on v2; AD-0..2
+and AD-4 need the detection sidecar, not installed (the owner's install decision), on either
+editor. Next: E6 (parity with the old editor, then cutover).
 
 **Owner decision 2026-10-05:** replace the Animo-fork editor with a new editor
 that contains **no Animo code**, licensed **MIT** from its first commit. The
@@ -125,7 +130,7 @@ undo, onion skins — these are ideas every editor shares. The rules:
 | E2 | **Stage**: canvas viewport rendering the model through our own runtime — setup pose, bone overlay, selection, transform gizmos, zoom/pan | the stickman fixture is inspectable and editable on screen |
 | E3 | **Timeline + playback**: keys, eases, scrub, playback through our runtime; the pure key edits the agent tools will call | a walk is keyed on a fixture rig, played, saved and read back by both runtimes. *(Owner, 2026-10-06: the agent criterion moved to E5, since D5 versions the contract.)* |
 | E4 | **Authoring surfaces**: panels and docking on Dockview (D6), bones/slots/attachments, draw order, skins, constraints (IK, transform, path, physics), mesh edit, PSD import (ag-psd bindings), prefs | every authoring surface is built and seen working in the browser, popout windows included (a permanent Playwright regression keeps them checked). *(Owner, 2026-10-06: the agent-flow check moved to E5, as E3's did; the weight brush and snapping to guides are parked for after E5, listed in E4-PLAN.)* |
-| E5 | **AI layer re-bind**: `tools.json` onto the new model per D5 (layer → slot names, sidecar-backed tools, or a versioned contract), Ask AI, bridge, AnimatedDrawings sidecar tools | **E5 is done when `auto_rig` → `apply_motion` → `check_preview` runs end to end via MCP on a fixture rig, against the tools contract as versioned by D5 — with the flow's own tools (`auto_rig`, `apply_motion`, `check_preview`, `set_keys`, `show`, `get_pose`) keeping their v1 names and argument shapes** *(owner, 2026-10-06: moved from E4 and made E5's primary criterion; worded so on the same day, replacing "against the unmodified tools contract", which contradicted D5)*. Every tool D5 drops or renames is listed in the contract's version note in the same commit, and `npm run check` fails on an unlisted breaking change; also every tool `tests/agentApi.test.ts` exercises passes against v2, or is listed as dropped in the contract's version note; an AI keys a walk on a fixture rig via MCP (`set_keys`, `show`, `get_pose`, moved from E3); the AD-0..AD-4 plans execute against v2 |
+| E5 | **AI layer re-bind**: `tools.json` onto the new model per D5 (layer → slot names, sidecar-backed tools, or a versioned contract), Ask AI, bridge, AnimatedDrawings sidecar tools | **E5 is done when `auto_rig` → `apply_motion` → `check_preview` runs end to end via MCP on a fixture rig, against the tools contract as versioned by D5 — with the flow's own tools (`auto_rig`, `apply_motion`, `check_preview`, `set_keys`, `show`, `get_pose`) keeping their v1 names and argument shapes** *(owner, 2026-10-06: moved from E4 and made E5's primary criterion; worded so on the same day, replacing "against the unmodified tools contract", which contradicted D5)*. Every tool D5 drops or renames is listed in the contract's version note in the same commit, and `npm run check` fails on an unlisted breaking change; also every tool `tests/agentApi.test.ts` exercises passes against v2, or is listed as dropped in the contract's version note; an AI keys a walk on a fixture rig via MCP (`set_keys`, `show`, `get_pose`, moved from E3); the AD-0..AD-4 plans execute against v2 *(at E5's close, 2026-10-06: AD-3 runs on v2; AD-0..2 and AD-4 need the detection sidecar, which waits on the owner's install decision and runs on neither editor)* |
 | E6 | **Parity + cutover**: side-by-side with the old editor as oracle; same rigs edited → same exports; docs migrated; the AGPL folder demoted to oracle-only, then archived | v2 is the daily driver; the fork takes no new features |
 
 ## Licence handling

@@ -309,6 +309,10 @@ bridge's `/chat` (Claude or GLM with the same tools) and shows it as rows (`ui/a
 Sending turns the AI connection on. Keys stay in the bridge. `?bridge=<port>` picks another local
 bridge port.
 
+**End to end (E5 step 10).** `e2e/mcpFlow.spec.ts` keeps E5's done-when: an MCP client over the
+real bridge drives the editor in a browser through `auto_rig` → `apply_motion` →
+`check_preview` on the figure PSD.
+
 ## 9. Verification
 
 - `scripts/check.sh`: typecheck and build, the tests (zero tests is a failure), no Spine runtime

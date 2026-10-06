@@ -1,16 +1,11 @@
 # E5 — the AI layer re-bound — plan
 
-**Status:** in progress, 2026-10-06. Step 1 (provenance and the contract) done: v2's `tools.json`
-with its version note, the gate in `npm run check`. Step 2 (the bridge) done: an MCP client's call
-reaches the open rig (`undo`, `redo` built; every argument checked). Step 3 (the read tools) done:
-`get_rig`, `get_animation`, `get_pose`, `get_reference`, `show`, `render_frame`. Step 4 (the key
-tools) done: all eleven, and a walk keyed on the stickman by an AI over MCP. Step 5 (the building
-tools) done: the thirteen, and the figure PSD rigged by an AI with `auto_rig` over MCP and waving.
-Step 6 (motion) done: the motion library on v2, AnimatedDrawings' captures (AD-3) included.
-Step 7 (`check_preview`) done: the owner's flow `auto_rig` → `apply_motion` → `check_preview`
-ran end to end over MCP on the figure PSD. Step 8 (the rest of the contract) done: every tool of contract version 2 is built (skins, tints,
-sequences, meshes, Export to Unity). Step 9 (Ask AI) done: the AI panel, Claude or GLM with the editor's tools, each step shown as
-the editor runs it. Step 10 (the end-to-end MCP test, then E5 closes) next.
+**Status:** done, 2026-10-06. Every done-when item holds (Step 10 results lists each and what
+guards it); AnimatedDrawings' detection half (AD-0..2, and AD-4, its packaging) waits on the
+owner's install decision, as it does for v1. Steps: 1 the contract and its gated version note;
+2 the bridge; 3 the read tools; 4 the key tools (an AI-keyed walk over MCP); 5 the building tools
+and `auto_rig`; 6 motion with AD-3; 7 `check_preview`; 8 the rest of the contract; 9 Ask AI;
+10 the flow as a permanent end-to-end test.
 
 E5 puts the AI tools onto v2's model: an MCP client (Claude Code, Claude Desktop, any agent) and
 the in-app Ask AI drive the open rig through the tool contract, each edit one undo step. It is
@@ -813,4 +808,60 @@ sequenceDiagram
    stand-in model through a real bridge on a side port (`get_rig`, `render_frame` with its
    picture, the answer). No API key was at hand, so no real model was asked: with a key the panel
    is the same, the bridge's providers unchanged since step 2.
+
+## Step 10 — end to end, and E5 closed
+
+The done-when as a test that stays: an MCP client, the real bridge, the editor in a browser.
+
+```mermaid
+sequenceDiagram
+    participant T as e2e/mcpFlow.spec.ts (the MCP client)
+    participant B as mcp/bridge.mjs (stdio + its own port)
+    participant E as the editor (Playwright, ?bridge=port)
+    T->>E: open tests/fixtures/psd/figure.psd, press AI
+    T->>B: initialize, tools/list (contract v2, version note)
+    T->>B: auto_rig → apply_motion → check_preview → show
+    B->>E: each call (long poll), E runs it on the open rig
+    E-->>B: answers
+    B-->>T: results: bones, IK, matches, no seam
+```
+
+### Decisions
+
+- **The fixture rig** is the figure PSD (`tests/fixtures/psd/figure.psd`), opened through the
+  editor's own file input, with the joints the on-screen runs used.
+- **What it asserts**: `initialize` carries the version note; `tools/list` is the contract's 46
+  tools; `auto_rig` makes the eleven bones and both leg IKs; `apply_motion idle_front` matches the
+  runtime; `check_preview` matches with no seam; `show` moves the editor to the animation; one undo
+  takes `apply_motion` back. Kept in `npm run check`.
+- **Closing E5**: each done-when item checked and recorded with where it is guarded.
+
+### Steps
+
+1. `e2e/mcpFlow.spec.ts`.
+2. The done-when, item by item; E5's status **done**; the v2 plan (`EDITOR-V2-PLAN.md`) and
+   SPEC updated.
+
+### Step 10 results
+
+1. `e2e/mcpFlow.spec.ts`: the real bridge on a port of its own, an MCP client on its stdio, the
+   editor in Playwright's Chromium (`?bridge=`), the figure PSD opened through the editor's file
+   input and the AI button pressed. `initialize` carries the version note, `tools/list` is the
+   contract's 46 tools; `auto_rig` makes 11 bones and both leg IKs; `apply_motion idle_front`
+   matches the runtime; `check_preview` matches with no seam; `show` moves the editor to frame 10
+   of `idle`; one `undo` takes the motion back. Three planted faults fail it (the file posed at
+   the wrong time; the version note left out of `initialize`; `show` not showing).
+2. **The done-when, item by item:**
+   - `auto_rig` → `apply_motion` → `check_preview` end to end via MCP on a fixture rig, against
+     contract version 2, the flow's six tools with v1's names and argument shapes: this test;
+     the shapes by `tests/contract.test.ts` (`FLOW_TOOLS`).
+   - Every tool v1's `tests/agentApi.test.ts` exercises (all 50 of v1's, by name) works on v2 or
+     is in the version note: 46 are built (`tests/agentHost.test.ts` holds the built list equal to
+     the contract), 4 are dropped in the note (`set_cycle`, `offset_keys`, `get_bone_path`,
+     `set_bone_path`); the gate fails on an unlisted drop.
+   - An AI keys a walk via MCP: step 4 (on screen, the stickman), `tests/agentKeys.test.ts`.
+   - AD-3 runs on v2: step 6, `tests/agentMotion.test.ts` (the captures as clips, v1's answers).
+     AD-0..2 and AD-4 need the detection sidecar; not installed, by the owner's choice, and not
+     run on v1 either.
+3. Parked, unchanged: E4.5's weight brush and guide snapping.
 
