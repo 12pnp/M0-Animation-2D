@@ -499,6 +499,44 @@ export class Session {
     this.changed();
   }
 
+  /**
+   * Everything that belongs to the open document, to set aside while another is shown (document
+   * tabs): the history, atlas, pages, selection, playhead, sidecar and the rest. What belongs to
+   * the person (undo steps, reference opacity) and to the page (listeners) stays.
+   */
+  capture(): DocumentState {
+    this.playing = false;
+    const state: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(this)) if (!SHARED_FIELDS.has(k)) state[k] = v;
+    state.unkeyed = new Map(this.unkeyed);
+    return state as unknown as DocumentState;
+  }
+
+  /** Show a document set aside by `capture` (or the empty one, `Session.blank`). */
+  resume(state: DocumentState): void {
+    Object.assign(this, state, { unkeyed: this.unkeyed });
+    this.unkeyed.clear();
+    for (const [bone, local] of (state as unknown as { unkeyed: Map<string, LocalPose> }).unkeyed) this.unkeyed.set(bone, local);
+    this.unkeyedRev++;
+    this.posed = null;
+    this.changed();
+  }
+
+  /** The state of no document: what `resume` shows when the last tab closes. */
+  static blank(): DocumentState { return new Session().capture(); }
+
+  /** Free a set-aside document's page images (a closed tab). */
+  static release(state: DocumentState): void {
+    const s = state as unknown as { pages: Map<string, ImageBitmap>; referenceImages: Map<string, ImageBitmap> };
+    for (const b of [...s.pages.values(), ...s.referenceImages.values()]) b.close();
+  }
+
+  /** Whether a set-aside document has unsaved changes. */
+  static dirtyOf(state: DocumentState): boolean {
+    const s = state as unknown as { history: History<Skeleton> | null; saved: Skeleton | null; sidecar: Sidecar; sidecarWritten: string };
+    return !!s.history && (s.history.doc !== s.saved || contentText(s.sidecar) !== s.sidecarWritten);
+  }
+
   /** The document as Spine JSON text; marks it saved. */
   save(): string {
     if (!this.history) throw new Error("Nothing is open.");
@@ -508,6 +546,12 @@ export class Session {
     return text;
   }
 }
+
+/** A document set aside by `Session.capture`: opaque to everything but the session. */
+export interface DocumentState { readonly __documentState: never }
+
+/** The session's fields that belong to the person or the page, not to a document. */
+const SHARED_FIELDS: ReadonlySet<string> = new Set(["listeners", "undoSteps", "referenceOpacity", "unkeyed", "unkeyedRev"]);
 
 /** An atlas with what goes with it: its regions in numbers, page images, exact pixels, the files Save writes. */
 interface AtlasState {

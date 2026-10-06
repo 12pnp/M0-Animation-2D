@@ -17,6 +17,7 @@ import { AiBridge, DEFAULT_BRIDGE } from "./agent/bridge";
 import { ChatClient } from "./agent/chat";
 import { sessionContext } from "./agent/context";
 import { AskAi } from "./panels/askAi";
+import { DocumentTabs } from "./documentTabs";
 import { DIVIDER, MenuBar } from "./menubar";
 import { icon, iconButton } from "./icons";
 import { ExportRefused, exportToUnity } from "./unityExport";
@@ -78,7 +79,6 @@ export function mountApp(root: HTMLElement): void {
   const skinSelect = document.createElement("select");
   skinSelect.addEventListener("change", () => { session.skin = skinSelect.value || null; session.changed(); });
   skinLabel.append("Skin ", skinSelect);
-  const title = el("span", "title");
   const panelsMenu = document.createElement("select");
   panelsMenu.title = "Show a panel, or put the panels back where they started";
   // The app icon at the menu bar's left: the Preferences button.
@@ -97,7 +97,7 @@ export function mountApp(root: HTMLElement): void {
   aiBtn.classList.add("ai-button");
   aiBtn.dataset.state = "off";
   ai.onState((state, detail) => { aiBtn.dataset.state = state; aiBtn.title = detail; message.textContent = detail; });
-  bar.append(openBtn, saveBtn, unityBtn, sep(), undoBtn, redoBtn, sep(), skinLabel, aiBtn, title, fileInput, prefsDialog.element);
+  bar.append(openBtn, saveBtn, unityBtn, sep(), undoBtn, redoBtn, sep(), skinLabel, aiBtn, fileInput, prefsDialog.element);
 
   // The stage panel: the canvas, with the hint over it while nothing is open.
   const stagePanel = el("section", "stage-panel");
@@ -148,10 +148,16 @@ export function mountApp(root: HTMLElement): void {
   // The panel picker at the bar's top: an icon over the native select, which opens on a click.
   const picker = el("div", "panel-picker");
   picker.append(icon("panels"), panelsMenu);
+  const tabs = new DocumentTabs(session, {
+    camera: () => stage.camera,
+    showCamera: (c) => { session.openedCamera = c; stage.opened(); },
+    save: () => save(),
+  });
   const menubar = new MenuBar([
     { label: "File", items: () => [
       { label: "Open…", keys: "⌘O", run: () => fileInput.click() },
       { label: "Save", keys: "⌘S", disabled: !session.doc, run: () => void save() },
+      { label: "Close File", disabled: !session.doc, run: () => tabs.closeCurrent() },
       { label: "Export to Unity…", disabled: !session.doc, run: () => void toUnity(false) },
       { label: "Export to Unity, another folder…", disabled: !session.doc, run: () => void toUnity(true) },
     ] },
@@ -185,6 +191,7 @@ export function mountApp(root: HTMLElement): void {
   const body = el("div", "body");
   body.append(activity, main);
   menubar.element.prepend(prefsBtn);
+  menubar.element.append(tabs.element);
   root.replaceChildren(menubar.element, bar, body, status, issuesList);
 
   // The docking shell (D6): every panel is a Dockview panel.
@@ -281,12 +288,14 @@ export function mountApp(root: HTMLElement): void {
       say(await session.addReferenceImages([...picked.images.values()], [stage.camera.x, stage.camera.y]));
       return;
     }
-    if (session.dirty && !confirm(`${session.name}.json has unsaved changes. Open another file and lose them?`)) return;
+    // A new file gets its own tab: the shown one is set aside, and comes back if this one fails.
+    const parked = tabs.park();
     try {
       await session.open(files);
       stage.opened();
       say(`Opened ${session.name}.`);
     } catch (err) {
+      tabs.unpark(parked);
       say(err instanceof Error ? err.message : String(err));
     }
   }
@@ -332,7 +341,6 @@ export function mountApp(root: HTMLElement): void {
   function refresh(): void {
     const h = session.history, doc = session.doc;
     document.title = titleFor(doc ? `${session.name}.json` : null, session.dirty);
-    title.textContent = doc ? `${session.dirty ? "• " : ""}${session.name}.json` : "";
     saveBtn.disabled = !doc;
     unityBtn.disabled = !doc;
     undoBtn.disabled = !h?.canUndo;
@@ -419,7 +427,7 @@ export function mountApp(root: HTMLElement): void {
     const files = [...(e.dataTransfer?.files ?? [])];
     if (files.length) void open(files.map(fileSource), true);
   });
-  window.addEventListener("beforeunload", (e) => { if (session.dirty) e.preventDefault(); });
+  window.addEventListener("beforeunload", (e) => { if (tabs.anyDirty) e.preventDefault(); });
 
   window.addEventListener("keydown", onKey);
   function onKey(e: KeyboardEvent): void {
