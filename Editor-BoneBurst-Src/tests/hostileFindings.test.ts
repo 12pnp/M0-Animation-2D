@@ -63,6 +63,15 @@ describe("files BoneBurst's C# reader refuses say so when opened (H6)", () => {
   });
 });
 
+describe("a path with no whole curve says so (E8, F9): the C# reader takes it, and its solver reads past the curves", () => {
+  it.each([
+    ["an open path of 3 vertices", { skins: [{ name: "default", attachments: { s: { p: { type: "path", vertexCount: 3, vertices: [0, 0, 1, 1, 2, 2], lengths: [1] } } } }] }, /a path of 3 vertices: .*at least 6 \(open\)/],
+    ["a path of 7 vertices", { skins: [{ name: "default", attachments: { s: { p: { type: "path", vertexCount: 7, vertices: new Array(14).fill(1), lengths: [1, 2] } } } }] }, /a path of 7 vertices/],
+  ] as const)("%s", (_, extra, why) => {
+    expect(issues(base(extra)).join("\n")).toMatch(why);
+  });
+});
+
 describe("the engine poses what it is given, broken or not, without hanging or throwing (H1, H3–H5)", () => {
   it("a draw-order key moving one slot twice: an order of every slot once, the first move kept", () => {
     const slots = new Map([["s", 0], ["t", 1], ["u", 2]]);
@@ -79,6 +88,8 @@ describe("the engine poses what it is given, broken or not, without hanging or t
     ["path lengths that are not a list", { skins: [{ name: "default", attachments: { s: { p: { type: "path", vertexCount: 3, vertices: [0, 0, 1, 1, 2, 2], lengths: {} } } } }] }],
     ["a mesh with triangles out of range", { skins: [{ name: "default", attachments: mesh({ triangles: [0, 1, 1000000000] }) }], slots: [{ name: "s", bone: "root", attachment: "m" }] }],
     ["a mesh with odd uvs", { skins: [{ name: "default", attachments: mesh({ uvs: [0, 0, 1, 0, 1] }) }], slots: [{ name: "s", bone: "root", attachment: "m" }] }],
+    // E8, F9: the path constraint on a path with no whole curve leaves its bones as they were.
+    ["a path constraint on a 3-vertex path", { skins: [{ name: "default", attachments: { s: { p: { type: "path", vertexCount: 3, vertices: [0, 0, 0, 0, 0, 0], lengths: [0] } } } }], slots: [{ name: "s", bone: "root", attachment: "p" }], constraints: [{ type: "path", name: "f", bones: ["a"], slot: "s", rotateMode: "chain", spacingMode: "length", spacing: 1 }] }],
     ["a deform key of nulls", { animations: { w: { attachments: { default: { s: { m: { deform: [null, { vertices: "x" }] } } } } } }, skins: [{ name: "default", attachments: mesh({}) }] }],
   ])("%s", (_, extra) => {
     const doc = readSkeleton(base(extra)).skeleton;
@@ -86,6 +97,8 @@ describe("the engine poses what it is given, broken or not, without hanging or t
     for (const a of [null, ...(doc.animations ?? []).map((x) => x.name)]) {
       const posed = p.pose(null, a, 0.5);
       for (const d of posed.draw.slots) expect(d.triangles.every((i) => i < d.vertexCount)).toBe(true);
+      // Every bone posed (the 3-vertex path made NaN before F9's guard).
+      for (let i = 0; i < (doc.bones ?? []).length; i++) expect([...posed.rig.matrix(i)].every(Number.isFinite), `${a} bone ${i}`).toBe(true);
     }
   });
 });

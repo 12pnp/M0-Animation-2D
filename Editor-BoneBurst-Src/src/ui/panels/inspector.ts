@@ -22,6 +22,7 @@ import { brush, BRUSH_STRENGTH } from "../stage/weightBrush";
 import { animatedLocal, constraintNow, localUnder, Poser } from "../stage/posed";
 import { empty, heading } from "./outline";
 import { keysOf } from "../shortcuts";
+import { unposed } from "../notes";
 
 /** The timeline each value keys in Animate mode (length is setup only). */
 const KEYED: Partial<Record<BoneNumber, BoneProperty>> = {
@@ -106,6 +107,8 @@ export class Inspector {
   private boneForm(form: HTMLElement, doc: Skeleton, name: string): void {
     const s = this.session, bone = doc.bones!.find((b) => b.name === name)!, anim = s.animation;
     form.append(this.bonePath(doc, name));
+    // A bone the pose shown leaves without one says so here, as the notes do (E8-PLAN step 2).
+    if (unposed(doc, s.pose()).has(name)) form.append(readOnly("Pose", "none here: a constraint it is in cannot be solved at this frame, so it is not drawn"));
     form.append(this.textField("name", "Name", bone.name, (v) => (v === name ? null : renameBone(name, v)), (v) => `Rename bone ${name} to ${v}`,
       (v) => s.select({ kind: "bone", name: v })));
     const p = anim ? s.pose() : null, index = p?.bones.get(name);

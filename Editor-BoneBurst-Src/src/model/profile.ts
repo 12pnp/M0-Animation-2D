@@ -76,6 +76,10 @@ export function profileIssues(s: Skeleton, opts: { written?: boolean } = {}): Is
           for (const k of ["uvs", "vertices", "triangles"] as const) if (a[k] === undefined) bad(w, `mesh without ${k}`);
         }
         if (type === "path" && a.lengths === undefined) bad(w, "path without lengths");
+        // A path is points of three vertices (handle, point, handle); an open one needs two points for one curve (E8, F9).
+        if (type === "path" && a.vertexCount !== undefined && (a.vertexCount % 3 !== 0 || a.vertexCount < (a.closed ? 3 : 6))) {
+          bad(w, `a path of ${a.vertexCount} vertices: a path is curves of three vertices, ${a.closed ? "at least 3 (closed)" : "at least 6 (open)"}`);
+        }
         // The geometry the C# reader takes (E7-PLAN step 5): whole, in range, weights by real bones.
         if (a.source === undefined) for (const m of geometryIssues(a, type, s.bones?.length ?? 0)) bad(w, m);
         colour(w, { color: a.color }, bad);

@@ -13,6 +13,14 @@ flowchart LR
 
 ## 2026-10-06
 
+- **BoneBurst Editor v2, E8 step 2: a bone the pose leaves without one is named, and not drawn as garbage** (`Editor-BoneBurst-Src/`).
+  - **The stage and Properties**: the stage leaves such a bone out of what it draws and picks, with no gizmo; Properties says "Pose: none here" for it; the notes (step 1) name it.
+  - **The fixture**: `tests/fixtures/unposed/unposed.json` (a two-bone IK on an arm scaled to 0 in y), where BoneBurst's C# runtime agrees the bone has no pose.
+  - **F9, found on the way**: an open path of fewer than 6 vertices, or a count not a multiple of 3, has no whole curve; both runtimes' solvers read past their data. The profile says so, and v2's solver leaves the bones as they were.
+  - **F10, recorded, not fixed**: a two-bone IK on a parent scaled to zero can fall on different sides of a branch in float64 (v2) and float32 (C#): an ill-conditioned input, as root `CLAUDE.md` §5 describes, still named by v2's note.
+  - Plan: [E8-PLAN.md](../../Editor-BoneBurst-Src/docs/E8-PLAN.md) ▸ Step 2.
+  - **Guard**: `e2e/unposed.spec.ts` (fails with either the stage filter or the Properties line removed) and 3 rows in `tests/hostileFindings.test.ts`. `npm run check`: 681 vitest, 22 browser tests and 1 build browser test pass. `scripts/unity-parity.ts`: 17 rigs agree.
+
 - **BoneBurst Editor v2: New Project, Recent projects, an Open dialog, and dedicated Skins and Animations panels** (`Editor-BoneBurst-Src/`).
   - **File ▸ New Project** opens a blank rig (a root bone, no atlas) in its own tab, clean until edited. **File ▸ Recent / name** and **Open…** use `src/ui/recent.ts`: the `.bbdata` files and folders this browser opened or saved through the File System Access pickers, kept as handles in IndexedDB (Chrome and Edge; elsewhere the lists are empty and Browse is the way in).
   - **Open…** (⌘O, toolbar, menu) shows `src/ui/openDialog.ts` first: Files (recent, or the projects of a chosen folder), Folders (added with +, starred ones first), Filter, Browse (the browser's picker), Cancel. It is draggable by its title and resizable, 560×620 by default.

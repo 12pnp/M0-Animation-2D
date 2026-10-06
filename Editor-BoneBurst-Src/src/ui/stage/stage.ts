@@ -234,7 +234,8 @@ export class Stage {
     }
     if (this.show.constraints) this.drawConstraints(g, p, css, selected);
     const sel = this.selectedIndex();
-    if (sel >= 0) this.drawGizmo(g, sel, this.selectedBoneColour ?? selected);
+    // No gizmo on a bone without a pose: nothing to grab it by (E8-PLAN step 2).
+    if (sel >= 0 && boneMatrix(p, sel).every(Number.isFinite)) this.drawGizmo(g, sel, this.selectedBoneColour ?? selected);
     const mesh = this.meshMode();
     if (mesh) this.drawMesh(g, mesh, selected, bone);
     this.drawGuides(g, css.getPropertyValue("--guide").trim() || "#36c2d9");
@@ -652,6 +653,8 @@ export class Stage {
       const m = boneMatrix(p, b.index), tip = boneTip(p, b.index);
       const [x0, y0] = toScreen(this.camera, this.size, m[4], m[5]);
       const [x1, y1] = toScreen(this.camera, this.size, tip[0], tip[1]);
+      // A bone the pose leaves without one is neither drawn nor picked; the notes say so (E8-PLAN step 2).
+      if (![x0, y0, x1, y1].every(Number.isFinite)) continue;
       out.push({ name: b.name, x0, y0, x1, y1 });
     }
     return out;

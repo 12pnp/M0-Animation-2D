@@ -1,6 +1,6 @@
 # E8 — the editor tells the truth up to the bake — plan
 
-**Status:** in progress, 2026-10-06; step 1 (live notes) done. Scope chosen by the owner ("go E8" on the recommendation): what
+**Status:** in progress, 2026-10-06; steps 1 (live notes) and 2 (a bone with no pose) done. Scope chosen by the owner ("go E8" on the recommendation): what
 the editor cannot show, it says, as you edit, naming the thing; and v2's export baked by the real
 Unity bake, first bake and rebake on change, checked by reading the result in Unity.
 
@@ -96,3 +96,31 @@ flowchart LR
    the revision from the cache key, since a changed document builds a new rig, whose new skip
    list refreshes the notes anyway.
 6. `npm run check`: all pass (21 browser tests).
+
+## Step 2 results
+
+1. **A fixture both runtimes agree on**: `tests/fixtures/unposed/unposed.json`, a two-bone IK on an
+   arm scaled to 0 in y; `hand` has no pose in v2 and in BoneBurst's C# runtime alike (`run.sh
+   --dump`). Found by posing 4,000 small random rigs with one constraint each and keeping those
+   where v2 gave NaN, then dumping them through the C# runtime: 4 of the 6 agree.
+2. **The stage**: `Stage.screenBones` leaves out a bone whose ends are not finite (neither drawn nor
+   picked, whatever the canvas does with NaN), and the gizmo is not drawn for a selected bone
+   without a pose. **Properties**: a selected bone without a pose has a "Pose: none here…" line.
+3. **`e2e/unposed.spec.ts`**: the fixture through Open…; the note names `hand` with "setup pose"; a
+   click selects it; Properties says so; the stage's bones leave `hand` out and keep the others; no
+   page error. Planted faults, each caught: the stage's filter removed; the Properties line removed.
+4. **F9 (found on the way)**: an open path of fewer than 6 vertices (or a vertex count not a multiple
+   of 3) has no whole curve. v2's solver read past its curves (NaN), and the C# solver past its
+   scratch buffer (whatever lay there; stock spine-csharp alike), so neither had defined behaviour.
+   The profile now says so (`a path of 3 vertices: …`), and v2's solver leaves the bones as they
+   were. Rows in `tests/hostileFindings.test.ts` (3, failing without the fixes).
+5. **F10 (recorded, not fixed)**: 2 of the 6 random rigs, a two-bone IK on a parent scaled to 0 in
+   y, give `hand` no pose in v2 but a pose in C#. The solvers are the same (both pass NaN
+   through `atan2`); a branch on the degenerate input (`d >= 0`, `rr >= 0`) falls on different
+   sides in float64 and float32. An ill-conditioned input as root `CLAUDE.md` §5 describes; v2's note
+   names the bone either way.
+6. Main was broken for a while by another session's commit (bdf3db4: the Animations panel squashed
+   the stage, 10 browser tests failing); this step was checked on cfb7806 with its changes applied
+   meanwhile (all pass but the three that need the bridge's own origin), and again on main once
+   62d46c6 fixed it: `npm run check` all pass (681 vitest, 22 browser tests, 1 build).
+7. Valid files pose as before: `scripts/unity-parity.ts`, 17 rigs agree, worst 0.0067.

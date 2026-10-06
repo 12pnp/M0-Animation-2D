@@ -1,0 +1,13 @@
+{
+  "skeleton": { "spine": "4.3.0", "hash": "e8-unposed" },
+  "bones": [
+    { "name": "root" },
+    { "name": "arm", "parent": "root", "length": 1, "x": -1, "y": 1, "scaleY": 0 },
+    { "name": "hand", "parent": "arm", "length": 1, "x": -1 },
+    { "name": "target", "parent": "root", "x": 0.5, "y": 1 }
+  ],
+  "constraints": [
+    { "type": "ik", "name": "reach", "bones": ["arm", "hand"], "target": "target", "mix": 0.5, "softness": 10, "scaleY": "uniform" }
+  ],
+  "animations": { "still": {} }
+}

@@ -19,6 +19,9 @@ export interface PathPose { position: number; spacing: number; mixRotate: number
 export function solvePath(rig: Rig, k: PathConstraintData, pose: PathPose): void {
   const path = rig.attachmentOf(k.slot);
   if (path?.kind !== "path") return;
+  // A path without a whole curve has nothing to follow; reading its curves would run past them
+  // (E8, F9: NaN here, whatever lay past the buffer in the runtimes). The bones keep their pose.
+  if (path.vertexCount % 3 !== 0 || path.vertexCount < (path.closed ? 3 : 6)) return;
   const { mixRotate, mixX, mixY } = pose;
   if (mixRotate === 0 && mixX === 0 && mixY === 0) return;
   const W = rig.world;
