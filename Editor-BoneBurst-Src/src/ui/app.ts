@@ -122,9 +122,9 @@ export function mountApp(root: HTMLElement): void {
   }), "autoKey");
   autoKeyBtn.setAttribute("aria-pressed", "true");
   const SPACES: ReadonlyArray<{ space: Space; label: string; tip: string }> = [
-    { space: "local", label: "Local", tip: "Move or scale along the bone's own axes" },
-    { space: "parent", label: "Parent", tip: "Move and scale freely, as dragged" },
-    { space: "world", label: "World", tip: "Move or scale along the world's axes" },
+    { space: "local", label: "Local", tip: "Move, scale or shear along the bone's own axes" },
+    { space: "parent", label: "Parent", tip: "Move, scale and shear freely, as dragged" },
+    { space: "world", label: "World", tip: "Move, scale or shear along the world's axes" },
   ];
   const spaceBtns = SPACES.map((x) => {
     const b = button(x.label, x.tip, () => {

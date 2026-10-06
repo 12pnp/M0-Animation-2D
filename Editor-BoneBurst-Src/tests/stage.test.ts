@@ -9,7 +9,7 @@ import type { Skeleton } from "@/model/skeleton";
 import { atlasImages } from "@/engine/regions";
 import { fit, pan, toScreen, toWorld, zoomAt } from "@/ui/stage/camera";
 import { baseName, pickFiles } from "@/ui/files";
-import { asWritten, localRotation, lockToAxis, scaleAlong, spaceAxes, moveDelta, pickBone, scaleFactors, shearDelta, tidy, turn, turnSign } from "@/ui/stage/gizmo";
+import { asWritten, localRotation, lockToAxis, scaleAlong, shearAlong, spaceAxes, moveDelta, pickBone, scaleFactors, shearDelta, tidy, turn, turnSign } from "@/ui/stage/gizmo";
 import { boneMatrix, bounds, parentMatrix, Poser, poseSetup } from "@/ui/stage/posed";
 import { STICKMAN } from "./fixtures/rigs";
 
@@ -245,5 +245,23 @@ describe("Scale from too near the origin", () => {
   it("scales as before from further out", () => {
     expect(scaleFactors(still, [20, 0], [40, 0], true, 12)).toEqual([2, 2]);
     expect(scaleAlong("local", still, still, [20, 0], [40, 0], null, 4, 12).factors).toEqual([2, 1]);
+  });
+});
+
+describe("Shear along an axis of a space", () => {
+  const still = [1, 0, 0, 1, 0, 0] as const;
+  it("shears only the axis the drag went along", () => {
+    expect(shearAlong("local", still, still, [0, 0], [2, 1], null, 1).delta).toEqual([1, 0]);
+    expect(shearAlong("local", still, still, [0, 0], [1, 8], null, 1)).toEqual({ delta: [0, 4], lock: 1 });
+  });
+  it("shears nothing before the axis is chosen", () => {
+    expect(shearAlong("world", still, still, [0, 0], [0.5, 0.5], null, 4)).toEqual({ delta: [0, 0], lock: null });
+  });
+  it("in the world's space shears the bone axis most nearly along the chosen world axis", () => {
+    const turned = [0, -1, 1, 0, 0, 0] as const; // the bone's x points up the world
+    const r = shearAlong("world", turned, still, [0, 0], [1, 20], null, 4);
+    expect(r.lock).toBe(1);
+    expect(r.delta[1]).toBe(0);
+    expect(Math.abs(r.delta[0])).toBeGreaterThan(0);
   });
 });

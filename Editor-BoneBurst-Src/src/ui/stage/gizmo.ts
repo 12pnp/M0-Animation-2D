@@ -63,6 +63,13 @@ export function lockToAxis(delta: Point, axes: readonly [Point, Point], lock: 0 
   return { delta: [a[0] * t + 0, a[1] * t + 0], lock: chosen };
 }
 
+/** The bone axis (0: x, 1: y) a space's axis `k` stands for: itself in the bone's space, else the bone axis most nearly along it. */
+function boneAxisFor(space: Space, k: 0 | 1, bone: Matrix, parent: Matrix): 0 | 1 {
+  if (space === "local") return k;
+  const own = spaceAxes("local", bone, parent), w = spaceAxes(space, bone, parent)[k];
+  return Math.abs(w[0] * own[0][0] + w[1] * own[0][1]) >= Math.abs(w[0] * own[1][0] + w[1] * own[1][1]) ? 0 : 1;
+}
+
 /**
  * A scale held to one of the bone's axes (Scale in the Local or World space): the drag picks the
  * nearer axis of `space` as `lockToAxis` does; in the world's space that is the bone axis most
@@ -73,16 +80,23 @@ export function lockToAxis(delta: Point, axes: readonly [Point, Point], lock: 0 
 export function scaleAlong(space: Space, bone: Matrix, parent: Matrix, p0: Point, p1: Point, lock: 0 | 1 | null, threshold: number, minStart = 1e-9): { factors: Point; lock: 0 | 1 | null } {
   const held = lockToAxis([p1[0] - p0[0], p1[1] - p0[1]], spaceAxes(space, bone, parent), lock, threshold);
   if (held.lock === null) return { factors: [1, 1], lock: null };
-  const own = spaceAxes("local", bone, parent);
-  let j: 0 | 1 = held.lock;
-  if (space === "world") {
-    const w = spaceAxes("world", bone, parent)[held.lock];
-    j = Math.abs(w[0] * own[0][0] + w[1] * own[0][1]) >= Math.abs(w[0] * own[1][0] + w[1] * own[1][1]) ? 0 : 1;
-  }
-  const u = own[j], o: Point = [bone[4], bone[5]];
+  const j = boneAxisFor(space, held.lock, bone, parent), u = spaceAxes("local", bone, parent)[j], o: Point = [bone[4], bone[5]];
   const a = (p0[0] - o[0]) * u[0] + (p0[1] - o[1]) * u[1], b = (p1[0] - o[0]) * u[0] + (p1[1] - o[1]) * u[1];
   const f = Math.abs(a) < minStart ? 1 : b / a;
   return { factors: j === 0 ? [f, 1] : [1, f], lock: held.lock };
+}
+
+/**
+ * A shear held to one bone axis (Shear in the Local or World space): the drag picks the nearer
+ * axis of `space` as `lockToAxis` does, and only that axis shears, by `shearDelta`'s amount. A
+ * drag along the bone's x shears shearX, along its y shears shearY.
+ */
+export function shearAlong(space: Space, bone: Matrix, parent: Matrix, p0: Point, p1: Point, lock: 0 | 1 | null, threshold: number): { delta: Point; lock: 0 | 1 | null } {
+  const dx = p1[0] - p0[0], dy = p1[1] - p0[1];
+  const held = lockToAxis([dx, dy], spaceAxes(space, bone, parent), lock, threshold);
+  if (held.lock === null) return { delta: [0, 0], lock: null };
+  const [lx, ly] = shearDelta((Math.atan2(bone[2], bone[0]) * 180) / Math.PI, dx, dy, false);
+  return { delta: boneAxisFor(space, held.lock, bone, parent) === 0 ? [lx, 0] : [0, ly], lock: held.lock };
 }
 
 /** Degrees of shear for each world unit the pointer moves along the bone's own axes. */
