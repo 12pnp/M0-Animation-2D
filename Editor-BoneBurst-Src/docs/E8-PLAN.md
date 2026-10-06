@@ -1,6 +1,6 @@
 # E8 — the editor tells the truth up to the bake — plan
 
-**Status:** in progress, 2026-10-06; steps 1 (live notes) and 2 (a bone with no pose) done. Scope chosen by the owner ("go E8" on the recommendation): what
+**Status:** in progress, 2026-10-06; steps 1 (live notes), 2 (a bone with no pose) and 3 (the bake) done. Scope chosen by the owner ("go E8" on the recommendation): what
 the editor cannot show, it says, as you edit, naming the thing; and v2's export baked by the real
 Unity bake, first bake and rebake on change, checked by reading the result in Unity.
 
@@ -124,3 +124,40 @@ flowchart LR
    meanwhile (all pass but the three that need the bridge's own origin), and again on main once
    62d46c6 fixed it: `npm run check` all pass (681 vitest, 22 browser tests, 1 build).
 7. Valid files pose as before: `scripts/unity-parity.ts`, 17 rigs agree, worst 0.0067.
+
+## Step 3 results
+
+1. **The Editor**: this project's, opened with `unity open` (6000.6.4f1; root `CLAUDE.md` names
+   6000.6.3f1), compiling clean, auto-tick on. Midway the Editor was closed (an ordinary quit at
+   20:11:46, after the rebake had run; not one of the step's commands); the owner chose to reopen it
+   and finish there. Unity clears `Temp/` on restart, so the builder script is kept in the repository,
+   `scripts/unity/BakeCheck.cs` (copied to `Temp/AgentScripts/` to run), outside `Assets/`.
+2. **First bake, as the popup makes it** (`FindSource`, `SettingsFor`, `Bake`) of the daily-driver
+   export copied to `Assets/E8BakeCheck/figure`: `figure_BoneBurst.asset`, `figure.sbdata.bytes` (8,289
+   bytes, scale 0.01), the page, shader `BoneBurst/Unlit`. Read back: 14 bones, 7 slots, 1 skin, 2
+   constraints, 1 animation, all as exported; the baked data posed by BoneBurst's runtime in Unity
+   (`ManagedPose`, as the harness's dump) against v2's engine on the export: **60 frames agree, worst
+   0.0010** (`scripts/bake-check.ts`; `scripts/oracle/csharp.ts ▸ comparePoses` now takes a poses
+   file and its bake scale, shared with `unity-parity.ts`, still 17 rigs agreeing).
+3. **Rebake on change**: a second export made by v2's own edit and writer (a key on `hips` at 1.5 s)
+   written over the first and imported: `BoneBurstRebakeOnChange` rebaked it by itself ("BoneBurst
+   rebake on change: … rebaked"). Read back after reopening: the asset's and the data's GUIDs kept,
+   the data changed; it agrees with the second export (60 frames, worst 0.0010) and no longer with
+   the first (25.5 off at frame 45, where the new key is): the check tells the two apart.
+4. **Cleanup**: `Assets/E8BakeCheck` deleted through `AssetDatabase.DeleteAsset`; `git status` of
+   `Assets/` and `ProjectSettings/` as before (the three files the Unity session already had
+   modified); `Packed Assets.asset` and `SmartAddresserData.asset` byte for byte as before; no
+   duplicate index (§11's query); console clean.
+5. **What the plan had wrong**: "`AssetSystem.db` is not written". The bake's indexing did refuse the
+   scratch folder (no `EntryAssetReference` row; those tables last written 04:48 UTC, before this
+   step), but the AssetSystem's **cache** table (`EntryAssetReferenceCache`) gained a row for the baked
+   asset on import, and keeps it, marked valid, after the asset is deleted. The same stale rows sit
+   there for every `BoneBurstBakeTest_*` folder the EditMode tests made and deleted at 12:13 UTC: the
+   cache does not follow deletions. Not edited by hand (§11); for the owner and pb-creator-base (M2).
+6. **Found, for the owner**: stock spine-unity, kept here as the parity reference and the
+   benchmark's stock side (D1), **auto-imports any Spine export put under `Assets/`**: it made
+   `figure_SkeletonData.asset`, `figure_Atlas.asset` and two materials beside the export, and clears
+   and rebuilds them on every change. In M0 an artist's Export to Unity therefore also makes stock
+   Spine assets (M2, which removed stock Spine, does not).
+7. Not run: a player build (§5's check of the AssetSystem path), as planned: the export was not in an
+   addressable folder.

@@ -43,48 +43,60 @@ export function compareWithCsharp(rigs: readonly Rig[]): { compared: number; fai
   for (const r of rigs) {
     const file = join(outDir, `${r.name}.poses.json`);
     if (!existsSync(file)) { console.log(`${r.name.padEnd(28)} NO DUMP`); continue; }
-    const dump = JSON.parse(readFileSync(file, "utf8")) as { animations: Record<string, Frame[]> };
-    const doc = readSkeleton(readFileSync(r.json, "utf8")).skeleton, images = atlasImages(readAtlas(readFileSync(r.atlas, "utf8")));
-    let worst = { d: 0, at: "" }, frames = 0, wider = { d: 0, at: "" };
-    // Each bone's parent, and the two-bone IK chains: the bones under an out-of-reach chain take the wider bound.
-    const parent = doc.bones!.map((b) => doc.bones!.findIndex((x) => x.name === b.parent));
-    const chains = (doc.constraints ?? []).flatMap((c) => (c.type === "ik" && c.bones?.length === 2 && c.target !== undefined
-      ? [{ bones: c.bones.map((n) => doc.bones!.findIndex((x) => x.name === n)), target: doc.bones!.findIndex((x) => x.name === c.target) }] : []));
-    const under = (i: number, root: number) => { for (let b = i; b >= 0; b = parent[b]!) if (b === root) return true; return false; };
-    for (const [anim, list] of Object.entries(dump.animations)) {
-      const poser = new Poser(doc, images);
-      let time = 0;
-      list.forEach((want, f) => {
-        // As the dump steps it: no time first, then a step; physics started over, then stepped.
-        const dt = f === 0 ? 0 : STEP;
-        time = Math.fround(time + dt);
-        poser.rig.update(dt);
-        const p = poser.pose(null, anim, time, f === 0 ? "reset" : "update");
-        frames++;
-        // The chains whose target lies beyond the chain's length on this frame.
-        const len = (b: number) => (doc.bones![b]!.length ?? 0) * Math.hypot(p.rig.matrix(b)[0]!, p.rig.matrix(b)[2]!);
-        const stretched = chains.filter((c) => {
-          const a = p.rig.matrix(c.bones[0]!), t = p.rig.matrix(c.target);
-          return Math.hypot(t[4]! - a[4]!, t[5]! - a[5]!) > len(c.bones[0]!) + len(c.bones[1]!);
-        });
-        want.w.forEach((m, i) => {
-          if (!m || !p.rig.active[i]) return;
-          const got = p.rig.matrix(i);
-          for (let k = 0; k < 6; k++) {
-            // Positions in units; the 2×2 part scaled to a 100-unit bone so both read as distance.
-            const d = Math.abs(got[k]! - m[k]!) * (k < 4 ? 100 : 1), at = `${anim} frame ${f} bone ${doc.bones![i]!.name}`;
-            if (stretched.some((c) => under(i, c.bones[0]!))) { if (d > wider.d) wider = { d, at }; } else if (d > worst.d) worst = { d, at };
-          }
-        });
-      });
-    }
+    const { ok, worst } = comparePoses(r, file);
     compared++;
-    const ok = worst.d <= TOLERANCE && wider.d <= OUT_OF_REACH;
     if (!ok) failed++;
-    worstAll = Math.max(worstAll, worst.d);
-    console.log(`${r.name.padEnd(28)} ${String(frames).padStart(5)} frames  ${ok ? "agrees" : "DIFFERS"}: ${worst.d.toFixed(4)}${worst.d > TOLERANCE ? ` (${worst.at})` : ""}`
-      + (wider.d > 0 ? `; IK out of reach: ${wider.d.toFixed(4)} (${wider.at}, bound ${OUT_OF_REACH})` : ""));
+    worstAll = Math.max(worstAll, worst);
   }
   console.log(`${compared} rigs; worst ${worstAll.toFixed(4)} (tolerance ${TOLERANCE})`);
   return { compared, failed };
+}
+
+/**
+ * One rig's poses from BoneBurst's C# runtime (`file`: the harness's dump, or a baked asset's poses
+ * written in Unity) against v2's engine, every bone every frame; prints a line. 0.01 units, and 0.1
+ * for bones under an IK chain whose target is out of reach on that frame.
+ */
+export function comparePoses(r: Rig, file: string): { ok: boolean; worst: number; frames: number } {
+  const dump = JSON.parse(readFileSync(file, "utf8")) as { scale?: number; animations: Record<string, Frame[]> };
+  // A baked file holds positions times its bake scale (E8 step 3); the harness's dump, at 1.
+  const scale = dump.scale ?? 1;
+  const doc = readSkeleton(readFileSync(r.json, "utf8")).skeleton, images = atlasImages(readAtlas(readFileSync(r.atlas, "utf8")));
+  let worst = { d: 0, at: "" }, frames = 0, wider = { d: 0, at: "" };
+  // Each bone's parent, and the two-bone IK chains: the bones under an out-of-reach chain take the wider bound.
+  const parent = doc.bones!.map((b) => doc.bones!.findIndex((x) => x.name === b.parent));
+  const chains = (doc.constraints ?? []).flatMap((c) => (c.type === "ik" && c.bones?.length === 2 && c.target !== undefined
+    ? [{ bones: c.bones.map((n) => doc.bones!.findIndex((x) => x.name === n)), target: doc.bones!.findIndex((x) => x.name === c.target) }] : []));
+  const under = (i: number, root: number) => { for (let b = i; b >= 0; b = parent[b]!) if (b === root) return true; return false; };
+  for (const [anim, list] of Object.entries(dump.animations)) {
+    const poser = new Poser(doc, images);
+    let time = 0;
+    list.forEach((want, f) => {
+      // As the dump steps it: no time first, then a step; physics started over, then stepped.
+      const dt = f === 0 ? 0 : STEP;
+      time = Math.fround(time + dt);
+      poser.rig.update(dt);
+      const p = poser.pose(null, anim, time, f === 0 ? "reset" : "update");
+      frames++;
+      // The chains whose target lies beyond the chain's length on this frame.
+      const len = (b: number) => (doc.bones![b]!.length ?? 0) * Math.hypot(p.rig.matrix(b)[0]!, p.rig.matrix(b)[2]!);
+      const stretched = chains.filter((c) => {
+        const a = p.rig.matrix(c.bones[0]!), t = p.rig.matrix(c.target);
+        return Math.hypot(t[4]! - a[4]!, t[5]! - a[5]!) > len(c.bones[0]!) + len(c.bones[1]!);
+      });
+      want.w.forEach((m, i) => {
+        if (!m || !p.rig.active[i]) return;
+        const got = p.rig.matrix(i);
+        for (let k = 0; k < 6; k++) {
+          // Positions in units; the 2×2 part scaled to a 100-unit bone so both read as distance.
+          const d = Math.abs(got[k]! - (k < 4 ? m[k]! : m[k]! / scale)) * (k < 4 ? 100 : 1), at = `${anim} frame ${f} bone ${doc.bones![i]!.name}`;
+          if (stretched.some((c) => under(i, c.bones[0]!))) { if (d > wider.d) wider = { d, at }; } else if (d > worst.d) worst = { d, at };
+        }
+      });
+    });
+  }
+  const ok = worst.d <= TOLERANCE && wider.d <= OUT_OF_REACH;
+  console.log(`${r.name.padEnd(28)} ${String(frames).padStart(5)} frames  ${ok ? "agrees" : "DIFFERS"}: ${worst.d.toFixed(4)}${worst.d > TOLERANCE ? ` (${worst.at})` : ""}`
+    + (wider.d > 0 ? `; IK out of reach: ${wider.d.toFixed(4)} (${wider.at}, bound ${OUT_OF_REACH})` : ""));
+  return { ok, worst: worst.d, frames };
 }

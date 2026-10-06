@@ -13,6 +13,18 @@ flowchart LR
 
 ## 2026-10-06
 
+- **BoneBurst Editor v2, E8 step 3: v2's export through the real Unity bake, first bake and rebake on change, read back alike** (`Editor-BoneBurst-Src/`).
+  - **First bake** in the Unity Editor (`BoneBurstBake.FindSource`/`SettingsFor`/`Bake`, as the popup does) of the daily driver's export, in a scratch folder outside SmartAddresser's targets. Read back: the same bones, slots, skins, constraints and animations as exported, and the baked data posed by BoneBurst's runtime in Unity as v2 poses the export: 60 frames, worst 0.0010.
+  - **Rebake on change**: a second export (one more key) written over the first is rebaked by `BoneBurstRebakeOnChange` on its own, the GUIDs kept; it matches the second export and no longer the first.
+  - **New**: `scripts/unity/BakeCheck.cs` (the builder, run with `run_script`), `scripts/bake-check.ts`, and `comparePoses` in `scripts/oracle/csharp.ts`, which takes a bake scale.
+  - **Cleanup**: the scratch folder deleted through `AssetDatabase.DeleteAsset`; `Assets/` and two of the three Unity files as before.
+  - **Reported for the owner**:
+    - The AssetSystem's cache table (`EntryAssetReferenceCache`, pb-creator-base) keeps a row, marked valid, for a deleted asset: the plan's "`AssetSystem.db` not written" was wrong for that table. The index tables were not written.
+    - Stock spine-unity auto-imports any Spine export under `Assets/` (it made a SkeletonData, an Atlas and two materials).
+    - Unity is 6000.6.4f1 here, while `CLAUDE.md` says 6000.6.3f1.
+  - Plan: [E8-PLAN.md](../../Editor-BoneBurst-Src/docs/E8-PLAN.md) ▸ Step 3.
+  - **Guard**: the run itself (by hand, with the Unity Editor). `npm run check` passes: 25 browser tests and 1 build browser test.
+
 - **BoneBurst Editor v2: path attachments edited on the stage and by number** (`Editor-BoneBurst-Src/`, plan `docs/PATH-PLAN.md`). Select a path attachment: its curve, handles and points are drawn on the Stage and dragged (a point takes its handles; one undo per drag; setup pose only), and a path window gives ◀ ▶ through the vertices, X and Y in Local (the slot bone's space) or World, + Point, Delete Point, Closed and Constant speed (`edit/path.ts`, `pathView.ts`, `pathPanel.ts`). Vertices are handled unbound and bound to bones (weights kept); `isWeighted` in `meshLayout.ts` now reads a path's `vertexCount`. Lengths are recomputed only when constant speed is off. Guarded by `tests/pathEdit.test.ts` (round trip with the path constraint's fields, both vertex forms), `e2e/pathEdit.spec.ts`, and `scripts/path-parity.ts`: six edited corpus rigs (a point moved; a point added and constant speed flipped; bound and closed unbound paths) agree with BoneBurst's C# runtime on every animation and active bone, worst 0.0019 of 0.01. Not done: adding a path attachment from the interface, and editing a path while an animation is shown; adding or removing a point is refused on a path with deform keys.
 - **BoneBurst Editor v2: the Open dialog's + works in browsers without a persistent folder picker** (`Editor-BoneBurst-Src/`).
   - + said "This browser cannot keep folders" and stopped, where the picker was missing or the page was automated. It now uses `showDirectoryPicker` when there is one (the folder is kept across visits), and otherwise a plain folder input: the folder's `.bbdata` projects are listed and open, held until the page closes (Save then asks where to write). `src/ui/openDialog.ts`.
