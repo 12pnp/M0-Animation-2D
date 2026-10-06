@@ -192,6 +192,13 @@ export function mountApp(root: HTMLElement): void {
       DIVIDER,
       { label: "Fit to skeleton", keys: "F", run: () => stage.fitView() },
       { label: "Onion Skin", checked: prefs.values.onion, run: () => prefs.set({ onion: !prefs.values.onion }) },
+      DIVIDER,
+      { label: "Grid", checked: prefs.values.grid, run: () => prefs.set({ grid: !prefs.values.grid }) },
+      { label: "Snapping", keys: "⇧⌘;", checked: prefs.values.snap, run: () => prefs.set({ snap: !prefs.values.snap }) },
+      { label: "Snap to Grid", checked: prefs.values.snapGrid, disabled: !prefs.values.snap, run: () => prefs.set({ snapGrid: !prefs.values.snapGrid }) },
+      { label: "Snap to Guides", checked: prefs.values.snapGuides, disabled: !prefs.values.snap, run: () => prefs.set({ snapGuides: !prefs.values.snapGuides }) },
+      { label: "Snap to Bones", checked: prefs.values.snapBones, disabled: !prefs.values.snap, run: () => prefs.set({ snapBones: !prefs.values.snapBones }) },
+      { label: "Snap to Whole Pixels", checked: prefs.values.snapPixels, disabled: !prefs.values.snap, run: () => prefs.set({ snapPixels: !prefs.values.snapPixels }) },
     ] },
     { label: "Window", items: () => [
       ...workspace.built.map((id) => ({ label: PANEL_TITLES[id], checked: workspace.isOpen(id), run: () => workspace.toggle(id) })),
@@ -250,6 +257,8 @@ export function mountApp(root: HTMLElement): void {
     workspace.refreshTheme();
     stage.show = { rulers: p.rulers, bones: p.bones, constraints: p.constraints };
     stage.onion = p.onion ? { before: p.onionBefore, after: p.onionAfter, keyedOnly: p.onionKeyedOnly, colour: p.onionColour } : null;
+    stage.grid = p.grid ? p.gridSize : null;
+    stage.snap = p.snap ? { grid: p.snapGrid, guides: p.snapGuides, bones: p.snapBones, pixels: p.snapPixels, gridSize: p.gridSize } : null;
     stage.redraw();
     session.undoSteps = p.undoSteps;
     session.referenceOpacity = p.referenceOpacity;
@@ -455,6 +464,8 @@ export function mountApp(root: HTMLElement): void {
     if (mod && e.code === "KeyC") { e.preventDefault(); say(e.altKey ? copyPose(session) : timeline.copySelected()); return; }
     if (mod && e.code === "KeyV") { e.preventDefault(); say(e.altKey ? pastePoseHere(session) : timeline.paste()); return; }
     if (mod && key === "a" && session.animation) { e.preventDefault(); timeline.selectAll(); return; }
+    // Snapping on and off (E6 step 4e), as the old editor's ⇧⌘;.
+    if (mod && e.shiftKey && e.code === "Semicolon") { e.preventDefault(); prefs.set({ snap: !prefs.values.snap }); say(`Snapping ${prefs.values.snap ? "on" : "off"}.`); return; }
     if (mod && key === "y") { e.preventDefault(); redoBtn.click(); return; }
     if (mod || e.altKey) return;
     if (key === "escape") {

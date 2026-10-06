@@ -1,4 +1,4 @@
-import { updateBone } from "@/edit/bones";
+import { subtree, updateBone } from "@/edit/bones";
 import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { EditRefused } from "@/edit/history";
 import { findAttachment } from "@/edit/attachments";
@@ -16,6 +16,7 @@ import { constraintShapes, hitConstraint } from "./constraintShapes";
 import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
 import { type Backdrop, Renderer } from "./renderer";
 import { ghostsFor, type OnionOptions } from "./onion";
+import { type SnapOptions, type Snapped, type SnapTargets, snapPoint } from "./snap";
 import { hitReference, movedReference, type Placed, referenceCorner, referenceQuad, scaledReference } from "./references";
 
 /** How far from the selected bone's origin a press still grabs it, in pixels (the gizmo's ring). */
@@ -49,6 +50,8 @@ interface Drag {
   unkeyed: boolean;
   /** The keys as the file had them (absent: undefined), for an axis that ends where it began. */
   written: Dragged;
+  /** What the bone's origin may snap to (E6 step 4e): the bones that do not move with it, the guides. */
+  targets: SnapTargets;
 }
 
 /** The setup values a drag sets. */
@@ -74,6 +77,12 @@ export class Stage {
   show = { rulers: true, bones: true, constraints: true };
   /** Onion skin (E6 step 4d): which ghosts to draw, or null when off. */
   onion: OnionOptions | null = null;
+  /** Snapping (E6 step 4e): what a dragged origin or vertex snaps to, or null when off. */
+  snap: SnapOptions | null = null;
+  /** The grid's spacing in skeleton units, or null when the grid is not shown. */
+  grid: number | null = null;
+  /** What the drag snapped to this step, drawn until the drag ends. */
+  private snapped: Snapped | null = null;
   /** A message for the status line (a refused edit). */
   onStatus: (message: string) => void = () => {};
   /** The pointer's world position or the zoom, for the status line's corner. */
@@ -187,7 +196,7 @@ export class Stage {
       const bitmap = this.session.referenceImages.get(r.path);
       if (bitmap) refs.push({ bitmap, ...referenceQuad(r, bitmap.width, bitmap.height), opacity: r.opacity });
     }
-    this.renderer.draw(p, this.session.pages, this.camera, this.size, this.dpr, rgb(css.getPropertyValue("--stage-bg")), refs, ghostsFor(this.session, this.onion));
+    this.renderer.draw(p, this.session.pages, this.camera, this.size, this.dpr, rgb(css.getPropertyValue("--stage-bg")), refs, ghostsFor(this.session, this.onion), this.grid);
     const g = this.overlay.getContext("2d")!;
     g.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     g.clearRect(0, 0, this.size.width, this.size.height);
@@ -205,6 +214,7 @@ export class Stage {
     const mesh = this.meshMode();
     if (mesh) this.drawMesh(g, mesh, selected, bone);
     this.drawGuides(g, css.getPropertyValue("--guide").trim() || "#36c2d9");
+    if (this.snapped && (this.drag || this.vertexDrag)) this.drawSnapped(g, this.snapped, selected);
     this.drawChosenReference(g, selected);
     if (this.show.rulers) this.drawRulers(g, css);
   }
@@ -287,6 +297,20 @@ export class Stage {
       if (gd.axis === "x") { g.moveTo(at, 0); g.lineTo(at, height); } else { g.moveTo(0, at); g.lineTo(width, at); }
       g.stroke();
     });
+    g.restore();
+  }
+
+  /** What the drag snapped to: the grid or guide line (dashed, across the stage), or the joint (a ring). */
+  private drawSnapped(g: CanvasRenderingContext2D, s: Snapped, color: string): void {
+    const { width, height } = this.size;
+    g.save();
+    g.strokeStyle = color;
+    g.lineWidth = 1;
+    g.setLineDash([4, 3]);
+    if (s.x !== undefined) { const x = Math.round(toScreen(this.camera, this.size, s.x, 0)[0]) + 0.5; g.beginPath(); g.moveTo(x, 0); g.lineTo(x, height); g.stroke(); }
+    if (s.y !== undefined) { const y = Math.round(toScreen(this.camera, this.size, 0, s.y)[1]) + 0.5; g.beginPath(); g.moveTo(0, y); g.lineTo(width, y); g.stroke(); }
+    g.setLineDash([]);
+    if (s.to) { const [x, y] = toScreen(this.camera, this.size, s.to[0], s.to[1]); g.lineWidth = 2; g.beginPath(); g.arc(x, y, 7, 0, Math.PI * 2); g.stroke(); }
     g.restore();
   }
 
@@ -510,6 +534,7 @@ export class Stage {
 
   /** One step of a vertex drag: Alt stretches the image, otherwise it stays put. */
   private vertexTo(at: Point, stretch: boolean): void {
+    at = this.snapAt(at, this.snapTargets(new Set()));
     const d = this.vertexDrag!, [x, y] = toBone(d.view, at);
     try {
       const anim = d.view.animated;
@@ -527,6 +552,27 @@ export class Stage {
       this.onStatus(err.message);
     }
     this.session.changed();
+  }
+
+  /** What a dragged point may snap to: the joints and tips of the bones not in `moving`, and the guides. */
+  private snapTargets(moving: ReadonlySet<string>): SnapTargets {
+    const p = this.session.pose(), points: [number, number][] = [];
+    if (p) {
+      for (const b of p.rig.data.bones) {
+        if (!p.rig.active[b.index] || moving.has(b.name)) continue;
+        const m = boneMatrix(p, b.index);
+        points.push([m[4], m[5]]);
+        if (b.length > 0) points.push(boneTip(p, b.index));
+      }
+    }
+    return { points, guides: this.session.sidecar.guides };
+  }
+
+  /** `at` snapped (when snapping is on), what it snapped to kept for drawing. */
+  private snapAt(at: Point, targets: SnapTargets): Point {
+    if (!this.snap) { this.snapped = null; return at; }
+    this.snapped = snapPoint(at, targets, this.snap, this.camera.zoom);
+    return this.snapped.point as Point;
   }
 
   /** Every active bone, origin to tip, in screen pixels, in the skeleton's order. */
@@ -639,6 +685,8 @@ export class Stage {
       written: { x: b.x, y: b.y, rotation: b.rotation, scaleX: b.scaleX, scaleY: b.scaleY, shearX: b.shearX, shearY: b.shearY },
       key: anim !== null && !unkeyed ? { animation: anim, time: this.session.keyTime } : null,
       unkeyed,
+      // The bone and the bones under it move together: they are not targets.
+      targets: this.tool === "move" ? this.snapTargets(new Set(subtree(this.session.doc!, name))) : { points: [], guides: [] },
       space: this.space,
       lock: null,
     };
@@ -672,6 +720,9 @@ export class Stage {
     const d = this.drag!, h = this.session.history!;
     let patch: Dragged;
     if (d.tool === "move") {
+      // The origin's new place, snapped; the pointer moved by as much.
+      const o: Point = [d.matrix[4] + at[0] - d.start[0], d.matrix[5] + at[1] - d.start[1]], to = this.snapAt(o, d.targets);
+      at = [at[0] + to[0] - o[0], at[1] + to[1] - o[1]];
       if (d.space !== "parent") {
         const held = lockToAxis([at[0] - d.start[0], at[1] - d.start[1]], spaceAxes(d.space, d.matrix, d.parent), d.lock, 4 / this.camera.zoom);
         d.lock = held.lock;
@@ -731,6 +782,7 @@ export class Stage {
       this.redraw();
     }
     if (this.drag || this.vertexDrag) {
+      this.snapped = null;
       const unkeyed = this.drag?.unkeyed ?? false;
       this.drag = null;
       this.vertexDrag = null;

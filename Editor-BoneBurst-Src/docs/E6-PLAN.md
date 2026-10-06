@@ -5,7 +5,8 @@ all 17 corpus rigs back exactly; the old editor changes every one, and poses one
 Step 2 (edit-script parity) done: both scripts agree once each known difference is taken out
 (0.007 and 0 px); `set_keys`' named eases now are version 1's curves. Step 3 (the gap list) done: walked in the old editor, decided by the owner. Step 4 (the gaps
 chosen, built in v2) in progress: 4a (autosave and recovery) done; 4b (events on the
-timeline) done; 4c (copy and paste, multiple selection) done; 4d (onion skin) done; 4e (snapping and a grid) next.
+timeline) done; 4c (copy and paste, multiple selection) done; 4d (onion skin) done; 4e (snapping and a grid) done; 4f (the weight brush) next. 4h (the axes) moved to the other
+session (its owner's request; the Shear tool was already there).
 
 E6 makes v2 the editor people use. The old editor (`../../Animation-BoneBurst-Src/`, AGPL, the
 Animo fork) is the **behavioural oracle**: it is run, never read, and v2 has to agree with it on
@@ -460,4 +461,56 @@ flowchart LR
    green ahead.
 4. The stage, renderer and View-menu lines were agreed with the other session (which was building
    document tabs in `app.ts` and `session.ts` meanwhile).
+
+### 4e — snapping and a grid
+
+```mermaid
+flowchart LR
+    DRAG["Move tool drag (a bone's origin)<br/>or a mesh vertex drag"] --> SNAP["snapPoint: within 8 screen px"]
+    SNAP -->|"1"| PTS["other bones' joints and tips"]
+    SNAP -->|"2"| GD["guides (x or y)"]
+    SNAP -->|"3"| GR["grid lines (x and y)"]
+    SNAP -->|"else"| PX["whole pixels, when on"]
+    SNAP --> LINE["the line snapped to, shown while dragging"]
+    GRID["View ▸ Grid: lines behind the images,<br/>every N units, every 5th stronger"]
+```
+
+#### Decisions
+
+- **What snaps**: a bone's origin dragged with the Move tool (setup pose or animation, keyed as
+  ever), and a mesh vertex dragged in mesh mode. The point snaps when within 8 screen pixels of
+  a target, each axis on its own: to another bone's joint or tip (both axes; not the dragged
+  bone's own, nor those under it, which move with it), else a guide (its axis), else a grid line;
+  with **Whole Pixels** on, what did not snap rounds to a whole unit. The line or point snapped to
+  is drawn while dragging.
+- **Switches** (View menu, kept as preferences): **Grid** (off), **Snapping** (on), and what it
+  snaps to: **Snap to Grid**, **Snap to Guides**, **Snap to Bones** (all on), **Snap to Whole
+  Pixels** (off). Grid spacing in Preferences (50 units, 1–1000). The old editor's "stage edges
+  and centre" has no stage to snap to in v2 (its size was cut in step 3).
+- **Grid**: drawn by the renderer behind references and images, lines every spacing, every fifth
+  stronger, the axes through the origin strongest.
+
+#### Steps
+
+1. `ui/stage/snap.ts` (`snapPoint`, pure), the stage's Move drag and vertex drag through it, the
+   snap lines, the renderer's grid, preferences and View menu.
+2. Tests: the snapping rules (each target, priority, radius in screen pixels, axes apart, whole
+   pixels); a browser test (a bone dragged near a guide lands on it; with Snapping off it does
+   not; the grid draws behind).
+
+#### 4e results
+
+1. `src/ui/stage/snap.ts` (`snapPoint`); the stage's Move drag snapping the bone's origin (the
+   bone and those under it are not targets), the mesh vertex drag snapping the vertex, the line
+   or joint snapped to drawn while dragging; the renderer's grid pass (behind references and
+   images, one screen pixel wide, every fifth line stronger, the axes strongest, spaced out
+   when zoomed far out); Preferences: grid spacing (50, 1–1000); View: **Grid**, **Snapping**
+   (⇧⌘;), **Snap to Grid / Guides / Bones / Whole Pixels**, all kept as preferences.
+2. Tests: `tests/snap.test.ts` (3: a joint first, the reach in screen pixels at the zoom; a guide
+   on its axis, then the grid, axes apart; each switch, whole pixels); `tests/preferences.test.ts`;
+   `e2e/snap.spec.ts` (the head dragged two pixels short of a guide lands on it; Snapping off, it
+   stops short; View ▸ Grid changes the stage's pixels). Four planted faults fail them (the drag
+   not snapped; guide axes swapped; the grid not drawn; the reach in units, not pixels).
+3. **4h** (Local, Parent and World axes) is now the other session's, at its owner's request; it
+   edits the Move drag beside this step's snapping lines, which feed its axis lock.
 

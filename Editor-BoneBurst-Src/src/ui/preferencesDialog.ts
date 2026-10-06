@@ -1,4 +1,4 @@
-import { AUTOSAVE_RANGE, ONION_RANGE, type Preferences, type Theme, UNDO_RANGE } from "./preferences";
+import { AUTOSAVE_RANGE, GRID_RANGE, ONION_RANGE, type Preferences, type Theme, UNDO_RANGE } from "./preferences";
 
 /**
  * The Preferences dialog (E4-PLAN step 10): a native `<dialog>`; each change applies at once.
@@ -46,6 +46,10 @@ export class PreferencesDialog {
     const after = number(`Onion frames after (${ONION_RANGE[0]}–${ONION_RANGE[1]})`, p.onionAfter, 1, (n) => this.prefs.set({ onionAfter: n }));
     const keyedOnly = check("Onion: keyed frames only", p.onionKeyedOnly, (on) => this.prefs.set({ onionKeyedOnly: on }));
     const colour = check("Onion: colour-coded (past red, future green)", p.onionColour, (on) => this.prefs.set({ onionColour: on }));
+    const gridSize = number(`Grid spacing (units, ${GRID_RANGE[0]}–${GRID_RANGE[1]})`, p.gridSize, 1, (n) => this.prefs.set({ gridSize: n }));
+    const gridNote = document.createElement("p");
+    gridNote.className = "note";
+    gridNote.textContent = "View ▸ Grid shows it; View ▸ Snapping and its Snap to… items choose what a dragged bone or vertex snaps to.";
     const actions = document.createElement("div");
     actions.className = "actions";
     const reset = document.createElement("button");
@@ -57,7 +61,7 @@ export class PreferencesDialog {
     close.textContent = "Close";
     close.value = "close";
     actions.append(reset, close);
-    this.form.replaceChildren(title, theme, rulers, bones, constraints, undo, undoNote, opacity, autosave, every, autosaveNote, onion, before, after, keyedOnly, colour, actions);
+    this.form.replaceChildren(title, theme, rulers, bones, constraints, undo, undoNote, opacity, autosave, every, autosaveNote, onion, before, after, keyedOnly, colour, gridSize, gridNote, actions);
   }
 }
 

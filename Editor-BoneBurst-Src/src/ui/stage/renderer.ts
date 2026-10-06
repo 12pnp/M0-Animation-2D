@@ -95,17 +95,19 @@ export class Renderer {
 
   /** `size` in CSS pixels; the canvas is `size × dpr` device pixels. */
   draw(p: Posed | null, pages: ReadonlyMap<string, ImageBitmap>, cam: Camera, size: Size, dpr: number, background: [number, number, number],
-    references: readonly Backdrop[] = [], ghosts: readonly Ghost[] = []): void {
+    references: readonly Backdrop[] = [], ghosts: readonly Ghost[] = [], grid: number | null = null): void {
     const gl = this.gl;
     gl.viewport(0, 0, Math.round(size.width * dpr), Math.round(size.height * dpr));
     gl.clearColor(background[0], background[1], background[2], 1);
     gl.clearStencil(0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
-    if (!p && !references.length) return;
+    if (!p && !references.length && !grid) return;
     gl.useProgram(this.program);
     gl.uniform4f(this.view, cam.x, cam.y, (cam.zoom * 2) / size.width, (cam.zoom * 2) / size.height);
     gl.enable(gl.BLEND);
     gl.activeTexture(gl.TEXTURE0);
+    // The grid (E6 step 4e): behind everything.
+    if (grid) this.grid(grid, cam, size, background);
     // Reference images first: behind the skeleton (E4 step 9).
     gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
     for (const r of references) {
@@ -163,6 +165,39 @@ export class Renderer {
       gl.drawElements(gl.TRIANGLES, d.triangles.length, gl.UNSIGNED_INT, 0);
     }
     gl.disable(gl.STENCIL_TEST);
+  }
+
+  /**
+   * Lines every `spacing` units across the view, one screen pixel wide: every fifth stronger, the
+   * axes through the origin strongest; in the colour that shows on the background. Zoomed far
+   * out, only every fifth (then every 25th…) is drawn, so lines stay at least 6 pixels apart.
+   */
+  private grid(spacing: number, cam: Camera, size: Size, background: readonly number[]): void {
+    const gl = this.gl;
+    let step = spacing;
+    while (step * cam.zoom < 6) step *= 5;
+    const halfW = size.width / 2 / cam.zoom, halfH = size.height / 2 / cam.zoom, px = 1 / cam.zoom;
+    const x0 = cam.x - halfW, x1 = cam.x + halfW, y0 = cam.y - halfH, y1 = cam.y + halfH;
+    const light = background[0]! * 0.3 + background[1]! * 0.59 + background[2]! * 0.11 > 0.5 ? 0 : 1;
+    const quads: number[] = [];
+    const line = (ax: number, ay: number, bx: number, by: number, alpha: number) => {
+      // A thin quad: x and y lines are one pixel thick across their run.
+      const vx = ax === bx, h = px / 2;
+      const c = [ax - (vx ? h : 0), ay - (vx ? 0 : h), bx + (vx ? h : 0), by - (vx ? 0 : h), bx + (vx ? h : 0), by + (vx ? 0 : h), ax - (vx ? h : 0), ay + (vx ? 0 : h)];
+      for (let i = 0; i < 4; i++) quads.push(c[i * 2]!, c[i * 2 + 1]!, 0, 0, light, light, light, alpha, light, light, light);
+    };
+    const strength = (v: number) => (Math.abs(v) < step / 2 ? 0.35 : Math.round(v / step) % 5 === 0 ? 0.18 : 0.08);
+    for (let x = Math.ceil(x0 / step) * step; x <= x1; x += step) line(x, y0, x, y1, strength(x));
+    for (let y = Math.ceil(y0 / step) * step; y <= y1; y += step) line(x0, y, x1, y, strength(y));
+    const n = quads.length / (4 * STRIDE);
+    if (!n) return;
+    const idx = new Uint32Array(n * 6);
+    for (let i = 0; i < n; i++) idx.set([i * 4, i * 4 + 1, i * 4 + 2, i * 4 + 2, i * 4 + 3, i * 4], i * 6);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+    gl.bindTexture(gl.TEXTURE_2D, this.white);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(quads), gl.STREAM_DRAW);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STREAM_DRAW);
+    gl.drawElements(gl.TRIANGLES, idx.length, gl.UNSIGNED_INT, 0);
   }
 
   /** Open the clip of slot `slot` (its polygon into the stencil), or close any with -1. */

@@ -27,9 +27,19 @@ export interface PreferenceValues {
   readonly onionAfter: number;
   readonly onionKeyedOnly: boolean;
   readonly onionColour: boolean;
+  /** The grid and snapping (E6 step 4e): the grid shown and its spacing; snapping on, and what it snaps to. */
+  readonly grid: boolean;
+  readonly gridSize: number;
+  readonly snap: boolean;
+  readonly snapGrid: boolean;
+  readonly snapGuides: boolean;
+  readonly snapBones: boolean;
+  readonly snapPixels: boolean;
 }
 
-export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true };
+export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, bones: true, constraints: true, undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
+  grid: false, gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
+export const GRID_RANGE = [1, 1000] as const;
 export const ONION_RANGE = [0, 10] as const;
 export const AUTOSAVE_RANGE = [5, 600] as const;
 export const UNDO_RANGE = [50, 5000] as const;
@@ -63,6 +73,13 @@ export function readPreferences(text: string | null): PreferenceValues {
     onionAfter: Math.round(num("onionAfter", ONION_RANGE[0], ONION_RANGE[1], DEFAULTS.onionAfter)),
     onionKeyedOnly: bool("onionKeyedOnly", DEFAULTS.onionKeyedOnly),
     onionColour: bool("onionColour", DEFAULTS.onionColour),
+    grid: bool("grid", DEFAULTS.grid),
+    gridSize: num("gridSize", GRID_RANGE[0], GRID_RANGE[1], DEFAULTS.gridSize),
+    snap: bool("snap", DEFAULTS.snap),
+    snapGrid: bool("snapGrid", DEFAULTS.snapGrid),
+    snapGuides: bool("snapGuides", DEFAULTS.snapGuides),
+    snapBones: bool("snapBones", DEFAULTS.snapBones),
+    snapPixels: bool("snapPixels", DEFAULTS.snapPixels),
   };
 }
 
@@ -99,6 +116,7 @@ export class Preferences {
       autosaveSeconds: Number.isFinite(merged.autosaveSeconds) ? clamp(Math.round(merged.autosaveSeconds), AUTOSAVE_RANGE[0], AUTOSAVE_RANGE[1]) : this.current.autosaveSeconds,
       onionBefore: Number.isFinite(merged.onionBefore) ? clamp(Math.round(merged.onionBefore), ONION_RANGE[0], ONION_RANGE[1]) : this.current.onionBefore,
       onionAfter: Number.isFinite(merged.onionAfter) ? clamp(Math.round(merged.onionAfter), ONION_RANGE[0], ONION_RANGE[1]) : this.current.onionAfter,
+      gridSize: Number.isFinite(merged.gridSize) ? clamp(merged.gridSize, GRID_RANGE[0], GRID_RANGE[1]) : this.current.gridSize,
     }));
     if (writePreferences(next) === writePreferences(this.current)) return;
     this.current = next;
