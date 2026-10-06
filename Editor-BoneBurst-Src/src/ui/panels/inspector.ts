@@ -1,3 +1,4 @@
+import { mergePairs } from "../pairs";
 import { type AttachmentPatch, type AttachmentRef, findAttachment, renameAttachment, updateAttachment } from "@/edit/attachments";
 import { type BoneProperty, keyBone } from "@/edit/boneKeys";
 import { type BonePatch, renameBone, reparentBone, subtree, updateBone } from "@/edit/bones";
@@ -101,6 +102,7 @@ export class Inspector {
     else this.attachmentForm(form, doc, sel);
     const title = sel.kind === "bone" ? (anim ? `Bone · keys at frame ${s.frame}` : "Bone") : sel.kind === "slot" ? "Slot" : sel.kind === "skin" ? "Skin"
       : sel.kind === "constraint" ? `Constraint · ${KIND_TITLES[sel.type]}${anim ? ` · keys at frame ${s.frame}` : ""}` : sel.kind === "event" ? "Event" : "Attachment";
+    mergePairs(form);
     this.element.replaceChildren(heading(title), form);
   }
 

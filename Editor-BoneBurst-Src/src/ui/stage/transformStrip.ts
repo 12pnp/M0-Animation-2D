@@ -4,6 +4,7 @@ import { EditRefused } from "@/edit/history";
 import { BONE_DEFAULTS, boneNumber, type BoneNumber } from "@/model/defaults";
 import { keysAt } from "@/model/timelines";
 import { icon } from "../icons";
+import { tagged } from "../pairs";
 import type { Session } from "../session";
 import type { Tool } from "./gizmo";
 import { animatedLocal } from "./posed";
@@ -58,7 +59,9 @@ export class TransformStrip {
         });
         input.addEventListener("change", () => this.set(row, key, input.value));
         this.cells.set(key, input);
-        values.append(input);
+        // Each box has its letter (x, y, or r for rotation) in a head cell, dragged to change the number.
+        if (row.fields.length === 2) values.append(tagged(input, key.endsWith("Y") || key === "y" ? "y" : "x", row.property === "scale" ? 0.01 : 1));
+        else values.append(tagged(input, "r", 1));
       }
       const keyBtn = document.createElement("button");
       keyBtn.type = "button";

@@ -13,6 +13,8 @@ flowchart LR
 
 ## 2026-10-07
 
+- **BoneBurst Editor v2: fields that come in twos share one line, each box with a lettered head cell you drag to change the number** (`Editor-BoneBurst-Src/`). In Properties and References, X/Y, Scale, Shear, Mix and Width/Height merge into Position, Scale, Shear, Mix and Size, with `x`/`y`/`w`/`h`, and Rotation, Rotate and Length get `r`/`l`; the Stage's transform panel has the same cells. Dragging a letter changes the value (a step per pixel, Shift a tenth, 0.01 for Scale and Mix) as one edit on release. One rule in `src/ui/pairs.ts` serves every panel. Guarded by `e2e/pairedFields.spec.ts`; 39 browser tests and 708 unit tests passed; not tried by hand with a real mouse.
+
 - **BoneBurst Editor v2: stage panels float, Hide IK, ruler and Fit buttons, timeline Fit/zoom/pan/splitter** (`Editor-BoneBurst-Src/`).
   - **Stage**: the tool panels are draggable and foldable (`stage/floatingGroups.ts`); a Hide IK toggle (animation mode) hides IK-driven bones and IK lines; the panels and rulers toggles sit bottom-left on the ruler edge, Fit in the top-right ruler corner (also the Local Path panel's).
   - **Rulers**: background colour and opacity (default invisible) and number colour in Preferences ▸ Display; numbers drawn without an outline.

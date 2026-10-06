@@ -1,3 +1,4 @@
+import { mergePairs } from "../pairs";
 import { EditRefused } from "@/edit/history";
 import { moveReference, type ReferencePatch, removeReference, updateReference } from "@/edit/sidecar";
 import type { Sidecar } from "@/model/sidecar";
@@ -127,6 +128,7 @@ export class References {
         return row;
       };
       form.append(field("x", "X", r.x), field("y", "Y", r.y), field("scale", "Scale", r.scale), field("opacity", "Opacity %", r.opacity * 100, (n) => n / 100));
+      mergePairs(form);
       parts.push(form);
     }
     this.element.replaceChildren(...parts);
