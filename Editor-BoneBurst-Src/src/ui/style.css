@@ -347,12 +347,15 @@ html .dockview-theme-light {
 .timeline-bar .frame { color: var(--muted); font-family: var(--font-mono); font-size: 12px; min-width: 13em; }
 .timeline-body {
   display: grid;
-  grid-template-columns: 220px minmax(0, 1fr);
+  grid-template-columns: var(--tl-labels, 220px) minmax(0, 1fr);
   overflow-y: auto;
   min-height: 0;
 }
-.timeline-labels { border-right: 1px solid var(--line); }
-.timeline-labels .ruler-gap { height: 24px; background: var(--bg); }
+.timeline-labels { grid-column: 1; grid-row: 1; border-right: 1px solid var(--line); }
+.timeline-labels .ruler-gap { height: 24px; background: var(--bg); position: sticky; top: 0; z-index: 2; }
+/* The splitter sits on the names column's right edge, over the same grid cell, the full height of the rows. */
+.timeline-split { grid-column: 1; grid-row: 1; justify-self: end; width: 7px; margin-right: -3px; z-index: 4; cursor: col-resize; touch-action: none; }
+.timeline-split:hover, .timeline-split:active { background: var(--accent); opacity: 0.6; }
 .timeline-labels .row {
   height: 22px;
   display: flex;
@@ -368,11 +371,16 @@ html .dockview-theme-light {
 .timeline-labels .row.selected { color: var(--accent); font-weight: 600; }
 .timeline-labels .twisty { border: 0; background: transparent; padding: 0 4px; width: 20px; }
 .timeline-labels .empty { color: var(--muted); padding: 6px 10px; margin: 0; }
-.timeline-track { position: relative; min-width: 0; }
-.timeline-track canvas { display: block; width: 100%; touch-action: none; }
+.timeline-track { grid-column: 2; grid-row: 1; position: relative; min-width: 0; display: flex; flex-direction: column; }
+.timeline-track canvas { display: block; width: 100%; flex: none; touch-action: none; }
+/* Fit stays at the ruler's right end as the rows scroll: sticky, and out of the flow so the canvas starts at the top. */
+.tl-fit { position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: center; flex: none; align-self: flex-end; width: 22px; height: 22px; margin: 0 0 -22px 0; padding: 0; border: 0; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; background: var(--panel); color: var(--text); }
+.tl-fit .icon { width: 15px; height: 15px; margin: 0; }
+.tl-fit:hover:not(:disabled) { background: var(--hover); }
+.tl-fit:disabled { opacity: 0.4; }
 
 @media (max-width: 760px) {
-  .timeline-body { grid-template-columns: 120px minmax(0, 1fr); }
+  .timeline-body { grid-template-columns: var(--tl-labels, 120px) minmax(0, 1fr); }
 }
 
 .inspector .action { align-self: flex-start; margin: 6px 0 2px; padding: 3px 10px; font-size: 12px; }
@@ -613,7 +621,10 @@ dialog.open-project .op-buttons { flex: none; display: flex; justify-content: ce
 .local-path .path-panel .note { max-width: none; }
 .local-path .p-row.xy .cell { width: 72px; }
 .lp-body canvas { cursor: grab; touch-action: none; }
-.lp-fit { position: absolute; top: 6px; right: 6px; z-index: 1; padding: 3px 6px; }
+/* Same as the stage's Fit: a 22 px square flush in the top-right corner, solid, above what is drawn. */
+.lp-fit { position: absolute; top: 0; right: 0; z-index: 3; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; background: var(--panel); color: var(--text); }
+.lp-fit .icon { width: 15px; height: 15px; margin: 0; }
+.lp-fit:hover { background: var(--hover); }
 
 /* Thin scrollbars everywhere (12 px); the thumb is lit as below. */
 *::-webkit-scrollbar { width: 12px; height: 12px; }
@@ -632,3 +643,23 @@ dialog.open-project .op-buttons { flex: none; display: flex; justify-content: ce
 dialog.preferences .slider { display: flex; align-items: center; gap: 8px; }
 dialog.preferences .slider input[type="range"] { flex: 1; min-width: 0; accent-color: var(--accent); }
 dialog.preferences .slider input[type="number"] { width: 64px; }
+
+/* The stage's tool panels as floating cards: a grip bar on top, a fold arrow, and a folded state that keeps only the grip. */
+.stage-tools .group { position: relative; }
+.stage-tools .group:has(> .grip:active) { z-index: 2; }
+.stage-tools .group > .grip { display: flex; align-items: center; justify-content: space-between; height: 14px; margin: -2px -2px 0; padding: 0 4px; border-radius: 5px; cursor: grab; touch-action: none; user-select: none; color: var(--muted); background: radial-gradient(circle, var(--muted) 1px, transparent 1.5px) center / 6px 6px repeat-x; background-size: 6px 6px; }
+.stage-tools .group > .grip:active { cursor: grabbing; }
+.stage-tools .group > .grip:hover { color: var(--text); }
+.stage-tools .group > .grip .fold { margin-left: auto; font-size: 13px; line-height: 12px; padding: 0 4px; color: var(--text); background: var(--bb-header-bg, var(--panel)); border-radius: 3px; transition: transform 0.12s; }
+.stage-tools .group.folded > :not(.grip) { display: none; }
+.stage-tools .group.folded > .grip .fold { transform: rotate(-90deg); }
+.stage-ruler-tools { position: absolute; left: 0; bottom: 6px; z-index: 1; display: flex; flex-direction: column-reverse; gap: 2px; }
+.stage-ruler-tools button, .stage-fit button { width: 16px; height: 16px; padding: 0; display: flex; align-items: center; justify-content: center; border-radius: 3px; background: var(--hover); border: 1px solid var(--line); color: var(--muted); }
+.stage-ruler-tools button .icon, .stage-fit button .icon { width: 11px; height: 11px; }
+/* Fit is embedded in the top ruler's right end, flush with the stage's top and right edges. */
+.stage-fit { top: 0; right: 0; left: auto; }
+.stage-fit { z-index: 3; }
+.stage-fit button { width: 22px; height: 22px; border: 0; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; background: var(--panel); color: var(--text); }
+.stage-fit button .icon { width: 15px; height: 15px; margin: 0; }
+.stage-fit button:hover { background: var(--hover); color: var(--text); }
+.stage-ruler-tools button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }

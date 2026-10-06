@@ -36,6 +36,7 @@ import { OpenDialog } from "./openDialog";
 import { folders, type Recent, recent, type RecentHandle, readRecent } from "./recent";
 import { ExportRefused, exportFiles, exportToUnity } from "./unityExport";
 import { Autosaver, clearRecovery, readRecovery, sourcesOf } from "./recovery";
+import { floatGroups } from "./stage/floatingGroups";
 import { clipboard, copyPose, pastePoseHere } from "./clipboard";
 import { brush, resizeBrush } from "./stage/weightBrush";
 import { isPanelId, PANEL_ICONS, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
@@ -56,6 +57,12 @@ const TOOLS: ReadonlyArray<{ tool: Tool; label: string; shortcut: ShortcutId }> 
  * timeline, rig tree and properties panels. With no animation chosen the stage edits the setup
  * pose; with one, it keys at the playhead.
  */
+/** "#rrggbb" at `alpha` as a CSS colour; transparent when the colour is not a hex one. */
+function rulerBackground(hex: string, alpha: number): string {
+  const m = /^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(hex);
+  return m ? `rgb(${parseInt(m[1]!, 16)} ${parseInt(m[2]!, 16)} ${parseInt(m[3]!, 16)} / ${alpha})` : "transparent";
+}
+
 export function mountApp(root: HTMLElement): void {
   const session = new Session();
   const stage = new Stage(session);
@@ -126,7 +133,7 @@ export function mountApp(root: HTMLElement): void {
   const stagePanel = el("section", "stage-panel");
   const hint = el("div", "hint");
   // The stage's tools, floating over its foot: the bone tools and fit, then what the stage draws.
-  const showBtn = (label: string, tip: string, key: "bones" | "constraints" | "rulers" | "onion") => {
+  const showBtn = (label: string, tip: string, key: "bones" | "constraints" | "rulers" | "onion" | "hideIkBones") => {
     const b = button(label, tip, () => prefs.set({ [key]: !prefs.values[key] }));
     b.dataset.show = key;
     return b;
@@ -135,8 +142,10 @@ export function mountApp(root: HTMLElement): void {
     showBtn("Bones", "Draw the bones", "bones"),
     showBtn("Constraints", "Draw the constraints", "constraints"),
     showBtn("Rulers", "Show the rulers and their guides", "rulers"),
+    showBtn("Hide IK", "In animation mode, hide the bones an IK constraint drives: they are not animated, so only the targets and the free bones show", "hideIkBones"),
     showBtn("Onion", "Onion skin: the poses before (red) and after (green) the playhead, behind the skeleton (View ▸ Onion Skin)", "onion"),
   ];
+  const rulersBtn = iconButton(showBtns.find((b) => b.dataset.show === "rulers")!, "ruler", false);
   const stageTools = el("div", "stage-tools");
   let crumb: HTMLElement;
   const group = (...children: HTMLElement[]) => { const g = el("div", "group"); g.append(...children); return g; };
@@ -175,10 +184,19 @@ export function mountApp(root: HTMLElement): void {
   modeBtn.classList.add("mode");
   // The path window: the selected path attachment's vertices, by number (docs/PATH-PLAN.md); it sits in the Local Path panel.
   const pathPanel = new PathPanel(session, (m) => say(m));
-  stageTools.append(crumb, group(modeBtn), transform.element, group(...spaceBtns), group(...showBtns, autoKeyBtn));
+  const modeGroup = group(modeBtn), spaceGroup = group(...spaceBtns), showGroup = group(...showBtns.filter((b) => b !== rulersBtn), autoKeyBtn);
+  stageTools.append(crumb, modeGroup, transform.element, spaceGroup, showGroup);
+  // Each panel can be dragged by its grip and folded; the corner button shows or hides all of them.
+  const resetPanels = floatGroups(stagePanel, { mode: modeGroup, transform: transform.element, space: spaceGroup, show: showGroup });
   // Fit stays in the panel's top right corner, whatever its size.
   const fitCorner = el("div", "stage-fit");
+  const panelsBtn = iconButton(button("Panels", "Show or hide the tool panels over the stage (View ▸ Stage Panels); double-click to put them back where they started", () => prefs.set({ stagePanels: !prefs.values.stagePanels })), "panels", false);
+  panelsBtn.addEventListener("dblclick", () => { resetPanels(); say("Stage panels put back."); });
   fitCorner.append(fitBtn);
+  // Two small buttons in the stage's bottom-left corner, stacked upward: show or hide the panels, then the rulers.
+  const rulerTools = el("div", "stage-ruler-tools");
+  rulerTools.append(panelsBtn, rulersBtn);
+  stagePanel.append(rulerTools);
   stagePanel.append(fitCorner);
   // "Automatic" text labels: hidden while the stage is narrow.
   new ResizeObserver(() => stageTools.classList.toggle("narrow", stagePanel.clientWidth < 560)).observe(stagePanel);
@@ -325,6 +343,7 @@ export function mountApp(root: HTMLElement): void {
     else document.documentElement.dataset.theme = p.theme;
     workspace.refreshTheme();
     stage.show = { rulers: p.rulers, bones: p.bones, constraints: p.constraints };
+    stage.hideIkBones = p.hideIkBones;
     localPath.onion = () => ({ before: prefs.values.onionBefore, after: prefs.values.onionAfter, keyedOnly: prefs.values.onionKeyedOnly, colour: prefs.values.onionColour });
     stage.onion = p.onion ? { before: p.onionBefore, after: p.onionAfter, keyedOnly: p.onionKeyedOnly, colour: p.onionColour } : null;
     stage.grid = p.grid ? p.gridSize : null;
@@ -345,18 +364,25 @@ export function mountApp(root: HTMLElement): void {
     stage.boneColour = p.boneColour === "auto" ? null : p.boneColour;
     if (session.boneSize !== p.boneSize) { session.boneSize = p.boneSize; session.changed(); }
     stageTools.hidden = !p.stagePanels;
+    panelsBtn.setAttribute("aria-pressed", String(p.stagePanels));
     stage.selectedBoneColour = p.selectedBoneColour === "auto" ? null : p.selectedBoneColour;
     // The panel tabs' colours: "auto" leaves the theme's.
     const rootStyle = document.documentElement.style;
     for (const [name, value] of [["--tab-bar-bg", p.tabBarColour], ["--tab-active-bg", p.tabActiveColour], ["--tab-text", p.tabTextColour], ["--tab-dim-text", p.tabDimTextColour]] as const) {
       if (value === "auto") rootStyle.removeProperty(name); else rootStyle.setProperty(name, value);
     }
+    // The rulers' background: the colour at its opacity ("auto" is the panel colour); the stage and the Fit button read it.
+    rootStyle.setProperty("--ruler-bg", rulerBackground(p.rulerColour === "auto" ? getComputedStyle(document.documentElement).getPropertyValue("--panel").trim() : p.rulerColour, p.rulerOpacity));
+    if (p.rulerTextColour === "auto") rootStyle.removeProperty("--ruler-text"); else rootStyle.setProperty("--ruler-text", p.rulerTextColour);
     stage.snap = p.snap ? { grid: p.snapGrid, guides: p.snapGuides, bones: p.snapBones, pixels: p.snapPixels, gridSize: p.gridSize } : null;
     stage.redraw();
     session.undoSteps = p.undoSteps;
     session.referenceOpacity = p.referenceOpacity;
     aiBtn.setAttribute("aria-pressed", String(p.ai));
-    for (const b of showBtns) b.setAttribute("aria-pressed", String(p[b.dataset.show as "bones" | "constraints" | "rulers" | "onion"]));
+    for (const b of showBtns) b.setAttribute("aria-pressed", String(p[b.dataset.show as "bones" | "constraints" | "rulers" | "onion" | "hideIkBones"]));
+    // The IK button names what its next press does: Hide IK, then Show IK.
+    const ikBtn = showBtns.find((b) => b.dataset.show === "hideIkBones");
+    if (ikBtn) ikBtn.textContent = p.hideIkBones ? "Show IK" : "Hide IK";
     if (p.ai) ai.start(); else if (ai.state !== "off") ai.stop();
   };
   applyPrefs(prefs.values);

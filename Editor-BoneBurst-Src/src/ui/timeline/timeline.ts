@@ -32,6 +32,17 @@ type Drag =
   /** A press on empty track: a click (playhead, selection cleared) until it moves; then a box (E6 step 4c). */
   | { kind: "box"; x0: number; y0: number; x1: number; y1: number; moved: boolean; add: boolean; base: Map<string, KeyRef> };
 
+/**
+ * The track's zoom limits, in CSS pixels per frame. The least is a key's width (a diamond is 10 px
+ * across), so keys on neighbouring frames never overlap; the most is double what it was (60).
+ */
+const MIN_FRAME_WIDTH = 10;
+/** The playhead: a green tag with the frame number on the ruler, and a line of the same green under it. */
+const PLAYHEAD = "#30a46c";
+const BADGE_H = 15;
+const BADGE_BOTTOM = 9 + BADGE_H / 2;
+const MAX_FRAME_WIDTH = 120;
+
 /** How far a press on empty track moves before it is a box rather than a click. */
 const BOX_SLOP = 4;
 
@@ -51,6 +62,7 @@ export class Timeline {
   private readonly animButtons: HTMLButtonElement[];
   private readonly curveButtons: HTMLButtonElement[];
   private readonly keyBtn: HTMLButtonElement;
+  private readonly fitBtn: HTMLButtonElement;
   private readonly labels: HTMLDivElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly body: HTMLDivElement;
@@ -59,6 +71,8 @@ export class Timeline {
   private readonly expanded = new Set<string>();
   private readonly selected = new Map<string, KeyRef>();
   private drag: Drag | null = null;
+  /** A middle-button drag that pans the track: where it began, the view then, and the rows' scroll then. */
+  private pan: { x: number; y: number; first: number; scroll: number } | null = null;
   /** The curve graph (E6 step 4g): on, the track draws the chosen channels' curves. */
   private graph = false;
   private readonly graphBtn: HTMLButtonElement;
@@ -111,10 +125,21 @@ export class Timeline {
     const track = document.createElement("div");
     track.className = "timeline-track";
     this.canvas = document.createElement("canvas");
-    track.append(this.canvas);
-    this.body.append(this.labels, track);
+    this.fitBtn = iconButton(button("Fit", "Fit the whole animation in the track", () => this.fit()), "fit", false);
+    this.fitBtn.className = "tl-fit";
+    track.append(this.fitBtn, this.canvas);
+    const split = document.createElement("div");
+    split.className = "timeline-split";
+    split.title = "Drag to resize the names column";
+    this.attachSplit(split);
+    this.body.append(this.labels, track, split);
+    this.body.addEventListener("scroll", () => this.redraw());
+    // The track is as wide as the panel leaves it (and the names column): repaint when that changes.
+    new ResizeObserver(() => this.redraw()).observe(track);
     this.element.append(bar, this.body);
 
+    // The middle button drags the track; the browser's own middle-click autoscroll is off.
+    this.canvas.addEventListener("mousedown", (e) => { if (e.button === 1) e.preventDefault(); });
     this.canvas.addEventListener("pointerdown", (e) => this.down(e));
     this.canvas.addEventListener("pointermove", (e) => this.move(e));
     this.canvas.addEventListener("pointerup", (e) => this.up(e));
@@ -122,6 +147,38 @@ export class Timeline {
     this.canvas.addEventListener("wheel", (e) => this.wheel(e), { passive: false });
     session.onChange(() => this.update());
     this.update();
+  }
+
+  /** The names column's width: dragged at the splitter, kept in this browser. */
+  private attachSplit(split: HTMLElement): void {
+    const KEY = "bb.timelineLabels";
+    const set = (px: number): void => {
+      const max = Math.max(80, this.element.clientWidth - 160);
+      this.element.style.setProperty("--tl-labels", `${Math.round(Math.min(max, Math.max(80, px)))}px`);
+    };
+    try {
+      const saved = Number(localStorage.getItem(KEY));
+      if (Number.isFinite(saved) && saved > 0) set(saved);
+    } catch { /* storage blocked: the default width */ }
+    let from: { x: number; width: number } | null = null;
+    split.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      from = { x: e.clientX, width: this.labels.getBoundingClientRect().width };
+      split.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    split.addEventListener("pointermove", (e) => {
+      if (!from) return;
+      set(from.width + (e.clientX - from.x));
+      this.redraw();
+    });
+    const end = (): void => {
+      if (!from) return;
+      from = null;
+      try { localStorage.setItem(KEY, String(parseInt(this.element.style.getPropertyValue("--tl-labels"), 10))); } catch { /* storage blocked: kept for this visit only */ }
+    };
+    split.addEventListener("pointerup", end);
+    split.addEventListener("pointercancel", end);
   }
 
   /** Keys are selected, so Delete is the timeline's. */
@@ -158,6 +215,17 @@ export class Timeline {
     }
     this.session.changed();
     return `Pasted at frame ${frame}${skipped.length ? `; skipped (not in this rig): ${skipped.join(", ")}` : ""}.`;
+  }
+
+  /** Zoom and scroll the track so the whole animation, from frame 0 to its end, fits the width. */
+  fit(): void {
+    const a = this.session.animation;
+    if (!a) return;
+    const width = Math.max(1, this.canvas.parentElement!.clientWidth), left = 12, right = 34;
+    const end = Math.max(1, timeFrame(animationDuration(a), this.session.fps));
+    const frameWidth = Math.min(MAX_FRAME_WIDTH, Math.max(MIN_FRAME_WIDTH, (width - left - right) / end));
+    this.view = { frameWidth, first: -left / frameWidth };
+    this.redraw();
   }
 
   togglePlay(): void {
@@ -243,6 +311,7 @@ export class Timeline {
     this.select.value = a?.name ?? "";
     this.select.disabled = !doc;
     for (const b of this.animButtons) b.disabled = !a;
+    this.fitBtn.disabled = !a;
     for (const b of this.curveButtons) b.disabled = !a || !this.selected.size;
     this.keyBtn.disabled = !a || (s.selectedBone === null && s.selected?.kind !== "event");
     // Play is there in Pose mode too: it switches to Animate (the last animation, or the first) and plays.
@@ -356,28 +425,20 @@ export class Timeline {
     // Past the end, dimmed.
     const ex = frameX(v, end);
     if (ex < width) { g.fillStyle = col("--bg"); g.globalAlpha = 0.5; g.fillRect(Math.max(0, ex), RULER, width, height); g.globalAlpha = 1; }
-    // Ruler.
-    g.fillStyle = col("--bg");
-    g.fillRect(0, 0, width, RULER);
+    // The ruler's frame lines run down through the rows.
     const step = labelStep(v.frameWidth);
-    g.font = `11px ${col("--font-mono")}`;
-    g.textBaseline = "middle";
     const firstFrame = Math.max(0, Math.floor(v.first)), lastFrame = Math.ceil(xFrame(v, width));
+    g.strokeStyle = col("--line");
+    g.globalAlpha = 0.35;
+    g.beginPath();
     for (let f = firstFrame; f <= lastFrame; f++) {
+      if (f % step) continue;
       const x = Math.round(frameX(v, f)) + 0.5;
-      const major = f % step === 0;
-      if (!major && v.frameWidth < 5) continue;
-      g.strokeStyle = col("--line");
-      g.beginPath(); g.moveTo(x, major ? 10 : 17); g.lineTo(x, RULER); g.stroke();
-      if (major) {
-        g.fillStyle = col("--muted");
-        g.fillText(String(f), x + 3, 9);
-        g.globalAlpha = 0.35;
-        g.beginPath(); g.moveTo(x, RULER); g.lineTo(x, height); g.stroke();
-        g.globalAlpha = 1;
-      }
+      g.moveTo(x, RULER); g.lineTo(x, height);
     }
-    if (this.graph) { this.paintGraph(g, width, height, col); return; }
+    g.stroke();
+    g.globalAlpha = 1;
+    if (this.graph) { this.paintRuler(g, width, 0, col, step, firstFrame, lastFrame); this.paintGraph(g, width, height, col); this.paintPlayheadBadge(g, width, 0, col); return; }
     // Keys.
     const accent = col("--accent"), text = col("--text");
     this.rows.forEach((r, i) => {
@@ -405,12 +466,71 @@ export class Timeline {
       g.globalAlpha = 1;
       g.strokeRect(Math.min(d.x0, d.x1) + 0.5, Math.min(d.y0, d.y1) + 0.5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
     }
-    // Playhead.
+    // The ruler stays at the top of what is in view as the rows scroll; the playhead runs through it.
+    const top = this.rulerTop();
+    this.paintRuler(g, width, top, col, step, firstFrame, lastFrame);
     const px = Math.round(frameX(v, s.time * fps)) + 0.5;
-    g.strokeStyle = col("--playhead");
+    g.strokeStyle = PLAYHEAD;
     g.lineWidth = 1.5;
-    g.beginPath(); g.moveTo(px, 0); g.lineTo(px, height); g.stroke();
+    g.beginPath(); g.moveTo(px, top + BADGE_BOTTOM); g.lineTo(px, height); g.stroke();
     g.lineWidth = 1;
+    this.paintPlayheadBadge(g, width, top, col);
+  }
+
+  /** Where the ruler is drawn: the top of what is in view (the rows scroll under it). */
+  private rulerTop(): number { return this.graph ? 0 : this.body.scrollTop; }
+
+  /** Whether a y in the canvas is on the ruler as it is now drawn. */
+  private inRuler(y: number): boolean {
+    const t = this.rulerTop();
+    return y >= t && y < t + RULER;
+  }
+
+  private paintRuler(g: CanvasRenderingContext2D, width: number, top: number, col: (n: string) => string, step: number, firstFrame: number, lastFrame: number): void {
+    const v = this.view;
+    g.save();
+    g.translate(0, top);
+    g.fillStyle = col("--bg");
+    g.fillRect(0, 0, width, RULER);
+    g.font = `11px ${col("--font-mono")}`;
+    g.textBaseline = "middle";
+    for (let f = firstFrame; f <= lastFrame; f++) {
+      const x = Math.round(frameX(v, f)) + 0.5;
+      const major = f % step === 0;
+      if (!major && v.frameWidth < 5) continue;
+      g.strokeStyle = col("--line");
+      // A labelled tick runs the ruler's whole height; its number sits centred on it, in the upper part, with the tick cut behind it.
+      g.beginPath(); g.moveTo(x, major ? 0 : 17); g.lineTo(x, RULER); g.stroke();
+      if (major) {
+        const label = String(f), w = Math.ceil(g.measureText(label).width) + 6;
+        g.fillStyle = col("--bg");
+        g.fillRect(Math.round(x - w / 2), 2, w, 14);
+        g.fillStyle = col("--muted");
+        g.textAlign = "center";
+        g.fillText(label, x, 9.5);
+        g.textAlign = "start";
+      }
+    }
+    g.restore();
+  }
+
+  /** The playhead's frame number, in a green tag on the ruler. */
+  private paintPlayheadBadge(g: CanvasRenderingContext2D, width: number, top: number, col: (n: string) => string): void {
+    const s = this.session, label = String(Math.round(s.time * s.fps));
+    g.save();
+    g.font = `600 11px ${col("--font-mono")}`;
+    g.textBaseline = "middle";
+    g.textAlign = "center";
+    const w = Math.ceil(g.measureText(label).width) + 10, h = BADGE_H;
+    // On the same line as the ruler's own numbers (their middle is 9 px down).
+    const x = Math.min(Math.max(frameX(this.view, s.time * s.fps), w / 2), width - w / 2), y = top + 9 - h / 2;
+    g.fillStyle = PLAYHEAD;
+    g.beginPath();
+    g.roundRect(x - w / 2, y, w, h, 4);
+    g.fill();
+    g.fillStyle = "#ffffff";
+    g.fillText(label, x, y + h / 2 + 0.5);
+    g.restore();
   }
 
   private local(e: PointerEvent | WheelEvent): [number, number] {
@@ -418,15 +538,21 @@ export class Timeline {
   }
 
   private down(e: PointerEvent): void {
+    if (e.button === 1) {
+      e.preventDefault();
+      this.canvas.setPointerCapture(e.pointerId);
+      this.pan = { x: e.clientX, y: e.clientY, first: this.view.first, scroll: this.body.scrollTop };
+      return;
+    }
     const s = this.session, a = s.animation;
     if (!a || e.button !== 0) return;
     const [x, y] = this.local(e);
     this.canvas.setPointerCapture(e.pointerId);
-    if (this.graph && y >= RULER && this.graphDown(x, y)) return;
-    const i = rowAt(y, this.rows.length);
+    if (this.graph && !this.inRuler(y) && this.graphDown(x, y)) return;
+    const i = this.inRuler(y) ? -1 : rowAt(y, this.rows.length);
     const mark: Mark | null = i >= 0 ? markAt(this.view, marks(this.rows[i]!, s.fps), x) : null;
     if (!mark) {
-      if (y >= RULER) { this.drag = { kind: "box", x0: x, y0: y, x1: x, y1: y, moved: false, add: e.shiftKey, base: new Map(this.selected) }; return; }
+      if (!this.inRuler(y)) { this.drag = { kind: "box", x0: x, y0: y, x1: x, y1: y, moved: false, add: e.shiftKey, base: new Map(this.selected) }; return; }
       this.drag = { kind: "scrub" };
       s.seek(xFrame(this.view, x));
       return;
@@ -449,6 +575,13 @@ export class Timeline {
   }
 
   private move(e: PointerEvent): void {
+    if (this.pan) {
+      const p = this.pan, scale = this.canvas.getBoundingClientRect().width / Math.max(1, this.canvas.clientWidth);
+      this.view = { ...this.view, first: Math.max(-0.5, p.first - (e.clientX - p.x) / scale / this.view.frameWidth) };
+      this.body.scrollTop = p.scroll - (e.clientY - p.y) / scale;
+      this.redraw();
+      return;
+    }
     const d = this.drag, s = this.session, a = s.animation;
     if (this.graphDrag && a) { const [gx, gy] = this.local(e); this.graphMove(gx, gy); return; }
     if (!d || !a) return;
@@ -478,6 +611,7 @@ export class Timeline {
 
   private up(e: PointerEvent): void {
     if (this.canvas.hasPointerCapture(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId);
+    if (this.pan) { this.pan = null; return; }
     if (this.graphDrag) { this.graphDrag = null; this.graphFit = null; this.session.history?.end(); this.session.changed(); return; }
     const d = this.drag;
     if (d?.kind === "keys") { this.session.history?.end(); this.session.changed(); }
@@ -560,9 +694,9 @@ export class Timeline {
     });
     // Playhead.
     const px = Math.round(frameX(v, this.session.time * fps)) + 0.5;
-    g.strokeStyle = col("--playhead");
+    g.strokeStyle = PLAYHEAD;
     g.lineWidth = 1.5;
-    g.beginPath(); g.moveTo(px, 0); g.lineTo(px, height); g.stroke();
+    g.beginPath(); g.moveTo(px, BADGE_BOTTOM); g.lineTo(px, height); g.stroke();
     g.lineWidth = 1;
   }
 
@@ -628,11 +762,14 @@ export class Timeline {
   }
 
   private wheel(e: WheelEvent): void {
-    const [x] = this.local(e);
-    if (e.ctrlKey || e.metaKey) {
+    const [x, y] = this.local(e);
+    // Over the ruler a plain scroll zooms with the left edge pinned (gently: a mouse notch is ~100); Ctrl or Cmd zooms anywhere, around the pointer.
+    const onRuler = this.inRuler(y) && Math.abs(e.deltaY) >= Math.abs(e.deltaX) && !e.shiftKey;
+    const pinned = onRuler && !e.ctrlKey && !e.metaKey;
+    if (e.ctrlKey || e.metaKey || onRuler) {
       e.preventDefault();
-      const at = xFrame(this.view, x), frameWidth = Math.min(60, Math.max(1, this.view.frameWidth * Math.exp(-e.deltaY * 0.01)));
-      this.view = { frameWidth, first: at - x / frameWidth };
+      const at = xFrame(this.view, x), frameWidth = Math.min(MAX_FRAME_WIDTH, Math.max(MIN_FRAME_WIDTH, this.view.frameWidth * Math.exp(-e.deltaY * (pinned ? 0.003 : 0.01))));
+      this.view = { frameWidth, first: pinned ? this.view.first : at - x / frameWidth };
     } else if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
       e.preventDefault();
       const dx = e.shiftKey ? e.deltaY : e.deltaX;

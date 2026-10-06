@@ -25,6 +25,7 @@ files.
 | `rotate-cw.svg` | `icons/rotate-cw.svg` | the Rotate tool |
 | `scaling.svg` | `icons/scaling.svg` | the Scale tool |
 | `scan.svg` | `icons/scan.svg` | Fit |
+| `ruler.svg` | `icons/ruler.svg` | the stage's Rulers toggle |
 | `settings.svg` | `icons/settings.svg` | Preferences |
 | `arrow-up.svg` | `icons/arrow-up.svg` | up in a list |
 | `arrow-down.svg` | `icons/arrow-down.svg` | down in a list |

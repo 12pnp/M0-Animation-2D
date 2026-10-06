@@ -13,7 +13,7 @@ import type { Session } from "../session";
 import { type Camera, fit, pan, toScreen, toWorld, zoomAt } from "./camera";
 import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, lockToAxis, scaleAlong, scaleFactors, type ScreenBone, shearAlong, shearDelta, type Space, spaceAxes, tidy, type Tool, turn, turnSign } from "./gizmo";
 import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix, type Posed } from "./posed";
-import { constraintShapes, hitConstraint } from "./constraintShapes";
+import { type ConstraintShape, constraintShapes, hitConstraint } from "./constraintShapes";
 import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
 import { movePathPoint, movePathVertex } from "@/edit/path";
 import { boneColourOf } from "../boneLook";
@@ -86,6 +86,8 @@ export class Stage {
   pointer: Point | null = null;
   /** Preferences (E4 step 10): rulers and bones drawn or not. Hidden bones are still picked. */
   show = { rulers: true, bones: true, constraints: true };
+  /** With an animation shown, the bones IK constraints drive are neither drawn nor picked (they are not animated). */
+  hideIkBones = false;
   /** Onion skin (E6 step 4d): which ghosts to draw, or null when off. */
   onion: OnionOptions | null = null;
   /** Snapping (E6 step 4e): what a dragged origin or vertex snaps to, or null when off. */
@@ -349,14 +351,14 @@ export class Stage {
   /** Rulers along the top and left edges, in skeleton units: where guides are dragged out of. */
   private drawRulers(g: CanvasRenderingContext2D, css: CSSStyleDeclaration): void {
     const { width, height } = this.size, c = this.camera;
-    const bg = css.getPropertyValue("--panel").trim() || "#222", line = css.getPropertyValue("--line").trim() || "#444", text = css.getPropertyValue("--muted").trim() || "#999";
+    const bg = css.getPropertyValue("--ruler-bg").trim() || "transparent", text = css.getPropertyValue("--ruler-text").trim() || css.getPropertyValue("--text").trim() || "#ddd", line = text;
     g.save();
     g.fillStyle = bg;
     g.fillRect(0, 0, width, RULER);
     g.fillRect(0, 0, RULER, height);
     g.strokeStyle = line;
     g.fillStyle = text;
-    g.font = `9px "JetBrains Mono", monospace`;
+    g.font = `600 11px "JetBrains Mono", monospace`;
     g.lineWidth = 1;
     const step = tickStep(c.zoom);
     const label = (v: number) => String(Math.round(v * 1000) / 1000);
@@ -367,7 +369,7 @@ export class Stage {
       if (x > width) break;
       if (x < RULER) continue;
       g.moveTo(x, RULER - 6); g.lineTo(x, RULER);
-      g.fillText(label(v), x + 2, 9);
+      g.fillText(label(v), x + 3, 12);
     }
     // Left ruler: y, labels turned to read upwards.
     for (let v = Math.floor((c.y + height / 2 / c.zoom) / step) * step; ; v -= step) {
@@ -375,7 +377,7 @@ export class Stage {
       if (y > height) break;
       if (y < RULER) continue;
       g.moveTo(RULER - 6, y); g.lineTo(RULER, y);
-      g.save(); g.translate(9, y - 2); g.rotate(-Math.PI / 2); g.fillText(label(v), 0, 0); g.restore();
+      g.save(); g.translate(12, y - 3); g.rotate(-Math.PI / 2); g.fillText(label(v), 0, 0); g.restore();
     }
     g.moveTo(0, RULER + 0.5); g.lineTo(width, RULER + 0.5);
     g.moveTo(RULER + 0.5, 0); g.lineTo(RULER + 0.5, height);
@@ -383,10 +385,16 @@ export class Stage {
     g.restore();
   }
 
+  /** The constraint shapes to draw and pick: without the IK ones while Hide IK is on in an animation. */
+  private shownShapes(p: Posed): ConstraintShape[] {
+    const shapes = constraintShapes(p);
+    return this.hideIkBones && this.session.animation ? shapes.filter((s) => s.type !== "ik") : shapes;
+  }
+
   /** A press on a drawn constraint selects it; false when on none (or constraints are hidden). */
   private constraintDown(sx: number, sy: number): boolean {
     const p = this.session.pose();
-    const hit = this.show.constraints && p ? hitConstraint(constraintShapes(p), (x, y) => toScreen(this.camera, this.size, x, y), sx, sy) : null;
+    const hit = this.show.constraints && p ? hitConstraint(this.shownShapes(p), (x, y) => toScreen(this.camera, this.size, x, y), sx, sy) : null;
     if (hit) this.session.select({ kind: "constraint", type: hit.type, name: hit.name });
     return !!hit;
   }
@@ -420,7 +428,7 @@ export class Stage {
   private drawConstraints(g: CanvasRenderingContext2D, p: Posed, css: CSSStyleDeclaration, accent: string): void {
     const sel = this.session.selected;
     const at = (x: number, y: number) => toScreen(this.camera, this.size, x, y);
-    for (const s of constraintShapes(p)) {
+    for (const s of this.shownShapes(p)) {
       const on = sel?.kind === "constraint" && sel.type === s.type && sel.name === s.name;
       g.save();
       g.strokeStyle = g.fillStyle = on ? accent : css.getPropertyValue(`--c-${s.type}`).trim() || "#d08a2b";
@@ -730,12 +738,23 @@ export class Stage {
   }
 
   /** Every active bone, origin to tip, in screen pixels, in the skeleton's order. */
+  /** The names of the bones IK constraints drive (their chains; the targets are not among them). */
+  private ikDrivenBones(): Set<string> {
+    const names = new Set<string>();
+    for (const c of this.session.doc?.constraints ?? []) {
+      if (c.type === "ik") for (const n of c.bones ?? []) names.add(n);
+    }
+    return names;
+  }
+
   private screenBones(): ScreenBone[] {
     const p = this.session.pose();
     if (!p) return [];
     const out: ScreenBone[] = [];
+    const driven = this.hideIkBones && this.session.animation ? this.ikDrivenBones() : null;
     for (const b of p.rig.data.bones) {
       if (!p.rig.active[b.index]) continue;
+      if (driven?.has(b.name)) continue;
       const m = boneMatrix(p, b.index), tip = boneTip(p, b.index);
       const [x0, y0] = toScreen(this.camera, this.size, m[4], m[5]);
       const [x1, y1] = toScreen(this.camera, this.size, tip[0], tip[1]);

@@ -13,6 +13,11 @@ flowchart LR
 
 ## 2026-10-07
 
+- **BoneBurst Editor v2: stage panels float, Hide IK, ruler and Fit buttons, timeline Fit/zoom/pan/splitter** (`Editor-BoneBurst-Src/`).
+  - **Stage**: the tool panels are draggable and foldable (`stage/floatingGroups.ts`); a Hide IK toggle (animation mode) hides IK-driven bones and IK lines; the panels and rulers toggles sit bottom-left on the ruler edge, Fit in the top-right ruler corner (also the Local Path panel's).
+  - **Rulers**: background colour and opacity (default invisible) and number colour in Preferences ▸ Display; numbers drawn without an outline.
+  - **Timeline**: a Fit button; wheel over the ruler zooms (left edge pinned), middle-drag pans; zoom 10-120 px per frame; the ruler stays on top while rows scroll; ticks carry centred numbers; a green frame tag and line for the playhead; a draggable splitter for the names column; the track repaints on resize.
+  - **Not verified**: `tsc --noEmit` and `vitest run` pass (708 tests, after listing the new icon in the Lucide manifest); each change was looked at in the dev server in the browser pane, but there is no e2e test for them, and the double-click panel reset and the Preferences rows were not exercised.
 - **BoneBurst Editor v2: Preferences ▸ User interface (font size, interface scale 95%, toolbar position and labels, row height, fewer ticks, default FPS, tree colours and indent), and Play from Pose** (`Editor-BoneBurst-Src/`). Spine's "User interface" settings, as many as v2 has a use for, each reset per section; the interface scale is CSS zoom (95% by default, 100% under automation) with `src/ui/pageScale.ts` correcting every pointer and popup position. Play in Pose mode switches to Animate on the last animation shown, then plays. Left out: bitmap/Unicode fonts, and a separate Animate/Setup toolbar position (one setting). Guarded by `tests/preferences.test.ts`, `tests/uiPrefsEffects.test.ts`, `e2e/uiScale.spec.ts`, `e2e/playFromPose.spec.ts`; 708 unit and 36 browser tests passed on the working tree, and the staged tree (the other session's ruler, Hide IK and floating-panel work left out) type-checks with 706 unit tests passing. The Preferences window was not looked at by eye.
 
 ## 2026-10-06
