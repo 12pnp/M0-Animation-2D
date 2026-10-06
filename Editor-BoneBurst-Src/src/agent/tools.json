@@ -1,0 +1,1696 @@
+{
+  "version": {
+    "number": 2,
+    "from": 1,
+    "date": "2026-10-06",
+    "note": "BoneBurst Editor v2: the document is the Spine JSON file (D4), so the contract follows it (D5). Tools keep their names and argument shapes where the meaning holds; each change from version 1 is listed here, and a test fails when one is not. The flow's tools (auto_rig, apply_motion, check_preview, set_keys, show, get_pose) are unchanged.",
+    "changes": [
+      {
+        "tool": "set_cycle",
+        "change": "dropped",
+        "why": "A cycle was the old editor's flag for an animation that loops back to frame 0; Spine's file has no such flag (a game loops what it plays).",
+        "instead": "Key the last frame equal to frame 0 (apply_motion's clips already end where they start); check_preview reports a seam."
+      },
+      {
+        "tool": "offset_keys",
+        "change": "dropped",
+        "why": "It staggered whole layers' keys in time; Spine has no layers.",
+        "instead": "Move or re-key bones' keys with set_keys and delete_keys."
+      },
+      {
+        "tool": "get_bone_path",
+        "change": "dropped",
+        "why": "Bone motion paths were the old editor's own curves, not part of Spine's file.",
+        "instead": "Read where bones go with get_pose at several frames."
+      },
+      {
+        "tool": "set_bone_path",
+        "change": "dropped",
+        "why": "Bone motion paths were the old editor's own curves, not part of Spine's file.",
+        "instead": "Key positions with set_keys."
+      },
+      {
+        "tool": "auto_rig",
+        "change": "meaning",
+        "what": "`layers` names slots (the pictures on no bone are slots on the root bone), not the old editor's picture layers."
+      },
+      {
+        "tool": "set_skin_image",
+        "change": "meaning",
+        "what": "`layer` names a slot."
+      },
+      {
+        "tool": "make_sequence",
+        "change": "meaning",
+        "what": "`layer` names a slot."
+      },
+      {
+        "tool": "key_sequence",
+        "change": "meaning",
+        "what": "`layer` names a slot."
+      },
+      {
+        "tool": "link_mesh",
+        "change": "meaning",
+        "what": "`layer` names a slot."
+      },
+      {
+        "tool": "set_tint",
+        "change": "meaning",
+        "what": "`layer` names a slot."
+      },
+      {
+        "tool": "key_properties",
+        "change": "meaning",
+        "what": "`layers` names slots."
+      }
+    ]
+  },
+  "tools": [
+    {
+      "name": "get_rig",
+      "description": "The skeleton being edited: its bones (parent, length, setup pose), slots (a picture's slot also gives its image, size in pixels, pivot pixel, and where that pivot is in skeleton space with its world rotation: pixel (u, v) of an unturned picture is at at + (u - pivot[0], pivot[1] - v)), IK constraints, the library's pictures, skins, animations and frame rate, and which animation, frame and skins the editor shows. Call this first. Values use Spine's conventions: x right, y UP, rotation in degrees counter-clockwise, all local to the parent bone.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_animation",
+      "description": "Every key of one animation, per bone: frame, local x, y, rotation, scaleX, scaleY and the ease of the interval that starts at the key (with `eases` for properties that follow their own). Also its length in frames, whether it loops, and whether it is a cycle (its last frame is frame 0 again); for a cycle, `seam` lists every bone whose pose at that last frame differs from frame 0, where the loop would hitch. Keys set by other tools (constraints, meshes, events) are not listed.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "animation": {
+            "type": "string",
+            "description": "Animation name."
+          }
+        },
+        "required": [
+          "animation"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_pose",
+      "description": "Where bones are at one frame, as the Spine runtime poses them (IK and every constraint applied): each bone's world position (y up), world rotation in degrees and world scale. Use it to check an edit, e.g. that a foot touches the ground (y near 0 for most rigs).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "animation": {
+            "type": "string",
+            "description": "Animation name; omit for the setup pose."
+          },
+          "frame": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "bones": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Bone names; omit for all."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "new_animation",
+      "description": "Create an empty animation. It loops over `frames` frames: frame `frames` is the same instant as frame 0, so a looping animation keys the same pose at 0 and at `frames`.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "frames": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10000,
+            "description": "Length in frames at the rig's frame rate."
+          }
+        },
+        "required": [
+          "name",
+          "frames"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_keys",
+      "description": "Key bones at frames, all in ONE undoable step. Each key sets any of x, y, rotation, scaleX, scaleY (local to the parent bone, Spine conventions: y up, degrees counter-clockwise; absolute values, not offsets from setup); what a key leaves out keeps the value the animation already has at that frame. `ease` shapes the motion from this key to the next: linear (default), hold, in, out, inout, or a cubic bezier [x1, y1, x2, y2] in 0..1. `eases` gives single properties their own ease over the same interval, e.g. {\"y\": \"out\"} for a ball that travels x linearly and slows in y; it replaces the key's earlier per-property eases ({} clears them), and `ease` given alone clears them too. Keying past the end lengthens the animation.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "animation": {
+            "type": "string"
+          },
+          "keys": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "bone": {
+                  "type": "string"
+                },
+                "frame": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                },
+                "rotation": {
+                  "type": "number"
+                },
+                "scaleX": {
+                  "type": "number"
+                },
+                "scaleY": {
+                  "type": "number"
+                },
+                "ease": {
+                  "oneOf": [
+                    {
+                      "type": "string",
+                      "enum": [
+                        "linear",
+                        "hold",
+                        "in",
+                        "out",
+                        "inout"
+                      ]
+                    },
+                    {
+                      "type": "array",
+                      "items": {
+                        "type": "number"
+                      },
+                      "minItems": 4,
+                      "maxItems": 4
+                    }
+                  ]
+                },
+                "eases": {
+                  "type": "object",
+                  "properties": {
+                    "x": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "linear",
+                            "in",
+                            "out",
+                            "inout"
+                          ]
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 4,
+                          "maxItems": 4
+                        }
+                      ]
+                    },
+                    "y": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "linear",
+                            "in",
+                            "out",
+                            "inout"
+                          ]
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 4,
+                          "maxItems": 4
+                        }
+                      ]
+                    },
+                    "rotation": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "linear",
+                            "in",
+                            "out",
+                            "inout"
+                          ]
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 4,
+                          "maxItems": 4
+                        }
+                      ]
+                    },
+                    "scaleX": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "linear",
+                            "in",
+                            "out",
+                            "inout"
+                          ]
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 4,
+                          "maxItems": 4
+                        }
+                      ]
+                    },
+                    "scaleY": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "enum": [
+                            "linear",
+                            "in",
+                            "out",
+                            "inout"
+                          ]
+                        },
+                        {
+                          "type": "array",
+                          "items": {
+                            "type": "number"
+                          },
+                          "minItems": 4,
+                          "maxItems": 4
+                        }
+                      ]
+                    }
+                  },
+                  "additionalProperties": false
+                }
+              },
+              "required": [
+                "bone",
+                "frame"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "animation",
+          "keys"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "delete_keys",
+      "description": "Remove keys, in one undoable step. A bone left with no keys goes back to its setup pose in that animation.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "animation": {
+            "type": "string"
+          },
+          "keys": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "bone": {
+                  "type": "string"
+                },
+                "frame": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "bone",
+                "frame"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "animation",
+          "keys"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "show",
+      "description": "Show an animation at a frame in the editor, so the user sees it (the stage, the timeline and the Preview follow). `skins` picks which of the rig's skins (get_rig lists them) are shown, combined over the default skin; [] shows the default skin only. Choosing skins is one undoable step.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "animation": {
+            "type": "string"
+          },
+          "frame": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "skins": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "animation"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "undo",
+      "description": "Undo the last steps, whoever made them (each tool call that edits is one step). Returns what was undone.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "redo",
+      "description": "Redo steps undone.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "steps": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "check_preview",
+      "description": "Play the animation in the real Spine runtime (the Preview panel, what a game will show) at the given frames and compare every bone with the editor's pose. Returns the largest difference in pixels; anything above 0.01 means the file would not play as the editor shows it. Needs the Preview panel open. For a cycle it also reports `seam`: the bones whose last frame does not match frame 0.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "animation": {
+            "type": "string"
+          },
+          "frames": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "description": "Omit for every frame (up to 120)."
+          }
+        },
+        "required": [
+          "animation"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "export_to_unity",
+      "description": "Export the document into its Unity folder (the one File › Export to Unity… chose; the user must have done that once in this browser): the skeleton JSON, the .atlas.txt and the page images, the skeleton written last. Unity's BoneBurst import package rebakes a folder it has baked before on its next refresh, so a change made here reaches the game's baked asset. Returns the folder and the files written.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "get_reference",
+      "description": "The animation's reference: pictures the user added to animate against, frame by frame (get_rig lists which animations have one). Returns how its images sit in time (which frames each shows) and in the skeleton's space (where an image pixel lands), and the images at the frames you ask for, at most 6 at a time. Look at the reference's key poses before keying.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "animation": {
+            "type": "string"
+          },
+          "frames": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "maxItems": 6,
+            "description": "Frames whose reference image to return. Omit to get only the timing and placement."
+          }
+        },
+        "required": [
+          "animation"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "render_frame",
+      "description": "A picture of the skeleton at a frame (omit animation for the setup pose: what add_bones and attach built), drawn as the editor's stage draws it, over the reference image at that frame (half transparent) when there is one, with every bone drawn as a line from its joint to its tip and named: blue for bones named far or right, magenta for the rest. Also returns each bone's joint and tip in the picture's pixels, and how a pixel maps to the skeleton's space. Use it to compare your pose with the reference and to see what you made; fix what does not match with set_keys and look again. With `paths`, each named bone's tip is also drawn at every frame, joined into its path, the keyed frames as rings: an arc you can judge in one picture.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "animation": {
+            "type": "string",
+            "description": "Animation name; omit for the setup pose."
+          },
+          "frame": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Default 0."
+          },
+          "reference": {
+            "type": "boolean",
+            "description": "Draw the reference behind the skeleton (default true)."
+          },
+          "bones": {
+            "type": "boolean",
+            "description": "Draw and name the bones (default true)."
+          },
+          "paths": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Bones whose path to draw: where the bone's tip is at every frame of the animation (needs animation)."
+          }
+        },
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "add_bones",
+      "description": "Create bones in the setup pose, all in ONE undoable step. Give each bone its joint `from` and its tip `to` in skeleton space (y up: the space get_pose and render_frame report), or its local x, y, rotation and length under its parent (Spine conventions). A parent is an existing bone or one earlier in the list; omit it for a root. Names must be new. render_frame and get_reference say how a pixel maps to skeleton space, for reading joints off a picture.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "bones": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "parent": {
+                  "type": "string"
+                },
+                "from": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "description": "Joint [x, y] in skeleton space."
+                },
+                "to": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "description": "Tip [x, y] in skeleton space: the bone's direction and length."
+                },
+                "x": {
+                  "type": "number"
+                },
+                "y": {
+                  "type": "number"
+                },
+                "rotation": {
+                  "type": "number"
+                },
+                "length": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "name"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "bones"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "attach",
+      "description": "Put pictures on bones, all in ONE undoable step: each becomes a slot that moves with its bone. `image` names a library picture (get_rig lists them with their sizes) and adds it; `layer` names artwork already in the skeleton (a slot get_rig lists, e.g. from File ▸ Import PSD as Layers) and moves it onto the bone, staying where it is. `pivot` is the pixel of the picture (from its top-left) it turns about, usually the joint: for a layer it moves only that point, not the artwork. For an image, `at` is where the pivot pixel goes in skeleton space (default: the bone's joint); `rotation` turns the picture counter-clockwise in the world (default 0: upright, as drawn). A new picture draws in front of what the bone already holds; draw_order changes that.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "bone": {
+                  "type": "string"
+                },
+                "image": {
+                  "type": "string",
+                  "description": "A library picture to add."
+                },
+                "layer": {
+                  "type": "string",
+                  "description": "Artwork already in the skeleton, to move onto the bone."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "The new slot's name (default: the image's)."
+                },
+                "pivot": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "description": "[u, v] in the picture's pixels from its top-left (a new image: default its centre; a layer: default unchanged)."
+                },
+                "at": {
+                  "type": "array",
+                  "items": {
+                    "type": "number"
+                  },
+                  "minItems": 2,
+                  "maxItems": 2,
+                  "description": "[x, y] in skeleton space (default the bone's joint)."
+                },
+                "rotation": {
+                  "type": "number"
+                },
+                "scale": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                }
+              },
+              "required": [
+                "bone"
+              ],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": [
+          "items"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "add_ik",
+      "description": "Add an IK constraint in one undoable step: `bone` reaches for `target`. A bone whose parent is a bone gets the two-bone solve (the parent turns too: a shin reaching for a foot target turns the thigh); a root bone only aims. Without `target`, a target bone <bone>_target is made at the bone's tip. Key the TARGET to animate the limb: the bones the IK turns must never be keyed, so a bone with keys is refused (delete_keys first). `bendPositive` picks which way the joint bends (default true); flip it if render_frame shows the knee or elbow bent backwards.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "bone": {
+            "type": "string"
+          },
+          "target": {
+            "type": "string",
+            "description": "An existing bone outside the chain; omit to make one."
+          },
+          "name": {
+            "type": "string",
+            "description": "Default <bone>_ik."
+          },
+          "bendPositive": {
+            "type": "boolean"
+          },
+          "mix": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1,
+            "description": "Default 1."
+          },
+          "stretch": {
+            "type": "boolean",
+            "description": "Scale the bones along their length to reach a target out of reach."
+          },
+          "compress": {
+            "type": "boolean",
+            "description": "One bone: scale it down for a target nearer than its length."
+          },
+          "scale_y": {
+            "enum": [
+              "none",
+              "uniform",
+              "volume"
+            ],
+            "description": "What scale y does when a bone stretches or compresses: stays (default), follows, or keeps the area."
+          }
+        },
+        "required": [
+          "bone"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "auto_rig",
+      "description": "Build a whole skeleton from a character's joints, in ONE undoable step: bones named hips, torso, head, thigh_near, shin_near, foot_near, upper_arm_near, forearm_near, hand_near… (near/far for a side view, left/right for a front view), each picture layer that is on no bone put on the bone running through it with its joint as the pivot, the drawing order kept as the layers were stacked, and IK on the legs (and arms with armIk). To read the joints: render_frame with no animation shows the pictures and how a pixel maps to skeleton space; give each joint where the body bends, in skeleton space (y up). pelvis and neck are required; a limb stops at its first missing joint (hip defaults to pelvis). Returns which layer went on which bone; look with render_frame and fix what is off with attach, or undo and run it again.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "joints": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "array",
+              "items": {
+                "type": "number"
+              },
+              "minItems": 2,
+              "maxItems": 2
+            },
+            "description": "[x, y] per joint: pelvis, chest (where the ribcage starts, when the pelvis and torso are drawn apart), neck, head (top of the head), and per side (side view: .near and .far; front view: .left and .right, as on screen) shoulder, elbow, wrist, hand (fingertips), hip, knee, ankle, toe. E.g. {\"pelvis\": [0, 100], \"neck\": [0, 160], \"knee.near\": [8, 52]}."
+          },
+          "view": {
+            "type": "string",
+            "enum": [
+              "side",
+              "front"
+            ],
+            "description": "Default side."
+          },
+          "facing": {
+            "type": "string",
+            "enum": [
+              "right",
+              "left"
+            ],
+            "description": "A side view's facing (default right): which way a straight knee or elbow will bend."
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The picture layers to rig; default every one on no bone."
+          },
+          "armIk": {
+            "type": "boolean",
+            "description": "IK on the arms too (default false: arms are keyed by their bones)."
+          }
+        },
+        "required": [
+          "joints"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "list_motions",
+      "description": "The motion library: ready-made clips (walk, run, idle, jump, and front-view ones) that apply_motion fits onto this rig, each with the body roles it moves (thigh.near, shin.near, upperArm.far, torso, head, hips…), and the roles guessed for this rig's bones from their names, for side-view and front-view clips.",
+      "input_schema": {
+        "type": "object",
+        "properties": {},
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "apply_motion",
+      "description": "Make a new animation from a library clip, fitted to this rig, in ONE undoable step: each role's limb points the way the clip says (so any proportions and setup pose take it), the feet stay on the ground, and limbs under IK get their targets keyed instead of their bones. Side-view clips face right; `facing: \"left\"` mirrors them. Roles are guessed from bone names (list_motions shows the guess); `map` overrides roles ({\"thigh.near\": \"leg_l_up\"}, or null to leave one out). Returns the mapping it used and a check of the result against the runtime pose; then refine it with set_keys like any animation. Every clip ends where it starts, so the animation loops.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "motion": {
+            "type": "string",
+            "description": "A clip from list_motions."
+          },
+          "animation": {
+            "type": "string",
+            "description": "The new animation's name (default: the clip's)."
+          },
+          "map": {
+            "type": "object",
+            "additionalProperties": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "description": "Role → bone name, over the guess."
+          },
+          "facing": {
+            "type": "string",
+            "enum": [
+              "right",
+              "left"
+            ],
+            "description": "Which way the character faces (side-view clips). Default right."
+          },
+          "frames": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Length in frames; default the clip's length at the rig's frame rate. Longer is slower."
+          }
+        },
+        "required": [
+          "motion"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "draw_order",
+      "description": "Reorder what draws in front, in one undoable step: the listed children of `parent` (bones and slots; omit parent for the skeleton's roots) draw in this order, FRONT first, in the places they held; the others keep theirs. A bone carries everything below it, so the near arm goes in front of the torso by ordering the chest's children, e.g. [\"arm_near_up\", \"torso\", \"arm_far_up\"].",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "parent": {
+            "type": "string"
+          },
+          "front": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "Names, front first."
+          }
+        },
+        "required": [
+          "front"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "key_draw_order",
+      "description": "Key the draw order at a frame of an animation, in one undoable step: from that frame on (until the next draw order key) the listed layers draw in this order, FRONT first, in the places they hold there; the others keep theirs. A bone stands for the pictures hanging directly on it. `setup: true` instead keys a return to the setup order. Spine's draw order keys; get_animation's `drawOrder` lists them.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "animation": {
+            "type": "string"
+          },
+          "frame": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "front": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "Layer or bone names, front first."
+          },
+          "setup": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "animation",
+          "frame"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "key_ik",
+      "description": "Key an IK constraint's mix, bend and softness at a frame of an animation, in one undoable step (Spine's IK keys). From the key on the mix tweens to the next key by `ease` (linear by default; stepped holds; smooth eases in and out) and the bend is the key's until the next key. Before the first key the constraint's own mix and bend hold. A mix of 0 lets the chain bones play their own keys (FK); 1 is full IK. `bendPositive` has add_ik's sense: flip it to bend the knee or elbow the other way from that frame on. Leaving mix, bendPositive or softness out keys the value in force there. `delete: true` removes the key at that frame. get_animation's `ik` lists the keys.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "animation": {
+            "type": "string"
+          },
+          "ik": {
+            "type": "string",
+            "description": "The constraint's name, as get_rig lists it."
+          },
+          "frame": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "mix": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "bendPositive": {
+            "type": "boolean"
+          },
+          "softness": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Pixels: near full reach a two-bone chain eases into straight over this distance instead of snapping. Tweens with the mix."
+          },
+          "ease": {
+            "type": "string",
+            "enum": [
+              "linear",
+              "stepped",
+              "smooth"
+            ]
+          },
+          "delete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "animation",
+          "ik",
+          "frame"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "define_event",
+      "description": "Add, change, rename or delete one of the skeleton's events (Spine's events: footsteps, hits, sounds), in one undoable step. An event has an int, a float and a string the game reads, and optionally a sound: `audio` is the sound file's path as the game finds it (the project's sound files are added by the user in the Events panel), with its volume (0..1) and balance (-1 left .. 1 right). A value left out is unchanged (new events start at 0, 0, \"\", no sound, volume 1, balance 0). `rename` gives the event a new name and its keys follow; `delete: true` deletes it and every key that fires it. get_rig lists the events.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "int": {
+            "type": "integer"
+          },
+          "float": {
+            "type": "number"
+          },
+          "string": {
+            "type": "string"
+          },
+          "audio": {
+            "type": "string"
+          },
+          "volume": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "balance": {
+            "type": "number",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "rename": {
+            "type": "string"
+          },
+          "delete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "key_event",
+      "description": "Fire an event at a frame of an animation, in one undoable step: the game receives it when playback reaches that frame (Spine's event keys). Several events may fire on one frame, in the order they were keyed. int, float, string, volume and balance override the event's own values for this key only. `delete: true` removes that event's keys at that frame. get_animation's `events` lists the keys.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "animation": {
+            "type": "string"
+          },
+          "frame": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "event": {
+            "type": "string"
+          },
+          "int": {
+            "type": "integer"
+          },
+          "float": {
+            "type": "number"
+          },
+          "string": {
+            "type": "string"
+          },
+          "volume": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "balance": {
+            "type": "number",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "delete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "animation",
+          "frame",
+          "event"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "add_transform_constraint",
+      "description": "Make bones follow another bone's rotation, position, scale and shear, in one undoable step (Spine's transform constraint). By default every property follows in world space at full mix and the bones take the source's world transform. `mix` lowers how far each property follows (rotate, x, y, scaleX, scaleY, shearY: 0..1); `offsets` are added to what the source gives, as Spine writes them (y up, degrees counter-clockwise, scale as an amount added); `localSource` / `localTarget` read or write local values instead of world ones; `relative` adds the source's values to the bones' own; `clamp` keeps each value within its range. get_rig lists the constraints; key_transform keys the mixes.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "bones": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "source": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "mix": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "offsets": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "localSource": {
+            "type": "boolean"
+          },
+          "localTarget": {
+            "type": "boolean"
+          },
+          "relative": {
+            "type": "boolean"
+          },
+          "clamp": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bones",
+          "source"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "key_transform",
+      "description": "Key a transform constraint's mixes at a frame of an animation, in one undoable step (Spine's transform constraint keys). `mix` gives the mixes to set (rotate, x, y, scaleX, scaleY, shearY: 0..1); the others keep the value in force there. From the key on the mixes tween to the next key by `ease` (linear by default, stepped holds, smooth eases in and out). `delete: true` removes the key at that frame. get_animation's `transforms` lists the keys.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "animation": {
+            "type": "string"
+          },
+          "constraint": {
+            "type": "string"
+          },
+          "frame": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "mix": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          },
+          "ease": {
+            "type": "string",
+            "enum": [
+              "linear",
+              "stepped",
+              "smooth"
+            ]
+          },
+          "delete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "animation",
+          "constraint",
+          "frame"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "make_mesh",
+      "description": "Turn images into meshes, in one undoable step (Spine's mesh attachments): points along each image's outline (traced from its opaque pixels) and a grid inside it, triangulated. A mesh can then bend with bind_mesh. `spacing` is the distance between points in image pixels (default: the image's shorter side in sixths, at least 8). Returns each mesh's point and triangle counts.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "images": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          },
+          "spacing": {
+            "type": "number",
+            "minimum": 2
+          }
+        },
+        "required": [
+          "images"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "bind_mesh",
+      "description": "Bind a mesh (make_mesh first) to bones, in one undoable step: each point follows the two bones nearest to it at the setup pose, weighted by distance, so the image bends where the bones meet (Spine's weighted mesh). Key the bones as usual to animate it.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "image": {
+            "type": "string"
+          },
+          "bones": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "image",
+          "bones"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "add_skin",
+      "description": "Make a skin, in one undoable step (Spine's skins: one skeleton, several characters or outfits). It starts empty and is shown on the stage alone; set_skin_image gives it images, set_skin_members bones and constraints only it has. Returns the skins.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_skin_image",
+      "description": "What a skin shows in a layer's place, in one undoable step: `image` is a library image (null: the layer's own image again). `display` picks which of the layer's displays (default 0). `only_in_skins` true leaves that display empty in the default skin, so only skins fill it (Spine's skin placeholder). The image is placed about the same relative point as the layer's own.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "skin": {
+            "type": "string"
+          },
+          "layer": {
+            "type": "string"
+          },
+          "image": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "only_in_skins": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "skin",
+          "layer"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "add_attachment",
+      "description": "Add a bounding box (kind box: a hit area, Spine's boundingbox attachment) or a point (kind point: a spawn point such as a muzzle or a hand grip, with a direction), in one undoable step. `on` a picture: in its place, a box tracing its outline; `on` a bone: at the bone's origin, under it (a box a 40-pixel square); omitted: at the origin. Neither draws; the stage outlines them. Move it like any layer.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "kind": {
+            "enum": [
+              "box",
+              "point"
+            ]
+          },
+          "on": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "kind"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "make_sequence",
+      "description": "Make a picture layer a frame-by-frame sequence (Spine's region sequence), in one undoable step: the library images named like its image with the numbers around it (fire_01, fire_02, …), all one size. Then key_sequence picks how they play.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "layer": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "layer"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "key_sequence",
+      "description": "Key a sequence layer at a frame, in one undoable step: from `frame` it shows image `index` (0 first) and, unless mode is hold, the next every `delay` frames: loop, once (stops at the last), pingpong, or their reversed kinds. `delete` true removes the key there.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "animation": {
+            "type": "string"
+          },
+          "layer": {
+            "type": "string"
+          },
+          "frame": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "mode": {
+            "enum": [
+              "hold",
+              "once",
+              "loop",
+              "pingpong",
+              "onceReverse",
+              "loopReverse",
+              "pingpongReverse"
+            ]
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "delay": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "delete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "animation",
+          "layer",
+          "frame"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "add_physics",
+      "description": "Give a bone physics (Spine's physics constraint), in one undoable step: it lags behind, springs back and sways as its parent moves (hair, cloth, antennae, tails). By default its rotation sways. `settings` sets any of x, y, rotate, scaleX, shearX (how much of each the simulation moves, 0..1), inertia, strength, damping, mass, wind, gravity, mix, limit, fps. The stage simulates while it plays; render_frame shows it at rest.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "bone": {
+            "type": "string"
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "number"
+            }
+          }
+        },
+        "required": [
+          "bone"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "link_mesh",
+      "description": "Let another image of a mesh layer draw that layer's mesh (Spine's linked mesh), in one undoable step: the image bends with the mesh's points, weights and, unless `deform` is false, its deform keys. For variants of one piece (a frown and a smile on one face mesh, a torn shirt over the shirt). The image must be one of the layer's own images, shown by an attachment key; `linked` false unlinks it.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "layer": {
+            "type": "string"
+          },
+          "image": {
+            "type": "string"
+          },
+          "linked": {
+            "type": "boolean"
+          },
+          "deform": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "layer",
+          "image"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "key_constraint",
+      "description": "Key one value of a physics, slider or path constraint at a frame, in one undoable step (Spine's physics, slider and path timelines). Physics keys mix, inertia, strength, damping, mass, wind, gravity (e.g. gravity rising as a character falls, mix 0 to switch a sway off); a slider keys time (seconds into the animation it plays) and mix; a path keys position, spacing and mix (its three mixes together). Before the first key the constraint's own value holds; `ease` (linear, stepped, smooth) is how this key goes to the next. `delete` true removes the key.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "animation": {
+            "type": "string"
+          },
+          "constraint": {
+            "type": "string"
+          },
+          "channel": {
+            "enum": [
+              "mix",
+              "inertia",
+              "strength",
+              "damping",
+              "mass",
+              "wind",
+              "gravity",
+              "time",
+              "position",
+              "spacing"
+            ]
+          },
+          "frame": {
+            "type": "integer"
+          },
+          "value": {
+            "type": "number"
+          },
+          "ease": {
+            "enum": [
+              "linear",
+              "stepped",
+              "smooth"
+            ]
+          },
+          "delete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "animation",
+          "constraint",
+          "channel",
+          "frame"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_inherit",
+      "description": "Set what a bone takes from its parent (Spine's inherit mode), in one undoable step: normal (everything), onlyTranslation (its position only: it keeps its own angle and size as the parent turns or scales, like a head that stays level), noRotationOrReflection, noScale, noScaleOrReflection. Without `animation` it is the bone's own; with `animation` and `frame` it is keyed there and holds until the next key (`delete` true removes the key).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "bone": {
+            "type": "string"
+          },
+          "inherit": {
+            "enum": [
+              "normal",
+              "onlyTranslation",
+              "noRotationOrReflection",
+              "noScale",
+              "noScaleOrReflection"
+            ]
+          },
+          "animation": {
+            "type": "string"
+          },
+          "frame": {
+            "type": "integer"
+          },
+          "delete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "bone"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_point",
+      "description": "Move a point attachment (add_attachment kind point) away from its layer's origin and turn it, in one undoable step: x and y in the layer's own space (y down), rotation in degrees clockwise, as the stage shows them. Spine's point x, y and rotation. Give any of the three; the others stay.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "point": {
+            "type": "string"
+          },
+          "x": {
+            "type": "number"
+          },
+          "y": {
+            "type": "number"
+          },
+          "rotation": {
+            "type": "number"
+          }
+        },
+        "required": [
+          "point"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_tint",
+      "description": "Tint a layer's image, in one undoable step: Spine's attachment colour, multiplied into the layer's colour (it can only darken). color is \"rrggbb\" or \"rrggbbaa\", null for none. display picks one of the layer's images (0 first, the default).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "layer": {
+            "type": "string"
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "display": {
+            "type": "integer",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "layer",
+          "color"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "map_transform",
+      "description": "Edit a transform constraint's property map (Spine 4.3's properties), in one undoable step: make the source's `from` property drive the bones' `to` property (rotate, x, y, scaleX, scaleY, shearY), with `scale` (multiplies, default 1), `offset` (added after) and `max` (the limit Clamp keeps it within), in Spine's units. `sourceOffset` is added to the source's `from` value first. `remove: true` stops `from` driving `to`. Returns the whole map.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "constraint": {
+            "type": "string"
+          },
+          "from": {
+            "type": "string"
+          },
+          "to": {
+            "type": "string"
+          },
+          "scale": {
+            "type": "number"
+          },
+          "offset": {
+            "type": "number"
+          },
+          "max": {
+            "type": "number"
+          },
+          "sourceOffset": {
+            "type": "number"
+          },
+          "remove": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "constraint",
+          "from",
+          "to"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_skin_color",
+      "description": "Set a skin's colour in Spine's editor, in one undoable step: \"rrggbb\" or \"rrggbbaa\", null for Spine's default. Nonessential data: the runtimes do not read it.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "skin": {
+            "type": "string"
+          },
+          "color": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "required": [
+          "skin",
+          "color"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_constraint_order",
+      "description": "Set the order the skeleton's constraints are applied in (Spine's constraint order), in one undoable step: `order` names constraints first to last; the ones it leaves out follow, in the order they had. A constraint applied later reads what the earlier ones did to the bones, e.g. a transform constraint before an IK makes the IK reach from the constrained pose. get_rig lists the current order in constraintOrder.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "order": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "order"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "add_slider",
+      "description": "Play an animation by a value (Spine 4.3's slider), in one undoable step: with `bone`, its `property` (rotate by default) sets the animation's time: time = to + (value − from) × scale seconds; without, the animation holds at `time`. A dial, a facial expression blend, a door opening by a handle. `loop` wraps the time; `additive` adds the animation over the pose.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "animation": {
+            "type": "string"
+          },
+          "bone": {
+            "type": "string"
+          },
+          "property": {
+            "enum": [
+              "rotate",
+              "x",
+              "y",
+              "scaleX",
+              "scaleY",
+              "shearY"
+            ]
+          },
+          "from": {
+            "type": "number"
+          },
+          "to": {
+            "type": "number"
+          },
+          "scale": {
+            "type": "number"
+          },
+          "time": {
+            "type": "number"
+          },
+          "mix": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 1
+          },
+          "loop": {
+            "type": "boolean"
+          },
+          "additive": {
+            "type": "boolean"
+          },
+          "local": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "animation"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "make_path",
+      "description": "Make bones follow a path (Spine's path constraint), in one undoable step: a smooth path through the bones' joints and the last one's tip (a new path layer, edited with the Mesh tool), the bones laid along it by their lengths and turned with it. Key the path's points or its constraint's position to animate (a tail, a snake, a rope).",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "bones": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "bones"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "set_skin_members",
+      "description": "Bones and constraints only some skins have, in one undoable step: each bone (with the bones and pictures below it) exists, and each constraint (IK, transform, physics, slider or path) applies, only while a skin listing it is shown. `remove` true takes them out of the skin instead.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "skin": {
+            "type": "string"
+          },
+          "bones": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "constraints": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "remove": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "skin"
+        ],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "key_properties",
+      "description": "Key properties of `layers` at `frame` without changing the pose, in one undoable step (Spine's key buttons): `properties` \"changed\" (the default) keys each property whose value there is not the setup pose's; \"all\" keys rotate, x, y, scale and shear; or a list of groups from rotate, translate, scale, shear. Use it to pin a pose before editing around it.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "animation": {
+            "type": "string"
+          },
+          "frame": {
+            "type": "integer"
+          },
+          "layers": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "properties": {
+            "oneOf": [
+              {
+                "enum": [
+                  "changed",
+                  "all"
+                ]
+              },
+              {
+                "type": "array",
+                "items": {
+                  "enum": [
+                    "rotate",
+                    "translate",
+                    "scale",
+                    "shear"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "required": [
+          "animation",
+          "frame",
+          "layers"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ]
+}

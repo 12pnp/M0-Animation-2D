@@ -42,8 +42,10 @@ layer model '@/model/|\./'
 layer io '@/model/|@/io/|\./'
 layer edit '@/model/|@/edit/|\./'
 layer engine '@/model/|@/engine/|\./'
+# The AI tools (E5): pure like the document's layers, above them, below the interface.
+layer agent '@/model/|@/io/|@/edit/|@/engine/|@/agent/|\./'
 pure=""
-for d in src/model src/io src/edit src/engine; do if [ -d "$d" ]; then pure="$pure $d"; fi; done
+for d in src/model src/io src/edit src/engine src/agent; do if [ -d "$d" ]; then pure="$pure $d"; fi; done
 dom=$(grep -rnE '\b(document|window|navigator)\.[a-zA-Z]|\bHTML[A-Za-z]*Element\b|requestAnimationFrame' $pure \
   | grep -vE '^[^:]+:[0-9]+:\s*(\*|//|/\*)' || true)
 if [ -n "$dom" ]; then echo "$dom"; echo "error: a pure layer touches the DOM" >&2; exit 1; fi

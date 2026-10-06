@@ -217,6 +217,21 @@ The tool contract gets a new version (D5): names stay where their meaning holds,
 arguments become slot names, and tools for features Spine has no home for are dropped or renamed
 in the version note. Every edit a tool makes is one history step labelled "AI: …".
 
+**The contract (E5 step 1).** `src/agent/tools.json` is `{ version, tools }`: version 2 from v1's
+50 tools, 46 served; its `version.changes` lists each tool dropped, renamed, reshaped or given a new
+meaning. v1's file is frozen in `tests/fixtures/tools-v1.json`, and `src/agent/contract.ts`'s
+`contractProblems` fails `npm run check` when a change has no line, a line has no change, or one
+of the flow's tools (`auto_rig`, `apply_motion`, `check_preview`, `set_keys`, `show`,
+`get_pose`) differs from v1 in name or arguments (prose may change). `src/agent` is pure: it
+imports the model, io, edit and engine, never the interface.
+
+**Provenance (E5).** Files lifted from the fork are checked as in E2 before they are opened:
+git authorship and history, then imports, Animo-side names and comments. `tools.json`: created in
+our "Phase 9: an AI can animate the open rig" (2026-10-01), changed only in our commits after;
+data, no Animo name; one phrase ("the symbol's constraints") rewritten. Code that speaks the old
+editor's model (the agent API and its modules) is rewritten, not lifted; v1's agent tests are
+read for what each tool must do.
+
 ## 9. Verification
 
 - `scripts/check.sh`: typecheck and build, the tests (zero tests is a failure), no Spine runtime
