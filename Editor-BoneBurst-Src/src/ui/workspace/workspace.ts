@@ -1,6 +1,7 @@
 import type { DockviewApi, DockviewTheme, IContentRenderer, ITabRenderer } from "dockview-core";
-// The UMD build: it carries Dockview's own styles (the ES module does not), injected on load.
-import { createDockview, themeDark, themeLight } from "dockview-core/dist/dockview-core.js";
+import { createDockview, themeDark, themeLight } from "dockview-core";
+// Dockview's own styles, taken from its package at build time (vite.config.ts, E7-PLAN step 3).
+import "virtual:dockview.css";
 import { arrivalPlacement, DEFAULT_ORDER, type Deferred, defaultPlacement, type Placement, restoreWorkspace, saveWorkspace } from "./layout";
 import { icon } from "../icons";
 import { PANEL_ICONS, PANEL_TITLES, type PanelId } from "./panelIds";

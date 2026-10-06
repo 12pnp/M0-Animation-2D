@@ -17,10 +17,7 @@ import { animationDuration, DEFAULT_FPS, frameTime, timeFrame } from "@/model/ti
 import type { PhysicsMode } from "@/engine/physics";
 import { atlasImages, NO_IMAGES, type AtlasImages } from "@/engine/regions";
 import { baseName, pickFiles } from "./files";
-import { importPsd } from "./psdImport";
-import { planReimport, rebuildAtlas, ReimportRefused } from "./psdReimport";
 import { decodePng, type PngImage } from "@/io/png";
-import { readPsdLayers } from "@/io/psd";
 import { writeAtlas } from "@/io/atlas";
 import { matchReferences, referenceFile } from "./stage/references";
 import { boneMatrix, Poser, type Posed } from "./stage/posed";
@@ -208,6 +205,8 @@ export class Session {
    * the status line; refused (nothing changed) with the reason.
    */
   async reimportPsd(f: Source): Promise<string> {
+    // The PSD reader loads with its first use (E7-PLAN step 3).
+    const [{ planReimport, rebuildAtlas, ReimportRefused }, { readPsdLayers }] = await Promise.all([import("./psdReimport"), import("@/io/psd")]);
     const h = this.history, atlas = this.atlas, bones = this.setupBones();
     if (!h || !bones) throw new ReimportRefused("Open the rig first, then drop its PSD on it.");
     if (!atlas) throw new ReimportRefused("The rig has no atlas to bring the layers into; open it with its atlas and pages.");
@@ -438,6 +437,8 @@ export class Session {
    * layers (E4-PLAN step 7). Refusals (`PsdRefused`, `PackRefused`) pass through with their reason.
    */
   private async openPsd(f: Source): Promise<void> {
+    // The PSD reader loads with its first use (E7-PLAN step 3).
+    const { importPsd } = await import("./psdImport");
     const im = importPsd(await (await f.blob()).arrayBuffer(), f.name, randomHash());
     const pages = new Map<string, ImageBitmap>();
     for (const p of im.pages) {

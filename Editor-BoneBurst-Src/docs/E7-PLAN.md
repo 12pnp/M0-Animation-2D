@@ -1,6 +1,6 @@
 # E7 — the daily driver: history, shortcuts, a build, a robustness pass — plan
 
-**Status:** in progress, 2026-10-06; steps 1 (the History panel) and 2 (the shortcuts table and sheet) done. Scope chosen by the owner:
+**Status:** in progress, 2026-10-06; steps 1 (the History panel), 2 (the shortcuts table and sheet) and 3 (running without the dev server) done. Scope chosen by the owner:
 the History panel and the shortcuts sheet (set aside at E6 step 3), running without the dev
 server, and a robustness pass.
 Not in E7: the AnimatedDrawings detection sidecar (waits on the owner's install decision).
@@ -173,3 +173,88 @@ flowchart LR
    Escape's default prevented (the e2e), a tool key taking ⌥, a menu writing "⌘Z" itself, a
    handler missing (does not compile), Undo taking ⇧ too.
 5. `npm run check`: 473 vitest and 15 browser tests, all pass.
+
+## Step 3 — running without the dev server
+
+Measured first (the build's source map, bytes per source): one chunk of 1,410 kB, of which
+`dockview-core` 535 kB, `ag-psd` 241 kB with `pako` 49 kB, the AI layer (`src/agent`, with the
+motion clips) 199 kB, and the rest of the editor about 350 kB. Dockview is that large because the
+app loads its UMD build (E4-PLAN D6): the only build that carries its styles, as one JavaScript
+string it injects; its ES module (387 kB minified) carries none.
+
+```mermaid
+flowchart LR
+    UMD["dockview-core.js (UMD)<br/>its styles as one string"] -->|"vite plugin, at build:<br/>virtual:dockview.css"| CSS["the editor's CSS"]
+    ESM["dockview-core (ES module)"] --> V["chunk: dockview"]
+    APP["src/ui, edit, engine, io, model"] --> M["chunk: index"]
+    PSD["io/psd + ag-psd + pako"] -.->|"import() on the first PSD"| L1["chunk: psd"]
+    AG["src/agent (tools, clips)"] -.->|"import() on the first tool call"| L2["chunk: agent"]
+    START["npm start → scripts/start.mjs"] -->|"vite build when stale"| DIST["dist/"]
+    START -->|"serves on localhost:5185"| DIST
+    START -->|"bridge --http-only when 5191 is free"| BR["mcp/bridge.mjs"]
+```
+
+### Decisions
+
+- **Dockview's styles from its own package, at build time.** A small Vite plugin in
+  `vite.config.ts` reads the pinned `dockview-core/dist/dockview-core.js`, takes the one CSS string
+  it injects, and serves it as the CSS module `virtual:dockview.css`; the app imports the ES module
+  and that CSS. Nothing copied or vendored, so an upgrade brings its styles with it; the plugin
+  fails the build loudly when it does not find exactly one such string. Dockview copies the page's
+  style sheets into a popout window, so popouts get the styles as before (`e2e/popout.spec.ts`).
+- **Chunks**: Dockview in its own chunk; the PSD reader (`io/psd`, `ag-psd`, `pako`) loaded by
+  `import()` when a PSD is first opened or re-imported; the AI layer (`@/agent/host`, its tools and
+  clips) when the bridge first hands the page a tool call. Every chunk under 500 kB; `npm run
+  build` without the warning.
+- **`npm start`** (`scripts/start.mjs`, Node only): builds `dist/` with Vite when it is missing or
+  older than any source (`src/`, `public/`, `index.html`, `vite.config.ts`, `package-lock.json`);
+  serves it on `http://localhost:5185` (the dev server's origin, so preferences, layouts, recovery
+  copies and the Unity folder's permission carry over); refuses with a reason when the port is
+  taken (a dev server running); starts `mcp/bridge.mjs --http-only` when nothing answers on 5191,
+  and stops it on exit; opens the browser (`--no-open` not to). The server: files under `dist/`
+  only (no path outside it), the types an editor needs, `index.html` not cached and `assets/`
+  cached for good (their names change with their content). `--port` and `--no-bridge` for tests.
+- **The build has its browser tests**: `playwright.build.config.ts` runs `e2e-build/` against
+  `scripts/start.mjs --no-open --no-bridge --port 5186`. The build has no dev hooks
+  (`window.boneburst`, the fixture buttons), so the smoke test drives it as a user does: open the
+  stickman's three files through Open…, the layout's panels present with Dockview's styles
+  applied, an edit and ⌘Z, the History panel, `?`, a PSD opened (the lazy chunk loads), and the AI
+  button connecting to a bridge the test starts with a tool call answered (the agent chunk loads).
+  `scripts/check.sh` runs it after the dev tests.
+- **README**: `npm start` first, `npm run dev` for working on the editor.
+
+### Steps
+
+1. The plugin, the ES module, the chunks; sizes measured again.
+2. `scripts/start.mjs`, `npm start`.
+3. `playwright.build.config.ts`, `e2e-build/smoke.spec.ts`, `check.sh`.
+4. README, CLAUDE.md commands; planted faults (the plugin finding no styles; a lazy import made
+   static; the server serving outside `dist/`).
+
+### Step 3 results
+
+1. **Dockview from its ES module**, its styles from `virtual:dockview.css` (`vite.config.ts` ▸
+   `dockviewStyles`, reading the pinned package's one injected sheet; `dockview-umd.d.ts` replaced
+   by `dockview-styles.d.ts`). All 15 browser tests pass on it, the popout windows' styles among
+   them.
+2. **Chunks**, measured again: at start `index` 342 kB and `dockview` 357 kB (was one 1,410 kB
+   chunk); `psd` 297 kB (`ag-psd`, `pako`) loaded by the first PSD opened or re-imported
+   (`Session.openPsd`, `reimportPsd`); `host` 212 kB (the AI layer and its clips) by the first tool
+   call (`AiBridge.answer`); `psdImport`, `psdReimport` small. CSS 155 kB (Dockview's 133 kB). No
+   warning. `check.sh` now fails on Vite's chunk warning.
+3. **`npm start`** (`scripts/start.mjs`): builds when `dist/` is missing or older than `src/`,
+   `public/`, `index.html`, `vite.config.ts` or `package-lock.json`; serves `dist/` on localhost:5185
+   (`index.html` not cached, `assets/` immutable, correct types, 404 outside `dist/`); refuses a
+   taken port with the reason; starts the bridge `--http-only` when 5191 does not answer (its
+   origins the server's), stops it on exit; opens the browser. Checked by hand: the headers, a
+   path outside `dist/` (raw and encoded) 404, a second start on a taken port refused.
+4. **Tests**: `tests/start.test.ts` (the path rule: the page and assets mapped, seven ways out of
+   `dist/` refused); `playwright.build.config.ts` and `e2e-build/smoke.spec.ts`, run by `check.sh`:
+   on the build, no dev hooks, Dockview's rules present, the stickman opened through Open…, K keys
+   hips and the History panel shows it, ⌘Z, `?`, neither lazy chunk asked for until a PSD is opened
+   (then `psd`) and the AI button answers a tool call (then `host`), no page error. Planted faults,
+   each caught: the plugin finding no styles (the build fails, naming it); the PSD reader imported
+   statically (`index` 643 kB, the warning, `check.sh` fails); the server's path rule removed
+   (`tests/start.test.ts`).
+5. README (`npm start` first), the editor's `CLAUDE.md` (its commands). `npm run check`: 475
+   vitest, 15 browser tests, 1 build browser test, all pass.

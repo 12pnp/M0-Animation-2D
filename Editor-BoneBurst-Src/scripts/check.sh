@@ -4,7 +4,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-npm run build
+out=$(npm run build 2>&1) || { echo "$out"; exit 1; }
+echo "$out" | grep -E 'dist/assets/.*\.js ' || true
+# Every chunk under Vite's 500 kB warning (E7-PLAN step 3): the PSD reader and the AI layer load
+# when first used, Dockview in a chunk of its own.
+if echo "$out" | grep -q 'Some chunks are larger'; then echo "error: a chunk is over 500 kB" >&2; exit 1; fi
 out=$(npx vitest run 2>&1) || { echo "$out"; exit 1; }
 echo "$out" | tail -4
 if echo "$out" | grep -qE 'Tests +0 passed|No test files found'; then
@@ -19,6 +23,10 @@ fi
 out=$(npx playwright test 2>&1) || { echo "$out"; exit 1; }
 echo "$out" | tail -2
 if ! echo "$out" | grep -qE '[1-9][0-9]* passed'; then echo "error: no browser tests ran" >&2; exit 1; fi
+# The build as npm start serves it (E7-PLAN step 3).
+out=$(npx playwright test -c playwright.build.config.ts 2>&1) || { echo "$out"; exit 1; }
+echo "$out" | tail -2
+if ! echo "$out" | grep -qE '[1-9][0-9]* passed'; then echo "error: no build browser tests ran" >&2; exit 1; fi
 
 # Spine's official runtimes are under the Spine Runtimes License: dev-only
 # oracles at most, never imported by the app.

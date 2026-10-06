@@ -40,11 +40,12 @@ not proof.
 ## Commands
 
 ```bash
+npm start          # the built editor on :5185 (builds when stale; starts the bridge if none)
 npm run dev        # Vite on :5185
 npm test           # vitest run
 npm run e2e        # Playwright: popout windows (once: npx playwright install chromium)
 npm run build      # tsc --noEmit && vite build
-npm run check      # all of it (e2e too), plus the licence guards
+npm run check      # all of it (e2e, the build's e2e, no chunk over 500 kB), plus the licence guards
 node mcp/bridge.mjs  # the AI bridge (MCP on stdio, the editor's AI button on :5191)
 npx vite-node scripts/oracle-parity.ts  # E6: the old editor as oracle: round trips compared
 npx vite-node scripts/oracle-edits.ts   # E6: the same edits through both editors' bridges, posed

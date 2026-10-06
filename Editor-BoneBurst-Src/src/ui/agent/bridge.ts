@@ -1,4 +1,4 @@
-import { AgentRefused, type AgentContext, callTool } from "@/agent/host";
+import { AgentRefused, type AgentContext } from "@/agent/context";
 
 /**
  * The editor tab's end of `mcp/bridge.mjs` (E5-PLAN step 2), the local process an AI talks to:
@@ -90,6 +90,8 @@ export class AiBridge {
     const tell = (e: CallEvent) => { for (const f of this.callListeners) f(e); };
     tell({ phase: "start", id: call.id, name: call.name, args: call.args ?? {} });
     try {
+      // The AI layer (its tools, the motion clips) loads with the first call (E7-PLAN step 3).
+      const { callTool } = await import("@/agent/host");
       body = { id: call.id, ok: true, value: await callTool(call.name, call.args ?? {}, this.ctx) };
       tell({ phase: "end", id: call.id, name: call.name, ok: true, detail: "" });
     } catch (err) {
