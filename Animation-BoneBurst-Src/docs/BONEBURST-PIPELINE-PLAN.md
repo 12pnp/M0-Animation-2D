@@ -1,5 +1,11 @@
 # BoneBurst pipeline — plan
 
+> **2026-10-06:** the editor side of this pipeline is moving to the BoneBurst Editor v2
+> (`../../Editor-BoneBurst-Src/`, MIT): its Export to Unity writes the folder
+> `BoneBurstRebakeOnChange` rebakes, and its `scripts/unity-parity.ts` holds it to the C# runtime
+> on R2's dump. This plan stays the record of R0–R5 for this editor
+> (`../../Editor-BoneBurst-Src/docs/E6-PLAN.md`).
+
 **Status:** R0 done 2026-10-05 (below), **not verified** in Unity: opening this copy in
 the Editor without it importing the editor folder was not checked. R1 done 2026-10-05 on
 the editor's side (below); its C# side is not started. R2 done 2026-10-05 except the bake

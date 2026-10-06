@@ -5,8 +5,9 @@ back exactly; the old editor rewrites every rig, and poses one differently), edi
 (both agree once each known difference is taken out; `set_keys`' eases made version 1's), the gap
 list decided by the owner, and the chosen gaps built: autosave and recovery, events on the
 timeline, copy and paste with multiple selection, onion skin, snapping and a grid, the weight
-brush, the curve graph, the frame rate (4h, the axes, done by the other session). Step 5 (docs
-migrated) next.
+brush, the curve graph, the frame rate (4h, the axes, done by the other session). Step 5 (docs migrated) done: v2
+held to BoneBurst's C# runtime by `scripts/unity-parity.ts` (17 rigs agree). Step 6 (cutover, the
+owner's) next.
 
 E6 makes v2 the editor people use. The old editor (`../../Animation-BoneBurst-Src/`, AGPL, the
 Animo fork) is the **behavioural oracle**: it is run, never read, and v2 has to agree with it on
@@ -665,4 +666,55 @@ All nine gaps chosen in step 3 are in v2: 4a–4g and 4i here, 4h by the other s
 Parent and World axes for Move, Scale and Shear, in its own commits). Each with unit tests, a
 browser test and planted faults. Left for after cutover, as decided: the history panel and the
 shortcuts sheet.
+
+## Step 5 — docs migrated
+
+The documents that name the old editor as *the* editor, or say how its exports are checked, now
+name v2; the old editor keeps its own docs (its demotion is step 6, the owner's).
+
+```mermaid
+flowchart LR
+    V2["Editor-BoneBurst-Src"] -->|"Save · Export to Unity"| FILES["name.json · name.atlas.txt · pages"]
+    FILES -->|"BoneBurstRebakeOnChange"| BAKE["Unity: the bake"]
+    FILES -->|"run.sh --dump (C# runtime)"| DUMP["poses.json"]
+    DUMP -->|"scripts/unity-parity.ts"| CMP["v2's engine, frame by frame"]
+```
+
+### Decisions
+
+- **The check the docs promise moves too.** Root `CLAUDE.md` §5 says the editor's exports are
+  posed by BoneBurst's C# runtime and compared with the editor's own: that was the old editor's
+  `tests/boneburstUnity.test.ts`. v2 gets `scripts/unity-parity.ts` (the corpus dumped by
+  `run.sh --dump`, v2's engine stepped as the dump steps, every bone every frame; 0.01 units, and
+  0.1 only for bones under an IK chain whose target is out of reach on that frame, each case
+  listed: root `CLAUDE.md` §5's rule for ill-conditioned frames). Run by hand, as the oracle
+  scripts: it needs Unity's .NET SDK.
+- **What changes**: v2's `README.md` (what it is, running it, connecting an AI, Export to Unity,
+  the checks); root `CLAUDE.md` (the editor is v2; the old one described as the old editor; §5's
+  check); the import package's rebake comment and the parity harness's dump comments (the
+  editor is v2; the old editor's test still reads the same dump); the BoneBurst profile's note
+  on which editor its editor column measured; a pointer at the top of the old editor's pipeline
+  plan. Package doc and comment changes get their package's changelog line at commit.
+- **What does not**: the old editor's own `CLAUDE.md` and docs (step 6), history in plans and
+  changelogs.
+
+### Step 5 results
+
+1. `scripts/unity-parity.ts`: the corpus dumped by the Unity package's harness (`run.sh --dump`,
+   under 2 s), v2's engine stepped as the dump steps (no time first, then 0.0337 s; physics started
+   over, then stepped; the default skin), every active bone's world matrix compared at every frame
+   (positions in units, the 2×2 part scaled to a 100-unit bone). **All 17 rigs agree**, worst 0.0067
+   (celestial-circus-pro, physics). Bones under an IK chain whose target is out of reach on that
+   frame are held to 0.1 and listed: worst 0.065 (raptor-pro, `roar` frames 52–53, `back-bracer`
+   under spineboy's back arm, its target 1.16–1.19 times the chain's reach; every other frame of
+   that bone agrees to 1e-4). A run that compares nothing fails; stepping 0.0333 s instead of the
+   dump's 0.0337 s makes 16 of 17 rigs differ.
+2. **Docs**: v2's `README.md` rewritten (what it does, running it, connecting an AI, the checks);
+   root `CLAUDE.md` (the old editor described as being replaced and kept as oracle; v2 where new
+   editor work goes; v2's E6 status; §5's check names v2's script beside the old editor's test);
+   `BoneBurstRebakeOnChange.cs` and the harness's `Dump.cs` and `run.sh` comments (the editor is v2,
+   the old editor's test reading the same dump); the profile's dated note (the editor side is v2;
+   its diagram and editor column describe the old editor); a dated pointer at the top of the old
+   editor's pipeline plan; the editor's `CLAUDE.md` lists the new script.
+3. Comments only in C#: nothing compiles differently.
 

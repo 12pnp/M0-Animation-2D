@@ -9,8 +9,9 @@ using Object = UnityEngine.Object;
 namespace BoneBurst.Editor
 {
     /// <summary>
-    ///     Rebakes an export folder when its export changes: a new export from the BoneBurst editor
-    ///     (<c>Animation-BoneBurst-Src/</c>, File › Export to Unity) or files copied in by hand. Only a folder that was
+    ///     Rebakes an export folder when its export changes: a new export from the BoneBurst Editor
+    ///     (<c>Editor-BoneBurst-Src/</c>, Export to Unity; or the old editor's File › Export to Unity) or files copied
+    ///     in by hand. Only a folder that was
     ///     baked before (<see cref="BoneBurstBake.WasBaked" />), with that bake's settings, as the asset's Rebake
     ///     command does; the first bake stays the popup's (BoneBurstBakeMenu). Pipeline plan R4
     ///     (<c>Animation-BoneBurst-Src/docs/BONEBURST-PIPELINE-PLAN.md</c>).

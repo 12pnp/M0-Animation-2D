@@ -3,7 +3,8 @@
 # Builds with the .NET SDK bundled in the project's Unity version and runs from the project root.
 #   run.sh                         every parity test class
 #   run.sh SetupPoseParityTests    only the named classes
-#   run.sh --dump <in> <out>       pose the Spine exports in <in> for the BoneBurst editor's own comparison (Dump.cs)
+#   run.sh --dump <in> <out>       pose the Spine exports in <in> for the BoneBurst Editor's own comparison (Dump.cs;
+#                                  Editor-BoneBurst-Src/scripts/unity-parity.ts runs it)
 # Needs: that Unity version installed under /Applications/Unity/Hub/Editor, and the project opened once
 # (Library/ScriptAssemblies provides Unity.Collections and Unity.Burst).
 set -euo pipefail
