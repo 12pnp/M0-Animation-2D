@@ -4,15 +4,9 @@ import type { Skeleton } from "@/model/skeleton";
 import { DIVIDER, type MenuItem } from "./menubar";
 import type { Session } from "./session";
 import { type Point, toLocal } from "./stage/gizmo";
+import { uniqueName } from "./names";
+import { createPath } from "./stage/pathCreate";
 import { parentMatrix, Poser } from "./stage/posed";
-
-/** `base`, or `base2`, `base3`… the first not in `taken`. */
-export function uniqueName(base: string, taken: readonly string[]): string {
-  if (!taken.includes(base)) return base;
-  let n = 2;
-  while (taken.includes(`${base}${n}`)) n++;
-  return `${base}${n}`;
-}
 
 /** What the stage's right-click menu needs of the app around it. */
 export interface StageMenuHost {
@@ -72,6 +66,7 @@ export function stageMenu(host: StageMenuHost, world: Point, boneName: string | 
     },
   });
   items.push(
+    { label: "Add Path Here", run: () => host.status(createPath(s, bone ? { bone: bone.name } : doc.bones?.[0] ? { bone: doc.bones[0].name } : {}, world)) },
     DIVIDER,
     { label: "Copy Pose", run: host.copyPose },
     { label: "Paste Pose", disabled: !host.canPastePose(), run: host.pastePose },

@@ -6,6 +6,7 @@ import { type PreferenceValues, Preferences } from "./preferences";
 import { PreferencesDialog } from "./preferencesDialog";
 import { AnimationsPanel } from "./panels/animationsPanel";
 import { HistoryPanel } from "./panels/history";
+import { LocalPathPanel } from "./panels/localPath";
 import { SkinsPanel } from "./panels/skinsPanel";
 import { References } from "./panels/references";
 import { droppedFiles } from "./dropFiles";
@@ -196,6 +197,7 @@ export function mountApp(root: HTMLElement): void {
   const timeline = new Timeline(session);
   const references = new References(session);
   const history = new HistoryPanel(session);
+  const localPath = new LocalPathPanel(session);
   const skinsPanel = new SkinsPanel(session);
   const animationsPanel = new AnimationsPanel(session);
   // Ask AI (E5 step 9): the bridge's model with the editor's tools; sending connects the AI button.
@@ -285,6 +287,7 @@ export function mountApp(root: HTMLElement): void {
     ["reference", { element: references.element }],
     ["ai", { element: askAi.element }],
     ["history", { element: history.element }],
+    ["localPath", { element: localPath.element, layout: (w, h) => localPath.layout(w, h) }],
     ["skins", { element: skinsPanel.element }],
     ["animations", { element: animationsPanel.element }],
   ]), (w) => w.addEventListener("keydown", onKey));

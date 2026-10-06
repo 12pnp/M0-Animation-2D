@@ -1,8 +1,9 @@
 import { type AttachmentRef, findAttachment } from "@/edit/attachments";
 import { EditRefused, type Edit } from "@/edit/history";
-import { addPathPoint, deletePathPoint, localOf, movePathPoint, movePathVertex, pathFrame, pathPositions, pointCount, setPathFlags, worldOf } from "@/edit/path";
+import { addPathPoint, deletePathPoint, localOf, movePathPoint, movePathVertex, pathFrame, pathPositions, pointCount, runsAtConstantSpeed, setPathFlags, worldOf } from "@/edit/path";
 import { attachmentType, type Skeleton } from "@/model/skeleton";
 import type { Session } from "../session";
+import { createPath } from "./pathCreate";
 
 type Space = "local" | "world";
 
@@ -27,6 +28,8 @@ export class PathPanel {
   private readonly closed = document.createElement("input");
   private readonly constant = document.createElement("input");
   private readonly note = document.createElement("p");
+  private readonly create = button("+ New Path", "Add a path attachment on the selected slot (or on a new slot of the selected bone)");
+  private readonly editing: HTMLElement[] = [];
 
   constructor(private readonly session: Session, private readonly status: (message: string) => void) {
     this.element = document.createElement("div");
@@ -51,7 +54,10 @@ export class PathPanel {
     this.closed.type = this.constant.type = "checkbox";
     const flags = row("flags", flag("Closed", this.closed), flag("Constant speed", this.constant));
     this.note.className = "note";
-    this.element.append(head, pick, xy, buttons, flags, this.note);
+    this.editing.push(this.spaceBtns.local, this.spaceBtns.world, pick, xy, buttons, flags);
+    const make = row("make", this.create);
+    this.element.append(head, pick, xy, buttons, flags, make, this.note);
+    this.create.addEventListener("click", () => { const t = this.target(); if (t) this.status(createPath(this.session, t)); });
     for (const s of ["local", "world"] as const) this.spaceBtns[s].addEventListener("click", () => { this.space = s; this.update(); });
     this.prev.addEventListener("click", () => this.step(-1));
     this.next.addEventListener("click", () => this.step(1));
@@ -71,6 +77,16 @@ export class PathPanel {
     return a && attachmentType(a) === "path" && a.vertices && a.vertexCount !== undefined ? { skin: sel.skin, slot: sel.slot, key: sel.key } : null;
   }
 
+  /** Where a new path would go: the selected slot (or the slot of the selected attachment), or the selected bone (a slot is made). */
+  private target(): { slot?: string; bone?: string } | null {
+    const sel = this.session.selected, doc = this.session.doc;
+    if (!sel || !doc) return null;
+    if (sel.kind === "slot") return { slot: sel.name };
+    if (sel.kind === "attachment") return { slot: sel.slot };
+    if (sel.kind === "bone") return { bone: sel.name };
+    return null;
+  }
+
   /** The vertex the window shows: the chosen one, else the first point. */
   private vertex(count: number): number {
     const v = this.session.pathVertex;
@@ -86,9 +102,17 @@ export class PathPanel {
   }
 
   private update(): void {
-    const s = this.session, ref = this.ref(), doc = s.doc;
-    this.element.hidden = !ref || !doc;
-    if (!ref || !doc) return;
+    const s = this.session, ref = this.ref(), doc = s.doc, target = this.target();
+    this.element.hidden = !doc || (!ref && !target);
+    if (!doc || (!ref && !target)) return;
+    for (const e of this.editing) e.hidden = !ref;
+    this.create.disabled = !target;
+    if (!ref) {
+      this.title.textContent = "Path";
+      this.note.textContent = target!.slot ? `A new path goes on the slot ${target!.slot}.` : `A new path goes on a new slot of ${target!.bone}.`;
+      this.note.hidden = false;
+      return;
+    }
     const { a, f, reason } = this.frame(doc, ref), count = a.vertexCount!, i = this.vertex(count);
     const editable = !s.animation && !reason;
     this.title.textContent = `Path · ${ref.key}`;
@@ -110,7 +134,7 @@ export class PathPanel {
     this.add.disabled = !editable;
     this.del.disabled = !editable || pointCount(a) <= 2;
     this.closed.checked = !!a.closed;
-    this.constant.checked = !!a.constantSpeed;
+    this.constant.checked = runsAtConstantSpeed(a);
     this.closed.disabled = this.constant.disabled = !editable;
     this.note.textContent = s.animation ? "Paths are edited on the setup pose: choose Pose." : reason ?? "";
     this.note.hidden = !this.note.textContent;

@@ -1,10 +1,13 @@
 import { expect, test } from "@playwright/test";
 
-/** Path attachments (docs/PATH-PLAN.md): drag a point on the stage, type a vertex in Local or World, one undo each. */
+/** Path attachments (docs/PATH-PLAN.md): make one from the path window, drag a point on the stage, type a vertex in Local or World, one undo each. */
 
 type Live = { boneburst: { session: { select(s: unknown): void; doc: { skins: { attachments: { slot: string; entries: { key: string; attachment: { vertices: number[]; vertexCount: number } }[] }[] }[] }; history: { undo(): void; apply(l: string, e: unknown): void }; changed(): void; pathVertex: number | null; pose(): unknown }; stage: { camera: { x: number; y: number; zoom: number }; size: { width: number; height: number }; fitView(): void }; workspace: { api: { getPanel(id: string): { api: { maximize(): void } } } } } };
 
-const vertices = (page: import("@playwright/test").Page) => page.evaluate(() => (window as unknown as Live).boneburst.session.doc.skins[0]!.attachments.find((s) => s.slot === "rope")!.entries[0]!.attachment.vertices.slice());
+const vertices = (page: import("@playwright/test").Page) => page.evaluate(() => {
+  const att = (window as unknown as Live).boneburst.session.doc.skins[0]!.attachments.flatMap((sl) => sl.entries).find((e) => (e.attachment as { type?: string }).type === "path");
+  return att ? att.attachment.vertices.slice() : [];
+});
 
 test("a path's point dragged on the stage, typed in Local and World, undone in one step each", async ({ page }) => {
   await page.goto("/");
@@ -12,26 +15,23 @@ test("a path's point dragged on the stage, typed in Local and World, undone in o
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
-  // A path on the hips (the app has no way to add one yet: through the edit functions, as the agent does).
-  await page.evaluate(async () => {
-    const s = (window as unknown as Live).boneburst.session;
-    // Dev-server modules, by variable path so the type-check does not look for them.
-    const modules = ["/src/edit/attachments.ts", "/src/edit/slots.ts"];
-    const att = await import(/* @vite-ignore */ modules[0]!), slots = await import(/* @vite-ignore */ modules[1]!);
-    s.history.apply("slot", slots.addSlot("rope", "hips"));
-    s.history.apply("path", att.addAttachment({ skin: "default", slot: "rope", key: "rope" }, { type: "path", constantSpeed: false, vertexCount: 12, lengths: [0, 0, 0, 0], extra: new Map(),
-      vertices: [-60, 0, 0, 0, 40, 0, 60, 80, 100, 80, 140, 80, 200, 0, 240, 0, 280, 0, 300, -80, 340, -80, 380, -80] } as never));
-    s.changed();
-    s.select({ kind: "attachment", skin: "default", slot: "rope", key: "rope" });
-  });
+  // No path yet: select a bone, and the path window offers to make one on a new slot of it.
+  expect(await vertices(page)).toEqual([]);
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "hips" }));
   await expect(page.locator(".path-panel")).toBeVisible();
+  await expect(page.locator(".path-panel .note")).toContainText("hips");
+  await page.locator(".path-panel").getByRole("button", { name: "+ New Path" }).click();
+  await expect.poll(async () => (await vertices(page)).length).toBe(12);
+  await expect(page.locator(".message")).toContainText("Added the path");
+  // It is selected, with its vertices to type: one undo takes the slot and the path away together.
+  await expect(page.locator(".path-panel input.cell").first()).toBeVisible();
   // The stage's own size is small in this layout: the point's screen place, from the camera.
   await page.evaluate(() => { const b = (window as unknown as Live).boneburst; b.workspace.api.getPanel("stage").api.maximize(); b.stage.fitView(); });
   await page.waitForTimeout(400);
   const before = await vertices(page);
   const at = await page.evaluate(async () => {
     const b = (window as unknown as Live).boneburst, pv = await import(/* @vite-ignore */ "/src/ui/stage/" + "pathView.ts");
-    const view = pv.pathView(b.session.doc as never, b.session.pose() as never, { skin: "default", slot: "rope", key: "rope" })!;
+    const view = pv.pathView(b.session.doc as never, b.session.pose() as never, { skin: "default", slot: "hips-path", key: "path" })!;
     const cam = b.stage.camera, sz = b.stage.size, r = document.querySelector(".stage canvas.overlay")!.getBoundingClientRect();
     return { x: r.left + (view.world[8]! - cam.x) * cam.zoom + sz.width / 2, y: r.top + sz.height / 2 - (view.world[9]! - cam.y) * cam.zoom };
   });
@@ -63,4 +63,24 @@ test("a path's point dragged on the stage, typed in Local and World, undone in o
   expect(await vertices(page)).toEqual(before);
   await page.locator(".path-panel").getByRole("button", { name: "Local", exact: true }).click();
   expect(await x.inputValue()).toBe(String(Math.round(before[8]! * 100) / 100));
+});
+
+test("Add Path Here in the stage's right-click menu puts a path where the pointer is; one undo removes it and its slot", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  await page.evaluate(() => { const b = (window as unknown as Live).boneburst; b.workspace.api.getPanel("stage").api.maximize(); });
+  await page.waitForTimeout(300);
+  const box = (await page.locator(".stage canvas.overlay").boundingBox())!;
+  await page.mouse.click(box.x + box.width * 0.25, box.y + box.height * 0.3, { button: "right" });
+  await page.getByRole("menuitem", { name: "Add Path Here" }).click();
+  await expect.poll(async () => (await vertices(page)).length).toBe(12);
+  await expect(page.locator(".path-panel")).toBeVisible();
+  const slots = () => page.evaluate(() => ((window as unknown as { boneburst: { session: { doc: { slots: { name: string }[] } } } }).boneburst.session.doc.slots).map((x) => x.name));
+  expect((await slots()).some((n) => n.endsWith("-path"))).toBe(true);
+  await page.keyboard.press("ControlOrMeta+z");
+  expect(await vertices(page)).toEqual([]);
+  expect((await slots()).some((n) => n.endsWith("-path"))).toBe(false);
 });

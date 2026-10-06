@@ -5,7 +5,7 @@ import type { IconName } from "../icons";
  * so saved layouts and cross-references stay stable; a panel registers only in the phase that
  * builds it (reference in E4, AI in E5, history in E7, preview when it exists).
  */
-export const PANEL_IDS = ["stage", "timeline", "rigTree", "properties", "preview", "reference", "ai", "history", "skins", "animations"] as const;
+export const PANEL_IDS = ["stage", "timeline", "rigTree", "properties", "preview", "reference", "ai", "history", "skins", "animations", "localPath"] as const;
 
 export type PanelId = (typeof PANEL_IDS)[number];
 
@@ -20,6 +20,7 @@ export const PANEL_TITLES: Readonly<Record<PanelId, string>> = {
   history: "History",
   skins: "Skins",
   animations: "Animations",
+  localPath: "Local Path",
 };
 
 export function isPanelId(id: string): id is PanelId {
@@ -29,5 +30,5 @@ export function isPanelId(id: string): id is PanelId {
 /** Each panel's icon: on its tab and on the activity bar. */
 export const PANEL_ICONS: Readonly<Record<PanelId, IconName>> = {
   stage: "panelStage", rigTree: "panelRig", properties: "panelProperties", timeline: "panelTimeline",
-  reference: "addImage", ai: "ai", preview: "play", history: "history", skins: "skin", animations: "panelTimeline",
+  reference: "addImage", ai: "ai", preview: "play", history: "history", skins: "skin", animations: "panelTimeline", localPath: "path",
 };

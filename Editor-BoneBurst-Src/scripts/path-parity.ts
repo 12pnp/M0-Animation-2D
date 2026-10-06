@@ -43,7 +43,7 @@ function main(): void {
     const moved = movePathPoint(ref, mid, pos[c]! + 15, pos[c + 1]! - 10, bones)(doc);
     // Two: a point added past the end, and constant speed flipped.
     const last = Math.floor((a.vertexCount ?? 0) / 3) - 1, lc = (last * 3 + 1) * 2;
-    const grown = setPathFlags(ref, { constantSpeed: !a.constantSpeed }, bones)(addPathPoint(ref, pos[lc]! + 40, pos[lc + 1]! + 25, bones)(doc));
+    const grown = setPathFlags(ref, { constantSpeed: a.constantSpeed === false }, bones)(addPathPoint(ref, pos[lc]! + 40, pos[lc + 1]! + 25, bones)(doc));
     for (const [tag, d] of [["moved", moved], ["grown", grown]] as const) {
       const name = `${r.file}-${tag}`, json = join(tmp, `${name}.json`), atlas = join(tmp, `${name}.atlas`);
       writeFileSync(json, writeSkeleton(d));

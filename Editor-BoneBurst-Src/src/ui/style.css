@@ -593,3 +593,13 @@ dialog.open-project .op-buttons { flex: none; display: flex; justify-content: ce
 .p-row.flags { gap: 12px; font-size: 12px; }
 .p-row.flags .flag { display: flex; align-items: center; gap: 4px; }
 .path-panel .note { margin: 0; color: var(--muted); font-size: 11px; max-width: 220px; }
+
+/* The Local Path panel: a header with the bone and Local | World, the trail's canvas under it. */
+.local-path { display: flex; flex-direction: column; overflow: hidden; }
+.lp-head { display: flex; align-items: center; gap: 6px; padding: 4px 8px; height: 30px; flex: none; border-bottom: 1px solid var(--line); }
+.lp-head > span { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.lp-head button { padding: 1px 10px; font-size: 12px; }
+.lp-body { position: relative; flex: 1; min-height: 0; }
+.lp-body canvas { display: block; }
+.lp-note { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center; padding: 16px; margin: 0; }
+.lp-note[hidden] { display: none; }

@@ -22,6 +22,15 @@ export function editablePath(s: Skeleton, r: AttachmentRef): Attachment {
   return a;
 }
 
+/**
+ * A new path of two points, 100 units apart along x from (x, y) in the slot bone's space, with
+ * handles a third of the way along: a straight, open path at constant speed (Spine's default).
+ */
+export function newPathAttachment(x = 0, y = 0): Attachment {
+  const r = (n: number) => round(n, 2);
+  return { type: "path", vertexCount: 6, vertices: [r(x - 100 / 3), r(y), r(x), r(y), r(x + 100 / 3), r(y), r(x + 200 / 3), r(y), r(x + 100), r(y), r(x + 400 / 3), r(y)], lengths: [0, 0], extra: new Map() };
+}
+
 /** The number of points: three vertices each. */
 export const pointCount = (a: Attachment): number => Math.floor((a.vertexCount ?? 0) / 3);
 
@@ -68,9 +77,12 @@ function written(s: Skeleton, r: AttachmentRef, a: Attachment, f: Frame | null, 
   return replaceAttachment(s, r, withLengths({ ...a, vertices }, f, pos));
 }
 
+/** Spine's default: a path runs at constant speed unless the file says `constantSpeed: false`. */
+export const runsAtConstantSpeed = (a: Attachment): boolean => a.constantSpeed !== false;
+
 /** `a` with `lengths` worked out from `pos`, when it does not run at constant speed: cumulative curve lengths, as many as it had. */
 function withLengths(a: Attachment, f: Frame | null, pos: readonly number[]): Attachment {
-  if (a.constantSpeed || !a.lengths) return a;
+  if (runsAtConstantSpeed(a) || !a.lengths) return a;
   const world = Array.from({ length: pos.length / 2 }, (_, i) => (f ? worldOf(f, pos[i * 2]!, pos[i * 2 + 1]!) : [pos[i * 2]!, pos[i * 2 + 1]!] as [number, number]));
   const points = Math.floor(world.length / 3), curves = a.closed ? points : points - 1, out: number[] = [];
   let total = 0;
@@ -171,15 +183,11 @@ export function deletePathPoint(r: AttachmentRef, p: number, bones?: BoneWorlds)
 export function setPathFlags(r: AttachmentRef, flags: { closed?: boolean; constantSpeed?: boolean }, bones?: BoneWorlds): Edit<Skeleton> {
   return (s) => {
     const { a, f, pos } = pathAt(s, r, bones);
-    const next: Attachment = { ...a };
-    const set = (k: "closed" | "constantSpeed", v: boolean | undefined) => {
-      const o = next as { -readonly [K in keyof Attachment]: Attachment[K] };
-      if (v === undefined) return;
-      if (v) o[k] = true; else delete o[k];
-    };
-    set("closed", flags.closed);
-    set("constantSpeed", flags.constantSpeed);
-    if (!!next.closed === !!a.closed && !!next.constantSpeed === !!a.constantSpeed) return s;
+    const next = { ...a } as { -readonly [K in keyof Attachment]: Attachment[K] };
+    // As Spine writes them: `closed` only when true, `constantSpeed` only when false (it defaults to true).
+    if (flags.closed !== undefined) { if (flags.closed) next.closed = true; else delete next.closed; }
+    if (flags.constantSpeed !== undefined) { if (flags.constantSpeed) delete next.constantSpeed; else next.constantSpeed = false; }
+    if (!!next.closed === !!a.closed && runsAtConstantSpeed(next) === runsAtConstantSpeed(a)) return s;
     return replaceAttachment(s, r, withLengths(next, f, pos));
   };
 }

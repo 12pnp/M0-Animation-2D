@@ -32,10 +32,12 @@ const DEFAULTS: Readonly<Record<PanelId, readonly Placement[]>> = {
   // Behind the rig panel: the default layout looks as before. (Behind the timeline resized its group and squashed the stage.)
   skins: [{ referencePanel: "rigTree", direction: "within" }, { direction: "left" }],
   animations: [{ referencePanel: "rigTree", direction: "within" }, { direction: "left" }],
+  // Behind the properties panel, with the reference and AI panels.
+  localPath: [{ referencePanel: "properties", direction: "within" }, { direction: "right" }],
 };
 
 /** The order the default layout adds the panels in. */
-export const DEFAULT_ORDER: readonly PanelId[] = ["rigTree", "stage", "properties", "timeline", "preview", "reference", "ai", "history", "skins", "animations"];
+export const DEFAULT_ORDER: readonly PanelId[] = ["rigTree", "stage", "properties", "timeline", "preview", "reference", "ai", "history", "skins", "animations", "localPath"];
 
 /** The default place for `id`, given the panels already in the dock. */
 export function defaultPlacement(id: PanelId, present: ReadonlySet<string>): Placement {

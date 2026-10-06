@@ -1,10 +1,10 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { type AttachmentRef, findAttachment } from "@/edit/attachments";
+import { addAttachment, type AttachmentRef, findAttachment } from "@/edit/attachments";
 import { History } from "@/edit/history";
 import { type BoneWorlds, decodeBinds, isWeighted } from "@/edit/meshLayout";
-import { addPathPoint, deletePathPoint, localOf, movePathPoint, movePathVertex, pathFrame, pathPositions, pointCount, setPathFlags, worldOf } from "@/edit/path";
+import { addPathPoint, deletePathPoint, localOf, movePathPoint, newPathAttachment, movePathVertex, pathFrame, pathPositions, pointCount, runsAtConstantSpeed, setPathFlags, worldOf } from "@/edit/path";
 import { NO_IMAGES } from "@/engine/regions";
 import { readSkeleton } from "@/io/skeletonRead";
 import { writeSkeleton } from "@/io/skeletonWrite";
@@ -21,7 +21,7 @@ function straight(extra: Record<string, unknown> = {}): Skeleton {
     skeleton: { hash: "h", spine: "4.3.40" },
     bones: [{ name: "root" }, { name: "arm", parent: "root", x: 10, y: 20, scaleX: 2, scaleY: 2 }],
     slots: [{ name: "rope", bone: "arm" }],
-    skins: [{ name: "default", attachments: { rope: { rope: { type: "path", vertexCount: 9, vertices: line, lengths: [0, 0, 0], ...extra } } } }],
+    skins: [{ name: "default", attachments: { rope: { rope: { type: "path", vertexCount: 9, vertices: line, lengths: [0, 0, 0], constantSpeed: false, ...extra } } } }],
   })).skeleton;
 }
 
@@ -76,7 +76,12 @@ describe("a path's lengths", () => {
     expect(l[1]).toBeCloseTo(402, 1);
     expect(l[2]).toBeCloseTo(402, 1);
   });
-  it("are left as written at constant speed", () => {
+  it("are left as written at constant speed, which is Spine's default when the file says nothing", () => {
+    for (const extra of [{ constantSpeed: true }, { constantSpeed: undefined }]) {
+      const s = straight(extra), bones = setup(s);
+      expect(runsAtConstantSpeed(findAttachment(s, REF)!)).toBe(true);
+      expect(findAttachment(movePathPoint(REF, 2, 300, 0, bones)(s), REF)!.lengths).toEqual([0, 0, 0]);
+    }
     const s = straight({ constantSpeed: true }), bones = setup(s);
     const out = movePathPoint(REF, 2, 300, 0, bones)(s);
     expect(findAttachment(out, REF)!.lengths).toEqual([0, 0, 0]);
@@ -152,5 +157,29 @@ describe("an edited path moves what follows it", () => {
     const worst = (x: number[][], y: number[][]) => Math.max(...x.flatMap((m, i) => m.map((v, k) => Math.abs(v - y[i]![k]!))));
     expect(worst(before, after)).toBeGreaterThan(1);
     expect(worst(after, again)).toBeLessThan(1e-3);
+  });
+});
+
+describe("a new path", () => {
+  it("is two points 100 apart with their handles, open, at constant speed, and a valid path in the file", () => {
+    const a = newPathAttachment(10, 20);
+    expect(a).toMatchObject({ type: "path", vertexCount: 6, lengths: [0, 0] });
+    expect(a.vertices).toEqual([-23.33, 20, 10, 20, 43.33, 20, 76.67, 20, 110, 20, 143.33, 20]);
+    expect(runsAtConstantSpeed(a)).toBe(true);
+  });
+  it("is made on a slot, written, and read back the same, and can be edited at once", () => {
+    const s = straight(), ref: AttachmentRef = { skin: "default", slot: "rope", key: "second" };
+    const withNew = addAttachment(ref, newPathAttachment())(s);
+    expect(readSkeleton(writeSkeleton(withNew)).skeleton.skins).toEqual(withNew.skins);
+    const out = movePathPoint(ref, 1, 90, 5, setup(withNew))(withNew);
+    expect(findAttachment(out, ref)!.vertices!.slice(6, 12)).toEqual([56.67, 5, 90, 5, 123.33, 5]);
+  });
+  it("turns constant speed off by writing false, and on by leaving the key out; lengths follow", () => {
+    const s = straight({ constantSpeed: true }), bones = setup(s);
+    const off = setPathFlags(REF, { constantSpeed: false }, bones)(s), a = findAttachment(off, REF)!;
+    expect(a.constantSpeed).toBe(false);
+    expect(a.lengths![0]).toBeCloseTo(200, 1);
+    const on = setPathFlags(REF, { constantSpeed: true }, bones)(off);
+    expect(findAttachment(on, REF)!.constantSpeed).toBeUndefined();
   });
 });

@@ -1,6 +1,6 @@
 # Path attachments — editing, on the stage and by number — plan
 
-**Status:** done 2026-10-06, apart from adding a path attachment from the interface (it is made by the agent's tools and by Spine; the stage has no "add path" yet). Un-parks "bone paths and their panels" from the v2 cut list
+**Status:** done 2026-10-06, including making a path from the interface (step 6 below). Un-parks "bone paths and their panels" from the v2 cut list
 (`docs/EDITOR-V2-PLAN.md`). Scope, from the owner: select a path attachment and drag its points on
 the stage; a Local / World choice for the values; a numeric window for exact values; the file
 round-trips (vertices in both the unweighted and the bone-weighted form, and the path constraint's
@@ -74,5 +74,12 @@ flowchart LR
    6 edited rigs, worst 0.0019 against a 0.01 tolerance, every animation and every active bone, so
    the engine poses an edited path as BoneBurst's C# runtime does.
 
-**Playback gap:** none. **Not done:** adding a path attachment from the interface; editing a path
-while an animation is shown (its deform keys are not edited here).
+6. **Making a path** (`pathCreate.ts`, `newPathAttachment`): the path window's **+ New Path** (on the selected
+   slot, or on a new slot of the selected bone) and the stage's right-click **Add Path Here** (at the
+   pointer, on the bone under it or the root). Two points 100 apart with their handles, open, at constant
+   speed; one undo takes the path and any slot made for it away; the path is selected, ready to drag.
+   Also fixed on the way: a path with no `constantSpeed` runs at constant speed (Spine's default), so
+   the editor now writes `constantSpeed: false` to turn it off and leaves the key out to turn it on.
+
+**Playback gap:** none. **Not done:** editing a path while an animation is shown (its deform keys are
+not edited here); a path constraint is not made by this window (Constraints ▸ + Constraint ▸ Path).
