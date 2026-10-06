@@ -11,11 +11,11 @@ flowchart LR
 
 ## 0.1.0 (2026-10-05)
 
-### 2026-10-06 — **hostile files refused with a reason, never a crash: a JSON depth limit, draw-order offsets checked** (not verified in Unity)
+### 2026-10-06 — **hostile files refused with a reason, never a crash: a JSON depth limit, draw-order offsets checked**
 - **`Runtime/JsonNode.cs`**: `JsonNode.MaxDepth` (1000, the BoneBurst Editor's limit); the parser refuses deeper nesting with `nested deeper than 1000 levels`. JSON nested 100,000 deep overflowed the stack, which kills the process (in Unity, the Editor).
 - **`Runtime/SkeletonJsonReader.cs` `DrawOrder`, `Runtime/SkeletonBinaryReader.cs` `ReadDrawOrder`**: every offset's slot is checked before the walk, and a slot moved twice, slots out of slot order, two slots to one place (and, binary only, a slot index outside the list or a target past it) are refused naming the slot. Each threw `IndexOutOfRangeException` before; stock spine-csharp crashes the same way, so no valid file reads differently.
 - Why: the BoneBurst Editor's E7 step 5 findings H1 and H2 (`Editor-BoneBurst-Src/docs/E7-PLAN.md`). Plan: [BoneBurstImport-HostileFiles-Plan.md](Review/BoneBurstImport-HostileFiles-Plan.md).
-- Guard: `HostileFileTests` (7; on the old readers the 4 draw-order cases throw `IndexOutOfRangeException` and the deep case overflows the stack, run on .NET with an NUnit shim); parity gate 215 of 215, 144,294,824 values bit-exact; offline compile (`tiercompile.py`) 0 errors; v2's `unity-parity.ts` 17 rigs, worst 0.0067. **Not verified:** the import suite through the live Editor (none was open), and the binary guards by a test (only the binary corpus reading unchanged).
+- Guard: `HostileFileTests` (7; on the old readers the 4 draw-order cases throw `IndexOutOfRangeException` and the deep case overflows the stack, run on .NET with an NUnit shim); parity gate 215 of 215, 144,294,824 values bit-exact; offline compile (`tiercompile.py`) 0 errors; v2's `unity-parity.ts` 17 rigs, worst 0.0067. Import suite through the live Editor, 29 of 29 (a follow-up commit adds the two new files' `.meta`). **Not verified:** the binary guards by a test (only the binary corpus reading unchanged).
 
 ### 2026-10-06 — **the rebake's comment: the old editor archived at the tag `old-editor-final`** (comment only)
 - `Editor/BoneBurstRebakeOnChange.cs`: its summary names only the BoneBurst Editor's (v2) Export to Unity. Its link to the pipeline plan now says the plan is at the git tag `old-editor-final`, because the old editor left `main` at E6 step 7 (`Editor-BoneBurst-Src/docs/E6-PLAN.md`, D8). Nothing compiles differently.

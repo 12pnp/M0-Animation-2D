@@ -1,6 +1,6 @@
 # E7 — the daily driver: history, shortcuts, a build, a robustness pass — plan
 
-**Status:** in progress, 2026-10-06; steps 1 (the History panel), 2 (the shortcuts table and sheet), 3 (running without the dev server), 4 (edits fuzzed: eight findings, seven fixed, one the runtime's own) and 5 (hostile files: nine findings fixed, two in the C# reader handed on) done. Scope chosen by the owner:
+**Status:** in progress, 2026-10-06; steps 1 (the History panel), 2 (the shortcuts table and sheet), 3 (running without the dev server), 4 (edits fuzzed: eight findings, seven fixed, one the runtime's own) 5 (hostile files: nine findings fixed, two in the C# reader handed on) and 6 (the daily driver end to end; Unity's side through the C# harness, the asset bake not run) done. Scope chosen by the owner:
 the History panel and the shortcuts sheet (set aside at E6 step 3), running without the dev
 server, and a robustness pass.
 Not in E7: the AnimatedDrawings detection sidecar (waits on the owner's install decision).
@@ -442,3 +442,73 @@ flowchart LR
    deep (each refused with its reason, the stickman still the open document), then a good file;
    no page error. A planted fault, the unreadable-page handling removed, fails it.
 7. Valid files pose exactly as before: `scripts/unity-parity.ts`, 17 rigs agree, worst 0.0067.
+
+## Step 6 — the daily driver end to end
+
+The owner's choice (2026-10-06): **the C# harness, no Unity Editor.** No Editor was running, and a
+bake writes assets into `Assets/` and indexes them in `AssetSystem.db`, a file left to the Unity
+session. BoneBurst's C# reader and runtime (the bake's own reader, through the parity harness)
+read and pose what v2 exports; the asset bake itself is reported as not run.
+
+```mermaid
+flowchart LR
+    PSD["figure.psd"] -->|"Open…"| V2["v2 in the browser"]
+    AI["MCP: auto_rig → apply_motion idle_front"] --> V2
+    UI["Rig panel, timeline, K: a key by hand"] --> V2
+    V2 -->|"File ▸ Export to Unity…"| OUT["figure.json · figure.atlas.txt · figure.png"]
+    OUT -->|"Open…"| V2B["v2 again: no notes, exports the same bytes"]
+    OUT -->|"run.sh --dump"| CS["BoneBurst C# reader + runtime"]
+    CS -->|"scripts/daily-driver.ts"| CMP["every bone, every frame, against v2's engine"]
+```
+
+### Decisions
+
+- **The flow, as the owner works**: a PSD opened through Open…; rigged and given a motion by an AI
+  over MCP (`auto_rig`, `apply_motion`), the flow E5 made the editor's purpose; then a hand edit in
+  the UI (a bone chosen in the Rig panel, the playhead moved, K); Export to Unity into a folder
+  (the picker answered by a folder the test reads back).
+- **Its round trip**: the exported files opened again through Open…; they open with no notes, and
+  exporting again writes the same bytes (skeleton, atlas, page). Saving to a project file is the
+  other session's `.bbdata` work in progress, tested by its own `e2e/project.spec.ts`; this test
+  stays on what is committed: export and open.
+- **Unity's side, without the Editor**: `scripts/daily-driver.ts` takes the export the browser test
+  wrote, has the parity harness's C# reader and runtime read and pose it (`run.sh --dump`), and
+  compares every bone at every frame with v2's engine, as `scripts/unity-parity.ts` does for the
+  corpus (one comparison, shared by both scripts). Run by hand (it needs Unity's .NET SDK); the
+  browser test is in `npm run check`.
+- **Reported, not passed**: the asset bake (`BoneBurstBake`, the `BoneBurstAsset`, AssetSystem
+  indexing) did not run; the plan and the reply say so.
+
+### Steps
+
+1. `e2e/dailyDriver.spec.ts`: the flow, its export kept in `node_modules/.cache/daily-driver/`.
+2. The comparison moved out of `scripts/unity-parity.ts` into `scripts/oracle/csharp.ts`, used by it
+   and by `scripts/daily-driver.ts`.
+3. Run both; fix what breaks, each with a test that fails on the old code.
+4. Results here.
+
+### Step 6 results
+
+1. **`e2e/dailyDriver.spec.ts`**, in `npm run check`: the figure PSD through Open…; `auto_rig` (11
+   bones) and `apply_motion idle_front` over MCP, the AI button connected; by hand, the Rig panel's
+   `shin_left`, `idle` chosen, Home and five `.` to frame 5, K (one undo step more); File ▸ Export
+   to Unity… (`figure.json`, `figure.atlas.txt`, `figure.png`), kept in
+   `node_modules/.cache/daily-driver/`; those three opened again through Open… (no notes), and
+   exported again to another folder: the same bytes, all three. No page error. Planted fault: the
+   atlas reader dropping a field (`filter`) makes the second export's atlas differ, and the test
+   fails on it.
+2. **`scripts/daily-driver.ts`** (by hand, Unity's .NET SDK): the export read and posed by BoneBurst's
+   C# reader and runtime (`run.sh --dump`), every bone at every frame of `idle` against v2's engine:
+   **60 frames agree, worst 0.0002** (tolerance 0.01). The comparison now lives in
+   `scripts/oracle/csharp.ts` (`compareWithCsharp`), which `scripts/unity-parity.ts` uses too:
+   still 17 rigs agree, worst 0.0067.
+3. **Found nothing to fix**: the flow ran clean on its first complete run; the two changes to the
+   test were its own (a bone named by a row the tree shows).
+4. **Not run**: the asset bake in the Unity Editor (`BoneBurstBake`, the `BoneBurstAsset`, its
+   AssetSystem indexing): no Editor was running, and the owner chose not to start one, so nothing
+   was written into `Assets/` or `AssetSystem.db`. What is shown is that the bake's own reader
+   takes v2's export and its runtime plays it as v2 does.
+5. Save and reopen of a project file is the other session's `.bbdata` work (uncommitted when this
+   ran); this test stays on export and open.
+6. `npm run check`'s suites: 657 vitest, 19 browser tests, all pass (its type check stops on the
+   other session's work in progress in `tests/preferences.test.ts`, not on this step's files).

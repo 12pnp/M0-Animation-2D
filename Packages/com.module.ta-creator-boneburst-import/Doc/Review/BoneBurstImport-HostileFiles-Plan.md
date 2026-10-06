@@ -1,6 +1,6 @@
 # BoneBurst Import — hostile files refused with a reason, never a crash
 
-**Status:** not verified in Unity (2026-10-06): the code is done, and the gates that run outside Unity pass. Left: the import suite through the live Editor (no Editor was open), the `.meta` files Unity makes for the new test file and this plan, and a commit with its changelog entry (§12).
+**Status:** done (2026-10-06). The import suite passed in the live Editor, 29 of 29. Left: a test that feeds the binary reader a broken draw order (none built; only the binary corpus is shown reading unchanged).
 
 The BoneBurst Editor's (v2) E7 step 5 ran its hand-made hostile files through this package's JSON reader
 (`Editor-BoneBurst-Src/docs/E7-PLAN.md`, "Step 5 — hostile files", findings H1 and H2). Two inputs crash it instead
@@ -70,4 +70,5 @@ flowchart LR
    `JSON line 1: nested deeper than 1000 levels.` `parity-harness` gate: 215 of 215, 144,294,824 values, 0 not
    bit-exact (run after the last change). Offline compile (`tiercompile.py --only` both touched assemblies): 9 of 9,
    0 failed, the new test file included. v2's `unity-parity.ts`: 17 rigs, worst 0.0067 (tolerance 0.01).
-   **Not run:** the import suite in the Editor (`unity status`: no instance).
+   Import suite in the live Editor (Unity 6000.6.4f1, after the commit `b71de45`): compile 0 errors,
+   `Module.TA.BoneBurstImport.Tests.Editor` 29 of 29 (22 before + the 7 new).

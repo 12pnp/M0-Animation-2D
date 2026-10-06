@@ -13,6 +13,14 @@ flowchart LR
 
 ## 2026-10-06
 
+- **BoneBurst Editor v2, E7 step 6: the daily driver end to end, and BoneBurst's C# runtime plays what it exports as v2 does** (`Editor-BoneBurst-Src/`).
+  - **`e2e/dailyDriver.spec.ts`**: the figure PSD through Open…, rigged and animated by an AI over MCP (`auto_rig`, `apply_motion idle_front`), and a key by hand (Rig panel, frame 5, K). Then Export to Unity. The export opens again with no notes, and exporting it again writes the same bytes.
+  - **`scripts/daily-driver.ts`**: BoneBurst's C# reader and runtime (`run.sh --dump`, the bake's own reader) pose that export frame by frame against v2. 60 frames agree, worst 0.0002.
+  - The comparison moved into `scripts/oracle/csharp.ts`, shared with `scripts/unity-parity.ts` (17 rigs still agree).
+  - **Not run**: the asset bake in the Unity Editor (owner's choice: no Editor started, nothing written to `Assets/` or `AssetSystem.db`). Save and reopen of a project file are left to the other session's `.bbdata` work.
+  - Plan: [E7-PLAN.md](../../Editor-BoneBurst-Src/docs/E7-PLAN.md) ▸ Step 6.
+  - **Guard**: the browser test, in `npm run check`; a planted fault (the atlas reader dropping a field) fails it. 657 vitest and 19 browser tests pass.
+
 - **BoneBurst Editor v2, E7 step 5: hostile files. Every way in either refuses with a reason or opens saying what is wrong; two hangs and five crashes gone** (`Editor-BoneBurst-Src/`).
   - **How it was tested**: `tests/hostileFiles.test.ts` runs the open path headless on 60 hand-made cases and on seeded mutations of every corpus skeleton and atlas. Reading may refuse; after that, posing, drawing and saving may not throw, and each file takes under 2 s. BoneBurst's C# reader judges which damaged files must say so: it refuses 42 of the 60, and each of those that opens here reports what is wrong.
   - **The two hangs**: a draw-order key moving one slot twice (`orderFromOffsets`, where the first move now wins), and a weighted vertex stream with a negative bone count (`weightedLength`).
