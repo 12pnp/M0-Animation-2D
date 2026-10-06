@@ -1,6 +1,6 @@
 # BoneBurst ECS port: Plan
 
-**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 onward not started.**
+**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 (CPU route, skins, tint black, Lit2D) done 2026-10-07 except the vertex-fetch route, rim light and a player build (§15); P7 not started.**
 
 BoneBurst's pose, constraint, timeline and mesh code (`Module.PA.BoneBurst.Core`) is already Burst-friendly pointer code with no `UnityEngine`. The port keeps that code unchanged and replaces only the managed shell around it (`BoneBurstSystem`, `BoneBurstSkeleton`, `BoneBurstAsset`, `BoneAnimationState`, the GPU and fetch buffers) with Entities 6.7 systems, bakers and Entities Graphics. The result is a new package in `M0-25DPlatformer-ECS/Packages`.
 
@@ -331,3 +331,25 @@ P5 is split in two because the render side needs a shader, Entities Graphics reg
 *   The Editor's pipeline stops answering `unity command` while the 25D Editor is in play mode and in the background after a long session; restarting the Editor fixed it. Nothing in the package caused it.
 
 **Not verified:** a player build (IL2CPP, shader variants, subscene content loading); the shader on the 3D renderer's `UniversalForward` pass; tint black, Lit2D and rim light on this route (P6).
+
+## 15. P6 result (2026-10-07): CPU route, skins, tint black, Lit2D
+
+**Built** (25D repo, commits `78bf56b`, `e40cd7c` and the Lit2D one):
+
+*   **CPU route.** `BoneBurstCpuMeshJob` (the scratch step of the MonoBehaviour front's `MeshJob`, without vertex fetch) and `BoneBurstCpuMeshSystem` mesh every instance that is not GPU-skinned and every GPU instance the classifier sent to the CPU (deform, clipping): the job fills the instance's own lists, the main thread uploads the vertices every frame and the indices and submesh table only when the topology hash changed. `BoneBurstGpuMesh` became `BoneBurstDrawMesh` (a shared GPU mesh, or the instance's own CPU mesh with a `Version`); the render system rebuilds an instance's render entities when its mesh or that version changes, and picks the GPU or CPU variant of the shader keyword `BONE_BURST_GPU`. A GPU instance that falls back invalidates its GPU topology, so it returns to a shared mesh when the classifier allows. **Change from the plan:** R2 as planned was a shared vertex buffer (vertex fetch); this step is the simpler per-instance mesh, which is what the MonoBehaviour front did before fetch. Fetch stays open until a measurement asks for it.
+*   **Skin requests**: `SetSkin`, `SkinBegin`/`SkinAdd`/`SkinApply` (the M2 `SpineLook` pattern), `SetAttachment`, `SetupPoseSlots`, `SetupPose`, in the same request buffer as the animation requests.
+*   **Tint black** (`BoneBurstTintBlack`, authoring `TintBlack`): the record stride on the GPU route, the second vertex stream on the CPU route, the dark-colour code in both shaders and the `_TINT_BLACK_ON` keyword on the materials.
+*   **Lit2D.** `BoneBurstEcs/Lit2D` (the light-combine and normals passes, an unlit forward pass) beside `BoneBurstEcs/Unlit`, both on a shared `BoneBurstEcsCommon.hlsl`; the shader is now per skeleton (`BoneBurstRenderSettings`), so lit and unlit skeletons of one asset coexist. Rim light is **not** ported: it needs the rim mask textures and their authoring.
+
+| Gate | Result |
+|---|---|
+| CPU route equals `ManagedPose.BuildMesh` (vertex position within 1e-4, uv and colour bytes exact, indices exact, counts, submesh keys, bounds) every frame: 24 fixtures on the CPU route, and 24 fixtures with GPU skinning on whose classifier-forced fallback frames are compared the same way | PASS, 48 of 48 |
+| Topology rewritten exactly when the reference's indices or submesh keys changed | PASS (inside the same tests) |
+| spineboy "idle" on the GPU route, "walk" falls back to the CPU mesh; the mesh follows the reference classifier every frame | PASS |
+| Tint black on both routes against the reference: classification, GPU record with stride 2, CPU tint stream, 24 fixtures × 20 frames | PASS |
+| Mix-and-match skin requests (combined skin, then a single skin), GPU and CPU, slot attachments and mesh against the reference; `SetAttachment` and `SetupPose` | PASS |
+| 25D `Module.TA.BoneBurstEcs.Tests.Editor` | 305 of 305 |
+| Deliberate bugs: vertices uploaded only with the topology failed 23; topology never rewritten failed 6; tint stream not uploaded failed 22 (so the corpus does have dark colours); combined skin without its parts failed 2. One attempt (skipping the slot reset in `SkinApply`) changed nothing: with this sample `SetSkin` already places the attachments, so that call is redundant there; it was discarded | PASS |
+| Seen on screen (25D Editor, URP 2D Renderer): spineboy "walk" and "run" now draw (CPU route) beside "idle" (GPU route); four spineboys of one asset under a Global and a warm Point Light 2D: the Lit2D ones are darker, and the lit walking one (CPU route) takes the point light | PASS, by eye |
+
+**Left open:** the vertex-fetch route (a shared vertex buffer, instancing for CPU-skinned skeletons: the CPU route draws one mesh and one draw call per skeleton), rim light and the Lit2D rim masks, a player build (shader variants, subscene loading) and the 3D renderer's pass of both shaders, a Lit2D unit test (checked by eye only), and a skeleton's sorting layer and order (§14).
