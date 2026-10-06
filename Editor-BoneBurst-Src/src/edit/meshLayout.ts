@@ -45,6 +45,16 @@ export function frameFor(s: Skeleton, r: AttachmentRef, a: Attachment, bones: Bo
   const slotBone = s.slots?.find((x) => x.name === r.slot)?.bone;
   const i = (s.bones ?? []).findIndex((b) => b.name === slotBone);
   if (i < 0 || !bones[i]) throw new EditRefused(`The slot "${r.slot}" has no bone.`);
+  // A bone posed as all zeros (not active in the skin shown) or scaled to zero has no inverse: its
+  // vertices came out NaN, or silently at its origin (E7-PLAN step 4). The slot's bone, and every
+  // bone a weighted mesh is bound to, must be usable.
+  const used = isWeighted(a) ? [i, ...new Set(decodeBinds(a.vertices!).flatMap((b) => b.map((x) => x.bone)))] : [i];
+  for (const k of used) {
+    const m = bones[k];
+    if (!m || !m.every(Number.isFinite) || Math.abs(m[0]! * m[3]! - m[1]! * m[2]!) < 1e-12) {
+      throw new EditRefused(`"${r.key}" cannot be edited here: its bone "${s.bones?.[k]?.name ?? k}" is not active in the skin shown, or scaled to zero.${r.skin !== "default" ? ` Show the skin "${r.skin}" to edit it.` : ""}`);
+    }
+  }
   return { slot: bones[i]!, bones };
 }
 

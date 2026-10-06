@@ -17,6 +17,20 @@ function boneIndex(s: Skeleton, name: string): number {
   return i;
 }
 
+/**
+ * Refuse bones a vertex cannot be bound to (E7-PLAN step 4): a bone whose world matrix cannot be
+ * inverted on the setup pose, as a bone scaled to zero or one the shown skin leaves inactive
+ * (posed as all zeros). Bound anyway, its binds came out NaN and the file could not be saved.
+ */
+function refuseUnbindable(s: Skeleton, bones: BoneWorlds, chosen: readonly number[]): void {
+  for (const i of chosen) {
+    const m = bones[i], det = m ? m[0]! * m[3]! - m[1]! * m[2]! : 0;
+    if (!m || !m.every(Number.isFinite) || Math.abs(det) < 1e-12) {
+      throw new EditRefused(`"${s.bones![i]!.name}" cannot hold vertices here: it is scaled to zero, or not active in the skin shown.`);
+    }
+  }
+}
+
 /** The bones a weighted mesh follows, by index, in the order they first appear. */
 export function meshBones(a: Attachment): number[] {
   if (!isWeighted(a)) return [];
@@ -59,6 +73,7 @@ export function bindMesh(r: AttachmentRef, boneNames: readonly string[], bones: 
     const a = editableMesh(s, r), f = frameFor(s, r, a, bones)!;
     if (!boneNames.length) throw new EditRefused("Choose at least one bone to bind the mesh to.");
     const chosen = [...new Set(boneNames)].map((n) => boneIndex(s, n));
+    refuseUnbindable(s, bones, chosen);
     return rebind(s, r, a, f, (_v, wx, wy) => distanceWeights(s, bones, chosen, wx, wy));
   };
 }
@@ -69,6 +84,7 @@ export function autoWeights(r: AttachmentRef, bones: BoneWorlds, vertices?: read
     const a = editableMesh(s, r);
     if (!isWeighted(a)) throw new EditRefused(`"${r.key}" is not bound to bones; bind it first.`);
     const f = frameFor(s, r, a, bones)!, chosen = meshBones(a), only = vertices ? new Set(vertices) : null;
+    refuseUnbindable(s, bones, chosen);
     const out = rebind(s, r, a, f, (v, wx, wy, old) => (only && !only.has(v) ? old!.map((b) => ({ bone: b.bone, w: b.w })) : distanceWeights(s, bones, chosen, wx, wy)));
     return sameVertices(out, s, r) ? s : out;
   };
@@ -113,6 +129,7 @@ export function setWeight(r: AttachmentRef, v: number, bone: string, w: number, 
     if (w === 0 && !others.length) throw new EditRefused(`"${bone}" is this vertex's only bone; give another bone weight first.`);
     if (w < 1 && !(rest > 0)) throw new EditRefused(`No other bone holds this vertex to take the rest; add one first.`);
     const ws = [...(w > 0 ? [{ bone: i, w }] : []), ...others.map((b) => ({ bone: b.bone, w: (b.w / rest) * (1 - w) }))];
+    if (w > 0) refuseUnbindable(s, bones, [i]);
     const f = frameFor(s, r, a, bones)!;
     const out = rebind(s, r, a, f, (n, _x, _y, old) => (n === v ? normaliseWeights(ws) : old!.map((b) => ({ bone: b.bone, w: b.w }))));
     return sameVertices(out, s, r) ? s : out;
@@ -138,6 +155,7 @@ export function setWeights(r: AttachmentRef, bone: string, weights: ReadonlyMap<
       next.set(v, normaliseWeights([...(w > 0 ? [{ bone: i, w }] : []), ...others.map((b) => ({ bone: b.bone, w: (b.w / rest) * (1 - w) }))]));
     }
     if (!next.size) return s;
+    if ([...next.values()].some((ws) => ws.some((b) => b.bone === i))) refuseUnbindable(s, bones, [i]);
     const f = frameFor(s, r, a, bones)!;
     const out = rebind(s, r, a, f, (n, _x, _y, old) => next.get(n) ?? old!.map((b) => ({ bone: b.bone, w: b.w })));
     return sameVertices(out, s, r) ? s : out;

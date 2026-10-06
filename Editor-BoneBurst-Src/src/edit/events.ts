@@ -1,5 +1,6 @@
 import type { Animation, EventDef, Key, Skeleton } from "@/model/skeleton";
 import { EditRefused, type Edit } from "./history";
+import { refuseNonFinite } from "./finite";
 
 /**
  * Events (Format-Json-Atlas.md §6, §11.13): the skeleton's named events with their values and
@@ -16,6 +17,7 @@ const sameTime = (a: number, b: number) => Math.abs(a - b) <= 1e-5;
 /** Add the event `name`, or change the values given (a value left out is unchanged; one given as undefined is removed). */
 export function defineEvent(name: string, patch: EventPatch): Edit<Skeleton> {
   return (s) => {
+    refuseNonFinite(`Event "${name}"`, patch);
     if (!name.trim()) throw new EditRefused("An event needs a name.");
     if (patch.volume !== undefined && !(patch.volume >= 0 && patch.volume <= 1)) throw new EditRefused("Volume is from 0 to 1.");
     if (patch.balance !== undefined && !(patch.balance >= -1 && patch.balance <= 1)) throw new EditRefused("Balance is from -1 to 1.");
@@ -65,6 +67,7 @@ export function deleteEvent(name: string): Edit<Skeleton> {
 /** Fire `name` at `time` in `animation`, after any events already on that frame. */
 export function keyEvent(animation: string, time: number, name: string, overrides: EventOverrides = {}): Edit<Skeleton> {
   return (s) => {
+    refuseNonFinite(`Event "${name}"`, { time, ...overrides });
     if (!s.events?.some((e) => e.name === name)) throw new EditRefused(`There is no event "${name}": define it first.`);
     if (time < 0) throw new EditRefused("A key cannot be before 0.");
     const a = s.animations?.find((x) => x.name === animation);

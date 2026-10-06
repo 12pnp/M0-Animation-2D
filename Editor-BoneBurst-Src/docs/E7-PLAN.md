@@ -1,6 +1,6 @@
 # E7 — the daily driver: history, shortcuts, a build, a robustness pass — plan
 
-**Status:** in progress, 2026-10-06; steps 1 (the History panel), 2 (the shortcuts table and sheet) and 3 (running without the dev server) done. Scope chosen by the owner:
+**Status:** in progress, 2026-10-06; steps 1 (the History panel), 2 (the shortcuts table and sheet), 3 (running without the dev server) and 4 (edits fuzzed: eight findings, seven fixed, one the runtime's own) done. Scope chosen by the owner:
 the History panel and the shortcuts sheet (set aside at E6 step 3), running without the dev
 server, and a robustness pass.
 Not in E7: the AnimatedDrawings detection sidecar (waits on the owner's install decision).
@@ -258,3 +258,89 @@ flowchart LR
    (`tests/start.test.ts`).
 5. README (`npm start` first), the editor's `CLAUDE.md` (its commands). `npm run check`: 475
    vitest, 15 browser tests, 1 build browser test, all pass.
+
+## Step 4 — edits fuzzed
+
+```mermaid
+flowchart LR
+    RIG["every corpus rig<br/>(16 samples + the stickman)"] --> H["History(doc)"]
+    RNG["seeded PRNG<br/>(rig, seed)"] --> GEN["pick an edit from the doc as it is now<br/>bones · slots · attachments · meshes · weights<br/>skins · constraints · events · animations · keys · fps"]
+    GEN -->|"h.apply"| H
+    H --> INV["after every step:<br/>no new profile issue · write→read→write fixed ·<br/>poses (setup + an animation) finite · no throw but EditRefused"]
+    H -->|"goTo(0), goTo(n)"| UNDO["the very first and last documents"]
+```
+
+### Decisions
+
+- **The edits are the edit layer's own**, called as the UI and the AI tools call them, with
+  arguments drawn from the document as it is at that step (an existing bone, slot, attachment,
+  constraint, animation, key; sometimes a name that does not exist, an empty or odd name, a value
+  out of range), so refusals are exercised as much as the edits.
+- **What must hold after each step**, the document's own invariants:
+  1. no profile issue the starting document did not have (`profileIssues`, the rules the C#
+     runtime's reader holds a file to);
+  2. writing is a fixed point: `write(read(write(d))) === write(d)`, and reading what was written
+     says nothing new;
+  3. the setup pose and one animation (a random time) pose without throwing, every bone's matrix
+     finite;
+  4. anything thrown is an `EditRefused` (said to the user, nothing changed); any other error is a
+     bug.
+  At the end, `goTo(0)` gives back the very first document and `goTo(n)` the very last (identity).
+- **Reproducible**: a failure names the rig, the seed, the step and the edit with its arguments;
+  `FUZZ_SEED` and `FUZZ_STEPS` rerun one case or run longer. In `npm run check`: 17 rigs × 2 seeds ×
+  60 steps, kept under about 20 s; longer runs by hand.
+- **Each finding fixed** in the edit layer (or where it belongs) with a table test of its own that
+  fails on the old code; the fuzz test itself stays as the net. The plan lists every finding.
+
+### Steps
+
+1. `tests/fuzzEdits.test.ts`: the generator, the invariants, the corpus.
+2. Run long (thousands of steps per rig); triage; fix each finding with its own test.
+3. Results here.
+
+### Step 4 results
+
+1. **`tests/fuzzEdits.test.ts`**: 58 edit kinds (every edit the stage, panels, curve graph, weight
+   brush and AI tools make, with arguments from the document at that step, refusals included), on
+   the 17 corpus rigs; `FUZZ_SEED`, `FUZZ_STEPS`, `FUZZ_RIG`, `FUZZ_STATS` (per kind: applied,
+   refused, unchanged), `FUZZ_DUMP` (the documents before and after a failing step). Invariants after
+   each step: no new profile issue; write → read → write fixed and the read says nothing; posing does
+   not throw; nothing thrown but `EditRefused`; and (added after F3, which none of these saw) every
+   weighted attachment the step did not aim at bound to the same bones by name, renames followed. At
+   the end, undo to the very first document and redo to the very last. In `npm run check`: 17 rigs ×
+   2 seeds × 60 steps, 9 s.
+2. **Findings**, each fixed with rows in `tests/fuzzFindings.test.ts` (24) that fail on the old code
+   (checked by stashing the fix):
+   - **F1** NaN or ±Infinity taken by `updateBone`, `addBone`, `reparentBone`, `updateAttachment`,
+     `addRegion`, `addAttachment`, `addConstraint`, `updateConstraint`, `setKey` (value and time),
+     `defineEvent`, `keyEvent`, `moveVertex`, `addVertex`: the document could then not be saved.
+     Now refused, naming the field (`src/edit/finite.ts` ▸ `refuseNonFinite`).
+   - **F2** `bindMesh`/`autoWeights` to a bone whose world matrix has no inverse (a bone of another
+     skin, posed as zeros; a bone scaled to zero): NaN binds. Reachable in the editor: Bind on
+     hero-pro's mouth with its morningstar bone while the default skin shows. Now refused, saying why.
+   - **F3** (the serious one) `addBone`, `reparentBone` and `deleteBone` changed the bone order but
+     not the bone indices weighted vertices hold: since E4, adding a bone to a rig with weighted
+     meshes silently rebound every mesh bound to a later bone to the wrong bone, and a delete could
+     leave an index past the end. Now one function (`withBoneOrder`) remaps every weighted
+     attachment (meshes, paths, boxes, clipping) by bone name, and refuses deleting a bone a
+     weighted attachment outside the deleted slots is bound to, naming it.
+   - **F4** vertex and weight edits on a mesh whose slot bone or bound bones are inactive in the skin
+     shown: NaN, or vertices silently at the bone's origin. `frameFor` refuses, and says which skin
+     to show.
+   - **F5** `autoWeights` crashing on an index past the end: F3's consequence, gone with it.
+   - **F6** bones posed to NaN after constraint edits (a path constraint following a path with
+     nothing to follow; keys driven to extremes through a slider). Not v2's: BoneBurst's C# runtime
+     poses the same bones to NaN on the same files (`run.sh --dump` on the fuzzer's documents:
+     8 of 8 bones on mix-and-match; 19,360 of 19,360 bone-frames agree on spineboy-unity). The
+     invariant counts these (812 poses in a 1,000-step seed) instead of failing; a note on the stage
+     for an unposable bone is a possible follow-up, not done here.
+   - **F7** `setWeight`/`setWeights` (the weight fields, the weight brush) giving weight to such a
+     bone: as F2, refused.
+   - **F8** `setChannelCurve` (the curve graph) taking NaN handles: refused (F1's guard).
+   All refusals reach the user as the status line's message: every caller already catches
+   `EditRefused`.
+3. **Runs**: seeds 1–10 × 1,000 steps and seeds 9–12 × 3,000 steps on every rig, all clean after the
+   fixes (about 250,000 edits). Every kind applied at least 31 times in a 1,000-step seed.
+4. **Planted faults**, each caught by the default run: `updateBone`'s guard removed (1 run fails);
+   `withBoneOrder` skipped in `addBone` (9) or `reparentBone` (13), caught by the drift invariant.
+5. `npm run check`: 538 vitest, 16 browser tests, 1 build browser test, all pass.

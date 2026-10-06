@@ -1,6 +1,7 @@
 import type { Animation, Constraint, ConstraintType, Skeleton, Skin } from "@/model/skeleton";
 import { subtree } from "./bones";
 import { EditRefused, type Edit } from "./history";
+import { refuseNonFinite } from "./finite";
 
 /**
  * Constraint edits (Format-Json-Atlas.md §7). The constraints are one list whose order is the
@@ -104,6 +105,7 @@ function checkName(s: Skeleton, type: ConstraintType, name: string): void {
 /** Add a constraint, last in the update order unless `at` says where. */
 export function addConstraint(c: Constraint, at?: number): Edit<Skeleton> {
   return (s) => {
+    refuseNonFinite(`Constraint "${c.name}"`, c);
     checkName(s, c.type, c.name);
     check(s, c);
     const list = s.constraints ?? [];
@@ -115,6 +117,7 @@ export function addConstraint(c: Constraint, at?: number): Edit<Skeleton> {
 /** Set fields of a constraint; refused when the result would not hold (see `check`). */
 export function updateConstraint<T extends ConstraintType>(r: ConstraintRef & { readonly type: T }, patch: ConstraintPatch<T>): Edit<Skeleton> {
   return (s) => {
+    refuseNonFinite(`Constraint "${r.name}"`, patch);
     const i = indexOf(s, r);
     const next: Record<string, unknown> = { ...s.constraints![i]! };
     let changed = false;

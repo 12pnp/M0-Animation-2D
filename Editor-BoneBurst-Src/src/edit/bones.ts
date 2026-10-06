@@ -1,6 +1,7 @@
-import type { Bone, Constraint, Skeleton } from "@/model/skeleton";
+import type { Attachment, Bone, Constraint, Skeleton, Skin } from "@/model/skeleton";
 import { EditRefused, type Edit } from "./history";
 import { removeSlots, slotUsers } from "./slots";
+import { refuseNonFinite } from "./finite";
 
 /** The fields of a bone an edit may set; `undefined` removes the key (the default then applies). */
 export type BonePatch = { -readonly [K in Exclude<keyof Bone, "name" | "extra">]?: Bone[K] | undefined };
@@ -8,6 +9,7 @@ export type BonePatch = { -readonly [K in Exclude<keyof Bone, "name" | "extra">]
 /** Set fields of the bone `name`. Refused when there is no such bone, or the parent would not be an earlier bone. */
 export function updateBone(name: string, patch: BonePatch): Edit<Skeleton> {
   return (s) => {
+    refuseNonFinite(`Bone "${name}"`, patch);
     const bones = s.bones ?? [];
     const i = bones.findIndex((b) => b.name === name);
     if (i < 0) throw new EditRefused(`There is no bone "${name}".`);
@@ -87,6 +89,7 @@ function afterSubtree(bones: readonly Bone[], name: string): number {
 /** Add a bone under `parent`, after the parent's other descendants (the first bone of an empty skeleton has none). */
 export function addBone(name: string, parent: string | null, patch: BonePatch = {}): Edit<Skeleton> {
   return (s) => {
+    refuseNonFinite(`Bone "${name}"`, patch);
     const bones = s.bones ?? [];
     if (!name.trim()) throw new EditRefused("A bone needs a name.");
     if (bones.some((b) => b.name === name)) throw new EditRefused(`There is already a bone "${name}".`);
@@ -95,7 +98,7 @@ export function addBone(name: string, parent: string | null, patch: BonePatch = 
     const fields = Object.fromEntries(Object.entries(patch).filter(([k, v]) => v !== undefined && k !== "parent"));
     const bone = { name, ...(parent !== null ? { parent } : {}), ...fields, extra: new Map() } as Bone;
     const at = parent === null ? 0 : afterSubtree(bones, parent);
-    return { ...s, bones: [...bones.slice(0, at), bone, ...bones.slice(at)] };
+    return withBoneOrder(s, [...bones.slice(0, at), bone, ...bones.slice(at)]);
   };
 }
 
@@ -121,10 +124,9 @@ export function deleteBone(name: string): Edit<Skeleton> {
       // Users inside the deleted slots go with them; only outside ones block.
       if (why && !insideOnly(s, slot, slots)) throw new EditRefused(`"${name}" cannot be deleted: the slot "${slot}" is in use (${why}).`);
     }
-    const out = removeSlots(s, slots);
+    const out = withBoneOrder(removeSlots(s, slots), (s.bones ?? []).filter((x) => !gone.has(x.name)), name);
     return {
       ...out,
-      bones: (out.bones ?? []).filter((x) => !gone.has(x.name)),
       ...(out.skins ? { skins: out.skins.map((k) => (k.bones?.some((n) => gone.has(n)) ? { ...k, bones: k.bones.filter((n) => !gone.has(n)) } : k)) } : {}),
       ...(out.animations ? { animations: out.animations.map((a) => (a.bones?.some((g) => gone.has(g.name)) ? { ...a, bones: a.bones.filter((g) => !gone.has(g.name)) } : a)) } : {}),
     };
@@ -158,6 +160,7 @@ function insideOnly(s: Skeleton, slot: string, going: ReadonlySet<string>): bool
  */
 export function reparentBone(name: string, parent: string, local: BonePatch = {}): Edit<Skeleton> {
   return (s) => {
+    refuseNonFinite(`Bone "${name}"`, local);
     const bones = s.bones ?? [];
     const b = bones.find((x) => x.name === name);
     if (!b) throw new EditRefused(`There is no bone "${name}".`);
@@ -174,6 +177,61 @@ export function reparentBone(name: string, parent: string, local: BonePatch = {}
       return next as unknown as Bone;
     });
     const at = afterSubtree(rest, parent);
-    return { ...s, bones: [...rest.slice(0, at), ...block, ...rest.slice(at)] };
+    return withBoneOrder(s, [...rest.slice(0, at), ...block, ...rest.slice(at)]);
   };
+}
+
+/** Whether an attachment's vertices are weighted: per vertex its bones, not one x,y pair. */
+function weighted(a: Attachment): boolean {
+  const count = a.uvs ? a.uvs.length / 2 : a.vertexCount;
+  return !!a.vertices && count !== undefined && a.vertices.length !== count * 2;
+}
+
+/**
+ * The skeleton with its bones in the order `next` (E7-PLAN step 4). Weighted vertices name their
+ * bones by index, so each weighted attachment's indices follow their bones by name; one that names
+ * a bone `next` lacks refuses the edit (`deleting`: the bone the user asked to delete). Before,
+ * adding, moving or deleting a bone left the indices as they were: the meshes bound to later
+ * bones followed the wrong ones, and an index past the end broke the mesh edits.
+ */
+function withBoneOrder(s: Skeleton, next: readonly Bone[], deleting?: string): Skeleton {
+  const before = s.bones ?? [], at = new Map(next.map((b, i) => [b.name, i]));
+  const map = before.map((b) => at.get(b.name));
+  const same = map.every((m, i) => m === i);
+  const remap = (a: Attachment, where: string): Attachment => {
+    if (same || !weighted(a)) return a;
+    const v = a.vertices!, out = [...v];
+    let changed = false;
+    for (let i = 0; i < v.length;) {
+      const n = v[i++]!;
+      for (let k = 0; k < n; k++, i += 4) {
+        const to = map[v[i]!];
+        if (to === undefined) {
+          throw new EditRefused(`"${deleting ?? before[v[i]!]?.name}" cannot be deleted: ${where} is bound to "${before[v[i]!]?.name}". Unbind it first.`);
+        }
+        if (to !== v[i]) { out[i] = to; changed = true; }
+      }
+    }
+    return changed ? { ...a, vertices: out } : a;
+  };
+  let skinsChanged = false;
+  const skins = s.skins?.map((k) => {
+    let kc = false;
+    const attachments = k.attachments?.map((ss) => {
+      let sc = false;
+      const entries = ss.entries.map((e) => {
+        const a = remap(e.attachment, `"${e.key}" in the slot "${ss.slot}" of the skin "${k.name}"`);
+        if (a === e.attachment) return e;
+        sc = true;
+        return { ...e, attachment: a };
+      });
+      if (!sc) return ss;
+      kc = true;
+      return { ...ss, entries };
+    });
+    if (!kc) return k;
+    skinsChanged = true;
+    return { ...k, attachments: attachments! } as Skin;
+  });
+  return { ...s, bones: [...next], ...(skinsChanged && skins ? { skins } : {}) };
 }

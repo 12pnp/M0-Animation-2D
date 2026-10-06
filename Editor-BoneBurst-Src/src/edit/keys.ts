@@ -4,6 +4,7 @@ import {
 } from "@/model/timelines";
 import { remapCurve, type Segment, type Shape, shapeCurve } from "./curves";
 import { EditRefused, type Edit } from "./history";
+import { refuseNonFinite } from "./finite";
 
 /**
  * Key edits on one animation (Format-Json-Atlas.md §11–12). Each rebuilds the touched key list
@@ -33,7 +34,7 @@ export const sameTime = (a: number, b: number): boolean => Math.abs(a - b) <= 1e
  * out, as Spine writes them).
  */
 export function setKey(animation: string, path: TimelinePath, time: number, fields: KeyFields, clear: readonly (keyof KeyFields)[] = []): Edit<Skeleton> {
-  return onAnimation(animation, (a) => withList(a, path, (keys) => {
+  const edit = onAnimation(animation, (a) => withList(a, path, (keys) => {
     const at = keys.findIndex((k) => sameTime(keyTime(k), time));
     if (at >= 0) {
       const old = keys[at]! as unknown as Record<string, unknown>;
@@ -52,6 +53,10 @@ export function setKey(animation: string, path: TimelinePath, time: number, fiel
       origin: [...keys.slice(0, n).map((_, j) => j), null, ...keys.slice(n).map((_, j) => n + j)],
     };
   }));
+  return (s) => {
+    refuseNonFinite("A key", { time, ...fields });
+    return edit(s);
+  };
 }
 
 /** Remove the keys. A list left empty goes, and so does a group or section left empty. */
@@ -158,7 +163,7 @@ export function setKeyCurve(animation: string, ref: KeyRef, curve: "stepped" | r
  * straight or stepped interval becomes a curve, its other channels straight.
  */
 export function setChannelCurve(animation: string, ref: KeyRef, c: number, handles: readonly [number, number, number, number]): Edit<Skeleton> {
-  return onAnimation(animation, (a) => withList(a, ref.path, (keys) => {
+  const edit = onAnimation(animation, (a) => withList(a, ref.path, (keys) => {
     const i = keys.findIndex((k) => sameTime(keyTime(k), ref.time));
     if (i < 0) throw new EditRefused(`There is no key at ${ref.time}s on ${pathId(ref.path)}.`);
     const k = keys[i]!, after = keys[i + 1], n = channelCount(ref.path);
@@ -172,6 +177,10 @@ export function setChannelCurve(animation: string, ref: KeyRef, c: number, handl
     const next = { ...k, curve: base } as Key;
     return { keys: keys.map((x, j) => (j === i ? next : x)), origin: keys.map((_, j) => j), settled: true };
   }));
+  return (s) => {
+    refuseNonFinite("The curve's handles", handles);
+    return edit(s);
+  };
 }
 
 /* ── structure ─────────────────────────────────────────────────────────── */

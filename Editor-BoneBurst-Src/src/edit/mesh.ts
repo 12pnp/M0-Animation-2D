@@ -3,6 +3,7 @@ import { type AttachmentRef, findAttachment, replaceAttachment } from "./attachm
 import { EditRefused, type Edit } from "./history";
 import { type Bind, bindAt, type BoneWorlds, decodeBinds, encodeBinds, type Frame, frameFor, isWeighted, positions, rewriteDeform, round, type Source } from "./meshLayout";
 import { triangulate } from "./triangulate";
+import { refuseNonFinite } from "./finite";
 
 /**
  * Mesh geometry edits (E4-PLAN steps 5–6; Format-Json-Atlas.md §8.4, §8.9, §11.10). Positions
@@ -122,6 +123,7 @@ export function normaliseWeights(ws: readonly { bone: number; w: number }[]): { 
  */
 export function moveVertex(r: AttachmentRef, i: number, x: number, y: number, keepImage = true, bones?: BoneWorlds): Edit<Skeleton> {
   return (s) => {
+    refuseNonFinite("The vertex", { x, y });
     const { a, f, pos } = meshAt(s, r, bones), n = a.uvs!.length / 2;
     if (!(i >= 0 && i < n)) throw new EditRefused(`The mesh has no vertex ${i}.`);
     if (round(pos[i * 2]!, 4) === round(x, 4) && round(pos[i * 2 + 1]!, 4) === round(y, 4)) return s;
@@ -158,6 +160,7 @@ function reshape(s: Skeleton, r: AttachmentRef, a: Attachment, f: Frame | null, 
 /** Add a vertex at (x, y) inside the mesh; its UV, weights and deform offsets come from the triangle it lands in. */
 export function addVertex(r: AttachmentRef, x: number, y: number, bones?: BoneWorlds): Edit<Skeleton> {
   return (s) => {
+    refuseNonFinite("The vertex", { x, y });
     const { a, f, pos } = meshAt(s, r, bones);
     const at = triangleAt(a, x, y, pos);
     if (!at) throw new EditRefused("A new vertex goes inside the mesh; click on its outline to extend it.");

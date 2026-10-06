@@ -1,5 +1,6 @@
 import type { Animation, Attachment, Skeleton, Skin, SkinSlot } from "@/model/skeleton";
 import { EditRefused, type Edit } from "./history";
+import { refuseNonFinite } from "./finite";
 
 /**
  * Attachment edits (Format-Json-Atlas.md §8). An attachment is stored in a skin, under a slot,
@@ -34,6 +35,7 @@ function onSkinSlot(s: Skeleton, skin: string, slot: string, f: (entries: SkinSl
 /** Add a region attachment. The default skin is created when the skeleton has none yet. */
 export function addRegion(r: AttachmentRef, fields: AttachmentPatch & { width: number; height: number }): Edit<Skeleton> {
   return (s0) => {
+    refuseNonFinite(`Attachment "${r.key}"`, fields);
     if (!r.key.trim()) throw new EditRefused("An attachment needs a name.");
     if (!s0.slots?.some((x) => x.name === r.slot)) throw new EditRefused(`There is no slot "${r.slot}".`);
     if (!(fields.width > 0 && fields.height > 0)) throw new EditRefused("A region needs a width and a height above 0.");
@@ -51,6 +53,7 @@ export function addRegion(r: AttachmentRef, fields: AttachmentPatch & { width: n
 /** Add any attachment as it is given (a box, a point, a path: E5 step 5); the default skin is created when missing. */
 export function addAttachment(r: AttachmentRef, a: Attachment): Edit<Skeleton> {
   return (s0) => {
+    refuseNonFinite(`Attachment "${r.key}"`, a);
     if (!r.key.trim()) throw new EditRefused("An attachment needs a name.");
     if (!s0.slots?.some((x) => x.name === r.slot)) throw new EditRefused(`There is no slot "${r.slot}".`);
     let s = s0;
@@ -150,6 +153,7 @@ export function renameAttachment(r: AttachmentRef, to: string): Edit<Skeleton> {
 /** Set fields of an attachment. */
 export function updateAttachment(r: AttachmentRef, patch: AttachmentPatch): Edit<Skeleton> {
   return (s) => {
+    refuseNonFinite(`Attachment "${r.key}"`, patch);
     const a = findAttachment(s, r);
     if (!a) throw new EditRefused(`There is no attachment "${r.key}" in "${r.slot}" of "${r.skin}".`);
     if ((patch.width !== undefined && !(patch.width > 0)) || (patch.height !== undefined && !(patch.height > 0))) throw new EditRefused("Width and height must be above 0.");
