@@ -11,6 +11,9 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-07 — **ECS port P2 recorded: the skeleton data as an Entities BlobAsset** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
+- [BoneBurst-ECS-Plan](Review/BoneBurst-ECS-Plan.md) §10: `com.module.ta-creator-boneburst-ecs` converts Core's `BlobContent` into a `SkeletonBlobData` BlobAsset byte for byte and rebuilds Core's `BlobView` from it. Guards: 74 EditMode tests over 24 baked fixtures (a deliberate copy bug failed 48 of them) and a subscene bake checked by script. Core is unchanged.
+
 ### 2026-10-07 — **Data and Core move to their own package, `com.module.ta-creator-boneburst-core`** (P1 of [BoneBurst-ECS-Plan](Review/BoneBurst-ECS-Plan.md))
 - `Runtime/Data` (`Module.PA.BoneBurst.Data`) and `Runtime/Core` (`Module.PA.BoneBurst.Core`) moved with their `.meta` files to `Packages/com.module.ta-creator-boneburst-core/Runtime/`. Assembly names, namespaces, GUIDs and `InternalsVisibleTo` lists are unchanged; the new package depends only on collections and mathematics. **Why:** the ECS port takes the pose core without this package's AssetSystem, UniTask and pb-creator-base dependencies, and a copy would break `CLAUDE.md` §4's single source of truth.
 - `package.json` here and in `com.module.ta-creator-boneburst-import` list the core package; `Tools~/ParityHarness/ParityHarness.csproj` compiles Data and Core from it. M2-Creator-All and M2-Sample-25DL-Shader gain a `file:` entry for it in their manifests (M2-Sample's old, dead `M0-Animation2D` path is corrected).
