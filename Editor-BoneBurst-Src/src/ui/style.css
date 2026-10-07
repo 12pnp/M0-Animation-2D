@@ -842,3 +842,14 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 .inspector-tabs button { padding: 4px 12px; font-size: 12px; background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); }
 .inspector-tabs button:hover { color: var(--text); }
 .inspector-tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
+
+/* Motion Path: the node numbers sit under the picture, and the picked node's data under them. */
+.motion-path .lp-slots { border-top: 1px solid var(--line); border-bottom: 0; }
+.lp-data { flex: none; display: flex; flex-direction: column; gap: 4px; padding: 6px 10px; border-top: 1px solid var(--line); font-size: 12px; }
+.lp-data[hidden] { display: none; }
+.lp-data .title { font-weight: 600; }
+.lp-data .hint { color: var(--muted, var(--text)); }
+.lp-data .row { display: flex; align-items: center; gap: 6px; }
+.lp-data .row .k { width: 8em; color: var(--muted, var(--text)); }
+.lp-data input[type=number] { width: 86px; font-family: var(--font-mono); font-size: 12px; padding: 1px 4px; }
+.lp-data .row.buttons button { padding: 1px 10px; font-size: 12px; }

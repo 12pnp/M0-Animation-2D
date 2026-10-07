@@ -4,7 +4,7 @@ import { addNodeTime, blocksOf, curveOf, endFrame, FLAT_SPEED, handleOffsets, mo
 import { drawnVertices } from "@/engine/draw";
 import { boneInherit } from "@/model/defaults";
 import type { Skeleton } from "@/model/skeleton";
-import type { MotionPath } from "@/model/sidecar";
+import type { MotionNode, MotionPath } from "@/model/sidecar";
 import { frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
 import { iconButton } from "../icons";
 import { showContextMenu } from "../contextMenu";
@@ -30,6 +30,8 @@ const LAYERS: readonly Layer[] = ["image", "bone", "path", "spline", "length", "
 const GIZMOS = ["rotate", "move", "scale", "shear"] as const;
 /** The path's dots and the lengths between them. */
 const DOT = "#ff2bd6";
+/** The part of the spline that belongs to the picked node. */
+const SPAN = "#2f80ed";
 /** The top of the block speed graph (its canvas shows speeds 0 to this). */
 const GRAPH_TOP = 3;
 const PAST = "rgb(230, 64, 51)", FUTURE = "rgb(51, 179, 77)";
@@ -183,6 +185,8 @@ export class MotionPathPanel {
   private readonly framesHint = document.createElement("span");
   /** The capture bar (docs/PATH-CAPTURE-PLAN.md): a numbered button for each node (press: put the bone there), a green + to add a slot. */
   private readonly slotBar = document.createElement("div");
+  /** Under the node numbers: the picked node's numbers (Edit Path). */
+  private readonly dataBox = document.createElement("div");
   private slotSig = "";
   /** The path as a held number would leave it (and the two nodes), drawn dashed on the canvas while it is dragged. */
   private nodePreview: { motion: MotionPath; from: number } | null = null;
@@ -287,6 +291,7 @@ export class MotionPathPanel {
       drop: this.button("Remove path", "Forget this bone's path; its keys stay as they are"),
     };
     this.slotBar.className = "lp-slots";
+    this.dataBox.className = "lp-data";
     this.graphBar.className = "lp-graph";
     this.graphBar.hidden = true;
     const presets: [string, string, readonly SpeedPoint[]][] = [
@@ -344,7 +349,8 @@ export class MotionPathPanel {
     this.motionBtns.add.addEventListener("click", () => { if (motionFor(this.session)) this.addNode(); else this.enterDraw(); });
     this.motionBtns.del.addEventListener("click", () => this.removeNode());
     this.motionBtns.drop.addEventListener("click", () => { const m = motionFor(this.session); if (m) { dropMotion(this.session, m.animation, m.bone); this.selNode = -1; this.selTime = -1; } });
-    this.element.append(this.head, this.motionBar, this.slotBar, this.graphBar, this.body);
+    // The picture under the buttons; under it the node numbers, and under them the picked node's data.
+    this.element.append(this.head, this.motionBar, this.graphBar, this.body, this.slotBar, this.dataBox);
     // The canvas is as big as its box, whatever else the panel holds (the path window under it).
     new ResizeObserver(() => this.schedule()).observe(this.body);
     for (const l of LAYERS) {
@@ -1034,9 +1040,11 @@ export class MotionPathPanel {
     if (!m || this.selTime >= nodeTimeFrames(m).length) this.selTime = -1;
     if (this.multi.size) this.multi = new Set([...this.multi].filter((l) => !!m && nodeLabels(m).includes(l)));
     this.slotBar.hidden = !m;
+    this.dataBox.hidden = !m || this.mode === "time";
     const sig = !m ? "" : (this.mode === "draw" ? `d|${JSON.stringify(m.nodes)}|${this.selNode}|${[...this.multi]}` : `t|${JSON.stringify([m.starts, m.speeds, m.frames, m.closed, m.curves ?? []])}|${this.selTime}`);
     if (sig === this.slotSig) return;
     this.slotSig = sig;
+    this.renderData(m);
     const make = (cls: string, text: string, title: string, run: (e: MouseEvent) => void): HTMLButtonElement => {
       const b = this.button(text, title);
       b.className = cls;
@@ -1211,6 +1219,68 @@ export class MotionPathPanel {
       case "merge": if (!draw) return false; this.mergePicked(); return true;
       case "origin": if (!draw) return false; if (this.selNode < 0) this.onStatus("Pick a node first (press its number)."); else this.setOrigin(this.selNode); return true;
     }
+  }
+
+  /**
+   * The picked node's data under the numbers: its place, both handles (the way in follows the way out until the legs are
+   * broken), the legs' state, and the span to the next node. A field commits on Enter or when it loses focus, as one undo step.
+   */
+  private renderData(m: MotionPath | undefined): void {
+    const box = this.dataBox, doc = box.ownerDocument;
+    if (!m || this.mode !== "draw") return;
+    // Not under a field being typed in: it is drawn again once that is done.
+    if (doc.activeElement instanceof HTMLInputElement && box.contains(doc.activeElement)) return;
+    const i = this.selNode, n = m.nodes[i];
+    if (!n) { const hint = doc.createElement("span"); hint.className = "hint"; hint.textContent = "Press a number to see that node's data."; box.replaceChildren(hint); return; }
+    const s = this.session, label = nodeLabels(m)[i]!, h = handleOffsets(m.nodes, m.closed)[i]!, broken = n.bx !== undefined;
+    const r4 = (v: number): number => Math.round(v * 1e4) / 1e4;
+    const patch = (change: Partial<MotionNode>, why: string, pose = false): void => {
+      const cur = motionFor(s);
+      if (!cur?.nodes[i]) return;
+      keepMotion(s, { ...cur, nodes: cur.nodes.map((q, k) => (k === i ? { ...q, ...change } : q)) }, why, true);
+      if (pose) { const q = motionFor(s)!.nodes[i]!; poseAtNode(s, q.x, q.y, this.chosenParent()); }
+      setTimeout(() => { this.slotSig = ""; this.schedule(); });
+    };
+    const num = (value: number, off: boolean, aria: string, run: (v: number) => void): HTMLInputElement => {
+      const input = doc.createElement("input");
+      input.type = "number";
+      input.step = "0.1";
+      input.value = String(r4(value));
+      input.disabled = off;
+      input.setAttribute("aria-label", aria);
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); input.blur(); } if (e.key === "Escape") { input.value = String(r4(value)); input.blur(); } });
+      input.addEventListener("change", () => { const v = Number(input.value); if (Number.isFinite(v)) run(r4(v)); else input.value = String(r4(value)); });
+      return input;
+    };
+    const pair = (name: string, a: HTMLInputElement, b: HTMLInputElement, extra?: HTMLElement): HTMLElement => {
+      const row = doc.createElement("div"), l = doc.createElement("span"), ax = doc.createElement("span"), bx = doc.createElement("span");
+      row.className = "row";
+      l.className = "k";
+      l.textContent = name;
+      ax.textContent = "x";
+      bx.textContent = "y";
+      row.append(l, ax, a, bx, b);
+      if (extra) row.append(extra);
+      return row;
+    };
+    const last = i === m.nodes.length - 1, first = i === 0, noOut = !m.closed && last, noIn = !m.closed && first;
+    const title = doc.createElement("div");
+    title.className = "title";
+    const curve = curveOf(m), a0 = curve.nodeAt[i], a1 = curve.nodeAt[i + 1], next = m.nodes[(i + 1) % m.nodes.length];
+    title.textContent = `Node ${label} · place ${i + 1} of ${m.nodes.length}${a0 !== undefined && a1 !== undefined && next && (m.closed || !last) ? ` · span to node ${nodeLabels(m)[(i + 1) % m.nodes.length]}: ${r4(a1 - a0)} long` : ""}`;
+    const auto = this.button("Auto", "Put both handles back to automatic (the curve decides)");
+    auto.disabled = n.tx === undefined && !broken;
+    auto.addEventListener("click", () => { const cur = motionFor(s); if (cur) { keepMotion(s, { ...cur, nodes: cur.nodes.map((q, k) => { if (k !== i) return q; const { tx: _a, ty: _b, bx: _c, by: _d, ...rest } = q; return rest; }) }, "Reset a handle"); } });
+    const legs = this.button(broken ? "Mirror legs" : "Break legs", broken ? "The way in follows the way out again" : "Each handle moves on its own");
+    legs.addEventListener("click", () => this.setLegs(i, !broken));
+    const ox = num(h.out.x, noOut, "Way out, x", (v) => patch({ tx: v, ty: h.out.y }, "Bend the path")), oy = num(h.out.y, noOut, "Way out, y", (v) => patch({ tx: h.out.x, ty: v }, "Bend the path"));
+    const ix = num(h.in.x, noIn || !broken, "Way in, x", (v) => patch({ bx: v, by: h.in.y }, "Bend the path")), iy = num(h.in.y, noIn || !broken, "Way in, y", (v) => patch({ bx: h.in.x, by: v }, "Bend the path"));
+    const buttons = doc.createElement("div");
+    buttons.className = "row buttons";
+    buttons.append(legs, auto);
+    box.replaceChildren(title,
+      pair("Place", num(n.x, false, "Node x", (v) => patch({ x: v, y: n.y }, "Move a spline node", true)), num(n.y, false, "Node y", (v) => patch({ x: n.x, y: v }, "Move a spline node", true))),
+      pair("Way out", ox, oy), pair(broken ? "Way in" : "Way in (mirror)", ix, iy), buttons);
   }
 
   /** What the panel keeps of how it was left, for the project's remembered view (ui/viewMemory.ts). */
@@ -1541,6 +1611,26 @@ export class MotionPathPanel {
     if (!m || this.space !== "parent" || !this.show.spline) return;
     const curve = curveOf(m), draw = this.mode === "draw";
     g.save();
+    // The picked node's span (to the next node; the last of an open path: the span into it) lit under the curve, so a number shows which part of the path it owns.
+    const lit = this.selNode;
+    if (draw && lit >= 0 && lit < m.nodes.length) {
+      const end = !m.closed && lit === m.nodes.length - 1, from = curve.nodeAt[end ? lit - 1 : lit], to = curve.nodeAt[end ? lit : lit + 1];
+      if (from !== undefined && to !== undefined && to > from) {
+        g.save();
+        g.strokeStyle = SPAN;
+        g.globalAlpha = 0.9;
+        g.lineWidth = 6;
+        g.lineCap = "round";
+        g.lineJoin = "round";
+        g.beginPath();
+        for (let k = 0; k <= 48; k++) {
+          const p = curve.at(from + ((to - from) * k) / 48), [x, y] = at(p.x, p.y);
+          if (k === 0) g.moveTo(x, y); else g.lineTo(x, y);
+        }
+        g.stroke();
+        g.restore();
+      }
+    }
     // Edit Path draws the curve as a graph editor does: a solid line in the accent colour, filled square nodes, hollow round handles on thin stems.
     g.strokeStyle = draw ? accent : "#ffffff";
     g.globalAlpha = draw ? 1 : 0.35;

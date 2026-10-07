@@ -10,6 +10,8 @@ async function open(page: Page): Promise<void> {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
+  // The page being left wrote its remembered view as it went: this one starts clean.
+  await page.evaluate(() => localStorage.clear());
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".stage-panel button.mode").click();
@@ -165,4 +167,34 @@ test("Break the legs: the right-click menu breaks a node's legs and mirrors them
   await page.mouse.up();
   await page.keyboard.up("Alt");
   expect((await node(0)).bx).toBeDefined();
+});
+
+test("the node numbers sit under the picture and the picked node's data under them: place, both handles, legs; a field commits as one undo step", async ({ page }) => {
+  await open(page);
+  const panel = page.locator(".panel.motion-path");
+  await startEditPath(panel);
+  await expect(panel.locator(".lp-slots button.node").first()).toBeVisible();
+  await expect(panel.locator(".lp-data")).toBeVisible();
+  const canvas = (await panel.locator(".lp-body").boundingBox())!, strip = (await panel.locator(".lp-slots").boundingBox())!, data = (await panel.locator(".lp-data").boundingBox())!;
+  expect(strip.y).toBeGreaterThanOrEqual(canvas.y + canvas.height - 1);
+  expect(data.y).toBeGreaterThanOrEqual(strip.y + strip.height - 1);
+  const node = (k: number) => page.evaluate((i) => (window as unknown as { boneburst: { session: { sidecar: { motion: { nodes: { x: number; y: number; bx?: number }[] }[] } } } }).boneburst.session.sidecar.motion[0]!.nodes[i]!, k);
+  await panel.locator(".lp-slots button.node").nth(1).click();
+  await expect(panel.locator(".lp-data .title")).toContainText("Node 2");
+  const x = panel.locator(".lp-data").getByLabel("Node x");
+  await x.fill("123.5");
+  await x.press("Enter");
+  expect((await node(1)).x).toBe(123.5);
+  await expect(panel.locator(".lp-data").getByLabel("Way in, x")).toBeDisabled();
+  await panel.locator(".lp-data").getByRole("button", { name: "Break legs" }).click();
+  expect((await node(1)).bx).toBeDefined();
+  await expect(panel.locator(".lp-data").getByLabel("Way in, x")).toBeEnabled();
+  const before = (await node(1)).bx;
+  const inx = panel.locator(".lp-data").getByLabel("Way in, x");
+  await inx.fill("17");
+  await inx.press("Enter");
+  expect((await node(1)).bx).toBe(17);
+  expect(before).not.toBe(17);
+  await undo(page, "undo");
+  expect((await node(1)).bx).toBe(before);
 });
