@@ -1912,6 +1912,9 @@ export class MotionPathPanel {
         return;
       }
     }
+    // Only the middle button pans: a left press on empty space does nothing, so a slip never moves the view.
+    if (e.button !== 1) return;
+    e.preventDefault();
     this.dragging = { x: e.clientX, y: e.clientY };
     try { this.canvas.setPointerCapture(e.pointerId); } catch { /* no such pointer: the pan still follows moves over the canvas */ }
     this.canvas.style.cursor = "grabbing";

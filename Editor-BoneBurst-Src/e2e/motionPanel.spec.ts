@@ -133,7 +133,7 @@ test("Onion: a button on the Timeline bar turns onion skin on and off, and Motio
   expect((await tints()).green).toBeGreaterThan(off.green + 50);
 });
 
-test("Motion Path zooms with the wheel, pans by dragging, and Fit (top right) shows it whole again", async ({ page }) => {
+test("Motion Path zooms with the wheel, pans only with the middle button (a left drag on empty canvas does nothing), and Fit (top right) shows it whole again", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
@@ -156,11 +156,17 @@ test("Motion Path zooms with the wheel, pans by dragging, and Fit (top right) sh
   await page.mouse.wheel(0, -400);
   await expect.poll(picture).not.toBe(whole);
   const zoomed = await picture();
-  // A drag on empty canvas pans.
+  // A left drag on empty canvas does not pan; a middle drag does.
   await page.mouse.move(box.x + 20, box.y + box.height - 20);
   await page.mouse.down();
   await page.mouse.move(box.x + 70, box.y + box.height - 60, { steps: 4 });
   await page.mouse.up();
+  await page.waitForTimeout(200);
+  expect(await picture()).toBe(zoomed);
+  await page.mouse.move(box.x + 20, box.y + box.height - 20);
+  await page.mouse.down({ button: "middle" });
+  await page.mouse.move(box.x + 70, box.y + box.height - 60, { steps: 4 });
+  await page.mouse.up({ button: "middle" });
   await expect.poll(picture).not.toBe(zoomed);
   await panel.locator(".lp-fit").click();
   await expect.poll(picture).toBe(whole);
