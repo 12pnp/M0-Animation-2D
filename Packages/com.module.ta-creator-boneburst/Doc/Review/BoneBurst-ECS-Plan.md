@@ -524,3 +524,16 @@ flowchart LR
 4.  **Guards:** the on-screen check, and `RenderMaterialTests` (ConfigureRim reaches the material and picks the page's mask; a deliberate bug that zeroed the strength failed it). 383 EditMode tests pass. The painted-mask path was not seen on screen (no `_rim.png` sample was used: white mask), and the rim's per-asset-mask lookup by page is covered by the unit test only.
 
 **Not covered:** a painted rim mask on screen, rim with a rotated atlas region or flipped skeleton, IL2CPP. Status: done.
+
+
+## 21. P12 (2026-10-07): IL2CPP build and player comparison: blocked, not started
+
+```mermaid
+flowchart LR
+    ED["Editor 7000.0.0a7<br/>PlaybackEngines/MacStandaloneSupport/Variations"] --> CL["coreclr player variations only<br/>(development, nondevelopment)"]
+    CL -.->|"no IL2CPP variation"| X["ECS player cannot be IL2CPP"]
+    E6["Entities 6.7.0 / Graphics 6.7.0"] -->|"need Unity 7000"| ED
+    M6["M0 Editor 6000.6.4f1<br/>IL2CPP benchmark player"] -.->|"cannot load Entities 6.7"| X
+```
+
+Checked on disk: the 7000.0.0a7 Editor has `IL2CPP` in `ScriptingImplementation` but its macOS support ships only `macos_arm64_player_{development,nondevelopment}_coreclr`, so an IL2CPP player cannot be built; the ECS packages are built on this Editor only (Entities 6.7). The MonoBehaviour benchmark is the IL2CPP player from 6000.6.4f1. A like-for-like comparison therefore needs one of: (a) the MonoBehaviour benchmark built as a CoreCLR player on 7000 (a second project or a port of the benchmark), (b) an IL2CPP module for 7000.0.0a7 when one ships, (c) the ECS port on Entities for 6000.6 (a large port). No code changed. Status: blocked on that choice.

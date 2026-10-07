@@ -11,6 +11,10 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-07 — **ECS port P12 checked: an IL2CPP ECS player cannot be built with this Editor** (docs only; no code changed)
+
+Plan [BoneBurst-ECS-Plan.md](Review/BoneBurst-ECS-Plan.md) §21. Unity 7000.0.0a7 ships only CoreCLR macOS player variations; a like-for-like backend comparison needs a CoreCLR build of the MonoBehaviour benchmark, an IL2CPP module, or an Entities 6000.6 port. Not verified: nothing was built.
+
 ### 2026-10-07 — **ECS port P11 recorded: rim light on the ECS Lit2D shader, tint black and rim seen in a player** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
 
 Plan [BoneBurst-ECS-Plan.md](Review/BoneBurst-ECS-Plan.md) §20. Rim light (authoring fields, baked settings and masks, per-material rim, shader port) built; tint black checked on both routes with a dark-coloured spineboy written through Core's writer. Both match between Editor and a macOS player. Guarded by the on-screen check and `RenderMaterialTests`; painted masks, rotated regions and IL2CPP not covered.
