@@ -48,7 +48,7 @@ test("autosave keeps unsaved work; after a reload Restore gives it back unsaved;
   await page.evaluate(async () => {
     localStorage.clear();
     // A copy every 5 s (the shortest the preferences allow).
-    localStorage.setItem("boneburst.preferences", JSON.stringify({ version: 1, autosave: true, autosaveSeconds: 5 }));
+    localStorage.setItem("boneburst.preferences", JSON.stringify({ version: 1, autosave: true, autosaveSeconds: 5, saveTo: "file" }));
     await new Promise((ok) => { const r = indexedDB.deleteDatabase("boneburst-editor"); r.onsuccess = r.onerror = r.onblocked = ok; });
   });
   await page.reload();
@@ -100,4 +100,31 @@ test("autosave keeps unsaved work; after a reload Restore gives it back unsaved;
   page.on("download", (d) => names.push(d.suggestedFilename()));
   await menuItem(page, "File", "Save Project(?! As)");
   await expect.poll(() => names).toEqual(["figure.bbdata"]);
+});
+
+test("Save with the default (this browser) downloads nothing, keeps the project here, and a reload offers it back as saved; Save Project As… still writes a file", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await new Promise((ok) => { const r = indexedDB.deleteDatabase("boneburst-editor"); r.onsuccess = r.onerror = r.onblocked = ok; });
+  });
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  let downloads = 0;
+  page.on("download", () => { downloads++; });
+  await menuItem(page, "File", "Save Project(?! As)");
+  await expect(page.locator(".message")).toContainText("in this browser");
+  await expect(page.locator(".flash")).toContainText("Saved in this browser");
+  await expect(page.locator(".flash .detail")).toContainText("Stickman_IK.json");
+  await expect(page.locator(".flash")).toHaveCount(0);
+  expect(downloads).toBe(0);
+  // Nothing unsaved, yet the copy is kept (it is the save).
+  await page.reload();
+  const bar = page.locator(".recovery-bar");
+  await expect(bar).toContainText("saved in this browser");
+  await bar.getByRole("button", { name: "Restore" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  await expect(page.locator(".message")).toContainText("as saved");
+  await expect(bar).toHaveCount(0);
 });

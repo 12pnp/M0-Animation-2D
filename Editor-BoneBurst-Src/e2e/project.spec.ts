@@ -17,7 +17,7 @@ async function menuItem(page: Page, menu: string, item: string): Promise<void> {
 
 test("Save Project writes one .bbdata that opens as the same rig; Export Spine JSON writes the three Spine files", async ({ page }) => {
   await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
+  await page.evaluate(() => { localStorage.clear(); localStorage.setItem("boneburst.preferences", JSON.stringify({ version: 1, saveTo: "file" })); });
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
@@ -56,7 +56,7 @@ test("Save Project writes one .bbdata that opens as the same rig; Export Spine J
 
 test("New Project opens a blank rig in its own tab, clean until edited, and the open rig stays in its tab", async ({ page }) => {
   await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
+  await page.evaluate(() => { localStorage.clear(); localStorage.setItem("boneburst.preferences", JSON.stringify({ version: 1, saveTo: "file" })); });
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
@@ -72,7 +72,7 @@ test("Open dialog: + works where the browser cannot keep folders: the folder's p
   await page.addInitScript(() => { (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker = undefined; });
   // A folder holding one project: the stickman, saved as .bbdata by the editor itself.
   await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
+  await page.evaluate(() => { localStorage.clear(); localStorage.setItem("boneburst.preferences", JSON.stringify({ version: 1, saveTo: "file" })); });
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
@@ -93,7 +93,7 @@ test("Open dialog: + works where the browser cannot keep folders: the folder's p
 test("a project remembers the selected bone and the animation shown, and opens on them", async ({ page }) => {
   type Remembered = { boneburst: { session: { selectedBone: string | null; animation: { name: string } | null; doc: { animations?: { name: string }[] }; select(s: unknown): void; showAnimation(n: string | null): void } } };
   await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
+  await page.evaluate(() => { localStorage.clear(); localStorage.setItem("boneburst.preferences", JSON.stringify({ version: 1, saveTo: "file" })); });
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();

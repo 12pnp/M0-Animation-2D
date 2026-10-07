@@ -945,6 +945,10 @@ export class MotionPathPanel {
    * docs/PATH-CAPTURE-PLAN.md); in Adjust time a tab for each block (its frames and its multiplier).
    */
   private renderStrip(m: MotionPath | undefined): void {
+    // An undo can take a node or a node time away: what was picked goes with it.
+    if (!m || this.selNode >= m.nodes.length) this.selNode = -1;
+    if (!m || this.selTime >= nodeTimeFrames(m).length) this.selTime = -1;
+    if (this.multi.size) this.multi = new Set([...this.multi].filter((l) => !!m && nodeLabels(m).includes(l)));
     this.slotBar.hidden = !m;
     const sig = !m ? "" : (this.mode === "draw" ? `d|${JSON.stringify(m.nodes)}|${this.selNode}|${[...this.multi]}` : `t|${JSON.stringify([m.starts, m.speeds, m.frames, m.closed, m.curves ?? []])}|${this.selTime}`);
     if (sig === this.slotSig) return;
@@ -1122,7 +1126,7 @@ export class MotionPathPanel {
     if (!n) { this.onStatus("Pick a node first (press its number, or Q and W)."); return true; }
     const d = step * (big ? bigFactor : 1), dx = dir === "left" ? -d : dir === "right" ? d : 0, dy = dir === "up" ? d : dir === "down" ? -d : 0;
     const x = Math.round((n.x + dx) * 1e4) / 1e4, y = Math.round((n.y + dy) * 1e4) / 1e4;
-    keepMotion(s, { ...m, nodes: m.nodes.map((q, i) => (i === this.selNode ? { ...q, x, y } : q)) });
+    keepMotion(s, { ...m, nodes: m.nodes.map((q, i) => (i === this.selNode ? { ...q, x, y } : q)) }, "Move a spline node", true);
     poseAtNode(s, x, y);
     return true;
   }
@@ -1166,7 +1170,7 @@ export class MotionPathPanel {
     if (!m || !n) return;
     const cur = currentNode(s);
     if (!cur || Math.hypot(cur.x - n.x, cur.y - n.y) < 1e-3) return;
-    keepMotion(s, { ...m, nodes: m.nodes.map((x, i) => (i === this.selNode ? { ...n, x: cur.x, y: cur.y } : x)) });
+    keepMotion(s, { ...m, nodes: m.nodes.map((x, i) => (i === this.selNode ? { ...n, x: cur.x, y: cur.y } : x)) }, "Move a spline node", true);
   }
 
   /** Edit Path: start a path for the bone (two spline nodes: where it is, and that plus an offset), or go back to drawing the one it has. */
@@ -1175,7 +1179,7 @@ export class MotionPathPanel {
     if (!m) {
       const started = startMotion(s);
       if (!started) { this.onStatus("Select a bone in Animate mode, then Edit Path."); return; }
-      keepMotion(s, started);
+      keepMotion(s, started, `Start a path for ${started.bone}`);
       // Node 2 is picked and the bone goes to it; node 1 is one press away.
       this.pickSlot(1);
       this.onStatus(`${started.bone}: two spline nodes (where it is, and an offset). Press a number to put the bone on that node, then move the bone or drag the node; + adds a node; then Bake.`);
@@ -1281,7 +1285,7 @@ export class MotionPathPanel {
     if (!m) return;
     try {
       const next = withOrigin(m, i);
-      keepMotion(s, next);
+      keepMotion(s, next, `Set ${nodeLabels(m)[i]} to origin`);
       if (this.selNode >= 0) this.selNode = nodeLabels(next).indexOf(nodeLabels(m)[this.selNode]!);
       this.slotSig = "";
       this.onStatus(`The path now starts at ${nodeLabels(next)[0]} and runs ${nodeLabels(next).join(", ")}.`);
@@ -1294,7 +1298,7 @@ export class MotionPathPanel {
     const s = this.session, m = motionFor(s);
     if (!m || from === to || from < 0 || to < 0 || from >= m.nodes.length || to >= m.nodes.length) return;
     const next = moveNode(m, from, to);
-    keepMotion(s, next);
+    keepMotion(s, next, "Reorder the spline nodes");
     // The picked node keeps its place in the order as the others shift.
     if (this.selNode === from) this.selNode = to;
     else if (this.selNode >= 0) this.selNode = nodeLabels(next).indexOf(nodeLabels(m)[this.selNode]!);
@@ -1327,7 +1331,7 @@ export class MotionPathPanel {
     if (!m) return;
     try {
       const next = mergeNodes(m, this.pickedPlaces()), keep = nodeLabels(m)[this.pickedPlaces()[0]!]!;
-      keepMotion(s, next);
+      keepMotion(s, next, "Merge spline nodes");
       this.multi.clear();
       this.selNode = nodeLabels(next).indexOf(keep);
       this.slotSig = "";
@@ -1340,7 +1344,7 @@ export class MotionPathPanel {
   private sortNumbers(): void {
     const s = this.session, m = motionFor(s);
     if (!m) return;
-    keepMotion(s, renumberNodes(m));
+    keepMotion(s, renumberNodes(m), "Sort the node numbers");
     this.multi.clear();
     this.slotSig = "";
     this.onStatus("The numbers are 1 to " + m.nodes.length + " again; the path is unchanged.");
@@ -1352,7 +1356,7 @@ export class MotionPathPanel {
     const s = this.session, m = motionFor(s);
     if (!m) return;
     const next = reversePath(m);
-    keepMotion(s, next);
+    keepMotion(s, next, "Reverse the path");
     if (this.selNode >= 0) this.selNode = nodeLabels(next).indexOf(nodeLabels(m)[this.selNode]!);
     this.slotSig = "";
     this.onStatus(`The path now runs ${nodeLabels(next).join(", ")}.`);
@@ -1366,10 +1370,10 @@ export class MotionPathPanel {
     const mid = this.selNode >= 0 ? midAfter(m, this.selNode) : null;
     if (mid) {
       const at = this.selNode + 1;
-      keepMotion(s, withNode(m, { x: Math.round(mid.x * 1e4) / 1e4, y: Math.round(mid.y * 1e4) / 1e4 }, at));
+      keepMotion(s, withNode(m, { x: Math.round(mid.x * 1e4) / 1e4, y: Math.round(mid.y * 1e4) / 1e4 }, at), "Add a spline node");
       this.selNode = at;
     } else {
-      keepMotion(s, withNode(m, nodeAfter(s, m.nodes.at(-1)!)));
+      keepMotion(s, withNode(m, nodeAfter(s, m.nodes.at(-1)!)), "Add a spline node");
       this.selNode = m.nodes.length;
     }
     this.multi.clear();
@@ -1507,14 +1511,14 @@ export class MotionPathPanel {
     const n = m.nodes[hd.slot];
     if (!n) return;
     const dx = at[0] - n.x, dy = at[1] - n.y, sign = hd.side === "out" ? 1 : -1;
-    keepMotion(this.session, { ...m, nodes: m.nodes.map((o, i) => (i === hd.slot ? { ...o, tx: sign * dx, ty: sign * dy } : o)) });
+    keepMotion(this.session, { ...m, nodes: m.nodes.map((o, i) => (i === hd.slot ? { ...o, tx: sign * dx, ty: sign * dy } : o)) }, "Bend the path");
   }
 
   /** Back to the automatic handle at the one under the point (a double click on it). */
   private resetHandleAt(x: number, y: number): boolean {
     const h = this.handleAt(x, y), m = motionFor(this.session);
     if (!h || !m || this.mode !== "draw") return false;
-    keepMotion(this.session, { ...m, nodes: m.nodes.map((o, i) => { if (i !== h.slot) return o; const { tx: _a, ty: _b, ...rest } = o; return rest; }) });
+    keepMotion(this.session, { ...m, nodes: m.nodes.map((o, i) => { if (i !== h.slot) return o; const { tx: _a, ty: _b, ...rest } = o; return rest; }) }, "Reset a handle");
     return true;
   }
 
@@ -1545,8 +1549,8 @@ export class MotionPathPanel {
   }
 
   /** Keep a changed path; the keys are only written by Bake to timeline. */
-  private timeEdit(next: MotionPath, say?: string): void {
-    keepMotion(this.session, next);
+  private timeEdit(next: MotionPath, say?: string, label = `Edit the timing of ${next.bone}`, join = false): void {
+    keepMotion(this.session, next, label, join);
     if (say) this.onStatus(say);
   }
 
@@ -1562,7 +1566,7 @@ export class MotionPathPanel {
         frame = Math.round((longest.start + longest.end) / 2);
       }
       const next = addNodeTime(m, frame);
-      this.timeEdit(next, `Added a node time on frame ${frame}.`);
+      this.timeEdit(next, `Added a node time on frame ${frame}.`, "Add a node time");
       this.selTime = nodeTimeFrames(next).indexOf(frame);
     } catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); }
   }
@@ -1570,7 +1574,7 @@ export class MotionPathPanel {
   private removePickedTime(): void {
     const m = motionFor(this.session);
     if (!m || this.selTime < 0) return;
-    try { this.timeEdit(removeNodeTime(m, this.selTime), "Removed the node time."); this.selTime = -1; }
+    try { this.timeEdit(removeNodeTime(m, this.selTime), "Removed the node time.", "Remove a node time"); this.selTime = -1; }
     catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); }
   }
 
@@ -1580,7 +1584,7 @@ export class MotionPathPanel {
     if (!m || this.selTime < 1) return;
     try {
       const next = moveNodeTime(m, this.selTime, Number(this.frameField.value));
-      this.timeEdit(next);
+      this.timeEdit(next, undefined, "Move a node time", true);
       this.frameField.value = String(nodeTimeFrames(next)[this.selTime]);
     } catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); this.frameField.value = String(nodeTimeFrames(m)[this.selTime]); }
   }
@@ -1589,7 +1593,7 @@ export class MotionPathPanel {
   private setPickedSpeed(): void {
     const m = motionFor(this.session);
     if (!m || this.selTime < 0) return;
-    try { this.timeEdit(withSpeed(m, this.selTime, Number(this.speedField.value))); }
+    try { this.timeEdit(withSpeed(m, this.selTime, Number(this.speedField.value)), undefined, "Set a block multiplier", true); }
     catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); this.speedField.value = String(blocksOf(m)[this.selTime]!.speed); }
   }
 
@@ -1597,7 +1601,7 @@ export class MotionPathPanel {
   private setFrames(): void {
     const m = motionFor(this.session);
     if (!m) return;
-    try { this.timeEdit(withFrames(m, Math.round(Number(this.framesField.value))), `${Math.round(Number(this.framesField.value))} frames.`); }
+    try { this.timeEdit(withFrames(m, Math.round(Number(this.framesField.value))), `${Math.round(Number(this.framesField.value))} frames.`, "Set the total frames", true); }
     catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); this.framesField.value = String(m.frames); }
   }
 
@@ -1605,14 +1609,14 @@ export class MotionPathPanel {
   private setClosed(on: boolean): void {
     const m = motionFor(this.session);
     if (!m) return;
-    this.timeEdit({ ...m, closed: on }, on ? "The spline is a ring." : "The spline is open: it ends on its last node.");
+    this.timeEdit({ ...m, closed: on }, on ? "The spline is a ring." : "The spline is open: it ends on its last node.", on ? "Close the path into a ring" : "Open the ring");
   }
 
   private removeNode(): void {
     const m = motionFor(this.session);
     if (!m || this.selNode < 0 || this.selNode >= m.nodes.length) return;
     if (m.nodes.length <= 2) { this.onStatus("A path keeps two spline nodes."); return; }
-    keepMotion(this.session, { ...m, nodes: m.nodes.filter((_, i) => i !== this.selNode) });
+    keepMotion(this.session, { ...m, nodes: m.nodes.filter((_, i) => i !== this.selNode) }, "Remove a spline node");
     this.selNode = -1;
   }
 
@@ -1623,7 +1627,7 @@ export class MotionPathPanel {
     const curve = curveOf(m), hit = curve.project({ x: at[0], y: at[1] }), k = this.mapping?.k ?? 1;
     if (hit.distance * k > 10) return false;
     const i = curve.nodeAt.slice(0, m.nodes.length).filter((v) => v <= hit.s).length, p = curve.at(hit.s);
-    keepMotion(this.session, withNode(m, { x: p.x, y: p.y }, i));
+    keepMotion(this.session, withNode(m, { x: p.x, y: p.y }, i), "Add a spline node");
     this.selNode = i;
     return true;
   }
@@ -1642,7 +1646,7 @@ export class MotionPathPanel {
       if (d < bestD) { best = f; bestD = d; }
     }
     if (best < 0) return true;
-    try { const next = addNodeTime(m, best); this.timeEdit(next, `Added a node time on frame ${best}.`); this.selTime = nodeTimeFrames(next).indexOf(best); }
+    try { const next = addNodeTime(m, best); this.timeEdit(next, `Added a node time on frame ${best}.`, "Add a node time"); this.selTime = nodeTimeFrames(next).indexOf(best); }
     catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); }
     return true;
   }
@@ -1666,11 +1670,11 @@ export class MotionPathPanel {
         return;
       }
       const hnd = this.mode === "draw" ? this.handleAt(x, y) : null;
-      if (hnd) { this.selNode = hnd.slot; this.handleDrag = hnd; this.grab(e); return; }
+      if (hnd) { this.selNode = hnd.slot; this.handleDrag = hnd; this.session.history?.begin("Bend the path"); this.grab(e); return; }
       const tm = this.mode === "time" ? this.timeAt(x, y) : -1;
       if (tm >= 0) { this.pickTime(tm); return; }
       const node = this.mode === "draw" ? this.nodeAt(x, y) : -1;
-      if (node >= 0) { this.pickSlot(node); this.nodeDrag = node; this.grab(e); return; }
+      if (node >= 0) { this.pickSlot(node); this.nodeDrag = node; this.session.history?.begin("Move a spline node"); this.grab(e); return; }
       const h = this.handle;
       if (h && !this.timing && Math.hypot(h.x - x, h.y - y) <= 11 && this.beginEdit(x, y, "rotate", this.session.frame)) { this.grab(e); return; }
       const sc = this.scaleHandle, sh = this.shearHandle;
@@ -1736,6 +1740,8 @@ export class MotionPathPanel {
 
   private up(e: PointerEvent): void {
     this.scrubbing = false;
+    // A node or a handle dragged is one step, taken when it is let go.
+    if (this.nodeDrag !== null || this.handleDrag) this.session.history?.end();
     this.nodeDrag = null;
     this.handleDrag = null;
     const edit = this.edit;

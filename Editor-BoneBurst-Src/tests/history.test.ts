@@ -149,3 +149,58 @@ describe("History entries and goTo (E7 step 1)", () => {
     expect(h.entries).toEqual({ labels: ["x 13", "x 14"], done: 2, dropped: 2 });
   });
 });
+
+describe("History with state kept beside the document", () => {
+  const make = () => {
+    let side: readonly number[] = [];
+    const h = new History(doc());
+    h.link({ read: () => side, write: (v) => { side = v as readonly number[]; } });
+    return { h, get side() { return side; }, set: (v: readonly number[]) => { side = v; } };
+  };
+  it("makes a step of a change beside the document, undone and redone with it", () => {
+    const t = make();
+    expect(t.h.applyBeside("add", () => t.set([1]))).toBe(true);
+    expect(t.h.undoLabel).toBe("add");
+    t.h.undo();
+    expect(t.side).toEqual([]);
+    t.h.redo();
+    expect(t.side).toEqual([1]);
+    expect(t.h.applyBeside("same", () => t.set(t.side))).toBe(false);
+  });
+  it("takes a gesture's document and side changes as one step", () => {
+    const t = make();
+    t.h.begin("bake");
+    t.h.apply("", updateBone("hip", { x: 9 }));
+    t.set([7]);
+    t.h.end();
+    expect(t.h.entries.labels).toEqual(["bake"]);
+    t.h.undo();
+    expect(t.side).toEqual([]);
+    expect(bone(t.h.doc, "hip")!.x).toBe(1);
+  });
+  it("lets a document step undo without rolling back a later side change", () => {
+    const t = make();
+    t.h.apply("move", updateBone("hip", { x: 4 }));
+    t.h.applyBeside("path", () => t.set([2]));
+    t.h.undo();
+    t.h.undo();
+    expect(t.side).toEqual([]);
+    t.h.redo();
+    expect(t.side).toEqual([]);
+    t.h.redo();
+    expect(t.side).toEqual([2]);
+  });
+  it("joins quick steps of one label into one, and a drag cancelled puts the side back", () => {
+    const t = make();
+    t.h.applyBeside("type", () => t.set([1]), true);
+    t.h.applyBeside("type", () => t.set([2]), true);
+    expect(t.h.entries.labels).toEqual(["type"]);
+    t.h.undo();
+    expect(t.side).toEqual([]);
+    t.h.redo();
+    t.h.begin("drag");
+    t.set([5]);
+    t.h.cancel();
+    expect(t.side).toEqual([2]);
+  });
+});

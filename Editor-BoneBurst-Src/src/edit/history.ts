@@ -10,13 +10,24 @@ export class EditRefused extends Error {}
 
 export type Edit<D> = (doc: D) => D;
 
-interface Entry<D> { readonly label: string; readonly before: D; readonly after: D }
+/**
+ * State kept beside the document that undo should carry too (the motion paths, which live in the sidecar): read when a step is
+ * made, written back when it is undone or redone. Only steps that changed it hold its values, so undoing an older step never
+ * rolls back what was changed beside it later.
+ */
+export interface Beside { read(): unknown; write(value: unknown): void }
+
+/** Edits of this label, made this soon after the last step, join it: a field typed in, a key held down. */
+const JOIN_MS = 700;
+
+interface Entry<D> { readonly label: string; readonly before: D; after: D; side?: { before: unknown; after: unknown }; at?: number }
 
 export class History<D> {
   private current: D;
   private readonly past: Entry<D>[] = [];
   private future: Entry<D>[] = [];
-  private gesture: { label: string; start: D } | null = null;
+  private gesture: { label: string; start: D; side: unknown } | null = null;
+  private beside: Beside | null = null;
   /** Steps dropped from the start for the limit: the oldest kept step is not the first one made. */
   private droppedSteps = 0;
   /** Bumped on every change, so a view can tell whether it is stale. */
@@ -25,6 +36,9 @@ export class History<D> {
   constructor(doc: D, private readonly limit = 500) {
     this.current = settle(doc);
   }
+
+  /** Make undo and redo carry `beside` too. */
+  link(beside: Beside): void { this.beside = beside; }
 
   get doc(): D { return this.current; }
   get canUndo(): boolean { return this.past.length > 0 && !this.gesture; }
@@ -69,7 +83,7 @@ export class History<D> {
   /** Start a gesture: what `apply` does until `end` is one step labelled `label`. */
   begin(label: string): void {
     if (this.gesture) this.end();
-    this.gesture = { label, start: this.current };
+    this.gesture = { label, start: this.current, side: this.beside?.read() };
   }
 
   /** End the gesture: one step, or none if it ends on the very document it started from (identity,
@@ -78,7 +92,33 @@ export class History<D> {
     const g = this.gesture;
     if (!g) return;
     this.gesture = null;
-    if (this.current !== g.start) this.record(g.label, g.start, this.current);
+    const side = this.beside?.read();
+    if (this.current !== g.start || side !== g.side) this.record(g.label, g.start, this.current, g.side);
+  }
+
+  /**
+   * Run `change`, which alters what is kept beside the document, as one step labelled `label` (inside a gesture it belongs to the
+   * gesture). With `join`, a step of the same label made a moment ago, and still the last, takes it in instead of adding another.
+   * Returns false, and records nothing, when it changed nothing.
+   */
+  applyBeside(label: string, change: () => void, join = false): boolean {
+    const b = this.beside;
+    if (!b) { change(); return false; }
+    const before = b.read();
+    change();
+    const after = b.read();
+    if (after === before) return false;
+    if (this.gesture) return true;
+    const last = this.past.at(-1), now = Date.now();
+    if (join && last?.side && last.label === label && last.after === this.current && last.at !== undefined && now - last.at < JOIN_MS && this.future.length === 0) {
+      last.side.after = after;
+      last.at = now;
+    } else {
+      this.record(label, this.current, this.current, before);
+      this.past.at(-1)!.at = now;
+    }
+    this.revision++;
+    return true;
   }
 
   /** Abandon the gesture: back to the document it started from, nothing recorded. */
@@ -87,6 +127,7 @@ export class History<D> {
     if (!g) return;
     this.gesture = null;
     this.set(g.start);
+    this.beside?.write(g.side);
   }
 
   undo(): boolean {
@@ -94,6 +135,7 @@ export class History<D> {
     if (!e) return false;
     this.future.push(e);
     this.set(e.before);
+    if (e.side) this.beside?.write(e.side.before);
     return true;
   }
 
@@ -102,11 +144,14 @@ export class History<D> {
     if (!e) return false;
     this.past.push(e);
     this.set(e.after);
+    if (e.side) this.beside?.write(e.side.after);
     return true;
   }
 
-  private record(label: string, before: D, after: D): void {
-    this.past.push({ label, before, after });
+  private record(label: string, before: D, after: D, sideBefore: unknown = this.beside?.read()): void {
+    const sideAfter = this.beside?.read(), entry: Entry<D> = { label, before, after };
+    if (this.beside && sideBefore !== sideAfter) entry.side = { before: sideBefore, after: sideAfter };
+    this.past.push(entry);
     if (this.past.length > this.limit) { this.past.shift(); this.droppedSteps++; }
     this.future = [];
   }

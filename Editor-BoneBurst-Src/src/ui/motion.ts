@@ -123,19 +123,25 @@ export function bakeMotion(s: Session, m: MotionPath): { path: MotionPath; stray
   const h = s.history, doc = s.doc;
   if (!h || !doc) throw new EditRefused("Nothing is open.");
   const { keys: baked, stray } = bakeKeys(s, m), keys = translateKeys(setupXY(doc, m.bone), baked, s.fps);
-  h.apply(`Bake the path of ${m.bone} to the timeline`, bakeTranslate(m.animation, m.bone, keys));
   const path = { ...m, baked: `${keysSignature(keys)}|${pathSignature(m)}` };
-  s.setSidecar(withMotion(s.sidecar, m.animation, m.bone, path));
+  // The keys and the path's baked mark are one undo step.
+  h.begin(`Bake the path of ${m.bone} to the timeline`);
+  try {
+    h.apply("", bakeTranslate(m.animation, m.bone, keys));
+    s.setSidecar(withMotion(s.sidecar, m.animation, m.bone, path));
+  } finally { h.end(); }
   s.changed();
   return { path, stray };
 }
 
-/** Keep a path (nodes, node times, frames or a multiplier changed) without baking. */
-export function keepMotion(s: Session, m: MotionPath): void {
-  s.setSidecar(withMotion(s.sidecar, m.animation, m.bone, m));
+/** Keep a path (nodes, node times, frames or a multiplier changed) without baking: one undo step labelled `label`, and the steps of one label a moment apart (a typed field) are one. */
+export function keepMotion(s: Session, m: MotionPath, label = `Edit the path of ${m.bone}`, join = false): void {
+  const change = (): void => s.setSidecar(withMotion(s.sidecar, m.animation, m.bone, m));
+  if (s.history) s.history.applyBeside(label, change, join); else change();
 }
 
-/** Drop the path kept for a bone; its keys stay as they are. */
+/** Drop the path kept for a bone; its keys stay as they are. One undo step. */
 export function dropMotion(s: Session, animation: string, bone: string): void {
-  s.setSidecar(withMotion(s.sidecar, animation, bone, null));
+  const change = (): void => s.setSidecar(withMotion(s.sidecar, animation, bone, null));
+  if (s.history) s.history.applyBeside(`Remove the path of ${bone}`, change); else change();
 }

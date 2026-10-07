@@ -24,6 +24,10 @@ export interface RecoveryRecord {
   readonly sidecar: string | null;
   /** The atlas was made by the editor (a PSD import not saved yet): Save writes it. */
   readonly generated: boolean;
+  /** Written by Save (Preferences ▸ Files: keep in this browser): kept while nothing is unsaved, until a file is saved or it is discarded. */
+  readonly pinned?: boolean;
+  /** Changes made after the last Save are in it (a record without this is an autosave of unsaved work). */
+  readonly unsaved?: boolean;
 }
 
 const KEY = "current";
@@ -41,7 +45,7 @@ export function sourcesOf(r: RecoveryRecord): Source[] {
 }
 
 /** The open document as a record; null when nothing is open. */
-export async function recordOf(session: Session): Promise<RecoveryRecord | null> {
+export async function recordOf(session: Session, pinned = false, unsaved = true): Promise<RecoveryRecord | null> {
   const doc = session.doc;
   if (!doc) return null;
   const pages: { name: string; png: Uint8Array }[] = [];
@@ -53,7 +57,7 @@ export async function recordOf(session: Session): Promise<RecoveryRecord | null>
     version: 1, name: session.name, savedAt: Date.now(), skeleton: writeSkeleton(doc),
     atlas: session.atlas ? writeAtlas(session.atlas) : null, pages,
     sidecar: hasContent(session.sidecar) ? writeSidecar(session.sidecar) : null,
-    generated: session.generated !== null,
+    generated: session.generated !== null, pinned, unsaved,
   };
 }
 
@@ -70,6 +74,8 @@ export class Autosaver {
   /** A copy may be stored (one from before this page counts): cleared once nothing is unsaved. */
   private kept = true;
   private busy = false;
+  /** A Save to this browser was made (or is stored): the copy stays while nothing is unsaved. */
+  pinned = false;
 
   constructor(private readonly session: Session, private readonly prefs: Preferences, private readonly write: (r: RecoveryRecord) => Promise<boolean> = (r) => idbSet("recovery", KEY, r)) {}
 
@@ -85,18 +91,30 @@ export class Autosaver {
     window.addEventListener("pagehide", () => void this.tick());
   }
 
+  /** Save: write the copy now, as saved (nothing unsaved in it), and keep it. False when the browser would not store it. */
+  async saveNow(): Promise<boolean> {
+    const r = await recordOf(this.session, true, false);
+    if (!r || !(await this.write(r))) return false;
+    this.pinned = true;
+    this.kept = true;
+    this.lastDoc = this.session.doc;
+    this.lastSidecar = writeSidecar(this.session.sidecar);
+    return true;
+  }
+
   /** Write the copy when something unsaved changed; clear it when nothing is unsaved. */
   async tick(): Promise<void> {
     if (this.paused || this.busy || !this.prefs.values.autosave || !this.session.history) return;
     this.busy = true;
     try {
       if (!this.session.dirty) {
+        if (this.pinned) return;
         if (this.kept) { await clearRecovery(); this.kept = false; this.lastDoc = null; }
         return;
       }
       const sidecar = writeSidecar(this.session.sidecar);
       if (this.session.doc === this.lastDoc && sidecar === this.lastSidecar) return;
-      const r = await recordOf(this.session);
+      const r = await recordOf(this.session, this.pinned, true);
       if (r && await this.write(r)) { this.kept = true; this.lastDoc = this.session.doc; this.lastSidecar = sidecar; }
     } finally {
       this.busy = false;

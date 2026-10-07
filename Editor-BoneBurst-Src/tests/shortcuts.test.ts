@@ -29,7 +29,7 @@ describe("the shortcuts table", () => {
   // What the key handler did before the table (app.ts's if chain at E7's start), event by event.
   it("matches each key as the key handler did before it", () => {
     const table: [KeyEventLike, string | undefined][] = [
-      [ev("o", { cmd: true }), "open"], [ev("s", { cmd: true }), "save"], [ev(",", { cmd: true }), "preferences"],
+      [ev("o", { cmd: true }), "open"], [ev("s", { cmd: true }), "save"], [ev("s", { cmd: true, shift: true }), "saveAs"], [ev(",", { cmd: true }), "preferences"],
       [ev("<", { cmd: true, shift: true }, "Comma"), "preferences"],
       [ev("z", { cmd: true }), "undo"], [ev("Z", { cmd: true, shift: true }), "redo"], [ev("z", { cmd: true, alt: true }), "undo"],
       [ev("y", { cmd: true }), "redoAlt"],

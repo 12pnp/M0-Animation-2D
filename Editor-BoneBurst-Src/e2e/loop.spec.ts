@@ -21,7 +21,7 @@ type Live = {
 
 async function open(page: Page): Promise<void> {
   await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
+  await page.evaluate(() => { localStorage.clear(); localStorage.setItem("boneburst.preferences", JSON.stringify({ version: 1, saveTo: "file" })); });
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
@@ -66,7 +66,7 @@ test("a project keeps which animations are not loops", async ({ page }) => {
 
 test("Export Spine JSON carries the closing key of a loop,, and not for one that is unticked", async ({ page }) => {
   await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
+  await page.evaluate(() => { localStorage.clear(); localStorage.setItem("boneburst.preferences", JSON.stringify({ version: 1, saveTo: "file" })); });
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();

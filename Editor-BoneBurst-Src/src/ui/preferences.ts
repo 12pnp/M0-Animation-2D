@@ -17,6 +17,8 @@ export interface PreferenceValues {
   readonly toolbarLabels: ToolbarLabels;
   /** Where the stage's tool panels sit along the stage's foot. */
   readonly toolbarPosition: ToolbarPosition;
+  /** What ⌘S (Save) writes: a copy kept in this browser (restored from the bar when the editor opens), or the project's file. Save Project As… always writes a file. */
+  readonly saveTo: SaveTo;
   /** The height of a row in the timeline and graph, in pixels. */
   /** Timeline ticks and labels in a 1-2-5 series (1, 2, 5, 10, 20, 50), instead of the frame-rate divisors (10, 15, 30, 60). */
   readonly fewerTicks: boolean;
@@ -95,7 +97,7 @@ export interface PreferenceValues {
 export const UI_SCALE_RANGE = [60, 140] as const;
 /** 95: a twentieth smaller than the browser's own size; a browser under automation (the browser tests) keeps 100, so what they measure is in the pixels they see. */
 const DEFAULT_UI_SCALE = typeof navigator !== "undefined" && navigator.webdriver ? 100 : 95;
-export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, uiScale: DEFAULT_UI_SCALE, fontSize: "medium", toolbarLabels: "auto", toolbarPosition: "center", fewerTicks: false, defaultFps: 30, treeColours: true, treeIndent: 14, stagePanels: true, fullScreenOnStart: true, boneColour: "auto", boneSize: 1, selectedBoneColour: "auto", bones: true, constraints: true, hideIkBones: false, rulerColour: "auto", rulerOpacity: 0, rulerTextColour: "auto", undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
+export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, uiScale: DEFAULT_UI_SCALE, fontSize: "medium", toolbarLabels: "auto", toolbarPosition: "center", fewerTicks: false, defaultFps: 30, treeColours: true, treeIndent: 14, stagePanels: true, fullScreenOnStart: true, boneColour: "auto", boneSize: 1, selectedBoneColour: "auto", bones: true, constraints: true, hideIkBones: false, rulerColour: "auto", rulerOpacity: 0, rulerTextColour: "auto", undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, saveTo: "browser", onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
   grid: false, nudgeStep: 0.35, nudgeScaleStep: 0.01, nudgeBigFactor: 10, checker: true, axes: true, checkerColour: "auto", gridColour: "auto", gridThickness: 1, axisXColour: "#303030", axisYColour: "#303030", axisThickness: 1, tabBarColour: "#201f24", tabActiveColour: "auto", tabTextColour: "auto", tabDimTextColour: "auto", gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
 export { BONE_SIZE_RANGE } from "./stage/boneScale";
 import { BONE_SIZE_RANGE } from "./stage/boneScale";
@@ -103,6 +105,7 @@ export type FontSize = "small" | "medium" | "large";
 export const FONT_SIZES: Readonly<Record<FontSize, number>> = { small: 12, medium: 13, large: 14 };
 export type ToolbarLabels = "auto" | "show" | "hide";
 export type ToolbarPosition = "left" | "center" | "right";
+export type SaveTo = "browser" | "file";
 export const DEFAULT_FPS_RANGE = [1, 240] as const;
 export const TREE_INDENT_RANGE = [6, 40] as const;
 export const GRID_RANGE = [1, 1000] as const;
@@ -155,6 +158,7 @@ export function readPreferences(text: string | null): PreferenceValues {
     fontSize: choice("fontSize", ["small", "medium", "large"] as const, DEFAULTS.fontSize),
     toolbarLabels: choice("toolbarLabels", ["auto", "show", "hide"] as const, DEFAULTS.toolbarLabels),
     toolbarPosition: choice("toolbarPosition", ["left", "center", "right"] as const, DEFAULTS.toolbarPosition),
+    saveTo: choice("saveTo", ["browser", "file"] as const, DEFAULTS.saveTo),
     fewerTicks: bool("fewerTicks", DEFAULTS.fewerTicks),
     defaultFps: Math.round(num("defaultFps", DEFAULT_FPS_RANGE[0], DEFAULT_FPS_RANGE[1], DEFAULTS.defaultFps)),
     treeColours: bool("treeColours", DEFAULTS.treeColours),

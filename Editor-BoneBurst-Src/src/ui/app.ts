@@ -90,7 +90,7 @@ export function mountApp(root: HTMLElement): void {
   folderInput.webkitdirectory = true;
   folderInput.hidden = true;
   const openBtn = iconButton(button("Open…", `Open a project (.bbdata), a Spine skeleton with its atlas and images, or a Photoshop file to start a rig from (${keysOf("open")}). Drop a PSD on an open rig to bring its changes in`, () => openDialog.open()), "open");
-  const saveBtn = iconButton(button("Save", `Save the project (.bbdata): the rig, its atlas and pages, guides and references (${keysOf("save")}). Spine JSON and Unity go through File ▸ Export`, () => void save()), "save");
+  const saveBtn = iconButton(button("Save", `Save the project (${keysOf("save")}): kept in this browser and offered back when the editor opens, or written as a file (.bbdata) if Preferences ▸ Files says so; File ▸ Save Project As… always writes the file. Spine JSON and Unity go through File ▸ Export`, () => void save()), "save");
   // Export to Unity (E5 step 8): into the folder chosen once; Shift-click chooses another.
   const unityBtn = button("Export to Unity…", "Export to Unity…: write the skeleton, atlas and pages into your Unity folder, where the BoneBurst import rebakes them (Shift-click: choose another folder)", () => {});
   unityBtn.setAttribute("aria-label", "Export to Unity…");
@@ -274,7 +274,7 @@ export function mountApp(root: HTMLElement): void {
       { label: "Open…", keys: keysOf("open"), run: () => openDialog.open() },
       ...(recent.list.length ? [DIVIDER, ...recent.list.map((r): MenuItem => ({ label: `Recent / ${r.name}`, run: () => void openRecent(r) })), { label: "Clear Recent", run: () => void recent.clear() }, DIVIDER] : []),
       { label: "Save Project", keys: keysOf("save"), disabled: !session.doc, run: () => void save() },
-      { label: "Save Project As…", disabled: !session.doc, run: () => void save(true) },
+      { label: "Save Project As…", keys: keysOf("saveAs"), disabled: !session.doc, run: () => void save(true) },
       { label: "Close File", disabled: !session.doc, run: () => tabs.closeCurrent() },
       { label: "Export Spine JSON…", disabled: !session.doc, run: () => void exportSpine() },
       { label: "Export to Unity…", disabled: !session.doc, run: () => void toUnity(false) },
@@ -501,9 +501,42 @@ export function mountApp(root: HTMLElement): void {
   /** ⌘S: the project, to its file (File ▸ Save Project As… picks another). */
   async function save(again = false): Promise<void> {
     if (!session.history) return;
+    if (prefs.values.saveTo === "browser" && !again) { await saveToBrowser(); return; }
     try {
       const file = await saveProject(session, viewNow(), again);
+      if (file !== null) autosaver.pinned = false;
       say(file === null ? "Save cancelled." : `Saved ${file}.`);
+    } catch (err) {
+      say(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  /** A small note in the middle of the window that fades on its own (Save: it is quick, and nothing else says it happened). */
+  let flashTimer = 0;
+  function flash(text: string, detail: string): void {
+    document.querySelector(".flash")?.remove();
+    clearTimeout(flashTimer);
+    const note = el("div", "flash");
+    note.setAttribute("role", "status");
+    const title = el("strong", "title"), sub = el("span", "detail");
+    title.textContent = text;
+    sub.textContent = detail;
+    note.append(title, sub);
+    document.body.append(note);
+    flashTimer = window.setTimeout(() => { note.classList.add("out"); setTimeout(() => note.remove(), 200); }, 600);
+  }
+
+  /** ⌘S with Preferences ▸ Files set to this browser: the project is kept here, nothing is downloaded; the bar offers it back when the editor opens. */
+  async function saveToBrowser(): Promise<void> {
+    try {
+      session.projectSidecar(viewNow());
+      if (!(await autosaver.saveNow())) { say("Save failed: this browser would not keep it (storage is full or blocked). Save Project As… writes a file."); return; }
+      offerBar?.remove();
+      offerBar = null;
+      autosaver.paused = false;
+      session.markSaved();
+      say(`Saved ${session.name}.json in this browser. Save Project As… writes a file.`);
+      flash("Saved in this browser", `${session.name}.json · ${new Date().toLocaleTimeString()}`);
     } catch (err) {
       say(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -657,20 +690,24 @@ export function mountApp(root: HTMLElement): void {
   // found is offered back, and until it is restored or discarded nothing writes over it.
   const autosaver = new Autosaver(session, prefs);
   autosaver.start();
+  let offerBar: HTMLElement | null = null;
   void readRecovery().then((r) => {
     if (!r) { autosaver.paused = false; return; }
+    autosaver.pinned = r.pinned === true;
     const offer = el("div", "recovery-bar");
+    offerBar = offer;
     offer.setAttribute("role", "alert");
     const when = new Date(r.savedAt).toLocaleString();
     const text = el("span", "text");
-    text.textContent = `Unsaved work on ${r.name}.json from ${when} was kept in this browser.`;
-    const done = (m: string) => { offer.remove(); autosaver.paused = false; say(m); };
+    const unsaved = r.unsaved !== false;
+    text.textContent = unsaved ? `Unsaved work on ${r.name}.json from ${when} was kept in this browser.` : `${r.name}.json saved in this browser on ${when}.`;
+    const done = (m: string) => { offer.remove(); offerBar = null; autosaver.paused = false; say(m); };
     const restore = button("Restore", "Open it, unsaved, as it was", () => {
       if (session.dirty && !confirm(`${session.name}.json has unsaved changes. Restore the kept copy and lose them?`)) return;
       void session.restore(sourcesOf(r), r.generated && r.atlas !== null ? { atlasText: r.atlas } : null)
-        .then(() => done(`Restored ${r.name}.json from ${when}: unsaved until you Save it.`), (err) => say(err instanceof Error ? err.message : String(err)));
+        .then(() => { if (!unsaved) session.markSaved(); done(unsaved ? `Restored ${r.name}.json from ${when}: unsaved until you Save it.` : `Restored ${r.name}.json as saved on ${when}.`); }, (err) => say(err instanceof Error ? err.message : String(err)));
     });
-    const discard = button("Discard", "Delete the kept copy", () => { void clearRecovery().then(() => done("The kept copy was discarded.")); });
+    const discard = button("Discard", "Delete the kept copy", () => { void clearRecovery().then(() => { autosaver.pinned = false; done("The kept copy was discarded."); }); });
     offer.append(text, restore, discard);
     menubar.element.after(offer);
   });
@@ -716,6 +753,7 @@ export function mountApp(root: HTMLElement): void {
   const shortcuts: Record<ShortcutId, () => boolean | void> = {
     open: () => openDialog.open(),
     save: () => void save(),
+    saveAs: () => void save(true),
     preferences: () => prefsDialog.open(),
     undo: () => undoBtn.click(),
     redo: () => redoBtn.click(),

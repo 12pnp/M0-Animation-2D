@@ -47,7 +47,11 @@ const translate = (page: Page, bone: string) => page.evaluate((b) => {
   return keys.map((k) => ({ frame: Math.round((k.time ?? 0) * fps), x: k.x ?? 0, y: k.y ?? 0, curve: k.curve !== undefined }));
 }, bone);
 const path = (page: Page) => page.evaluate(() => (window as unknown as Live).boneburst.session.sidecar.motion[0] ?? null);
-const steps = (page: Page) => page.evaluate(() => (window as unknown as Live).boneburst.session.history.entries.done);
+/** The undo steps that changed the document: the path's own steps (Motion Path edits, kept beside it) are not counted. */
+const steps = (page: Page) => page.evaluate(() => {
+  const e = (window as unknown as Live).boneburst.session.history.entries as unknown as { labels: string[]; done: number };
+  return e.labels.slice(0, e.done).filter((l) => !/^(Start a path|Add a spline|Move a spline|Remove a spline|Bend the path|Reset a handle|Edit the|Add a node time|Remove a node time|Move a node time|Set a block|Set the total|Close the path|Open the ring|Reverse the path|Merge spline|Sort the node|Reorder the|Set \d+ to origin|Remove the path)/.test(l)).length;
+});
 
 /** The bone's joint at `frame` in the panel's Local space (from its parent's joint, the world's orientation). */
 const localJoint = (page: Page, bone: string, frame: number) => page.evaluate(async ([b, f]) => {

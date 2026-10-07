@@ -16,6 +16,13 @@ async function open(page: Page): Promise<void> {
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head" }));
 }
 
+/** What the Undo and Redo buttons do. */
+const undo = (page: Page, dir: "undo" | "redo"): Promise<void> => page.evaluate((d) => {
+  const s = (window as unknown as { boneburst: { session: { history: Record<string, () => boolean>; changed(): void } } }).boneburst.session;
+  s.history[d]!();
+  s.changed();
+}, dir);
+
 const line = (page: Page): Promise<Line> => page.evaluate(() => (window as unknown as Live).boneburst.motionPath.stageLine());
 
 test("the Stage button draws the bone's spline on the Stage in the swatch's colour, and is kept", async ({ page }) => {
@@ -40,4 +47,30 @@ test("the Stage button draws the bone's spline on the Stage in the swatch's colo
   }, on!.colour);
   expect(painted).toBe(true);
   expect(await page.evaluate(() => localStorage.getItem("boneburst.motionPath.stageLine"))).toContain('"on":true');
+});
+
+test("every Motion Path step is in the History and can be undone: a node dragged, a node added, a node removed, and Start", async ({ page }) => {
+  await open(page);
+  const panel = page.locator(".panel.motion-path"), nodes = () => page.evaluate(() => (window as unknown as { boneburst: { session: { sidecar: { motion: { nodes: unknown[] }[] } } } }).boneburst.session.sidecar.motion[0]?.nodes.length ?? 0);
+  const labels = () => page.evaluate(() => (window as unknown as { boneburst: { session: { history: { entries: { labels: string[]; done: number } } } } }).boneburst.session.history.entries);
+  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  expect(await nodes()).toBe(2);
+  await panel.getByRole("button", { name: "Add a spline node" }).click();
+  await panel.getByRole("button", { name: "Add a spline node" }).click();
+  expect(await nodes()).toBe(4);
+  const l = await labels();
+  expect(l.labels.slice(0, l.done)).toEqual([expect.stringMatching(/^Start a path for head/), "Add a spline node", "Add a spline node"]);
+  await undo(page, "undo");
+  expect(await nodes()).toBe(3);
+  await undo(page, "redo");
+  expect(await nodes()).toBe(4);
+  // A node removed, then undone: the picked number is not left pointing past the end.
+  await panel.locator(".lp-slots button.node").nth(3).click();
+  await panel.getByRole("button", { name: "− Node" }).click();
+  expect(await nodes()).toBe(3);
+  await undo(page, "undo");
+  expect(await nodes()).toBe(4);
+  for (let k = 0; k < 3; k++) await undo(page, "undo");
+  expect(await nodes()).toBe(0);
+  await expect(panel.locator(".lp-slots button.node")).toHaveCount(0);
 });

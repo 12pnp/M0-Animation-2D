@@ -592,6 +592,8 @@ export class Session {
     this.referenceBlobs = new Map();
     this.projectFile = null;
     this.history = new History(skeleton, this.undoSteps);
+    // The motion paths live in the sidecar, beside the document: undo and redo carry them (docs/PATH-FRAMES-PLAN.md).
+    this.history.link({ read: () => this.sidecar.motion, write: (m) => this.setSidecar({ ...this.sidecar, motion: m as Sidecar["motion"] }) });
     // A skeleton started from an atlas or a PSD is new: unsaved until saved.
     this.saved = fromFile ? this.history.doc : null;
     this.name = name;

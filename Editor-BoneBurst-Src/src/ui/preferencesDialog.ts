@@ -1,5 +1,5 @@
 import { pickColour } from "./colourPopup";
-import { AUTOSAVE_RANGE, BONE_SIZE_RANGE, DEFAULTS, GRID_RANGE, NUDGE_FACTOR_RANGE, NUDGE_RANGE, ONION_RANGE, DEFAULT_FPS_RANGE, type FontSize, type Preferences, type PreferenceValues, TREE_INDENT_RANGE, type ToolbarLabels, type ToolbarPosition, THICKNESS_RANGE, type Theme, UI_SCALE_RANGE, UNDO_RANGE } from "./preferences";
+import { AUTOSAVE_RANGE, BONE_SIZE_RANGE, DEFAULTS, GRID_RANGE, NUDGE_FACTOR_RANGE, NUDGE_RANGE, ONION_RANGE, DEFAULT_FPS_RANGE, type FontSize, type Preferences, type PreferenceValues, type SaveTo, TREE_INDENT_RANGE, type ToolbarLabels, type ToolbarPosition, THICKNESS_RANGE, type Theme, UI_SCALE_RANGE, UNDO_RANGE } from "./preferences";
 import { toStyle } from "./pageScale";
 
 /**
@@ -61,6 +61,8 @@ export class PreferencesDialog {
         slider(`Tree indentation (pixels, ${TREE_INDENT_RANGE[0]}–${TREE_INDENT_RANGE[1]})`, p.treeIndent, TREE_INDENT_RANGE[0], TREE_INDENT_RANGE[1], 1, (n) => this.prefs.set({ treeIndent: n })),
       ],
       files: [
+        select("Save keeps the project in", [["browser", "This browser"], ["file", "A file"]], p.saveTo, (v) => this.prefs.set({ saveTo: v as SaveTo })),
+        note("This browser: nothing is downloaded; the project is offered back when the editor opens. Save Project As… always writes a file."),
         check("Keep a recovery copy of unsaved work", p.autosave, (on) => this.prefs.set({ autosave: on })),
         number(`Every (seconds, ${AUTOSAVE_RANGE[0]}–${AUTOSAVE_RANGE[1]})`, p.autosaveSeconds, 1, (n) => this.prefs.set({ autosaveSeconds: n })),
         note("One copy, in this browser. It is not your file: Save writes that."),
@@ -204,7 +206,7 @@ const KEYS: Readonly<Record<string, readonly (keyof PreferenceValues)[]>> = {
   interface: ["fontSize", "uiScale", "toolbarPosition", "toolbarLabels"],
   timeline: ["defaultFps", "fewerTicks"],
   tree: ["treeColours", "treeIndent"],
-  files: ["autosave", "autosaveSeconds"],
+  files: ["saveTo", "autosave", "autosaveSeconds"],
   display: ["rulers", "rulerColour", "rulerOpacity", "rulerTextColour", "stagePanels", "bones", "boneColour", "boneSize", "selectedBoneColour", "constraints"],
   background: ["checker", "checkerColour", "gridColour", "gridThickness", "axes", "axisXColour", "axisYColour", "axisThickness"],
   tabs: ["tabBarColour", "tabActiveColour", "tabTextColour", "tabDimTextColour"],
