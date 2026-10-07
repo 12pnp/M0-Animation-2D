@@ -217,3 +217,31 @@ test("Motion Path has the Stage's backdrop: the stage background, checkerboard, 
   await open({ checker: false, axes: false, grid: true, gridSize: 10 });
   expect((await colours()).seen).toBeGreaterThan(1);
 });
+
+test("Motion Path's Parent bone and Parent image buttons show the parent bone the path is relative to, fainter and behind the bone's own; off until pressed, and remembered", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.evaluate(() => localStorage.clear());
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  await page.locator(".stage-panel button.mode").click();
+  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head" }));
+  const panel = page.locator(".motion-path"), bone = panel.getByRole("button", { name: "Parent bone", exact: true }), image = panel.getByRole("button", { name: "Parent image", exact: true });
+  await expect(bone).toHaveAttribute("aria-pressed", "false");
+  await expect(image).toHaveAttribute("aria-pressed", "false");
+  const drawn = () => drawnPixels(page);
+  await expect.poll(drawn).toBeGreaterThan(1000);
+  const before = await drawn();
+  // The parent bone drawn changes the picture (and the view takes it in).
+  await bone.click();
+  await expect(bone).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(drawn).not.toBe(before);
+  // (Parent image draws the parent's picture where it has one; the head's parent, the chest, has none.)
+  await image.click();
+  await expect(image).toHaveAttribute("aria-pressed", "true");
+  await image.click();
+  await expect(image).toHaveAttribute("aria-pressed", "false");
+  expect(await page.evaluate(() => localStorage.getItem("boneburst.motionPath.layers"))).toContain('"parentBone":true');
+});
