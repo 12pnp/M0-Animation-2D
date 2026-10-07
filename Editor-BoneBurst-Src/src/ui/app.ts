@@ -42,6 +42,7 @@ import { clipboard, copyPose, pastePoseHere } from "./clipboard";
 import { brush, resizeBrush } from "./stage/weightBrush";
 import { isPanelId, PANEL_ICONS, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
 import { PanelInfo } from "./workspace/panelInfo";
+import { ViewMemory } from "./viewMemory";
 import { type PanelContent, Workspace } from "./workspace/workspace";
 
 /** The stickman the plan names for E2, served by the dev server from the test fixtures. */
@@ -467,6 +468,19 @@ export function mountApp(root: HTMLElement): void {
   }
   setTool("move");
 
+  // How each project was left (camera, selection, playhead, tool, the Motion Path panel and timeline views) comes back when it is opened again.
+  const viewMemory = new ViewMemory(() => ({
+    session, camera: () => stage.camera, get tool() { return stage.tool; }, get space() { return stage.space; },
+    get motion() { return motionPanel.memory; }, get timeline() { return timeline.memory; },
+  }));
+  const restoreView = (): boolean => viewMemory.restore({
+    tool: (t) => { if (TOOLS.some((x) => x.tool === t)) setTool(t as Tool); },
+    space: (s) => { if (SPACES.some((x) => x.space === s)) setSpace(s as Space); },
+    motion: (m) => motionPanel.restoreMemory(m),
+    timeline: (t) => timeline.restoreMemory(t),
+  });
+  viewMemory.start();
+
   async function open(files: readonly Source[], dropped = false, project: ProjectFile | null = null): Promise<void> {
     // Images alone, onto an open document: references (E4 step 9), not a new document.
     const picked = pickFiles(files);
@@ -489,6 +503,7 @@ export function mountApp(root: HTMLElement): void {
     try {
       await session.open(files);
       session.projectFile = project;
+      restoreView();
       stage.opened();
       say(`Opened ${session.name}.`);
     } catch (err) {
@@ -707,7 +722,7 @@ export function mountApp(root: HTMLElement): void {
     const restore = button("Restore", "Open it, unsaved, as it was", () => {
       if (session.dirty && !confirm(`${session.name}.json has unsaved changes. Restore the kept copy and lose them?`)) return;
       void session.restore(sourcesOf(r), r.generated && r.atlas !== null ? { atlasText: r.atlas } : null)
-        .then(() => { if (!unsaved) session.markSaved(); done(unsaved ? `Restored ${r.name}.json from ${when}: unsaved until you Save it.` : `Restored ${r.name}.json as saved on ${when}.`); }, (err) => say(err instanceof Error ? err.message : String(err)));
+        .then(() => { if (!unsaved) session.markSaved(); restoreView(); stage.opened(); done(unsaved ? `Restored ${r.name}.json from ${when}: unsaved until you Save it.` : `Restored ${r.name}.json as saved on ${when}.`); }, (err) => say(err instanceof Error ? err.message : String(err)));
     });
     const discard = button("Discard", "Delete the kept copy", () => { void clearRecovery().then(() => { autosaver.pinned = false; done("The kept copy was discarded."); }); });
     offer.append(text, restore, discard);

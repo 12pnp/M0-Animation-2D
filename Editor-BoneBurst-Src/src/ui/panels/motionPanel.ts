@@ -10,6 +10,7 @@ import { iconButton } from "../icons";
 import { showContextMenu } from "../contextMenu";
 import type { MenuItem } from "../menubar";
 import { pickColour } from "../colourPopup";
+import type { MotionMemory } from "../viewMemory";
 import { bakeMotion, currentNode, dropMotion, keepMotion, motionChanged, motionFor, motionStale, nodeAfter, poseAtNode, startMotion } from "../motion";
 import { keysAt } from "@/model/timelines";
 import { localPoint, pageScale } from "../pageScale";
@@ -1126,6 +1127,25 @@ export class MotionPathPanel {
       case "merge": if (!draw) return false; this.mergePicked(); return true;
       case "origin": if (!draw) return false; if (this.selNode < 0) this.onStatus("Pick a node first (press its number)."); else this.setOrigin(this.selNode); return true;
     }
+  }
+
+  /** What the panel keeps of how it was left, for the project's remembered view (ui/viewMemory.ts). */
+  get memory(): MotionMemory {
+    return { mode: this.mode, node: this.selNode, time: this.selTime, zoom: this.zoom, pan: { ...this.pan }, space: this.space, axes: this.axes };
+  }
+
+  /** Put that back: the mode only where a path is there to show it. */
+  restoreMemory(m: MotionMemory): void {
+    this.zoom = Number.isFinite(m.zoom) && m.zoom > 0 ? m.zoom : 1;
+    this.pan = Number.isFinite(m.pan.x) && Number.isFinite(m.pan.y) ? { x: m.pan.x, y: m.pan.y } : { x: 0, y: 0 };
+    if (m.space === "local" || m.space === "world") this.space = m.space;
+    if (m.axes === "parent" || m.axes === "world") this.axes = m.axes;
+    this.hold = false;
+    this.mode = m.mode === "time" ? "time" : "draw";
+    this.selNode = m.node;
+    this.selTime = m.time;
+    this.slotSig = "";
+    this.schedule();
   }
 
   /** Pick a node time (and the block it starts): its frame and its multiplier show in the path row. */

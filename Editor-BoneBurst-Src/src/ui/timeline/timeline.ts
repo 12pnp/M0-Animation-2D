@@ -1,4 +1,5 @@
 import { addAnimation, deleteAnimation, renameAnimation } from "@/edit/animations";
+import type { TimelineMemory } from "../viewMemory";
 import { BONE_PROPERTIES, keyBone } from "@/edit/boneKeys";
 import { PRESETS, type Shape } from "@/edit/curves";
 import { isSeamless, trimClosingKeys } from "@/edit/loop";
@@ -245,6 +246,18 @@ export class Timeline {
       if (!(err instanceof EditRefused)) throw err;
       this.onStatus(err.message);
     }
+  }
+
+  /** What the track's view is (zoom, first frame shown, rows' scroll), for the project's remembered view (ui/viewMemory.ts). */
+  get memory(): TimelineMemory {
+    return { frameWidth: this.view.frameWidth, first: this.view.first, scroll: this.body.scrollTop };
+  }
+
+  restoreMemory(m: TimelineMemory): void {
+    if (!Number.isFinite(m.frameWidth) || !Number.isFinite(m.first)) return;
+    this.view = { frameWidth: Math.min(MAX_FRAME_WIDTH, Math.max(MIN_FRAME_WIDTH, m.frameWidth)), first: Math.max(-0.5, m.first) };
+    this.body.scrollTop = Number.isFinite(m.scroll) ? m.scroll : 0;
+    this.redraw();
   }
 
   /** Zoom and scroll the track so the whole animation, from frame 0 to its end, fits the width. */
