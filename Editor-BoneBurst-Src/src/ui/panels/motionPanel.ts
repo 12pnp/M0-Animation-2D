@@ -172,12 +172,12 @@ export class MotionPathPanel {
   private graphDrag = -1;
   /** The graph's points on its canvas as last drawn (a test hook). */
   private graphDots: { x: number; y: number }[] = [];
-  /** What the panel does with a path: Draw path shapes the spline; Adjust time sets the node times and their multipliers (docs/PATH-FRAMES-PLAN.md). */
+  /** What the panel does with a path: Edit Path shapes the spline; Adjust time sets the node times and their multipliers (docs/PATH-FRAMES-PLAN.md). */
   private mode: "draw" | "time" = "draw";
   private selNode = -1;
   /** The path's nodes on the canvas as last drawn (Local space only). */
   private nodePts: { x: number; y: number }[] = [];
-  /** The curve's handles at the nodes on the canvas (Draw path, Local), and the one being dragged. */
+  /** The curve's handles at the nodes on the canvas (Edit Path, Local), and the one being dragged. */
   private handlePts: { slot: number; side: "out" | "in"; x: number; y: number }[] = [];
   private handleDrag: { slot: number; side: "out" | "in" } | null = null;
   /** A node being dragged, or a dot being slid along the path (the speed). */
@@ -226,7 +226,7 @@ export class MotionPathPanel {
     this.motionBar.className = "lp-motion";
     this.motionInfo.className = "lp-motion-info";
     this.motionBtns = {
-      draw: this.button("Draw path", "Draw a spline for the bone: two nodes to start (where it is, and an offset); pose the bone and press a red button to store a node, + adds one, then Bake"),
+      draw: this.button("Edit Path", "Edit the bone's path, a spline: two nodes to start (where it is, and an offset). A red number puts the bone on that node, moving the bone moves the node, + adds a node"),
       time: this.button("Adjust time", "Set the node times (where the ring is cut into blocks) and each block's time multiplier, then Bake to timeline"),
       del: this.button("− Node", "Remove the picked spline node (a path keeps two)"),
       addTime: this.button("+ Time", "Add a node time at the playhead's frame (a path keeps at least two)"),
@@ -801,7 +801,7 @@ export class MotionPathPanel {
     const can = !!anim && bone !== null && !(s.doc && constraintDriving(s.doc, bone));
     this.motionBar.hidden = !can;
     const draw = !!m && this.mode === "draw", time = !!m && this.mode === "time";
-    // Without a path the one button is Draw path (it starts one); with a path the two modes.
+    // Without a path the one button is Edit Path (it starts one); with a path the two modes.
     this.motionBtns.draw.hidden = !can;
     this.motionBtns.time.hidden = !m;
     this.motionBtns.drop.hidden = !m;
@@ -810,7 +810,7 @@ export class MotionPathPanel {
     this.motionBtns.draw.setAttribute("aria-pressed", String(draw));
     this.motionBtns.time.setAttribute("aria-pressed", String(time));
     this.motionBtns.del.disabled = !m || m.nodes.length <= 2 || this.selNode < 0;
-    // Draw path shapes the spline (a ring or not); Adjust time sets the timing (total frames, node times, blocks).
+    // Edit Path shapes the spline (a ring or not); Adjust time sets the timing (total frames, node times, blocks).
     this.framesBox.hidden = !time;
     this.closedLabel.hidden = !draw;
     const times = m ? nodeTimeFrames(m) : [], blocks = m ? blocksOf(m) : [];
@@ -836,7 +836,7 @@ export class MotionPathPanel {
   }
 
   /**
-   * The strip under the path row: in Draw path a red button for each spline node and the green + (the capture bar,
+   * The strip under the path row: in Edit Path a red button for each spline node and the green + (the capture bar,
    * docs/PATH-CAPTURE-PLAN.md); in Adjust time a tab for each block (its frames and its multiplier).
    */
   private renderStrip(m: MotionPath | undefined): void {
@@ -1004,12 +1004,12 @@ export class MotionPathPanel {
     keepMotion(s, { ...m, nodes: m.nodes.map((x, i) => (i === this.selNode ? { ...n, x: cur.x, y: cur.y } : x)) });
   }
 
-  /** Draw path: start a path for the bone (two spline nodes: where it is, and that plus an offset), or go back to drawing the one it has. */
+  /** Edit Path: start a path for the bone (two spline nodes: where it is, and that plus an offset), or go back to drawing the one it has. */
   private enterDraw(): void {
     const s = this.session, m = motionFor(s);
     if (!m) {
       const started = startMotion(s);
-      if (!started) { this.onStatus("Select a bone in Animate mode, then Draw path."); return; }
+      if (!started) { this.onStatus("Select a bone in Animate mode, then Edit Path."); return; }
       keepMotion(s, started);
       // Node 2 is picked and the bone goes to it; node 1 is one press away.
       this.pickSlot(1);
@@ -1057,7 +1057,7 @@ export class MotionPathPanel {
     return this.mode === "draw" && !!motionFor(this.session);
   }
 
-  /** The ring (dashed); in Draw path the spline nodes and their handles; in Adjust time the frames' dots and the node times, in Local space. */
+  /** The ring (dashed); in Edit Path the spline nodes and their handles; in Adjust time the frames' dots and the node times, in Local space. */
   private drawMotion(g: CanvasRenderingContext2D, at: (x: number, y: number) => [number, number], accent: string): void {
     const m = motionFor(this.session);
     if (!m || this.space !== "local" || !this.show.path) return;
@@ -1121,7 +1121,7 @@ export class MotionPathPanel {
         g.globalAlpha = 1;
       }
     });
-    // The curve's hand tools: a handle each side of a node (Draw path), joined to it by a line; drag one to bend the curve there.
+    // The curve's hand tools: a handle each side of a node (Edit Path), joined to it by a line; drag one to bend the curve there.
     if (draw) {
       const offs = handleOffsets(m.nodes, m.closed);
       g.lineWidth = 1;
@@ -1267,7 +1267,7 @@ export class MotionPathPanel {
     this.selNode = -1;
   }
 
-  /** Put a spline node where a double click on the curve is (Draw path). */
+  /** Put a spline node where a double click on the curve is (Edit Path). */
   private insertNodeAt(x: number, y: number): boolean {
     const m = motionFor(this.session), at = this.spaceAt(x, y);
     if (!m || !at || this.space !== "local" || this.mode !== "draw") return false;

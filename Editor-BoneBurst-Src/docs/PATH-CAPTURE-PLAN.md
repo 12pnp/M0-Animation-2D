@@ -2,7 +2,7 @@
 
 **Status:** built 2026-10-07 with all five recommendations; not committed; **not verified by hand**. `tsc`, vitest
 (738) and the whole Playwright suite (66) pass, and a deliberate swap of the stored x and y fails the bake test.
-Not built: nothing from the plan is left out; **"Make path" is gone** (Draw path starts the path). Written from the owner's note and screenshot (below). It
+Not built: nothing from the plan is left out; **"Make path" is gone** (Edit Path starts the path). Written from the owner's note and screenshot (below). It
 **replaces the first step of `docs/PATH-SPEED-PLAN.md`** ("Make path" giving three nodes at the first, middle
 and last frame) with a capture flow; everything after it there (Bake, Adjust time, the key count fields, the
 sidecar) stays. Nothing is built.
@@ -15,7 +15,7 @@ at the top-left of the Motion Path panel.
 ```mermaid
 stateDiagram-v2
     [*] --> Idle: bone selected
-    Idle --> Capturing: Draw path
+    Idle --> Capturing: Edit Path
     state Capturing {
         [*] --> Start
         Start: ● empty  +
@@ -28,7 +28,7 @@ stateDiagram-v2
         Three --> Two: press + again, pose, store (repeat)
     }
     Capturing --> Baked: Bake (two or more stored)
-    Baked --> Capturing: Draw path (the nodes are kept)
+    Baked --> Capturing: Edit Path (the nodes are kept)
     Baked --> Baked: Adjust time (drag a dot along the path)
 ```
 
@@ -42,7 +42,7 @@ stateDiagram-v2
 
 ## My reading, to confirm
 
-1. **Entering:** a bone must be selected (and an animation shown). **Draw path** (the mode button, now the way
+1. **Entering:** a bone must be selected (and an animation shown). **Edit Path** (the mode button, now the way
    in; the old *Make path* button goes) opens the capture bar. With no path yet, the bar starts as the owner
    describes: **one red button and one green button** (a red *slot*, empty, and the green *add*).
 2. **Red = store.** Pressing a red button stores **the bone's pose as it is now** (its joint, in the panel's Local space,
@@ -53,10 +53,10 @@ stateDiagram-v2
    `● ● +`. The artist then moves the bone and presses the new red to store the next node.
 4. **Loop** as many times as wanted: green, pose the bone, red. **Bake** needs two stored nodes; an empty slot is
    skipped (with a note). Bake writes the keys, as before, and the panel goes to Adjust time.
-5. **Moving the bone while capturing writes no keys.** In Draw path the Stage and the panel's handles pose the bone
+5. **Moving the bone while capturing writes no keys.** In Edit Path the Stage and the panel's handles pose the bone
    *unkeyed* (the Stage's Auto Key off: `Session.setUnkeyed`), so the animation's keys are untouched until Bake; the
    unkeyed pose is dropped when the playhead moves, so a capture is made at the frame the artist is on.
-6. **The nodes are kept** (the preserved path, in the `.bbdata`): back in Draw path after a Bake, the bar shows one stored
+6. **The nodes are kept** (the preserved path, in the `.bbdata`): back in Edit Path after a Bake, the bar shows one stored
    red per node; a red can be re-stored, green adds more, and a node can still be dragged on the canvas to refine it.
 
 ## Open questions
@@ -73,18 +73,18 @@ stateDiagram-v2
    animation with no keys at all? *Recommended: every bone with no path.*
 4. **Removing a slot:** an × on a red (or the Delete key with a red picked); a path keeps at least two once it has been baked.
    *Recommended: yes.*
-5. **Stage handles while a path exists:** the move arrows are already hidden; in Draw path should dragging the bone on the **Stage**
-   also be unkeyed (point 5), or keyed as usual? *Recommended: unkeyed in Draw path only.*
+5. **Stage handles while a path exists:** the move arrows are already hidden; in Edit Path should dragging the bone on the **Stage**
+   also be unkeyed (point 5), or keyed as usual? *Recommended: unkeyed in Edit Path only.*
 
 ## What changed from the plan, and why
 
-- **The bar is `● ● +`** in Draw path: a red button per slot (hollow empty, solid stored, with `@frame`), and a green `+`. **− Node** removes the
+- **The bar is `● ● +`** in Edit Path: a red button per slot (hollow empty, solid stored, with `@frame`), and a green `+`. **− Node** removes the
   picked slot (the last pressed, or a node picked on the canvas); a path keeps one slot, and once baked two poses.
 - **Timing from the frames (Q1):** the poses' frames give the bake range (first to last) and when each pose is reached; two poses on one frame, or
   a node without a frame (one added by a double click on the curve), make the time between them **even**, said in the status line and the path's
   info ("even timing"). A range typed in the Timeline bar wins (`fixedRange`). A dot at a pose's frame is the pose's: **Adjust time does not slide it**.
 - **Bake replaces the bone's translate keys** (Q2): the status says how many it replaced the first time; Undo brings them back.
-- **Unkeyed while drawing (Q5):** `Stage.forceUnkeyed` is true while Draw path is on with a path; Adjust time and no path are as before. The panel's own
+- **Unkeyed while drawing (Q5):** `Stage.forceUnkeyed` is true while Edit Path is on with a path; Adjust time and no path are as before. The panel's own
   rotation handle also poses unkeyed then.
 - **The sidecar** now keeps slots (null), the frame of a pose and `fixedRange`; any number of nodes, including none, reads (a path being drawn).
 - **Guards:** `tests/motionPath.test.ts` (frames, empty slots, the even fallback, retimed pins), `tests/sidecar.test.ts` (a null slot, a frame, `fixedRange`),
@@ -93,7 +93,7 @@ stateDiagram-v2
 
 ## Sync between the bone and the nodes (owner's request, later the same day)
 
-In Draw path the bone on the Stage and the picked node in the Motion Path panel follow each other:
+In Edit Path the bone on the Stage and the picked node in the Motion Path panel follow each other:
 
 - **Drag the bone** (it poses unkeyed): the picked node, when the playhead is on its frame, takes the bone's new place live. No red press.
 - **Drag a node** on the canvas (or press it): the playhead goes to the node's frame and the bone is posed there, and moves with the node.
@@ -104,7 +104,7 @@ In Draw path the bone on the Stage and the picked node in the Motion Path panel 
 
 ## Hand tools: curve handles at the nodes (owner's request, later the same day)
 
-In Draw path every node has **handles**, as on a Bézier path: a line and a white dot on each side of a node (the first node has only a way out, the
+In Edit Path every node has **handles**, as on a Bézier path: a line and a white dot on each side of a node (the first node has only a way out, the
 last only a way in). **Drag a handle** to bend the curve there; the handle on the other side mirrors it, so the node stays smooth. **Double-click a handle**
 to put it back to automatic. The pose (the node) does not move, only the curve round it; Bake still passes through every pose on its frame.
 
@@ -123,10 +123,10 @@ to put it back to automatic. The pose (the node) does not move, only the curve r
    per Q1, its frame); keep the path in the sidecar (`keepMotion`); a path with a single stored node is allowed, but cannot Bake.
 3. **`makeMotion`** becomes `startMotion` (an empty path: no nodes, `from`/`to` from the animation); `Make path` is removed
    (clean break: nothing else calls it); the model allows 0–1 nodes while drawing (`readSidecar` accepts one or more; Bake needs two).
-4. **Unkeyed while drawing** (Q5): the Stage's drag uses its unkeyed branch while the panel is in Draw path with a path started.
+4. **Unkeyed while drawing** (Q5): the Stage's drag uses its unkeyed branch while the panel is in Edit Path with a path started.
 5. **Bake:** needs two stored nodes; builds the curve and the timing from the nodes' frames (Q1), writes the keys, goes to Adjust time.
 6. **Guards:** `tests/motionPath.test.ts` for nodes with frames (timing from them, spreading when they share a frame);
-   `e2e/motionPath.spec.ts`: select a bone, Draw path, the bar is `● +`; store; add; the bar is `● ● +`; pose the bone and store;
+   `e2e/motionPath.spec.ts`: select a bone, Edit Path, the bar is `● +`; store; add; the bar is `● ● +`; pose the bone and store;
    Bake writes keys at the stored frames; the keys are untouched before Bake (the document does not change while capturing);
    re-store replaces; undo takes the whole Bake back. **A deliberate bug must fail it:** store the previous pose once and see the
    position test fail.

@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 
 /**
- * A bone's motion path (docs/PATH-FRAMES-PLAN.md): Draw path (a spline of nodes, a ring), Bake, then Adjust time (node times, blocks,
+ * A bone's motion path (docs/PATH-FRAMES-PLAN.md): Edit Path (a spline of nodes, a ring), Bake, then Adjust time (node times, blocks,
  * time multipliers, total frames), then Bake to timeline. Frames only: no seconds, no fps.
  */
 
@@ -75,20 +75,20 @@ const panelOf = (page: Page) => page.locator(".motion-path");
 const reds = (page: Page) => page.locator(".lp-slots button.red");
 const blocks = (page: Page) => page.locator(".lp-slots button.block");
 
-/** Draw path, the bone dragged a little and its node stored, then Bake (into Adjust time): a path of 2 spline nodes. */
+/** Edit Path, the bone dragged a little and its node stored, then Bake (into Adjust time): a path of 2 spline nodes. */
 async function drawn(page: Page): Promise<void> {
-  await panelOf(page).getByRole("button", { name: "Draw path", exact: true }).click();
+  await panelOf(page).getByRole("button", { name: "Edit Path", exact: true }).click();
   await expect(reds(page)).toHaveCount(2);
   await panelOf(page).getByRole("button", { name: "Adjust time", exact: true }).click();
   await expect(panelOf(page).getByRole("button", { name: "Adjust time", exact: true })).toHaveAttribute("aria-pressed", "true");
 }
 
-test("Draw path starts with two spline nodes and a green +: [the bone's place] [that plus an offset] [+]; nothing is keyed", async ({ page }) => {
+test("Edit Path starts with two spline nodes and a green +: [the bone's place] [that plus an offset] [+]; nothing is keyed", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
   expect(await path(page)).toBeNull();
   const done = await steps(page), keys = await translate(page, "head"), here = await localJoint(page, "head", 0);
-  await panel.getByRole("button", { name: "Draw path", exact: true }).click();
+  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
   await expect(reds(page)).toHaveCount(2);
   await expect(reds(page).first()).toHaveClass(/stored/);
   await expect(reds(page).nth(1)).toHaveClass(/stored/);
@@ -111,7 +111,7 @@ test("Draw path starts with two spline nodes and a green +: [the bone's place] [
 test("edit the spline: + adds a node, the bone drags the picked node, − Node removes one, never below two", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await panel.getByRole("button", { name: "Draw path", exact: true }).click();
+  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
   const before = (await path(page))!.nodes;
   await panel.getByRole("button", { name: "Add a spline node" }).click();
   await expect(reds(page)).toHaveCount(3);
@@ -128,7 +128,7 @@ test("edit the spline: + adds a node, the bone drags the picked node, − Node r
   expect((await path(page))!.nodes).toHaveLength(2);
 });
 
-test("Adjust time (from Draw path) keeps the spline as it is, with two node times, and writes nothing to the timeline", async ({ page }) => {
+test("Adjust time (from Edit Path) keeps the spline as it is, with two node times, and writes nothing to the timeline", async ({ page }) => {
   await open(page);
   const keys = await translate(page, "head"), done = await steps(page);
   await drawn(page);
@@ -168,8 +168,8 @@ test("Adjust time: + Time adds a node time at the playhead's frame, − Time rem
 test("Total frames is set in Motion Path (14 + 0); the node times keep their share; Closed off ends the path on the last frame shown", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await panel.getByRole("button", { name: "Draw path", exact: true }).click();
-  // Draw path shapes the spline: Closed is here, Total frames is not.
+  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  // Edit Path shapes the spline: Closed is here, Total frames is not.
   await expect(panel.getByRole("spinbutton", { name: "Total frames" })).toBeHidden();
   await expect(panel.locator("label.lp-field input[type=checkbox]")).toBeVisible();
   await panel.getByRole("button", { name: "Adjust time", exact: true }).click();
@@ -185,7 +185,7 @@ test("Total frames is set in Motion Path (14 + 0); the node times keep their sha
   await expect(panel.getByText("(29 + 0)")).toBeVisible();
   // No path field on the Timeline bar any more.
   await expect(page.getByRole("spinbutton", { name: "Path time (s)" })).toHaveCount(0);
-  await panel.getByRole("button", { name: "Draw path", exact: true }).click();
+  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
   await panel.locator("label.lp-field input[type=checkbox]").uncheck();
   await expect.poll(async () => (await path(page))!.closed).toBe(false);
   await panel.getByRole("button", { name: "Adjust time", exact: true }).click();
@@ -228,7 +228,7 @@ test("a block's time multiplier: the block covers more of the ring; Bake to time
 test("the baked bone follows the ring between its keys: within a few units of the path at every frame", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await panel.getByRole("button", { name: "Draw path", exact: true }).click();
+  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
   await panel.getByRole("button", { name: "Add a spline node" }).click();
   await panel.getByRole("button", { name: "Adjust time", exact: true }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.seek(5));
@@ -258,11 +258,11 @@ test("Remove path forgets the path and keeps the keys", async ({ page }) => {
   expect(await translate(page, "head")).toEqual(keys);
 });
 
-test("in Draw path the bone and the picked node follow each other: drag the bone, the node moves; drag the node, the bone moves", async ({ page }) => {
+test("in Edit Path the bone and the picked node follow each other: drag the bone, the node moves; drag the node, the bone moves", async ({ page }) => {
   await open(page);
-  await panelOf(page).getByRole("button", { name: "Draw path", exact: true }).click();
+  await panelOf(page).getByRole("button", { name: "Edit Path", exact: true }).click();
   const stored = (await path(page))!.nodes;
-  // The bone dragged on the Stage (unkeyed, as Draw path poses it): the picked node (the second) follows, without pressing red.
+  // The bone dragged on the Stage (unkeyed, as Edit Path poses it): the picked node (the second) follows, without pressing red.
   await drag(page, "head", 30, 50);
   await expect.poll(async () => (await path(page))!.nodes[1]).not.toEqual(stored[1]);
   expect((await path(page))!.nodes[0]).toEqual(stored[0]);
@@ -283,7 +283,7 @@ test("in Draw path the bone and the picked node follow each other: drag the bone
 test("hand tools: on a ring every node has both handles; dragging one bends the curve and keeps the node; a double click puts it back to automatic", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await panel.getByRole("button", { name: "Draw path", exact: true }).click();
+  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
   await panel.getByRole("button", { name: "Add a spline node" }).click();
   await page.waitForTimeout(400);
   const handles = () => page.evaluate(() => (window as unknown as Live).boneburst.motionPath.grabPoints.handles);
@@ -459,7 +459,7 @@ test("a red number moves the bone on the Stage: the session announces each pose,
 test("Adjust time edits the timing only: the bone is not dragged on the Stage or in Motion Path, the spline stays, and the bone is back on the animation's pose", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await panel.getByRole("button", { name: "Draw path", exact: true }).click();
+  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
   await drag(page, "head", 50, 20);
   await expect.poll(async () => (await path(page))!.nodes[1]).toBeDefined();
   const nodes = (await path(page))!.nodes;
@@ -494,7 +494,7 @@ test("Adjust time edits the timing only: the bone is not dragged on the Stage or
   }
   expect((await path(page))!.nodes).toEqual(nodes);
   expect(await page.evaluate(() => (window as unknown as { boneburst: { session: { hasUnkeyed: boolean } } }).boneburst.session.hasUnkeyed)).toBe(false);
-  // Back in Draw path the bone drags again.
-  await panel.getByRole("button", { name: "Draw path", exact: true }).click();
+  // Back in Edit Path the bone drags again.
+  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
   expect(await page.evaluate(() => (window as unknown as { boneburst: { motionPath: { timing: boolean } } }).boneburst.motionPath.timing)).toBe(false);
 });

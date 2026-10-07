@@ -134,14 +134,14 @@ tells how far off the polygon is (the largest gap to the path) before the owner 
 
 The Motion Path panel's path row now has two modes, as buttons that show when a bone has a path:
 
-- **Draw path:** shape the path: drag, add (+ Node, or a double click on the curve) and remove nodes, then
+- **Edit Path:** shape the path: drag, add (+ Node, or a double click on the curve) and remove nodes, then
   **Bake** (the Spine keys). A press on a dot only puts the playhead there. The move arrows are hidden while a
   path exists (they edit the keys directly and would make the path stale); the rotation handle stays.
 - **Adjust time:** change the speed only: a dot is dragged **along the path** (the nodes are drawn small and hollow and
   cannot be grabbed). If the keys changed since the last bake, or the path was never baked, a press says so and
   only seeks.
 
-Make path starts in Draw path; **Bake switches to Adjust time**. The mode is a panel setting, not saved.
+Make path starts in Edit Path; **Bake switches to Adjust time**. The mode is a panel setting, not saved.
 
 ## Steps
 
