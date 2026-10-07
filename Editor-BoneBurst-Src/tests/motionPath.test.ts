@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addNodeTime, bakeTranslate, blocksOf, boundaryProgress, buildCurve, curveOf, endFrame, fitChannel, handleOffsets, keyFrames, keysSignature, moveNodeTime, nodeTimeFrames, pathSignature, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, swapNodes, translateKeys, withNode, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
+import { addNodeTime, bakeTranslate, blocksOf, boundaryProgress, buildCurve, curveOf, endFrame, fitChannel, handleOffsets, keyFrames, keysSignature, moveNodeTime, nodeTimeFrames, pathSignature, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, moveNode, withOrigin, translateKeys, withNode, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
 import type { MotionPath } from "@/model/sidecar";
 import type { Animation, Key, Skeleton } from "@/model/skeleton";
 import { keyLists, keyTime, timeFrame } from "@/model/timelines";
@@ -258,26 +258,54 @@ describe("a block's speed graph", () => {
   });
 });
 
-describe("swapping spline nodes", () => {
-  it("exchanges two nodes with their handles; each keeps its number, so 1, 2, 3 with 3 dragged to 2 reads 1, 3, 2", () => {
-    const m = motion({ nodes: [{ x: 0, y: 0 }, { x: 5, y: 5, tx: 1, ty: 2 }, { x: 9, y: 9 }] });
-    expect(nodeLabels(m)).toEqual([1, 2, 3]);
-    const s = swapNodes(m, 2, 1);
-    expect(s.nodes.map((n) => [n.x, n.y, n.id])).toEqual([[0, 0, 1], [9, 9, 3], [5, 5, 2]]);
+describe("moving spline nodes", () => {
+  const four = () => motion({ nodes: [{ x: 0, y: 0 }, { x: 5, y: 5, tx: 1, ty: 2 }, { x: 9, y: 9 }, { x: 4, y: 8 }] });
+  it("takes a node to another place in the order; it keeps its handle and its number: 1, 2, 3 with 3 dragged before 2 reads 1, 3, 2", () => {
+    const m = four(), s = moveNode(m, 2, 1);
+    expect(s.nodes.map((n) => [n.x, n.y, n.id])).toEqual([[0, 0, 1], [9, 9, 3], [5, 5, 2], [4, 8, 4]]);
     expect(s.nodes[2]!.tx).toBe(1);
-    expect(nodeLabels(s)).toEqual([1, 3, 2]);
+    expect(nodeLabels(s)).toEqual([1, 3, 2, 4]);
     // The same places, another order: the curve differs.
     expect(pathSignature(s)).not.toBe(pathSignature(m));
-    expect(swapNodes(s, 2, 1).nodes.map((n) => [n.x, n.y])).toEqual(m.nodes.map((n) => [n.x, n.y]));
-    expect(() => swapNodes(m, 0, 3)).toThrow();
-    expect(() => swapNodes(m, 1, 1)).toThrow();
+    expect(moveNode(s, 1, 2).nodes.map((n) => [n.x, n.y])).toEqual(m.nodes.map((n) => [n.x, n.y]));
+  });
+  it("shifts the others: 1 moved after 2 in 3, 1, 2, 4 gives 3, 2, 1, 4", () => {
+    const start = moveNode(four(), 2, 0);
+    expect(nodeLabels(start)).toEqual([3, 1, 2, 4]);
+    expect(nodeLabels(moveNode(start, 1, 2))).toEqual([3, 2, 1, 4]);
+    expect(nodeLabels(moveNode(four(), 0, 3))).toEqual([2, 3, 4, 1]);
+  });
+  it("refuses a node that is not there or no move", () => {
+    expect(() => moveNode(four(), 0, 4)).toThrow();
+    expect(() => moveNode(four(), 1, 1)).toThrow();
+    expect(() => moveNode(four(), -1, 1)).toThrow();
   });
   it("gives a node added later the next free number, in the middle too", () => {
     const m = motion({ nodes: [{ x: 0, y: 0 }, { x: 5, y: 5 }] });
     expect(nodeLabels(withNode(m, { x: 9, y: 9 }))).toEqual([1, 2, 3]);
     expect(withNode(m, { x: 9, y: 9 }).nodes.every((n) => n.id === undefined)).toBe(true);
-    const sw = swapNodes(withNode(m, { x: 9, y: 9 }), 2, 1);
+    const sw = moveNode(withNode(m, { x: 9, y: 9 }), 2, 1);
     expect(nodeLabels(withNode(sw, { x: 7, y: 7 }))).toEqual([1, 3, 2, 4]);
     expect(nodeLabels(withNode(m, { x: 2, y: 2 }, 1))).toEqual([1, 3, 2]);
+  });
+});
+
+describe("the origin of a ring", () => {
+  const four = () => moveNode(motion({ nodes: [{ x: 0, y: 0 }, { x: 5, y: 5 }, { x: 9, y: 9 }, { x: 4, y: 8 }] }), 2, 0);
+  it("starts the ring at a node and goes round in the same order: 3, 1, 2, 4 started at 2 is 2, 4, 3, 1", () => {
+    const m = four();
+    expect(nodeLabels(m)).toEqual([3, 1, 2, 4]);
+    const s = withOrigin(m, 2);
+    expect(nodeLabels(s)).toEqual([2, 4, 3, 1]);
+    // The same ring: every place has the same two neighbours.
+    const around = (x: MotionPath) => x.nodes.map((n, i) => [n.id, x.nodes[(i + 1) % x.nodes.length]!.id]).sort().join("|");
+    expect(around(s)).toBe(around(m));
+    // Started again two nodes on, it is back where it was.
+    expect(nodeLabels(withOrigin(s, 2))).toEqual([3, 1, 2, 4]);
+  });
+  it("refuses the origin itself, a node that is not there, and an open path", () => {
+    expect(() => withOrigin(four(), 0)).toThrow();
+    expect(() => withOrigin(four(), 4)).toThrow();
+    expect(() => withOrigin({ ...four(), closed: false }, 2)).toThrow();
   });
 });

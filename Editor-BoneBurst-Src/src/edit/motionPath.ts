@@ -222,13 +222,21 @@ export function withNode(m: MotionPath, node: MotionNode, at?: number): MotionPa
   return { ...base, nodes: [...base.nodes.slice(0, i), added, ...base.nodes.slice(i)] };
 }
 
-/** The nodes `i` and `j` of the path swapped: each keeps its handle and its number; the path is the same set of places run in another order. */
-export function swapNodes(m0: MotionPath, i: number, j: number): MotionPath {
-  if (i === j || i < 0 || j < 0 || i >= m0.nodes.length || j >= m0.nodes.length) throw new EditRefused("There is no such spline node.");
-  const m = withIds(m0), nodes = m.nodes.slice();
-  nodes[i] = m.nodes[j]!;
-  nodes[j] = m.nodes[i]!;
+/** The node at place `from` moved to place `to` (the others shift by one): it keeps its handle and its number; the path is the same set of places run in another order. */
+export function moveNode(m0: MotionPath, from: number, to: number): MotionPath {
+  if (from === to || from < 0 || to < 0 || from >= m0.nodes.length || to >= m0.nodes.length) throw new EditRefused("There is no such spline node.");
+  const m = withIds(m0), nodes = m.nodes.slice(), [held] = nodes.splice(from, 1);
+  nodes.splice(to, 0, held!);
   return { ...m, nodes };
+}
+
+/** The ring started at node `i` (the origin): the order is the same going round, from that node (3, 1, 2, 4 started at 2 is 2, 4, 3, 1). Only a ring can start elsewhere: an open path has two ends. */
+export function withOrigin(m0: MotionPath, i: number): MotionPath {
+  if (i < 0 || i >= m0.nodes.length) throw new EditRefused("There is no such spline node.");
+  if (!m0.closed) throw new EditRefused("Only a ring can start at another node: an open path has two ends.");
+  if (i === 0) throw new EditRefused("That node is already the origin.");
+  const m = withIds(m0);
+  return { ...m, nodes: [...m.nodes.slice(i), ...m.nodes.slice(0, i)] };
 }
 
 /** A node time added at `frame` (inside the run, not on another); the block it falls in is split in two, each keeping its multiplier. */

@@ -13,6 +13,12 @@ flowchart LR
 
 ## 2026-10-07
 
+- **BoneBurst Editor v2: Motion Path node strip as square cells you drag to a gap, Set to Origin, and the keys follow the panel under the pointer** (`Editor-BoneBurst-Src/`, [plan](../../Editor-BoneBurst-Src/docs/PATH-FRAMES-PLAN.md)).
+  - **Node strip:** square green cells from the left (blocks as tabs in Adjust time). A number dragged along the strip moves that node to another place in the path's order; a red line with an arrow carrying the number marks the gap, the status line and the canvas show the order it would run in; Escape or letting go outside cancels. This replaces the earlier swap (`moveNode`, was `swapNodes`). Right-click a number: **Set N to Origin** starts the ring there and goes round in the same order (`withOrigin`; rings only).
+  - **Keys:** the panel under the pointer owns them. Over Motion Path: Q and W select the previous and next node (node time in Adjust time), an arrow moves the picked node by the nudge step (Shift: the big step), F fits its view; over the Timeline F fits the Timeline; elsewhere Q and W step frames, arrows nudge the bone, F focuses the Stage. `,` and `.` always step frames.
+  - Fix: a node added with + is shown as picked at once.
+  - Guarded by `tests/motionPath.test.ts`, `e2e/motionPath.spec.ts` (a deliberate bug in the swap, the canvas preview, the Stage lock and the F routing each fail it); 755 unit and 82 browser tests passed; not tried by hand.
+
 - **BoneBurst Editor v2: Motion Path node buttons are green numbers that swap by dragging, each node keeps its number, and the + moves to the upper row** (`Editor-BoneBurst-Src/`, [plan](../../Editor-BoneBurst-Src/docs/PATH-FRAMES-PLAN.md)).
   - The strip under the buttons holds only the numbered nodes (solid green); the green + is in the upper row (it creates the path when there is none, adds a node in Edit Path, hidden in Adjust time).
   - Dragging a number onto another swaps the two places; a node keeps its number (`MotionNode.id`, saved in the sidecar), so dragging 3 onto 2 reads 1, 3, 2 and the spline runs that way. The keys on the timeline stay the old route until Bake to timeline, which highlights.

@@ -732,21 +732,31 @@ dialog.preferences .slider input[type="number"] { width: 64px; }
 .timeline-bar .path-keys input { width: 3.4em; padding: 1px 3px; font-size: 12px; }
 
 /* The capture bar: a red button per pose slot, a green one to add a slot (docs/PATH-CAPTURE-PLAN.md). */
-.lp-slots { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--line); flex: none; }
+/* The strip is a row of cells from the left edge, hairlines between: a node is a square (width = height); a block is as wide as its label. */
+.lp-slots { position: relative; display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: stretch; gap: 0; padding: 0; border-bottom: 1px solid var(--line); flex: none; }
 .lp-slots[hidden] { display: none; }
-.lp-slots button.slot { min-width: 22px; height: 22px; padding: 0 5px; font-size: 12px; background: transparent; border-radius: 4px; border-width: 2px; border-style: solid; }
-.lp-slots button.node { border-color: #2e9e4f; background: #2e9e4f; color: #ffffff; cursor: grab; }
-.lp-slots button.node.picked { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lp-slots button.slot { min-width: 0; height: 28px; padding: 0 4px; flex: none; font-size: 12px; background: transparent; border-radius: 0; border: 0; border-right: 1px solid var(--line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lp-slots button.slot:last-child { border-right: 0; }
+.lp-slots button.node { width: 28px; padding: 0; background: #2e9e4f; color: #ffffff; cursor: grab; border-right-color: rgba(255, 255, 255, 0.35); }
+.lp-slots button.node { touch-action: none; user-select: none; }
+.lp-slots button.node.dragging { opacity: 0.35; }
+.lp-slots button.node.picked { outline: 2px solid var(--accent); outline-offset: -2px; }
 .lp-motion button.add { min-width: 22px; border: 2px solid #2e9e4f; color: #2e9e4f; font-weight: 700; background: transparent; }
 .lp-motion button.add:hover { background: #2e9e4f; color: #ffffff; }
 .lp-motion input.time-field { width: 5em; padding: 1px 3px; font-size: 12px; }
 .lp-motion .lp-field { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .lp-motion .lp-field[hidden] { display: none; }
-.lp-slots button.block { padding: 0 8px; border-color: var(--line); color: var(--text); }
-.lp-slots button.block.picked { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.lp-slots button.block { padding: 0 6px; color: var(--text); }
+.lp-slots button.block.picked { background: var(--accent); color: var(--accent-text); }
 
 .lp-graph { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--line); flex: none; }
 .lp-graph[hidden] { display: none; }
 .lp-graph button { padding: 1px 8px; font-size: 12px; }
 .lp-graph span { color: var(--muted); font-size: 12px; }
 .lp-graph-canvas { display: block; touch-action: none; cursor: crosshair; }
+
+/* The gap a dragged number would go into: a red line through the strip exactly on the boundary, an arrow under it pointing up at it, the number in the arrow. */
+.lp-drop-arrow { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; background: #e03e3e; border-radius: 1px; pointer-events: none; z-index: 5; }
+.lp-drop-arrow::after { content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); width: 0; height: 0; margin-top: 1px; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 7px solid #e03e3e; }
+.lp-drop-arrow span { position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border-radius: 4px; background: #e03e3e; color: #fff; font-size: 12px; font-weight: 700; line-height: 1; }
+.lp-drop-arrow[hidden] { display: none; }

@@ -690,7 +690,7 @@ export function mountApp(root: HTMLElement): void {
       if (!stage.cancel() && session.playing) session.pause();
       else session.select(null);
     },
-    fit: () => stage.focusSelected(),
+    fit: () => { if (hovered === "motion") motionPanel.fitView(); else if (hovered === "timeline") timeline.fit(); else stage.focusSelected(); },
     nudgeLeft: (e?: KeyboardEvent) => nudge("left", e),
     nudgeRight: (e?: KeyboardEvent) => nudge("right", e),
     nudgeDown: (e?: KeyboardEvent) => nudge("down", e),
@@ -704,8 +704,9 @@ export function mountApp(root: HTMLElement): void {
     brushSmaller: () => { if (!brush.on) return false; say(`Brush ${resizeBrush(-1)} px.`); stage.redraw(); },
     brushLarger: () => { if (!brush.on) return false; say(`Brush ${resizeBrush(1)} px.`); stage.redraw(); },
     play: () => timeline.togglePlay(),
-    prevFrame: () => session.seek(session.frame - 1),
-    nextFrame: () => session.seek(session.frame + 1),
+    // Q and W step the nodes while the Motion Path panel is the one last pressed, and the frames anywhere else (, and . always step frames).
+    prevFrame: (e?: KeyboardEvent) => { if (hovered === "motion" && /^q$/i.test(e?.key ?? "") && motionPanel.stepNode(-1)) return; session.seek(session.frame - 1); },
+    nextFrame: (e?: KeyboardEvent) => { if (hovered === "motion" && /^w$/i.test(e?.key ?? "") && motionPanel.stepNode(1)) return; session.seek(session.frame + 1); },
     firstFrame: () => session.seek(0),
     lastFrame: () => { const a = session.animation; if (a) session.seek(timeFrame(session.length(a), session.fps)); },
     key: () => timeline.keySelected(),
@@ -725,9 +726,21 @@ export function mountApp(root: HTMLElement): void {
     shortcuts: () => sheet.open(),
   };
 
+  // The keys belong to the panel the pointer is over (a press leaves it there): Motion Path takes F, the arrows and Q and W for its own
+  // view and nodes, the Timeline takes F, and everywhere else they are the Stage's and the frames'.
+  let hovered: "motion" | "timeline" | "stage" | "other" = "other";
+  const track = (e: Event): void => {
+    const at = e.target as Node;
+    hovered = motionPanel.element.contains(at) ? "motion" : timeline.element.contains(at) ? "timeline" : stage.element.contains(at) ? "stage" : "other";
+  };
+  document.addEventListener("pointermove", track, true);
+  document.addEventListener("pointerdown", track, true);
+
   // An arrow key nudges the chosen tool's value, unless a list or menu has it (a select moves its choice on arrows).
   const nudge = (dir: "left" | "right" | "up" | "down", e?: KeyboardEvent): boolean | void => {
     if ((e?.target as HTMLElement | null)?.tagName === "SELECT") return false;
+    const sizes = { step: prefs.values.nudgeStep, scaleStep: prefs.values.nudgeScaleStep, bigFactor: prefs.values.nudgeBigFactor };
+    if (hovered === "motion" && motionPanel.nudge(dir, !!e?.shiftKey, sizes.step, sizes.bigFactor)) return;
     transform.nudge(stage.tool, dir, !!e?.shiftKey, { step: prefs.values.nudgeStep, scaleStep: prefs.values.nudgeScaleStep, bigFactor: prefs.values.nudgeBigFactor });
   };
 

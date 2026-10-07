@@ -1,12 +1,13 @@
 import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { EditRefused } from "@/edit/history";
-import { addNodeTime, blocksOf, curveOf, endFrame, FLAT_SPEED, handleOffsets, moveNodeTime, nodeTimeFrames, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, type SpeedPoint, swapNodes, withNode, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
+import { addNodeTime, blocksOf, curveOf, endFrame, FLAT_SPEED, handleOffsets, moveNodeTime, nodeTimeFrames, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, type SpeedPoint, moveNode, withNode, withOrigin, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
 import { drawnVertices } from "@/engine/draw";
 import { boneInherit } from "@/model/defaults";
 import type { Skeleton } from "@/model/skeleton";
 import type { MotionPath } from "@/model/sidecar";
 import { frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
 import { iconButton } from "../icons";
+import { showContextMenu } from "../contextMenu";
 import { bakeMotion, currentNode, dropMotion, keepMotion, motionChanged, motionFor, motionStale, nodeAfter, poseAtNode, startMotion } from "../motion";
 import { keysAt } from "@/model/timelines";
 import { localPoint, pageScale } from "../pageScale";
@@ -166,6 +167,10 @@ export class MotionPathPanel {
   /** The capture bar (docs/PATH-CAPTURE-PLAN.md): a numbered button for each node (press: put the bone there), a green + to add a slot. */
   private readonly slotBar = document.createElement("div");
   private slotSig = "";
+  /** The path as a held number would leave it (and the two nodes), drawn dashed on the canvas while it is dragged. */
+  private nodePreview: { motion: MotionPath; from: number } | null = null;
+  /** The click that ends a drag of a number is ignored. */
+  private suppressClick = false;
   /** The picked block's speed graph (Adjust time): presets above a small canvas of draggable points; a straight line at 1 by default. */
   private readonly graphBar = document.createElement("div");
   private readonly graphCanvas = document.createElement("canvas");
@@ -221,7 +226,7 @@ export class MotionPathPanel {
     this.note.className = "empty lp-note";
     const fit = iconButton(this.button("Fit", "Fit the whole path in the panel (double-click does the same)"), "fit", false);
     fit.className = "lp-fit";
-    fit.addEventListener("click", () => this.fit());
+    fit.addEventListener("click", () => this.fitView());
     this.body.append(this.canvas, this.note, fit);
     this.motionBar.className = "lp-motion";
     this.motionInfo.className = "lp-motion-info";
@@ -304,7 +309,7 @@ export class MotionPathPanel {
     this.canvas.addEventListener("pointermove", (e) => this.move(e));
     this.canvas.addEventListener("pointerup", (e) => this.up(e));
     this.canvas.addEventListener("pointercancel", (e) => this.up(e));
-    this.canvas.addEventListener("dblclick", (e) => { const [x, y] = localPoint(this.canvas, e); if (!this.resetHandleAt(x, y) && !this.insertNodeAt(x, y) && !this.addTimeAt(x, y)) this.fit(); });
+    this.canvas.addEventListener("dblclick", (e) => { const [x, y] = localPoint(this.canvas, e); if (!this.resetHandleAt(x, y) && !this.insertNodeAt(x, y) && !this.addTimeAt(x, y)) this.fitView(); });
     this.canvas.tabIndex = 0;
     this.canvas.addEventListener("keydown", (e) => {
       if ((e.key !== "Delete" && e.key !== "Backspace") || !motionFor(this.session)) return;
@@ -862,14 +867,20 @@ export class MotionPathPanel {
       const items = m.nodes.map((n, i) => {
         const label = nodeLabels(m)[i]!;
         const b = make(`slot node${i === this.selNode ? " picked" : ""}`, `${label}`,
-          `Spline node ${label}: x ${n.x}, y ${n.y}. Press to put the bone there; then moving the bone moves the node. Drag onto another number to swap their places.`,
-          () => this.pickSlot(i));
+          `Spline node ${label}: x ${n.x}, y ${n.y}. Press to put the bone there; then moving the bone moves the node. Drag it along the numbers to move it in the order.`,
+          () => { if (this.suppressClick) { this.suppressClick = false; return; } this.pickSlot(i); });
         b.setAttribute("aria-label", `Spline node ${label}`);
-        // Drag a number onto another: the two nodes swap places in the path (and the order it runs in).
-        b.draggable = true;
-        b.addEventListener("dragstart", (e) => { e.dataTransfer?.setData("text/plain", String(i)); if (e.dataTransfer) e.dataTransfer.effectAllowed = "move"; });
-        b.addEventListener("dragover", (e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = "move"; });
-        b.addEventListener("drop", (e) => { e.preventDefault(); this.swapNodes(Number(e.dataTransfer?.getData("text/plain")), i); });
+        this.nodeDragStart(b, i);
+        // Right-click: make this node the origin (the path starts there and goes round in the same order).
+        b.addEventListener("contextmenu", (e) => {
+          e.preventDefault();
+          const ring = motionFor(this.session)?.closed ?? false;
+          showContextMenu(e.clientX, e.clientY, [{
+            label: `Set ${label} to Origin`,
+            disabled: i === 0 || !ring,
+            run: () => this.setOrigin(i),
+          }]);
+        });
         return b;
       });
       this.slotBar.replaceChildren(...items);
@@ -983,6 +994,39 @@ export class MotionPathPanel {
   }
 
   /**
+   * An arrow key while the pointer is over this panel: in Edit Path the picked node moves by one step (Shift: the big step) and the bone
+   * goes with it; in Adjust time nothing moves. False when the bone has no path, so the key goes on to the bone as anywhere else.
+   */
+  nudge(dir: "left" | "right" | "up" | "down", big: boolean, step: number, bigFactor: number): boolean {
+    const s = this.session, m = motionFor(s);
+    if (!m) return false;
+    if (this.mode !== "draw") return true;
+    const n = m.nodes[this.selNode];
+    if (!n) { this.onStatus("Pick a node first (press its number, or Q and W)."); return true; }
+    const d = step * (big ? bigFactor : 1), dx = dir === "left" ? -d : dir === "right" ? d : 0, dy = dir === "up" ? d : dir === "down" ? -d : 0;
+    const x = Math.round((n.x + dx) * 1e4) / 1e4, y = Math.round((n.y + dy) * 1e4) / 1e4;
+    keepMotion(s, { ...m, nodes: m.nodes.map((q, i) => (i === this.selNode ? { ...q, x, y } : q)) });
+    poseAtNode(s, x, y);
+    return true;
+  }
+
+  /**
+   * Q and W while this panel has the keys: the previous or next node (Edit Path: the bone goes to it) or node time (Adjust
+   * time). A ring goes round; an open path stops at its ends. False when there is nothing to step through here.
+   */
+  stepNode(dir: -1 | 1): boolean {
+    const m = motionFor(this.session);
+    if (!m) return false;
+    const count = this.mode === "draw" ? m.nodes.length : nodeTimeFrames(m).length, at = this.mode === "draw" ? this.selNode : this.selTime;
+    if (count < 1) return false;
+    const wrap = this.mode === "time" || m.closed;
+    let next = at < 0 ? (dir > 0 ? 0 : count - 1) : at + dir;
+    if (next < 0 || next >= count) next = wrap ? (next + count) % count : Math.min(count - 1, Math.max(0, next));
+    if (this.mode === "draw") this.pickSlot(next); else this.pickTime(next);
+    return true;
+  }
+
+  /**
    * Pick a spline node (the one the bone and the node now follow each other for) and pose the bone at it, at
    * the playhead's frame: then dragging the bone moves the node and dragging the node moves the bone.
    */
@@ -1042,15 +1086,103 @@ export class MotionPathPanel {
     this.schedule();
   }
 
-  /** Two spline nodes swap places (a number dragged onto another); the picked node stays the one picked. */
-  private swapNodes(from: number, to: number): void {
+  /**
+   * Drag a numbered button along the strip to move that node to another place in the path's order. While it is held a red
+   * arrow carrying its number shows the gap it would go into; the status line says the order the path would run in
+   * and the canvas draws that path. Let go outside the strip, or press Escape, to leave it as it was.
+   */
+  private nodeDragStart(b: HTMLButtonElement, from: number): void {
+    b.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      const m0 = motionFor(this.session);
+      if (!m0) return;
+      const x0 = e.clientX, y0 = e.clientY, bar = this.slotBar, cells = [...bar.querySelectorAll<HTMLButtonElement>("button.node")];
+      let arrow: HTMLElement | null = null, to = -1, moved = false;
+      // The place the node would take: the gap the pointer is over (before the cell whose middle is past it), as an index; -1 outside the strip or where it already is.
+      const place = (cx: number, cy: number): number => {
+        const r = bar.getBoundingClientRect();
+        if (cy < r.top - 24 || cy > r.bottom + 24 || cx < r.left - 24 || cx > r.right + 24) return -1;
+        const gap = cells.filter((q) => { const c = q.getBoundingClientRect(); return (c.left + c.right) / 2 < cx; }).length, at = gap > from ? gap - 1 : gap;
+        return at === from ? -1 : at;
+      };
+      const gapX = (at: number): number => {
+        // The gap's x: before the cell now at `at` when moving left, after it when moving right.
+        const q = cells[at]!.getBoundingClientRect(), r = bar.getBoundingClientRect();
+        return (at > from ? q.right : q.left) - r.left;
+      };
+      const show = (): void => {
+        const preview = to >= 0 ? moveNode(m0, from, to) : null;
+        cells.forEach((q, k) => q.classList.toggle("dragging", k === from && moved));
+        if (arrow) {
+          arrow.hidden = to < 0;
+          if (to >= 0) arrow.style.left = `${gapX(to)}px`;
+        }
+        this.nodePreview = preview ? { motion: preview, from } : null;
+        if (moved) this.onStatus(preview ? `Drop here: the path will run ${nodeLabels(preview).join(", ")}.` : "Drag along the numbers to a gap; let go here to leave the order as it is.");
+        this.schedule();
+      };
+      const finish = (apply: boolean): void => {
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", up);
+        window.removeEventListener("keydown", key, true);
+        arrow?.remove();
+        cells.forEach((q) => q.classList.remove("dragging"));
+        this.nodePreview = null;
+        if (moved && apply && to >= 0) this.moveNodeTo(from, to);
+        else this.schedule();
+        // A drag is not a press: the click that follows it must not put the bone on a node.
+        if (moved) { this.suppressClick = true; setTimeout(() => { this.suppressClick = false; }, 0); }
+      };
+      const move = (ev: PointerEvent): void => {
+        if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
+        if (!moved) {
+          moved = true;
+          // The marker: a line on the gap, an arrow under it, the dragged number in the arrow.
+          arrow = document.createElement("div");
+          arrow.className = "lp-drop-arrow";
+          arrow.hidden = true;
+          const tag = document.createElement("span");
+          tag.textContent = b.textContent;
+          arrow.append(tag);
+          bar.append(arrow);
+          show();
+        }
+        const next = place(ev.clientX, ev.clientY);
+        if (next !== to) { to = next; show(); }
+      };
+      const up = (): void => finish(true);
+      const key = (ev: KeyboardEvent): void => { if (ev.key === "Escape") { ev.stopPropagation(); finish(false); } };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", up);
+      window.addEventListener("keydown", key, true);
+    });
+  }
+
+  /** The ring started at the node at place `i`; the picked node stays the one picked. */
+  private setOrigin(i: number): void {
     const s = this.session, m = motionFor(s);
-    if (!m || !Number.isInteger(from) || from === to || from < 0 || to < 0 || from >= m.nodes.length || to >= m.nodes.length) return;
-    keepMotion(s, swapNodes(m, from, to));
-    if (this.selNode === from) this.selNode = to; else if (this.selNode === to) this.selNode = from;
+    if (!m) return;
+    try {
+      const next = withOrigin(m, i);
+      keepMotion(s, next);
+      if (this.selNode >= 0) this.selNode = nodeLabels(next).indexOf(nodeLabels(m)[this.selNode]!);
+      this.slotSig = "";
+      this.onStatus(`The path now starts at ${nodeLabels(next)[0]} and runs ${nodeLabels(next).join(", ")}.`);
+      this.schedule();
+    } catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); }
+  }
+
+  /** The node at place `from` moved to place `to` in the path's order (a number dragged to a gap); it stays the picked one if it was. */
+  private moveNodeTo(from: number, to: number): void {
+    const s = this.session, m = motionFor(s);
+    if (!m || from === to || from < 0 || to < 0 || from >= m.nodes.length || to >= m.nodes.length) return;
+    const next = moveNode(m, from, to);
+    keepMotion(s, next);
+    // The picked node keeps its place in the order as the others shift.
+    if (this.selNode === from) this.selNode = to;
+    else if (this.selNode >= 0) this.selNode = nodeLabels(next).indexOf(nodeLabels(m)[this.selNode]!);
     this.slotSig = "";
-    const labels = nodeLabels(m);
-    this.onStatus(`Swapped spline nodes ${labels[from]} and ${labels[to]}: the path now runs ${nodeLabels(swapNodes(m, from, to)).join(", ")}.`);
+    this.onStatus(`The path now runs ${nodeLabels(next).join(", ")}.`);
     this.schedule();
   }
 
@@ -1060,7 +1192,9 @@ export class MotionPathPanel {
     if (!m) return;
     keepMotion(s, withNode(m, nodeAfter(s, m.nodes.at(-1)!)));
     this.selNode = m.nodes.length;
+    this.slotSig = "";
     this.onStatus("Added a spline node: move the bone (or drag the node) to place it.");
+    this.schedule();
   }
 
   /** Whether the path's time is being adjusted: the bone is not dragged, on the Stage or here, and its spline stays as it is. */
@@ -1092,6 +1226,24 @@ export class MotionPathPanel {
     g.stroke();
     g.setLineDash([]);
     g.globalAlpha = 1;
+    const pre = this.nodePreview;
+    if (pre && draw) {
+      // The path a held number would make: solid in the accent colour, the node being moved ringed.
+      const pc = curveOf(pre.motion);
+      g.strokeStyle = accent;
+      g.lineWidth = 2.5;
+      g.beginPath();
+      for (let i = 0; i <= steps; i++) {
+        const p = pc.at((pc.length * i) / steps), [x, y] = at(p.x, p.y);
+        if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+      }
+      g.stroke();
+      const held = m.nodes[pre.from];
+      if (held) {
+        const [x, y] = at(held.x, held.y);
+        g.beginPath(); g.arc(x, y, 11, 0, Math.PI * 2); g.stroke();
+      }
+    }
     this.timePts = [];
     if (!draw) {
       // Where the bone will be on each frame (even speed inside a block), and the node times: where a block begins.
@@ -1314,8 +1466,8 @@ export class MotionPathPanel {
     return true;
   }
 
-  /** Shown whole again. */
-  private fit(): void {
+  /** Shown whole again (F while the pointer is over this panel). */
+  fitView(): void {
     this.hold = false;
     this.zoom = 1;
     this.pan = { x: 0, y: 0 };
