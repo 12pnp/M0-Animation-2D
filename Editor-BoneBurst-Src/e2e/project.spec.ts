@@ -89,3 +89,27 @@ test("Open dialog: + works where the browser cannot keep folders: the folder's p
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await expect(page.locator("dialog.open-project")).not.toBeVisible();
 });
+
+test("a project remembers the selected bone and the animation shown, and opens on them", async ({ page }) => {
+  type Remembered = { boneburst: { session: { selectedBone: string | null; animation: { name: string } | null; doc: { animations?: { name: string }[] }; select(s: unknown): void; showAnimation(n: string | null): void } } };
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  const chosen = await page.evaluate(() => {
+    const s = (window as unknown as Remembered).boneburst.session, anim = s.doc.animations![0]!.name;
+    s.select({ kind: "bone", name: "head" });
+    s.showAnimation(anim);
+    return { anim };
+  });
+  const [saved] = await Promise.all([page.waitForEvent("download"), menuItem(page, "File", "Save Project(?! As)")]);
+  const path = join(mkdtempSync(join(tmpdir(), "bbdata-")), "Stickman_IK.bbdata");
+  await saved.saveAs(path);
+  await page.reload();
+  await page.locator('input[type=file][accept*=".bbdata"]').setInputFiles(path);
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  const back = await page.evaluate(() => { const s = (window as unknown as Remembered).boneburst.session; return { bone: s.selectedBone, anim: s.animation?.name ?? null }; });
+  expect(back.bone).toBe("head");
+  expect(back.anim).toBe(chosen.anim);
+});

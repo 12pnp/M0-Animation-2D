@@ -366,10 +366,6 @@ html .dockview-theme-light {
   overflow: hidden;
   cursor: default;
 }
-.timeline-labels .row:nth-child(odd) { background: var(--hover); }
-.timeline-labels .row.depth1 { padding-left: 30px; color: var(--muted); }
-.timeline-labels .row.selected { color: var(--accent); font-weight: 600; }
-.timeline-labels .twisty { border: 0; background: transparent; padding: 0 4px; width: 20px; }
 .timeline-labels .empty { color: var(--muted); padding: 6px 10px; margin: 0; }
 .timeline-track { grid-column: 2; grid-row: 1; position: relative; min-width: 0; display: flex; flex-direction: column; }
 .timeline-track canvas { display: block; width: 100%; flex: none; touch-action: none; }
@@ -738,3 +734,38 @@ dialog.preferences .slider input[type="number"] { width: 64px; }
 .stage-tools .group.folded { width: 18px; height: 10px; }
 /* The value fields take the tool label cell's colour. */
 .stage-tools .group.transform .t-values .axis-box, .stage-tools .group.transform .t-values > .cell { background: var(--hover); }
+
+/* The Timeline bar's "Closed loop" tick (docs/LOOP-PLAN.md). */
+.timeline-bar .closed-loop { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.timeline-bar .closed-loop:has(input:checked) { color: var(--text); }
+
+/* The Local Path panel's row of motion-path buttons (docs/PATH-SPEED-PLAN.md). */
+.lp-motion { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 3px 8px; border-bottom: 1px solid var(--line); flex: none; }
+.lp-motion[hidden], .lp-motion button[hidden] { display: none; }
+.lp-motion button { padding: 1px 8px; font-size: 12px; }
+.lp-motion button.attention { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.lp-motion-info { color: var(--muted); font-size: 11px; margin-left: 4px; }
+.timeline-bar .path-keys { display: flex; align-items: center; gap: 3px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.timeline-bar .path-keys[hidden] { display: none; }
+.timeline-bar .path-keys input { width: 3.4em; padding: 1px 3px; font-size: 12px; }
+
+/* The capture bar: a red button per pose slot, a green one to add a slot (docs/PATH-CAPTURE-PLAN.md). */
+.lp-slots { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--line); flex: none; }
+.lp-slots[hidden] { display: none; }
+.lp-slots button.slot { min-width: 26px; height: 22px; padding: 0 7px; font-size: 12px; background: transparent; border-radius: 4px; border-width: 2px; border-style: solid; }
+.lp-slots button.red { border-color: #e03e3e; color: #e03e3e; }
+.lp-slots button.red.stored { background: #e03e3e; color: #ffffff; }
+.lp-slots button.red.picked { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lp-slots button.green { border-color: #2e9e4f; color: #2e9e4f; font-weight: 700; }
+.lp-slots button.green:hover { background: #2e9e4f; color: #ffffff; }
+.lp-motion input.time-field { width: 5em; padding: 1px 3px; font-size: 12px; }
+.lp-motion .lp-field { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; }
+.lp-motion .lp-field[hidden] { display: none; }
+.lp-slots button.block { padding: 0 8px; border-color: var(--line); color: var(--text); }
+.lp-slots button.block.picked { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+
+.lp-graph { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--line); flex: none; }
+.lp-graph[hidden] { display: none; }
+.lp-graph button { padding: 1px 8px; font-size: 12px; }
+.lp-graph span { color: var(--muted); font-size: 12px; }
+.lp-graph-canvas { display: block; touch-action: none; cursor: crosshair; }

@@ -193,7 +193,7 @@ interface Rebuilt {
   settled?: boolean;
 }
 
-function onAnimation(name: string, f: (a: Animation) => Animation): Edit<Skeleton> {
+export function onAnimation(name: string, f: (a: Animation) => Animation): Edit<Skeleton> {
   return (s) => {
     const all = s.animations ?? [];
     const i = all.findIndex((a) => a.name === name);
@@ -244,6 +244,11 @@ function withList(a: Animation, path: TimelinePath, f: (keys: readonly Key[]) =>
   const keys = settle(path, current, r);
   // Nothing changed (no key matched): the same document, so the history records nothing.
   if (keys.length === current.length && keys.every((k, i) => k === current[i])) return a;
+  return putList(a, path, keys.length ? keys : null);
+}
+
+/** `a` with the key list at `path` replaced by `keys` (the list goes when `keys` is empty). */
+export function withKeys(a: Animation, path: TimelinePath, keys: readonly Key[]): Animation {
   return putList(a, path, keys.length ? keys : null);
 }
 

@@ -42,7 +42,7 @@ test("dragging a letter left or right changes its number, as one edit", async ({
   await expect(x).toHaveValue(String(before));
 });
 
-test("the Stage's transform panel: x / y letters on Translate, Scale and Shear; dragging one changes its cell", async ({ page }) => {
+test("the Stage's transform panel: x / y letters on Move, Scale and Shear; dragging one changes its cell", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();

@@ -14,7 +14,7 @@ import { exportFiles } from "./unityExport";
 /** The files a project holds: what a folder import reads, so opening one is that open. */
 export async function projectFiles(session: Session, view: View): Promise<BbFile[]> {
   const encoder = new TextEncoder();
-  const files: BbFile[] = (await exportFiles(session)).map((f) => ({ name: f.name, data: typeof f.data === "string" ? encoder.encode(f.data) : f.data }));
+  const files: BbFile[] = (await exportFiles(session, false)).map((f) => ({ name: f.name, data: typeof f.data === "string" ? encoder.encode(f.data) : f.data }));
   files.push({ name: sidecarName(`${session.name}.json`), data: encoder.encode(session.projectSidecar(view)) });
   const taken = new Set(files.map((f) => f.name.toLowerCase()));
   for (const [path, blob] of session.referenceBlobs) {

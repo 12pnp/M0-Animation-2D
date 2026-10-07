@@ -16,6 +16,7 @@ const FULL: Sidecar = {
   guides: [{ axis: "x", at: 12.5 }],
   references: [{ path: "ref/run.png", x: 10, y: -4, scale: 0.5, opacity: 0.4 }],
   notes: [{ text: "hips lead", author: "AI", about: "hip" }, { text: "plain" }],
+  motion: [{ animation: "run", bone: "hip", nodes: [{ x: 0, y: 0 }, { x: 5, y: 8, tx: 2, ty: -3 }, { x: 10, y: 0 }], closed: false, frames: 15, starts: [5, 10], speeds: [1, 2, 1], curves: [[], [0, 0.2, 0.5, 1.5, 1, 0.4], []], baked: "abc|def" }],
   extra: new Map([["later", true]]),
 };
 
@@ -58,9 +59,9 @@ describe("sidecar edits", () => {
     expect(hasContent(EMPTY_SIDECAR)).toBe(false);
   });
   it("keeps the view through the file, a newer editor's view keys too, and leaves out what does not read", () => {
-    const s = withView({ ...EMPTY_SIDECAR, view: new Map<string, Json>([["later", 1], ["skin", "old"]]) }, { camera: { x: 1.234, y: -5, zoom: 2.123456 }, skin: "alt", animation: "run" });
+    const s = withView({ ...EMPTY_SIDECAR, view: new Map<string, Json>([["later", 1], ["skin", "old"]]) }, { camera: { x: 1.234, y: -5, zoom: 2.123456 }, skin: "alt", animation: "run", bone: "hips", loopOff: ["jump"] });
     const back = readSidecar(writeSidecar(s)).sidecar;
-    expect(viewOf(back)).toEqual({ camera: { x: 1.23, y: -5, zoom: 2.1235 }, skin: "alt", animation: "run" });
+    expect(viewOf(back)).toEqual({ camera: { x: 1.23, y: -5, zoom: 2.1235 }, skin: "alt", animation: "run", bone: "hips", loopOff: ["jump"] });
     expect(back.view.get("later")).toBe(1);
     expect(viewOf(withView(back, {}))).toEqual({});
     expect(viewOf({ ...EMPTY_SIDECAR, view: new Map<string, Json>([["camera", new Map<string, Json>([["x", 1], ["y", 2], ["zoom", 0]])], ["skin", 3]]) })).toEqual({});

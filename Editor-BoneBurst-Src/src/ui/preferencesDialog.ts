@@ -1,5 +1,5 @@
 import { pickColour } from "./colourPopup";
-import { AUTOSAVE_RANGE, BONE_SIZE_RANGE, DEFAULTS, GRID_RANGE, NUDGE_FACTOR_RANGE, NUDGE_RANGE, ONION_RANGE, DEFAULT_FPS_RANGE, type FontSize, type Preferences, type PreferenceValues, ROW_HEIGHT_RANGE, TREE_INDENT_RANGE, type ToolbarLabels, type ToolbarPosition, THICKNESS_RANGE, type Theme, UI_SCALE_RANGE, UNDO_RANGE } from "./preferences";
+import { AUTOSAVE_RANGE, BONE_SIZE_RANGE, DEFAULTS, GRID_RANGE, NUDGE_FACTOR_RANGE, NUDGE_RANGE, ONION_RANGE, DEFAULT_FPS_RANGE, type FontSize, type Preferences, type PreferenceValues, TREE_INDENT_RANGE, type ToolbarLabels, type ToolbarPosition, THICKNESS_RANGE, type Theme, UI_SCALE_RANGE, UNDO_RANGE } from "./preferences";
 import { toStyle } from "./pageScale";
 
 /**
@@ -51,7 +51,6 @@ export class PreferencesDialog {
         number(`Default timeline FPS (${DEFAULT_FPS_RANGE[0]}–${DEFAULT_FPS_RANGE[1]})`, p.defaultFps, 1, (n) => this.prefs.set({ defaultFps: n })),
         note("The frame rate a new project starts with."),
         check("Fewer timeline ticks (1-2-5 series)", p.fewerTicks, (on) => this.prefs.set({ fewerTicks: on })),
-        slider(`Row height (pixels, ${ROW_HEIGHT_RANGE[0]}–${ROW_HEIGHT_RANGE[1]})`, p.rowHeight, ROW_HEIGHT_RANGE[0], ROW_HEIGHT_RANGE[1], 1, (n) => this.prefs.set({ rowHeight: n })),
         note("The height of each row in the timeline and graph."),
       ],
       tree: [
@@ -201,7 +200,7 @@ export class PreferencesDialog {
 const KEYS: Readonly<Record<string, readonly (keyof PreferenceValues)[]>> = {
   general: ["theme", "undoSteps", "referenceOpacity"],
   interface: ["fontSize", "uiScale", "toolbarPosition", "toolbarLabels"],
-  timeline: ["defaultFps", "fewerTicks", "rowHeight"],
+  timeline: ["defaultFps", "fewerTicks"],
   tree: ["treeColours", "treeIndent"],
   files: ["autosave", "autosaveSeconds"],
   display: ["rulers", "rulerColour", "rulerOpacity", "rulerTextColour", "stagePanels", "bones", "boneColour", "boneSize", "selectedBoneColour", "constraints"],

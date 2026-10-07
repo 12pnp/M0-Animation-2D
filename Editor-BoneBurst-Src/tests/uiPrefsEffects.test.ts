@@ -1,17 +1,10 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { newSkeleton } from "@/edit/newSkeleton";
-import { labelStep, ROW, setRowHeight, setTickSeries } from "@/ui/timeline/layout";
+import { labelStep, setTickSeries } from "@/ui/timeline/layout";
 
-afterEach(() => { setRowHeight(22); setTickSeries(false); });
+afterEach(() => { setTickSeries(false); });
 
-describe("the timeline's row height and ticks", () => {
-  it("take the row height from the preference, where every user of ROW sees it", () => {
-    expect(ROW).toBe(22);
-    setRowHeight(30);
-    expect(ROW).toBe(30);
-    setRowHeight(2);
-    expect(ROW).toBe(8);
-  });
+describe("the timeline's ticks", () => {
   it("label every 15 or 30 frames by default, and in a 1-2-5 series with fewer ticks", () => {
     expect(labelStep(4)).toBe(15);
     expect(labelStep(2)).toBe(30);

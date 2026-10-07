@@ -17,6 +17,8 @@ test("Properties ▸ Skeleton ▸ Frame rate: 24 to 30 changes the timeline's fr
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".timeline select").first().selectOption("run");
+  // Not a loop: the frame counts below are the keys' own, without a closing frame (docs/LOOP-PLAN.md).
+  await page.getByLabel("Closed loop").uncheck();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select(null));
   await expect(page.locator(".frame")).toContainText("/ 17 · 24 fps");
   const before = await hipsTimes(page);

@@ -1,6 +1,7 @@
 import { addAnimation, deleteAnimation, renameAnimation } from "@/edit/animations";
 import { BONE_PROPERTIES, keyBone } from "@/edit/boneKeys";
 import { PRESETS, type Shape } from "@/edit/curves";
+import { isSeamless, trimClosingKeys } from "@/edit/loop";
 import { type Edit, EditRefused } from "@/edit/history";
 import { keyEvent } from "@/edit/events";
 import { deleteKeys, type KeyRef, moveKeys, sameTime, setChannelCurve, setCurve, setKey } from "@/edit/keys";
@@ -8,12 +9,12 @@ import { copyKeys, pasteKeys } from "@/edit/paste";
 import type { Skeleton } from "@/model/skeleton";
 import { animationDuration, channelValues, frameTime, keyLists, keyTime, pathId, timeFrame } from "@/model/timelines";
 import { type Channel, channelField, channelId, channelsOf, fitValues, intervals, valueY, yValue } from "./graph";
-import { CONSTRAINT_ICONS, icon, iconButton, type IconName, setIcon } from "../icons";
+import { iconButton, type IconName, setIcon } from "../icons";
 import { clipboard } from "../clipboard";
 import type { Session } from "../session";
 import { animatedLocal } from "../stage/posed";
 import {
-  buildRows, shiftedRefs, frameX, labelStep, type Mark, markAt, marks, refId, ROW, type Row, rowAt, RULER, type View, xFrame,
+  secondsSinceLastKey, frameX, labelStep, refId, RULER, type View, xFrame,
 } from "./layout";
 import { keysOf } from "../shortcuts";
 import { localPoint, pageScale } from "../pageScale";
@@ -28,8 +29,7 @@ const CURVES: ReadonlyArray<{ label: string; title: string; icon: IconName; curv
 
 type Drag =
   | { kind: "scrub" }
-  | { kind: "keys"; from: number; applied: number; refs: KeyRef[] }
-  /** A press on empty track: a click (playhead, selection cleared) until it moves; then a box (E6 step 4c). */
+  /** A press on empty graph: a click (playhead, selection cleared) until it moves; then a box (E6 step 4c). */
   | { kind: "box"; x0: number; y0: number; x1: number; y1: number; moved: boolean; add: boolean; base: Map<string, KeyRef> };
 
 /**
@@ -43,14 +43,18 @@ const BADGE_H = 15;
 const BADGE_BOTTOM = 9 + BADGE_H / 2;
 const MAX_FRAME_WIDTH = 120;
 
+/** The height of the strip of time-difference tabs under the ruler. */
+const TABS = 22;
+
 /** How far a press on empty track moves before it is a box rather than a click. */
 const BOX_SLOP = 4;
 
 /**
- * The timeline (SPEC §7): the animation list and transport, a ruler in frames at the skeleton's
- * fps, and a row per bone, slot and constraint with its keys. Click the ruler or an empty track to
- * move the playhead; click a key to select it (Shift adds), drag to move the selection by whole
- * frames (one undo step); Delete removes it; the curve buttons set the interpolation to the next key.
+ * The timeline (SPEC §7, docs/TIMELINE-GRAPH-PLAN.md): the animation list and transport, a ruler in
+ * frames at the skeleton's fps, and the curve graph of the selected bone's (or constraint's) channels.
+ * Click the ruler or an empty place on the graph to move the playhead; click a key to select it (Shift
+ * adds), drag a box to select the keys in it; drag a key or a curve's handle to edit it (one undo
+ * step); Delete removes the selected keys; the curve buttons set the interpolation to the next key.
  */
 export class Timeline {
   readonly element: HTMLElement;
@@ -64,19 +68,19 @@ export class Timeline {
   private readonly curveButtons: HTMLButtonElement[];
   private readonly keyBtn: HTMLButtonElement;
   private readonly fitBtn: HTMLButtonElement;
+  private readonly closedBox: HTMLInputElement;
+  private readonly trimBtn: HTMLButtonElement;
   private readonly labels: HTMLDivElement;
   private readonly canvas: HTMLCanvasElement;
   private readonly body: HTMLDivElement;
   private view: View = { frameWidth: 12, first: -0.5 };
-  private rows: Row[] = [];
-  private readonly expanded = new Set<string>();
   private readonly selected = new Map<string, KeyRef>();
   private drag: Drag | null = null;
+  /** The frame tag on the ruler as last drawn, for the cursor. */
+  private tag: { x0: number; x1: number; y0: number; y1: number } | null = null;
   /** A middle-button drag that pans the track: where it began, the view then, and the rows' scroll then. */
   private pan: { x: number; y: number; first: number; scroll: number } | null = null;
   /** The curve graph (E6 step 4g): on, the track draws the chosen channels' curves. */
-  private graph = false;
-  private readonly graphBtn: HTMLButtonElement;
   /** The value range, held still while a curve is dragged. */
   private graphFit: { min: number; max: number } | null = null;
   private graphDrag:
@@ -110,15 +114,19 @@ export class Timeline {
       b.setAttribute("aria-label", c.label);
       return iconButton(b, c.icon, false);
     });
-    this.graphBtn = button("Graph", "Show the curves of the selected keys' timelines, or of the selected bone: drag keys and handles", () => {
-      this.graph = !this.graph;
-      this.graphBtn.setAttribute("aria-pressed", String(this.graph));
-      this.labelSig = "";
-      this.update();
-    });
-    this.graphBtn.setAttribute("aria-pressed", "false");
     this.bar = bar;
-    bar.append(this.select, newBtn, ...this.animButtons, sep(), startBtn, this.playBtn, this.loopBtn, this.frameOut, sep(), this.keyBtn, sep(), ...this.curveButtons, sep(), this.graphBtn);
+    // The animation is a loop: it ends on its first pose, and the closing frame is supplied (docs/LOOP-PLAN.md).
+    const closedLabel = document.createElement("label");
+    closedLabel.className = "closed-loop";
+    closedLabel.title = "A closed loop: the animation ends on its first pose, so key it up to the last frame before the end and the closing frame (a copy of frame 0) is added when it is played or exported. Untick for an animation that does not loop.";
+    this.closedBox = document.createElement("input");
+    this.closedBox.type = "checkbox";
+    this.closedBox.addEventListener("change", () => { const an = session.animation; if (an) session.setLoop(an.name, this.closedBox.checked); });
+    closedLabel.append(this.closedBox, " Closed loop");
+    this.trimBtn = button("Trim end", "This animation already ends on a copy of its first pose (frame 0 = the last frame): delete the copy, and let Closed loop supply it", () => this.trimEnd());
+    this.trimBtn.hidden = true;
+    // The selected bone's motion path (docs/PATH-SPEED-PLAN.md): the frames it is baked over and how many keys: change one and the keys follow.
+    bar.append(this.select, newBtn, ...this.animButtons, closedLabel, this.trimBtn, sep(), startBtn, this.playBtn, this.loopBtn, this.frameOut, sep(), this.keyBtn, sep(), ...this.curveButtons);
 
     this.body = document.createElement("div");
     this.body.className = "timeline-body";
@@ -195,7 +203,7 @@ export class Timeline {
   selectAll(): void {
     const fps = this.session.fps;
     this.selected.clear();
-    for (const r of this.rows) for (const m of marks(r, fps)) for (const ref of m.refs) this.selected.set(refId(ref, fps), ref);
+    for (const ch of this.graphChannels()) for (const k of ch.keys) { const ref: KeyRef = { path: ch.path, time: keyTime(k) }; this.selected.set(refId(ref, fps), ref); }
     this.session.changed();
   }
 
@@ -224,12 +232,25 @@ export class Timeline {
     return `Pasted at frame ${frame}${skipped.length ? `; skipped (not in this rig): ${skipped.join(", ")}` : ""}.`;
   }
 
+  /** Delete the closing keys of an animation that already ends on its first pose. */
+  private trimEnd(): void {
+    const s = this.session, a = s.animation, h = s.history;
+    if (!a || !h) return;
+    try {
+      h.apply(`Trim the closing frame of ${a.name}`, trimClosingKeys(a.name));
+      s.changed();
+    } catch (err) {
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+    }
+  }
+
   /** Zoom and scroll the track so the whole animation, from frame 0 to its end, fits the width. */
   fit(): void {
     const a = this.session.animation;
     if (!a) return;
     const width = Math.max(1, this.canvas.parentElement!.clientWidth), left = 12, right = 34;
-    const end = Math.max(1, timeFrame(animationDuration(a), this.session.fps));
+    const end = Math.max(1, timeFrame(this.session.length(a), this.session.fps));
     const frameWidth = Math.min(MAX_FRAME_WIDTH, Math.max(MIN_FRAME_WIDTH, (width - left - right) / end));
     this.view = { frameWidth, first: -left / frameWidth };
     this.redraw();
@@ -319,6 +340,9 @@ export class Timeline {
     this.select.disabled = !doc;
     for (const b of this.animButtons) b.disabled = !a;
     this.fitBtn.disabled = !a;
+    this.closedBox.disabled = !a;
+    this.closedBox.checked = a ? s.loopOf(a.name) : true;
+    this.trimBtn.hidden = !(a && isSeamless(a, s.fps));
     for (const b of this.curveButtons) b.disabled = !a || !this.selected.size;
     this.keyBtn.disabled = !a || (s.selectedBone === null && s.selected?.kind !== "event");
     // Play is there in Pose mode too: it switches to Animate (the last animation, or the first) and plays.
@@ -327,41 +351,20 @@ export class Timeline {
     this.playBtn.title = `${s.playing ? "Pause" : "Play"} (${keysOf("play")})`;
     this.playBtn.setAttribute("aria-label", this.playBtn.title);
     this.loopBtn.setAttribute("aria-pressed", String(s.loop));
-    const end = a ? timeFrame(animationDuration(a), s.fps) : 0;
+    const end = a ? timeFrame(s.length(a), s.fps) : 0;
     this.frameOut.textContent = a ? `frame ${s.frame} / ${end} · ${s.fps} fps` : "";
 
-    this.rows = doc && a ? buildRows(doc, a, s.selectedBone, this.expanded, s.selected?.kind === "event" ? s.selected.name : null) : [];
     // Keys an undo or another edit took away leave the selection.
-    const live = new Set(this.rows.flatMap((r) => marks(r, s.fps).flatMap((m) => m.refs.map((x) => refId(x, s.fps)))));
+    const live = new Set(a ? keyLists(a).flatMap((l) => l.keys.map((k) => refId({ path: l.path, time: keyTime(k) }, s.fps))) : []);
     for (const id of [...this.selected.keys()]) if (!live.has(id)) this.selected.delete(id);
-    // The labels are DOM: rebuilt only when the rows or the selected bone change, not every frame.
-    const sig = `${this.graph ? `graph:${this.graphChannels().map(channelId).join(",")}` : ""}|${a?.name}|${s.selectedBone}|${s.selected?.kind === "event" ? s.selected.name : ""}|${!!doc}|${this.rows.map((r) => `${r.id}:${r.expandable}:${r.expanded}`).join(",")}`;
+    // The labels are DOM: rebuilt only when the channels shown change, not every frame.
+    const sig = `${this.graphChannels().map(channelId).join(",")}|${a?.name}|${s.selectedBone}|${!!doc}`;
     if (sig !== this.labelSig) { this.labelSig = sig; this.renderLabels(); }
     this.redraw();
   }
 
   private renderLabels(): void {
     const s = this.session;
-    if (this.graph && s.animation) {
-      const chs = this.graphChannels();
-      const head = document.createElement("div");
-      head.className = "ruler-gap";
-      const rows = chs.map((ch, i) => {
-        const el = document.createElement("div");
-        el.className = "row depth0 channel";
-        const swatch = document.createElement("span");
-        swatch.className = "swatch";
-        // Inline: a swatch the size of the text's x-height, beside the label.
-        Object.assign(swatch.style, { display: "inline-block", width: "10px", height: "10px", borderRadius: "2px", marginRight: "6px", flex: "none", background: CHANNEL_COLOURS[i % CHANNEL_COLOURS.length]! });
-        const name = document.createElement("span");
-        name.textContent = ch.label;
-        el.append(swatch, name);
-        return el;
-      });
-      if (!rows.length) rows.push(Object.assign(document.createElement("p"), { className: "empty", textContent: "Select keys, or a bone with keys, to see their curves." }));
-      this.labels.replaceChildren(head, ...rows);
-      return;
-    }
     if (!s.animation) {
       this.labels.replaceChildren(Object.assign(document.createElement("p"), {
         className: "empty",
@@ -369,33 +372,22 @@ export class Timeline {
       }));
       return;
     }
+    const chs = this.graphChannels();
     const head = document.createElement("div");
     head.className = "ruler-gap";
-    const rows = this.rows.map((r) => {
+    const rows = chs.map((ch, i) => {
       const el = document.createElement("div");
-      el.className = `row depth${r.depth}`;
-      if ((r.bone !== undefined && r.bone === s.selectedBone && r.depth === 0) || (r.event !== undefined && s.selected?.kind === "event" && s.selected.name === r.event)) el.classList.add("selected");
-      if (r.expandable) {
-        const t = button(r.expanded ? "▾" : "▸", r.expanded ? "Collapse" : "Show each timeline", () => {
-          if (this.expanded.has(r.id)) this.expanded.delete(r.id); else this.expanded.add(r.id);
-          this.update();
-        });
-        t.className = "twisty";
-        el.append(t);
-      }
-      const kind = rowIcon(r);
-      if (kind) el.append(icon(kind));
+      el.className = "row depth0 channel";
+      const swatch = document.createElement("span");
+      swatch.className = "swatch";
+      // Inline: a swatch the size of the text's x-height, beside the label.
+      Object.assign(swatch.style, { display: "inline-block", width: "10px", height: "10px", borderRadius: "2px", marginRight: "6px", flex: "none", background: CHANNEL_COLOURS[i % CHANNEL_COLOURS.length]! });
       const name = document.createElement("span");
-      name.textContent = r.label;
-      el.append(name);
-      if (r.bone !== undefined) el.addEventListener("click", (e) => {
-        if ((e.target as HTMLElement).classList.contains("twisty")) return;
-        s.selectBone(r.bone!);
-      });
-      if (r.event !== undefined) el.addEventListener("click", () => s.select({ kind: "event", name: r.event! }));
+      name.textContent = ch.label;
+      el.append(swatch, name);
       return el;
     });
-    if (!rows.length) rows.push(Object.assign(document.createElement("p"), { className: "empty", textContent: "No keys yet: select a bone (or an event) and press Key, or drag a bone on the stage." }));
+    if (!rows.length) rows.push(Object.assign(document.createElement("p"), { className: "empty", textContent: "Select a bone (or a constraint) with keys to see its curves." }));
     this.labels.replaceChildren(head, ...rows);
   }
 
@@ -409,8 +401,8 @@ export class Timeline {
     const c = this.canvas, parent = c.parentElement!;
     const view = this.element.ownerDocument.defaultView ?? window;
     const dpr = (view.devicePixelRatio || 1) * pageScale(this.canvas.ownerDocument);
-    // The graph fills what is in view; the rows run as long as they need.
-    const width = Math.max(1, parent.clientWidth), height = this.graph ? this.graphHeight() : Math.max(parent.clientHeight, RULER + this.rows.length * ROW);
+    // The graph fills what is in view.
+    const width = Math.max(1, parent.clientWidth), height = this.graphHeight();
     if (c.width !== Math.round(width * dpr) || c.height !== Math.round(height * dpr)) {
       c.width = Math.round(width * dpr);
       c.height = Math.round(height * dpr);
@@ -424,15 +416,25 @@ export class Timeline {
     g.fillRect(0, 0, width, height);
     const s = this.session, a = s.animation;
     if (!a) return;
-    const v = this.view, fps = s.fps, end = timeFrame(animationDuration(a), fps);
-    // Rows, alternating (not under the graph).
-    if (!this.graph) this.rows.forEach((_, i) => {
-      if (i % 2) { g.fillStyle = col("--hover"); g.fillRect(0, RULER + i * ROW, width, ROW); }
-    });
+    const v = this.view, fps = s.fps, end = timeFrame(s.length(a), fps);
     // Past the end, dimmed.
     const ex = frameX(v, end);
     if (ex < width) { g.fillStyle = col("--bg"); g.globalAlpha = 0.5; g.fillRect(Math.max(0, ex), RULER, width, height); g.globalAlpha = 1; }
-    // The ruler's frame lines run down through the rows.
+    // A closed loop's closing frame is not a key you edit: a dashed line where it falls, "= 0" under the ruler.
+    if (s.loopOf(a.name) && end > timeFrame(animationDuration(a), fps)) {
+      const sx = Math.round(ex) + 0.5;
+      g.save();
+      g.strokeStyle = col("--muted");
+      g.fillStyle = col("--muted");
+      g.setLineDash([3, 3]);
+      g.beginPath(); g.moveTo(sx, RULER); g.lineTo(sx, height); g.stroke();
+      g.setLineDash([]);
+      g.font = `10px ${col("--font-mono")}`;
+      g.textBaseline = "top";
+      g.fillText("= 0", sx + 4, RULER + 3);
+      g.restore();
+    }
+    // The ruler's frame lines run down through the graph.
     const step = labelStep(v.frameWidth);
     const firstFrame = Math.max(0, Math.floor(v.first)), lastFrame = Math.ceil(xFrame(v, width));
     g.strokeStyle = col("--line");
@@ -445,48 +447,13 @@ export class Timeline {
     }
     g.stroke();
     g.globalAlpha = 1;
-    if (this.graph) { this.paintRuler(g, width, 0, col, step, firstFrame, lastFrame); this.paintGraph(g, width, height, col); this.paintPlayheadBadge(g, width, 0, col); return; }
-    // Keys.
-    const accent = col("--accent"), text = col("--text");
-    this.rows.forEach((r, i) => {
-      const y = RULER + i * ROW + ROW / 2;
-      for (const m of marks(r, fps)) {
-        // On the same pixel column as the frame's tick and the playhead line.
-        const x = Math.round(frameX(v, m.frame)) + 0.5;
-        if (x < -8 || x > width + 8) continue;
-        const on = m.refs.every((ref) => this.selected.has(refId(ref, fps)));
-        g.fillStyle = on ? accent : r.depth ? col("--muted") : text;
-        g.beginPath();
-        const k = r.depth ? 4 : 5;
-        if (m.stepped) g.rect(x - k + 1, y - k + 1, 2 * k - 2, 2 * k - 2);
-        else { g.moveTo(x, y - k); g.lineTo(x + k, y); g.lineTo(x, y + k); g.lineTo(x - k, y); g.closePath(); }
-        g.fill();
-        if (m.eased) { g.strokeStyle = on ? accent : text; g.beginPath(); g.arc(x, y, k + 2.5, 0, Math.PI * 2); g.stroke(); }
-      }
-    });
-    // The selection box.
-    const d = this.drag;
-    if (d?.kind === "box" && d.moved) {
-      g.strokeStyle = accent;
-      g.fillStyle = accent;
-      g.globalAlpha = 0.12;
-      g.fillRect(Math.min(d.x0, d.x1), Math.min(d.y0, d.y1), Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
-      g.globalAlpha = 1;
-      g.strokeRect(Math.min(d.x0, d.x1) + 0.5, Math.min(d.y0, d.y1) + 0.5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
-    }
-    // The ruler stays at the top of what is in view as the rows scroll; the playhead runs through it.
-    const top = this.rulerTop();
-    this.paintRuler(g, width, top, col, step, firstFrame, lastFrame);
-    const px = Math.round(frameX(v, s.time * fps)) + 0.5;
-    g.strokeStyle = PLAYHEAD;
-    g.lineWidth = 1.5;
-    g.beginPath(); g.moveTo(px, top + BADGE_BOTTOM); g.lineTo(px, height); g.stroke();
-    g.lineWidth = 1;
-    this.paintPlayheadBadge(g, width, top, col);
+    this.paintRuler(g, width, 0, col, step, firstFrame, lastFrame);
+    this.paintGraph(g, width, height, col);
+    this.paintPlayheadBadge(g, width, 0, col);
   }
 
   /** Where the ruler is drawn: the top of what is in view (the rows scroll under it). */
-  private rulerTop(): number { return this.graph ? 0 : this.body.scrollTop; }
+  private rulerTop(): number { return 0; }
 
   /** Whether a y in the canvas is on the ruler as it is now drawn. */
   private inRuler(y: number): boolean {
@@ -538,7 +505,25 @@ export class Timeline {
     g.fill();
     g.fillStyle = "#ffffff";
     g.fillText(label, x, y + h / 2 + 0.5);
+    this.tag = { x0: x - w / 2, x1: x + w / 2, y0: y, y1: y + h };
+    // The time since the last key before it, beside the tag (docs: the owner's note); on the other side when it would run off the track.
+    const since = s.animation ? secondsSinceLastKey(s.animation, s.frame, s.fps) : null;
+    if (since !== null) {
+      const text = `+${since.toFixed(2)}s`;
+      g.font = `10px ${col("--font-mono")}`;
+      g.fillStyle = col("--muted");
+      const tw = g.measureText(text).width;
+      if (x + w / 2 + 6 + tw <= width) { g.textAlign = "left"; g.fillText(text, x + w / 2 + 6, y + h / 2 + 0.5); }
+      else { g.textAlign = "right"; g.fillText(text, x - w / 2 - 6, y + h / 2 + 0.5); }
+    }
     g.restore();
+  }
+
+  /** The cursor over the track: a hand on the frame tag, a sideways arrow on the ruler (a press there scrubs). */
+  private cursorAt(x: number, y: number): string {
+    const t = this.tag;
+    if (t && x >= t.x0 && x <= t.x1 && y >= t.y0 && y <= t.y1) return "grab";
+    return this.inRuler(y) ? "ew-resize" : "";
   }
 
   private local(e: PointerEvent | WheelEvent): [number, number] {
@@ -556,30 +541,10 @@ export class Timeline {
     if (!a || e.button !== 0) return;
     const [x, y] = this.local(e);
     this.canvas.setPointerCapture(e.pointerId);
-    if (this.graph && !this.inRuler(y) && this.graphDown(x, y)) return;
-    const i = this.inRuler(y) ? -1 : rowAt(y, this.rows.length);
-    const mark: Mark | null = i >= 0 ? markAt(this.view, marks(this.rows[i]!, s.fps), x) : null;
-    if (!mark) {
-      if (!this.inRuler(y)) { this.drag = { kind: "box", x0: x, y0: y, x1: x, y1: y, moved: false, add: e.shiftKey, base: new Map(this.selected) }; return; }
-      this.drag = { kind: "scrub" };
-      s.seek(xFrame(this.view, x));
-      return;
-    }
-    const ids = mark.refs.map((r) => refId(r, s.fps));
-    const all = ids.every((id) => this.selected.has(id));
-    if (e.shiftKey) {
-      for (const [k, r] of ids.map((id, j) => [id, mark.refs[j]!] as const)) { if (all) this.selected.delete(k); else this.selected.set(k, r); }
-    } else if (!all) {
-      this.selected.clear();
-      mark.refs.forEach((r, j) => this.selected.set(ids[j]!, r));
-    }
-    const row = this.rows[i]!;
-    if (row.bone !== undefined && s.selectedBone !== row.bone) s.selected = { kind: "bone", name: row.bone };
-    if (row.event !== undefined && !(s.selected?.kind === "event" && s.selected.name === row.event)) s.selected = { kind: "event", name: row.event };
-    s.pause();
-    this.drag = { kind: "keys", from: Math.round(xFrame(this.view, x)), applied: 0, refs: [...this.selected.values()] };
-    s.history?.begin(`Move ${this.selected.size} key${this.selected.size === 1 ? "" : "s"}`);
-    s.changed();
+    if (!this.inRuler(y) && this.graphDown(x, y, e.shiftKey)) return;
+    if (!this.inRuler(y)) { this.drag = { kind: "box", x0: x, y0: y, x1: x, y1: y, moved: false, add: e.shiftKey, base: new Map(this.selected) }; return; }
+    this.drag = { kind: "scrub" };
+    s.seek(xFrame(this.view, x));
   }
 
   private move(e: PointerEvent): void {
@@ -592,9 +557,13 @@ export class Timeline {
     }
     const d = this.drag, s = this.session, a = s.animation;
     if (this.graphDrag && a) { const [gx, gy] = this.local(e); this.graphMove(gx, gy); return; }
-    if (!d || !a) return;
+    if (!d || !a) {
+      const [cx, cy] = this.local(e);
+      this.canvas.style.cursor = this.cursorAt(cx, cy);
+      return;
+    }
     const [x, y] = this.local(e);
-    if (d.kind === "scrub") { s.seek(xFrame(this.view, x)); return; }
+    if (d.kind === "scrub") { this.canvas.style.cursor = "grabbing"; s.seek(xFrame(this.view, x)); return; }
     if (d.kind === "box") {
       d.x1 = x; d.y1 = y;
       if (!d.moved && Math.hypot(x - d.x0, y - d.y0) < BOX_SLOP) return;
@@ -602,27 +571,14 @@ export class Timeline {
       this.boxSelect(d);
       return;
     }
-    const by = Math.round(xFrame(this.view, x)) - d.from;
-    if (by === d.applied) return;
-    const fps = s.fps;
-    try {
-      s.history!.apply("step", moveKeys(a.name, shiftedRefs(d.refs, d.applied, fps), by - d.applied, fps));
-      d.applied = by;
-      this.selected.clear();
-      for (const r of shiftedRefs(d.refs, by, fps)) this.selected.set(refId(r, fps), r);
-      s.changed();
-    } catch (err) {
-      if (!(err instanceof EditRefused)) throw err;
-      this.onStatus(err.message);
-    }
   }
 
   private up(e: PointerEvent): void {
     if (this.canvas.hasPointerCapture(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId);
+    this.canvas.style.cursor = "";
     if (this.pan) { this.pan = null; return; }
     if (this.graphDrag) { this.graphDrag = null; this.graphFit = null; this.session.history?.end(); this.session.changed(); return; }
     const d = this.drag;
-    if (d?.kind === "keys") { this.session.history?.end(); this.session.changed(); }
     // A click on empty track: the playhead goes there; without Shift the selection is cleared.
     if (d?.kind === "box" && !d.moved) {
       if (!d.add) this.selected.clear();
@@ -632,43 +588,49 @@ export class Timeline {
     if (d?.kind === "box") this.redraw();
   }
 
-  /** The keys inside the box (rows it crosses, frames it spans), added to what was selected with Shift. */
+  /** The keys of the shown channels inside the box, added to what was selected with Shift. */
   private boxSelect(d: Extract<Drag, { kind: "box" }>): void {
-    const fps = this.session.fps, f0 = xFrame(this.view, Math.min(d.x0, d.x1)), f1 = xFrame(this.view, Math.max(d.x0, d.x1));
-    const r0 = Math.floor((Math.min(d.y0, d.y1) - RULER) / ROW), r1 = Math.floor((Math.max(d.y0, d.y1) - RULER) / ROW);
+    const fps = this.session.fps, chs = this.graphChannels(), [top, bottom] = this.graphBand(this.graphHeight()), fit = this.graphFit ?? fitValues(chs);
+    const x0 = Math.min(d.x0, d.x1), x1 = Math.max(d.x0, d.x1), y0 = Math.min(d.y0, d.y1), y1 = Math.max(d.y0, d.y1);
     this.selected.clear();
     if (d.add) for (const [k, v] of d.base) this.selected.set(k, v);
-    this.rows.forEach((r, i) => {
-      if (i < r0 || i > r1) return;
-      for (const m of marks(r, fps)) if (m.frame >= f0 && m.frame <= f1) for (const ref of m.refs) this.selected.set(refId(ref, fps), ref);
-    });
+    for (const ch of chs) {
+      for (const k of ch.keys) {
+        const kx = frameX(this.view, keyTime(k) * fps), ky = valueY(fit, top, bottom, channelValues(ch.path, k, "start")[ch.c]!);
+        if (kx < x0 || kx > x1 || ky < y0 || ky > y1) continue;
+        const ref: KeyRef = { path: ch.path, time: keyTime(k) };
+        this.selected.set(refId(ref, fps), ref);
+      }
+    }
     this.session.changed();
   }
 
-  /** The channels the graph shows: the selected keys' timelines, else the selected bone's or constraint's. */
+  /** The channels the graph shows: the selected bone's or constraint's, else the selected keys' timelines. */
   private graphChannels(): Channel[] {
     const s = this.session, a = s.animation;
     if (!a) return [];
     const lists = keyLists(a), sel = s.selected;
+    // The selected bone's or constraint's channels, whatever keys are picked; the picked keys' timelines when neither is selected.
     const picked = new Set([...this.selected.values()].map((r) => pathId(r.path)));
-    const chosen = picked.size ? lists.filter((l) => picked.has(pathId(l.path)))
-      : sel?.kind === "bone" ? lists.filter((l) => l.path.section === "bones" && l.path.owner === sel.name)
-        : sel?.kind === "constraint" ? lists.filter((l) => l.path.section === sel.type && "owner" in l.path && l.path.owner === sel.name) : [];
+    const chosen = sel?.kind === "bone" ? lists.filter((l) => l.path.section === "bones" && l.path.owner === sel.name)
+      : sel?.kind === "constraint" ? lists.filter((l) => l.path.section === sel.type && "owner" in l.path && l.path.owner === sel.name)
+        : lists.filter((l) => picked.has(pathId(l.path)));
     return channelsOf(chosen);
   }
 
   /** The graph's height: the timeline body as seen (it does not scroll in graph mode). */
   private graphHeight(): number {
     if (this.body.scrollTop) this.body.scrollTop = 0;
-    return Math.max(RULER + 60, this.body.clientHeight);
+    return Math.max(RULER + TABS + 60, this.body.clientHeight);
   }
 
   /** The band the curves are drawn in. */
-  private graphBand(height: number): [number, number] { return [RULER + 10, Math.max(RULER + 40, height - 10)]; }
+  private graphBand(height: number): [number, number] { return [RULER + TABS + 14, Math.max(RULER + TABS + 44, height - 10)]; }
 
   private paintGraph(g: CanvasRenderingContext2D, width: number, height: number, col: (n: string) => string): void {
     const fps = this.session.fps, v = this.view, chs = this.graphChannels(), [top, bottom] = this.graphBand(height);
     const fit = this.graphFit ?? fitValues(chs), y = (val: number) => valueY(fit, top, bottom, val), x = (t: number) => frameX(v, t * fps);
+    this.paintTabs(g, chs, col);
     // Zero, when it is in view.
     if (fit.min < 0 && fit.max > 0) { g.strokeStyle = col("--line"); g.beginPath(); g.moveTo(0, Math.round(y(0)) + 0.5); g.lineTo(width, Math.round(y(0)) + 0.5); g.stroke(); }
     chs.forEach((ch, n) => {
@@ -694,12 +656,26 @@ export class Timeline {
         for (const [ht, hv] of [[iv.h[0], iv.h[1]], [iv.h[2], iv.h[3]]] as const) { g.beginPath(); g.arc(x(ht), y(hv), 3, 0, Math.PI * 2); g.stroke(); }
         g.globalAlpha = 1;
       }
-      g.fillStyle = colour;
       for (const k of ch.keys) {
-        const kx = x(keyTime(k)), ky = y(channelValues(ch.path, k, "start")[ch.c]!);
-        g.beginPath(); g.rect(kx - 3.5, ky - 3.5, 7, 7); g.fill();
+        const kx = x(keyTime(k)), ky = y(channelValues(ch.path, k, "start")[ch.c]!), on = this.selected.has(refId({ path: ch.path, time: keyTime(k) }, this.session.fps));
+        g.fillStyle = on ? "#ffffff" : colour;
+        g.strokeStyle = colour;
+        g.lineWidth = 2;
+        g.beginPath(); g.rect(kx - (on ? 4.5 : 3.5), ky - (on ? 4.5 : 3.5), on ? 9 : 7, on ? 9 : 7); g.fill();
+        if (on) g.stroke();
+        g.lineWidth = 1;
       }
     });
+    // The selection box.
+    const d = this.drag, accent = col("--accent");
+    if (d?.kind === "box" && d.moved) {
+      g.strokeStyle = accent;
+      g.fillStyle = accent;
+      g.globalAlpha = 0.12;
+      g.fillRect(Math.min(d.x0, d.x1), Math.min(d.y0, d.y1), Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
+      g.globalAlpha = 1;
+      g.strokeRect(Math.min(d.x0, d.x1) + 0.5, Math.min(d.y0, d.y1) + 0.5, Math.abs(d.x1 - d.x0), Math.abs(d.y1 - d.y0));
+    }
     // Playhead.
     const px = Math.round(frameX(v, this.session.time * fps)) + 0.5;
     g.strokeStyle = PLAYHEAD;
@@ -708,8 +684,45 @@ export class Timeline {
     g.lineWidth = 1;
   }
 
+  /**
+   * The strip of tabs under the ruler: one between each two neighbouring key frames of the channels
+   * shown, labelled with the time between them (frames, and seconds when there is room). A closed
+   * loop's closing frame ends the last tab; the tab the playhead is in is lit.
+   */
+  private paintTabs(g: CanvasRenderingContext2D, chs: readonly Channel[], col: (n: string) => string): void {
+    const s = this.session, a = s.animation, fps = s.fps, v = this.view;
+    if (!a) return;
+    const set = new Set<number>();
+    for (const ch of chs) for (const k of ch.keys) set.add(timeFrame(keyTime(k), fps));
+    const end = timeFrame(s.length(a), fps);
+    if (set.size && end > Math.max(...set)) set.add(end);
+    const frames = [...set].sort((p, q) => p - q);
+    if (frames.length < 2) return;
+    const y0 = RULER + 4, h = TABS - 8;
+    g.save();
+    g.font = `10px ${col("--font-mono")}`;
+    g.textBaseline = "middle";
+    g.textAlign = "center";
+    for (let i = 0; i + 1 < frames.length; i++) {
+      const f0 = frames[i]!, f1 = frames[i + 1]!, x0 = frameX(v, f0) + 1.5, x1 = frameX(v, f1) - 1.5;
+      if (x1 < 0 || x0 > this.canvas.clientWidth || x1 - x0 < 3) continue;
+      const here = s.frame >= f0 && s.frame < f1;
+      g.fillStyle = here ? col("--accent") : col("--hover");
+      g.globalAlpha = here ? 0.35 : 1;
+      g.beginPath(); g.roundRect(x0, y0, x1 - x0, h, 3); g.fill();
+      g.globalAlpha = 1;
+      g.strokeStyle = here ? col("--accent") : col("--line");
+      g.beginPath(); g.roundRect(x0 + 0.5, y0 + 0.5, x1 - x0 - 1, h - 1, 3); g.stroke();
+      const d = f1 - f0, long = `${d}f · ${(d / fps).toFixed(2)}s`, short = `${d}f`, num = String(d);
+      const room = x1 - x0 - 6;
+      const text = g.measureText(long).width <= room ? long : g.measureText(short).width <= room ? short : g.measureText(num).width <= room ? num : "";
+      if (text) { g.fillStyle = col("--text"); g.fillText(text, (x0 + x1) / 2, y0 + h / 2 + 0.5); }
+    }
+    g.restore();
+  }
+
   /** A press on the graph: on a handle or a key, a drag begins (one undo step); false when on neither. */
-  private graphDown(px: number, py: number): boolean {
+  private graphDown(px: number, py: number, shift: boolean): boolean {
     const s = this.session, fps = s.fps, chs = this.graphChannels(), height = this.graphHeight();
     const [top, bottom] = this.graphBand(height), fit = fitValues(chs);
     const x = (t: number) => frameX(this.view, t * fps), y = (v: number) => valueY(fit, top, bottom, v), near = (a: number, b: number) => Math.hypot(a - px, b - py) <= 6;
@@ -729,6 +742,10 @@ export class Timeline {
     for (const ch of chs) {
       for (const k of ch.keys) {
         if (!near(x(keyTime(k)), y(channelValues(ch.path, k, "start")[ch.c]!))) continue;
+        // The key is selected (Shift adds it to the others, or takes it out), so the curve buttons, Delete and Copy have it.
+        const ref: KeyRef = { path: ch.path, time: keyTime(k) }, id = refId(ref, fps);
+        if (shift) { if (this.selected.has(id)) this.selected.delete(id); else this.selected.set(id, ref); }
+        else if (!this.selected.has(id)) { this.selected.clear(); this.selected.set(id, ref); }
         this.graphFit = fit;
         this.graphDrag = { kind: "key", id: channelId(ch), time: keyTime(k), from: timeFrame(keyTime(k), fps), applied: 0 };
         s.pause();
@@ -789,23 +806,6 @@ export class Timeline {
 
 /** The graph's channel colours, in order. */
 const CHANNEL_COLOURS = ["#e5484d", "#30a46c", "#3e63dd", "#f76b15", "#8e4ec6", "#12a594", "#d6409f"];
-
-const TIMELINE_ICONS: Readonly<Record<string, IconName>> = {
-  translate: "keyTranslate", translatex: "keyTranslate", translatey: "keyTranslate",
-  rotate: "keyRotate", scale: "keyScale", scalex: "keyScale", scaley: "keyScale", deform: "keyDeform",
-};
-
-/** A row's icon: what owns it (a bone, a slot, a constraint's kind, the draw order), or for a timeline its kind. */
-function rowIcon(r: Row): IconName | null {
-  const p = r.lists[0]?.path;
-  if (r.depth === 1) return p && "timeline" in p ? TIMELINE_ICONS[p.timeline] ?? null : null;
-  if (r.bone !== undefined) return "bone";
-  if (r.id.startsWith("slot/")) return "slot";
-  if (r.id === "drawOrder") return "drawOrder";
-  if (r.event !== undefined) return "event";
-  if (p && p.section in CONSTRAINT_ICONS) return CONSTRAINT_ICONS[p.section as keyof typeof CONSTRAINT_ICONS];
-  return null;
-}
 
 function button(text: string, title: string, onClick: () => void): HTMLButtonElement {
   const b = document.createElement("button");

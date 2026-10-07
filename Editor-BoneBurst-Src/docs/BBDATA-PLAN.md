@@ -20,7 +20,7 @@ flowchart LR
 
 `BBDATA1\n`, a little-endian u32 length, a JSON header `{format, version, files:[{name,size}]}`, then
 the files' bytes in that order. The files are exactly what the folder import reads: `<name>.json`, `<name>.atlas.txt`,
-the page PNGs, `<name>.bb.json` (the sidecar: guides, references, notes, view) and the reference images.
+the page PNGs, `<name>.bb.json` (the sidecar: guides, references, notes, view: the camera, the skin, the animation shown and the selected bone) and the reference images.
 So opening a project is the folder open of those files, with no second reader.
 
 ## Steps

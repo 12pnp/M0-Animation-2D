@@ -3,7 +3,7 @@ import { Inspector } from "./panels/inspector";
 import { pickFiles, spineFolderProblems } from "./files";
 import { Outline } from "./panels/outline";
 import { FONT_SIZES, type PreferenceValues, Preferences } from "./preferences";
-import { setRowHeight, setTickSeries } from "./timeline/layout";
+import { setTickSeries } from "./timeline/layout";
 import { PreferencesDialog } from "./preferencesDialog";
 import { AnimationsPanel } from "./panels/animationsPanel";
 import { HistoryPanel } from "./panels/history";
@@ -17,7 +17,7 @@ import { keysOf, matching, type ShortcutId } from "./shortcuts";
 import { ShortcutsSheet } from "./shortcutsSheet";
 import { isTyping, Stage } from "./stage/stage";
 import { Timeline } from "./timeline/timeline";
-import { animationDuration, timeFrame } from "@/model/timelines";
+import { timeFrame } from "@/model/timelines";
 import { AiBridge, DEFAULT_BRIDGE } from "./agent/bridge";
 import { ChatClient } from "./agent/chat";
 import { sessionContext } from "./agent/context";
@@ -47,7 +47,7 @@ import { type PanelContent, Workspace } from "./workspace/workspace";
 const STICKMAN = ["Stickman_IK.json", "Stickman_IK.atlas.txt", "Stickman_IK_tex.png"];
 
 const TOOLS: ReadonlyArray<{ tool: Tool; label: string; shortcut: ShortcutId }> = [
-  { tool: "move", label: "Translate", shortcut: "toolMove" },
+  { tool: "move", label: "Move", shortcut: "toolMove" },
   { tool: "rotate", label: "Rotate", shortcut: "toolRotate" },
   { tool: "scale", label: "Scale", shortcut: "toolScale" },
   { tool: "shear", label: "Shear", shortcut: "toolShear" },
@@ -224,6 +224,8 @@ export function mountApp(root: HTMLElement): void {
   const localPath = new LocalPathPanel(session);
   // The path window (+ New Path, a path's vertices) is part of the Local Path panel.
   localPath.addTools(pathPanel.element);
+  localPath.autoKey = () => stage.autoKey;
+  stage.forceUnkeyed = () => localPath.drawing;
   const skinsPanel = new SkinsPanel(session);
   const animationsPanel = new AnimationsPanel(session);
   // Ask AI (E5 step 9): the bridge's model with the editor's tools; sending connects the AI button.
@@ -359,7 +361,6 @@ export function mountApp(root: HTMLElement): void {
     document.documentElement.style.setProperty("--ui-font-size", `${FONT_SIZES[p.fontSize]}px`);
     stageTools.dataset.align = p.toolbarPosition;
     stageTools.dataset.labels = p.toolbarLabels;
-    setRowHeight(p.rowHeight);
     setTickSeries(p.fewerTicks);
     timeline.redraw();
     outline.setLook(p.treeIndent, p.treeColours);
@@ -414,6 +415,7 @@ export function mountApp(root: HTMLElement): void {
   inspector.snapFields = (owner) => snapFields(prefs, owner);
   outline.onStatus = say;
   skinsPanel.onStatus = say;
+  localPath.onStatus = say;
   animationsPanel.onStatus = say;
   references.onStatus = say;
   references.centre = () => [stage.camera.x, stage.camera.y];
@@ -465,7 +467,7 @@ export function mountApp(root: HTMLElement): void {
   }
 
   /** The view a project keeps: the camera, the skin and the animation shown. */
-  const viewNow = (): View => ({ camera: stage.camera, ...(session.skin ? { skin: session.skin } : {}), ...(session.animation ? { animation: session.animation.name } : {}) });
+  const viewNow = (): View => ({ camera: stage.camera, ...(session.skin ? { skin: session.skin } : {}), ...(session.animation ? { animation: session.animation.name } : {}), ...(session.selectedBone ? { bone: session.selectedBone } : {}), ...(session.loopOff.size ? { loopOff: [...session.loopOff] } : {}) });
 
   /** ⌘S: the project, to its file (File ▸ Save Project As… picks another). */
   async function save(again = false): Promise<void> {
@@ -605,7 +607,7 @@ export function mountApp(root: HTMLElement): void {
   );
   if (import.meta.env.DEV) {
     // For inspecting the live editor from the browser console; not in a build.
-    (window as unknown as { boneburst: unknown }).boneburst = { session, stage, get workspace() { return workspace; } };
+    (window as unknown as { boneburst: unknown }).boneburst = { session, stage, localPath, get workspace() { return workspace; } };
     const dev = button("Open the stickman fixture", "Dev only: tests/fixtures/stickman", () => void openStickman());
     const devNew = button("New skeleton on the stickman's atlas", "Dev only: tests/fixtures/stickman, atlas and image", () => void openStickman(false));
     // Kept apart and quiet: they are for developing the editor, not for opening a rig.
@@ -709,7 +711,7 @@ export function mountApp(root: HTMLElement): void {
     prevFrame: () => session.seek(session.frame - 1),
     nextFrame: () => session.seek(session.frame + 1),
     firstFrame: () => session.seek(0),
-    lastFrame: () => { const a = session.animation; if (a) session.seek(timeFrame(animationDuration(a), session.fps)); },
+    lastFrame: () => { const a = session.animation; if (a) session.seek(timeFrame(session.length(a), session.fps)); },
     key: () => timeline.keySelected(),
     // The timeline's selected keys; on the stage in mesh mode, the selected vertex; in the rig
     // panel, what is selected there (Undo brings it back).

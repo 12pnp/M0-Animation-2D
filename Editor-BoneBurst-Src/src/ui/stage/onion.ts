@@ -1,4 +1,4 @@
-import { frameTime, keyLists, keyTime, timeFrame, animationDuration } from "@/model/timelines";
+import { frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
 import type { Session } from "../session";
 import type { AtlasImages } from "@/engine/regions";
 import type { Skeleton } from "@/model/skeleton";
@@ -70,9 +70,9 @@ function ghostPoser(doc: Skeleton, images: AtlasImages): Poser {
 
 /** The ghosts to draw now: none without an animation, while playing, or with onion skin off. */
 export function ghostsFor(session: Session, o: OnionOptions | null): Ghost[] {
-  const a = session.animation, doc = session.doc;
+  const a = session.animation, doc = session.closedDoc();
   if (!o || !a || !doc || session.playing) return [];
-  const fps = session.fps, end = timeFrame(animationDuration(a), fps);
+  const fps = session.fps, end = timeFrame(session.length(a), fps);
   const keyed = o.keyedOnly ? keyLists(a).flatMap((l) => l.keys.map((k) => timeFrame(keyTime(k), fps))) : [];
   const frames = onionFrames(session.frame, end, o, keyed, session.loop);
   // Farthest first, so nearer ghosts lie over them.

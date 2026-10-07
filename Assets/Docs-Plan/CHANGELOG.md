@@ -13,6 +13,12 @@ flowchart LR
 
 ## 2026-10-07
 
+- **BoneBurst Editor v2: a bone's motion path in frames and blocks, drawn and timed in Local Path, baked to the timeline on request** (`Editor-BoneBurst-Src/`, [plan](../../Editor-BoneBurst-Src/docs/PATH-FRAMES-PLAN.md)).
+  - **Draw path:** a green + (or Draw path) makes a closed spline of two nodes, the bone's place and that plus an offset; a red number puts the bone on its node and from then on the bone and the node follow each other; never fewer than two nodes; nothing is keyed.
+  - **Adjust time:** Bake goes here with two node times; node times add and remove (never fewer than two), Total frames (`14 + 0`), a Closed tick, a time multiplier and a speed graph (flat by default, presets, draggable points) for each block; frames only, no seconds or fps.
+  - **Bake to timeline:** keys at the node times plus a closing key copying the first, fitted Bézier curves, and keys past the path's last frame cut on every timeline (undo restores them), one undo step. Also in this change: the Timeline is the curve graph only, loop animations, the Local Path hand tools and trail editing.
+  - Guarded by `tests/motionPath.test.ts`, `tests/sidecar.test.ts`, `e2e/motionPath.spec.ts`, `e2e/localPathEdit.spec.ts`; 749 unit and 73 browser tests passed; deliberate bugs (closing key, speed graph ignored, bone not posed on a red press) fail them; not tried by hand.
+
 - **BoneBurst Editor v2: the Stage's tool panels reworked, axis-locked gizmo arrows, new hotkeys, snap and arrow-key step settings** (`Editor-BoneBurst-Src/`).
   - **Transform panel:** each row has a head cell that keys the property (red when keyed) and the tool's label; no padding, 1 px light-gray lines, rounded corners; the grip is a small rectangle on the corner (drag to move, click to fold). Pose/Animate is a text tab at the stage's bottom right; Auto Key and Onion moved to the Timeline bar.
   - **Gizmo:** the move, scale and shear arrows are Godot's red (x) and green (y), and a press on one drags along that axis only; the Rotate ring has a radius line with the Rotation value.

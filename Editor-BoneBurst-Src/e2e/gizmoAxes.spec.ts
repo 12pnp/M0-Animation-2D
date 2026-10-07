@@ -64,7 +64,7 @@ for (const [tool, fields] of [["scale", ["scaleX", "scaleY"]], ["shear", ["shear
   });
 }
 
-test("F centres the view on the selected bone; Z cycles the space with a short label; T is Translate, R is Rotate", async ({ page }) => {
+test("F centres the view on the selected bone; Z cycles the space with a short label; T is Move, R is Rotate", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
@@ -93,7 +93,7 @@ test("F centres the view on the selected bone; Z cycles the space with a short l
   await expect(page.locator('[data-tool="move"]')).toHaveAttribute("aria-pressed", "true");
 });
 
-test("arrow keys nudge the chosen tool's value: R then → adds to rotation, Shift ten times; Translate uses x and y", async ({ page }) => {
+test("arrow keys nudge the chosen tool's value: R then → adds to rotation, Shift ten times; Move uses x and y", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.setItem("boneburst.preferences", JSON.stringify({ version: 1, nudgeStep: 1 })));
   await page.reload();

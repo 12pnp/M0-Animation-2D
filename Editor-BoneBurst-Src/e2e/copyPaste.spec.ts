@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 
 /**
- * Copy and paste (E6-PLAN step 4c): keys selected with a box, copied and pasted at the playhead
+ * Copy and paste (E6-PLAN step 4c; on the graph since docs/TIMELINE-GRAPH-PLAN.md): keys selected with a box, copied and pasted at the playhead
  * with their spacing, one undo step; ⌘A; a pose copied from one animation and pasted into another.
  */
 
@@ -20,12 +20,10 @@ const frames = (page: Page, anim: string, bone: string, timeline: string) => pag
   return (d.animations.find((x) => x.name === a)!.bones?.find((g) => g.name === b)?.timelines.find((x) => x.name === t)?.keys ?? []).map((k) => Math.round((k.time ?? 0) * 24));
 }, [anim, bone, timeline] as const);
 
-/** The page point of frame `f` on the timeline row named `name` (scrolled into view). */
-async function at(page: Page, name: string, f: number): Promise<{ x: number; y: number }> {
-  const label = page.locator(".timeline-labels .row").filter({ hasText: new RegExp(`^\\W*${name}$`) }).first();
-  await label.scrollIntoViewIfNeeded();
-  const row = (await label.boundingBox())!, track = (await page.locator(".timeline-track canvas").boundingBox())!;
-  return { x: track.x + (f + 0.5) * 12, y: row.y + row.height / 2 };
+/** The page point of frame `f`, `dy` below the top of the timeline's graph. */
+async function at(page: Page, f: number, dy: number): Promise<{ x: number; y: number }> {
+  const track = (await page.locator(".timeline-track canvas").boundingBox())!;
+  return { x: track.x + (f + 0.5) * 12, y: track.y + dy };
 }
 
 test("box-select keys, copy, paste at the playhead with their spacing (one undo); ⌘A; a pose pasted into another animation", async ({ page }) => {
@@ -35,14 +33,15 @@ test("box-select keys, copy, paste at the playhead with their spacing (one undo)
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".timeline select").first().selectOption("run");
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.selectBone("hips"));
   const before = await frames(page, "run", "hips", "rotate");
   expect(before.slice(0, 3)).toEqual([0, 2, 4]);
 
-  // A box over hips' row, started on empty track between frames 4 and 6 and dragged left past frame 0.
-  const a = await at(page, "hips", 4.6), b = await at(page, "hips", -0.45);
-  await page.mouse.move(a.x, a.y - 8);
+  // A box over the graph, started on empty graph between frames 4 and 6 and dragged left past frame 0 and down over the whole height.
+  const a = await at(page, 4.6, 28), b = await at(page, -0.45, 400);
+  await page.mouse.move(a.x, a.y);
   await page.mouse.down();
-  await page.mouse.move(b.x, b.y + 8, { steps: 5 });
+  await page.mouse.move(b.x, b.y, { steps: 5 });
   await page.mouse.up();
   await page.keyboard.press("ControlOrMeta+c");
   await expect(page.locator(".status, footer, .message").getByText(/Copied \d+ keys/).first()).toBeVisible();
@@ -55,7 +54,7 @@ test("box-select keys, copy, paste at the playhead with their spacing (one undo)
   await page.keyboard.press("ControlOrMeta+z");
   await expect.poll(() => frames(page, "run", "hips", "rotate")).toEqual(before);
 
-  // ⌘A selects every key: copying says how many.
+  // ⌘A selects every key of the channels shown: copying says how many.
   await page.locator(".timeline-track canvas").click({ position: { x: 300, y: 5 } });
   await page.keyboard.press("ControlOrMeta+a");
   await page.keyboard.press("ControlOrMeta+c");

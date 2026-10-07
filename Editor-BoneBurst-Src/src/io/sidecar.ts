@@ -1,6 +1,6 @@
 import { isArray, isObject, type Json, type JsonObject } from "@/model/json";
 import type { Issue } from "@/model/issue";
-import { EMPTY_SIDECAR, type Guide, type Note, type Reference, SIDECAR_FORMAT, SIDECAR_VERSION, type Sidecar } from "@/model/sidecar";
+import { EMPTY_SIDECAR, type Guide, type MotionNode, type MotionPath, type Note, type Reference, SIDECAR_FORMAT, SIDECAR_VERSION, type Sidecar } from "@/model/sidecar";
 import { parseJson, stringifyJson } from "./json";
 
 /**
@@ -44,10 +44,25 @@ export function readSidecar(text: string): { sidecar: Sidecar; issues: Issue[] }
     const text2 = str(o, "text"), author = str(o, "author"), about = str(o, "about");
     return text2 === undefined ? null : { text: text2, ...(author !== undefined ? { author } : {}), ...(about !== undefined ? { about } : {}) };
   });
+  const motion = each<MotionPath>("motion", (o) => {
+    const animation = str(o, "animation"), bone = str(o, "bone"), nodes = o.get("nodes"), frames = num(o, "frames");
+    // An earlier build's path (seconds, pins) has no frames: dropped.
+    if (animation === undefined || bone === undefined || !isArray(nodes) || nodes.length < 2 || frames === undefined || !(frames >= 2)) return null;
+    const ns: MotionNode[] = [];
+    for (const n of nodes) {
+      if (!isObject(n) || typeof n.get("x") !== "number" || typeof n.get("y") !== "number") return null;
+      const tx = num(n, "tx"), ty = num(n, "ty");
+      ns.push({ x: n.get("x") as number, y: n.get("y") as number, ...(tx !== undefined && ty !== undefined ? { tx, ty } : {}) });
+    }
+    const numbers = (k: string): number[] => { const v = o.get(k); return isArray(v) ? v.filter((q): q is number => typeof q === "number") : []; };
+    const baked = str(o, "baked"), cv = o.get("curves");
+    const curves = isArray(cv) ? cv.map((c) => (isArray(c) ? c.filter((q): q is number => typeof q === "number") : [])) : [];
+    return { animation, bone, nodes: ns, closed: o.get("closed") !== false, frames, starts: numbers("starts"), speeds: numbers("speeds"), ...(curves.some((c) => c.length) ? { curves } : {}), ...(baked !== undefined ? { baked } : {}) };
+  });
   const view = root.get("view");
   if (view !== undefined && !isObject(view)) issues.push({ where: "view", message: "not an object; ignored" });
-  const extra = new Map([...root].filter(([k]) => !["format", "version", "view", "guides", "references", "notes"].includes(k)));
-  return { sidecar: { view: isObject(view) ? view : new Map(), guides, references, notes, extra }, issues };
+  const extra = new Map([...root].filter(([k]) => !["format", "version", "view", "guides", "references", "notes", "motion"].includes(k)));
+  return { sidecar: { view: isObject(view) ? view : new Map(), guides, references, notes, motion, extra }, issues };
 }
 
 export function writeSidecar(s: Sidecar): string {
@@ -56,6 +71,13 @@ export function writeSidecar(s: Sidecar): string {
     ["guides", s.guides.map((g) => new Map<string, Json>([["axis", g.axis], ["at", g.at]]))],
     ["references", s.references.map((r) => new Map<string, Json>([["path", r.path], ["x", r.x], ["y", r.y], ["scale", r.scale], ["opacity", r.opacity]]))],
     ["notes", s.notes.map((n) => new Map<string, Json>([["text", n.text], ...(n.author !== undefined ? [["author", n.author] as [string, Json]] : []), ...(n.about !== undefined ? [["about", n.about] as [string, Json]] : [])]))],
+    ...(s.motion.length ? [["motion", s.motion.map((m) => new Map<string, Json>([
+      ["animation", m.animation], ["bone", m.bone],
+      ["nodes", m.nodes.map((n) => new Map<string, Json>([["x", n.x], ["y", n.y], ...(n.tx !== undefined && n.ty !== undefined ? [["tx", n.tx] as [string, Json], ["ty", n.ty] as [string, Json]] : [])]))],
+      ["closed", m.closed], ["frames", m.frames], ["starts", [...m.starts]], ["speeds", [...m.speeds]],
+      ...(m.curves?.some((c) => c.length) ? [["curves", m.curves.map((c) => [...c])] as [string, Json]] : []),
+      ...(m.baked !== undefined ? [["baked", m.baked] as [string, Json]] : []),
+    ]))] as [string, Json]] : []),
   ];
   return `${stringifyJson(new Map([...entries, ...s.extra]))}\n`;
 }

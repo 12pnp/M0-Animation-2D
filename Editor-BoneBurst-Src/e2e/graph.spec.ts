@@ -1,7 +1,7 @@
 import { expect, type Page, test } from "@playwright/test";
 
 /**
- * The curve graph (E6-PLAN step 4g): Timeline ▸ Graph shows the selected bone's channels; a
+ * The curve graph (E6-PLAN step 4g; the Timeline since docs/TIMELINE-GRAPH-PLAN.md): shows the selected bone's channels; a
  * straight interval's handle dragged makes it a curve; a key dragged up raises its value; one
  * undo each.
  */
@@ -17,7 +17,7 @@ const geometry = (page: Page, label: string, i: number) => page.evaluate(async (
   const chs = g.channelsOf(tl.keyLists(a).filter((l: any) => l.path.section === "bones" && l.path.owner === "hips"));
   const ch = chs.find((c: any) => c.label === lab)!;
   const canvas = document.querySelector(".timeline-track canvas") as HTMLCanvasElement, box = canvas.getBoundingClientRect();
-  const height = Math.max(24 + 60, (document.querySelector(".timeline-body") as HTMLElement).clientHeight), top = 24 + 10, bottom = Math.max(24 + 40, height - 10), fit = g.fitValues(chs);
+  const height = Math.max(24 + 22 + 60, (document.querySelector(".timeline-body") as HTMLElement).clientHeight), top = 24 + 22 + 14, bottom = Math.max(24 + 22 + 44, height - 10), fit = g.fitValues(chs);
   const x = (t: number) => box.left + (t * s.fps + 0.5) * 12, y = (v: number) => box.top + g.valueY(fit, top, bottom, v);
   const key = ch.keys[k], iv = g.intervals(ch)[k]!;
   return {
@@ -33,7 +33,7 @@ const rotateKey = (page: Page, i: number) => page.evaluate((k) => {
   return a.bones.find((g: any) => g.name === "hips").timelines.find((t: any) => t.name === "rotate").keys[k];
 }, i);
 
-test("Graph: the selected bone's channels; a handle dragged makes a curve; a key dragged up raises its value; one undo each", async ({ page }) => {
+test("Timeline graph: the selected bone's channels; a handle dragged makes a curve; a key dragged up raises its value; one undo each", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
@@ -41,7 +41,6 @@ test("Graph: the selected bone's channels; a handle dragged makes a curve; a key
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".timeline select").first().selectOption("run");
   await page.evaluate(() => (window as unknown as Live).boneburst.session.selectBone("hips"));
-  await page.getByRole("button", { name: "Graph", exact: true }).click();
   await expect(page.locator(".timeline-labels .channel", { hasText: "hips · rotate" })).toBeVisible();
 
   // A straight interval's first handle, dragged up: the interval is a curve now.
@@ -71,4 +70,32 @@ test("Graph: the selected bone's channels; a handle dragged makes a curve; a key
   expect(Math.round(((await rotateKey(page, 1)).time ?? 0) * 24)).toBe(2);
   await page.keyboard.press("ControlOrMeta+z");
   expect((await rotateKey(page, 1)).value ?? 0).toBeCloseTo(k.value, 6);
+});
+
+test("Timeline graph: a click on a key selects it, Shift adds another, Stepped acts on them, Delete removes them; one undo each", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  await page.locator(".timeline select").first().selectOption("run");
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.selectBone("hips"));
+  await expect(page.locator(".timeline-labels .channel", { hasText: "hips · rotate" })).toBeVisible();
+  const count = () => page.evaluate(() => (window as unknown as Live).boneburst.session.animation.bones.find((g: any) => g.name === "hips").timelines.find((t: any) => t.name === "rotate").keys.length);
+  const n = await count();
+  const k1 = await geometry(page, "hips · rotate", 1), k2 = await geometry(page, "hips · rotate", 2);
+  // Click the second key; Shift-click the third: both selected, so Stepped sets their curves.
+  await page.mouse.click(k1.key.x, k1.key.y);
+  await page.keyboard.down("Shift");
+  await page.mouse.click(k2.key.x, k2.key.y);
+  await page.keyboard.up("Shift");
+  await page.getByRole("button", { name: "Stepped", exact: true }).click();
+  await expect.poll(async () => (await rotateKey(page, 1)).curve).toBe("stepped");
+  expect((await rotateKey(page, 2)).curve).toBe("stepped");
+  expect((await rotateKey(page, 0)).curve).toBeUndefined();
+  // Delete removes the two selected keys; one undo gives them back.
+  await page.keyboard.press("Delete");
+  await expect.poll(count).toBe(n - 2);
+  await page.keyboard.press("ControlOrMeta+z");
+  await expect.poll(count).toBe(n);
 });

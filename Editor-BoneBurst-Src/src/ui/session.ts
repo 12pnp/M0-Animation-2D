@@ -1,6 +1,7 @@
 import { readAtlas } from "@/io/atlas";
 import { unpackBbdata } from "@/io/bbdata";
 import { readSidecar, writeSidecar } from "@/io/sidecar";
+import { closeLoops } from "@/edit/loop";
 import { addReference, type View, viewOf, withView } from "@/edit/sidecar";
 import { EMPTY_SIDECAR, type Sidecar } from "@/model/sidecar";
 import type { Page } from "@/io/pack";
@@ -113,6 +114,11 @@ export class Session {
   private step: PhysicsMode = "none";
   private poser: { doc: Skeleton; value: Poser } | null = null;
   private posed: { key: string; value: Posed } | null = null;
+  /** The animations whose Loop tick is off (docs/LOOP-PLAN.md); every other animation is a loop. Kept in the sidecar's view. */
+  private loopOffSet: ReadonlySet<string> = new Set();
+  /** Counts changes to the ticks, so a cached pose is not served across one. */
+  private loopRev = 0;
+  private closed: { doc: Skeleton; off: ReadonlySet<string>; value: Skeleton } | null = null;
   /** Poses dragged with Auto Key off (by bone): shown over the animation, in no document, until keyed or the playhead moves. */
   private readonly unkeyed = new Map<string, LocalPose>();
   private unkeyedRev = 0;
@@ -277,6 +283,9 @@ export class Session {
 
   get hasUnkeyed(): boolean { return this.unkeyed.size > 0; }
 
+  /** Counts every change to the unkeyed poses: what tells a bone was dragged from a session change for another reason. */
+  get unkeyedRevision(): number { return this.unkeyedRev; }
+
   /** Hold `local` as `bone`'s pose over the animation, unkeyed. */
   setUnkeyed(bone: string, local: LocalPose): void {
     this.unkeyed.set(bone, local);
@@ -304,7 +313,7 @@ export class Session {
     const anim = this.animation;
     if (!anim) return;
     this.clearUnkeyed();
-    const end = animationDuration(anim);
+    const end = this.length(anim);
     if (!this.loop && this.time >= end) this.time = 0;
     this.playing = true;
     this.physics = "reset";
@@ -320,7 +329,7 @@ export class Session {
   advance(dt: number): void {
     const a = this.animation;
     if (!this.playing || !a) return;
-    const end = animationDuration(a);
+    const end = this.length(a);
     this.time += dt;
     if (this.time >= end) {
       if (this.loop && end > 0) this.time %= end;
@@ -333,8 +342,38 @@ export class Session {
     this.changed();
   }
 
-  private poserFor(): Poser | null {
+  /** The names of the animations whose Loop tick is off. */
+  get loopOff(): ReadonlySet<string> { return this.loopOffSet; }
+
+  /** Whether an animation is a loop: ticked unless turned off. */
+  loopOf(name: string): boolean { return !this.loopOffSet.has(name); }
+
+  /** Tick or untick an animation's Loop. Not an edit of the document: it is kept in the project's view. */
+  setLoop(name: string, on: boolean): void {
+    if (this.loopOf(name) === on) return;
+    const next = new Set(this.loopOffSet);
+    if (on) next.delete(name); else next.add(name);
+    this.loopOffSet = next;
+    this.loopRev++;
+    this.changed();
+  }
+
+  /** The document as it is used: the animations ticked as loops carry their closing key. What is posed, played and exported; never what is edited. */
+  closedDoc(): Skeleton | null {
     const doc = this.doc;
+    if (!doc) return null;
+    if (this.closed?.doc !== doc || this.closed.off !== this.loopOffSet) this.closed = { doc, off: this.loopOffSet, value: closeLoops(doc, this.loopOffSet) };
+    return this.closed.value;
+  }
+
+  /** How long an animation runs, in seconds, closing key included. */
+  length(a: Animation): number {
+    const doc = this.closedDoc();
+    return animationDuration(doc?.animations?.find((x) => x.name === a.name) ?? a);
+  }
+
+  poserFor(): Poser | null {
+    const doc = this.closedDoc();
     if (!doc) return null;
     if (this.poser?.doc !== doc) this.poser = { doc, value: new Poser(doc, this.images) };
     return this.poser.value;
@@ -372,7 +411,7 @@ export class Session {
     if (!poser) return null;
     const anim = this.animation?.name ?? null;
     const step = this.playing ? this.step : "none";
-    const key = `${this.history!.revision}|${this.skin}|${anim}|${this.time}|${this.tick}|${step}|${this.unkeyedRev}`;
+    const key = `${this.history!.revision}|${this.loopRev}|${this.skin}|${anim}|${this.time}|${this.tick}|${step}|${this.unkeyedRev}`;
     if (this.posed?.key !== key) this.posed = { key, value: poser.pose(this.skin, anim, this.time, step, this.unkeyed) };
     return this.posed.value;
   }
@@ -483,13 +522,16 @@ export class Session {
       filled.length ? `Showing ${filled.join(", ")}.` : ""].filter(Boolean).join(" ");
   }
 
-  /** The opened sidecar, and the view it keeps: skin and animation now, the camera for the stage. */
+  /** The opened sidecar, and the view it keeps: skin, animation and the selected bone, and the camera for the stage. */
   private takeSidecar(s: Sidecar): void {
     this.sidecar = s;
     this.sidecarWritten = contentText(s);
     const v = viewOf(s), doc = this.doc!;
     if (v.skin !== undefined && doc.skins?.some((k) => k.name === v.skin)) this.skin = v.skin === "default" ? null : v.skin;
     if (v.animation !== undefined && doc.animations?.some((a) => a.name === v.animation)) this.shown = v.animation;
+    if (v.bone !== undefined && doc.bones?.some((b) => b.name === v.bone)) this.selected = { kind: "bone", name: v.bone };
+    this.loopOffSet = new Set(v.loopOff ?? []);
+    this.loopRev++;
     this.openedCamera = v.camera ?? null;
     this.changed();
   }
@@ -545,6 +587,8 @@ export class Session {
     this.time = 0;
     this.playing = false;
     this.poser = null;
+    this.loopOffSet = new Set();
+    this.closed = null;
     this.issues = all;
     this.posed = null;
     this.changed();

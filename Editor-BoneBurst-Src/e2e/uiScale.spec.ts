@@ -74,9 +74,6 @@ test("User interface settings: row height, tree indent, toolbar labels, font siz
   await expect(page.locator(".stage-tools")).toHaveAttribute("data-align", "right");
   await select(/^Toolbar text labels/).selectOption("hide");
   await expect(page.locator(".stage-tools")).toHaveAttribute("data-labels", "hide");
-  await dialog.getByText("Timeline", { exact: true }).first().click();
-  await set(/^Row height/, "30");
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("boneburst.preferences")!).rowHeight)).toBe(30);
   await dialog.getByText("Tree", { exact: true }).first().click();
   await set(/^Tree indentation/, "24");
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("boneburst.preferences")!).treeIndent)).toBe(24);

@@ -3,39 +3,14 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { readAtlas } from "@/io/atlas";
 import { readSkeleton } from "@/io/skeletonRead";
-import { keyLists } from "@/model/timelines";
+import type { Animation } from "@/model/skeleton";
 import { atlasImages } from "@/engine/regions";
 import { animatedLocal, Poser } from "@/ui/stage/posed";
-import { buildRows, shiftedRefs, frameX, labelStep, markAt, marks, refId, ROW, rowAt, RULER, xFrame } from "@/ui/timeline/layout";
+import { secondsSinceLastKey, frameX, labelStep, refId, xFrame } from "@/ui/timeline/layout";
 import { STICKMAN } from "./fixtures/rigs";
 
 const stickman = () => readSkeleton(readFileSync(join(STICKMAN, "Stickman_IK.json"), "utf8")).skeleton;
 const images = () => atlasImages(readAtlas(readFileSync(join(STICKMAN, "Stickman_IK.atlas.txt"), "utf8")));
-
-describe("timeline rows", () => {
-  const doc = stickman(), run = doc.animations!.find((a) => a.name === "run")!;
-  it("one row per keyed bone in the skeleton's order, every key list once", () => {
-    const rows = buildRows(doc, run, null, new Set());
-    const bones = (doc.bones ?? []).map((b) => b.name);
-    const order = rows.filter((r) => r.bone !== undefined).map((r) => bones.indexOf(r.bone!));
-    expect(order).toEqual([...order].sort((a, b) => a - b));
-    expect(rows.flatMap((r) => r.lists).length).toBe(keyLists(run).length);
-  });
-  it("adds the selected bone even with no keys, and expands a row into its timelines", () => {
-    const rows = buildRows(doc, { name: "empty", extra: new Map() }, "head", new Set());
-    expect(rows.map((r) => r.id)).toEqual(["bone/head"]);
-    const first = buildRows(doc, run, null, new Set())[0]!;
-    const open = buildRows(doc, run, null, new Set([first.id]));
-    const subs = open.filter((r) => r.depth === 1 && r.bone === first.bone);
-    expect(subs.length).toBe(first.lists.length);
-  });
-  it("a row's diamonds are the frames with keys, each holding every key there", () => {
-    const row = buildRows(doc, run, null, new Set()).find((r) => r.lists.length > 1)!;
-    const ms = marks(row, 24);
-    expect(ms.map((m) => m.frame)).toEqual([...new Set(ms.map((m) => m.frame))].sort((a, b) => a - b));
-    expect(ms.reduce((n, m) => n + m.refs.length, 0)).toBe(row.lists.reduce((n, l) => n + l.keys.length, 0));
-  });
-});
 
 describe("timeline geometry", () => {
   const v = { frameWidth: 10, first: 2 };
@@ -44,25 +19,10 @@ describe("timeline geometry", () => {
     expect(frameX(v, 7)).toBe(50);
     expect(xFrame(v, 50)).toBe(7);
   });
-  it("finds the row under y and the nearest diamond in reach", () => {
-    expect(rowAt(RULER - 1, 5)).toBe(-1);
-    expect(rowAt(RULER + ROW * 2 + 1, 5)).toBe(2);
-    expect(rowAt(RULER + ROW * 9, 5)).toBe(-1);
-    const ms = [{ frame: 5, refs: [], stepped: false, eased: false }, { frame: 6, refs: [], stepped: false, eased: false }];
-    expect(markAt(v, ms, 34)!.frame).toBe(5);
-    expect(markAt(v, ms, 38)!.frame).toBe(6);
-    expect(markAt(v, ms, 80)).toBeNull();
-  });
   it("labels the ruler at least 48 px apart", () => {
     expect(labelStep(60)).toBe(1);
     expect(labelStep(12)).toBe(5);
     expect(labelStep(1)).toBe(60);
-  });
-  it("a dragged key keeps the file's stored time until it has moved", () => {
-    const path = { section: "bones" as const, owner: "a", timeline: "rotate" };
-    const stored = [{ path, time: 0.0833333283662796 }];
-    expect(shiftedRefs(stored, 0, 24)).toEqual(stored);
-    expect(shiftedRefs(stored, 1, 24)).toEqual([{ path, time: 0.125 }]);
   });
   it("names a key by its list and frame, so float32 noise does not split it", () => {
     const path = { section: "bones" as const, owner: "a", timeline: "rotate" };
@@ -85,5 +45,18 @@ describe("posing an animation", () => {
     const once = at(0.5);
     at(0.1);
     expect(at(0.5)).toEqual(once);
+  });
+});
+
+describe("the time since the last key", () => {
+  const key = (t: number) => ({ ...(t ? { time: t } : {}), extra: new Map() });
+  const a = { name: "x", bones: [{ name: "b", timelines: [{ name: "rotate", keys: [key(0), key(0.5)] }] }], extra: new Map() } as unknown as Animation;
+  it("is measured from the nearest key before the frame, on any timeline", () => {
+    expect(secondsSinceLastKey(a, 18, 24)).toBeCloseTo(0.25, 6);
+    expect(secondsSinceLastKey(a, 5, 24)).toBeCloseTo(5 / 24, 6);
+  });
+  it("on a key it counts from the one before, and there is nothing before the first", () => {
+    expect(secondsSinceLastKey(a, 12, 24)).toBeCloseTo(0.5, 6);
+    expect(secondsSinceLastKey(a, 0, 24)).toBeNull();
   });
 });

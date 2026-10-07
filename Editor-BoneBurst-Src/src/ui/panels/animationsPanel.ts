@@ -1,5 +1,4 @@
 import { addAnimation, deleteAnimation, duplicateAnimation, renameAnimation } from "@/edit/animations";
-import { animationDuration } from "@/model/timelines";
 import type { Session } from "../session";
 import { ListPanel, type ListRow } from "./listPanel";
 import { unique } from "./outline";
@@ -25,7 +24,7 @@ export class AnimationsPanel extends ListPanel {
     const shown = this.session.animation?.name ?? null;
     const setup: ListRow = { label: "Setup pose", note: "", current: shown === null, editable: false, choose: () => this.session.showAnimation(null) };
     return [setup, ...(doc.animations ?? []).map((a): ListRow => ({
-      label: a.name, note: `${animationDuration(a).toFixed(2)} s`, current: shown === a.name, editable: true, choose: () => this.session.showAnimation(a.name),
+      label: a.name, note: `${this.session.length(a).toFixed(2)} s`, current: shown === a.name, editable: true, choose: () => this.session.showAnimation(a.name),
     }))];
   }
 

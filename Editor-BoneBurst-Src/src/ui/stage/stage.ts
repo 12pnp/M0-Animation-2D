@@ -81,6 +81,8 @@ export class Stage {
   tool: Tool = "move";
   /** With an animation chosen: a drag keys it (on), or poses the bone unkeyed until Key (off). */
   autoKey = true;
+  /** True while a motion path is being drawn: the bone is posed to store it, so a drag writes no keys (docs/PATH-CAPTURE-PLAN.md). */
+  forceUnkeyed: () => boolean = () => false;
   /** The Move tool's axes: parent's is the free drag; local and world hold it to one axis. */
   space: Space = "parent";
   camera: Camera = { x: 0, y: 0, zoom: 1 };
@@ -909,7 +911,7 @@ export class Stage {
     const p = this.session.pose()!, index = p.bones.get(name)!;
     const b = this.session.doc!.bones!.find((x) => x.name === name)!;
     const at = toWorld(this.camera, this.size, sx, sy), parent = parentMatrix(p, index);
-    const anim = this.session.animation?.name ?? null, unkeyed = anim !== null && !this.autoKey;
+    const anim = this.session.animation?.name ?? null, unkeyed = anim !== null && (!this.autoKey || this.forceUnkeyed());
     // Animate mode starts from the pose at the playhead; setup mode from the setup values.
     const from = anim !== null ? animatedLocal(p, index) : {
       x: boneNumber(b, "x"), y: boneNumber(b, "y"), rotation: boneNumber(b, "rotation"),

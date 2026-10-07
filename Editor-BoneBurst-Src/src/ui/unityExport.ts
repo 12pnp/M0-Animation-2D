@@ -27,8 +27,8 @@ export interface Folder {
 export interface ExportFile { readonly name: string; readonly data: string | Uint8Array }
 
 /** The files an export writes, in order: the atlas and its pages, then the skeleton. */
-export async function exportFiles(session: Session): Promise<ExportFile[]> {
-  const doc = session.doc;
+export async function exportFiles(session: Session, closed = true): Promise<ExportFile[]> {
+  const doc = closed ? session.closedDoc() : session.doc;
   if (!doc) throw new ExportRefused("Nothing is open to export.");
   const files: ExportFile[] = [];
   if (session.atlas) {

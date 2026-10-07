@@ -14,7 +14,7 @@ function store(initial: string | null = null, blocked = false): Store & { saved:
 describe("preferences", () => {
   it("start from the defaults, and read back what was written", () => {
     expect(readPreferences(null)).toEqual(DEFAULTS);
-    const p = { theme: "dark" as const, rulers: false, nudgeStep: 0.5, nudgeScaleStep: 0.05, nudgeBigFactor: 4, uiScale: 80, fontSize: "large" as const, toolbarLabels: "hide" as const, toolbarPosition: "right" as const, rowHeight: 30, fewerTicks: true, defaultFps: 24, treeColours: false, treeIndent: 20, stagePanels: false, boneColour: "#334455", boneSize: 2.5, selectedBoneColour: "#ff00aa", bones: false, constraints: false, hideIkBones: true, rulerColour: "#112233", rulerOpacity: 0.4, rulerTextColour: "#ffee00", undoSteps: 1200, referenceOpacity: 0.3, ai: true, autosave: false, autosaveSeconds: 90, onion: true, onionBefore: 3, onionAfter: 0, onionKeyedOnly: true, onionColour: false, grid: true, checker: false, axes: false, checkerColour: "#112233", gridColour: "#445566", gridThickness: 2.5, axisXColour: "#aa0000", axisYColour: "#00aa00", axisThickness: 3, tabBarColour: "#101820", tabActiveColour: "auto", tabTextColour: "#ddeeff", tabDimTextColour: "#778899", gridSize: 12.5, snap: false, snapGrid: false, snapGuides: false, snapBones: false, snapPixels: true };
+    const p = { theme: "dark" as const, rulers: false, nudgeStep: 0.5, nudgeScaleStep: 0.05, nudgeBigFactor: 4, uiScale: 80, fontSize: "large" as const, toolbarLabels: "hide" as const, toolbarPosition: "right" as const, fewerTicks: true, defaultFps: 24, treeColours: false, treeIndent: 20, stagePanels: false, boneColour: "#334455", boneSize: 2.5, selectedBoneColour: "#ff00aa", bones: false, constraints: false, hideIkBones: true, rulerColour: "#112233", rulerOpacity: 0.4, rulerTextColour: "#ffee00", undoSteps: 1200, referenceOpacity: 0.3, ai: true, autosave: false, autosaveSeconds: 90, onion: true, onionBefore: 3, onionAfter: 0, onionKeyedOnly: true, onionColour: false, grid: true, checker: false, axes: false, checkerColour: "#112233", gridColour: "#445566", gridThickness: 2.5, axisXColour: "#aa0000", axisYColour: "#00aa00", axisThickness: 3, tabBarColour: "#101820", tabActiveColour: "auto", tabTextColour: "#ddeeff", tabDimTextColour: "#778899", gridSize: 12.5, snap: false, snapGrid: false, snapGuides: false, snapBones: false, snapPixels: true };
     expect(readPreferences(writePreferences(p))).toEqual(p);
   });
   it.each([
@@ -76,14 +76,14 @@ describe("bone size", () => {
 
 describe("the user interface preferences", () => {
   it("fall back to the default for a choice that is not one, and read a value in range", () => {
-    const text = JSON.stringify({ version: 1, fontSize: "huge", toolbarLabels: "hide", toolbarPosition: "middle", rowHeight: 30, fewerTicks: true, defaultFps: 24, treeColours: false, treeIndent: 20 });
-    expect(readPreferences(text)).toMatchObject({ fontSize: DEFAULTS.fontSize, toolbarLabels: "hide", toolbarPosition: DEFAULTS.toolbarPosition, rowHeight: 30, fewerTicks: true, defaultFps: 24, treeColours: false, treeIndent: 20 });
+    const text = JSON.stringify({ version: 1, fontSize: "huge", toolbarLabels: "hide", toolbarPosition: "middle", fewerTicks: true, defaultFps: 24, treeColours: false, treeIndent: 20 });
+    expect(readPreferences(text)).toMatchObject({ fontSize: DEFAULTS.fontSize, toolbarLabels: "hide", toolbarPosition: DEFAULTS.toolbarPosition, fewerTicks: true, defaultFps: 24, treeColours: false, treeIndent: 20 });
   });
   it("bring a row height, a frame rate and an indent into range", () => {
     const prefs = new Preferences(null);
-    prefs.set({ rowHeight: 999, defaultFps: 0, treeIndent: -4 });
-    expect(prefs.values).toMatchObject({ rowHeight: 40, defaultFps: 1, treeIndent: 6 });
-    prefs.set({ rowHeight: 3, defaultFps: 1000, treeIndent: 99 });
-    expect(prefs.values).toMatchObject({ rowHeight: 16, defaultFps: 240, treeIndent: 40 });
+    prefs.set({ defaultFps: 0, treeIndent: -4 });
+    expect(prefs.values).toMatchObject({ defaultFps: 1, treeIndent: 6 });
+    prefs.set({ defaultFps: 1000, treeIndent: 99 });
+    expect(prefs.values).toMatchObject({ defaultFps: 240, treeIndent: 40 });
   });
 });
