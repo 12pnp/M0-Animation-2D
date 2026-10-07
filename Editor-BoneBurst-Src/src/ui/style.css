@@ -658,6 +658,10 @@ dialog.preferences .slider input[type="number"] { width: 64px; }
 .stage-mode { position: absolute; right: 0; bottom: 0; z-index: 1; min-width: 96px; padding: 3px 14px; text-align: center; border-radius: 6px 0 0 0; border: 1px solid var(--line); border-bottom: 0; border-right: 0; background: var(--bb-header-bg, var(--panel)); }
 .stage-mode[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
 .stage-mode:disabled { opacity: 0.5; }
+.stage-lock { position: absolute; right: 96px; bottom: 0; z-index: 1; min-width: 64px; padding: 3px 12px; text-align: center; border-radius: 6px 6px 0 0; border: 1px solid var(--line); border-bottom: 0; background: var(--bb-header-bg, var(--panel)); }
+.stage-lock[hidden] { display: none; }
+.stage-lock[aria-pressed="true"] { background: #c8622d; border-color: #c8622d; color: #ffffff; }
+.stage-lock:disabled { opacity: 0.5; }
 
 /* The transform panel, compact: a head cell (the key toggle, red when keyed), the tool's label, then the values. */
 .stage-tools .group { padding: 3px; gap: 3px; }

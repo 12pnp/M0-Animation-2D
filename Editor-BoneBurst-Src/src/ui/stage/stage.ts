@@ -873,6 +873,8 @@ export class Stage {
     if (mesh && this.meshDown(mesh, sx, sy)) return;
     const screenBones = this.screenBones();
     let name = pickBone(screenBones, sx, sy, 6, this.session.selectedBone);
+    // With the selection locked only the selected bone can be pressed: another bone is an empty press (it pans).
+    if (name !== null && this.session.selectionLocked && name !== this.session.selectedBone) name = null;
     // A drawn constraint (E4 step 12) comes before a bone picked only by its segment: path bones
     // lie along their curve. The selected bone and a bone's origin (an IK target) keep the press.
     if (name !== null && name !== this.session.selectedBone) {

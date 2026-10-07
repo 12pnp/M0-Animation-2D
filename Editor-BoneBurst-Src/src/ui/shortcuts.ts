@@ -53,6 +53,7 @@ export const SHORTCUTS = [
   { id: "redoAlt", keys: "⌘Y", group: "Edit", what: "Redo (also)", chord: cmd("y") },
   { id: "escape", keys: "Esc", group: "Stage", what: "Cancel a drag, stop playback, or select nothing", chord: plain("escape"), keepDefault: true },
   { id: "fit", keys: "F", group: "View", what: "Centre the view on the selected bone, or fit the whole skeleton when none is selected", chord: plain("f") },
+  { id: "lockSelection", keys: "L", group: "Stage", what: "Lock the selected bone (Animate mode): it cannot be let go or swapped for another until unlocked", chord: plain("l") },
   { id: "cycleSpace", keys: "Z", group: "Stage", what: "Cycle the transform space: Local, Parent, World", chord: plain("z") },
   { id: "brushSmaller", keys: "[", group: "Stage", what: "Weight brush smaller (while painting weights)", chord: plain("[") },
   { id: "brushLarger", keys: "]", group: "Stage", what: "Weight brush larger (while painting weights)", chord: plain("]") },

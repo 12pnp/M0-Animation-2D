@@ -532,6 +532,9 @@ test("the numbered node buttons are green and alone in their strip (the + is in 
 
 /** Drag the numbered button at place `from` to place `to` with the mouse, in steps; `hold` leaves it held on `to`. */
 async function dragNode(page: Page, from: number, to: number, hold = false): Promise<void> {
+  // The strip repaints after an edit: let it settle before taking the cells' places.
+  await expect(reds(page).nth(Math.max(from, to))).toBeVisible();
+  await page.waitForTimeout(150);
   const a = (await reds(page).nth(from).boundingBox())!, b = (await reds(page).nth(to).boundingBox())!;
   await page.mouse.move(a.x + a.width / 2, a.y + a.height / 2);
   await page.mouse.down();

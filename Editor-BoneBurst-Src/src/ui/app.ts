@@ -185,6 +185,16 @@ export function mountApp(root: HTMLElement): void {
   });
   // Text only, fixed at the stage's foot, in the middle.
   modeBtn.classList.add("mode", "stage-mode");
+  // Lock (Animate mode only): hold the selected bone, so it cannot be let go or swapped for another by a stray click.
+  const toggleLock = (): boolean | void => {
+    if (!session.animation) return false;
+    const on = !session.selectionLocked;
+    if (session.lockSelection(on)) say(`Locked on ${session.selectedBone ?? "the selection"}: press ${keysOf("lockSelection")} or click Locked to pick another.`);
+    else say(on ? "Select a bone first, then lock." : "Unlocked.");
+  };
+  const lockBtn = button("Lock", "", () => { toggleLock(); });
+  lockBtn.classList.add("stage-lock");
+  session.onSelectionLocked = () => say(`The selection is locked: press ${keysOf("lockSelection")} or click Locked (bottom right of the stage) to pick another.`);
   const spaceGroup = group(...spaceBtns), showGroup = group(...showBtns.filter((b) => b !== rulersBtn && b.dataset.show !== "onion"));
   stageTools.append(crumb, transform.element, spaceGroup, showGroup);
   // Each panel can be dragged by its grip and folded; the corner button shows or hides all of them.
@@ -197,7 +207,7 @@ export function mountApp(root: HTMLElement): void {
   // Two small buttons in the stage's bottom-left corner, stacked upward: show or hide the panels, then the rulers.
   const rulerTools = el("div", "stage-ruler-tools");
   rulerTools.append(panelsBtn, rulersBtn);
-  stagePanel.append(rulerTools, modeBtn);
+  stagePanel.append(rulerTools, lockBtn, modeBtn);
   stagePanel.append(fitCorner);
   // "Automatic" text labels: hidden while the stage is narrow.
   new ResizeObserver(() => stageTools.classList.toggle("narrow", stagePanel.clientWidth < 560)).observe(stagePanel);
@@ -584,6 +594,13 @@ export function mountApp(root: HTMLElement): void {
     modeBtn.disabled = !doc;
     workspace.setMode(animating ? "animate" : "pose");
     modeBtn.setAttribute("aria-pressed", String(animating));
+    // The lock shows in Animate mode only, and needs something selected to hold.
+    const locked = session.selectionLocked;
+    lockBtn.hidden = !animating;
+    lockBtn.textContent = locked ? "Locked" : "Lock";
+    lockBtn.disabled = !locked && !session.selected;
+    lockBtn.setAttribute("aria-pressed", String(locked));
+    lockBtn.title = locked ? `Locked: the selection cannot be changed or let go. Click or press ${keysOf("lockSelection")} to unlock` : session.selected ? `Lock the selection on what is selected now (${keysOf("lockSelection")})` : "Select a bone first, then lock it";
     // The path of what is selected.
     const sel = session.selected, parts: string[] = [];
     if (doc && sel) {
@@ -690,6 +707,7 @@ export function mountApp(root: HTMLElement): void {
       if (!stage.cancel() && session.playing) session.pause();
       else session.select(null);
     },
+    lockSelection: () => toggleLock(),
     fit: () => { if (hovered === "motion") motionPanel.fitView(); else if (hovered === "timeline") timeline.fit(); else stage.focusSelected(); },
     nudgeLeft: (e?: KeyboardEvent) => nudge("left", e),
     nudgeRight: (e?: KeyboardEvent) => nudge("right", e),

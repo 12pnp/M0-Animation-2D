@@ -133,12 +133,32 @@ export class Session {
   /** Select (null: nothing) and tell the listeners. */
   select(sel: Selection | null): void {
     if (sameSelection(sel, this.selected)) return;
+    // Locked on the bone chosen: nothing else is picked and nothing is let go until it is unlocked.
+    if (this.selectionLocked) { this.onSelectionLocked?.(); return; }
     this.selected = sel;
     this.vertex = null;
     this.pathVertex = null;
     // Choosing something in the rig lets go of a reference.
     if (sel) this.reference = null;
     this.changed();
+  }
+
+  private lockedOn = false;
+
+  /** Called when a pick was refused because the selection is locked (the app says so). */
+  onSelectionLocked: (() => void) | null = null;
+
+  /** The selection is held: Animate mode with something selected and the lock on. Leaving Animate, or nothing selected, lets it go. */
+  get selectionLocked(): boolean {
+    if (this.lockedOn && (!this.animation || !this.selected)) this.lockedOn = false;
+    return this.lockedOn;
+  }
+
+  /** Lock the selection on what is selected now (Animate mode only), or let it go. Returns whether it is locked. */
+  lockSelection(on: boolean): boolean {
+    this.lockedOn = on && !!this.animation && !!this.selected;
+    this.changed();
+    return this.lockedOn;
   }
 
   /** Choose a reference to move on the stage (null: none) and tell the listeners. */
@@ -580,6 +600,7 @@ export class Session {
     this.pages = pages;
     this.skin = null;
     this.selected = null;
+    this.lockedOn = false;
     this.vertex = null;
     this.reference = null;
     this.weightBone = null;
