@@ -549,7 +549,7 @@ test("the baked bone follows the ring with a speed on its nodes: within a few un
   let worst = 0;
   for (let f = 0; f < p.frames; f++) {
     const got = await localJoint(page, "head", f);
-    const want = await page.evaluate(async ([m, fr]) => { const url = "/src/edit/twinSpline.ts"; const mod: any = await import(/* @vite-ignore */ url); return mod.placeAtFrame(m, fr) as { x: number; y: number }; }, [p, f] as const);
+    const want = await page.evaluate(async ([m, fr]) => { const url = "/src/motion/speed.ts"; const mod: any = await import(/* @vite-ignore */ url); return mod.placeAtFrame(m, fr) as { x: number; y: number }; }, [p, f] as const);
     worst = Math.max(worst, Math.hypot(got[0] - want.x, got[1] - want.y));
   }
   expect(worst).toBeLessThan(4);

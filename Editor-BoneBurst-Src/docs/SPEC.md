@@ -18,13 +18,16 @@ flowchart TB
         EDIT["src/edit<br/>Edit = (doc) → doc · History"]
         IO["src/io<br/>readSkeleton · writeSkeleton<br/>atlas · sidecar · normalise"]
         ENGINE["src/engine<br/>posing (runtime, lifted in E2)"]
+        MOTION["src/motion<br/>path motion: curve · nodes · speed spline<br/>(apart from the key animation)"]
     end
     UI["src/ui<br/>stage · timeline · inspector · outline"]
     AGENT["src/agent<br/>tool contract v2 (D5) · bridge"]
     IO --> MODEL
     EDIT --> MODEL
     ENGINE --> MODEL
-    UI --> EDIT & ENGINE & IO
+    MOTION -.->|"sidecar types only"| MODEL
+    IO --> MOTION
+    UI --> EDIT & ENGINE & IO & MOTION
     AGENT --> EDIT & ENGINE & IO
     FILE[("name.json · name.atlas · pages<br/>name.bb.json")] <--> IO
 ```
@@ -37,10 +40,11 @@ flowchart TB
 | `src/io` | Spine JSON and atlas reading and writing; the sidecar; round-trip normalisation | `model` |
 | `src/edit` | edits (pure functions document → document) and the history | `model` |
 | `src/engine` | posing a document at a time: bones, constraints, physics, meshes; reads plain Spine JSON | `model` |
+| `src/motion` | the path motion, the second system beside the key animation (docs/TWO-SYSTEMS-PLAN.md): the curve, the nodes and the speed spline, numbers in and out | `model/sidecar` (types) and `model/refused` only; not `edit`, not `engine`; `edit` and `engine` never import it |
 | `src/ui` | everything with a DOM | anything above |
 | `src/agent` | the AI tools and their bridge | `model`, `io`, `edit`, `engine` |
 
-`model`, `io`, `edit` and `engine` touch no DOM, so all of them run in vitest under Node. The
+`model`, `io`, `edit`, `engine` and `motion` touch no DOM, so all of them run in vitest under Node. The
 check script enforces the import direction once there is code to enforce it on (E1).
 
 ## 2. Document

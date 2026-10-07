@@ -1,5 +1,5 @@
-import { type BakedKey, bakeTranslate, curveOf, DEFAULT_FRAMES, endFrame, fitChannel, keysSignature, pathSignature, setupXY, translateKeys } from "@/edit/motionPath";
-import { arrivalFrames, progressAtFrame } from "@/edit/twinSpline";
+import { arrivalFrames, curveOf, DEFAULT_FRAMES, endFrame, progressAtFrame } from "@/motion";
+import { type BakedKey, bakeTranslate, fitChannel, keysSignature, pathSignature, setupXY, translateKeys } from "@/edit/motionPath";
 import { motionOf, withMotion } from "@/edit/sidecar";
 import { EditRefused } from "@/edit/history";
 import type { Skeleton } from "@/model/skeleton";

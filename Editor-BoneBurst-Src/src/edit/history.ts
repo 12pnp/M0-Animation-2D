@@ -5,8 +5,7 @@
  * steps it took.
  */
 
-/** An edit that would leave the document breaking a rule: nothing changes, and the reason is said. */
-export class EditRefused extends Error {}
+export { EditRefused } from "@/model/refused";
 
 export type Edit<D> = (doc: D) => D;
 

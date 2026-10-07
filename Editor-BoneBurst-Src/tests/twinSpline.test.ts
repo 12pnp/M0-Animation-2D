@@ -1,6 +1,5 @@
+import { arrivalFrames, buildCurve, clampSpeed, endFrame, multiplierOf, nodeProgress, placeAtFrame, progressAtFrame, reversePath, setSpeedLegs, slopesOf, SPEED_MAX, SPEED_MIN, speedAt, timeMap, withSpeedSlope } from "@/motion";
 import { describe, expect, it } from "vitest";
-import { buildCurve, endFrame, reversePath } from "@/edit/motionPath";
-import { arrivalFrames, clampSpeed, multiplierOf, nodeProgress, placeAtFrame, progressAtFrame, setSpeedLegs, SPEED_MAX, SPEED_MIN, slopesOf, speedAt, timeMap, withSpeedSlope } from "@/edit/twinSpline";
 import type { MotionPath } from "@/model/sidecar";
 
 /** TwinSpline (docs/TWINSPLINE-PLAN.md): the speed spline over a ring, and the time it makes. */

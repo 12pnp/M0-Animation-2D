@@ -1,4 +1,4 @@
-import { SPEED_MAX, SPEED_MIN } from "@/edit/twinSpline";
+import { SPEED_MAX, SPEED_MIN } from "@/motion";
 import { isArray, isObject, type Json, type JsonObject } from "@/model/json";
 import type { Issue } from "@/model/issue";
 import { EMPTY_SIDECAR, type Guide, type MotionNode, type MotionPath, type Note, type TagEntry, type Reference, SIDECAR_FORMAT, SIDECAR_VERSION, type Sidecar } from "@/model/sidecar";

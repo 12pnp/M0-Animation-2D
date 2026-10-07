@@ -1,5 +1,6 @@
 import type { MotionNode, MotionPath } from "@/model/sidecar";
-import { curveOf, endFrame, type Pt } from "./motionPath";
+import { curveOf, type Pt } from "./curve";
+import { endFrame } from "./nodes";
 
 /**
  * TwinSpline (docs/TWINSPLINE-PLAN.md): the motion path is a ring spline through its nodes, and each node carries a speed

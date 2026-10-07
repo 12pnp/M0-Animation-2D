@@ -1,7 +1,6 @@
+import { breakLegs, clampSpeed, curveOf, endFrame, handleOffsets, mergeNodes, midAfter, mirrorLegs, moveNode, multiplierOf, nodeLabels, nodeProgress, progressAtFrame, renumberNodes, reversePath, setSpeedLegs, slopesOf, SPEED_MAX, SPEED_MIN, speedAt, speedOf, timeMap, withFrames, withNode, withOrigin, withSpeedSlope } from "@/motion";
 import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { EditRefused } from "@/edit/history";
-import { curveOf, endFrame, handleOffsets, nodeLabels, moveNode, withNode, withOrigin, midAfter, mergeNodes, renumberNodes, reversePath, breakLegs, mirrorLegs, withFrames } from "@/edit/motionPath";
-import { clampSpeed, multiplierOf, nodeProgress, progressAtFrame, setSpeedLegs, SPEED_MAX, SPEED_MIN, slopesOf, speedAt, speedOf, timeMap, withSpeedSlope } from "@/edit/twinSpline";
 import { drawnVertices } from "@/engine/draw";
 import { boneInherit } from "@/model/defaults";
 import type { Skeleton } from "@/model/skeleton";

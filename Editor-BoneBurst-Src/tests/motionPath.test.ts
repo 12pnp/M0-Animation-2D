@@ -1,5 +1,6 @@
+import { breakLegs, buildCurve, curveOf, handleOffsets, mergeNodes, midAfter, mirrorLegs, moveNode, nodeLabels, renumberNodes, reversePath, withFrames, withNode, withOrigin } from "@/motion";
 import { describe, expect, it } from "vitest";
-import { withFrames, bakeTranslate, buildCurve, curveOf, fitChannel, handleOffsets, keysSignature, pathSignature, nodeLabels, moveNode, withOrigin, midAfter, mergeNodes, renumberNodes, reversePath, breakLegs, mirrorLegs, translateKeys, withNode } from "@/edit/motionPath";
+import { bakeTranslate, fitChannel, keysSignature, pathSignature, translateKeys } from "@/edit/motionPath";
 import type { MotionPath } from "@/model/sidecar";
 import type { Animation, Key, Skeleton } from "@/model/skeleton";
 import { keyLists, keyTime, timeFrame } from "@/model/timelines";
