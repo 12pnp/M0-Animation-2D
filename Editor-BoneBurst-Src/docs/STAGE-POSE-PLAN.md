@@ -1,6 +1,6 @@
 # Stage and Pose mode — what Spine's Stage tools have that v2 does not — plan
 
-**Status:** steps 1 and 2 done (the matrix, 2026-10-07; the Create tools, 2026-10-08, without Region); step 3 done 2026-10-08 on the plan's own defaults (Compensate and Pin; Lock length left out); steps 4–5 not started; the questions below are still open. Written from the owner's picture of Spine's Stage tool panels
+**Status:** steps 1 and 2 done (the matrix, 2026-10-07; the Create tools, 2026-10-08, without Region); step 3 done 2026-10-08 on the plan's own defaults (Compensate and Pin; Lock length left out); step 4 done 2026-10-08 (Mesh, Weights, Path, Reset; IK handles were already there); step 5 not started; the questions below are still open. Written from the owner's picture of Spine's Stage tool panels
 (Pose mode) and from what v2 has today, read on disk. Spine's editor is not open here, so what each icon does
 is read from the picture and marked **confirm** where it is a guess; the owner confirms the list in
 "Questions" before step 1. Clean-room: no code from the old editor or the fork is read; the behaviour is
@@ -104,7 +104,7 @@ no step changes the Spine file format, so every export stays what BoneBurst's re
    length while its tip is dragged (a drag turns it instead of stretching it); Pin is the open question below.
    Tests: with Compensate on, a child's world matrix is the same before and after a parent's Move, Rotate,
    Scale and Shear (compared by `boneMatrix`), with it off, it moves.
-4. **Pose-mode extras.** The Stage's own entries for Weights, Mesh and Path (today in the Rig and
+4. **Pose-mode extras — done 2026-10-08.** Result: a Pose tools group, Pose mode only, `ui/stage/poseTools.ts`: **Mesh** edits the selected slot's image as a mesh (a region is turned into a mesh first, one undo step) and selects it, so its vertices drag on the Stage; **Weights** toggles the weight brush for the mesh being edited (it says what to do when none is, and the bone is still picked in Properties ▸ Show weights); **Path** selects the selected bone's or slot's first path; **Reset** puts the selected bone's rotation, scale and shear back to 0, 1, 0 as the right-click menu does, one undo step, and never touches every bone at once, since in Pose mode those values are the rig. IK handles were already there: an IK target is a bone, so dragging it on the Stage moves the chain, and the constraint is drawn. Icon `rotate-ccw` vendored. Tests: `e2e/poseTools.spec.ts`. Original text: The Stage's own entries for Weights, Mesh and Path (today in the Rig and
    Properties panels), IK handles dragged on the Stage in Pose mode, and Reset Pose (setup values back for
    the selected bone, or all). Tests: each entry turns the same mode on as its panel button; Reset Pose is one
    undo step.

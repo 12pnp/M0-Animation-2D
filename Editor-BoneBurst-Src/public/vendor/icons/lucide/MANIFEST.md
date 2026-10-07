@@ -59,6 +59,7 @@ files.
 | `eye.svg` | `icons/eye.svg` | the Stage matrix's Visible column |
 | `tag.svg` | `icons/tag.svg` | the Stage matrix's Names column |
 | `pin.svg` | `icons/pin.svg` | the Pin bone option |
+| `rotate-ccw.svg` | `icons/rotate-ccw.svg` | the Reset pose tool |
 | `layout-panel-left.svg` | `icons/layout-panel-left.svg` | the activity bar's panel picker |
 | `search.svg` | `icons/search.svg` | the rig panel's search field |
 | `arrow-left.svg` | `icons/arrow-left.svg` | the rig panel's Back |

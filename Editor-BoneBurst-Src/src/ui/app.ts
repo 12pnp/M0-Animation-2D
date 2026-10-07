@@ -37,6 +37,7 @@ import { folders, type Recent, recent, type RecentHandle, readRecent } from "./r
 import { ExportRefused, exportFiles, exportToUnity } from "./unityExport";
 import { snapFields } from "./snapFields";
 import type { CreateKind } from "./stage/create";
+import { editMesh, editPath, resetPose, togglePaint } from "./stage/poseTools";
 import { viewMatrix } from "./stage/viewMatrix";
 import { Autosaver, clearRecovery, readRecoveries, type RecoveryRecord, sourcesOf } from "./recovery";
 import { floatGroups } from "./stage/floatingGroups";
@@ -178,6 +179,20 @@ export function mountApp(root: HTMLElement): void {
     if (session.pinned.has(name)) session.pinned.delete(name); else session.pinned.add(name);
     session.changed();
   }), "pin", false);
+  // Pose tools (step 4), Pose mode only: what Properties offers for an image, from the Stage.
+  const POSE_TOOLS: ReadonlyArray<{ id: string; label: string; tip: string; icon: IconName; run: () => string }> = [
+    { id: "mesh", label: "Mesh", tip: "Edit the mesh of the selected image (a region is made a mesh first): drag its vertices on the stage", icon: "mesh", run: () => editMesh(session) },
+    { id: "weights", label: "Weights", tip: "Paint the weights of the mesh being edited (Properties ▸ Show weights picks the bone)", icon: "keyDeform", run: () => togglePaint(session) },
+    { id: "path", label: "Path", tip: "Edit the path of the selected bone or slot: drag its points on the stage", icon: "path", run: () => editPath(session) },
+    { id: "reset", label: "Reset", tip: "Put the selected bone's rotation, scale and shear back to 0, 1, 0", icon: "reset", run: () => resetPose(session) },
+  ];
+  const poseBtns = POSE_TOOLS.map((t) => {
+    const b = iconButton(button(t.label, t.tip, () => { say(t.run()); }), t.icon, false);
+    b.dataset.pose = t.id;
+    return b;
+  });
+  const poseGroup = el("div", "group poses");
+  poseGroup.append(...poseBtns);
   const optionsGroup = el("div", "group options");
   optionsGroup.append(compensateBtn, pinBtn);
   // Bones, Images and Others: what a press picks, what is drawn, and which names show (docs/STAGE-POSE-PLAN.md step 1).
@@ -248,9 +263,9 @@ export function mountApp(root: HTMLElement): void {
   lockBtn.classList.add("stage-lock");
   session.onSelectionLocked = () => say(`The selection is locked: press ${keysOf("lockSelection")} or click Locked (bottom right of the stage) to pick another.`);
   const spaceGroup = group(...spaceBtns), showGroup = group(matrix.element, ...showBtns.filter((b) => b !== rulersBtn && b.dataset.show !== "onion"));
-  stageTools.append(crumb, createGroup, optionsGroup, transform.element, spaceGroup, showGroup);
+  stageTools.append(crumb, createGroup, optionsGroup, poseGroup, transform.element, spaceGroup, showGroup);
   // Each panel can be dragged by its grip and folded; the corner button shows or hides all of them.
-  const resetPanels = floatGroups(stagePanel, { create: createGroup, options: optionsGroup, transform: transform.element, space: spaceGroup, show: showGroup });
+  const resetPanels = floatGroups(stagePanel, { create: createGroup, options: optionsGroup, poses: poseGroup, transform: transform.element, space: spaceGroup, show: showGroup });
   // Fit stays in the panel's top right corner, whatever its size.
   const fitCorner = el("div", "stage-fit");
   const panelsBtn = iconButton(button("Panels", "Show or hide the tool panels over the stage (View ▸ Stage Panels); double-click to put them back where they started", () => prefs.set({ stagePanels: !prefs.values.stagePanels })), "panels", false);
@@ -701,6 +716,8 @@ export function mountApp(root: HTMLElement): void {
     // The Create group is for the setup pose.
     createGroup.hidden = animating;
     optionsGroup.hidden = animating;
+    poseGroup.hidden = animating;
+    poseBtns.find((b) => b.dataset.pose === "weights")?.setAttribute("aria-pressed", String(brush.on));
     const pinned = session.selectedBone !== null && session.pinned.has(session.selectedBone);
     pinBtn.setAttribute("aria-pressed", String(pinned));
     if (animating && stage.createKind) setCreate(null);
