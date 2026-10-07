@@ -72,11 +72,8 @@ export interface MotionNode {
 
 /**
  * One bone's motion in one animation (docs/PATH-FRAMES-PLAN.md), kept so its keys can be baked again. The
- * path is a spline through `nodes` (at least two), a ring unless `closed` is off. It runs `frames` frames
- * (counting frame 0: 15 is "14 + 0"). The node times cut it into blocks: the first is always frame 0, `starts`
- * are the others (at least one: two node times), and a block runs to the next node time, the last to the end.
- * `speeds` is a time multiplier for each block (absent = 1); `curves` the speed graph inside each block, flat
- * `[u, v, u, v …]` points from u 0 to 1 (absent or empty = a straight line: even speed). `baked` signs the keys the last bake to the timeline wrote.
+ * path is a spline through `nodes` (at least two), a ring unless `closed` is off, and the speed spline runs over it (each node's `speed`).
+ * It runs `duration` seconds. `baked` signs the keys the last bake to the timeline wrote.
  */
 export interface MotionPath {
   readonly animation: string;
@@ -85,7 +82,10 @@ export interface MotionPath {
   readonly parent?: string;
   readonly nodes: readonly MotionNode[];
   readonly closed: boolean;
-  readonly frames: number;
+  /** How long the run takes, in seconds (docs/TWO-SYSTEMS-PLAN.md): the path's own time, not any animation's frames. A ring ends where it began. */
+  readonly duration: number;
+  /** Whether the path's clock starts over at the end (the default) or stops there. */
+  readonly loop: boolean;
   readonly baked?: string;
 }
 

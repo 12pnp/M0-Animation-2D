@@ -539,7 +539,7 @@ export class Session {
     }
     let sidecar: Sidecar = EMPTY_SIDECAR;
     if (picked.sidecar) {
-      const read = readSidecar(await picked.sidecar.text());
+      const read = readSidecar(await picked.sidecar.text(), skeleton.header?.fps && skeleton.header.fps > 0 ? skeleton.header.fps : DEFAULT_FPS);
       sidecar = read.sidecar;
       all.push(...read.issues.map((i) => ({ where: `${picked.sidecar!.name}: ${i.where}`, message: i.message })));
     }

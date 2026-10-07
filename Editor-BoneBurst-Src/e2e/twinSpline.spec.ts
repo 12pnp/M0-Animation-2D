@@ -21,13 +21,13 @@ async function open(page: Page): Promise<void> {
 const nodes = (page: Page) => page.evaluate(() => (window as unknown as Live).boneburst.session.sidecar.motion[0]?.nodes ?? []);
 const dots = (page: Page) => page.evaluate(() => (window as unknown as Live).boneburst.motionPath.speedPoints);
 
-test("Adjust time is gone: Edit Path is the one mode, with Total frames, Closed and Bake beside it", async ({ page }) => {
+test("Adjust time is gone: Edit Path is the one mode, with Duration, Closed and Bake beside it", async ({ page }) => {
   await open(page);
   const panel = page.locator(".panel.motion-path");
   await startEditPath(panel);
   await expect(panel.getByRole("button", { name: "Adjust time" })).toHaveCount(0);
   await expect(panel.getByRole("button", { name: /Time$/ })).toHaveCount(0);
-  await expect(panel.getByRole("spinbutton", { name: "Total frames" })).toBeVisible();
+  await expect(panel.getByRole("spinbutton", { name: "Duration" })).toBeVisible();
   await expect(panel.getByRole("button", { name: "Bake to timeline" })).toBeVisible();
 });
 

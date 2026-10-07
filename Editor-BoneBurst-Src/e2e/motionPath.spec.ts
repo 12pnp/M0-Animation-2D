@@ -8,7 +8,7 @@ import { chooseParent, startEditPath } from "./motionHelpers";
 
 type LocalPose = { x: number; y: number; rotation: number; scaleX: number; scaleY: number; shearX: number; shearY: number };
 type Node = { x: number; y: number; tx?: number; ty?: number; speed?: number };
-type Path = { bone: string; animation: string; nodes: Node[]; closed: boolean; frames: number; baked?: string };
+type Path = { bone: string; animation: string; nodes: Node[]; closed: boolean; duration: number; loop: boolean; baked?: string };
 type Live = {
   boneburst: {
     session: {
@@ -95,7 +95,8 @@ test("Edit Path starts with two spline nodes and a green +: [the bone's place] [
   const p = (await path(page))!;
   expect(p.nodes).toHaveLength(2);
   expect(p.closed).toBe(true);
-  expect(p.frames).toBe(15);
+  expect(p.duration).toBe(0.5);
+  expect(p.loop).toBe(true);
   // The first is where the bone is; the second is that plus an offset along x.
   expect(p.nodes[0]!.x).toBeCloseTo(here[0], 1);
   expect(p.nodes[0]!.y).toBeCloseTo(here[1], 1);
@@ -483,22 +484,26 @@ test("F and the arrow keys belong to the panel under the pointer: over Motion Pa
   expect((await path(page))!.nodes).toEqual(moved);
 });
 
-test("Total frames is set in Motion Path (14 + 0) and Closed off ends the path on the last frame shown; the speeds stay", async ({ page }) => {
+test("Duration is set in Motion Path in seconds, with the frames it makes at the animation's rate beside it; Closed off keeps the duration", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
   await startEditPath(panel);
-  const frames = panel.getByRole("spinbutton", { name: "Total frames" });
-  await expect(frames).toHaveValue("15");
-  await expect(panel.getByText("(14 + 0)")).toBeVisible();
+  const duration = panel.getByRole("spinbutton", { name: "Duration" });
+  await expect(duration).toHaveValue("0.5");
+  await expect(panel.getByText("(12 frames at 24 fps)")).toBeVisible();
   await expect(panel.getByRole("button", { name: "Adjust time", exact: true })).toHaveCount(0);
-  await frames.fill("30");
-  await frames.press("Enter");
-  await frames.blur();
-  await expect.poll(async () => (await path(page))!.frames).toBe(30);
-  await expect(panel.getByText("(29 + 0)")).toBeVisible();
+  await duration.fill("1.25");
+  await duration.press("Enter");
+  await duration.blur();
+  await expect.poll(async () => (await path(page))!.duration).toBe(1.25);
+  await expect(panel.getByText("(30 frames at 24 fps)")).toBeVisible();
+  await duration.fill("0.01");
+  await duration.press("Enter");
+  await duration.blur();
+  await expect(duration).toHaveValue("1.25");
   await panel.locator("label.lp-field input[type=checkbox]").uncheck();
   await expect.poll(async () => (await path(page))!.closed).toBe(false);
-  await expect(panel.getByText("(29 + 0)")).toBeHidden();
+  expect((await path(page))!.duration).toBe(1.25);
 });
 
 test("Bake to timeline writes a key where the bone reaches each node and a closing key that copies the first; a node's speed moves the keys; one undo step", async ({ page }) => {
@@ -512,7 +517,7 @@ test("Bake to timeline writes a key where the bone reaches each node and a closi
   await expect.poll(async () => (await path(page))!.baked).toBeDefined();
   const even = await translate(page, "head");
   expect(even[0]!.frame).toBe(0);
-  expect(even.at(-1)!.frame).toBe(15);
+  expect(even.at(-1)!.frame).toBe(12);
   expect(even.at(-1)!.x).toBeCloseTo(even[0]!.x, 3);
   expect(even.at(-1)!.y).toBeCloseTo(even[0]!.y, 3);
   expect(even.slice(0, -1).every((k) => k.curve)).toBe(true);
@@ -531,7 +536,7 @@ test("Bake to timeline writes a key where the bone reaches each node and a closi
   await expect.poll(async () => (await translate(page, "head")).map((k) => k.frame)).not.toEqual(even.map((k) => k.frame));
   const fast = await translate(page, "head");
   expect(fast[1]!.frame).toBeLessThan(even[1]!.frame);
-  expect(fast.at(-1)!.frame).toBe(15);
+  expect(fast.at(-1)!.frame).toBe(12);
 });
 
 test("the baked bone follows the ring with a speed on its nodes: within a few units of the path at every frame", async ({ page }) => {
@@ -547,9 +552,10 @@ test("the baked bone follows the ring with a speed on its nodes: within a few un
   await expect.poll(async () => (await path(page))!.baked).toBeDefined();
   const p = (await path(page))!;
   let worst = 0;
-  for (let f = 0; f < p.frames; f++) {
+  const fps = await page.evaluate(() => (window as unknown as Live).boneburst.session.fps);
+  for (let f = 0; f < Math.round(p.duration * fps); f++) {
     const got = await localJoint(page, "head", f);
-    const want = await page.evaluate(async ([m, fr]) => { const url = "/src/motion/speed.ts"; const mod: any = await import(/* @vite-ignore */ url); return mod.placeAtFrame(m, fr) as { x: number; y: number }; }, [p, f] as const);
+    const want = await page.evaluate(async ([m, fr]) => { const url = "/src/motion/speed.ts"; const mod: any = await import(/* @vite-ignore */ url); return mod.pathPose(m, fr) as { x: number; y: number }; }, [p, f / fps] as const);
     worst = Math.max(worst, Math.hypot(got[0] - want.x, got[1] - want.y));
   }
   expect(worst).toBeLessThan(4);

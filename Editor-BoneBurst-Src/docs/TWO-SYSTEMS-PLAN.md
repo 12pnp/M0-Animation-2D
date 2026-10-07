@@ -113,6 +113,16 @@ Outside this project nothing changes in steps 1 to 7: the sidecar is not exporte
 - `docs/SPEC.md` §1 has the new row and diagram node.
 - Not done on purpose: the old data names (`frames`, `baked`) are untouched (steps 2 and 4).
 
+## Step 2 built (2026-10-08): the path's own time
+
+**Done.** `tsc`, 802 unit tests and all 133 browser tests pass; looked at only through the tests (the Duration field was not seen on screen).
+
+- `MotionPath.frames` is gone: `duration` (seconds, at least 0.1) and `loop` (default true) replace it (`model/sidecar.ts`). `src/motion/` speaks seconds only: `progressAtTime`, `pathPose(m, t)`, `arrivalTimes`, `withDuration`, `withLoop`, `DEFAULT_DURATION` (0.5 s), and `PathClock` (`clock.ts`: time, playing, loop, `seek`, `advance(dt, duration)`; no timer in it, the caller supplies the seconds). `endFrame`, `withFrames`, `progressAtFrame`, `placeAtFrame`, `arrivalFrames` are deleted.
+- **Sidecar.** Written as `duration` (and `"loop": false` only when off). A path stored with `frames` is read once, as `(frames if a ring, frames - 1 if open) ÷ the skeleton's fps` seconds (`readSidecar(text, fps)`; the session passes the skeleton's `header.fps`), and written back as `duration`; one with neither is dropped as before. Checked: no `*.bb.json` sidecar is committed in this repository, so no file here carries an old `frames` path; the owner's own sidecars outside it (and copies kept in a browser) are the only such data, and are covered by the one-time reading above (unit-tested, not tried on a real old file).
+- **Panel.** Total frames becomes **Duration (s)** (0.05 steps, at least 0.1), with `(N frames at F fps)` beside it. The graph's cap and the ruler read `progressAtTime(m, frame / fps)`. The path is still driven by the Timeline's playhead until step 3 gives it its own Play.
+- **Bake (until step 4).** The run's end frame is `round(duration × fps)`, the node frames `round(arrivalTime × fps)`. **A visible change:** a new path used to run 15 frames; it now runs 0.5 s, which is 12 frames at 24 fps (15 at 30 fps).
+- Tests: `tests/twinSpline.test.ts` (time, clock), `tests/motionPath.test.ts` (duration, loop), `tests/sidecar.test.ts` (the one-time frames reading, loop, bad durations), `e2e/motionPath.spec.ts` (Duration field, bake length, the bake's follow-the-path check on `pathPose`).
+
 ## Decided (2026-10-08, the owner)
 
 - **Q1 Where a path lives: the sidecar, as today.** The document stays byte-exact Spine JSON. Each path is shaped as plain numbers keyed by animation and bone, so moving it into the export later (the Unity plan, step 8) is only a writer change.

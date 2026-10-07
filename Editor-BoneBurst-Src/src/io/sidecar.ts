@@ -1,4 +1,4 @@
-import { SPEED_MAX, SPEED_MIN } from "@/motion";
+import { MIN_DURATION, SPEED_MAX, SPEED_MIN } from "@/motion";
 import { isArray, isObject, type Json, type JsonObject } from "@/model/json";
 import type { Issue } from "@/model/issue";
 import { EMPTY_SIDECAR, type Guide, type MotionNode, type MotionPath, type Note, type TagEntry, type Reference, SIDECAR_FORMAT, SIDECAR_VERSION, type Sidecar } from "@/model/sidecar";
@@ -9,7 +9,11 @@ import { parseJson, stringifyJson } from "./json";
  * the result is the empty sidecar, with an issue (SPEC §3). An entry that does not read is
  * dropped with an issue: the sidecar holds view state, never the document.
  */
-export function readSidecar(text: string): { sidecar: Sidecar; issues: Issue[] } {
+/**
+ * `fps` is the skeleton's frame rate: a path stored by an earlier build ran `frames` frames, and is read once as that many frames' seconds
+ * (a ring `frames`, an open path `frames - 1`, over `fps`); it is written back as `duration`.
+ */
+export function readSidecar(text: string, fps = 30): { sidecar: Sidecar; issues: Issue[] } {
   const issues: Issue[] = [];
   const refuse = (message: string) => ({ sidecar: EMPTY_SIDECAR, issues: [{ where: "sidecar", message }] });
   let root: Json;
@@ -46,9 +50,10 @@ export function readSidecar(text: string): { sidecar: Sidecar; issues: Issue[] }
     return text2 === undefined ? null : { text: text2, ...(author !== undefined ? { author } : {}), ...(about !== undefined ? { about } : {}) };
   });
   const motion = each<MotionPath>("motion", (o) => {
-    const animation = str(o, "animation"), bone = str(o, "bone"), nodes = o.get("nodes"), frames = num(o, "frames");
-    // An earlier build's path (seconds, pins) has no frames: dropped.
-    if (animation === undefined || bone === undefined || !isArray(nodes) || nodes.length < 2 || frames === undefined || !(frames >= 2)) return null;
+    const animation = str(o, "animation"), bone = str(o, "bone"), nodes = o.get("nodes"), frames = num(o, "frames"), seconds = num(o, "duration");
+    const closed = o.get("closed") !== false, duration = seconds !== undefined ? seconds : frames !== undefined && frames >= 2 ? Math.round(((closed ? frames : frames - 1) / fps) * 1e4) / 1e4 : undefined;
+    // An earlier build's path (seconds, pins) has neither a duration nor frames: dropped.
+    if (animation === undefined || bone === undefined || !isArray(nodes) || nodes.length < 2 || duration === undefined || !(duration >= MIN_DURATION)) return null;
     const ns: MotionNode[] = [];
     for (const n of nodes) {
       if (!isObject(n) || typeof n.get("x") !== "number" || typeof n.get("y") !== "number") return null;
@@ -58,7 +63,7 @@ export function readSidecar(text: string): { sidecar: Sidecar; issues: Issue[] }
       ns.push({ x: n.get("x") as number, y: n.get("y") as number, ...(tx !== undefined && ty !== undefined ? { tx, ty } : {}), ...(bx !== undefined && by !== undefined ? { bx, by } : {}), ...(id !== undefined && Number.isInteger(id) && id > 0 ? { id } : {}), ...(speed !== undefined && Number.isFinite(speed) && speed !== 0 ? { speed: Math.min(SPEED_MAX, Math.max(SPEED_MIN, speed)) } : {}), ...(ss !== undefined && Number.isFinite(ss) ? { ss, ...(sb !== undefined && Number.isFinite(sb) ? { sb } : {}) } : {}) });
     }
     const baked = str(o, "baked"), parent = str(o, "parent");
-    return { animation, bone, ...(parent !== undefined ? { parent } : {}), nodes: ns, closed: o.get("closed") !== false, frames, ...(baked !== undefined ? { baked } : {}) };
+    return { animation, bone, ...(parent !== undefined ? { parent } : {}), nodes: ns, closed, duration, loop: o.get("loop") !== false, ...(baked !== undefined ? { baked } : {}) };
   });
   // Tags: { "bone:leg": ["IK", "left"], … }; an entry that does not read is dropped.
   const tg = root.get("tags"), tags: TagEntry[] = [];
@@ -82,7 +87,7 @@ export function writeSidecar(s: Sidecar): string {
     ...(s.motion.length ? [["motion", s.motion.map((m) => new Map<string, Json>([
       ["animation", m.animation], ["bone", m.bone], ...(m.parent !== undefined ? [["parent", m.parent] as [string, Json]] : []),
       ["nodes", m.nodes.map((n) => new Map<string, Json>([["x", n.x], ["y", n.y], ...(n.tx !== undefined && n.ty !== undefined ? [["tx", n.tx] as [string, Json], ["ty", n.ty] as [string, Json]] : []), ...(n.bx !== undefined && n.by !== undefined ? [["bx", n.bx] as [string, Json], ["by", n.by] as [string, Json]] : []), ...(n.id !== undefined ? [["id", n.id] as [string, Json]] : []), ...(n.speed !== undefined && n.speed !== 0 ? [["speed", n.speed] as [string, Json]] : []), ...(n.ss !== undefined ? [["ss", n.ss] as [string, Json]] : []), ...(n.ss !== undefined && n.sb !== undefined ? [["sb", n.sb] as [string, Json]] : [])]))],
-      ["closed", m.closed], ["frames", m.frames],
+      ["closed", m.closed], ["duration", m.duration], ...(m.loop ? [] : [["loop", false] as [string, Json]]),
       ...(m.baked !== undefined ? [["baked", m.baked] as [string, Json]] : []),
     ]))] as [string, Json]] : []),
   ];

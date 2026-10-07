@@ -13,7 +13,7 @@ const M: Matrix = [0, -0.5, 2, 0, 30, -10];
 const path: MotionPath = {
   animation: "run", bone: "head", parent: "hips",
   nodes: [{ x: 10, y: 0, id: 1 }, { x: 20, y: 6, tx: 4, ty: -2, bx: -3, by: 1, id: 2 }, { x: 5, y: -8, id: 3 }],
-  closed: true, frames: 15,
+  closed: true, duration: 0.5, loop: true,
 };
 
 describe("a path relative to a parent bone: its nodes through that bone's matrix", () => {

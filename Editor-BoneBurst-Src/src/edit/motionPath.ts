@@ -58,9 +58,9 @@ export function translateKeys(boneSetup: { x: number; y: number }, keys: readonl
   });
 }
 
-/** A short signature of the path's own settings (nodes, handles, speeds, frames, closed): what a bake to the timeline was made from. */
-export function pathSignature(m: Pick<MotionPath, "nodes" | "closed" | "frames">): string {
-  const text = JSON.stringify([m.nodes.map((n) => [n.x, n.y, n.tx ?? null, n.ty ?? null, n.bx ?? null, n.by ?? null, n.speed ?? 0]), m.closed, m.frames]);
+/** A short signature of the path's own settings (nodes, handles, speeds, duration, closed): what a bake to the timeline was made from. */
+export function pathSignature(m: Pick<MotionPath, "nodes" | "closed" | "duration">): string {
+  const text = JSON.stringify([m.nodes.map((n) => [n.x, n.y, n.tx ?? null, n.ty ?? null, n.bx ?? null, n.by ?? null, n.speed ?? 0]), m.closed, m.duration]);
   let h = 5381;
   for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) | 0;
   return (h >>> 0).toString(36);

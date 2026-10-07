@@ -1,6 +1,5 @@
 import type { MotionNode, MotionPath } from "@/model/sidecar";
 import { curveOf, type Pt } from "./curve";
-import { endFrame } from "./nodes";
 
 /**
  * TwinSpline (docs/TWINSPLINE-PLAN.md): the motion path is a ring spline through its nodes, and each node carries a speed
@@ -133,20 +132,19 @@ export function timeMap(m: Pick<MotionPath, "nodes" | "closed">): TimeMap {
   return t;
 }
 
-/** The progress (0..1 of the ring's length) at a frame: even when no node has a speed; the run takes `endFrame` frames whatever the speeds. */
-export function progressAtFrame(m: MotionPath, frame: number): number {
-  const end = Math.max(1, endFrame(m));
-  return timeMap(m).progress(Math.min(end, Math.max(0, frame)) / end);
+/** The progress (0..1 of the ring's length) at a time in seconds: even when no node has a speed; the run takes `duration` seconds whatever the speeds. */
+export function progressAtTime(m: Pick<MotionPath, "nodes" | "closed" | "duration">, t: number): number {
+  return timeMap(m).progress(Math.min(1, Math.max(0, t / Math.max(1e-9, m.duration))));
 }
 
-/** The path's point at a frame. */
-export function placeAtFrame(m: MotionPath, frame: number): Pt {
+/** The path's point at a time in seconds: the path system's pose (docs/TWO-SYSTEMS-PLAN.md), in the path's own space. */
+export function pathPose(m: Pick<MotionPath, "nodes" | "closed" | "duration">, t: number): Pt {
   const c = curveOf(m);
-  return c.at(progressAtFrame(m, frame) * c.length);
+  return c.at(progressAtTime(m, t) * c.length);
 }
 
-/** The frame (a fraction of one) each node is reached on, and the last on `endFrame`; a ring's last entry is the way back to the first. */
-export function arrivalFrames(m: MotionPath): number[] {
-  const end = endFrame(m), t = timeMap(m), xs = nodeProgress(m);
-  return [...xs, ...(m.closed ? [1] : [])].map((p) => t.time(p) * end);
+/** The time in seconds each node is reached at, and (a ring) the way back to the first at `duration`. */
+export function arrivalTimes(m: Pick<MotionPath, "nodes" | "closed" | "duration">): number[] {
+  const t = timeMap(m), xs = nodeProgress(m);
+  return [...xs, ...(m.closed ? [1] : [])].map((p) => t.time(p) * m.duration);
 }

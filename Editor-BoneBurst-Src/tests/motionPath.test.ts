@@ -1,4 +1,4 @@
-import { breakLegs, buildCurve, curveOf, handleOffsets, mergeNodes, midAfter, mirrorLegs, moveNode, nodeLabels, renumberNodes, reversePath, withFrames, withNode, withOrigin } from "@/motion";
+import { breakLegs, buildCurve, curveOf, handleOffsets, mergeNodes, midAfter, mirrorLegs, moveNode, nodeLabels, renumberNodes, reversePath, withDuration, withLoop, withNode, withOrigin } from "@/motion";
 import { describe, expect, it } from "vitest";
 import { bakeTranslate, fitChannel, keysSignature, pathSignature, translateKeys } from "@/edit/motionPath";
 import type { MotionPath } from "@/model/sidecar";
@@ -7,7 +7,7 @@ import { keyLists, keyTime, timeFrame } from "@/model/timelines";
 
 const nodes = [{ x: 0, y: 0 }, { x: 40, y: 60 }, { x: 100, y: 10 }, { x: 160, y: 70 }];
 /** 15 frames (14 + 0), a ring through four nodes. */
-const motion = (extra: Partial<MotionPath> = {}): MotionPath => ({ animation: "a", bone: "b", nodes, closed: true, frames: 15, ...extra });
+const motion = (extra: Partial<MotionPath> = {}): MotionPath => ({ animation: "a", bone: "b", nodes, closed: true, duration: 0.5, loop: true, ...extra });
 
 describe("the path through the nodes", () => {
   it("passes through every node, and is a straight line through two", () => {
@@ -252,19 +252,22 @@ describe("breaking the legs of a node", () => {
 });
 
 describe("the path's signature", () => {
-  it("changes when a node, a handle, a speed, the frames or the ring changes, and not for anything else", () => {
+  it("changes when a node, a handle, a speed, the duration or the ring changes, and not for anything else", () => {
     const base = pathSignature(motion());
     expect(pathSignature(motion())).toBe(base);
     expect(pathSignature(motion({ nodes: nodes.map((n, i) => (i === 1 ? { ...n, x: 41 } : n)) }))).not.toBe(base);
     expect(pathSignature(motion({ nodes: nodes.map((n, i) => (i === 1 ? { ...n, speed: 2 } : n)) }))).not.toBe(base);
-    expect(pathSignature(motion({ frames: 20 }))).not.toBe(base);
+    expect(pathSignature(motion({ duration: 0.8 }))).not.toBe(base);
     expect(pathSignature(motion({ closed: false }))).not.toBe(base);
     expect(pathSignature(motion({ bone: "other", baked: "x" }))).toBe(base);
   });
-  it("the total frames are at least 4 and change nothing else", () => {
-    const m = motion({ nodes: nodes.map((n, i) => (i === 2 ? { ...n, speed: 1.5 } : n)) }), w = withFrames(m, 30);
-    expect(w.frames).toBe(30);
+  it("the duration is at least 0.1 s and changes nothing else; the loop switch only the loop", () => {
+    const m = motion({ nodes: nodes.map((n, i) => (i === 2 ? { ...n, speed: 1.5 } : n)) }), w = withDuration(m, 1.25);
+    expect(w.duration).toBe(1.25);
     expect(w.nodes).toBe(m.nodes);
-    expect(() => withFrames(m, 3)).toThrow();
+    expect(() => withDuration(m, 0.05)).toThrow();
+    expect(() => withDuration(m, Number.NaN)).toThrow();
+    expect(withLoop(m, false)).toMatchObject({ loop: false, duration: 0.5 });
+    expect(withLoop(m, true)).toBe(m);
   });
 });

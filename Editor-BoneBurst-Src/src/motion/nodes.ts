@@ -4,13 +4,11 @@ import { curveOf, handleOffsets, type Pt } from "./curve";
 
 /** The path's nodes and run: labels, adding, merging, legs, order, origin, frames (docs/TWO-SYSTEMS-PLAN.md, P). Pure. */
 
-/** The frames a path shows by default: 15, written 14 + 0 (frames 1 to 14 and frame 0). */
-export const DEFAULT_FRAMES = 15;
+/** The seconds a new path runs when nothing says otherwise. */
+export const DEFAULT_DURATION = 0.5;
 
-/** The last frame of the path's run: a ring ends where it began (frame `frames`, which is frame 0 again); an open path ends on its last frame shown. */
-export function endFrame(m: Pick<MotionPath, "frames" | "closed">): number {
-  return m.closed ? m.frames : m.frames - 1;
-}
+/** The shortest run a path can have, in seconds. */
+export const MIN_DURATION = 0.1;
 
 /** The number each node's button shows: its own once nodes have been reordered, else its place in the list. */
 export function nodeLabels(m: Pick<MotionPath, "nodes">): number[] {
@@ -108,8 +106,13 @@ export function withOrigin(m0: MotionPath, i: number): MotionPath {
   return { ...m, nodes: [...m.nodes.slice(i), ...m.nodes.slice(0, i)] };
 }
 
-/** The path running `frames` frames (at least 4). The speed spline stays as it is: it is over the path, not over frames. */
-export function withFrames(m: MotionPath, frames: number): MotionPath {
-  if (!Number.isInteger(frames) || frames < 4) throw new EditRefused("A path takes at least 4 frames.");
-  return { ...m, frames };
+/** The path running `seconds` seconds (at least 0.1). The speed spline stays as it is: it is over the path's length, not over time. */
+export function withDuration(m: MotionPath, seconds: number): MotionPath {
+  if (!Number.isFinite(seconds) || seconds < MIN_DURATION) throw new EditRefused(`A path takes at least ${MIN_DURATION} seconds.`);
+  return { ...m, duration: Math.round(seconds * 1e4) / 1e4 };
+}
+
+/** The path's clock starting over at the end, or stopping there. */
+export function withLoop(m: MotionPath, loop: boolean): MotionPath {
+  return m.loop === loop ? m : { ...m, loop };
 }

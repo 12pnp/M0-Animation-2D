@@ -1,4 +1,4 @@
-import { breakLegs, clampSpeed, curveOf, endFrame, handleOffsets, mergeNodes, midAfter, mirrorLegs, moveNode, multiplierOf, nodeLabels, nodeProgress, progressAtFrame, renumberNodes, reversePath, setSpeedLegs, slopesOf, SPEED_MAX, SPEED_MIN, speedAt, speedOf, timeMap, withFrames, withNode, withOrigin, withSpeedSlope } from "@/motion";
+import { breakLegs, clampSpeed, curveOf, handleOffsets, mergeNodes, midAfter, mirrorLegs, moveNode, multiplierOf, nodeLabels, nodeProgress, progressAtTime, renumberNodes, reversePath, setSpeedLegs, slopesOf, SPEED_MAX, SPEED_MIN, speedAt, speedOf, timeMap, withDuration, withNode, withOrigin, withSpeedSlope } from "@/motion";
 import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { EditRefused } from "@/edit/history";
 import { drawnVertices } from "@/engine/draw";
@@ -190,12 +190,12 @@ export class MotionPathPanel {
   private readonly motionBar = document.createElement("div");
   private readonly motionInfo = document.createElement("span");
   private readonly motionBtns: Record<"draw" | "add" | "del" | "bakeTl" | "drop", HTMLButtonElement>;
-  /** Total frames (14 + 0), and whether the spline is a ring. */
-  private readonly framesField = document.createElement("input");
+  /** The duration in seconds, and whether the spline is a ring. */
+  private readonly durationField = document.createElement("input");
   private readonly closedBox = document.createElement("input");
   private readonly closedLabel = document.createElement("label");
-  private readonly framesBox = document.createElement("label");
-  private readonly framesHint = document.createElement("span");
+  private readonly durationBox = document.createElement("label");
+  private readonly durationHint = document.createElement("span");
   /** The capture bar (docs/PATH-CAPTURE-PLAN.md): a numbered button for each node (press: put the bone there), a green + to add a slot. */
   private readonly slotBar = document.createElement("div");
   /** Under the node numbers: the picked node's numbers and the speed graph (docs/TWINSPLINE-PLAN.md). */
@@ -345,7 +345,7 @@ export class MotionPathPanel {
       label.append(`${text} `, input);
       if (extra) label.append(extra);
     };
-    field(this.framesField, this.framesBox, "Total frames", "How many frames the path takes, counting frame 0: 15 is 14 + 0 (the loop goes 0 to 14, then to 0 again)", "Total frames", "1", "4", () => this.setFrames(), this.framesHint);
+    field(this.durationField, this.durationBox, "Duration (s)", "How long the path takes, in seconds: the bone is at the start at 0 and, for a ring, back there at the end. The frames shown beside it are at the animation's rate", "Duration", "0.05", "0.1", () => this.setDuration(), this.durationHint);
     this.closedBox.type = "checkbox";
     this.closedBox.addEventListener("change", () => this.setClosed(this.closedBox.checked));
     this.closedLabel.className = "lp-field";
@@ -357,7 +357,7 @@ export class MotionPathPanel {
     this.parentPick.addEventListener("change", () => this.chooseParent(this.parentPick.value));
     // Three sections: the path (parent, start, nodes), its time (total frames, ring), what to do with it (bake, remove); then what it says.
     const section = (...kids: HTMLElement[]): HTMLElement => { const d = document.createElement("div"); d.className = "lp-sect"; d.append(...kids); return d; };
-    this.motionBar.append(section(this.parentPick, this.motionBtns.draw, this.motionBtns.add, this.motionBtns.del), section(this.framesBox, this.closedLabel), section(this.motionBtns.bakeTl, this.motionBtns.drop), this.motionInfo);
+    this.motionBar.append(section(this.parentPick, this.motionBtns.draw, this.motionBtns.add, this.motionBtns.del), section(this.durationBox, this.closedLabel), section(this.motionBtns.bakeTl, this.motionBtns.drop), this.motionInfo);
     this.motionBtns.draw.addEventListener("click", () => this.enterDraw());
     this.motionBtns.bakeTl.addEventListener("click", () => this.bakeToTimeline());
     this.motionBtns.add.className = "add";
@@ -1082,12 +1082,12 @@ export class MotionPathPanel {
     this.motionBtns.bakeTl.hidden = !has;
     this.motionBtns.draw.setAttribute("aria-pressed", String(has));
     this.motionBtns.del.disabled = !m || m.nodes.length <= 2 || this.selNode < 0;
-    this.framesBox.hidden = !has;
+    this.durationBox.hidden = !has;
     this.closedLabel.hidden = !has;
     const idle = (el: HTMLInputElement) => el.ownerDocument.activeElement !== el;
     if (m) {
-      if (idle(this.framesField)) this.framesField.value = String(m.frames);
-      this.framesHint.textContent = m.closed ? `(${m.frames - 1} + 0)` : "";
+      if (idle(this.durationField)) this.durationField.value = String(m.duration);
+      this.durationHint.textContent = `(${Math.round(m.duration * this.session.fps)} frames at ${this.session.fps} fps)`;
       this.closedBox.checked = m.closed;
     }
     this.renderStrip(m);
@@ -1495,7 +1495,7 @@ export class MotionPathPanel {
       g.fillText(String(labels[i]), Math.round(x) + 0.5, b + 4);
     });
     // The cap: the playhead, as on the Timeline, dragged along the ruler; it says how far along the ring the bone is, in the path's units, not the frame.
-    const hp = progressAtFrame(m, s.frame), hx = Math.round(X(hp)) + 0.5;
+    const hp = progressAtTime(m, s.frame / s.fps), hx = Math.round(X(hp)) + 0.5;
     if (hx >= l - 1 && hx <= r + 1) {
       g.strokeStyle = DOT;
       g.setLineDash([3, 3]);
@@ -1576,7 +1576,7 @@ export class MotionPathPanel {
     const s = this.session, m = motionFor(s);
     if (!m) return;
     const p = Math.min(1, Math.max(0, this.gp(x)));
-    s.seek(Math.round(timeMap(m).time(p) * Math.max(1, endFrame(m))));
+    s.seek(Math.round(timeMap(m).time(p) * m.duration * s.fps));
   }
 
   /**
@@ -2154,12 +2154,13 @@ export class MotionPathPanel {
     if (say) this.onStatus(say);
   }
 
-  /** Total frames was typed (a loop of 15 is 14 + 0): the speed spline stays as it is. */
-  private setFrames(): void {
+  /** Duration was typed, in seconds: the speed spline stays as it is. */
+  private setDuration(): void {
     const m = motionFor(this.session);
     if (!m) return;
-    try { this.timeEdit(withFrames(m, Math.round(Number(this.framesField.value))), `${Math.round(Number(this.framesField.value))} frames.`, "Set the total frames", true); }
-    catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); this.framesField.value = String(m.frames); }
+    const v = Number(this.durationField.value);
+    try { this.timeEdit(withDuration(m, v), `${v} seconds.`, "Set the duration", true); }
+    catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); this.durationField.value = String(m.duration); }
   }
 
   /** Closed: the spline is a ring (the last node joins the first); off, it is a path with two ends. */

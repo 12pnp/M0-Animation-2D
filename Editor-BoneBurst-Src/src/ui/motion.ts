@@ -1,4 +1,4 @@
-import { arrivalFrames, curveOf, DEFAULT_FRAMES, endFrame, progressAtFrame } from "@/motion";
+import { arrivalTimes, curveOf, DEFAULT_DURATION, progressAtTime } from "@/motion";
 import { type BakedKey, bakeTranslate, fitChannel, keysSignature, pathSignature, setupXY, translateKeys } from "@/edit/motionPath";
 import { motionOf, withMotion } from "@/edit/sidecar";
 import { EditRefused } from "@/edit/history";
@@ -109,14 +109,13 @@ export function pathFromView(view: MotionPath, M: Matrix, stored?: MotionPath): 
 
 /**
  * A new path for the selected bone (docs/PATH-FRAMES-PLAN.md): a ring through two nodes, the bone's place
- * now and that place plus an offset (the length of the bone, along x), 15 frames (14 + 0) and the two node
- * times it is cut at once it is baked: frame 0 and the middle. Null when there is no animation, bone or pose.
+ * now and that place plus an offset (the length of the bone, along x), run in half a second. Null when there is no animation, bone or pose.
  */
 export function startMotion(s: Session, parent: string): MotionPath | null {
   const a = s.animation, bone = s.selectedBone, here = currentNode(s, parent), p = s.pose();
   if (!a || !bone || !here || !p) return null;
   const i = p.bones.get(bone)!, length = Math.max(20, p.rig.data.bones[i]!.length);
-  return { animation: a.name, bone, parent, nodes: [here, { x: here.x + length, y: here.y }], closed: true, frames: DEFAULT_FRAMES };
+  return { animation: a.name, bone, parent, nodes: [here, { x: here.x + length, y: here.y }], closed: true, duration: DEFAULT_DURATION, loop: true };
 }
 
 /** A node after `last`: its place plus the same offset the first two have (a bone length along x). */
@@ -170,9 +169,9 @@ const FIT_SAMPLES = 12;
 export function bakeKeys(s: Session, m: MotionPath): { keys: BakedKey[]; stray: number } {
   const poser = s.poserFor();
   if (!poser) throw new EditRefused("Nothing is open.");
-  const fps = s.fps, curve = curveOf(m), ref = refBoneName(s.doc, m), end = endFrame(m);
+  const fps = s.fps, curve = curveOf(m), ref = refBoneName(s.doc, m), end = Math.max(1, Math.round(m.duration * fps));
   const local = (frame: number): [number, number] => {
-    const q = curve.at(progressAtFrame(m, frame) * curve.length), pose = poser.pose(s.skin, m.animation, Math.fround(frame / fps), "none"), i = pose.bones.get(m.bone);
+    const q = curve.at(progressAtTime(m, frame / fps) * curve.length), pose = poser.pose(s.skin, m.animation, Math.fround(frame / fps), "none"), i = pose.bones.get(m.bone);
     if (i === undefined) throw new EditRefused(`"${m.bone}" has no pose in this skin.`);
     // The path point is in the reference bone's space: through that bone as it is at this frame to the world, then into the bone's own parent's space.
     const R = refMatrix(pose, ref), P = parentMatrix(pose, i), [vx, vy] = toView(R, q.x, q.y);
@@ -181,8 +180,8 @@ export function bakeKeys(s: Session, m: MotionPath): { keys: BakedKey[]; stray: 
   };
   // Where the bone reaches each node, as whole frames in order, from frame 0 to the end.
   const frames: number[] = [0];
-  for (const f of arrivalFrames(m)) {
-    const r = Math.round(f);
+  for (const t of arrivalTimes(m)) {
+    const r = Math.round(t * fps);
     if (r > frames.at(-1)! && r < end) frames.push(r);
   }
   if (frames.at(-1)! !== end) frames.push(end);
