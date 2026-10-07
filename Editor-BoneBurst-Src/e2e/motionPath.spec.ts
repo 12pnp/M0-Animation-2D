@@ -15,6 +15,7 @@ type Live = {
       doc: { animations: { name: string; bones?: { name: string; timelines: { name: string; keys: { time?: number; x?: number; y?: number; curve?: unknown }[] }[] }[] }[] };
       history: { entries: { done: number; labels: string[] } };
       frame: number;
+      pickedBlock: number;
       fps: number;
       pose(): { bones: Map<string, number>; local: Float32Array | Float64Array } | null;
       seek(f: number): void;
@@ -23,6 +24,7 @@ type Live = {
       changed(): void;
     };
     stage: { forceUnkeyed(): boolean };
+    timeline: { blockTabs: { x0: number; x1: number; y: number }[] };
     localPath: { speedGraph: { x: number; y: number }[]; grabPoints: { nodes: { x: number; y: number }[]; times: { i: number; x: number; y: number }[]; handles: { slot: number; side: string; x: number; y: number }[] } };
   };
 };
@@ -77,7 +79,7 @@ const blocks = (page: Page) => page.locator(".lp-slots button.block");
 async function drawn(page: Page): Promise<void> {
   await panelOf(page).getByRole("button", { name: "Draw path", exact: true }).click();
   await expect(reds(page)).toHaveCount(2);
-  await panelOf(page).getByRole("button", { name: "Bake", exact: true }).click();
+  await panelOf(page).getByRole("button", { name: "Adjust time", exact: true }).click();
   await expect(panelOf(page).getByRole("button", { name: "Adjust time", exact: true })).toHaveAttribute("aria-pressed", "true");
 }
 
@@ -126,7 +128,7 @@ test("edit the spline: + adds a node, the bone drags the picked node, − Node r
   expect((await path(page))!.nodes).toHaveLength(2);
 });
 
-test("Bake (Draw path) goes to Adjust time with two node times, and writes nothing to the timeline", async ({ page }) => {
+test("Adjust time (from Draw path) keeps the spline as it is, with two node times, and writes nothing to the timeline", async ({ page }) => {
   await open(page);
   const keys = await translate(page, "head"), done = await steps(page);
   await drawn(page);
@@ -140,7 +142,7 @@ test("Bake (Draw path) goes to Adjust time with two node times, and writes nothi
   expect(await steps(page)).toBe(done);
   // The two modes show their own buttons.
   await expect(panelOf(page).getByRole("button", { name: "Bake to timeline" })).toBeVisible();
-  await expect(panelOf(page).getByRole("button", { name: "Bake", exact: true })).toBeHidden();
+  await expect(panelOf(page).getByRole("button", { name: "Bake", exact: true })).toHaveCount(0);
   await expect(panelOf(page).getByRole("button", { name: "Add a spline node" })).toHaveCount(0);
   expect(await page.evaluate(() => (window as unknown as Live).boneburst.stage.forceUnkeyed())).toBe(false);
 });
@@ -166,7 +168,12 @@ test("Adjust time: + Time adds a node time at the playhead's frame, − Time rem
 test("Total frames is set in Local Path (14 + 0); the node times keep their share; Closed off ends the path on the last frame shown", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await drawn(page);
+  await panel.getByRole("button", { name: "Draw path", exact: true }).click();
+  // Draw path shapes the spline: Closed is here, Total frames is not.
+  await expect(panel.getByRole("spinbutton", { name: "Total frames" })).toBeHidden();
+  await expect(panel.locator("label.lp-field input[type=checkbox]")).toBeVisible();
+  await panel.getByRole("button", { name: "Adjust time", exact: true }).click();
+  await expect(panel.locator("label.lp-field input[type=checkbox]")).toBeHidden();
   const frames = panel.getByRole("spinbutton", { name: "Total frames" });
   await expect(frames).toHaveValue("15");
   await expect(panel.getByText("(14 + 0)")).toBeVisible();
@@ -178,8 +185,10 @@ test("Total frames is set in Local Path (14 + 0); the node times keep their shar
   await expect(panel.getByText("(29 + 0)")).toBeVisible();
   // No path field on the Timeline bar any more.
   await expect(page.getByRole("spinbutton", { name: "Path time (s)" })).toHaveCount(0);
+  await panel.getByRole("button", { name: "Draw path", exact: true }).click();
   await panel.locator("label.lp-field input[type=checkbox]").uncheck();
   await expect.poll(async () => (await path(page))!.closed).toBe(false);
+  await panel.getByRole("button", { name: "Adjust time", exact: true }).click();
   await expect(blocks(page).nth(1)).toContainText("→29");
 });
 
@@ -221,7 +230,7 @@ test("the baked bone follows the ring between its keys: within a few units of th
   const panel = panelOf(page);
   await panel.getByRole("button", { name: "Draw path", exact: true }).click();
   await panel.getByRole("button", { name: "Add a spline node" }).click();
-  await panel.getByRole("button", { name: "Bake", exact: true }).click();
+  await panel.getByRole("button", { name: "Adjust time", exact: true }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.seek(5));
   await panel.getByRole("button", { name: "+ Time" }).click();
   await panel.getByRole("button", { name: "Bake to timeline" }).click();
@@ -381,4 +390,111 @@ test("no path yet: one green + creates it (node 1 is the bone, node 2 the bone p
   await expect.poll(async () => (await joint())[0]).toBeCloseTo(moved[0]!.x, 1);
   expect((await joint())[1]).toBeCloseTo(moved[0]!.y, 1);
   expect((await path(page))!.nodes).toEqual(moved);
+});
+
+test("the Timeline's tab strip shows the path's blocks (not the key gaps) and picking a tab picks the block in Local Path too", async ({ page }) => {
+  await open(page);
+  const panel = panelOf(page);
+  await drawn(page);
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.seek(5));
+  await panel.getByRole("button", { name: "+ Time" }).click();
+  await expect.poll(async () => (await path(page))!.starts).toEqual([5, 8]);
+  await page.waitForTimeout(300);
+  const tabs = () => page.evaluate(() => (window as unknown as Live).boneburst.timeline.blockTabs);
+  const t = await tabs();
+  // The blocks 0→5, 5→8, 8→15, drawn under the Timeline's ruler.
+  expect(t).toHaveLength(3);
+  expect(t[0]!.x1).toBeCloseTo(t[1]!.x0, 6);
+  expect(t[2]!.x1 - t[2]!.x0).toBeGreaterThan(t[1]!.x1 - t[1]!.x0);
+  await blocks(page).first().click();
+  await expect(blocks(page).first()).toHaveClass(/picked/);
+  // Pick the middle one on the Timeline: Local Path's strip has it picked.
+  const canvas = page.locator(".timeline canvas").first(), box = (await canvas.boundingBox())!;
+  await page.mouse.click(box.x + (t[1]!.x0 + t[1]!.x1) / 2, box.y + t[1]!.y);
+  await expect(blocks(page).nth(1)).toHaveClass(/picked/);
+  await expect(panel.getByRole("spinbutton", { name: "Block time multiplier" })).toBeVisible();
+  // And the other way: pick the third in Local Path; the Timeline's picked block follows.
+  await blocks(page).nth(2).click();
+  expect(await page.evaluate(() => (window as unknown as Live).boneburst.session.pickedBlock)).toBe(2);
+  // The Timeline paints it (a 2 px accent outline on the third tab): its canvas changed.
+  const picture = () => canvas.evaluate((c) => (c as HTMLCanvasElement).toDataURL());
+  const third = await picture();
+  await blocks(page).first().click();
+  await expect.poll(picture).not.toBe(third);
+});
+
+test("a red number moves the bone on the Stage: the session announces each pose, for node 1 and node 2, as often as they are pressed", async ({ page }) => {
+  await open(page);
+  const panel = panelOf(page);
+  await page.evaluate(() => { const w = window as unknown as { __n: number; boneburst: Live["boneburst"] & { session: { onChange(f: () => void): void } } }; w.__n = 0; w.boneburst.session.onChange(() => { w.__n++; }); });
+  const count = () => page.evaluate(() => (window as unknown as { __n: number }).__n);
+  const joint = () => page.evaluate(async () => {
+    const posedUrl = "/src/ui/stage/posed.ts", trailUrl = "/src/ui/stage/trail.ts";
+    const posed: any = await import(/* @vite-ignore */ posedUrl), trail: any = await import(/* @vite-ignore */ trailUrl);
+    const p = (window as unknown as Live).boneburst.session.pose() as any, i = p.bones.get("head")!, m = posed.boneMatrix(p, i);
+    return trail.fromParent(p, i, m[4], m[5]) as [number, number];
+  });
+  await panel.getByRole("button", { name: "Create a path" }).click();
+  const nodes = (await path(page))!.nodes;
+  // Created: the bone is on node 2 (the picked one), not left on node 1.
+  await expect.poll(async () => (await joint())[0]).toBeCloseTo(nodes[1]!.x, 1);
+  for (const [i, n] of [[0, nodes[0]!], [1, nodes[1]!], [0, nodes[0]!], [1, nodes[1]!]] as const) {
+    const before = await count();
+    await reds(page).nth(i).click();
+    await expect.poll(count).toBeGreaterThan(before);
+    await expect.poll(async () => (await joint())[0]).toBeCloseTo(n.x, 1);
+    expect((await joint())[1]).toBeCloseTo(n.y, 1);
+  }
+  expect((await path(page))!.nodes).toEqual(nodes);
+  // And the Stage itself repaints: its picture differs between the two nodes.
+  const stage = page.locator(".stage").first();
+  await reds(page).nth(0).click();
+  await page.waitForTimeout(300);
+  const one = await stage.screenshot();
+  await reds(page).nth(1).click();
+  await page.waitForTimeout(300);
+  expect((await stage.screenshot()).equals(one)).toBe(false);
+});
+
+test("Adjust time edits the timing only: the bone is not dragged on the Stage or in Local Path, the spline stays, and the bone is back on the animation's pose", async ({ page }) => {
+  await open(page);
+  const panel = panelOf(page);
+  await panel.getByRole("button", { name: "Draw path", exact: true }).click();
+  await drag(page, "head", 50, 20);
+  await expect.poll(async () => (await path(page))!.nodes[1]).toBeDefined();
+  const nodes = (await path(page))!.nodes;
+  await panel.getByRole("button", { name: "Adjust time", exact: true }).click();
+  // The unkeyed pose from drawing is dropped: the bone is where the animation has it.
+  expect(await page.evaluate(() => (window as unknown as { boneburst: { session: { hasUnkeyed: boolean } } }).boneburst.session.hasUnkeyed)).toBe(false);
+  expect(await page.evaluate(() => (window as unknown as { boneburst: { localPath: { timing: boolean } } }).boneburst.localPath.timing)).toBe(true);
+  const keys = await translate(page, "head"), done = await steps(page);
+  // A drag of the bone on the Stage: nothing is keyed, nothing is posed.
+  const at = await page.evaluate(async () => {
+    const b = (window as unknown as Live).boneburst, posed: any = await import(/* @vite-ignore */ "/src/ui/stage/" + "posed.ts"), st = b.stage as any;
+    const p = b.session.pose() as any, m = posed.boneMatrix(p, p.bones.get("head")!), cam = st.camera, sz = st.size, r = document.querySelector(".stage canvas.overlay")!.getBoundingClientRect();
+    return { x: r.left + (m[4] - cam.x) * cam.zoom + sz.width / 2, y: r.top + sz.height / 2 - (m[5] - cam.y) * cam.zoom };
+  });
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.down();
+  await page.mouse.move(at.x + 40, at.y - 30, { steps: 5 });
+  await page.mouse.up();
+  expect(await translate(page, "head")).toEqual(keys);
+  expect(await steps(page)).toBe(done);
+  expect(await page.evaluate(() => (window as unknown as { boneburst: { session: { hasUnkeyed: boolean } } }).boneburst.session.hasUnkeyed)).toBe(false);
+  // The spline is not touched by the panel either: its canvas has no node or handle to grab.
+  expect((await path(page))!.nodes).toEqual(nodes);
+  await page.waitForTimeout(300);
+  const g = await page.evaluate(() => (window as unknown as Live).boneburst.localPath.grabPoints);
+  const box = (await page.locator(".local-path canvas").first().boundingBox())!;
+  if (g.nodes[0]) {
+    await page.mouse.move(box.x + g.nodes[0].x, box.y + g.nodes[0].y);
+    await page.mouse.down();
+    await page.mouse.move(box.x + g.nodes[0].x + 30, box.y + g.nodes[0].y + 30, { steps: 4 });
+    await page.mouse.up();
+  }
+  expect((await path(page))!.nodes).toEqual(nodes);
+  expect(await page.evaluate(() => (window as unknown as { boneburst: { session: { hasUnkeyed: boolean } } }).boneburst.session.hasUnkeyed)).toBe(false);
+  // Back in Draw path the bone drags again.
+  await panel.getByRole("button", { name: "Draw path", exact: true }).click();
+  expect(await page.evaluate(() => (window as unknown as { boneburst: { localPath: { timing: boolean } } }).boneburst.localPath.timing)).toBe(false);
 });

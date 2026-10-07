@@ -152,7 +152,7 @@ export class LocalPathPanel {
   /** The motion path's own row of buttons (docs/PATH-SPEED-PLAN.md), and the node picked on the canvas (-1: none). */
   private readonly motionBar = document.createElement("div");
   private readonly motionInfo = document.createElement("span");
-  private readonly motionBtns: Record<"draw" | "time" | "bake" | "del" | "addTime" | "delTime" | "bakeTl" | "drop", HTMLButtonElement>;
+  private readonly motionBtns: Record<"draw" | "time" | "del" | "addTime" | "delTime" | "bakeTl" | "drop", HTMLButtonElement>;
   /** Total frames (14 + 0), the picked node time's frame, the picked block's time multiplier, and whether the spline is a ring. */
   private readonly framesField = document.createElement("input");
   private readonly frameField = document.createElement("input");
@@ -183,7 +183,9 @@ export class LocalPathPanel {
   /** A node being dragged, or a dot being slid along the path (the speed). */
   private nodeDrag: number | null = null;
   /** The node time picked (-1: none); where the node times are on the canvas; how far the last bake to the timeline strays. */
-  private selTime = -1;
+  /** The picked node time / block: kept on the session, where the Timeline's block tabs read it too. */
+  private get selTime(): number { return this.session.pickedBlock; }
+  private set selTime(i: number) { this.session.pickedBlock = i; }
   private syncRev = -1;
   private timePts: { i: number; x: number; y: number }[] = [];
   private stray: number | null = null;
@@ -226,7 +228,6 @@ export class LocalPathPanel {
     this.motionBtns = {
       draw: this.button("Draw path", "Draw a spline for the bone: two nodes to start (where it is, and an offset); pose the bone and press a red button to store a node, + adds one, then Bake"),
       time: this.button("Adjust time", "Set the node times (where the ring is cut into blocks) and each block's time multiplier, then Bake to timeline"),
-      bake: this.button("Bake", "The spline is done: go to Adjust time (nothing is written to the timeline yet)"),
       del: this.button("− Node", "Remove the picked spline node (a path keeps two)"),
       addTime: this.button("+ Time", "Add a node time at the playhead's frame (a path keeps at least two)"),
       delTime: this.button("− Time", "Remove the picked node time (the first, on frame 0, stays; a path keeps two)"),
@@ -277,12 +278,11 @@ export class LocalPathPanel {
     this.closedLabel.className = "lp-field";
     this.closedLabel.title = "A ring: the last spline node joins the first, so the path comes back to where it began (on by default)";
     this.closedLabel.append(this.closedBox, " Closed");
-    this.motionBar.append(this.motionBtns.draw, this.motionBtns.time, this.motionBtns.bake, this.motionBtns.del, this.motionBtns.addTime, this.motionBtns.delTime, this.framesBox, this.closedLabel, this.frameBox, this.speedBox, this.motionBtns.bakeTl, this.motionBtns.drop, this.motionInfo);
+    this.motionBar.append(this.motionBtns.draw, this.motionBtns.time, this.motionBtns.del, this.motionBtns.addTime, this.motionBtns.delTime, this.framesBox, this.closedLabel, this.frameBox, this.speedBox, this.motionBtns.bakeTl, this.motionBtns.drop, this.motionInfo);
     this.motionBtns.addTime.addEventListener("click", () => this.addTimeHere());
     this.motionBtns.delTime.addEventListener("click", () => this.removePickedTime());
     this.motionBtns.draw.addEventListener("click", () => this.enterDraw());
-    this.motionBtns.time.addEventListener("click", () => { this.mode = "time"; this.slotSig = ""; this.schedule(); });
-    this.motionBtns.bake.addEventListener("click", () => this.enterTime());
+    this.motionBtns.time.addEventListener("click", () => this.enterTime());
     this.motionBtns.bakeTl.addEventListener("click", () => this.bakeToTimeline());
     this.motionBtns.del.addEventListener("click", () => this.removeNode());
     this.motionBtns.drop.addEventListener("click", () => { const m = motionFor(this.session); if (m) { dropMotion(this.session, m.animation, m.bone); this.selNode = -1; this.selTime = -1; } });
@@ -321,11 +321,6 @@ export class LocalPathPanel {
   /** The dock laid the panel out: draw again at the new size. */
   layout(_width: number, _height: number): void {
     this.schedule();
-  }
-
-  /** Put `el` (the path window) under the canvas. */
-  addTools(el: HTMLElement): void {
-    this.element.append(el);
   }
 
   private button(text: string, title: string): HTMLButtonElement {
@@ -810,13 +805,14 @@ export class LocalPathPanel {
     this.motionBtns.draw.hidden = !can;
     this.motionBtns.time.hidden = !m;
     this.motionBtns.drop.hidden = !m;
-    for (const k of ["bake", "del"] as const) this.motionBtns[k].hidden = !draw;
+    this.motionBtns.del.hidden = !draw;
     for (const k of ["addTime", "delTime", "bakeTl"] as const) this.motionBtns[k].hidden = !time;
     this.motionBtns.draw.setAttribute("aria-pressed", String(draw));
     this.motionBtns.time.setAttribute("aria-pressed", String(time));
     this.motionBtns.del.disabled = !m || m.nodes.length <= 2 || this.selNode < 0;
-    this.framesBox.hidden = !m;
-    this.closedLabel.hidden = !m;
+    // Draw path shapes the spline (a ring or not); Adjust time sets the timing (total frames, node times, blocks).
+    this.framesBox.hidden = !time;
+    this.closedLabel.hidden = !draw;
     const times = m ? nodeTimeFrames(m) : [], blocks = m ? blocksOf(m) : [];
     if (this.selTime >= times.length) this.selTime = -1;
     this.motionBtns.delTime.disabled = this.selTime <= 0 || times.length <= 2;
@@ -978,6 +974,8 @@ export class LocalPathPanel {
     this.selTime = i;
     this.slotSig = "";
     this.schedule();
+    // The Timeline's block tabs show the pick too.
+    this.session.changed();
   }
 
   /**
@@ -1013,7 +1011,8 @@ export class LocalPathPanel {
       const started = startMotion(s);
       if (!started) { this.onStatus("Select a bone in Animate mode, then Draw path."); return; }
       keepMotion(s, started);
-      this.selNode = 1;
+      // Node 2 is picked and the bone goes to it; node 1 is one press away.
+      this.pickSlot(1);
       this.onStatus(`${started.bone}: two spline nodes (where it is, and an offset). Press a red number to put the bone on that node, then move the bone or drag the node; + adds a node; then Bake.`);
     }
     this.mode = "draw";
@@ -1021,12 +1020,19 @@ export class LocalPathPanel {
     this.schedule();
   }
 
-  /** Bake (in Draw path): the spline is done; go to Adjust time, with the two node times it starts with. Nothing is written to the timeline yet. */
+  /**
+   * Adjust time (the mode button): the spline is done, so the path is baked as it stands (its nodes and handles are kept and
+   * the bone goes back to the animation's pose) and only the timing can be edited: node times, blocks, total frames. Nothing
+   * is written to the timeline until Bake to timeline.
+   */
   private enterTime(): void {
     const m = motionFor(this.session);
     if (!m) return;
+    if (this.mode !== "time") this.selTime = -1;
     this.mode = "time";
-    this.selTime = -1;
+    this.nodeDrag = null;
+    this.handleDrag = null;
+    this.session.clearUnkeyed();
     this.slotSig = "";
     this.onStatus(`${m.bone}: the spline is set. Adjust time: add or remove node times and set each block's multiplier, then Bake to timeline.`);
     this.schedule();
@@ -1039,6 +1045,11 @@ export class LocalPathPanel {
     keepMotion(s, { ...m, nodes: [...m.nodes, nodeAfter(s, m.nodes.at(-1)!)] });
     this.selNode = m.nodes.length;
     this.onStatus("Added a spline node: move the bone (or drag the node) to place it.");
+  }
+
+  /** Whether the path's time is being adjusted: the bone is not dragged, on the Stage or here, and its spline stays as it is. */
+  get timing(): boolean {
+    return this.mode === "time" && !!motionFor(this.session);
   }
 
   /** Whether a path is being drawn for the selected bone: its nodes are stored by posing it, so dragging it writes no keys. */
@@ -1312,9 +1323,9 @@ export class LocalPathPanel {
       const node = this.mode === "draw" ? this.nodeAt(x, y) : -1;
       if (node >= 0) { this.pickSlot(node); this.nodeDrag = node; this.grab(e); return; }
       const h = this.handle;
-      if (h && Math.hypot(h.x - x, h.y - y) <= 11 && this.beginEdit(x, y, "rotate", this.session.frame)) { this.grab(e); return; }
+      if (h && !this.timing && Math.hypot(h.x - x, h.y - y) <= 11 && this.beginEdit(x, y, "rotate", this.session.frame)) { this.grab(e); return; }
       const arrow = this.arrowAt(x, y);
-      if (arrow !== null && this.beginEdit(x, y, "move", this.session.frame, arrow)) { this.grab(e); return; }
+      if (arrow !== null && !this.timing && this.beginEdit(x, y, "move", this.session.frame, arrow)) { this.grab(e); return; }
       const best = this.markAt(x, y);
       if (best >= 0) {
         // With a path a dot only puts the playhead there (its node times are what is dragged, in Adjust time); with none, drag it to move the bone at that frame.

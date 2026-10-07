@@ -1,6 +1,6 @@
 # Path attachments — editing, on the stage and by number — plan
 
-**Status:** done 2026-10-06, including making a path from the interface (step 6 below). Un-parks "bone paths and their panels" from the v2 cut list
+**Status:** done 2026-10-06; **2026-10-07: the path window (`pathPanel.ts`: + New Path, vertex by number, Local/World) was removed at the owner's request**, so steps 4 and 6's window are gone; a path is made from the stage's right-click menu (Add Path Here) and its points are dragged on the stage, including making a path from the interface (step 6 below). Un-parks "bone paths and their panels" from the v2 cut list
 (`docs/EDITOR-V2-PLAN.md`). Scope, from the owner: select a path attachment and drag its points on
 the stage; a Local / World choice for the values; a numeric window for exact values; the file
 round-trips (vertices in both the unweighted and the bone-weighted form, and the path constraint's

@@ -13,6 +13,13 @@ flowchart LR
 
 ## 2026-10-07
 
+- **BoneBurst Editor v2: Draw path and Adjust time split into two duties, block tabs on the Timeline, the Path window removed, the Stage repaints when a node is pressed** (`Editor-BoneBurst-Src/`, [plan](../../Editor-BoneBurst-Src/docs/PATH-FRAMES-PLAN.md)).
+  - **Draw path** shapes the spline (red numbers put the bone on a node, + creates and adds, handles, Closed); the **Adjust time** button replaces Bake and edits timing only (node times, block multipliers and speed graphs, Total frames): the bone cannot be dragged on the Stage (`Stage.dragLocked`) or in Local Path.
+  - **Timeline:** with a path on the selected bone the strip under the ruler shows its blocks, picked together with Local Path (`Session.pickedBlock`).
+  - **Fix:** `poseAtNode` now announces its change, so the Stage moves the bone at once (it only changed the pose data before). A path made with + puts the bone on node 2.
+  - **Removed:** the Path window at the foot of Local Path (`pathPanel.ts`, + New Path, typed vertices); Add Path Here and dragging points on the stage stay.
+  - Guarded by `e2e/motionPath.spec.ts`, `e2e/pathEdit.spec.ts`; 749 unit and 76 browser tests passed; deliberate bugs (Stage lock, Stage repaint, tab pick) fail them; not tried by hand.
+
 - **BoneBurst Editor v2: a bone's motion path in frames and blocks, drawn and timed in Local Path, baked to the timeline on request** (`Editor-BoneBurst-Src/`, [plan](../../Editor-BoneBurst-Src/docs/PATH-FRAMES-PLAN.md)).
   - **Draw path:** a green + (or Draw path) makes a closed spline of two nodes, the bone's place and that plus an offset; a red number puts the bone on its node and from then on the bone and the node follow each other; never fewer than two nodes; nothing is keyed.
   - **Adjust time:** Bake goes here with two node times; node times add and remove (never fewer than two), Total frames (`14 + 0`), a Closed tick, a time multiplier and a speed graph (flat by default, presets, draggable points) for each block; frames only, no seconds or fps.

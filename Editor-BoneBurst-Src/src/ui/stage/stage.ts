@@ -83,6 +83,8 @@ export class Stage {
   autoKey = true;
   /** True while a motion path is being drawn: the bone is posed to store it, so a drag writes no keys (docs/PATH-CAPTURE-PLAN.md). */
   forceUnkeyed: () => boolean = () => false;
+  /** Whether the bone cannot be dragged now (Local Path's Adjust time edits the path's timing only). */
+  dragLocked: () => boolean = () => false;
   /** The Move tool's axes: parent's is the free drag; local and world hold it to one axis. */
   space: Space = "parent";
   camera: Camera = { x: 0, y: 0, zoom: 1 };
@@ -908,6 +910,7 @@ export class Stage {
     }
     this.session.selectBone(name);
     this.session.pause();
+    if (this.dragLocked()) return;
     const p = this.session.pose()!, index = p.bones.get(name)!;
     const b = this.session.doc!.bones!.find((x) => x.name === name)!;
     const at = toWorld(this.camera, this.size, sx, sy), parent = parentMatrix(p, index);

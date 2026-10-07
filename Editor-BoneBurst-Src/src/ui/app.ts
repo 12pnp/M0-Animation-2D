@@ -25,7 +25,6 @@ import { AskAi } from "./panels/askAi";
 import { showContextMenu } from "./contextMenu";
 import { DocumentTabs } from "./documentTabs";
 import { stageMenu } from "./stageMenu";
-import { PathPanel } from "./stage/pathPanel";
 import { TransformStrip } from "./stage/transformStrip";
 import { lookOf } from "./stage/look";
 import { DIVIDER, MenuBar, type MenuItem } from "./menubar";
@@ -186,8 +185,6 @@ export function mountApp(root: HTMLElement): void {
   });
   // Text only, fixed at the stage's foot, in the middle.
   modeBtn.classList.add("mode", "stage-mode");
-  // The path window: the selected path attachment's vertices, by number (docs/PATH-PLAN.md); it sits in the Local Path panel.
-  const pathPanel = new PathPanel(session, (m) => say(m));
   const spaceGroup = group(...spaceBtns), showGroup = group(...showBtns.filter((b) => b !== rulersBtn && b.dataset.show !== "onion"));
   stageTools.append(crumb, transform.element, spaceGroup, showGroup);
   // Each panel can be dragged by its grip and folded; the corner button shows or hides all of them.
@@ -222,10 +219,9 @@ export function mountApp(root: HTMLElement): void {
   const references = new References(session);
   const history = new HistoryPanel(session);
   const localPath = new LocalPathPanel(session);
-  // The path window (+ New Path, a path's vertices) is part of the Local Path panel.
-  localPath.addTools(pathPanel.element);
   localPath.autoKey = () => stage.autoKey;
   stage.forceUnkeyed = () => localPath.drawing;
+  stage.dragLocked = () => localPath.timing;
   const skinsPanel = new SkinsPanel(session);
   const animationsPanel = new AnimationsPanel(session);
   // Ask AI (E5 step 9): the bridge's model with the editor's tools; sending connects the AI button.
@@ -607,7 +603,7 @@ export function mountApp(root: HTMLElement): void {
   );
   if (import.meta.env.DEV) {
     // For inspecting the live editor from the browser console; not in a build.
-    (window as unknown as { boneburst: unknown }).boneburst = { session, stage, localPath, get workspace() { return workspace; } };
+    (window as unknown as { boneburst: unknown }).boneburst = { session, stage, localPath, timeline, get workspace() { return workspace; } };
     const dev = button("Open the stickman fixture", "Dev only: tests/fixtures/stickman", () => void openStickman());
     const devNew = button("New skeleton on the stickman's atlas", "Dev only: tests/fixtures/stickman, atlas and image", () => void openStickman(false));
     // Kept apart and quiet: they are for developing the editor, not for opening a rig.

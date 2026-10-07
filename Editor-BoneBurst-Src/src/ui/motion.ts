@@ -78,6 +78,8 @@ export function poseAtNode(s: Session, x: number, y: number): void {
   if (i === undefined) return;
   const [lx, ly] = moveDelta(parentMatrix(p, i), x, y), l = p.local, k = i * 7;
   s.setUnkeyed(bone, { x: lx, y: ly, rotation: l[k + 2]!, scaleX: l[k + 3]!, scaleY: l[k + 4]!, shearX: l[k + 5]!, shearY: l[k + 6]! });
+  // The Stage draws on a change: without it the bone moved in the pose but not on screen.
+  s.changed();
 }
 
 /** How many samples a segment's curve is fitted to. */

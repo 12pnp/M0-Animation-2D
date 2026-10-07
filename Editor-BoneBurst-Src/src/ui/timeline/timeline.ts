@@ -18,6 +18,8 @@ import {
 } from "./layout";
 import { keysOf } from "../shortcuts";
 import { localPoint, pageScale } from "../pageScale";
+import { blocksOf } from "@/edit/motionPath";
+import { motionFor } from "../motion";
 
 const CURVES: ReadonlyArray<{ label: string; title: string; icon: IconName; curve: "linear" | "stepped" | Shape }> = [
   { label: "Linear", icon: "curveLinear", title: "Straight from each selected key to the next", curve: "linear" },
@@ -541,6 +543,8 @@ export class Timeline {
     if (!a || e.button !== 0) return;
     const [x, y] = this.local(e);
     this.canvas.setPointerCapture(e.pointerId);
+    const tab = this.blockTabAt(x, y);
+    if (tab >= 0) { s.pickedBlock = tab; s.changed(); return; }
     if (!this.inRuler(y) && this.graphDown(x, y, e.shiftKey)) return;
     if (!this.inRuler(y)) { this.drag = { kind: "box", x0: x, y0: y, x1: x, y1: y, moved: false, add: e.shiftKey, base: new Map(this.selected) }; return; }
     this.drag = { kind: "scrub" };
@@ -692,11 +696,12 @@ export class Timeline {
   private paintTabs(g: CanvasRenderingContext2D, chs: readonly Channel[], col: (n: string) => string): void {
     const s = this.session, a = s.animation, fps = s.fps, v = this.view;
     if (!a) return;
+    const blocks = this.pathBlocks();
     const set = new Set<number>();
     for (const ch of chs) for (const k of ch.keys) set.add(timeFrame(keyTime(k), fps));
     const end = timeFrame(s.length(a), fps);
     if (set.size && end > Math.max(...set)) set.add(end);
-    const frames = [...set].sort((p, q) => p - q);
+    const frames = blocks ? [...blocks.map((b) => b.start), blocks.at(-1)!.end] : [...set].sort((p, q) => p - q);
     if (frames.length < 2) return;
     const y0 = RULER + 4, h = TABS - 8;
     g.save();
@@ -706,19 +711,41 @@ export class Timeline {
     for (let i = 0; i + 1 < frames.length; i++) {
       const f0 = frames[i]!, f1 = frames[i + 1]!, x0 = frameX(v, f0) + 1.5, x1 = frameX(v, f1) - 1.5;
       if (x1 < 0 || x0 > this.canvas.clientWidth || x1 - x0 < 3) continue;
-      const here = s.frame >= f0 && s.frame < f1;
-      g.fillStyle = here ? col("--accent") : col("--hover");
-      g.globalAlpha = here ? 0.35 : 1;
+      const here = s.frame >= f0 && s.frame < f1, picked = !!blocks && i === s.pickedBlock;
+      g.fillStyle = here || picked ? col("--accent") : col("--hover");
+      g.globalAlpha = here || picked ? 0.35 : 1;
       g.beginPath(); g.roundRect(x0, y0, x1 - x0, h, 3); g.fill();
       g.globalAlpha = 1;
-      g.strokeStyle = here ? col("--accent") : col("--line");
+      g.strokeStyle = here || picked ? col("--accent") : col("--line");
+      g.lineWidth = picked ? 2 : 1;
       g.beginPath(); g.roundRect(x0 + 0.5, y0 + 0.5, x1 - x0 - 1, h - 1, 3); g.stroke();
-      const d = f1 - f0, long = `${d}f · ${(d / fps).toFixed(2)}s`, short = `${d}f`, num = String(d);
+      const b = blocks?.[i], d = f1 - f0, mark = b ? `${b.speed !== 1 ? ` ×${b.speed}` : ""}${b.graph.some((q) => q.v !== 1) ? " ∿" : ""}` : "";
+      // A path's block is in frames only; the key gaps show their seconds too.
+      const long = b ? `${d}f${mark}` : `${d}f · ${(d / fps).toFixed(2)}s`, short = `${d}f${mark}`, num = String(d);
       const room = x1 - x0 - 6;
       const text = g.measureText(long).width <= room ? long : g.measureText(short).width <= room ? short : g.measureText(num).width <= room ? num : "";
       if (text) { g.fillStyle = col("--text"); g.fillText(text, (x0 + x1) / 2, y0 + h / 2 + 0.5); }
+      g.lineWidth = 1;
     }
     g.restore();
+  }
+
+  /** The selected bone's path blocks, when it has a path in the animation shown: the tabs are these, not the key gaps. */
+  private pathBlocks(): ReturnType<typeof blocksOf> | null {
+    const m = motionFor(this.session);
+    return m ? blocksOf(m) : null;
+  }
+
+  /** The path block tabs as drawn: their canvas x ranges and y (test hook). */
+  get blockTabs(): { x0: number; x1: number; y: number }[] {
+    return (this.pathBlocks() ?? []).map((b) => ({ x0: frameX(this.view, b.start), x1: frameX(this.view, b.end), y: RULER + TABS / 2 }));
+  }
+
+  /** The path block tab under a canvas point (in the strip below the ruler), or -1. */
+  private blockTabAt(x: number, y: number): number {
+    const blocks = this.pathBlocks();
+    if (!blocks || y < RULER || y >= RULER + TABS) return -1;
+    return blocks.findIndex((b) => x >= frameX(this.view, b.start) && x < frameX(this.view, b.end));
   }
 
   /** A press on the graph: on a handle or a key, a drag begins (one undo step); false when on neither. */
