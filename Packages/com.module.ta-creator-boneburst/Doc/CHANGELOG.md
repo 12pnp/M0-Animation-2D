@@ -11,6 +11,10 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-07 — **ECS port P13 recorded: CPU route vertex fetch, EcsCpu 25.8 → 4.85 ms at 2000 skeletons** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
+
+Plan [BoneBurst-ECS-Plan.md](Review/BoneBurst-ECS-Plan.md) §23; [BoneBurst-ECS-Summary.md](Review/BoneBurst-ECS-Summary.md) updated. The ECS CPU route now keeps vertices in one shared list (ring-uploaded) and draws topology-only meshes, 1.14× the mono CPU route at 2000 idle. Guarded by the fixture tests (deliberate bug failed 30) and Editor and player captures; per-mesh-upload fallback, platforms without vertex-shader structured buffers and IL2CPP not covered.
+
 ### 2026-10-07 — **ECS port summary written: all phases S0–P12 in one page** (docs only)
 
 [BoneBurst-ECS-Summary.md](Review/BoneBurst-ECS-Summary.md) collects the architecture, every phase's result, the P12 same-backend numbers and what is left, from [BoneBurst-ECS-Plan.md](Review/BoneBurst-ECS-Plan.md). Not verified against the plan section by section.
