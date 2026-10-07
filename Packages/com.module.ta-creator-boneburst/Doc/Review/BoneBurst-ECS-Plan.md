@@ -1,6 +1,6 @@
 # BoneBurst ECS port: Plan
 
-**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 (CPU route, skins, tint black, Lit2D) done 2026-10-07 except the vertex-fetch route, rim light and a player build (§15); P7 (physics input, followers, idle skipping, benchmark) done 2026-10-07 except the visibility mode, the steady shortcut and the sorting question (§16). P8 (shell overhead at small counts) done 2026-10-07: 7–16% less at 100–2000 skeletons, the rest is a fixed floor outside BoneBurst (§17). P10 (render variants in a player) done 2026-10-07: it found and fixed a CPU route that never drew and a stripped default shader (§19). P9 (sorting) done 2026-10-07: a per-skeleton render queue orders a skeleton against sprites of one sorting layer and order; the sorting layer and order themselves stay unreachable (§18).**
+**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 (CPU route, skins, tint black, Lit2D) done 2026-10-07 except the vertex-fetch route, rim light and a player build (§15); P7 (physics input, followers, idle skipping, benchmark) done 2026-10-07 except the visibility mode, the steady shortcut and the sorting question (§16). P8 (shell overhead at small counts) done 2026-10-07: 7–16% less at 100–2000 skeletons, the rest is a fixed floor outside BoneBurst (§17). P11 (tint black and rim light in a player) done 2026-10-07: rim light built and both seen in a player (§20). P10 (render variants in a player) done 2026-10-07: it found and fixed a CPU route that never drew and a stripped default shader (§19). P9 (sorting) done 2026-10-07: a per-skeleton render queue orders a skeleton against sprites of one sorting layer and order; the sorting layer and order themselves stay unreachable (§18).**
 
 BoneBurst's pose, constraint, timeline and mesh code (`Module.PA.BoneBurst.Core`) is already Burst-friendly pointer code with no `UnityEngine`. The port keeps that code unchanged and replaces only the managed shell around it (`BoneBurstSystem`, `BoneBurstSkeleton`, `BoneBurstAsset`, `BoneAnimationState`, the GPU and fetch buffers) with Entities 6.7 systems, bakers and Entities Graphics. The result is a new package in `M0-25DPlatformer-ECS/Packages`.
 
@@ -498,3 +498,29 @@ flowchart LR
 3.  The coloured squares in every capture are the 25D project's own demo boxes, not BoneBurst.
 
 **Not covered:** tint black, rim light, the 3D renderer's pass, IL2CPP (the player is the project's macOS build), and a regression test: the render system and the baker need a graphics device and a subscene world, so the guard is this player check only. Status: done for GPU and CPU, Unlit and Lit2D.
+
+## 20. P11 plan (2026-10-07): tint black and rim light in a player
+
+Tint black has run on both routes in the Editor and in data tests, but never been seen on screen: no sample export has a dark colour, so the flag draws the same as without it. Rim light does not exist on the ECS route (`BoneBurstEcs/Lit2D` was derived without it). P11 builds it, then looks at both in a player.
+
+```mermaid
+flowchart LR
+    AUTH["BoneBurstAuthoring<br/>RimMasks · RimColor · RimStrength · RimWidth · RimDirection"] --> BAKE["BoneBurstBaker<br/>BoneBurstRimSettings + BoneBurstRimMask buffer"]
+    BAKE --> RS["BoneBurstRenderSystem.MaterialFor<br/>_RimMaskTex · _RimColor · _RimStrength"]
+    RS --> SH["BoneBurstEcs/Lit2D<br/>BoneBurstRim (port of BoneBurstLit2DPass.hlsl)"]
+    DARK["Check rig: spineboy with dark colours<br/>BoneBurstDataWriter, Core only"] --> TB["Tint black skeleton<br/>GPU + CPU"]
+    SH --> PLY["Player capture vs Editor capture"]
+    TB --> PLY
+```
+
+**Steps:** (1) port the rim to the ECS Lit2D pass with the same maths and properties; authoring fields, a settings component and a mask buffer, set on the asset's materials (like the mono `BoneBurstAsset`: one rim per asset, the first skeleton to draw it decides); (2) a check rig made by writing dark colours onto spineboy's slots with Core's `BoneBurstDataWriter` (no bake, so no AssetSystem change in M0); (3) a scene with tint black and rim skeletons (GPU and CPU), captured in the Editor and in a release player; (4) compare, fix, record.
+**Gate:** the dark colour visibly changes the tinted slots on both routes; the rim shows on the edge facing `RimDirection` and is absent with strength 0 and outside the painted mask, same in Editor and player. 
+
+**Result (2026-10-07, macOS release player and Editor, six spineboy skeletons: control, tint black GPU, tint black CPU, rim GPU, rim CPU, Lit2D without rim):**
+
+1.  **Rim light built** in `BoneBurstEcs/Lit2D` (same maths as the mono pass; `BoneBurstRimSettings` and a `BoneBurstRimMask` buffer baked from new authoring fields; `BoneBurstEcsMaterials.ConfigureRim`). Seen on the edges facing the light on both routes, absent on the Lit2D skeleton with strength 0, in the Editor and the player alike.
+2.  **A design change from the plan:** the plan said one rim per asset, first skeleton wins, like the mono asset. The first capture showed no rim: the unrimmed Lit2D skeleton shared the asset and its material. The rim is now part of the material key (a hash of its settings and the page's mask), so skeletons of one asset can differ.
+3.  **Tint black seen on screen** on both routes in the player: a check rig made by writing a red dark colour onto every slot with Core's `BoneBurstDataWriter` (no bake, no AssetSystem change in M0) washes the skeleton red, the control skeleton does not. The shaders and streams were already right; nothing needed fixing.
+4.  **Guards:** the on-screen check, and `RenderMaterialTests` (ConfigureRim reaches the material and picks the page's mask; a deliberate bug that zeroed the strength failed it). 383 EditMode tests pass. The painted-mask path was not seen on screen (no `_rim.png` sample was used: white mask), and the rim's per-asset-mask lookup by page is covered by the unit test only.
+
+**Not covered:** a painted rim mask on screen, rim with a rotated atlas region or flipped skeleton, IL2CPP. Status: done.

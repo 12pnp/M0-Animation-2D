@@ -11,6 +11,10 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-07 — **ECS port P11 recorded: rim light on the ECS Lit2D shader, tint black and rim seen in a player** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
+
+Plan [BoneBurst-ECS-Plan.md](Review/BoneBurst-ECS-Plan.md) §20. Rim light (authoring fields, baked settings and masks, per-material rim, shader port) built; tint black checked on both routes with a dark-coloured spineboy written through Core's writer. Both match between Editor and a macOS player. Guarded by the on-screen check and `RenderMaterialTests`; painted masks, rotated regions and IL2CPP not covered.
+
 ### 2026-10-07 — **ECS port P10 recorded: CPU skeletons now draw, the default shader survives a player build** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
 
 Plan [BoneBurst-ECS-Plan.md](Review/BoneBurst-ECS-Plan.md) §19. A four-variant scene (GPU/CPU × Unlit/Lit2D) in the Editor and a macOS player showed that the render query skipped CPU-skinned skeletons and that the by-name default shader was stripped from the player; both fixed and seen drawing in the player. Not verified by a unit test (needs a graphics device); tint black, rim light and IL2CPP not covered.
