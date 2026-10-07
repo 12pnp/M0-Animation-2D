@@ -41,6 +41,7 @@ import { floatGroups } from "./stage/floatingGroups";
 import { clipboard, copyPose, pastePoseHere } from "./clipboard";
 import { brush, resizeBrush } from "./stage/weightBrush";
 import { isPanelId, PANEL_ICONS, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
+import { PanelInfo } from "./workspace/panelInfo";
 import { type PanelContent, Workspace } from "./workspace/workspace";
 
 /** The stickman the plan names for E2, served by the dev server from the test fixtures. */
@@ -73,6 +74,7 @@ export function mountApp(root: HTMLElement): void {
   const prefs = new Preferences(storage);
   const prefsDialog = new PreferencesDialog(prefs);
   const sheet = new ShortcutsSheet();
+  const panelInfo = new PanelInfo();
   // The theme before the dock is built, so it starts in it.
   if (prefs.values.theme !== "system") document.documentElement.dataset.theme = prefs.values.theme;
   const outline = new Outline(session);
@@ -332,7 +334,7 @@ export function mountApp(root: HTMLElement): void {
   body.append(activity, main);
   menubar.element.prepend(prefsBtn);
   menubar.element.append(tabs.element);
-  root.replaceChildren(menubar.element, body, status, issuesList, fileInput, folderInput, prefsDialog.element, sheet.element);
+  root.replaceChildren(menubar.element, body, status, issuesList, fileInput, folderInput, prefsDialog.element, sheet.element, panelInfo.element);
   menubar.element.append(aiBtn);
 
   // The docking shell (D6): every panel is a Dockview panel.
@@ -347,7 +349,7 @@ export function mountApp(root: HTMLElement): void {
     ["motionPath", { element: motionPanel.element, layout: (w, h) => motionPanel.layout(w, h) }],
     ["skins", { element: skinsPanel.element }],
     ["animations", { element: animationsPanel.element }],
-  ]), (w) => w.addEventListener("keydown", onKey));
+  ]), (w) => w.addEventListener("keydown", onKey), (id) => panelInfo.open(id));
   const activityBtns = workspace.built.map((id) => {
     const b = iconButton(button(PANEL_TITLES[id], `${PANEL_TITLES[id]}: show or hide the panel`, () => workspace.toggle(id)), PANEL_ICONS[id], false);
     b.dataset.panel = id;

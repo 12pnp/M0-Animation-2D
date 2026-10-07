@@ -5,6 +5,7 @@ import "virtual:dockview.css";
 import { arrivalPlacement, DEFAULT_ORDER, type Deferred, defaultPlacement, type Placement, restoreWorkspace, saveWorkspace } from "./layout";
 import { icon } from "../icons";
 import { PANEL_ICONS, PANEL_TITLES, type PanelId } from "./panelIds";
+import { panelMenu } from "./panelMenu";
 
 /** Where the browser keeps the workspace (view-only state of the app, not of a document). */
 export const WORKSPACE_KEY = "boneburst.workspace";
@@ -46,12 +47,15 @@ export class Workspace {
     private readonly panels: ReadonlyMap<PanelId, PanelContent>,
     /** Called for every popout window Dockview opens, so it can listen there (keys). */
     onWindow: (w: Window) => void,
+    /** The extra menu's Info: show what a panel is for. */
+    onInfo: (id: PanelId) => void = () => {},
   ) {
     this.api = createDockview(host, {
       theme: themeFor(prefersDark()),
       createComponent: ({ name }) => this.renderer(name as PanelId),
       createTabComponent: ({ id }) => tabRenderer(id as PanelId),
       defaultTabComponent: "tab",
+      createRightHeaderActionComponent: panelMenu(onInfo),
       getTabContextMenuItems: () => ["float", "popout", "maximize", "separator", "close"],
     });
     const scheme = window.matchMedia("(prefers-color-scheme: dark)");

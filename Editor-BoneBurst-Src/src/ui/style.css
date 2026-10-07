@@ -787,3 +787,11 @@ html.bb-gripping-row, html.bb-gripping-row * { cursor: row-resize !important; }
 .flash.out { opacity: 0; }
 .flash { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .flash .detail { color: var(--muted, var(--text)); font-size: 0.9em; opacity: 0.8; }
+
+/* The extra menu at the top right of every panel group (workspace/panelMenu.ts) and the Info window it opens. */
+.panel-menu { display: flex; align-items: center; height: 100%; padding: 0 4px; }
+.panel-menu-button { width: 22px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted, var(--text)); font-size: 16px; line-height: 1; cursor: pointer; }
+.panel-menu-button:hover { background: var(--hover); color: var(--text); }
+dialog.panel-info p { margin: 0 0 4px; }
+dialog.panel-info ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
+dialog.panel-info .panel-info-title { display: flex; align-items: center; gap: 6px; }
