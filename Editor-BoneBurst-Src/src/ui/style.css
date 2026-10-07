@@ -809,3 +809,5 @@ dialog.panel-info .panel-info-title { display: flex; align-items: center; gap: 6
 .stage-tools .group.user-hidden { display: none; }
 /* The picked name floats about 2 cm above the pointer (placed in app.ts). */
 .stage-crumb { position: absolute; z-index: 5; transform: translate(-50%, -100%); flex: none; }
+.stage-tools .create .create-region { width: 110px; margin: 3px; font-size: 11px; }
+.stage-tools .create .create-region[hidden] { display: none; }

@@ -156,12 +156,13 @@ export function mountApp(root: HTMLElement): void {
   // The Create group (docs/STAGE-POSE-PLAN.md step 2), Pose mode only: what a press on the stage makes.
   const CREATES: ReadonlyArray<{ kind: CreateKind; label: string; tip: string; icon: IconName }> = [
     { kind: "bone", label: "Bone", tip: "Create bones: press where it starts and drag to where it points; the next one carries on from it", icon: "bone" },
+    { kind: "region", label: "Region", tip: "Create a region: choose an image of the atlas below, then press where its centre goes", icon: "region" },
     { kind: "point", label: "Point", tip: "Create a point attachment on the bone under the press", icon: "point" },
     { kind: "boundingbox", label: "Bounding box", tip: "Create a bounding box: drag its corners, or click for a 100 unit square", icon: "boundingbox" },
     { kind: "clipping", label: "Clipping", tip: "Create a clipping polygon: drag its corners, or click for a 100 unit square; it clips the slots after it", icon: "clipping" },
     { kind: "path", label: "Path", tip: "Create a path attachment on the bone under the press", icon: "path" },
   ];
-  const CREATE_KEYS: Record<CreateKind, ShortcutId> = { bone: "createBone", point: "createPoint", boundingbox: "createBox", clipping: "createClipping", path: "createPath" };
+  const CREATE_KEYS: Record<CreateKind, ShortcutId> = { bone: "createBone", region: "createRegion", point: "createPoint", boundingbox: "createBox", clipping: "createClipping", path: "createPath" };
   const createBtns = CREATES.map((c) => {
     const b = iconButton(button(c.label, `${c.tip} (${keysOf(CREATE_KEYS[c.kind])})`, () => setCreate(stage.createKind === c.kind ? null : c.kind)), c.icon, false);
     b.dataset.create = c.kind;
@@ -170,9 +171,26 @@ export function mountApp(root: HTMLElement): void {
   const setCreate = (kind: CreateKind | null): void => {
     stage.setCreate(kind);
     for (const b of createBtns) b.setAttribute("aria-pressed", String(b.dataset.create === kind));
+    regionPick.hidden = kind !== "region";
   };
   const createGroup = el("div", "group create");
-  createGroup.append(...createBtns);
+  // The Region tool's image, from the loaded atlas.
+  const regionPick = document.createElement("select");
+  regionPick.className = "create-region";
+  regionPick.title = "The atlas image the Region tool places";
+  regionPick.addEventListener("change", () => { stage.regionName = regionPick.value || null; });
+  let regionSig = "";
+  const syncRegions = (): void => {
+    const names = [...new Set(session.images.regions.map((r) => r.name))], sig = names.join("\n");
+    if (sig === regionSig) return;
+    regionSig = sig;
+    regionPick.replaceChildren(...names.map((n) => new Option(n, n)));
+    stage.regionName = names.includes(stage.regionName ?? "") ? stage.regionName : names[0] ?? null;
+    regionPick.value = stage.regionName ?? "";
+    regionPick.disabled = !names.length;
+    createBtns.find((b) => b.dataset.create === "region")!.disabled = !names.length;
+  };
+  createGroup.append(...createBtns, regionPick);
   // Bone options (step 3), Pose mode only: Compensate, and Pin for the selected bone.
   const compensateBtn = iconButton(button("Compensate", "Compensate: when a bone is moved, rotated, scaled or sheared, its children keep their place", () => prefs.set({ compensate: !prefs.values.compensate })), "linkedmesh", false);
   const togglePin = (): void => {
@@ -755,6 +773,8 @@ export function mountApp(root: HTMLElement): void {
     modeBtn.textContent = animating ? "Animate" : "Pose";
     // The Create group is for the setup pose.
     createGroup.hidden = animating;
+    syncRegions();
+    regionPick.hidden = stage.createKind !== "region";
     optionsGroup.hidden = animating;
     poseGroup.hidden = animating;
     poseBtns.find((b) => b.dataset.pose === "weights")?.setAttribute("aria-pressed", String(brush.on));
@@ -914,6 +934,7 @@ export function mountApp(root: HTMLElement): void {
     nudgeUp: (e?: KeyboardEvent) => nudge("up", e),
     // The Pose-mode keys do nothing (and the key goes on) while an animation is shown.
     createBone: () => poseKey(() => setCreate(stage.createKind === "bone" ? null : "bone")),
+    createRegion: () => poseKey(() => setCreate(stage.createKind === "region" ? null : "region")),
     createPoint: () => poseKey(() => setCreate(stage.createKind === "point" ? null : "point")),
     createBox: () => poseKey(() => setCreate(stage.createKind === "boundingbox" ? null : "boundingbox")),
     createClipping: () => poseKey(() => setCreate(stage.createKind === "clipping" ? null : "clipping")),

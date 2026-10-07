@@ -1,4 +1,4 @@
-import { addAttachment, type AttachmentRef } from "@/edit/attachments";
+import { addAttachment, addRegion, type AttachmentRef } from "@/edit/attachments";
 import { addBone } from "@/edit/bones";
 import { newPointAttachment, newPolygon } from "@/edit/create";
 import { EditRefused } from "@/edit/history";
@@ -8,8 +8,8 @@ import { uniqueName } from "../names";
 import type { Session } from "../session";
 import type { Point } from "./gizmo";
 
-/** What the Create group makes (docs/STAGE-POSE-PLAN.md step 2). Region is not here yet: it needs the atlas picker. */
-export type CreateKind = "bone" | "point" | "boundingbox" | "clipping" | "path";
+/** What the Create group makes (docs/STAGE-POSE-PLAN.md step 2; Region, from the loaded atlas, since the owner chose it). */
+export type CreateKind = "bone" | "region" | "point" | "boundingbox" | "clipping" | "path";
 
 /** A press shorter than this many screen pixels is a click, not a drag. */
 export const CLICK_PX = 4;
@@ -88,4 +88,34 @@ export function createShape(session: Session, kind: "point" | "boundingbox" | "c
   session.changed();
   session.select({ kind: "attachment", skin: ref.skin, slot: ref.slot, key: ref.key });
   return kind === "clipping" ? `Added ${ref.key}: it clips every slot after it.` : `Added ${ref.key} on ${bone}.`;
+}
+
+/**
+ * A region attachment of the atlas region `region` on a new slot of `bone`, centred on `at` (world),
+ * as large as the region's original size, in one undo step; the slot shows it and it is selected.
+ */
+export function createRegion(session: Session, region: string, bone: string, at: Point): string {
+  const doc = session.doc, h = session.history, setup = session.setupBones();
+  if (!doc || !h) return "Open a skeleton first.";
+  const img = session.images.regions.find((r) => r.name === region);
+  if (!img) return `The atlas has no region "${region}".`;
+  const i = (doc.bones ?? []).findIndex((x) => x.name === bone), m = setup?.[i];
+  if (!m) return `${bone} has no pose to place it by.`;
+  const [x, y] = toLocal(m, at[0], at[1]);
+  const slot = uniqueName(region, (doc.slots ?? []).map((v) => v.name));
+  const skin = session.skin ?? "default", ref: AttachmentRef = { skin, slot, key: region };
+  h.begin(`Add region ${region} on ${bone}`);
+  try {
+    h.apply("step", addSlot(slot, bone));
+    h.apply("step", addRegion(ref, { width: img.originalWidth, height: img.originalHeight, ...(Math.abs(x) > 0.005 ? { x: Math.round(x * 100) / 100 } : {}), ...(Math.abs(y) > 0.005 ? { y: Math.round(y * 100) / 100 } : {}) }));
+    h.apply("step", updateSlot(slot, { attachment: ref.key }));
+  } catch (err) {
+    h.cancel();
+    if (!(err instanceof EditRefused)) throw err;
+    return err.message;
+  }
+  h.end();
+  session.changed();
+  session.select({ kind: "attachment", skin: ref.skin, slot: ref.slot, key: ref.key });
+  return `Added ${region} on ${bone}.`;
 }

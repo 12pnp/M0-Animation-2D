@@ -14,7 +14,7 @@ import { type Camera, fit, pan, toScreen, toWorld, zoomAt } from "./camera";
 import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, lockToAxis, scaleAlong, scaleFactors, type ScreenBone, shearAlong, shearDelta, type Space, spaceAxes, tidy, type Tool, turn, turnSign } from "./gizmo";
 import { drawnVertices } from "@/engine/draw";
 import { compensated } from "../compensate";
-import { CLICK_PX, createBone, type CreateKind, createShape } from "./create";
+import { CLICK_PX, createBone, type CreateKind, createRegion, createShape } from "./create";
 import { createPath } from "./pathCreate";
 import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix, type Posed } from "./posed";
 import { type ConstraintShape, constraintShapes, hitConstraint } from "./constraintShapes";
@@ -104,6 +104,8 @@ export class Stage {
   onPick: () => void = () => {};
   /** The Create group's tool: what a press on the stage makes (null: none, the transform tools work). */
   createKind: CreateKind | null = null;
+  /** The atlas region the Region tool places (chosen in the Create panel). */
+  regionName: string | null = null;
   private createDrag: { from: Point; to: Point | null; target: string | null; screen: [number, number] } | null = null;
 
   /** Choose what a press makes, or (null) go back to the transform tools. */
@@ -998,6 +1000,7 @@ export class Stage {
     let message: string;
     if (kind === "bone") message = createBone(this.session, d.target, d.from, d.to);
     else if (d.target === null) message = "Add a bone first: shapes hang on one.";
+    else if (kind === "region") message = this.regionName ? createRegion(this.session, this.regionName, d.target, d.from) : "Choose the atlas region in the Create panel first.";
     else if (kind === "path") message = createPath(this.session, { bone: d.target }, d.from);
     else message = createShape(this.session, kind, d.target, d.from, d.to);
     this.onStatus(message);

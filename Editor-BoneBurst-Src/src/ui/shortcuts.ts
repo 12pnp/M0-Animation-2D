@@ -83,6 +83,7 @@ export const SHORTCUTS = [
   { id: "motionOrigin", keys: "O", group: "Motion Path", what: "Make the picked spline node the origin (the ring starts there)", chord: plain("o") },
   { id: "motionBake", keys: "B", group: "Motion Path", what: "Bake the path to the timeline", chord: plain("b") },
   { id: "createBone", keys: "D", group: "Tools", what: "Create bones on the stage (Pose mode): press and drag; press again to leave", chord: plain("d") },
+  { id: "createRegion", keys: "Y", group: "Tools", what: "Create a region: an image of the atlas (Pose mode)", chord: plain("y") },
   { id: "createPoint", keys: "P", group: "Tools", what: "Create a point attachment (Pose mode)", chord: plain("p") },
   { id: "createBox", keys: "G", group: "Tools", what: "Create a bounding box (Pose mode)", chord: plain("g") },
   { id: "createClipping", keys: "C", group: "Tools", what: "Create a clipping polygon (Pose mode)", chord: plain("c") },

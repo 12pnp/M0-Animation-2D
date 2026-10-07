@@ -86,3 +86,27 @@ test("Esc leaves the Create tool; the group is hidden in Animate mode", async ({
   await expect(page.locator(".stage-tools .create")).toBeHidden();
   expect(await page.evaluate(() => (window as unknown as Live).boneburst.stage.createKind)).toBeNull();
 });
+
+test("the Region tool places an image chosen from the atlas on a new slot of the bone under the press, one undo", async ({ page }) => {
+  await open(page);
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "hips" }));
+  await page.locator('[data-create="region"]').click();
+  const pick = page.locator(".create-region");
+  await expect(pick).toBeVisible();
+  const names = await pick.locator("option").allTextContents();
+  expect(names.length).toBeGreaterThan(0);
+  await pick.selectOption(names[names.length - 1]!);
+  const box = (await page.locator(".stage canvas.overlay").boundingBox())!;
+  const before = await page.evaluate(() => (window as unknown as Live).boneburst.session.doc.slots.length);
+  await page.mouse.click(box.x + 70, box.y + 70);
+  const made = await page.evaluate(() => {
+    const doc = (window as unknown as Live).boneburst.session.doc;
+    return { slots: doc.slots.length, last: doc.slots[doc.slots.length - 1], entries: doc.skins.flatMap((k) => k.attachments ?? []).filter((a) => a.slot === doc.slots[doc.slots.length - 1]!.name).flatMap((a) => a.entries.map((e) => e.key)) };
+  });
+  expect(made.slots).toBe(before + 1);
+  expect(made.last).toMatchObject({ bone: "hips" });
+  expect(made.entries).toEqual([names[names.length - 1]]);
+  await page.locator("body").click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press("Control+z");
+  expect(await page.evaluate(() => (window as unknown as Live).boneburst.session.doc.slots.length)).toBe(before);
+});
