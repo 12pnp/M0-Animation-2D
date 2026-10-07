@@ -74,3 +74,93 @@ test("every Motion Path step is in the History and can be undone: a node dragged
   expect(await nodes()).toBe(0);
   await expect(panel.locator(".lp-slots button.node")).toHaveCount(0);
 });
+
+test("the Spline button hides and shows the spline in Motion Path, and leaves the bone's own path (Path) as it is", async ({ page }) => {
+  await open(page);
+  const panel = page.locator(".panel.motion-path"), spline = panel.getByRole("button", { name: "Spline", exact: true }), path = panel.getByRole("button", { name: "Path", exact: true });
+  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await expect(spline).toHaveAttribute("aria-pressed", "true");
+  await spline.click();
+  await expect(spline).toHaveAttribute("aria-pressed", "false");
+  await expect(path).toHaveAttribute("aria-pressed", "true");
+  expect(await page.evaluate(() => localStorage.getItem("boneburst.motionPath.layers"))).toContain('"spline":false');
+  // The other way round: the path off, the spline on, and its nodes can still be grabbed on the canvas.
+  await spline.click();
+  await path.click();
+  await expect(path).toHaveAttribute("aria-pressed", "false");
+  await expect.poll(() => page.evaluate(() => (window as unknown as { boneburst: { motionPath: { grabPoints: { nodes: unknown[] } } } }).boneburst.motionPath.grabPoints.nodes.length)).toBeGreaterThan(0);
+});
+
+test("Motion Path's keys, with the pointer over it: E starts the path and switches the mode, A adds, V reverses, X removes, B bakes", async ({ page }) => {
+  await open(page);
+  const panel = page.locator(".panel.motion-path");
+  const motion = () => page.evaluate(() => { const m = (window as unknown as { boneburst: { session: { sidecar: { motion: { nodes: { id?: number }[] }[] } } } }).boneburst.session.sidecar.motion[0]; return m ? m.nodes.map((n, i) => n.id ?? i + 1) : null; });
+  const box = (await panel.locator("canvas").boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.keyboard.press("e");
+  expect(await motion()).toEqual([1, 2]);
+  await page.keyboard.press("a");
+  await page.keyboard.press("a");
+  expect(await motion()).toEqual([1, 2, 3, 4]);
+  await page.keyboard.press("v");
+  expect(await motion()).toEqual([1, 4, 3, 2]);
+  // The node added last is the picked one: X removes it.
+  await page.keyboard.press("x");
+  expect((await motion())!.length).toBe(3);
+  // E switches the mode, both ways.
+  await page.keyboard.press("e");
+  await expect(panel.getByRole("button", { name: "Adjust time", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("e");
+  await expect(panel.getByRole("button", { name: "Edit Path", exact: true })).toHaveAttribute("aria-pressed", "true");
+  // The digits and C are not this panel's.
+  await page.keyboard.press("Digit2");
+  await page.keyboard.press("c");
+  expect((await motion())!.length).toBe(3);
+  // Away from the panel the same keys are not this panel's.
+  await page.mouse.move(2, 2);
+  await page.keyboard.press("a");
+  expect((await motion())!.length).toBe(3);
+});
+
+test("Break the legs: the right-click menu breaks a node's legs and mirrors them again; Alt + drag a handle moves only that leg; undo takes it back", async ({ page }) => {
+  await open(page);
+  const panel = page.locator(".panel.motion-path");
+  type N = { tx?: number; ty?: number; bx?: number; by?: number };
+  const node = (i: number) => page.evaluate((k) => (window as unknown as { boneburst: { session: { sidecar: { motion: { nodes: N[] }[] } } } }).boneburst.session.sidecar.motion[0]!.nodes[k]!, i);
+  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  expect((await node(0)).bx).toBeUndefined();
+  await panel.locator(".lp-slots button.node").nth(0).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Break the legs of 1" }).click();
+  const broken = await node(0);
+  expect(broken.bx).toBeDefined();
+  // Drag the way-out handle: the way in stays where it was (mirrored, it would have turned with it).
+  await page.waitForTimeout(400);
+  const handles = await page.evaluate(() => (window as unknown as { boneburst: { motionPath: { grabPoints: { handles: { slot: number; side: string; x: number; y: number }[] } } } }).boneburst.motionPath.grabPoints.handles.filter((h) => h.slot === 0));
+  const hin = handles.find((h) => h.side === "out")!, box = (await panel.locator("canvas").boundingBox())!;
+  await page.mouse.move(box.x + hin.x, box.y + hin.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + hin.x + 25, box.y + hin.y + 25, { steps: 4 });
+  await page.mouse.up();
+  const after = await node(0);
+  expect(after.tx).not.toBe(broken.tx);
+  expect(after.bx).toBe(broken.bx);
+  expect(after.by).toBe(broken.by);
+  await panel.locator(".lp-slots button.node").nth(0).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Mirror the legs of 1" }).click();
+  expect((await node(0)).bx).toBeUndefined();
+  await undo(page, "undo");
+  expect((await node(0)).bx).toBeDefined();
+  await undo(page, "undo");
+  await undo(page, "undo");
+  expect((await node(0)).bx).toBeUndefined();
+  // Alt + drag a handle of a mirrored node breaks it first.
+  await page.waitForTimeout(400);
+  const out = (await page.evaluate(() => (window as unknown as { boneburst: { motionPath: { grabPoints: { handles: { slot: number; side: string; x: number; y: number }[] } } } }).boneburst.motionPath.grabPoints.handles)).find((h) => h.slot === 0 && h.side === "out")!;
+  await page.keyboard.down("Alt");
+  await page.mouse.move(box.x + out.x, box.y + out.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + out.x + 20, box.y + out.y - 20, { steps: 4 });
+  await page.mouse.up();
+  await page.keyboard.up("Alt");
+  expect((await node(0)).bx).toBeDefined();
+});

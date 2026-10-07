@@ -49,6 +49,9 @@ export interface MotionNode {
   /** The curve's handle at this node, as an offset from it (the way out; the way in is its mirror): set by dragging a handle, automatic when absent. */
   readonly tx?: number;
   readonly ty?: number;
+  /** A broken leg (docs/PATH-FRAMES-PLAN.md): the handle on the way in, as an offset from the node, no longer the mirror of the way out. Both or neither. */
+  readonly bx?: number;
+  readonly by?: number;
   /** The number the node is known by (its button): set once nodes are reordered, so it keeps its number as the path's order changes; absent = its place in the list. */
   readonly id?: number;
 }

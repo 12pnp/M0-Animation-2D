@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addNodeTime, bakeTranslate, blocksOf, boundaryProgress, buildCurve, curveOf, endFrame, fitChannel, handleOffsets, keyFrames, keysSignature, moveNodeTime, nodeTimeFrames, pathSignature, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, moveNode, withOrigin, midAfter, mergeNodes, renumberNodes, reversePath, translateKeys, withNode, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
+import { addNodeTime, bakeTranslate, blocksOf, boundaryProgress, buildCurve, curveOf, endFrame, fitChannel, handleOffsets, keyFrames, keysSignature, moveNodeTime, nodeTimeFrames, pathSignature, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, moveNode, withOrigin, midAfter, mergeNodes, renumberNodes, reversePath, breakLegs, mirrorLegs, translateKeys, withNode, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
 import type { MotionPath } from "@/model/sidecar";
 import type { Animation, Key, Skeleton } from "@/model/skeleton";
 import { keyLists, keyTime, timeFrame } from "@/model/timelines";
@@ -338,5 +338,29 @@ describe("sorting the numbers", () => {
     const r = reversePath(motion({ nodes: nodes.map((n, i) => (i === 1 ? { ...n, tx: 5, ty: 6 } : n)) })), s = renumberNodes(r);
     expect(nodeLabels(s)).toEqual([1, 2, 3, 4]);
     expect(s.nodes).toEqual(r.nodes.map(({ id: _id, ...n }) => n));
+  });
+});
+
+describe("breaking the legs of a node", () => {
+  it("keeps the curve as it is, then moves the way in alone", () => {
+    const m = motion(), b = breakLegs(m, 1);
+    expect(b.nodes[1]).toMatchObject({ tx: expect.any(Number), bx: expect.any(Number) });
+    expect(curveOf(b).length).toBeCloseTo(curveOf(m).length, 3);
+    const moved = { ...b, nodes: b.nodes.map((n, i) => (i === 1 ? { ...n, bx: -30, by: 0 } : n)) };
+    expect(handleOffsets(moved.nodes, true)[1]!.in).toEqual({ x: -30, y: 0 });
+    expect(handleOffsets(moved.nodes, true)[1]!.out).toEqual(handleOffsets(b.nodes, true)[1]!.out);
+    expect(breakLegs(b, 1)).toBe(b);
+  });
+  it("mirrors them again: the way in is the way out turned round", () => {
+    const b = breakLegs(motion(), 2), moved = { ...b, nodes: b.nodes.map((n, i) => (i === 2 ? { ...n, bx: 9, by: 9 } : n)) }, back = mirrorLegs(moved, 2);
+    expect(back.nodes[2]!.bx).toBeUndefined();
+    const h = handleOffsets(back.nodes, true)[2]!;
+    expect(h.in).toEqual({ x: -h.out.x, y: -h.out.y });
+    expect(mirrorLegs(back, 2)).toBe(back);
+  });
+  it("reverses with the legs swapped", () => {
+    const b = breakLegs(motion(), 1), moved = { ...b, nodes: b.nodes.map((n, i) => (i === 1 ? { ...n, bx: 7, by: 8 } : n)) }, out = handleOffsets(moved.nodes, true)[1]!.out;
+    const r = reversePath(moved), at = r.nodes.findIndex((n) => n.bx !== undefined);
+    expect(r.nodes[at]).toMatchObject({ tx: 7, ty: 8, bx: out.x, by: out.y });
   });
 });

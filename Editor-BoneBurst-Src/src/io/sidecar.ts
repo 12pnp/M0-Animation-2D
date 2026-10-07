@@ -51,9 +51,9 @@ export function readSidecar(text: string): { sidecar: Sidecar; issues: Issue[] }
     const ns: MotionNode[] = [];
     for (const n of nodes) {
       if (!isObject(n) || typeof n.get("x") !== "number" || typeof n.get("y") !== "number") return null;
-      const tx = num(n, "tx"), ty = num(n, "ty");
+      const tx = num(n, "tx"), ty = num(n, "ty"), bx = num(n, "bx"), by = num(n, "by");
       const id = num(n, "id");
-      ns.push({ x: n.get("x") as number, y: n.get("y") as number, ...(tx !== undefined && ty !== undefined ? { tx, ty } : {}), ...(id !== undefined && Number.isInteger(id) && id > 0 ? { id } : {}) });
+      ns.push({ x: n.get("x") as number, y: n.get("y") as number, ...(tx !== undefined && ty !== undefined ? { tx, ty } : {}), ...(bx !== undefined && by !== undefined ? { bx, by } : {}), ...(id !== undefined && Number.isInteger(id) && id > 0 ? { id } : {}) });
     }
     const numbers = (k: string): number[] => { const v = o.get(k); return isArray(v) ? v.filter((q): q is number => typeof q === "number") : []; };
     const baked = str(o, "baked"), cv = o.get("curves");
@@ -74,7 +74,7 @@ export function writeSidecar(s: Sidecar): string {
     ["notes", s.notes.map((n) => new Map<string, Json>([["text", n.text], ...(n.author !== undefined ? [["author", n.author] as [string, Json]] : []), ...(n.about !== undefined ? [["about", n.about] as [string, Json]] : [])]))],
     ...(s.motion.length ? [["motion", s.motion.map((m) => new Map<string, Json>([
       ["animation", m.animation], ["bone", m.bone],
-      ["nodes", m.nodes.map((n) => new Map<string, Json>([["x", n.x], ["y", n.y], ...(n.tx !== undefined && n.ty !== undefined ? [["tx", n.tx] as [string, Json], ["ty", n.ty] as [string, Json]] : []), ...(n.id !== undefined ? [["id", n.id] as [string, Json]] : [])]))],
+      ["nodes", m.nodes.map((n) => new Map<string, Json>([["x", n.x], ["y", n.y], ...(n.tx !== undefined && n.ty !== undefined ? [["tx", n.tx] as [string, Json], ["ty", n.ty] as [string, Json]] : []), ...(n.bx !== undefined && n.by !== undefined ? [["bx", n.bx] as [string, Json], ["by", n.by] as [string, Json]] : []), ...(n.id !== undefined ? [["id", n.id] as [string, Json]] : [])]))],
       ["closed", m.closed], ["frames", m.frames], ["starts", [...m.starts]], ["speeds", [...m.speeds]],
       ...(m.curves?.some((c) => c.length) ? [["curves", m.curves.map((c) => [...c])] as [string, Json]] : []),
       ...(m.baked !== undefined ? [["baked", m.baked] as [string, Json]] : []),

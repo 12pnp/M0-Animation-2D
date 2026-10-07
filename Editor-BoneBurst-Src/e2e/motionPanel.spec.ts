@@ -53,7 +53,7 @@ test("Motion Path's Image, Bone and Path buttons show and hide each layer, and a
   await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head_art" }));
   const panel = page.locator(".motion-path");
-  for (const name of ["Image", "Bone", "Path"]) await expect(panel.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true");
+  for (const name of ["Image", "Bone", "Path", "Spline"]) await expect(panel.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true");
   const drawn = () => drawnPixels(page);
   await expect.poll(drawn).toBeGreaterThan(20000);
   const all = await drawn();

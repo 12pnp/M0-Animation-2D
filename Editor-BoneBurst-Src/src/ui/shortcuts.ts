@@ -16,7 +16,7 @@ export interface Chord {
   readonly code?: string;
 }
 
-export type ShortcutGroup = "File" | "Edit" | "View" | "Tools" | "Playback" | "Timeline" | "Stage" | "Help";
+export type ShortcutGroup = "File" | "Edit" | "View" | "Tools" | "Playback" | "Timeline" | "Stage" | "Motion Path" | "Help";
 
 export interface Shortcut {
   readonly id: string;
@@ -74,6 +74,14 @@ export const SHORTCUTS = [
   { id: "nudgeRight", keys: "→", group: "Stage", what: "Nudge the selected bone's value for the chosen tool up (Rotate: +; Move, Scale, Shear: x)", chord: plain("arrowright") },
   { id: "nudgeDown", keys: "↓", group: "Stage", what: "Nudge the selected bone's second value (y) down; Rotate: down", chord: plain("arrowdown") },
   { id: "nudgeUp", keys: "↑", group: "Stage", what: "Nudge the selected bone's second value (y) up; Rotate: up", chord: plain("arrowup") },
+  // The Motion Path panel's keys, with the pointer over it: the left hand on the letters, the right on the arrows (they nudge the picked node) and the mouse.
+  { id: "motionAdd", keys: "A", group: "Motion Path", what: "Add a spline node after the picked one (Adjust time: a node time at the playhead); makes the path when there is none", chord: plain("a") },
+  { id: "motionRemove", keys: "X", group: "Motion Path", what: "Remove the picked spline node (Adjust time: the picked node time)", chord: plain("x") },
+  { id: "motionMode", keys: "E", group: "Motion Path", what: "Switch between Edit Path and Adjust time", chord: plain("e") },
+  { id: "motionReverse", keys: "V", group: "Motion Path", what: "Run the path the other way round (1 2 3 4 becomes 1 4 3 2)", chord: plain("v") },
+  { id: "motionMerge", keys: "M", group: "Motion Path", what: "Merge the picked spline nodes into one", chord: plain("m") },
+  { id: "motionOrigin", keys: "O", group: "Motion Path", what: "Make the picked spline node the origin (the ring starts there)", chord: plain("o") },
+  { id: "motionBake", keys: "B", group: "Motion Path", what: "Bake the path to the timeline", chord: plain("b") },
   { id: "shortcuts", keys: "?", group: "Help", what: "This list of shortcuts", chord: plain("?") },
 ] as const satisfies readonly Shortcut[];
 

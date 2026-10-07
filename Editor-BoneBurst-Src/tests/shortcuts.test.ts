@@ -43,7 +43,7 @@ describe("the shortcuts table", () => {
       [ev("k"), "key"], [ev("Delete"), "delete"], [ev("Backspace"), "delete"],
       [ev("t"), "toolMove"], [ev("T", { shift: true }), "toolMove"], [ev("r"), "toolRotate"], [ev("s"), "toolScale"], [ev("h"), "toolShear"],
       [ev("z"), "cycleSpace"],
-      [ev("t", { cmd: true }), undefined], [ev("t", { alt: true }), undefined], [ev("x"), undefined],
+      [ev("t", { cmd: true }), undefined], [ev("t", { alt: true }), undefined], [ev("j"), undefined], [ev("x"), "motionRemove"], [ev("a"), "motionAdd"],
       [ev("?", { shift: true }, "Slash"), "shortcuts"],
     ];
     for (const [e, id] of table) expect(first(e), JSON.stringify(e)).toBe(id);

@@ -803,6 +803,14 @@ export function mountApp(root: HTMLElement): void {
     toolRotate: () => setTool("rotate"),
     toolScale: () => setTool("scale"),
     toolShear: () => setTool("shear"),
+    // Motion Path's own keys: only with the pointer over it; elsewhere the key goes on to whatever else has it.
+    motionAdd: () => (hovered === "motion" && motionPanel.hotkey("add") ? undefined : false),
+    motionRemove: () => (hovered === "motion" && motionPanel.hotkey("remove") ? undefined : false),
+    motionMode: () => (hovered === "motion" && motionPanel.hotkey("mode") ? undefined : false),
+    motionReverse: () => (hovered === "motion" && motionPanel.hotkey("reverse") ? undefined : false),
+    motionMerge: () => (hovered === "motion" && motionPanel.hotkey("merge") ? undefined : false),
+    motionOrigin: () => (hovered === "motion" && motionPanel.hotkey("origin") ? undefined : false),
+    motionBake: () => (hovered === "motion" && motionPanel.hotkey("bake") ? undefined : false),
     shortcuts: () => sheet.open(),
   };
 

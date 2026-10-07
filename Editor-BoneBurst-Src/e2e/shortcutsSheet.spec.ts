@@ -20,7 +20,7 @@ test("the shortcuts sheet lists and filters the table; Escape closes it; the key
   await page.keyboard.press("Shift+?");
   const sheet = page.getByRole("dialog", { name: "Keyboard Shortcuts" });
   await expect(sheet).toBeVisible();
-  await expect(sheet.locator("h3")).toHaveText(["File", "Edit", "View", "Tools", "Stage", "Timeline", "Playback", "Help"]);
+  await expect(sheet.locator("h3")).toHaveText(["File", "Edit", "View", "Tools", "Stage", "Timeline", "Playback", "Motion Path", "Help"]);
   await expect(sheet.locator("dt", { hasText: "⇧⌘Z" })).toBeVisible();
 
   // The filter: by what a key does.

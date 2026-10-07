@@ -15,7 +15,7 @@ import { deleteKeys, type KeyRef, onAnimation, withKeys } from "./keys";
 export interface Pt { readonly x: number; readonly y: number }
 
 /** A node of the path: its place, and the handle of the curve there when one was dragged (`tx`, `ty`: the way out, as an offset). */
-export interface PathNode extends Pt { readonly tx?: number; readonly ty?: number }
+export interface PathNode extends Pt { readonly tx?: number; readonly ty?: number; readonly bx?: number; readonly by?: number }
 
 /** Samples per span of the curve: a distance along the path maps to a point through this table. */
 const SAMPLES = 64;
@@ -36,7 +36,7 @@ export interface PathCurve {
 
 /**
  * The handles of every node, as offsets from it: `out` toward the next node and `in` back toward the
- * previous one. A node whose handle was dragged has it (`tx`, `ty`) and its mirror; any other has an
+ * previous one. A node whose handle was dragged has it (`tx`, `ty`) and its mirror, unless its leg was broken (`bx`, `by`: the way in on its own); any other has an
  * automatic one: along the line between its neighbours, a third of the way to each. On a ring every node
  * has both sides (the last joins the first); on an open path the first has no way in, the last none out.
  * A ring through two nodes bows out sideways, so it is a loop and not a line there and back.
@@ -61,6 +61,8 @@ export function handleOffsets(nodes: readonly PathNode[], closed = false): { out
       if (next) out = { x: (dx / d) * lenOut, y: (dy / d) * lenOut };
       if (prev) back = { x: -(dx / d) * lenIn, y: -(dy / d) * lenIn };
     }
+    // A broken leg: the way in is its own, not the mirror of the way out.
+    if (prev && p.bx !== undefined && p.by !== undefined) back = { x: p.bx, y: p.by };
     return { out, in: back };
   });
 }
@@ -239,11 +241,34 @@ export function mergeNodes(m0: MotionPath, picked: readonly number[]): MotionPat
   return { ...m, nodes: m.nodes.flatMap((n, i) => (i === at[0] ? [merged] : at.includes(i) ? [] : [n])) };
 }
 
+/** The legs of the node at place `i` broken: each handle moves on its own from now on; the curve stays as it is. A node already broken is left. */
+export function breakLegs(m: MotionPath, i: number): MotionPath {
+  const n = m.nodes[i];
+  if (!n) throw new EditRefused("There is no such spline node.");
+  if (n.bx !== undefined) return m;
+  const h = handleOffsets(m.nodes, m.closed)[i]!, r = (v: number) => Math.round(v * 1e4) / 1e4;
+  return { ...m, nodes: m.nodes.map((q, k) => (k === i ? { ...q, tx: r(h.out.x), ty: r(h.out.y), bx: r(h.in.x), by: r(h.in.y) } : q)) };
+}
+
+/** The legs of the node at place `i` mirrored again: the way in follows the way out (which stays as it is). */
+export function mirrorLegs(m: MotionPath, i: number): MotionPath {
+  const n = m.nodes[i];
+  if (!n) throw new EditRefused("There is no such spline node.");
+  if (n.bx === undefined) return m;
+  const { bx: _a, by: _b, ...rest } = n;
+  return { ...m, nodes: m.nodes.map((q, k) => (k === i ? rest : q)) };
+}
+
 /** The path run the other way round: a ring keeps its first node first (1, 2, 3, 4 becomes 1, 4, 3, 2), an open path is turned end for end; each handle turns with it. */
 export function reversePath(m0: MotionPath): MotionPath {
-  const m = withIds(m0), flip = (n: MotionNode): MotionNode => (n.tx === undefined && n.ty === undefined ? n : { ...n, tx: -(n.tx ?? 0) || 0, ty: -(n.ty ?? 0) || 0 });
-  const nodes = m.closed ? [m.nodes[0]!, ...m.nodes.slice(1).reverse()] : m.nodes.slice().reverse();
-  return { ...m, nodes: nodes.map(flip) };
+  const m = withIds(m0), h = handleOffsets(m.nodes, m.closed), r = (v: number) => Math.round(v * 1e4) / 1e4;
+  // A node turned round: its way out is what its way in was (a broken leg swaps with it), a mirrored handle is negated.
+  const flip = (n: MotionNode, k: number): MotionNode => {
+    if (n.bx !== undefined && n.by !== undefined) return { ...n, tx: n.bx, ty: n.by, bx: r(h[k]!.out.x), by: r(h[k]!.out.y) };
+    return n.tx === undefined && n.ty === undefined ? n : { ...n, tx: -(n.tx ?? 0) || 0, ty: -(n.ty ?? 0) || 0 };
+  };
+  const order = m.nodes.map((_, k) => k), turned = m.closed ? [0, ...order.slice(1).reverse()] : order.slice().reverse();
+  return { ...m, nodes: turned.map((k) => flip(m.nodes[k]!, k)) };
 }
 
 /** Only the numbers on the buttons put back in order (1, 4, 3, 2 shown as 1, 2, 3, 4): every node keeps its place, its position and its handle. */
