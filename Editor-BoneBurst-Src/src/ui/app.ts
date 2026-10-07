@@ -170,6 +170,16 @@ export function mountApp(root: HTMLElement): void {
   };
   const createGroup = el("div", "group create");
   createGroup.append(...createBtns);
+  // Bone options (step 3), Pose mode only: Compensate, and Pin for the selected bone.
+  const compensateBtn = iconButton(button("Compensate", "Compensate: when a bone is moved, rotated, scaled or sheared, its children keep their place", () => prefs.set({ compensate: !prefs.values.compensate })), "linkedmesh", false);
+  const pinBtn = iconButton(button("Pin", "Pin the selected bone: it keeps its place when a bone above it is moved. Press again to let it go", () => {
+    const name = session.selectedBone;
+    if (name === null) { say("Select a bone to pin."); return; }
+    if (session.pinned.has(name)) session.pinned.delete(name); else session.pinned.add(name);
+    session.changed();
+  }), "pin", false);
+  const optionsGroup = el("div", "group options");
+  optionsGroup.append(compensateBtn, pinBtn);
   // Bones, Images and Others: what a press picks, what is drawn, and which names show (docs/STAGE-POSE-PLAN.md step 1).
   const matrix = viewMatrix(prefs);
   const stageTools = el("div", "stage-tools");
@@ -238,9 +248,9 @@ export function mountApp(root: HTMLElement): void {
   lockBtn.classList.add("stage-lock");
   session.onSelectionLocked = () => say(`The selection is locked: press ${keysOf("lockSelection")} or click Locked (bottom right of the stage) to pick another.`);
   const spaceGroup = group(...spaceBtns), showGroup = group(matrix.element, ...showBtns.filter((b) => b !== rulersBtn && b.dataset.show !== "onion"));
-  stageTools.append(crumb, createGroup, transform.element, spaceGroup, showGroup);
+  stageTools.append(crumb, createGroup, optionsGroup, transform.element, spaceGroup, showGroup);
   // Each panel can be dragged by its grip and folded; the corner button shows or hides all of them.
-  const resetPanels = floatGroups(stagePanel, { create: createGroup, transform: transform.element, space: spaceGroup, show: showGroup });
+  const resetPanels = floatGroups(stagePanel, { create: createGroup, options: optionsGroup, transform: transform.element, space: spaceGroup, show: showGroup });
   // Fit stays in the panel's top right corner, whatever its size.
   const fitCorner = el("div", "stage-fit");
   const panelsBtn = iconButton(button("Panels", "Show or hide the tool panels over the stage (View ▸ Stage Panels); double-click to put them back where they started", () => prefs.set({ stagePanels: !prefs.values.stagePanels })), "panels", false);
@@ -409,6 +419,8 @@ export function mountApp(root: HTMLElement): void {
     stage.select = { bones: p.boneSelect, images: p.imageSelect, others: p.otherSelect };
     stage.names = { bones: p.boneNames };
     matrix.update(p);
+    session.compensate = p.compensate;
+    compensateBtn.setAttribute("aria-pressed", String(p.compensate));
     stage.hideIkBones = p.hideIkBones;
     motionPanel.onion = () => ({ before: prefs.values.onionBefore, after: prefs.values.onionAfter, keyedOnly: prefs.values.onionKeyedOnly, colour: prefs.values.onionColour });
     stage.onion = p.onion ? { before: p.onionBefore, after: p.onionAfter, keyedOnly: p.onionKeyedOnly, colour: p.onionColour } : null;
@@ -688,6 +700,9 @@ export function mountApp(root: HTMLElement): void {
     modeBtn.textContent = animating ? "Animate" : "Pose";
     // The Create group is for the setup pose.
     createGroup.hidden = animating;
+    optionsGroup.hidden = animating;
+    const pinned = session.selectedBone !== null && session.pinned.has(session.selectedBone);
+    pinBtn.setAttribute("aria-pressed", String(pinned));
     if (animating && stage.createKind) setCreate(null);
     modeBtn.title = animating ? `Animate: editing ${session.animation!.name}. Click for the setup pose (Pose)` : "Pose: editing the setup pose. Click to animate";
     modeBtn.disabled = !doc;

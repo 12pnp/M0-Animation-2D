@@ -1,5 +1,6 @@
 import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { updateBone } from "@/edit/bones";
+import { compensated } from "../compensate";
 import { EditRefused } from "@/edit/history";
 import { BONE_DEFAULTS, boneNumber, type BoneNumber } from "@/model/defaults";
 import { keysAt } from "@/model/timelines";
@@ -134,7 +135,7 @@ export class TransformStrip {
         h.apply(`Key ${row.property} of ${at.name} at frame ${s.frame}`, keyBone(anim.name, at.name, [row.property], { ...at.pose, [key]: n }, s.keyTime));
       } else {
         // Back at its default: leave the key out, as Spine writes it.
-        h.apply(`Set ${key} of bone ${at.name}`, updateBone(at.name, { [key]: n === BONE_DEFAULTS[key] ? undefined : n }));
+        h.apply(`Set ${key} of bone ${at.name}`, compensated(s, at.name, updateBone(at.name, { [key]: n === BONE_DEFAULTS[key] ? undefined : n })));
       }
     } catch (err) {
       if (!(err instanceof EditRefused)) throw err;

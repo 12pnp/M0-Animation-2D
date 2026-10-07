@@ -1,6 +1,6 @@
 # Stage and Pose mode — what Spine's Stage tools have that v2 does not — plan
 
-**Status:** steps 1 and 2 done (the matrix, 2026-10-07; the Create tools, 2026-10-08, without Region); steps 3–5 not started, and step 3 waits for the owner's answers below. Written from the owner's picture of Spine's Stage tool panels
+**Status:** steps 1 and 2 done (the matrix, 2026-10-07; the Create tools, 2026-10-08, without Region); step 3 done 2026-10-08 on the plan's own defaults (Compensate and Pin; Lock length left out); steps 4–5 not started; the questions below are still open. Written from the owner's picture of Spine's Stage tool panels
 (Pose mode) and from what v2 has today, read on disk. Spine's editor is not open here, so what each icon does
 is read from the picture and marked **confirm** where it is a guess; the owner confirms the list in
 "Questions" before step 1. Clean-room: no code from the old editor or the fork is read; the behaviour is
@@ -100,7 +100,7 @@ no step changes the Spine file format, so every export stays what BoneBurst's re
    tool state in `Stage`; click makes, click-drag on a bone tool sizes it (the tip follows the pointer),
    the next press continues the chain under it. Right-click ▸ Add … stays. Tests: a chain of three bones is
    one run of presses and three undo steps; each kind appears in the rig.
-3. **Bone options: Compensate, Lock length, Pin.** Compensate as decided above; Lock length keeps a bone's
+3. **Bone options: Compensate, Pin — done 2026-10-08 (Lock length left out).** Result: `ui/compensate.ts` wraps a bone's value edit (the Stage drag, the transform panel's cells and the arrow keys, the Properties fields) so that, in Pose mode only, every child stays put with Compensate on, and every pinned bone under it stays put at any depth: each gets the local values that keep its world place under the moved bone, measured from the setup pose before and after (bones that do not inherit normally are left alone). Compensate is a preference (`compensate`, Preferences ▸ Viewport ▸ Display); Pin is a set of bone names kept in the session, drawn as an orange ring and stalk, and is not written to the file. Both sit in a Bone options group beside Create, Pose mode only. Pin was built on the plan's own reading (one bone's world place held while a bone above moves), since question 2 is unanswered. Lock length is not built: v2's Stage has no bone-tip drag for it to act on. Tests: `e2e/boneOptions.spec.ts`. Original text: Compensate as decided above; Lock length keeps a bone's
    length while its tip is dragged (a drag turns it instead of stretching it); Pin is the open question below.
    Tests: with Compensate on, a child's world matrix is the same before and after a parent's Move, Rotate,
    Scale and Shear (compared by `boneMatrix`), with it off, it moves.

@@ -1,3 +1,4 @@
+import { compensated } from "../compensate";
 import { mergePairs } from "../pairs";
 import { type AttachmentPatch, type AttachmentRef, findAttachment, renameAttachment, updateAttachment } from "@/edit/attachments";
 import { type BoneProperty, keyBone } from "@/edit/boneKeys";
@@ -127,7 +128,7 @@ export class Inspector {
         const patch: BonePatch = {};
         // Back to the default: drop the key, as Spine writes it.
         patch[f.key] = n === BONE_DEFAULTS[f.key] ? undefined : n;
-        return updateBone(name, patch);
+        return compensated(s, name, updateBone(name, patch));
       }, () => (keyed ? `Key ${f.label.toLowerCase()} of ${name} at frame ${s.frame}` : `Set ${f.label.toLowerCase()} of bone ${name}`), undefined, "decimal"));
     }
     if (bone.parent === undefined) form.append(readOnly("Parent", "— (root)"));

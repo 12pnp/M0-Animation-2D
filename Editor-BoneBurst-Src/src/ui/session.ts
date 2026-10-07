@@ -78,6 +78,9 @@ export class Session {
   boneSize = 1;
   /** The frame rate a new project starts with (Preferences ▸ Timeline). */
   defaultFps = 30;
+  /** Bone options (Pose mode): a moved bone's children keep their place, and the bones named here keep theirs whatever is moved above them (`ui/compensate.ts`). */
+  compensate = false;
+  readonly pinned = new Set<string>();
   private unit: { history: History<Skeleton>; skin: string | null; value: number } | null = null;
   /** Reference pictures by reference path; a reference without one is missing (its file not given). */
   referenceImages = new Map<string, ImageBitmap>();
@@ -729,7 +732,7 @@ function sourceOf(f: { name: string; data: Uint8Array }): Source {
 export interface DocumentState { readonly __documentState: never }
 
 /** The session's fields that belong to the person or the page, not to a document. */
-const SHARED_FIELDS: ReadonlySet<string> = new Set(["listeners", "undoSteps", "referenceOpacity", "boneSize", "defaultFps", "unkeyed", "unkeyedRev"]);
+const SHARED_FIELDS: ReadonlySet<string> = new Set(["listeners", "undoSteps", "referenceOpacity", "boneSize", "defaultFps", "compensate", "unkeyed", "unkeyedRev"]);
 
 /** An atlas with what goes with it: its regions in numbers, page images, exact pixels, the files Save writes. */
 interface AtlasState {

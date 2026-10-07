@@ -13,6 +13,7 @@ import type { Session } from "../session";
 import { type Camera, fit, pan, toScreen, toWorld, zoomAt } from "./camera";
 import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, lockToAxis, scaleAlong, scaleFactors, type ScreenBone, shearAlong, shearDelta, type Space, spaceAxes, tidy, type Tool, turn, turnSign } from "./gizmo";
 import { drawnVertices } from "@/engine/draw";
+import { compensated } from "../compensate";
 import { CLICK_PX, createBone, type CreateKind, createShape } from "./create";
 import { createPath } from "./pathCreate";
 import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix, type Posed } from "./posed";
@@ -292,6 +293,7 @@ export class Stage {
         drawBone(g, b, on ? this.selectedBoneColour ?? selected : own.get(b.name) ?? this.boneColour ?? bone, on, boneHalfWidth(unit, size, this.camera.zoom), jointRadius(unit, size, this.camera.zoom));
       }
     }
+    if (this.session.pinned.size && !this.session.animation) this.drawPins(g);
     if (this.names.bones) this.drawBoneNames(g, css.getPropertyValue("--text").trim() || "#ffffff");
     if (this.show.constraints) { this.drawShapes(g, p, selected); this.drawConstraints(g, p, css, selected); }
     this.drawMotionLine(g);
@@ -888,6 +890,19 @@ export class Stage {
     return out;
   }
 
+  /** A ring on the origin of each pinned bone. */
+  private drawPins(g: CanvasRenderingContext2D): void {
+    g.save();
+    g.strokeStyle = "#f5a623";
+    g.lineWidth = 2;
+    for (const b of this.screenBones()) {
+      if (!this.session.pinned.has(b.name)) continue;
+      g.beginPath(); g.arc(b.x0, b.y0, 9, 0, Math.PI * 2); g.stroke();
+      g.beginPath(); g.moveTo(b.x0, b.y0 - 9); g.lineTo(b.x0, b.y0 - 16); g.stroke();
+    }
+    g.restore();
+  }
+
   /** Each bone's name at its middle, above the bone (Names ▸ Bones). */
   private drawBoneNames(g: CanvasRenderingContext2D, colour: string): void {
     g.save();
@@ -1185,7 +1200,7 @@ export class Stage {
         h.apply("step", keyBone(d.key.animation, d.bone, [KEYED[d.tool]], local as LocalPose, d.key.time));
       } else {
         patch = asWritten(patch, { x: d.x, y: d.y, rotation: d.rotation, scaleX: d.scaleX, scaleY: d.scaleY, shearX: d.shearX, shearY: d.shearY }, d.written);
-        h.apply("step", updateBone(d.bone, patch));
+        h.apply("step", compensated(this.session, d.bone, updateBone(d.bone, patch)));
       }
     } catch (err) {
       if (!(err instanceof EditRefused)) throw err;
