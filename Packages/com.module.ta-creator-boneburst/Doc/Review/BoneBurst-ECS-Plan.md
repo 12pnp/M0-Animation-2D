@@ -1,6 +1,6 @@
 # BoneBurst ECS port: Plan
 
-**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 (CPU route, skins, tint black, Lit2D) done 2026-10-07 except the vertex-fetch route, rim light and a player build (§15); P7 (physics input, followers, idle skipping, benchmark) done 2026-10-07 except the visibility mode, the steady shortcut and the sorting question (§16). P8 (shell overhead at small counts) done 2026-10-07: 7–16% less at 100–2000 skeletons, the rest is a fixed floor outside BoneBurst (§17).**
+**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 (CPU route, skins, tint black, Lit2D) done 2026-10-07 except the vertex-fetch route, rim light and a player build (§15); P7 (physics input, followers, idle skipping, benchmark) done 2026-10-07 except the visibility mode, the steady shortcut and the sorting question (§16). P8 (shell overhead at small counts) done 2026-10-07: 7–16% less at 100–2000 skeletons, the rest is a fixed floor outside BoneBurst (§17). P9 (sorting) done 2026-10-07: a per-skeleton render queue orders a skeleton against sprites of one sorting layer and order; the sorting layer and order themselves stay unreachable (§18).**
 
 BoneBurst's pose, constraint, timeline and mesh code (`Module.PA.BoneBurst.Core`) is already Burst-friendly pointer code with no `UnityEngine`. The port keeps that code unchanged and replaces only the managed shell around it (`BoneBurstSystem`, `BoneBurstSkeleton`, `BoneBurstAsset`, `BoneAnimationState`, the GPU and fetch buffers) with Entities 6.7 systems, bakers and Entities Graphics. The result is a new package in `M0-25DPlatformer-ECS/Packages`.
 
@@ -454,3 +454,23 @@ Inside them (500 idle): animation 0.02 requests, 0.03 update, 0.03 apply, 0.06 s
 *   **What is left is mostly not the shell.** At 100 skeletons the frame is 0.50 ms of which about 0.30 is the floor measured with one skeleton (Entities Graphics, the transform system, Netcode's local world, the demo's idle systems, the player loop), against 0.19 for the MonoBehaviour runtime; the pose job's latency at 100 instances is 0.11 ms. Our systems at 100 are 0.2 ms. Going further would mean a chunk-level rewrite of the loops (a change-filtered request query, no per-entity buffer access) worth about 0.1 ms at 500, not done: below what this measurement can resolve on this machine.
 
 **Process notes.** My "wait for the compile" loop twice returned a stale "completed" and the runs that followed used old binaries, which made two deliberate bugs look uncaught; `Tests/Tools~` was not changed, but the A/B and test helpers now wait on `isCompiling` and require the full test count. A deliberate bug that left the rotation pointer null corrupted the Editor's heap and crashed it (two Editor crashes in the session; the other was a hung pipeline). Both are why §17 states which results were rerun.
+
+
+## 18. P9 result (2026-10-07): sorting skeletons among sprites
+
+Entities Graphics draws carry no sorting layer or order, so every skeleton sorts as the Default layer, order 0 on the URP 2D Renderer. The experiment: three idle skeletons at the same position as a red sprite (order 0), each with a different material render queue; z offsets were tried first and do not break a same-order tie.
+
+```mermaid
+flowchart LR
+    AUTH["BoneBurstAuthoring.RenderQueue"] --> BAKE["BoneBurstBaker<br/>BoneBurstRenderSettings.RenderQueue"]
+    BAKE --> RS["BoneBurstRenderSystem.MaterialFor<br/>key (shader, queue, variant)"]
+    RS --> MAT["Material.renderQueue"]
+    MAT --> R2D["URP 2D Renderer<br/>sorting layer, order, then queue"]
+    SPR["Sprite, order 0, queue 3000"] --> R2D
+```
+
+**Result (on-screen, captured through Unity):** queue 2900 draws behind the sprite; the shader's own queue (3000) and 3100 draw in front. So within one sorting layer and order, the queue is a working lever: below 3000 behind sprites, at or above 3000 in front.
+
+**Built:** `BoneBurstAuthoring.RenderQueue` (-1 keeps the shader's queue), baked into `BoneBurstRenderSettings`, applied to the material; materials are cached per `(shader, queue, variant)`.
+
+**Not reached:** a real sorting layer or order (needs a custom pass or forking Entities Graphics' filter settings), and a skeleton cannot sit between two sprites of different orders. Guard: the on-screen check above plus the full EditMode suite (the render system has no EditMode test; it needs a graphics device). Status: done for the queue; layer and order not built.

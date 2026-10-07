@@ -11,6 +11,10 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-07 — **ECS port P9 recorded: skeleton render queue orders it against sprites** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
+
+Plan [BoneBurst-ECS-Plan.md](Review/BoneBurst-ECS-Plan.md) §18. A per-skeleton material render queue decides the draw order against sprites of the same sorting layer and order (checked on screen); a real sorting layer or order is not reachable through Entities Graphics and was not built. Not verified by a unit test: the render system needs a graphics device.
+
 ### 2026-10-07 — **ECS port P8 recorded: less shell overhead at small counts** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
 - [BoneBurst-ECS-Plan](Review/BoneBurst-ECS-Plan.md) §17: a per-system timer showed the managed shell at 1.1 of 1.7 ms at 500 idle skeletons; the steady animation shortcut, one frame job (pose, GPU record, CPU mesh) and staging without copies cut the frame time 7–12% at idle (100–2000) in alternating release-player A/Bs, with a better tail while switching; the rest is a fixed floor outside BoneBurst (0.30 ms for one skeleton against 0.19 for the MonoBehaviour runtime). 382 tests; deliberate bugs failed 29, 8 and 208. Core is unchanged by this step.
 
