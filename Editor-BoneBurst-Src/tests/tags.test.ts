@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cleanTag, parseTags, renameTagged, tagCounts, tagKeyOf, tagMatches, tagsFor, withoutTag, withTags } from "@/edit/tags";
+import { cleanTag, deleteTag, parseTags, renameTag, renameTagged, taggedOfKey, tagCounts, tagKeyOf, tagMatches, tagsFor, withoutTag, withTags } from "@/edit/tags";
 import { EMPTY_SIDECAR, type Sidecar } from "@/model/sidecar";
 
 const S = (tags: Sidecar["tags"]): Sidecar => ({ ...EMPTY_SIDECAR, tags });
@@ -42,5 +42,27 @@ describe("tags", () => {
     expect(renameTagged(s, { kind: "skin", name: "red" }, "blue").tags.map((e) => e.key)).toContain("attachment:blue/eye/open");
     expect(renameTagged(s, { kind: "attachment", skin: "default", slot: "eye", key: "open" }, "shut").tags.map((e) => e.key)).toContain("attachment:default/eye/shut");
     expect(renameTagged(s, { kind: "bone", name: "nobody" }, "x")).toBe(s);
+  });
+});
+
+describe("tags everywhere", () => {
+  const s: Sidecar = { ...EMPTY_SIDECAR, tags: [{ key: "bone:a", tags: ["IK", "arm"] }, { key: "bone:b", tags: ["ik"] }, { key: "slot:c", tags: ["arm", "Arm2"] }] };
+  it("read an element back from its key", () => {
+    expect(taggedOfKey("bone:a")).toEqual({ kind: "bone", name: "a" });
+    expect(taggedOfKey("attachment:default/eye/open")).toEqual({ kind: "attachment", skin: "default", slot: "eye", key: "open" });
+    expect(taggedOfKey("constraint:ik/reach")).toEqual({ kind: "constraint", type: "ik", name: "reach" });
+    expect(taggedOfKey("nonsense")).toBeNull();
+    expect(taggedOfKey("bone:")).toBeNull();
+  });
+  it("rename a tag on every element; a name in use merges, keeping one copy", () => {
+    expect(renameTag(s, "arm", "limb").tags).toEqual([{ key: "bone:a", tags: ["IK", "limb"] }, { key: "bone:b", tags: ["ik"] }, { key: "slot:c", tags: ["limb", "Arm2"] }]);
+    expect(renameTag(s, "ik", "arm").tags.find((e) => e.key === "bone:a")!.tags).toEqual(["arm"]);
+    expect(renameTag(s, "ik", "ik")).toBe(s);
+    expect(renameTag(s, "ik", "  ")).toBe(s);
+    expect(renameTag(s, "nope", "x")).toBe(s);
+  });
+  it("take a tag off every element; an element left with none has no entry", () => {
+    expect(deleteTag(s, "IK").tags).toEqual([{ key: "bone:a", tags: ["arm"] }, { key: "slot:c", tags: ["arm", "Arm2"] }]);
+    expect(deleteTag(s, "nope")).toBe(s);
   });
 });

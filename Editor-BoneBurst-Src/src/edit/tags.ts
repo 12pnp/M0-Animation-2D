@@ -87,3 +87,36 @@ export function renameTagged(s: Sidecar, from: Tagged, to: string): Sidecar {
   const next = s.tags.map((e) => ({ ...e, key: map(e.key) }));
   return next.some((e, i) => e.key !== s.tags[i]!.key) ? { ...s, tags: next } : s;
 }
+
+/** The element a key names (the other way round from `tagKeyOf`); null for a key that is not one of ours. */
+export function taggedOfKey(key: string): Tagged | null {
+  const i = key.indexOf(":"), kind = key.slice(0, i), rest = key.slice(i + 1);
+  if (i < 0) return null;
+  if (kind === "bone" || kind === "slot" || kind === "skin" || kind === "event") return rest ? { kind, name: rest } : null;
+  if (kind === "attachment") { const m = /^([^/]*)\/([^/]*)\/(.+)$/.exec(rest); return m ? { kind, skin: m[1]!, slot: m[2]!, key: m[3]! } : null; }
+  if (kind === "constraint") { const m = /^([^/]*)\/(.+)$/.exec(rest); return m ? { kind, type: m[1]!, name: m[2]! } : null; }
+  return null;
+}
+
+/** A tag renamed on every element that has it; one that already has the new name (any case) keeps one copy. Refused (the same sidecar) when the new name is empty or the same. */
+export function renameTag(s: Sidecar, from: string, to: string): Sidecar {
+  const next = cleanTag(to), f = from.toLowerCase();
+  if (!next || next === from) return s;
+  const out = s.tags.map((e) => {
+    if (!e.tags.some((t) => t.toLowerCase() === f)) return e;
+    const tags: string[] = [];
+    for (const t of e.tags) {
+      const name = t.toLowerCase() === f ? next : t;
+      if (!tags.some((q) => q.toLowerCase() === name.toLowerCase())) tags.push(name);
+    }
+    return { ...e, tags };
+  });
+  return out.some((e, i) => e !== s.tags[i]) ? { ...s, tags: out } : s;
+}
+
+/** A tag taken off every element that has it. */
+export function deleteTag(s: Sidecar, tag: string): Sidecar {
+  const t = tag.toLowerCase();
+  const out = s.tags.map((e) => ({ ...e, tags: e.tags.filter((q) => q.toLowerCase() !== t) })).filter((e) => e.tags.length);
+  return out.length === s.tags.length && out.every((e, i) => e.tags.length === s.tags[i]!.tags.length) ? s : { ...s, tags: out };
+}

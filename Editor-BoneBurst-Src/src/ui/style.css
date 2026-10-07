@@ -830,3 +830,9 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 .tags-popup .title { font-weight: 600; }
 .tags-popup .none { color: var(--muted, var(--text)); font-size: 12px; }
 .tags-popup input { width: 100%; box-sizing: border-box; }
+
+/* The Tags panel (panels/tagsPanel.ts): a row per tag with its count and tools, the elements under it when opened. */
+.tags-panel .tag-row { cursor: pointer; }
+.tags-panel .tag-row input { flex: 1; min-width: 0; }
+.tags-panel .tag-tool { margin-left: 2px; padding: 0 4px; min-width: 20px; font-size: 12px; }
+.tags-panel .tag-element { cursor: pointer; }

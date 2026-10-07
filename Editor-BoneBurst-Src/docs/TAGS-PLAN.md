@@ -25,6 +25,10 @@ flowchart LR
 
 `src/edit/tags.ts` (pure, `tests/tags.test.ts`), `src/model/sidecar.ts` + `src/io/sidecar.ts` (the `tags` object), `src/ui/tagsPopup.ts`, `src/ui/panels/outline.ts`, `src/ui/panels/inspector.ts`, the shortcut `tags` in `src/ui/shortcuts.ts`; checked by `e2e/tags.spec.ts`.
 
+## The Tags panel (2026-10-08)
+
+`src/ui/panels/tagsPanel.ts`, behind the Rig panel by default: every tag in use with its count (elements that no longer exist are not counted). A click opens the tag's elements, a click on one selects it; ✎ renames the tag on every element (a name already in use merges the two, one copy kept), the bin takes it off every element: each is one undo step (`Session.renameTagEverywhere`, `deleteTagEverywhere`; pure in `edit/tags.ts`: `renameTag`, `deleteTag`, `taggedOfKey`).
+
 ## Not done
 
-Tag colours, a tag list panel with rename/delete of a tag everywhere, tags on animations, and tag-based selection of several elements at once (the selection is one element).
+Tag colours, tags on animations, and tag-based selection of several elements at once (the selection is one element).

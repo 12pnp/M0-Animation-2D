@@ -45,6 +45,7 @@ import { floatGroups } from "./stage/floatingGroups";
 import { clipboard, copyPose, pastePoseHere } from "./clipboard";
 import { brush, resizeBrush } from "./stage/weightBrush";
 import { isPanelId, PANEL_ICONS, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
+import { TagsPanel } from "./panels/tagsPanel";
 import { PanelInfo } from "./workspace/panelInfo";
 import { openTags } from "./tagsPopup";
 import { ViewMemory } from "./viewMemory";
@@ -359,6 +360,8 @@ export function mountApp(root: HTMLElement): void {
   timeline.addTools(autoKeyBtn, showBtns.find((b) => b.dataset.show === "onion")!);
   const references = new References(session);
   const history = new HistoryPanel(session);
+  const tagsPanel = new TagsPanel(session);
+  tagsPanel.onStatus = (m) => say(m);
   const motionPanel = new MotionPathPanel(session);
   motionPanel.autoKey = () => stage.autoKey;
   stage.motionLine = () => motionPanel.stageLine();
@@ -461,6 +464,7 @@ export function mountApp(root: HTMLElement): void {
     ["history", { element: history.element }],
     ["motionPath", { element: motionPanel.element, layout: (w, h) => motionPanel.layout(w, h), reset: () => motionPanel.fitView() }],
     ["skins", { element: skinsPanel.element }],
+    ["tags", { element: tagsPanel.element }],
     ["animations", { element: animationsPanel.element }],
   ]), (w) => w.addEventListener("keydown", onKey), (id) => panelInfo.open(id));
   const activityBtns = workspace.built.map((id) => {

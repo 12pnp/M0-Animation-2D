@@ -53,3 +53,45 @@ test("⌘L tags the selected element; the rig tree finds it by tag; tags show in
   await page.locator(".inspector .tags-row .tag-chip", { hasText: "IK" }).locator(".tag-x").click();
   expect(await tags()).toEqual([{ key: "bone:ribcage", tags: ["upper body"] }]);
 });
+
+test("the Tags panel lists every tag with its count; a click lists its elements and selects one; ✎ renames it everywhere and merges; the bin deletes it; undo brings it back", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  const add = async (bone: string, text: string) => {
+    await page.evaluate((b) => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: b }), bone);
+    await page.keyboard.press("Meta+l");
+    const field = page.getByRole("dialog", { name: "Tags" }).getByLabel("Add a tag");
+    await field.fill(text);
+    await field.press("Enter");
+    await page.keyboard.press("Escape");
+  };
+  await add("chest", "IK, arm");
+  await add("hips", "ik");
+  await page.locator(".dv-tab", { hasText: /^Tags$/ }).click();
+  const panel = page.locator(".tags-panel");
+  await expect(panel.locator(".tag-row .name")).toHaveText(["IK", "arm"]);
+  await expect(panel.locator(".tag-row .note")).toHaveText(["2", "1"]);
+  // Open a tag, select one of its elements.
+  await panel.locator(".tag-row", { hasText: "IK" }).click();
+  await expect(panel.locator(".tag-element .name")).toHaveText(["chest", "hips"]);
+  await panel.locator(".tag-element", { hasText: "hips" }).click();
+  expect(await page.evaluate(() => JSON.stringify((window as unknown as { boneburst: { session: { selected: unknown } } }).boneburst.session.selected))).toBe('{"kind":"bone","name":"hips"}');
+  // Rename everywhere; into a name already used it merges.
+  await panel.locator(".tag-row", { hasText: "arm" }).getByRole("button", { name: /^Rename the tag arm/ }).click();
+  await panel.getByLabel("New name for the tag arm").fill("limb");
+  await panel.getByLabel("New name for the tag arm").press("Enter");
+  await expect(panel.locator(".tag-row .name")).toHaveText(["IK", "limb"]);
+  await panel.locator(".tag-row", { hasText: "limb" }).getByRole("button", { name: /^Rename the tag limb/ }).click();
+  await panel.getByLabel("New name for the tag limb").fill("ik");
+  await panel.getByLabel("New name for the tag limb").press("Enter");
+  await expect(panel.locator(".tag-row .name")).toHaveText(["IK"]);
+  await expect(panel.locator(".tag-row .note")).toHaveText(["2"]);
+  // Delete, then undo.
+  await panel.getByRole("button", { name: /^Take the tag IK off/ }).click();
+  await expect(panel.locator(".tag-row")).toHaveCount(0);
+  await page.evaluate(() => { const s = (window as unknown as Live).boneburst.session; s.history.undo(); s.changed(); });
+  await expect(panel.locator(".tag-row .name")).toHaveText(["IK"]);
+});

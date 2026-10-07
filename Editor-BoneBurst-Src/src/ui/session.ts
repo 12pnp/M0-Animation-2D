@@ -2,7 +2,7 @@ import { readAtlas } from "@/io/atlas";
 import { unpackBbdata } from "@/io/bbdata";
 import { readSidecar, writeSidecar } from "@/io/sidecar";
 import { closeLoops } from "@/edit/loop";
-import { type Tagged, parseTags, renameTagged, tagKeyOf, tagsFor, withoutTag, withTags } from "@/edit/tags";
+import { deleteTag, renameTag, type Tagged, parseTags, renameTagged, tagKeyOf, tagsFor, withoutTag, withTags } from "@/edit/tags";
 import { addReference, type View, viewOf, withView } from "@/edit/sidecar";
 import { EMPTY_SIDECAR, type Sidecar } from "@/model/sidecar";
 import type { Page } from "@/io/pack";
@@ -197,6 +197,18 @@ export class Session {
   removeTag(t: Tagged, tag: string): void {
     const change = (): void => this.setSidecar(withoutTag(this.sidecar, tagKeyOf(t), tag));
     if (this.history) this.history.applyBeside(`Remove tag ${tag}`, change); else change();
+  }
+
+  /** A tag renamed on every element that has it (one undo step). */
+  renameTagEverywhere(from: string, to: string): void {
+    const change = (): void => this.setSidecar(renameTag(this.sidecar, from, to));
+    if (this.history) this.history.applyBeside(`Rename the tag ${from} to ${to}`, change); else change();
+  }
+
+  /** A tag taken off every element (one undo step). */
+  deleteTagEverywhere(tag: string): void {
+    const change = (): void => this.setSidecar(deleteTag(this.sidecar, tag));
+    if (this.history) this.history.applyBeside(`Delete the tag ${tag}`, change); else change();
   }
 
   /** An element was renamed: its tags go with it (one undo step of their own, after the rename's). */

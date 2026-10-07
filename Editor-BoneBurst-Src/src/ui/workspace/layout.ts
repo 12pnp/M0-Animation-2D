@@ -34,10 +34,12 @@ const DEFAULTS: Readonly<Record<PanelId, readonly Placement[]>> = {
   animations: [{ referencePanel: "rigTree", direction: "within" }, { direction: "left" }],
   // Behind the properties panel, with the reference and AI panels.
   motionPath: [{ referencePanel: "properties", direction: "within" }, { direction: "right" }],
+  // Behind the rig panel, with the skins and animations.
+  tags: [{ referencePanel: "rigTree", direction: "within" }, { direction: "left" }],
 };
 
 /** The order the default layout adds the panels in. */
-export const DEFAULT_ORDER: readonly PanelId[] = ["rigTree", "stage", "properties", "timeline", "preview", "reference", "ai", "history", "skins", "animations", "motionPath"];
+export const DEFAULT_ORDER: readonly PanelId[] = ["rigTree", "stage", "properties", "timeline", "preview", "reference", "ai", "history", "skins", "animations", "motionPath", "tags"];
 
 /** The default place for `id`, given the panels already in the dock. */
 export function defaultPlacement(id: PanelId, present: ReadonlySet<string>): Placement {

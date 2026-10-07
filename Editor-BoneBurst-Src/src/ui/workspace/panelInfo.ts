@@ -54,6 +54,11 @@ const INFO: Readonly<Record<PanelId, { readonly what: string; readonly use: read
     use: ["Pick one to edit it on the Timeline; add, rename, duplicate or delete here.", "Loop ticks say which animations loop."],
     keys: [],
   },
+  tags: {
+    what: "Every tag in use, and how many elements have it.",
+    use: ["Click a tag to list the elements that have it; click an element to select it.", "✎ renames the tag on every element (a name already in use merges the two); the bin takes it off every element.", "Add tags to the selected element with the tags key, or from Properties."],
+    keys: [],
+  },
   motionPath: {
     what: "A bone's motion drawn as a spline: nodes and legs in Edit Path, the timing in Adjust time, then Bake to the timeline.",
     use: ["Edit Path: + adds a node; drag a number to reorder; right-click a number to merge, reverse, sort, break the legs or set the origin.", "Adjust time: cut the ring into pieces, set each piece's multiplier and speed graph, then Bake.", "Path is where the bone goes over the animation, Spline is the curve you draw, Stage draws the spline on the Stage."],
