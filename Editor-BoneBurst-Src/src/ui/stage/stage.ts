@@ -13,6 +13,8 @@ import type { Session } from "../session";
 import { type Camera, fit, pan, toScreen, toWorld, zoomAt } from "./camera";
 import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, lockToAxis, scaleAlong, scaleFactors, type ScreenBone, shearAlong, shearDelta, type Space, spaceAxes, tidy, type Tool, turn, turnSign } from "./gizmo";
 import { drawnVertices } from "@/engine/draw";
+import { CLICK_PX, createBone, type CreateKind, createShape } from "./create";
+import { createPath } from "./pathCreate";
 import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix, type Posed } from "./posed";
 import { type ConstraintShape, constraintShapes, hitConstraint } from "./constraintShapes";
 import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
@@ -97,6 +99,17 @@ export class Stage {
   select = { bones: true, images: true, others: true };
   /** The Names column: bones draw their names. */
   names = { bones: false };
+  /** The Create group's tool: what a press on the stage makes (null: none, the transform tools work). */
+  createKind: CreateKind | null = null;
+  private createDrag: { from: Point; to: Point | null; target: string | null; screen: [number, number] } | null = null;
+
+  /** Choose what a press makes, or (null) go back to the transform tools. */
+  setCreate(kind: CreateKind | null): void {
+    this.createKind = kind;
+    this.createDrag = null;
+    this.overlay.style.cursor = kind ? "crosshair" : "";
+    this.redraw();
+  }
   /** With an animation shown, the bones IK constraints drive are neither drawn nor picked (they are not animated). */
   hideIkBones = false;
   /** The motion path's line to draw over the skeleton (world points, x then y), or null. */
@@ -213,6 +226,7 @@ export class Stage {
 
   /** Abandon a drag in progress (Escape): the bone goes back, nothing recorded. */
   cancel(): boolean {
+    if (this.createDrag) { this.createDrag = null; this.redraw(); return true; }
     const rd = this.refDrag;
     if (rd) {
       this.refDrag = null;
@@ -279,7 +293,7 @@ export class Stage {
       }
     }
     if (this.names.bones) this.drawBoneNames(g, css.getPropertyValue("--text").trim() || "#ffffff");
-    if (this.show.constraints) this.drawConstraints(g, p, css, selected);
+    if (this.show.constraints) { this.drawShapes(g, p, selected); this.drawConstraints(g, p, css, selected); }
     this.drawMotionLine(g);
     const sel = this.selectedIndex();
     // No gizmo on a bone without a pose: nothing to grab it by (E8-PLAN step 2).
@@ -288,6 +302,7 @@ export class Stage {
     if (mesh) this.drawMesh(g, mesh, selected, bone);
     const path = this.pathMode();
     if (path) this.drawPath(g, path, this.selectedBoneColour ?? selected);
+    this.drawCreatePreview(g, selected);
     this.drawGuides(g, css.getPropertyValue("--guide").trim() || "#36c2d9");
     if (this.snapped && (this.drag || this.vertexDrag)) this.drawSnapped(g, this.snapped, selected);
     this.drawChosenReference(g, selected);
@@ -499,6 +514,40 @@ export class Stage {
   }
 
   /** Each active constraint's shape (E4 step 12), coloured by kind; the selected one in the accent colour. */
+  /** Bounding boxes, clipping polygons and points of the shown slots, as outlines (the Others row of the matrix). */
+  private drawShapes(g: CanvasRenderingContext2D, p: Posed, accent: string): void {
+    const sel = this.session.selected, rig = p.rig;
+    const at = (x: number, y: number) => toScreen(this.camera, this.size, x, y);
+    for (const slot of rig.drawOrder) {
+      const att = rig.attachmentOf(slot);
+      if (!att || (att.kind !== "box" && att.kind !== "clipping" && att.kind !== "point")) continue;
+      const on = sel?.kind === "attachment" && sel.slot === rig.data.slots[slot]!.name && sel.key === this.keyOf(slot);
+      g.save();
+      g.lineWidth = on ? 2 : 1.5;
+      if (att.kind === "point") {
+        const w = rig.pointWorld(slot, att), [x, y] = at(w.x, w.y), a = (-w.rotation * Math.PI) / 180;
+        g.strokeStyle = g.fillStyle = on ? accent : "#36c2d9";
+        g.beginPath(); g.moveTo(x - 6, y); g.lineTo(x + 6, y); g.moveTo(x, y - 6); g.lineTo(x, y + 6); g.stroke();
+        g.beginPath(); g.moveTo(x, y); g.lineTo(x + Math.cos(a) * 16, y + Math.sin(a) * 16); g.stroke();
+      } else {
+        const n = att.vertexCount, out = new Float32Array(n * 2);
+        rig.vertexWorld(slot, att, 0, n * 2, out, 0);
+        g.strokeStyle = on ? accent : att.kind === "box" ? "#3ddc84" : "#e5484d";
+        g.setLineDash(att.kind === "clipping" ? [6, 4] : []);
+        g.beginPath();
+        for (let i = 0; i < n; i++) { const [x, y] = at(out[i * 2]!, out[i * 2 + 1]!); if (i) g.lineTo(x, y); else g.moveTo(x, y); }
+        g.closePath();
+        g.stroke();
+      }
+      g.restore();
+    }
+  }
+
+  /** The key of the attachment a slot shows now (what the skeleton file calls it). */
+  private keyOf(slot: number): string | null {
+    return this.session.pose()?.rig.attachment[slot] ?? null;
+  }
+
   private drawConstraints(g: CanvasRenderingContext2D, p: Posed, css: CSSStyleDeclaration, accent: string): void {
     const sel = this.session.selected;
     const at = (x: number, y: number) => toScreen(this.camera, this.size, x, y);
@@ -915,6 +964,48 @@ export class Stage {
     return localPoint(this.overlay, e);
   }
 
+  /** A press with a Create tool: the bone under it (else the selected one, else the root) is what the new thing hangs on. */
+  private createDown(sx: number, sy: number): void {
+    const doc = this.session.doc;
+    if (!doc) return;
+    const picked = pickBone(this.screenBones(), sx, sy, 8, this.session.selectedBone);
+    const target = picked ?? this.session.selectedBone ?? doc.bones?.[0]?.name ?? null;
+    this.createDrag = { from: toWorld(this.camera, this.size, sx, sy), to: null, target, screen: [sx, sy] };
+  }
+
+  /** Let go with a Create tool: a click makes the default of its kind, a drag sizes it. */
+  private createUp(): void {
+    const d = this.createDrag, kind = this.createKind;
+    this.createDrag = null;
+    if (!d || !kind) return;
+    let message: string;
+    if (kind === "bone") message = createBone(this.session, d.target, d.from, d.to);
+    else if (d.target === null) message = "Add a bone first: shapes hang on one.";
+    else if (kind === "path") message = createPath(this.session, { bone: d.target }, d.from);
+    else message = createShape(this.session, kind, d.target, d.from, d.to);
+    this.onStatus(message);
+    this.redraw();
+  }
+
+  /** The rubber band while a Create press is held: a bone's line, a box's rectangle. */
+  private drawCreatePreview(g: CanvasRenderingContext2D, colour: string): void {
+    const d = this.createDrag;
+    if (!d?.to || !this.createKind) return;
+    const [x0, y0] = toScreen(this.camera, this.size, d.from[0], d.from[1]), [x1, y1] = toScreen(this.camera, this.size, d.to[0], d.to[1]);
+    g.save();
+    g.strokeStyle = colour;
+    g.fillStyle = colour;
+    g.lineWidth = 1.5;
+    if (this.createKind === "boundingbox" || this.createKind === "clipping") {
+      g.setLineDash([5, 4]);
+      g.strokeRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+    } else {
+      g.beginPath(); g.moveTo(x0, y0); g.lineTo(x1, y1); g.stroke();
+      g.beginPath(); g.arc(x0, y0, 4, 0, Math.PI * 2); g.fill();
+    }
+    g.restore();
+  }
+
   private down(e: PointerEvent): void {
     this.overlay.focus();
     const [sx, sy] = this.local(e);
@@ -926,6 +1017,7 @@ export class Stage {
       return;
     }
     if (this.show.rulers && rulerAt(sx, sy) && this.guideDown(sx, sy)) return;
+    if (this.createKind) { this.createDown(sx, sy); return; }
     const path = this.pathMode();
     if (path && this.pathDown(path, sx, sy)) return;
     const mesh = this.meshMode();
@@ -1016,6 +1108,12 @@ export class Stage {
     const [sx, sy] = this.local(e);
     this.pointer = toWorld(this.camera, this.size, sx, sy);
     if (brush.on) { this.brushAt = [sx, sy]; if (!this.stroke) this.redraw(); }
+    if (this.createDrag) {
+      const d = this.createDrag;
+      if (d.to || Math.hypot(sx - d.screen[0], sy - d.screen[1]) >= CLICK_PX) d.to = this.pointer;
+      this.redraw();
+      return;
+    }
     if (this.stroke) { this.brushStep([sx, sy]); this.onPointer(`${this.pointer[0].toFixed(1)}, ${this.pointer[1].toFixed(1)}`); return; }
     if (this.panning) {
       this.camera = pan(this.camera, sx - this.panning.x, sy - this.panning.y);
@@ -1098,6 +1196,7 @@ export class Stage {
 
   private up(e: PointerEvent): void {
     if (this.overlay.hasPointerCapture(e.pointerId)) this.overlay.releasePointerCapture(e.pointerId);
+    if (this.createDrag) { this.createUp(); return; }
     const right = this.rightDown;
     this.rightDown = null;
     if (e.button === 2 && right && Math.hypot(e.clientX - right.x, e.clientY - right.y) < 4) {

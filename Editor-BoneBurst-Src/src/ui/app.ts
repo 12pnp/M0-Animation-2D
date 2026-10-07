@@ -29,13 +29,14 @@ import { stageMenu } from "./stageMenu";
 import { TransformStrip } from "./stage/transformStrip";
 import { lookOf } from "./stage/look";
 import { DIVIDER, MenuBar, type MenuItem } from "./menubar";
-import { icon, iconButton } from "./icons";
+import { icon, type IconName, iconButton } from "./icons";
 import type { View } from "@/edit/sidecar";
 import { download, saveProject } from "./project";
 import { OpenDialog } from "./openDialog";
 import { folders, type Recent, recent, type RecentHandle, readRecent } from "./recent";
 import { ExportRefused, exportFiles, exportToUnity } from "./unityExport";
 import { snapFields } from "./snapFields";
+import type { CreateKind } from "./stage/create";
 import { viewMatrix } from "./stage/viewMatrix";
 import { Autosaver, clearRecovery, readRecoveries, type RecoveryRecord, sourcesOf } from "./recovery";
 import { floatGroups } from "./stage/floatingGroups";
@@ -150,6 +151,25 @@ export function mountApp(root: HTMLElement): void {
   ];
   iconButton(showBtns.find((b) => b.dataset.show === "onion")!, "onion", false);
   const rulersBtn = iconButton(showBtns.find((b) => b.dataset.show === "rulers")!, "ruler", false);
+  // The Create group (docs/STAGE-POSE-PLAN.md step 2), Pose mode only: what a press on the stage makes.
+  const CREATES: ReadonlyArray<{ kind: CreateKind; label: string; tip: string; icon: IconName }> = [
+    { kind: "bone", label: "Bone", tip: "Create bones: press where it starts and drag to where it points; the next one carries on from it", icon: "bone" },
+    { kind: "point", label: "Point", tip: "Create a point attachment on the bone under the press", icon: "point" },
+    { kind: "boundingbox", label: "Bounding box", tip: "Create a bounding box: drag its corners, or click for a 100 unit square", icon: "boundingbox" },
+    { kind: "clipping", label: "Clipping", tip: "Create a clipping polygon: drag its corners, or click for a 100 unit square; it clips the slots after it", icon: "clipping" },
+    { kind: "path", label: "Path", tip: "Create a path attachment on the bone under the press", icon: "path" },
+  ];
+  const createBtns = CREATES.map((c) => {
+    const b = iconButton(button(c.label, c.tip, () => setCreate(stage.createKind === c.kind ? null : c.kind)), c.icon, false);
+    b.dataset.create = c.kind;
+    return b;
+  });
+  const setCreate = (kind: CreateKind | null): void => {
+    stage.setCreate(kind);
+    for (const b of createBtns) b.setAttribute("aria-pressed", String(b.dataset.create === kind));
+  };
+  const createGroup = el("div", "group create");
+  createGroup.append(...createBtns);
   // Bones, Images and Others: what a press picks, what is drawn, and which names show (docs/STAGE-POSE-PLAN.md step 1).
   const matrix = viewMatrix(prefs);
   const stageTools = el("div", "stage-tools");
@@ -218,9 +238,9 @@ export function mountApp(root: HTMLElement): void {
   lockBtn.classList.add("stage-lock");
   session.onSelectionLocked = () => say(`The selection is locked: press ${keysOf("lockSelection")} or click Locked (bottom right of the stage) to pick another.`);
   const spaceGroup = group(...spaceBtns), showGroup = group(matrix.element, ...showBtns.filter((b) => b !== rulersBtn && b.dataset.show !== "onion"));
-  stageTools.append(crumb, transform.element, spaceGroup, showGroup);
+  stageTools.append(crumb, createGroup, transform.element, spaceGroup, showGroup);
   // Each panel can be dragged by its grip and folded; the corner button shows or hides all of them.
-  const resetPanels = floatGroups(stagePanel, { transform: transform.element, space: spaceGroup, show: showGroup });
+  const resetPanels = floatGroups(stagePanel, { create: createGroup, transform: transform.element, space: spaceGroup, show: showGroup });
   // Fit stays in the panel's top right corner, whatever its size.
   const fitCorner = el("div", "stage-fit");
   const panelsBtn = iconButton(button("Panels", "Show or hide the tool panels over the stage (View ▸ Stage Panels); double-click to put them back where they started", () => prefs.set({ stagePanels: !prefs.values.stagePanels })), "panels", false);
@@ -666,6 +686,9 @@ export function mountApp(root: HTMLElement): void {
     // The mode button says what is shown now, and what a click switches to.
     const animating = !!session.animation;
     modeBtn.textContent = animating ? "Animate" : "Pose";
+    // The Create group is for the setup pose.
+    createGroup.hidden = animating;
+    if (animating && stage.createKind) setCreate(null);
     modeBtn.title = animating ? `Animate: editing ${session.animation!.name}. Click for the setup pose (Pose)` : "Pose: editing the setup pose. Click to animate";
     modeBtn.disabled = !doc;
     // Each project keeps its own layout (an untitled one uses the general layout).
@@ -803,7 +826,8 @@ export function mountApp(root: HTMLElement): void {
     selectAll: () => { if (!session.animation) return false; timeline.selectAll(); },
     snapping: () => { prefs.set({ snap: !prefs.values.snap }); say(`Snapping ${prefs.values.snap ? "on" : "off"}.`); },
     escape: () => {
-      if (!stage.cancel() && session.playing) session.pause();
+      if (stage.createKind) { if (!stage.cancel()) setCreate(null); }
+      else if (!stage.cancel() && session.playing) session.pause();
       else session.select(null);
     },
     lockSelection: () => toggleLock(),

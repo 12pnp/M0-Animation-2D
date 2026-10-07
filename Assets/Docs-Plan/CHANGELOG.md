@@ -11,6 +11,10 @@ flowchart LR
     BEN --> MS["mix-and-match-pro_SkeletonData<br/>(stock side)"]
 ```
 
+## 2026-10-08
+
+- **BoneBurst Editor v2: Create tools on the Stage (step 2 of the Stage and Pose plan)** (`Editor-BoneBurst-Src/`, [plan](../../Editor-BoneBurst-Src/docs/STAGE-POSE-PLAN.md)). A Create group, in Pose mode only: Bone (press and drag; the next press carries on under it), Point, Bounding box, Clipping and Path, each one undo step; boxes, clipping polygons and points are now drawn while Others ▸ Visible is on. A new clipping polygon clips every slot after it (Undo removes it; its End is not editable yet). Region is left out until the plan's question 3 is answered. Guarded by `e2e/createTools.spec.ts`; 764 unit tests passed on the staged tree and 111 browser tests on the working tree; dark theme looked at, not tried with a real mouse.
+
 ## 2026-10-07
 
 - **BoneBurst Editor v2: the Stage's Select · Visible · Names matrix (step 1 of the Stage and Pose plan)** (`Editor-BoneBurst-Src/`, [plan](../../Editor-BoneBurst-Src/docs/STAGE-POSE-PLAN.md)). Rows Bones, Images and Others by what a press picks, what is drawn and which names show, in place of the Bones and Constraints buttons: a press on an image picks its slot, bones can draw their names, and each kind can be made unpickable; cells a kind has no column for are dimmed. The same switches are in Preferences ▸ Viewport ▸ Display. Guarded by `e2e/viewMatrix.spec.ts`; 764 unit tests passed on the staged tree and 108 browser tests on the working tree; one theme looked at, the plan's steps 2–5 and its questions to the owner still open.

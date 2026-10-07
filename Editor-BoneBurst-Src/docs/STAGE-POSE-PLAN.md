@@ -1,6 +1,6 @@
 # Stage and Pose mode — what Spine's Stage tools have that v2 does not — plan
 
-**Status:** step 1 done, 2026-10-07 (the matrix; steps 2–5 not started, and step 3 waits for the owner's answers below). Written from the owner's picture of Spine's Stage tool panels
+**Status:** steps 1 and 2 done (the matrix, 2026-10-07; the Create tools, 2026-10-08, without Region); steps 3–5 not started, and step 3 waits for the owner's answers below. Written from the owner's picture of Spine's Stage tool panels
 (Pose mode) and from what v2 has today, read on disk. Spine's editor is not open here, so what each icon does
 is read from the picture and marked **confirm** where it is a guess; the owner confirms the list in
 "Questions" before step 1. Clean-room: no code from the old editor or the fork is read; the behaviour is
@@ -96,7 +96,7 @@ no step changes the Spine file format, so every export stays what BoneBurst's re
    preferences `boneSelect`, `imageSelect`, `otherSelect`, the visible and names columns for images and
    others, `boneNames`; `Stage` reads them in drawing and in `pickBone`. Names on the Stage draw the bone's or
    attachment's name by its origin. Tests: a hidden kind is not drawn and not pickable; names draw.
-2. **Create tools.** The Create group (bone, region, bounding box, point, clipping, path) and a Create
+2. **Create tools — done 2026-10-08, without Region.** Result: `ui/stage/create.ts` (`createBone`, `createShape`) and `edit/create.ts` (`newPointAttachment`, `newPolygon`); the Create group (bone, point, bounding box, clipping, path) floats like the others and shows in Pose mode only; Esc leaves the tool. A bone is a press-and-drag (it starts where pressed, points where released, its length the drag; a click makes a 50 unit one), its parent the bone under the press, else the selected one, else the root, and it is selected after, so the next press carries on under it. A box or clipping polygon is the dragged rectangle (a click: 100 units square) on a new slot of that bone; a clipping one goes first in the draw order and clips every slot after it (Undo takes it away; its End is not editable in Properties yet). Boxes, clipping polygons and points are now drawn (green, red dashed, cyan cross) while Others ▸ Visible is on. Region is left out until question 3 below is answered. Tests: `e2e/createTools.spec.ts`. Original text: The Create group (bone, region, bounding box, point, clipping, path) and a Create
    tool state in `Stage`; click makes, click-drag on a bone tool sizes it (the tip follows the pointer),
    the next press continues the chain under it. Right-click ▸ Add … stays. Tests: a chain of three bones is
    one run of presses and three undo steps; each kind appears in the rig.
