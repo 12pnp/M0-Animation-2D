@@ -66,7 +66,7 @@ test("Reset puts the selected bone's rotation back to 0; Path selects a bone's p
   // A path made by the Create tool is found again by the Path tool.
   const box = (await page.locator(".stage canvas.overlay").boundingBox())!;
   await page.locator('[data-create="path"]').click();
-  await page.mouse.click(box.x + 70, box.y + 70);
+  await page.mouse.click(box.x + 330, box.y + 130);
   await page.keyboard.press("Escape");
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "hips" }));
   await tool(page, "path").click();
@@ -170,4 +170,26 @@ test("the panel menu (⋮) has Reset This Panel's Layout, Put This Panel Back an
   await stageGroup.locator(".panel-menu-button").click();
   await page.getByText("Reset All Panels").click();
   await expect(page.locator(".timeline").first()).toBeVisible();
+});
+
+test("Reset This Panel's Layout on the Stage: the matrix top left; Create, Pose tools, Bone options, the space and the transform panel along the bottom, left to right", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 800 });
+  await page.goto("/");
+  await page.evaluate(() => localStorage.setItem("boneburst.preferences", JSON.stringify({ version: 1, toolbarPosition: "center" })));
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  const stageGroup = page.locator(".dv-groupview", { has: page.locator(".stage-panel") });
+  await stageGroup.locator(".panel-menu-button").click();
+  await page.getByText("Reset This Panel's Layout").click();
+  await expect(page.locator(".stage-tools").first()).toHaveAttribute("data-align", "left");
+  const box = async (sel: string) => (await page.locator(sel).boundingBox())!;
+  const [create, poses, options, space, transform, matrix, stage] = [await box(".stage-tools .create"), await box(".stage-tools .poses"), await box(".stage-tools .options"), await box(".stage-tools .group:has(button:text-is('Local'))"), await box(".stage-tools .transform"), await box(".stage-tools-top .group"), await box(".stage-panel")];
+  expect(create.x).toBeLessThan(poses.x);
+  expect(poses.x).toBeLessThan(options.x);
+  expect(options.x).toBeLessThan(space.x);
+  expect(space.x).toBeLessThan(transform.x);
+  expect(matrix.y - stage.y).toBeLessThan(30);
+  expect(matrix.x - stage.x).toBeLessThan(30);
+  expect(create.y + create.height).toBeGreaterThan(stage.y + stage.height - 40);
 });

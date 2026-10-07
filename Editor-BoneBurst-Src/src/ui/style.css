@@ -617,7 +617,7 @@ dialog.open-project .op-buttons { flex: none; display: flex; justify-content: ce
 *::-webkit-scrollbar-thumb:hover { background: var(--accent); background-clip: content-box; }
 
 /* Preferences ▸ User interface: where the stage's tool panels sit, and whether they show their words. */
-.stage-tools[data-align="left"] { left: 10px; transform: none; justify-content: flex-start; }
+.stage-tools[data-align="left"] { left: 28px; transform: none; justify-content: flex-start; }
 .stage-tools[data-align="right"] { left: auto; right: 10px; transform: none; justify-content: flex-end; }
 .stage-tools[data-labels="hide"] .label, .stage-tools[data-labels="auto"].narrow .label { display: none; }
 .stage-tools[data-labels="hide"] .t-row > button:first-child, .stage-tools[data-labels="auto"].narrow .t-row > button:first-child { width: 36px; justify-content: center; }
@@ -811,3 +811,6 @@ dialog.panel-info .panel-info-title { display: flex; align-items: center; gap: 6
 .stage-crumb { position: absolute; z-index: 5; transform: translate(-50%, -100%); flex: none; }
 .stage-tools .create .create-region { width: 110px; margin: 3px; font-size: 11px; }
 .stage-tools .create .create-region[hidden] { display: none; }
+/* The Select · Visible · Names panel sits at the stage's top left. */
+.stage-tools.stage-tools-top { top: 6px; bottom: auto; left: 6px; transform: none; justify-content: flex-start; }
+.stage-tools[hidden] { display: none; }

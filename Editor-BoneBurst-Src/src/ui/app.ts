@@ -301,7 +301,10 @@ export function mountApp(root: HTMLElement): void {
   lockBtn.classList.add("stage-lock");
   session.onSelectionLocked = () => say(`The selection is locked: press ${keysOf("lockSelection")} or click Locked (bottom right of the stage) to pick another.`);
   const spaceGroup = group(...spaceBtns), showGroup = group(matrix.element, ...showBtns.filter((b) => b !== rulersBtn && b.dataset.show !== "onion"));
-  stageTools.append(createGroup, optionsGroup, poseGroup, transform.element, spaceGroup, showGroup);
+  // The default arrangement, bottom left to right: Create, Pose tools, Bone options, the space, the transform panel; the matrix at the top left.
+  stageTools.append(createGroup, poseGroup, optionsGroup, spaceGroup, transform.element);
+  const topTools = el("div", "stage-tools stage-tools-top");
+  topTools.append(showGroup);
   // Each panel can be dragged by its grip and folded; the corner button shows or hides all of them.
   const panels = floatGroups(stagePanel, { create: createGroup, options: optionsGroup, poses: poseGroup, transform: transform.element, space: spaceGroup, show: showGroup }, () => syncPanelBtns());
   // Fit stays in the panel's top right corner, whatever its size.
@@ -335,7 +338,7 @@ export function mountApp(root: HTMLElement): void {
   stagePanel.append(fitCorner);
   // "Automatic" text labels: hidden while the stage is narrow.
   new ResizeObserver(() => stageTools.classList.toggle("narrow", stagePanel.clientWidth < 560)).observe(stagePanel);
-  stagePanel.append(stage.element, hint, stageTools);
+  stagePanel.append(stage.element, hint, stageTools, topTools);
   const main = el("main", "dock");
 
   const status = el("footer", "status");
@@ -445,7 +448,7 @@ export function mountApp(root: HTMLElement): void {
 
   // The docking shell (D6): every panel is a Dockview panel.
   const workspace = new Workspace(main, new Map<PanelId, PanelContent>([
-    ["stage", { element: stagePanel, layout: (w, h) => stage.resize(w, h), reset: () => { panels.reset(); setCreate(null); stage.fitView(); } }],
+    ["stage", { element: stagePanel, layout: (w, h) => stage.resize(w, h), reset: () => { panels.reset(); setCreate(null); prefs.set({ toolbarPosition: "left" }); stage.fitView(); } }],
     ["timeline", { element: timeline.element, layout: () => timeline.redraw(), reset: () => timeline.resetLayout() }],
     ["rigTree", { element: outline.element, reset: () => outline.resetView() }],
     ["properties", { element: inspector.element }],
@@ -768,6 +771,7 @@ export function mountApp(root: HTMLElement): void {
       }));
     }
     hint.hidden = !!doc;
+    topTools.hidden = !doc;
     // The mode button says what is shown now, and what a click switches to.
     const animating = !!session.animation;
     modeBtn.textContent = animating ? "Animate" : "Pose";

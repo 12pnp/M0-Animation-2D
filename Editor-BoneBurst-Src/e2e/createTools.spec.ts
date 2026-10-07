@@ -32,7 +32,7 @@ test("the Bone tool: a drag makes a bone under the selected one, as long as the 
   const box = (await page.locator(".stage canvas.overlay").boundingBox())!;
   const before = (await bonesOf(page)).length;
   // The top left of the stage, clear of the floating panels.
-  const at = { x: box.x + 70, y: box.y + 70 };
+  const at = { x: box.x + 330, y: box.y + 130 };
   await page.mouse.move(at.x, at.y);
   await page.mouse.down();
   await page.mouse.move(at.x + 60, at.y, { steps: 5 });
@@ -59,7 +59,7 @@ test("a click makes the default of each kind: a point, a bounding box, a clippin
   const box = (await page.locator(".stage canvas.overlay").boundingBox())!;
   for (const [kind, type] of [["point", "point"], ["boundingbox", "boundingbox"], ["clipping", "clipping"], ["path", "path"]] as const) {
     await page.locator(`[data-create="${kind}"]`).click();
-    await page.mouse.click(box.x + 70, box.y + 70);
+    await page.mouse.click(box.x + 330, box.y + 130);
     const made = await page.evaluate((t) => {
       const doc = (window as unknown as Live).boneburst.session.doc;
       return doc.skins.flatMap((k) => k.attachments ?? []).flatMap((a) => a.entries.map((e) => ({ slot: a.slot, type: e.attachment.type, n: e.attachment.vertexCount, end: e.attachment.end }))).filter((e) => e.type === t).length;
@@ -98,7 +98,7 @@ test("the Region tool places an image chosen from the atlas on a new slot of the
   await pick.selectOption(names[names.length - 1]!);
   const box = (await page.locator(".stage canvas.overlay").boundingBox())!;
   const before = await page.evaluate(() => (window as unknown as Live).boneburst.session.doc.slots.length);
-  await page.mouse.click(box.x + 70, box.y + 70);
+  await page.mouse.click(box.x + 330, box.y + 130);
   const made = await page.evaluate(() => {
     const doc = (window as unknown as Live).boneburst.session.doc;
     return { slots: doc.slots.length, last: doc.slots[doc.slots.length - 1], entries: doc.skins.flatMap((k) => k.attachments ?? []).filter((a) => a.slot === doc.slots[doc.slots.length - 1]!.name).flatMap((a) => a.entries.map((e) => e.key)) };
