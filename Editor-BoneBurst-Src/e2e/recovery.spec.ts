@@ -16,8 +16,8 @@ const kept = (page: Page) => page.evaluate(() => new Promise<string | null>((ok)
   const r = indexedDB.open("boneburst-editor", 2);
   r.onupgradeneeded = () => { for (const s of ["handles", "recovery"]) r.result.createObjectStore(s); };
   r.onsuccess = () => {
-    const g = r.result.transaction("recovery").objectStore("recovery").get("current");
-    g.onsuccess = () => ok(g.result ? `${g.result.name}:${(JSON.parse(g.result.skeleton) as { bones: { name: string; x?: number }[] }).bones.find((b) => b.name === "hips")?.x ?? "-"}` : null);
+    const g = r.result.transaction("recovery").objectStore("recovery").getAll();
+    g.onsuccess = () => { const one = g.result[0]; ok(one ? `${one.name}:${(JSON.parse(one.skeleton) as { bones: { name: string; x?: number }[] }).bones.find((b) => b.name === "hips")?.x ?? "-"}` : null); };
     g.onerror = () => ok(null);
   };
   r.onerror = () => ok(null);
@@ -126,5 +126,46 @@ test("Save with the default (this browser) downloads nothing, keeps the project 
   await bar.getByRole("button", { name: "Restore" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await expect(page.locator(".message")).toContainText("as saved");
+  await expect(bar).toHaveCount(0);
+});
+
+test("several open files are each kept in this browser: Save in one tab does not replace another's copy, and a reload offers them all back as tabs", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(async () => {
+    localStorage.clear();
+    await new Promise((ok) => { const r = indexedDB.deleteDatabase("boneburst-editor"); r.onsuccess = r.onerror = r.onblocked = ok; });
+  });
+  await page.reload();
+  const copies = () => page.evaluate(() => new Promise<string[]>((ok) => {
+    const r = indexedDB.open("boneburst-editor", 2);
+    r.onsuccess = () => { const g = r.result.transaction("recovery").objectStore("recovery").getAll(); g.onsuccess = () => ok((g.result as { name: string }[]).map((x) => x.name).sort()); };
+  }));
+  const tabs = () => page.locator(".doc-tabs .doc-name");
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  await menuItem(page, "File", "Save Project(?! As)");
+  await expect.poll(() => copies()).toEqual(["Stickman_IK"]);
+  // A second file in a tab of its own; Save there keeps both.
+  await menuItem(page, "File", "New Project");
+  await expect(tabs()).toHaveCount(2);
+  await menuItem(page, "File", "Save Project(?! As)");
+  await expect.poll(() => copies()).toEqual(["Stickman_IK", "untitled"]);
+  // Change the first (still saved to this browser) and set it aside: the copy of the unsaved work is written as it leaves.
+  await page.locator(".doc-tab", { hasText: "Stickman_IK" }).click();
+  await edit(page);
+  await page.locator(".doc-tab", { hasText: "untitled" }).click();
+  await page.waitForTimeout(500);
+  // A reload: both come back, each in a tab, the changed one unsaved.
+  await page.reload();
+  const bar = page.locator(".recovery-bar");
+  await expect(bar).toContainText("2 projects");
+  await bar.getByRole("button", { name: "Restore all" }).click();
+  await expect(tabs()).toHaveCount(2);
+  expect((await tabs().allTextContents()).map((t) => t.replace(/^• /, "")).sort()).toEqual(["Stickman_IK.json", "untitled.json"]);
+  // The one changed after it was saved comes back unsaved, the other as saved.
+  await expect(page.locator(".doc-tab", { hasText: "Stickman_IK" })).toContainText("•");
+  await expect(page.locator(".doc-tab", { hasText: "untitled" })).not.toContainText("•");
+  await page.locator(".doc-tab", { hasText: "Stickman_IK" }).click();
+  expect(await hipsX(page)).not.toBeNull();
   await expect(bar).toHaveCount(0);
 });

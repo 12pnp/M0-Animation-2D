@@ -36,7 +36,7 @@ import { OpenDialog } from "./openDialog";
 import { folders, type Recent, recent, type RecentHandle, readRecent } from "./recent";
 import { ExportRefused, exportFiles, exportToUnity } from "./unityExport";
 import { snapFields } from "./snapFields";
-import { Autosaver, clearRecovery, readRecovery, sourcesOf } from "./recovery";
+import { Autosaver, clearRecovery, readRecoveries, type RecoveryRecord, sourcesOf } from "./recovery";
 import { floatGroups } from "./stage/floatingGroups";
 import { clipboard, copyPose, pastePoseHere } from "./clipboard";
 import { brush, resizeBrush } from "./stage/weightBrush";
@@ -269,6 +269,8 @@ export function mountApp(root: HTMLElement): void {
     camera: () => stage.camera,
     showCamera: (c) => { session.openedCamera = c; stage.opened(); },
     save: () => save(),
+    leaving: () => void autosaver.flush(),
+    closed: (id, keep) => { autosaver.forget(id); if (!keep) void clearRecovery(id); },
   });
   const menubar = new MenuBar([
     { label: "File", items: () => [
@@ -521,7 +523,7 @@ export function mountApp(root: HTMLElement): void {
     if (prefs.values.saveTo === "browser" && !again) { await saveToBrowser(); return; }
     try {
       const file = await saveProject(session, viewNow(), again);
-      if (file !== null) autosaver.pinned = false;
+      if (file !== null) session.browserSaved = false;
       say(file === null ? "Save cancelled." : `Saved ${file}.`);
     } catch (err) {
       say(`Save failed: ${err instanceof Error ? err.message : String(err)}`);
@@ -548,9 +550,6 @@ export function mountApp(root: HTMLElement): void {
     try {
       session.projectSidecar(viewNow());
       if (!(await autosaver.saveNow())) { say("Save failed: this browser would not keep it (storage is full or blocked). Save Project As… writes a file."); return; }
-      offerBar?.remove();
-      offerBar = null;
-      autosaver.paused = false;
       session.markSaved();
       say(`Saved ${session.name}.json in this browser. Save Project As… writes a file.`);
       flash("Saved in this browser", `${session.name}.json · ${new Date().toLocaleTimeString()}`);
@@ -709,24 +708,40 @@ export function mountApp(root: HTMLElement): void {
   // found is offered back, and until it is restored or discarded nothing writes over it.
   const autosaver = new Autosaver(session, prefs);
   autosaver.start();
-  let offerBar: HTMLElement | null = null;
-  void readRecovery().then((r) => {
-    if (!r) { autosaver.paused = false; return; }
-    autosaver.pinned = r.pinned === true;
+  void readRecoveries().then((records) => {
+    if (!records.length) { autosaver.paused = false; return; }
     const offer = el("div", "recovery-bar");
-    offerBar = offer;
     offer.setAttribute("role", "alert");
-    const when = new Date(r.savedAt).toLocaleString();
+    const when = (r: RecoveryRecord) => new Date(r.savedAt).toLocaleString();
     const text = el("span", "text");
-    const unsaved = r.unsaved !== false;
-    text.textContent = unsaved ? `Unsaved work on ${r.name}.json from ${when} was kept in this browser.` : `${r.name}.json saved in this browser on ${when}.`;
-    const done = (m: string) => { offer.remove(); offerBar = null; autosaver.paused = false; say(m); };
-    const restore = button("Restore", "Open it, unsaved, as it was", () => {
-      if (session.dirty && !confirm(`${session.name}.json has unsaved changes. Restore the kept copy and lose them?`)) return;
-      void session.restore(sourcesOf(r), r.generated && r.atlas !== null ? { atlasText: r.atlas } : null)
-        .then(() => { if (!unsaved) session.markSaved(); restoreView(); stage.opened(); done(unsaved ? `Restored ${r.name}.json from ${when}: unsaved until you Save it.` : `Restored ${r.name}.json as saved on ${when}.`); }, (err) => say(err instanceof Error ? err.message : String(err)));
+    const unsaved = (r: RecoveryRecord) => r.unsaved !== false;
+    const one = (r: RecoveryRecord) => (unsaved(r) ? `Unsaved work on ${r.name}.json from ${when(r)} was kept in this browser.` : `${r.name}.json saved in this browser on ${when(r)}.`);
+    text.textContent = records.length === 1 ? one(records[0]!) : `${records.length} projects were kept in this browser: ${records.map((r) => `${r.name}.json${unsaved(r) ? " (unsaved work)" : ""}`).join(", ")}.`;
+    const done = (m: string) => { offer.remove(); autosaver.paused = false; say(m); };
+    // Each copy opens in a tab of its own, so nothing open is lost; a copy keeps the id it is filed under.
+    const restore = button(records.length === 1 ? "Restore" : "Restore all", "Open each, as it was", () => {
+      void (async () => {
+        const restored: string[] = [];
+        for (const r of records) {
+          try {
+            tabs.park();
+            await session.restore(sourcesOf(r), r.generated && r.atlas !== null ? { atlasText: r.atlas } : null);
+            session.recoveryId = r.id!;
+            session.browserSaved = r.pinned === true;
+            autosaver.adopt(r.id!);
+            if (!unsaved(r)) session.markSaved();
+            restoreView();
+            stage.opened();
+            restored.push(`${r.name}.json`);
+          } catch (err) { say(err instanceof Error ? err.message : String(err)); }
+        }
+        const only = records.length === 1 ? records[0]! : null;
+        done(!restored.length ? "Nothing was restored." : only ? (unsaved(only) ? `Restored ${only.name}.json from ${when(only)}: unsaved until you Save it.` : `Restored ${only.name}.json as saved on ${when(only)}.`) : `Restored ${restored.join(", ")}.`);
+      })();
     });
-    const discard = button("Discard", "Delete the kept copy", () => { void clearRecovery().then(() => { autosaver.pinned = false; done("The kept copy was discarded."); }); });
+    const discard = button(records.length === 1 ? "Discard" : "Discard all", "Delete the kept copies", () => {
+      void Promise.all(records.map((r) => clearRecovery(r.id!))).then(() => done(records.length === 1 ? "The kept copy was discarded." : "The kept copies were discarded."));
+    });
     offer.append(text, restore, discard);
     menubar.element.after(offer);
   });

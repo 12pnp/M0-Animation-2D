@@ -576,12 +576,19 @@ export class Session {
     this.pageData = new Map(im.pages.map((p) => [p.name, async () => p]));
   }
 
+  /** What the browser's kept copy of this document is filed under: each open document (tab) has its own. */
+  recoveryId = randomHash();
+  /** Save kept the document in this browser: its copy stays while nothing is unsaved (until a file is saved or it is discarded). */
+  browserSaved = false;
+
   /** Start over on a new document. */
   private replace(skeleton: Skeleton, fromFile: boolean, name: string, atlas: Atlas | null, pages: Map<string, ImageBitmap>, all: Issue[]): void {
     const keep = new Set<ImageBitmap>();
     for (const r of this.reimports) for (const st of [r.old, r.next]) for (const b of st.pages.values()) keep.add(b);
     for (const b of [...this.pages.values(), ...keep]) b.close();
     this.reimports = [];
+    this.recoveryId = randomHash();
+    this.browserSaved = false;
     this.pageData = new Map();
     this.generated = null;
     this.sidecar = EMPTY_SIDECAR;
@@ -668,6 +675,16 @@ export class Session {
   static release(state: DocumentState): void {
     const s = state as unknown as { pages: Map<string, ImageBitmap>; referenceImages: Map<string, ImageBitmap> };
     for (const b of [...s.pages.values(), ...s.referenceImages.values()]) b.close();
+  }
+
+  /** The id a set-aside document's kept copy is filed under. */
+  static recoveryIdOf(state: DocumentState): string {
+    return (state as unknown as { recoveryId: string }).recoveryId;
+  }
+
+  /** Whether a set-aside document was saved to this browser. */
+  static browserSavedOf(state: DocumentState): boolean {
+    return (state as unknown as { browserSaved: boolean }).browserSaved;
   }
 
   /** Whether a set-aside document has unsaved changes. */

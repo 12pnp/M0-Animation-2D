@@ -18,6 +18,10 @@ export interface TabHost {
   showCamera(c: Camera): void;
   /** Save the shown document (Save, as in the File menu). */
   save(): Promise<void>;
+  /** The shown file is about to be set aside: its kept copy is written now. */
+  leaving(): void;
+  /** A file was closed: its kept copy goes, unless it was saved to this browser and left as it was saved (`keep`). */
+  closed(id: string, keep: boolean): void;
 }
 
 /**
@@ -47,6 +51,7 @@ export class DocumentTabs {
   park(): Tab | null {
     const t = this.current;
     if (!t || !this.session.doc) return null;
+    this.host.leaving();
     t.state = this.session.capture();
     t.camera = this.host.camera();
     this.session.resume(Session.blank());
@@ -82,6 +87,7 @@ export class DocumentTabs {
     if (t === this.current) return;
     const from = this.current;
     if (from && this.session.doc) {
+      this.host.leaving();
       from.state = this.session.capture();
       from.camera = this.host.camera();
       from.dirty = Session.dirtyOf(from.state);
@@ -122,15 +128,19 @@ export class DocumentTabs {
   /** Close a tab; false when the person kept it (unsaved changes, cancelled or not saved). */
   async close(t: Tab): Promise<boolean> {
     const dirty = t === this.current ? this.session.dirty : t.dirty;
+    let discarded = false;
     if (dirty) {
       const answer = await this.ask(t.name);
       if (answer === "cancel") return false;
+      discarded = answer === "discard";
       if (answer === "save") {
         this.activate(t);
         await this.host.save();
         if (this.session.dirty) return false;
       }
     }
+    const shown = t === this.current;
+    this.host.closed(shown ? this.session.recoveryId : Session.recoveryIdOf(t.state!), !discarded && (shown ? this.session.browserSaved : Session.browserSavedOf(t.state!)));
     const i = this.tabs.indexOf(t);
     const next = this.tabs[i + 1] ?? this.tabs[i - 1] ?? null;
     if (t === this.current) {

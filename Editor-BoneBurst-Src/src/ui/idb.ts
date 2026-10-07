@@ -42,3 +42,21 @@ export async function idbSet(store: StoreName, key: string, value: unknown): Pro
     });
   } catch { return false; }
 }
+
+/** Every key and value of a store, in key order; empty when the browser will not say. */
+export async function idbAll<T>(store: StoreName): Promise<{ key: string; value: T }[]> {
+  try {
+    const d = await open();
+    return await new Promise((ok) => {
+      const out: { key: string; value: T }[] = [];
+      const c = d.transaction(store).objectStore(store).openCursor();
+      c.onsuccess = () => {
+        const cur = c.result;
+        if (!cur) { ok(out); return; }
+        out.push({ key: String(cur.key), value: cur.value as T });
+        cur.continue();
+      };
+      c.onerror = () => ok(out);
+    });
+  } catch { return []; }
+}
