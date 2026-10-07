@@ -35,3 +35,27 @@ test("opening the project again puts back what was selected, the animation and f
   expect(back.camera.zoom).toBeCloseTo(cam.zoom, 3);
   expect(back.camera.x).toBeCloseTo(cam.x, 2);
 });
+
+test("each project keeps its own panel layout: a panel closed in one project stays closed when it is opened again, and a project never opened before starts from the layout as it is", async ({ page }) => {
+  type W = { boneburst: { workspace: { isOpen(id: string): boolean; close(id: string): void }; session: { newProject(): void } } };
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  const open = (id: string) => page.evaluate((i) => (window as unknown as W).boneburst.workspace.isOpen(i), id);
+  expect(await open("history")).toBe(true);
+  await page.evaluate(() => (window as unknown as W).boneburst.workspace.close("history"));
+  expect(await open("history")).toBe(false);
+  // Written after a moment, and under this project's own key.
+  await expect.poll(() => page.evaluate(() => Object.keys(localStorage).filter((k) => k.startsWith("boneburst.workspace") && k.includes(".project.Stickman")).length)).toBeGreaterThan(0);
+  // (the layout is written a moment after it changes)
+  await page.waitForTimeout(700);
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  await expect.poll(() => open("history")).toBe(false);
+  // Another project (a new one, with no name yet, takes the general layout) has the panel.
+  await page.evaluate(() => (window as unknown as W).boneburst.session.newProject());
+  await expect.poll(() => open("history")).toBe(true);
+});

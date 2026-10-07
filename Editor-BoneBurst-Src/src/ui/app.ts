@@ -665,6 +665,8 @@ export function mountApp(root: HTMLElement): void {
     modeBtn.textContent = animating ? "Animate" : "Pose";
     modeBtn.title = animating ? `Animate: editing ${session.animation!.name}. Click for the setup pose (Pose)` : "Pose: editing the setup pose. Click to animate";
     modeBtn.disabled = !doc;
+    // Each project keeps its own layout (an untitled one uses the general layout).
+    workspace.setProject(doc && session.name !== "untitled" ? session.name : null);
     workspace.setMode(animating ? "animate" : "pose");
     modeBtn.setAttribute("aria-pressed", String(animating));
     // The lock shows in Animate mode only, and needs something selected to hold.

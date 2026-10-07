@@ -13,6 +13,9 @@ export const WORKSPACE_KEY = "boneburst.workspace";
 /** Each mode keeps its own layout: the setup pose's (the original key) and the animation's. */
 export type WorkspaceMode = "pose" | "animate";
 const animateKey = `${WORKSPACE_KEY}.animate`;
+/** The projects whose layouts are kept (the oldest go first) and how many. */
+const PROJECTS_KEY = `${WORKSPACE_KEY}.projects`;
+const KEEP_PROJECTS = 40;
 
 /** A built panel: its element, and what it does when the dock lays it out. */
 export interface PanelContent {
@@ -39,6 +42,8 @@ export class Workspace {
   private deferred: Deferred = {};
   private saveTimer = 0;
   private mode: WorkspaceMode = "pose";
+  /** The open project whose layout this is (each project keeps its own, per mode); null: the general one, before any project is open. */
+  private project: string | null = null;
   /** Panels the saved layout had closed: they are not brought back with the panels a build adds. */
   private closed = new Set<PanelId>();
 
@@ -144,12 +149,24 @@ export class Workspace {
     }
   }
 
-  private storageKey(): string { return this.mode === "pose" ? WORKSPACE_KEY : animateKey; }
+  private storageKey(): string {
+    const base = this.mode === "pose" ? WORKSPACE_KEY : animateKey;
+    return this.project === null ? base : `${base}.project.${this.project}`;
+  }
 
   private saveNow(): void {
     try {
       localStorage.setItem(this.storageKey(), JSON.stringify(saveWorkspace(this.api.toJSON(), this.deferred, this.built.filter((id) => !this.isOpen(id)))));
+      if (this.project !== null) this.trimProjects();
     } catch { /* storage full or blocked: the layout is not kept */ }
+  }
+
+  /** The projects whose layouts are kept, oldest first: past KEEP_PROJECTS the oldest are let go. */
+  private trimProjects(): void {
+    const index = (JSON.parse(localStorage.getItem(PROJECTS_KEY) ?? "[]") as string[]).filter((n) => n !== this.project);
+    index.push(this.project!);
+    for (const old of index.splice(0, Math.max(0, index.length - KEEP_PROJECTS))) { localStorage.removeItem(`${WORKSPACE_KEY}.project.${old}`); localStorage.removeItem(`${animateKey}.project.${old}`); }
+    localStorage.setItem(PROJECTS_KEY, JSON.stringify(index));
   }
 
   private scheduleSave(): void {
@@ -166,6 +183,23 @@ export class Workspace {
     clearTimeout(this.saveTimer);
     this.saveNow();
     this.mode = mode;
+    this.loadScope();
+  }
+
+  /**
+   * Switch to a project's layout (null: the general one): the one that project was left with, or, the first time, the layout
+   * as it is now (which it then keeps). The layout being left is saved first.
+   */
+  setProject(project: string | null): void {
+    if (project === this.project) return;
+    clearTimeout(this.saveTimer);
+    this.saveNow();
+    this.project = project;
+    this.loadScope();
+  }
+
+  /** Take the layout kept for the current mode and project; with none, keep this one and save it there. */
+  private loadScope(): void {
     let text: string | null = null;
     try { text = localStorage.getItem(this.storageKey()); } catch { /* storage blocked: keep this layout */ }
     const saved = restoreWorkspace(text, new Set(this.built));
