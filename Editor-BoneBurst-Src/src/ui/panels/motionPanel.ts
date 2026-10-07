@@ -1,6 +1,6 @@
 import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { EditRefused } from "@/edit/history";
-import { addNodeTime, blocksOf, curveOf, endFrame, FLAT_SPEED, handleOffsets, moveNodeTime, nodeTimeFrames, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, type SpeedPoint, moveNode, withNode, withOrigin, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
+import { addNodeTime, blocksOf, curveOf, endFrame, FLAT_SPEED, handleOffsets, moveNodeTime, nodeTimeFrames, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, type SpeedPoint, moveNode, withNode, withOrigin, midAfter, mergeNodes, reversePath, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
 import { drawnVertices } from "@/engine/draw";
 import { boneInherit } from "@/model/defaults";
 import type { Skeleton } from "@/model/skeleton";
@@ -8,6 +8,7 @@ import type { MotionPath } from "@/model/sidecar";
 import { frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
 import { iconButton } from "../icons";
 import { showContextMenu } from "../contextMenu";
+import type { MenuItem } from "../menubar";
 import { bakeMotion, currentNode, dropMotion, keepMotion, motionChanged, motionFor, motionStale, nodeAfter, poseAtNode, startMotion } from "../motion";
 import { keysAt } from "@/model/timelines";
 import { localPoint, pageScale } from "../pageScale";
@@ -187,6 +188,8 @@ export class MotionPathPanel {
   /** What the panel does with a path: Edit Path shapes the spline; Adjust time sets the node times and their multipliers (docs/PATH-FRAMES-PLAN.md). */
   private mode: "draw" | "time" = "draw";
   private selNode = -1;
+  /** The numbers of the spline nodes picked together with Command + click (for Merge); empty = just the picked node. */
+  private multi = new Set<number>();
   /** The path's nodes on the canvas as last drawn (Local space only). */
   private nodePts: { x: number; y: number }[] = [];
   /** The curve's handles at the nodes on the canvas (Edit Path, Local), and the one being dragged. */
@@ -918,7 +921,7 @@ export class MotionPathPanel {
    */
   private renderStrip(m: MotionPath | undefined): void {
     this.slotBar.hidden = !m;
-    const sig = !m ? "" : (this.mode === "draw" ? `d|${JSON.stringify(m.nodes)}|${this.selNode}` : `t|${JSON.stringify([m.starts, m.speeds, m.frames, m.closed, m.curves ?? []])}|${this.selTime}`);
+    const sig = !m ? "" : (this.mode === "draw" ? `d|${JSON.stringify(m.nodes)}|${this.selNode}|${[...this.multi]}` : `t|${JSON.stringify([m.starts, m.speeds, m.frames, m.closed, m.curves ?? []])}|${this.selTime}`);
     if (sig === this.slotSig) return;
     this.slotSig = sig;
     const make = (cls: string, text: string, title: string, run: (e: MouseEvent) => void): HTMLButtonElement => {
@@ -931,20 +934,25 @@ export class MotionPathPanel {
     if (this.mode === "draw") {
       const items = m.nodes.map((n, i) => {
         const label = nodeLabels(m)[i]!;
-        const b = make(`slot node${i === this.selNode ? " picked" : ""}`, `${label}`,
+        const b = make(`slot node${i === this.selNode ? " picked" : ""}${this.multi.has(label) ? " multi" : ""}`, `${label}`,
           `Spline node ${label}: x ${n.x}, y ${n.y}. Press to put the bone there; then moving the bone moves the node. Drag it along the numbers to move it in the order.`,
-          () => { if (this.suppressClick) { this.suppressClick = false; return; } this.pickSlot(i); });
+          (e) => {
+            if (this.suppressClick) { this.suppressClick = false; return; }
+            if (e.metaKey || e.ctrlKey) { this.toggleMulti(i); return; }
+            this.multi.clear();
+            this.pickSlot(i);
+          });
         b.setAttribute("aria-label", `Spline node ${label}`);
         this.nodeDragStart(b, i);
-        // Right-click: make this node the origin (the path starts there and goes round in the same order).
+        // Right-click: merge the nodes picked with Command + click, run the ring the other way, or make this node the origin.
         b.addEventListener("contextmenu", (e) => {
           e.preventDefault();
-          const ring = motionFor(this.session)?.closed ?? false;
-          showContextMenu(e.clientX, e.clientY, [{
-            label: `Set ${label} to Origin`,
-            disabled: i === 0 || !ring,
-            run: () => this.setOrigin(i),
-          }]);
+          const cur = motionFor(this.session), ring = cur?.closed ?? false, picked = this.pickedPlaces();
+          const items: MenuItem[] = [];
+          if (picked.length >= 2 && this.multi.has(label)) items.push({ label: `Merge ${picked.map((k) => nodeLabels(cur!)[k]).join(" + ")}`, run: () => this.mergePicked() });
+          if (cur) items.push({ label: `Reverse Direction (${nodeLabels(reversePath(cur)).join(" ")})`, run: () => this.reverse() });
+          items.push({ label: `Set ${label} to Origin`, disabled: i === 0 || !ring, run: () => this.setOrigin(i) });
+          showContextMenu(e.clientX, e.clientY, items);
         });
         return b;
       });
@@ -1251,12 +1259,65 @@ export class MotionPathPanel {
     this.schedule();
   }
 
-  /** The green +: another spline node, after the last by the same offset. */
+  /** Command (or Ctrl) + click on a node's number: it joins, or leaves, the nodes picked together; the node picked before it is the first of them. */
+  private toggleMulti(i: number): void {
+    const m = motionFor(this.session);
+    if (!m) return;
+    const labels = nodeLabels(m), label = labels[i]!;
+    if (this.multi.size === 0 && this.selNode >= 0 && this.selNode !== i) this.multi.add(labels[this.selNode]!);
+    if (this.multi.has(label)) this.multi.delete(label); else this.multi.add(label);
+    this.slotSig = "";
+    this.onStatus(this.multi.size >= 2 ? "Right-click one of them to Merge." : "Command + click another node to pick it too.");
+    this.schedule();
+  }
+
+  /** The places (in the path's order) of the nodes picked together. */
+  private pickedPlaces(): number[] {
+    const m = motionFor(this.session);
+    return m ? nodeLabels(m).flatMap((l, i) => (this.multi.has(l) ? [i] : [])) : [];
+  }
+
+  /** The nodes picked together become one at their centre. */
+  private mergePicked(): void {
+    const s = this.session, m = motionFor(s);
+    if (!m) return;
+    try {
+      const next = mergeNodes(m, this.pickedPlaces()), keep = nodeLabels(m)[this.pickedPlaces()[0]!]!;
+      keepMotion(s, next);
+      this.multi.clear();
+      this.selNode = nodeLabels(next).indexOf(keep);
+      this.slotSig = "";
+      this.onStatus(`Merged: the path now runs ${nodeLabels(next).join(", ")}.`);
+      this.schedule();
+    } catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); }
+  }
+
+  /** The path runs the other way round; the picked node stays the picked one. */
+  private reverse(): void {
+    const s = this.session, m = motionFor(s);
+    if (!m) return;
+    const next = reversePath(m);
+    keepMotion(s, next);
+    if (this.selNode >= 0) this.selNode = nodeLabels(next).indexOf(nodeLabels(m)[this.selNode]!);
+    this.slotSig = "";
+    this.onStatus(`The path now runs ${nodeLabels(next).join(", ")}.`);
+    this.schedule();
+  }
+
+  /** The green +: a node after the picked one, halfway to the next (before the first on a ring's closing span); with none picked, or at an open path's end, after the last by the same offset. */
   private addNode(): void {
     const s = this.session, m = motionFor(s);
     if (!m) return;
-    keepMotion(s, withNode(m, nodeAfter(s, m.nodes.at(-1)!)));
-    this.selNode = m.nodes.length;
+    const mid = this.selNode >= 0 ? midAfter(m, this.selNode) : null;
+    if (mid) {
+      const at = this.selNode + 1;
+      keepMotion(s, withNode(m, { x: Math.round(mid.x * 1e4) / 1e4, y: Math.round(mid.y * 1e4) / 1e4 }, at));
+      this.selNode = at;
+    } else {
+      keepMotion(s, withNode(m, nodeAfter(s, m.nodes.at(-1)!)));
+      this.selNode = m.nodes.length;
+    }
+    this.multi.clear();
     this.slotSig = "";
     this.onStatus("Added a spline node: move the bone (or drag the node) to place it.");
     this.schedule();

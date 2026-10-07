@@ -222,6 +222,30 @@ export function withNode(m: MotionPath, node: MotionNode, at?: number): MotionPa
   return { ...base, nodes: [...base.nodes.slice(0, i), added, ...base.nodes.slice(i)] };
 }
 
+/** The point of the path halfway (by length) between the node at place `i` and the next one (on a ring the last one's next is the first); null for the last node of an open path. */
+export function midAfter(m: MotionPath, i: number): Pt | null {
+  const curve = curveOf(m), a = curve.nodeAt[i], b = curve.nodeAt[i + 1];
+  if (a === undefined || b === undefined || i >= m.nodes.length || (!m.closed && i === m.nodes.length - 1)) return null;
+  return curve.at((a + b) / 2);
+}
+
+/** The nodes at the places `picked` joined into one: at their centre, in the place of the first of them, with its number and an automatic handle. */
+export function mergeNodes(m0: MotionPath, picked: readonly number[]): MotionPath {
+  const at = [...new Set(picked)].filter((i) => i >= 0 && i < m0.nodes.length).sort((a, b) => a - b);
+  if (at.length < 2) throw new EditRefused("Pick two or more spline nodes to merge (Command + click).");
+  if (m0.nodes.length - at.length + 1 < 2) throw new EditRefused("A path keeps two spline nodes.");
+  const m = withIds(m0), x = at.reduce((s, i) => s + m.nodes[i]!.x, 0) / at.length, y = at.reduce((s, i) => s + m.nodes[i]!.y, 0) / at.length;
+  const merged: MotionNode = { x: Math.round(x * 1e4) / 1e4, y: Math.round(y * 1e4) / 1e4, id: m.nodes[at[0]!]!.id! };
+  return { ...m, nodes: m.nodes.flatMap((n, i) => (i === at[0] ? [merged] : at.includes(i) ? [] : [n])) };
+}
+
+/** The path run the other way round: a ring keeps its first node first (1, 2, 3, 4 becomes 1, 4, 3, 2), an open path is turned end for end; each handle turns with it. */
+export function reversePath(m0: MotionPath): MotionPath {
+  const m = withIds(m0), flip = (n: MotionNode): MotionNode => (n.tx === undefined && n.ty === undefined ? n : { ...n, tx: -(n.tx ?? 0) || 0, ty: -(n.ty ?? 0) || 0 });
+  const nodes = m.closed ? [m.nodes[0]!, ...m.nodes.slice(1).reverse()] : m.nodes.slice().reverse();
+  return { ...m, nodes: nodes.map(flip) };
+}
+
 /** The node at place `from` moved to place `to` (the others shift by one): it keeps its handle and its number; the path is the same set of places run in another order. */
 export function moveNode(m0: MotionPath, from: number, to: number): MotionPath {
   if (from === to || from < 0 || to < 0 || from >= m0.nodes.length || to >= m0.nodes.length) throw new EditRefused("There is no such spline node.");

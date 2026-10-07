@@ -747,6 +747,7 @@ dialog.preferences .slider input[type="number"] { width: 64px; }
 .lp-slots button.node { width: 28px; padding: 0; background: #2e9e4f; color: #ffffff; cursor: grab; border-right-color: rgba(255, 255, 255, 0.35); }
 .lp-slots button.node { touch-action: none; user-select: none; }
 .lp-slots button.node.dragging { opacity: 0.35; }
+.lp-slots button.node.multi { outline: 2px dashed var(--accent); outline-offset: -2px; }
 .lp-slots button.node.picked { outline: 2px solid var(--accent); outline-offset: -2px; }
 .lp-motion button.add { min-width: 22px; border: 2px solid #2e9e4f; color: #2e9e4f; font-weight: 700; background: transparent; }
 .lp-motion button.add:hover { background: #2e9e4f; color: #ffffff; }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addNodeTime, bakeTranslate, blocksOf, boundaryProgress, buildCurve, curveOf, endFrame, fitChannel, handleOffsets, keyFrames, keysSignature, moveNodeTime, nodeTimeFrames, pathSignature, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, moveNode, withOrigin, translateKeys, withNode, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
+import { addNodeTime, bakeTranslate, blocksOf, boundaryProgress, buildCurve, curveOf, endFrame, fitChannel, handleOffsets, keyFrames, keysSignature, moveNodeTime, nodeTimeFrames, pathSignature, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, moveNode, withOrigin, midAfter, mergeNodes, reversePath, translateKeys, withNode, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
 import type { MotionPath } from "@/model/sidecar";
 import type { Animation, Key, Skeleton } from "@/model/skeleton";
 import { keyLists, keyTime, timeFrame } from "@/model/timelines";
@@ -307,5 +307,28 @@ describe("the origin of a ring", () => {
     expect(() => withOrigin(four(), 0)).toThrow();
     expect(() => withOrigin(four(), 4)).toThrow();
     expect(() => withOrigin({ ...four(), closed: false }, 2)).toThrow();
+  });
+});
+
+describe("insert after, merge and reverse", () => {
+  it("finds the middle of the span after a node, also the closing span of a ring; none after an open path's end", () => {
+    const m = motion(), c = curveOf(m), p = midAfter(m, 0)!, back = c.project(p);
+    expect(back.distance).toBeLessThan(1e-6);
+    expect(back.s).toBeCloseTo((c.nodeAt[0]! + c.nodeAt[1]!) / 2, 3);
+    expect(midAfter(m, 3)).not.toBeNull();
+    expect(midAfter(motion({ closed: false }), 3)).toBeNull();
+  });
+  it("joins picked nodes into one at their centre, in the first one's place and number", () => {
+    const next = mergeNodes(motion(), [1, 0]);
+    expect(nodeLabels(next)).toEqual([1, 3, 4]);
+    expect(next.nodes[0]).toMatchObject({ x: 20, y: 30 });
+    expect(() => mergeNodes(motion(), [1])).toThrow();
+    expect(() => mergeNodes(motion({ nodes: nodes.slice(0, 3) }), [0, 1, 2])).toThrow();
+  });
+  it("runs a ring the other way keeping node 1 first (1 2 3 4 becomes 1 4 3 2) and turns the handles", () => {
+    const m = motion({ nodes: nodes.map((n, i) => (i === 1 ? { ...n, tx: 5, ty: 6 } : n)) }), r = reversePath(m);
+    expect(nodeLabels(r)).toEqual([1, 4, 3, 2]);
+    expect(r.nodes[3]).toMatchObject({ tx: -5, ty: -6 });
+    expect(nodeLabels(reversePath(motion({ closed: false })))).toEqual([4, 3, 2, 1]);
   });
 });
