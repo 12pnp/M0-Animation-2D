@@ -36,7 +36,7 @@ describe("the shortcuts table", () => {
       [ev("c", { cmd: true }, "KeyC"), "copyKeys"], [ev("C", { cmd: true, shift: true }, "KeyC"), "copyKeys"],
       [ev("ç", { cmd: true, alt: true }, "KeyC"), "copyPose"], [ev("v", { cmd: true }, "KeyV"), "pasteKeys"],
       [ev("√", { cmd: true, alt: true }, "KeyV"), "pastePose"], [ev("a", { cmd: true }, "KeyA"), "selectAll"],
-      [ev(":", { cmd: true, shift: true }, "Semicolon"), "snapping"], [ev(";", { cmd: true }, "Semicolon"), undefined],
+      [ev(":", { cmd: true, shift: true }, "Semicolon"), "snapping"], [ev("F", { cmd: true, shift: true }, "KeyF"), "fullScreen"], [ev("f", { cmd: true }, "KeyF"), undefined], [ev(";", { cmd: true }, "Semicolon"), undefined],
       [ev("Escape"), "escape"], [ev("f"), "fit"], [ev("F", { shift: true }), "fit"], [ev("f", { alt: true }), undefined],
       [ev("["), "brushSmaller"], [ev("]"), "brushLarger"], [ev(" ", {}, "Space"), "play"],
       [ev(","), "prevFrame"], [ev("."), "nextFrame"], [ev("q"), "prevFrame"], [ev("Q", { shift: true }), "prevFrame"], [ev("w"), "nextFrame"], [ev("Home"), "firstFrame"], [ev("End"), "lastFrame"],

@@ -13,6 +13,11 @@ flowchart LR
 
 ## 2026-10-07
 
+- **BoneBurst Editor v2: resize lines turn blue at once with a resize cursor, and full screen (View ▸ Full Screen, ⇧⌘F; on by default from the first click)** (`Editor-BoneBurst-Src/`).
+  - **Resize lines:** a panel sash or the Timeline's names splitter is blue the moment the pointer is on it (Dockview's half-second wait is off), shows `col-resize` / `row-resize`, and stays blue with that cursor everywhere while held (`workspace/grips.ts`). No grip icon.
+  - **Full screen:** View ▸ Full Screen and ⇧⌘F use the browser's full screen (it hides the address and tab bars; Esc leaves it). By default the first click or key in the page goes full screen, once per load; the preference "Go full screen on the first click or key" (Preferences ▸ General, View ▸ Full Screen on Start) changes the default. A browser under automation is skipped unless the address has `?fullscreen`.
+  - Guarded by `e2e/grips.spec.ts`, `e2e/fullScreen.spec.ts`, `tests/shortcuts.test.ts`, `tests/preferences.test.ts`; 755 unit and 89 browser tests passed; not seen in a real browser window.
+
 - **BoneBurst Editor v2: a Lock for the selected bone on the Stage (Animate mode, key L)** (`Editor-BoneBurst-Src/`). With a bone selected, the Lock button at the stage's bottom right (or L) holds the selection: no other bone can be picked (rig list, Stage, code), nothing can be let go (empty click, Escape), and the locked bone can still be dragged. Unlocking is L or the button; leaving Animate mode or opening another file lets go. `Session.lockSelection` / `selectionLocked`; the key is in the shortcuts table. Guarded by `e2e/selectionLock.spec.ts` (removing the check in `Session.select` fails it); 755 unit and 83 browser tests passed; not tried by hand.
 
 - **BoneBurst Editor v2: Motion Path node strip as square cells you drag to a gap, Set to Origin, and the keys follow the panel under the pointer** (`Editor-BoneBurst-Src/`, [plan](../../Editor-BoneBurst-Src/docs/PATH-FRAMES-PLAN.md)).

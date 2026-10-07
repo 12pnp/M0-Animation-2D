@@ -178,6 +178,9 @@ html .dockview-theme-light {
   --dv-paneview-header-border-color: var(--line);
   --dv-tab-divider-color: var(--line);
   --dv-active-sash-color: var(--accent);
+  /* A sash turns blue the moment the pointer is on it (Dockview waits half a second by default). */
+  --dv-active-sash-transition-delay: 0s;
+  --dv-active-sash-transition-duration: 0.08s;
   --dv-paneview-active-outline-color: var(--accent);
   --dv-icon-hover-background-color: var(--hover);
   --dv-drag-over-background-color: color-mix(in srgb, var(--accent) 22%, transparent);
@@ -764,3 +767,13 @@ dialog.preferences .slider input[type="number"] { width: 64px; }
 .lp-drop-arrow::after { content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); width: 0; height: 0; margin-top: 1px; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 7px solid #e03e3e; }
 .lp-drop-arrow span { position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border-radius: 4px; background: #e03e3e; color: #fff; font-size: 12px; font-weight: 700; line-height: 1; }
 .lp-drop-arrow[hidden] { display: none; }
+
+/* The lines you drag to resize (workspace/grips.ts): blue at once under the pointer, held blue through the drag, a resize cursor. */
+.dv-sash.bb-held { background-color: var(--accent); }
+.dv-sash:not(.dv-disabled):hover { box-shadow: 0 0 0 1px var(--accent); }
+.timeline-split:hover, .timeline-split.bb-held { background: linear-gradient(var(--accent), var(--accent)) center / 3px 100% no-repeat; }
+html .dv-split-view-container.dv-horizontal > .dv-sash-container > .dv-sash.dv-enabled, .timeline-split { cursor: col-resize; }
+html .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash.dv-enabled { cursor: row-resize; }
+/* While a line is held the resize cursor stays, wherever the pointer runs. */
+html.bb-gripping-col, html.bb-gripping-col * { cursor: col-resize !important; }
+html.bb-gripping-row, html.bb-gripping-row * { cursor: row-resize !important; }

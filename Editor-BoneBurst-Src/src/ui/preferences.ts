@@ -28,6 +28,8 @@ export interface PreferenceValues {
   readonly treeIndent: number;
   /** The transform, space and show panels over the stage's foot. */
   readonly stagePanels: boolean;
+  /** The editor goes full screen (the browser hides its address and tab bars) on the first click or key in the page; View ▸ Full Screen toggles it any time. */
+  readonly fullScreenOnStart: boolean;
   /** The colour bones are drawn in on the stage ("#rrggbb", or "auto" for the theme's); a bone with a colour of its own keeps it. */
   readonly boneColour: string;
   /** How big bones are drawn, a multiple of the default (BONE_SIZE_RANGE). */
@@ -93,7 +95,7 @@ export interface PreferenceValues {
 export const UI_SCALE_RANGE = [60, 140] as const;
 /** 95: a twentieth smaller than the browser's own size; a browser under automation (the browser tests) keeps 100, so what they measure is in the pixels they see. */
 const DEFAULT_UI_SCALE = typeof navigator !== "undefined" && navigator.webdriver ? 100 : 95;
-export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, uiScale: DEFAULT_UI_SCALE, fontSize: "medium", toolbarLabels: "auto", toolbarPosition: "center", fewerTicks: false, defaultFps: 30, treeColours: true, treeIndent: 14, stagePanels: true, boneColour: "auto", boneSize: 1, selectedBoneColour: "auto", bones: true, constraints: true, hideIkBones: false, rulerColour: "auto", rulerOpacity: 0, rulerTextColour: "auto", undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
+export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, uiScale: DEFAULT_UI_SCALE, fontSize: "medium", toolbarLabels: "auto", toolbarPosition: "center", fewerTicks: false, defaultFps: 30, treeColours: true, treeIndent: 14, stagePanels: true, fullScreenOnStart: true, boneColour: "auto", boneSize: 1, selectedBoneColour: "auto", bones: true, constraints: true, hideIkBones: false, rulerColour: "auto", rulerOpacity: 0, rulerTextColour: "auto", undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
   grid: false, nudgeStep: 0.35, nudgeScaleStep: 0.01, nudgeBigFactor: 10, checker: true, axes: true, checkerColour: "auto", gridColour: "auto", gridThickness: 1, axisXColour: "#303030", axisYColour: "#303030", axisThickness: 1, tabBarColour: "#201f24", tabActiveColour: "auto", tabTextColour: "auto", tabDimTextColour: "auto", gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
 export { BONE_SIZE_RANGE } from "./stage/boneScale";
 import { BONE_SIZE_RANGE } from "./stage/boneScale";
@@ -158,6 +160,7 @@ export function readPreferences(text: string | null): PreferenceValues {
     treeColours: bool("treeColours", DEFAULTS.treeColours),
     treeIndent: Math.round(num("treeIndent", TREE_INDENT_RANGE[0], TREE_INDENT_RANGE[1], DEFAULTS.treeIndent)),
     stagePanels: bool("stagePanels", DEFAULTS.stagePanels),
+    fullScreenOnStart: bool("fullScreenOnStart", DEFAULTS.fullScreenOnStart),
     boneColour: colour("boneColour", DEFAULTS.boneColour),
     boneSize: num("boneSize", BONE_SIZE_RANGE[0], BONE_SIZE_RANGE[1], DEFAULTS.boneSize),
     selectedBoneColour: colour("selectedBoneColour", DEFAULTS.selectedBoneColour),

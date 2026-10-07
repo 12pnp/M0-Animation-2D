@@ -38,6 +38,8 @@ export class PreferencesDialog {
         number(`Undo steps kept (${UNDO_RANGE[0]}–${UNDO_RANGE[1]})`, p.undoSteps, 1, (n) => this.prefs.set({ undoSteps: n })),
         note("Takes effect for the next document opened."),
         number("New references' opacity (%)", Math.round(p.referenceOpacity * 100), 1, (n) => this.prefs.set({ referenceOpacity: n / 100 })),
+        check("Go full screen on the first click or key", p.fullScreenOnStart, (on) => this.prefs.set({ fullScreenOnStart: on })),
+        note("The browser hides its address and tab bars. A page may only ask for full screen from a click or a key, so it starts with your first one; Esc leaves, and View ▸ Full Screen toggles it any time."),
       ],
       interface: [
         select("Font size", [["small", "Small"], ["medium", "Medium"], ["large", "Large"]], p.fontSize, (v) => this.prefs.set({ fontSize: v as FontSize })),
@@ -198,7 +200,7 @@ export class PreferencesDialog {
 
 /** The preferences each section holds: what its Reset puts back. */
 const KEYS: Readonly<Record<string, readonly (keyof PreferenceValues)[]>> = {
-  general: ["theme", "undoSteps", "referenceOpacity"],
+  general: ["theme", "undoSteps", "referenceOpacity", "fullScreenOnStart"],
   interface: ["fontSize", "uiScale", "toolbarPosition", "toolbarLabels"],
   timeline: ["defaultFps", "fewerTicks"],
   tree: ["treeColours", "treeIndent"],

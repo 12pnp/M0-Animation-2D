@@ -13,6 +13,7 @@ import { References } from "./panels/references";
 import { droppedFiles } from "./dropFiles";
 import { fileSource, type ProjectFile, Session, type Source } from "./session";
 import type { Space, Tool } from "./stage/gizmo";
+import { watchGrips } from "./workspace/grips";
 import { keysOf, matching, type ShortcutId } from "./shortcuts";
 import { ShortcutsSheet } from "./shortcutsSheet";
 import { isTyping, Stage } from "./stage/stage";
@@ -186,6 +187,23 @@ export function mountApp(root: HTMLElement): void {
   // Text only, fixed at the stage's foot, in the middle.
   modeBtn.classList.add("mode", "stage-mode");
   // Lock (Animate mode only): hold the selected bone, so it cannot be let go or swapped for another by a stray click.
+  function toggleFullScreen(): void {
+    if (document.fullscreenElement) { void document.exitFullscreen(); return; }
+    // navigationUI "hide" asks the browser to keep its own controls out of the way.
+    document.documentElement.requestFullscreen({ navigationUI: "hide" }).catch((err: unknown) => say(`The browser refused full screen: ${err instanceof Error ? err.message : String(err)}`));
+  }
+  // By default the editor goes full screen with the first click or key (a page may only ask from one); Preferences or View ▸ Full Screen on Start
+  // changes the default, and Esc leaves it. A browser under automation is left alone unless the address asks (?fullscreen).
+  const automated = navigator.webdriver && !new URLSearchParams(location.search).has("fullscreen");
+  const firstGesture = (): void => {
+    document.removeEventListener("pointerdown", firstGesture, true);
+    document.removeEventListener("keydown", firstGesture, true);
+    if (prefs.values.fullScreenOnStart && !document.fullscreenElement && document.fullscreenEnabled) toggleFullScreen();
+  };
+  if (!automated) {
+    document.addEventListener("pointerdown", firstGesture, true);
+    document.addEventListener("keydown", firstGesture, true);
+  }
   const toggleLock = (): boolean | void => {
     if (!session.animation) return false;
     const on = !session.selectionLocked;
@@ -277,6 +295,9 @@ export function mountApp(root: HTMLElement): void {
       { label: "Auto Key", checked: stage.autoKey, run: toggleAutoKey },
       { label: "Stage Panels", checked: prefs.values.stagePanels, run: () => prefs.set({ stagePanels: !prefs.values.stagePanels }) },
       DIVIDER,
+      // The browser's own full screen (it hides the address and tab bars; Esc leaves it): only the page itself can ask, and only from a key or a click.
+      { label: "Full Screen on Start", checked: prefs.values.fullScreenOnStart, run: () => prefs.set({ fullScreenOnStart: !prefs.values.fullScreenOnStart }) },
+      { label: "Full Screen", keys: keysOf("fullScreen"), checked: !!document.fullscreenElement, disabled: !document.fullscreenEnabled, run: toggleFullScreen },
       { label: "Fit to skeleton", keys: keysOf("fit"), run: () => stage.fitView() },
       { label: "Onion Skin", checked: prefs.values.onion, run: () => prefs.set({ onion: !prefs.values.onion }) },
       // The skins the file has, to show one at a time (the old toolbar's Skin choice).
@@ -708,6 +729,7 @@ export function mountApp(root: HTMLElement): void {
       else session.select(null);
     },
     lockSelection: () => toggleLock(),
+    fullScreen: () => toggleFullScreen(),
     fit: () => { if (hovered === "motion") motionPanel.fitView(); else if (hovered === "timeline") timeline.fit(); else stage.focusSelected(); },
     nudgeLeft: (e?: KeyboardEvent) => nudge("left", e),
     nudgeRight: (e?: KeyboardEvent) => nudge("right", e),
@@ -753,6 +775,8 @@ export function mountApp(root: HTMLElement): void {
   };
   document.addEventListener("pointermove", track, true);
   document.addEventListener("pointerdown", track, true);
+  // The resize lines (panel sashes, the names-column splitter): blue with a grip under the pointer, held through a drag.
+  watchGrips();
 
   // An arrow key nudges the chosen tool's value, unless a list or menu has it (a select moves its choice on arrows).
   const nudge = (dir: "left" | "right" | "up" | "down", e?: KeyboardEvent): boolean | void => {

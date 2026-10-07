@@ -50,6 +50,7 @@ export const SHORTCUTS = [
   { id: "pastePose", keys: "⌥⌘V", group: "Edit", what: "Paste the copied pose", chord: { mod: true, alt: true, code: "KeyV" } },
   { id: "selectAll", keys: "⌘A", group: "Timeline", what: "Select every key of the animation", chord: cmd("a") },
   { id: "snapping", keys: "⇧⌘;", group: "View", what: "Snapping on or off", chord: { mod: true, shift: true, code: "Semicolon" } },
+  { id: "fullScreen", keys: "⇧⌘F", group: "View", what: "Full screen on or off (the browser hides its address bar; Esc leaves it)", chord: { mod: true, shift: true, code: "KeyF" } },
   { id: "redoAlt", keys: "⌘Y", group: "Edit", what: "Redo (also)", chord: cmd("y") },
   { id: "escape", keys: "Esc", group: "Stage", what: "Cancel a drag, stop playback, or select nothing", chord: plain("escape"), keepDefault: true },
   { id: "fit", keys: "F", group: "View", what: "Centre the view on the selected bone, or fit the whole skeleton when none is selected", chord: plain("f") },
