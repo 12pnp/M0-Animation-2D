@@ -11,6 +11,10 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-07 — **ECS port summary written: all phases S0–P12 in one page** (docs only)
+
+[BoneBurst-ECS-Summary.md](Review/BoneBurst-ECS-Summary.md) collects the architecture, every phase's result, the P12 same-backend numbers and what is left, from [BoneBurst-ECS-Plan.md](Review/BoneBurst-ECS-Plan.md). Not verified against the plan section by section.
+
 ### 2026-10-07 — **ECS port P12 recorded: same-backend comparison; ECS GPU route 5–20% faster than mono, ECS CPU route 6× slower** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
 
 Plan [BoneBurst-ECS-Plan.md](Review/BoneBurst-ECS-Plan.md) §22 (replaces the blocked check below). Both runtimes built as CoreCLR players on Unity 7000 (a mono benchmark harness in the 25D project) and run ABBA. Corrects §16 and §17: their EcsCpu numbers measured undrawn skeletons. Numbers carry the noise of another session's runaway processes; IL2CPP not compared.
