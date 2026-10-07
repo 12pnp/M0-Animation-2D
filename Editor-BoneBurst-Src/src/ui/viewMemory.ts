@@ -11,7 +11,6 @@ export interface MotionMemory {
   readonly zoom: number;
   readonly pan: { readonly x: number; readonly y: number };
   /** `"local"` is what an earlier build wrote for Parent. */
-  readonly space: "parent" | "local" | "world";
   readonly axes: "parent" | "world";
   /** The height of the area under the picture (node numbers and speed graph), in pixels. */
   readonly lower?: number;

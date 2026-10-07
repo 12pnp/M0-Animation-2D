@@ -105,24 +105,34 @@ test("the line above the node numbers is dragged: the area under it grows and th
   await expect(split).toBeVisible();
   const h0 = (await lower.boundingBox())!.height, p0 = (await body.boundingBox())!.height;
   const s = (await split.boundingBox())!, x = s.x + s.width / 2, y = s.y + s.height / 2;
+  // Down: the area under the line shrinks and the picture takes the room.
   await page.mouse.move(x, y);
   await page.mouse.down();
-  await page.mouse.move(x, y - 60, { steps: 6 });
+  await page.mouse.move(x, y + 50, { steps: 6 });
   await page.mouse.up();
   const h1 = (await lower.boundingBox())!.height, p1 = (await body.boundingBox())!.height;
-  expect(h1).toBeGreaterThan(h0 + 40);
-  expect(p1).toBeLessThan(p0 - 40);
-  // Not below its least, nor so far that the picture is lost.
-  await page.mouse.move(x, y - 60);
+  expect(h1).toBeLessThan(h0 - 30);
+  expect(p1).toBeGreaterThan(p0 + 30);
+  // Up again past where it began: it grows, and the picture gives the room (never below its least).
+  const s1 = (await split.boundingBox())!;
+  await page.mouse.move(s1.x + s1.width / 2, s1.y + s1.height / 2);
   await page.mouse.down();
-  await page.mouse.move(x, y + 900, { steps: 6 });
+  await page.mouse.move(s1.x + s1.width / 2, s1.y - 300, { steps: 6 });
+  await page.mouse.up();
+  const h2 = (await lower.boundingBox())!.height, p2 = (await body.boundingBox())!.height;
+  expect(h2).toBeGreaterThan(h1 + 20);
+  expect(p2).toBeGreaterThanOrEqual(118);
+  // Far down: not below its least.
+  const s2 = (await split.boundingBox())!;
+  await page.mouse.move(s2.x + s2.width / 2, s2.y + s2.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(s2.x + s2.width / 2, s2.y + 900, { steps: 6 });
   await page.mouse.up();
   expect((await lower.boundingBox())!.height).toBeGreaterThanOrEqual(149);
-  await page.mouse.move(x, y + 900);
   // Kept for the next time.
   expect(await page.evaluate(() => Number(localStorage.getItem("boneburst.motionPath.lower")))).toBeGreaterThanOrEqual(150);
   // Back to the usual by a double click.
-  const s2 = (await split.boundingBox())!;
-  await page.mouse.dblclick(s2.x + s2.width / 2, s2.y + s2.height / 2);
+  const s3 = (await split.boundingBox())!;
+  await page.mouse.dblclick(s3.x + s3.width / 2, s3.y + s3.height / 2);
   await expect.poll(async () => Math.round((await lower.boundingBox())!.height)).toBe(Math.round(h0));
 });

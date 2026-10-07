@@ -866,3 +866,25 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 .lp-speed-canvas { flex: 1; min-height: 0; width: 100%; display: block; touch-action: none; }
 .lp-lower[hidden], .lp-split[hidden] { display: none; }
 .motion-path .lp-body { min-height: 120px; }
+
+/* Motion Path's header, in groups: a small label and a segmented row of toggles for each (what is shown, the parent's, the handles, the Stage line). */
+.lp-head { gap: 6px 10px; padding: 6px 8px 4px; }
+.lp-head > span { flex: 1 1 80px; }
+.lp-tools { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 14px; }
+.lp-group { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 2px; }
+.lp-group > .lp-glabel { font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: var(--muted); line-height: 1; }
+.lp-group { position: relative; }
+.lp-group > .lp-row { display: flex; align-items: center; gap: 6px; }
+.lp-seg { display: inline-flex; }
+.lp-seg > button { border-radius: 0; margin-left: -1px; padding: 2px 9px; }
+.lp-seg > button:first-child { border-radius: 5px 0 0 5px; margin-left: 0; }
+.lp-seg > button:last-child { border-radius: 0 5px 5px 0; }
+.lp-seg > button:only-child { border-radius: 5px; }
+.lp-seg > button[aria-pressed="true"] { position: relative; z-index: 1; }
+/* The path bar: its three sections with a line between them; what the path says on a row of its own. */
+.lp-motion { gap: 6px 12px; padding: 5px 8px; }
+.lp-sect { display: flex; align-items: center; gap: 5px; padding-right: 12px; border-right: 1px solid var(--line); }
+.lp-sect:last-of-type { border-right: 0; padding-right: 0; }
+.lp-sect:not(:has(> :not([hidden]))) { display: none; }
+.lp-motion .lp-motion-info { flex: 1 0 100%; margin: 0; }
+.lp-motion .lp-parent { max-width: 11em; }

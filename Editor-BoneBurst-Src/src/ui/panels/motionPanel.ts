@@ -135,9 +135,9 @@ export class MotionPathPanel {
   private readonly body = document.createElement("div");
   private readonly title = document.createElement("span");
   private readonly note = document.createElement("p");
-  private readonly spaceBtns: Record<TrailSpace, HTMLButtonElement>;
   private readonly layerBtns: Record<Layer, HTMLButtonElement>;
-  private space: TrailSpace = "parent";
+  /** Everything is in the parent bone's space (the World view was removed: the path follows its parent). */
+  private readonly space: TrailSpace = "parent";
   /** The parent bone picker: the bone whose space the path's nodes are in (docs/MOTION-PARENT-PLAN.md); required before a path can be made. */
   private readonly parentPick = document.createElement("select");
   /** The parent chosen for a bone before its path exists, by "animation|bone". */
@@ -255,8 +255,7 @@ export class MotionPathPanel {
     this.stageSwatch.setAttribute("aria-label", "Path line colour on the Stage");
     this.stageSwatch.style.background = this.stageColour;
     this.stageSwatch.addEventListener("click", () => pickColour(this.stageSwatch, this.stageColour, (hex) => { this.stageColour = hex; this.keepStageLine(); }));
-    this.spaceBtns = { parent: this.button("Parent", "Relative to the parent bone chosen for the path: its joint is the origin, and the path is drawn through its own turn and scale, so it follows it"), world: this.button("World", "In the skeleton's space, as the Stage shows it") };
-    this.layerBtns = { image: this.button("Image", "Show the bone's image"), bone: this.button("Bone", "Show the bone"), parentBone: this.button("Parent bone", "Show the parent bone the path is relative to (fainter), where it is at the playhead"), parentImage: this.button("Parent image", "Show the parent bone's image (behind the bone's own)"), path: this.button("Path", "Show the bone's path over the animation (where it goes, frame by frame)"), spline: this.button("Spline", "Show the spline you draw with Edit Path: its curve, nodes and handles"), length: this.button("Length", "Show the distance between each pair of dots along the path (in the panel's space)"), onion: this.button("Onion", "Show the bone at the frames before (red) and after (green) the playhead; the count is set in Preferences ▸ Behavior"), children: this.button("Children", "Show every bone under the selected one, with their images"), rotate: this.button("Rotate", "Show the rotation handle (the ring beyond the bone's tip)"), move: this.button("Move", "Show the move arrows (when the bone has no path)"), scale: this.button("Scale", "Show the scale handle (the square beside the bone's tip)"), shear: this.button("Shear", "Show the shear handle (the diamond on the other side of the tip)") };
+    this.layerBtns = { image: this.button("Image", "Show the bone's image"), bone: this.button("Bone", "Show the bone"), parentBone: this.button("Bone", "Show the parent bone the path is relative to (fainter), where it is at the playhead"), parentImage: this.button("Image", "Show the parent bone's image (behind the bone's own)"), path: this.button("Path", "Show the bone's path over the animation (where it goes, frame by frame)"), spline: this.button("Spline", "Show the spline you draw with Edit Path: its curve, nodes and handles"), length: this.button("Length", "Show the distance between each pair of dots along the path (in the panel's space)"), onion: this.button("Onion", "Show the bone at the frames before (red) and after (green) the playhead; the count is set in Preferences ▸ Behavior"), children: this.button("Children", "Show every bone under the selected one, with their images"), rotate: this.button("Rotate", "Show the rotation handle (the ring beyond the bone's tip)"), move: this.button("Move", "Show the move arrows (when the bone has no path)"), scale: this.button("Scale", "Show the scale handle (the square beside the bone's tip)"), shear: this.button("Shear", "Show the shear handle (the diamond on the other side of the tip)") };
     for (const g of GIZMOS) {
       this.layerBtns[g].setAttribute("aria-label", `Show ${g} handle`);
       iconButton(this.layerBtns[g], g, false);
@@ -268,7 +267,18 @@ export class MotionPathPanel {
       try { localStorage.setItem(AXES_KEY, this.axes); } catch { /* not kept */ }
       this.schedule();
     });
-    this.head.append(this.title, this.layerBtns.image, this.layerBtns.bone, this.layerBtns.parentBone, this.layerBtns.parentImage, this.layerBtns.path, this.layerBtns.spline, this.layerBtns.length, this.layerBtns.onion, this.layerBtns.children, this.layerBtns.rotate, this.layerBtns.move, this.layerBtns.scale, this.layerBtns.shear, this.spaceBtns.parent, this.spaceBtns.world, this.axesBtn, this.stageBtn, this.stageSwatch);
+    // The parent's two buttons share their names with the bone's: the groups tell them apart, and so do their accessible names.
+    this.layerBtns.parentBone.setAttribute("aria-label", "Parent bone");
+    this.layerBtns.parentImage.setAttribute("aria-label", "Parent image");
+    // Title and the Stage line on top; under them the toggles in groups: what is shown, the parent's, the handles.
+    const tools = document.createElement("div");
+    tools.className = "lp-tools";
+    tools.append(
+      this.group("Show", [this.layerBtns.image, this.layerBtns.bone, this.layerBtns.path, this.layerBtns.spline, this.layerBtns.length, this.layerBtns.onion, this.layerBtns.children]),
+      this.group("Parent", [this.layerBtns.parentBone, this.layerBtns.parentImage]),
+      this.group("Handles", [this.layerBtns.rotate, this.layerBtns.move, this.layerBtns.scale, this.layerBtns.shear], this.axesBtn),
+    );
+    this.head.append(this.title, this.group("Stage line", [this.stageBtn], this.stageSwatch), tools);
     this.body.className = "lp-body";
     this.note.className = "empty lp-note";
     const fit = iconButton(this.button("Fit", "Fit the whole path in the panel (double-click does the same)"), "fit", false);
@@ -308,7 +318,9 @@ export class MotionPathPanel {
     this.parentPick.setAttribute("aria-label", "Parent bone");
     this.parentPick.title = "The parent bone the path is relative to: its nodes are in that bone\'s space and follow it. Required before a path can be made";
     this.parentPick.addEventListener("change", () => this.chooseParent(this.parentPick.value));
-    this.motionBar.append(this.parentPick, this.motionBtns.draw, this.motionBtns.add, this.motionBtns.del, this.framesBox, this.closedLabel, this.motionBtns.bakeTl, this.motionBtns.drop, this.motionInfo);
+    // Three sections: the path (parent, start, nodes), its time (total frames, ring), what to do with it (bake, remove); then what it says.
+    const section = (...kids: HTMLElement[]): HTMLElement => { const d = document.createElement("div"); d.className = "lp-sect"; d.append(...kids); return d; };
+    this.motionBar.append(section(this.parentPick, this.motionBtns.draw, this.motionBtns.add, this.motionBtns.del), section(this.framesBox, this.closedLabel), section(this.motionBtns.bakeTl, this.motionBtns.drop), this.motionInfo);
     this.motionBtns.draw.addEventListener("click", () => this.enterDraw());
     this.motionBtns.bakeTl.addEventListener("click", () => this.bakeToTimeline());
     this.motionBtns.add.className = "add";
@@ -338,7 +350,6 @@ export class MotionPathPanel {
         this.schedule();
       });
     }
-    for (const s of ["parent", "world"] as const) this.spaceBtns[s].addEventListener("click", () => { this.space = s; this.schedule(); });
     this.canvas.addEventListener("pointerdown", (e) => this.down(e));
     this.canvas.addEventListener("pointermove", (e) => this.move(e));
     this.canvas.addEventListener("pointerup", (e) => this.up(e));
@@ -367,6 +378,24 @@ export class MotionPathPanel {
   layout(_width: number, _height: number): void {
     this.applyLower();
     this.schedule();
+  }
+
+  /** A header group: a small label, its toggles joined as one segmented control, and anything extra beside them. */
+  private group(label: string, buttons: readonly HTMLElement[], extra?: HTMLElement): HTMLElement {
+    const g = document.createElement("div"), l = document.createElement("span"), seg = document.createElement("div");
+    g.className = "lp-group";
+    l.className = "lp-glabel";
+    l.textContent = label;
+    seg.className = "lp-seg";
+    seg.setAttribute("role", "group");
+    seg.setAttribute("aria-label", label);
+    seg.append(...buttons);
+    const row = document.createElement("div");
+    row.className = "lp-row";
+    row.append(seg);
+    if (extra) row.append(extra);
+    g.append(l, row);
+    return g;
   }
 
   private button(text: string, title: string): HTMLButtonElement {
@@ -442,7 +471,6 @@ export class MotionPathPanel {
 
   private draw(): void {
     const s = this.session, r = this.trail();
-    for (const k of ["parent", "world"] as const) this.spaceBtns[k].setAttribute("aria-pressed", String(this.space === k));
     for (const l of LAYERS) this.layerBtns[l].setAttribute("aria-pressed", String(this.show[l]));
     this.updateMotionBar();
     this.axesBtn.textContent = this.axes === "parent" ? "Axes: Parent" : "Axes: World";
@@ -469,7 +497,7 @@ export class MotionPathPanel {
     this.note.hidden = true;
     const { trail, bone, extent } = r, css = style;
     const accent = css.getPropertyValue("--accent").trim() || "#4c9bff", muted = css.getPropertyValue("--muted").trim() || "#999", text = css.getPropertyValue("--text").trim() || "#ddd", boneColour = css.getPropertyValue("--bone").trim() || "#ccc";
-    this.title.textContent = `${bone} · ${this.space === "parent" ? `Parent${this.originName() ? ` ${this.originName()}` : ""}` : "World"}${trail ? "" : " · Pose"}`;
+    this.title.textContent = `${bone}${this.originName() ? ` · Parent ${this.originName()}` : " · Parent"}${trail ? "" : " · Pose"}`;
     // The box round the trails and the bone's image, drawn at one scale (y up) with room round it.
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     const grow = (x: number, y: number) => { if (Number.isFinite(x) && Number.isFinite(y)) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); } };
@@ -1016,7 +1044,6 @@ export class MotionPathPanel {
     const stale = motionStale(s, m), unbaked = m.baked === undefined, changed = motionChanged(m);
     this.motionInfo.textContent = `${m.nodes.length} spline nodes${unbaked ? " · not baked to the timeline" : stale ? " · timeline keys changed since the last bake" : changed ? " · changed since the last bake to the timeline" : ""}${this.stray !== null && !unbaked && !stale && !changed ? ` · strays ${Math.round(this.stray * 10) / 10}` : ""}`;
     this.motionBtns.bakeTl.classList.toggle("attention", unbaked || stale || changed);
-    if (this.space !== "parent") this.motionInfo.textContent += " · nodes edit in Parent";
   }
 
   /**
@@ -1376,14 +1403,13 @@ export class MotionPathPanel {
 
   /** What the panel keeps of how it was left, for the project's remembered view (ui/viewMemory.ts). */
   get memory(): MotionMemory {
-    return { node: this.selNode, zoom: this.zoom, pan: { ...this.pan }, space: this.space, axes: this.axes, lower: this.lowerHeight };
+    return { node: this.selNode, zoom: this.zoom, pan: { ...this.pan }, axes: this.axes, lower: this.lowerHeight };
   }
 
   /** Put that back. */
   restoreMemory(m: MotionMemory): void {
     this.zoom = Number.isFinite(m.zoom) && m.zoom > 0 ? m.zoom : 1;
     this.pan = Number.isFinite(m.pan.x) && Number.isFinite(m.pan.y) ? { x: m.pan.x, y: m.pan.y } : { x: 0, y: 0 };
-    if (m.space === "parent" || m.space === "local" || m.space === "world") this.space = m.space === "local" ? "parent" : m.space;
     if (m.axes === "parent" || m.axes === "world") this.axes = m.axes;
     this.hold = false;
     this.selNode = m.node;
