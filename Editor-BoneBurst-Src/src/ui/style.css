@@ -814,6 +814,7 @@ dialog.panel-info .panel-info-title { display: flex; align-items: center; gap: 6
 dialog.preferences .pref-title { display: flex; align-items: center; gap: 12px; }
 dialog.preferences .pref-themes { display: flex; align-items: center; gap: 6px; margin-left: auto; padding-right: 10px; font-size: 12px; cursor: default; }
 dialog.preferences .pref-themes select, dialog.preferences .pref-themes button { padding: 2px 8px; font-size: 12px; }
+dialog.preferences .pref-themes .theme-more { padding: 2px 6px; font-size: 16px; line-height: 1; background: transparent; border: 0; color: inherit; }
 dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 
 /* Tags (docs/TAGS-PLAN.md): chips on the rig tree's rows and the Properties panel, and the popup that edits them. */

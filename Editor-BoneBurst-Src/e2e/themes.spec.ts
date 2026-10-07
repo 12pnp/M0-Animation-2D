@@ -13,9 +13,12 @@ test("a new theme keeps its own tree indentation, and switching themes switches 
   await expect(theme.locator("option")).toHaveText(["Follow the system", "Light", "Dark"]);
   await theme.selectOption("dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
-  await dialog.getByRole("button", { name: "New" }).click();
+  await dialog.getByRole("button", { name: "Theme menu" }).click();
+  await page.getByRole("menuitem", { name: /^New Theme/ }).click();
   await expect(theme.locator("option")).toHaveText(["Follow the system", "Light", "Dark", "Dark 2"]);
-  await expect(dialog.getByRole("button", { name: "Delete" })).toBeEnabled();
+  await dialog.getByRole("button", { name: "Theme menu" }).click();
+  await expect(page.getByRole("menuitem", { name: /^Delete/ })).toBeEnabled();
+  await page.keyboard.press("Escape");
   await dialog.getByText("Tree", { exact: true }).first().click();
   const indent = dialog.getByLabel(/^Tree indentation/).locator("input[type=number]");
   await indent.fill("30");
@@ -26,9 +29,12 @@ test("a new theme keeps its own tree indentation, and switching themes switches 
   // Back on Dark: its own 14.
   await theme.selectOption("dark");
   await expect(indent).toHaveValue("14");
-  await expect(dialog.getByRole("button", { name: "Delete" })).toBeDisabled();
+  await dialog.getByRole("button", { name: "Theme menu" }).click();
+  await expect(page.getByRole("menuitem", { name: /^Delete/ })).toBeDisabled();
+  await page.keyboard.press("Escape");
   await theme.selectOption("theme-1");
   await expect(indent).toHaveValue("30");
-  await dialog.getByRole("button", { name: "Delete" }).click();
+  await dialog.getByRole("button", { name: "Theme menu" }).click();
+  await page.getByRole("menuitem", { name: /^Delete/ }).click();
   await expect(theme.locator("option")).toHaveText(["Follow the system", "Light", "Dark"]);
 });

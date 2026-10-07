@@ -1,5 +1,6 @@
 import { pickColour } from "./colourPopup";
-import { AUTOSAVE_RANGE, BUILT_IN_THEMES, type ThemeBase, BONE_SIZE_RANGE, DEFAULTS, GRID_RANGE, NUDGE_FACTOR_RANGE, NUDGE_RANGE, ONION_RANGE, DEFAULT_FPS_RANGE, type FontSize, type Preferences, type PreferenceValues, type SaveTo, TREE_INDENT_RANGE, type ToolbarLabels, type ToolbarPosition, THICKNESS_RANGE, UI_SCALE_RANGE, UNDO_RANGE } from "./preferences";
+import { AUTOSAVE_RANGE, BUILT_IN_THEMES, BONE_SIZE_RANGE, DEFAULTS, GRID_RANGE, NUDGE_FACTOR_RANGE, NUDGE_RANGE, ONION_RANGE, DEFAULT_FPS_RANGE, type FontSize, type Preferences, type PreferenceValues, type SaveTo, TREE_INDENT_RANGE, type ToolbarLabels, type ToolbarPosition, THICKNESS_RANGE, UI_SCALE_RANGE, UNDO_RANGE } from "./preferences";
+import { showContextMenu } from "./contextMenu";
 import { toStyle } from "./pageScale";
 
 /**
@@ -186,8 +187,8 @@ export class PreferencesDialog {
   }
 
   /**
-   * The theme controls in the title bar, over every section: pick the theme in use (every colour and size below belongs to it), make a new one as a
-   * copy, rename or delete one of your own, and choose the scheme (Light or Dark) it starts from.
+   * The theme controls in the title bar, over every section: pick the theme in use (every colour and size below belongs to it); the ⋮ menu makes a new
+   * one as a copy, renames or deletes one of your own, and chooses the scheme (Light or Dark) it starts from.
    */
   private themeBar(): HTMLElement {
     const box = document.createElement("div");
@@ -200,35 +201,32 @@ export class PreferencesDialog {
     pick.value = this.prefs.values.theme;
     pick.addEventListener("change", () => this.prefs.set({ theme: pick.value }));
     const active = this.prefs.active, own = this.prefs.themes.findIndex((t) => t.id === active.id) >= BUILT_IN_THEMES.length;
-    const btn = (text: string, title: string, run: () => void, disabled = false) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.textContent = text;
-      b.title = title;
-      b.disabled = disabled;
-      b.addEventListener("click", run);
-      return b;
-    };
-    const base = document.createElement("select");
-    base.setAttribute("aria-label", "Starts from");
-    base.title = "The colour scheme this theme starts from; its own colours are set below";
-    base.append(new Option("Based on Light", "light"), new Option("Based on Dark", "dark"));
-    base.value = active.base;
-    base.disabled = !own;
-    base.addEventListener("change", () => this.prefs.setThemeBase(active.id, base.value as ThemeBase));
-    box.append(
-      label, pick,
-      btn("New", `A new theme: a copy of ${active.name}, which you then change below`, () => {
-        const name = prompt(`Name of the new theme (a copy of "${active.name}"):`, uniqueName(active.name, this.prefs.themes.map((t) => t.name)))?.trim();
-        if (name) this.prefs.addTheme(name);
-      }),
-      btn("Rename", "Rename this theme", () => {
-        const name = prompt(`Rename "${active.name}" to:`, active.name)?.trim();
-        if (name) this.prefs.renameTheme(active.id, name);
-      }, !own),
-      btn("Delete", "Delete this theme", () => { if (confirm(`Delete the theme "${active.name}"?`)) this.prefs.deleteTheme(active.id); }, !own),
-      base,
-    );
+    // New, Rename, Delete and the base scheme are in a ⋮ menu beside the picker.
+    const more = document.createElement("button");
+    more.type = "button";
+    more.className = "theme-more";
+    more.textContent = "⋮";
+    more.title = "New, rename, delete and base scheme for themes";
+    more.setAttribute("aria-label", "Theme menu");
+    more.setAttribute("aria-haspopup", "menu");
+    more.addEventListener("click", () => {
+      const r = more.getBoundingClientRect();
+      showContextMenu(r.left, r.bottom, [
+        { label: `New Theme (a copy of ${active.name})…`, run: () => {
+          const name = prompt(`Name of the new theme (a copy of "${active.name}"):`, uniqueName(active.name, this.prefs.themes.map((t) => t.name)))?.trim();
+          if (name) this.prefs.addTheme(name);
+        } },
+        { label: `Rename ${active.name}…`, disabled: !own, run: () => {
+          const name = prompt(`Rename "${active.name}" to:`, active.name)?.trim();
+          if (name) this.prefs.renameTheme(active.id, name);
+        } },
+        { label: `Delete ${active.name}`, disabled: !own, run: () => { if (confirm(`Delete the theme "${active.name}"?`)) this.prefs.deleteTheme(active.id); } },
+        {},
+        { label: "Based on Light", checked: active.base === "light", disabled: !own, run: () => this.prefs.setThemeBase(active.id, "light") },
+        { label: "Based on Dark", checked: active.base === "dark", disabled: !own, run: () => this.prefs.setThemeBase(active.id, "dark") },
+      ], this.element);
+    });
+    box.append(label, pick, more);
     if (this.prefs.values.theme === "system") {
       const hint = document.createElement("span");
       hint.className = "theme-now";
