@@ -1,7 +1,7 @@
 import { pageScale } from "../pageScale";
 
 /**
- * The stage's tool panels as floating cards: each gets a small grip button on its corner to drag it by (a click folds it), and where it was left is remembered. A card keeps its place in the centred row; the
+ * The stage's tool panels as floating cards: with Cmd held, a left drag on one moves it (the pointer and a dashed outline say so), and where it was left is remembered. A card keeps its place in the centred row; the
  * drag only offsets it from there (CSS `translate`), so the default layout is untouched.
  */
 const KEY = "bb.stageGroups";
@@ -33,7 +33,6 @@ export function floatGroups(bounds: HTMLElement, groups: Readonly<Record<string,
   const apply = (id: string, el: HTMLElement): void => {
     const p = places[id] ?? { dx: 0, dy: 0, folded: false };
     el.style.translate = p.dx || p.dy ? `${p.dx}px ${p.dy}px` : "";
-    el.classList.toggle("folded", p.folded);
     el.classList.toggle("user-hidden", p.hidden === true);
   };
   /** Pull a card back inside the stage when the stage is smaller than where the card was left. */
@@ -59,30 +58,32 @@ export function floatGroups(bounds: HTMLElement, groups: Readonly<Record<string,
     return others(id).some((o) => { const after = overlap(moved, o); return after > 1 && after > overlap(now, o); });
   };
 
-  for (const [id, el] of Object.entries(groups)) {
-    const grip = document.createElement("div");
-    grip.className = "grip";
-    grip.title = "Drag to move this panel; click to fold it";
-    const fold = document.createElement("span");
-    fold.className = "fold";
-    fold.textContent = "▾";
-    grip.append(fold);
-    el.prepend(grip);
-    apply(id, el);
+  // Cmd held: the panels show they can be moved (the pointer, a dashed outline), and a left drag on one moves it.
+  const view = bounds.ownerDocument.defaultView ?? window;
+  const parents = (): Set<HTMLElement> => new Set(Object.values(groups).map((g) => g.parentElement).filter((p): p is HTMLElement => !!p));
+  const ready = (on: boolean): void => { for (const p of parents()) p.classList.toggle("drag-ready", on); };
+  const armedBy = (e: KeyboardEvent | PointerEvent): boolean => e.metaKey;
+  view.addEventListener("keydown", (e) => ready(armedBy(e)));
+  view.addEventListener("keyup", (e) => ready(armedBy(e)));
+  view.addEventListener("blur", () => ready(false));
+  view.addEventListener("pointermove", (e) => ready(armedBy(e)), true);
 
-    let start: { x: number; y: number; dx: number; dy: number; moved: boolean } | null = null;
-    grip.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
+  for (const [id, el] of Object.entries(groups)) {
+    apply(id, el);
+    let start: { x: number; y: number; dx: number; dy: number } | null = null;
+    // Capturing, so the press reaches the panel and not the button under it.
+    el.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || !armedBy(e)) return;
       const p = places[id] ?? { dx: 0, dy: 0, folded: false };
-      start = { x: e.clientX, y: e.clientY, dx: p.dx, dy: p.dy, moved: false };
-      grip.setPointerCapture(e.pointerId);
+      start = { x: e.clientX, y: e.clientY, dx: p.dx, dy: p.dy };
+      el.classList.add("dragging");
+      el.setPointerCapture(e.pointerId);
       e.preventDefault();
-    });
-    grip.addEventListener("pointermove", (e) => {
+      e.stopPropagation();
+    }, true);
+    el.addEventListener("pointermove", (e) => {
       if (!start) return;
       const mx = e.clientX - start.x, my = e.clientY - start.y;
-      if (!start.moved && Math.hypot(mx, my) < 3) return;
-      start.moved = true;
       const prev = places[id] ?? { dx: 0, dy: 0, folded: false }, k = pageScale(el.ownerDocument);
       const want = { dx: start.dx + mx / k, dy: start.dy + my / k };
       // A card never lands on another: try the move whole, then along x only and along y only (so it slides along an edge); else it stays.
@@ -94,17 +95,12 @@ export function floatGroups(bounds: HTMLElement, groups: Readonly<Record<string,
     });
     const end = (): void => {
       if (!start) return;
-      const wasClick = !start.moved;
       start = null;
-      if (wasClick) {
-        const prev = places[id] ?? { dx: 0, dy: 0, folded: false };
-        places[id] = { ...prev, folded: !prev.folded };
-        apply(id, el);
-      }
+      el.classList.remove("dragging");
       save(places);
     };
-    grip.addEventListener("pointerup", end);
-    grip.addEventListener("pointercancel", end);
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
   }
 
   new ResizeObserver(() => { for (const [id, el] of Object.entries(groups)) keepInside(id, el); }).observe(bounds);

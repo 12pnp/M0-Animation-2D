@@ -125,18 +125,24 @@ test("a panel dragged onto another stops at its edge: cards never overlap; a fre
   const rect = async (sel: string) => (await page.locator(sel).boundingBox())!;
   const overlap = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
     Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
-  const grip = (await page.locator(".stage-tools .create > .grip").boundingBox())!;
+  const start = await rect(".stage-tools .create");
+  const grip = { x: start.x + start.width / 2, y: start.y + start.height / 2 };
   const target = await rect(".stage-tools .options");
-  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  // Cmd held: the stage's panels show they can be moved, and a left drag moves one.
+  await page.keyboard.down("Meta");
+  await page.mouse.move(grip.x, grip.y);
+  await expect(page.locator(".stage-tools").first()).toHaveClass(/drag-ready/);
   await page.mouse.down();
   await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 20 });
   await page.mouse.up();
+  await page.keyboard.up("Meta");
+  await expect(page.locator(".stage-tools").first()).not.toHaveClass(/drag-ready/);
   const create = await rect(".stage-tools .create");
   expect(overlap(create, await rect(".stage-tools .options"))).toBeLessThan(2);
   expect(overlap(create, await rect(".stage-tools .poses"))).toBeLessThan(2);
   expect(overlap(create, await rect(".stage-tools .transform"))).toBeLessThan(2);
   // It did move (toward the target) rather than stay put.
-  expect(Math.abs(create.x - grip.x) + Math.abs(create.y - grip.y)).toBeGreaterThan(5);
+  expect(Math.abs(create.x - start.x) + Math.abs(create.y - start.y)).toBeGreaterThan(5);
 });
 
 test("the picked name floats about 2 cm (76 px) above the pointer", async ({ page }) => {
@@ -192,4 +198,14 @@ test("Reset This Panel's Layout on the Stage: the matrix top left; Create, Pose 
   expect(matrix.y - stage.y).toBeLessThan(30);
   expect(matrix.x - stage.x).toBeLessThan(30);
   expect(create.y + create.height).toBeGreaterThan(stage.y + stage.height - 40);
+});
+
+test("the small panel buttons follow the mode: Create, Bone options and Pose tools only in Pose", async ({ page }) => {
+  await open(page);
+  for (const id of ["create", "options", "poses", "transform", "space", "show"]) await expect(page.locator(`[data-panel-id="${id}"]`)).toBeVisible();
+  await page.locator(".stage-panel button.mode").click();
+  for (const id of ["create", "options", "poses"]) await expect(page.locator(`[data-panel-id="${id}"]`)).toBeHidden();
+  for (const id of ["transform", "space", "show"]) await expect(page.locator(`[data-panel-id="${id}"]`)).toBeVisible();
+  await page.locator(".stage-panel button.mode").click();
+  await expect(page.locator('[data-panel-id="create"]')).toBeVisible();
 });

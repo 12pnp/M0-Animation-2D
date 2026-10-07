@@ -305,7 +305,7 @@ export function mountApp(root: HTMLElement): void {
   stageTools.append(createGroup, poseGroup, optionsGroup, spaceGroup, transform.element);
   const topTools = el("div", "stage-tools stage-tools-top");
   topTools.append(showGroup);
-  // Each panel can be dragged by its grip and folded; the corner button shows or hides all of them.
+  // Each panel can be moved with Cmd held and a left drag; the small buttons on the left edge show or hide them.
   const panels = floatGroups(stagePanel, { create: createGroup, options: optionsGroup, poses: poseGroup, transform: transform.element, space: spaceGroup, show: showGroup }, () => syncPanelBtns());
   // Fit stays in the panel's top right corner, whatever its size.
   const fitCorner = el("div", "stage-fit");
@@ -329,6 +329,7 @@ export function mountApp(root: HTMLElement): void {
     b.dataset.panelId = p.id;
     return b;
   });
+  const POSE_ONLY_PANELS: ReadonlySet<string> = new Set(["create", "options", "poses"]);
   function syncPanelBtns(): void {
     for (const b of panelBtns) b.setAttribute("aria-pressed", String(!panels.isHidden(b.dataset.panelId!)));
   }
@@ -780,6 +781,8 @@ export function mountApp(root: HTMLElement): void {
     syncRegions();
     regionPick.hidden = stage.createKind !== "region";
     optionsGroup.hidden = animating;
+    // The small panel buttons follow the mode: the setup-pose panels' are for Pose mode only.
+    for (const b of panelBtns) b.hidden = animating && POSE_ONLY_PANELS.has(b.dataset.panelId!);
     poseGroup.hidden = animating;
     poseBtns.find((b) => b.dataset.pose === "weights")?.setAttribute("aria-pressed", String(brush.on));
     const pinned = session.selectedBone !== null && session.pinned.has(session.selectedBone);
