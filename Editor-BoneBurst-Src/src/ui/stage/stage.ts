@@ -12,6 +12,7 @@ import { boneInherit, boneNumber } from "@/model/defaults";
 import type { Session } from "../session";
 import { type Camera, fit, pan, toScreen, toWorld, zoomAt } from "./camera";
 import { asWritten, localRotation, type Matrix, moveDelta, pickBone, type Point, lockToAxis, scaleAlong, scaleFactors, type ScreenBone, shearAlong, shearDelta, type Space, spaceAxes, tidy, type Tool, turn, turnSign } from "./gizmo";
+import { drawnVertices } from "@/engine/draw";
 import { animatedLocal, boneMatrix, boneTip, bounds, parentMatrix, type Posed } from "./posed";
 import { type ConstraintShape, constraintShapes, hitConstraint } from "./constraintShapes";
 import { animatedMeshView, hitMesh, meshView, type MeshView, toBone, weightOf } from "./meshMode";
@@ -92,6 +93,10 @@ export class Stage {
   pointer: Point | null = null;
   /** Preferences (E4 step 10): rulers and bones drawn or not. Hidden bones are still picked. */
   show = { rulers: true, bones: true, constraints: true };
+  /** The Select column of the Stage matrix: what a press picks. A bone already selected keeps its gizmo, picked or not. */
+  select = { bones: true, images: true, others: true };
+  /** The Names column: bones draw their names. */
+  names = { bones: false };
   /** With an animation shown, the bones IK constraints drive are neither drawn nor picked (they are not animated). */
   hideIkBones = false;
   /** The motion path's line to draw over the skeleton (world points, x then y), or null. */
@@ -273,6 +278,7 @@ export class Stage {
         drawBone(g, b, on ? this.selectedBoneColour ?? selected : own.get(b.name) ?? this.boneColour ?? bone, on, boneHalfWidth(unit, size, this.camera.zoom), jointRadius(unit, size, this.camera.zoom));
       }
     }
+    if (this.names.bones) this.drawBoneNames(g, css.getPropertyValue("--text").trim() || "#ffffff");
     if (this.show.constraints) this.drawConstraints(g, p, css, selected);
     this.drawMotionLine(g);
     const sel = this.selectedIndex();
@@ -443,10 +449,26 @@ export class Stage {
     return this.hideIkBones && this.session.animation ? shapes.filter((s) => s.type !== "ik") : shapes;
   }
 
+  /** The slot whose image is topmost under the screen point, or null. */
+  private imageAt(sx: number, sy: number): string | null {
+    const p = this.session.pose();
+    if (!p) return null;
+    const [wx, wy] = toWorld(this.camera, this.size, sx, sy);
+    for (let i = p.draw.slots.length - 1; i >= 0; i--) {
+      const d = p.draw.slots[i]!, v = new Float32Array(d.vertexCount * 2);
+      drawnVertices(p.rig, d, v);
+      for (let t = 0; t < d.triangles.length; t += 3) {
+        const a = d.triangles[t]! * 2, b = d.triangles[t + 1]! * 2, c = d.triangles[t + 2]! * 2;
+        if (inTriangle(wx, wy, v[a]!, v[a + 1]!, v[b]!, v[b + 1]!, v[c]!, v[c + 1]!)) return p.rig.data.slots[d.slot]!.name;
+      }
+    }
+    return null;
+  }
+
   /** A press on a drawn constraint selects it; false when on none (or constraints are hidden). */
   private constraintDown(sx: number, sy: number): boolean {
     const p = this.session.pose();
-    const hit = this.show.constraints && p ? hitConstraint(this.shownShapes(p), (x, y) => toScreen(this.camera, this.size, x, y), sx, sy) : null;
+    const hit = this.show.constraints && this.select.others && p ? hitConstraint(this.shownShapes(p), (x, y) => toScreen(this.camera, this.size, x, y), sx, sy) : null;
     if (hit) this.session.select({ kind: "constraint", type: hit.type, name: hit.name });
     return !!hit;
   }
@@ -817,6 +839,24 @@ export class Stage {
     return out;
   }
 
+  /** Each bone's name at its middle, above the bone (Names ▸ Bones). */
+  private drawBoneNames(g: CanvasRenderingContext2D, colour: string): void {
+    g.save();
+    g.font = `11px "Inter", sans-serif`;
+    g.textAlign = "center";
+    g.textBaseline = "bottom";
+    g.fillStyle = colour;
+    g.lineWidth = 3;
+    g.strokeStyle = "rgb(0 0 0 / 0.55)";
+    g.lineJoin = "round";
+    for (const b of this.screenBones()) {
+      const x = (b.x0 + b.x1) / 2, y = (b.y0 + b.y1) / 2 - 6;
+      g.strokeText(b.name, x, y);
+      g.fillText(b.name, x, y);
+    }
+    g.restore();
+  }
+
   private selectedIndex(): number {
     const p = this.session.pose(), s = this.session.selectedBone;
     return p && s !== null ? p.bones.get(s) ?? -1 : -1;
@@ -892,7 +932,8 @@ export class Stage {
     if (mesh && this.brushDown(mesh, sx, sy, e.altKey)) return;
     if (mesh && this.meshDown(mesh, sx, sy)) return;
     const screenBones = this.screenBones();
-    let name = pickBone(screenBones, sx, sy, 6, this.session.selectedBone);
+    const pickable = this.select.bones ? screenBones : screenBones.filter((b) => b.name === this.session.selectedBone);
+    let name = pickBone(pickable, sx, sy, 6, this.session.selectedBone);
     // With the selection locked only the selected bone can be pressed: another bone is an empty press (it pans).
     if (name !== null && this.session.selectionLocked && name !== this.session.selectedBone) name = null;
     // A drawn constraint (E4 step 12) comes before a bone picked only by its segment: path bones
@@ -924,6 +965,14 @@ export class Stage {
       // A corner of the chosen reference may lie on a guide: the reference comes first.
       if (this.referenceDown(sx, sy)) return;
       if (this.guideDown(sx, sy)) return;
+      // An image under the press picks its slot (Select ▸ Images); the press still pans, as on empty ground.
+      const slot = this.select.images ? this.imageAt(sx, sy) : null;
+      if (slot !== null) {
+        this.session.selectReference(null);
+        this.session.select({ kind: "slot", name: slot });
+        this.panning = { x: sx, y: sy };
+        return;
+      }
       this.emptyPress = true;
       this.session.selectReference(null);
       this.session.select(null);
@@ -1117,6 +1166,13 @@ function heat(w: number): string {
   const t = Math.max(0, Math.min(1, w));
   const hue = 240 * (1 - t);
   return `hsl(${hue}, 90%, ${t === 0 ? 30 : 50}%)`;
+}
+
+function inTriangle(px: number, py: number, ax: number, ay: number, bx: number, by: number, cx: number, cy: number): boolean {
+  const d1 = (px - bx) * (ay - by) - (ax - bx) * (py - by);
+  const d2 = (px - cx) * (by - cy) - (bx - cx) * (py - cy);
+  const d3 = (px - ax) * (cy - ay) - (cx - ax) * (py - ay);
+  return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0));
 }
 
 function distToSegment(px: number, py: number, x0: number, y0: number, x1: number, y1: number): number {

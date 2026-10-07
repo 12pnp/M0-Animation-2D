@@ -13,6 +13,8 @@ flowchart LR
 
 ## 2026-10-07
 
+- **BoneBurst Editor v2: the Stage's Select · Visible · Names matrix (step 1 of the Stage and Pose plan)** (`Editor-BoneBurst-Src/`, [plan](../../Editor-BoneBurst-Src/docs/STAGE-POSE-PLAN.md)). Rows Bones, Images and Others by what a press picks, what is drawn and which names show, in place of the Bones and Constraints buttons: a press on an image picks its slot, bones can draw their names, and each kind can be made unpickable; cells a kind has no column for are dimmed. The same switches are in Preferences ▸ Viewport ▸ Display. Guarded by `e2e/viewMatrix.spec.ts`; 764 unit tests passed on the staged tree and 108 browser tests on the working tree; one theme looked at, the plan's steps 2–5 and its questions to the owner still open.
+
 - **BoneBurst Editor v2: four handle toggles in the Motion Path header, and Scale and Shear handles in the panel** (`Editor-BoneBurst-Src/`). Rotate, Move, Scale and Shear icons (the Stage's tool icons) show or hide the rotate ring, the move arrows (bones without a path), a scale square and a shear diamond beside the bone's tip; the choice is kept in the browser. The new square and diamond drag like the Stage's (`scaleFactors` / `scaleAlong`, `shearDelta` / `shearAlong`, in the panel's Local or World axes, Shift for uniform or snapped), keyed or unkeyed as the other handles are, and locked in Adjust time. Guarded by `e2e/motionGizmos.spec.ts` (ignoring the toggle fails it); 91 browser tests passed, 755 unit tests (one stress test timed out once under load, passes alone); not tried by hand.
 
 - **BoneBurst Editor v2: resize lines turn blue at once with a resize cursor, and full screen (View ▸ Full Screen, ⇧⌘F; on by default from the first click)** (`Editor-BoneBurst-Src/`).

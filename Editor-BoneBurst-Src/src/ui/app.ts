@@ -36,6 +36,7 @@ import { OpenDialog } from "./openDialog";
 import { folders, type Recent, recent, type RecentHandle, readRecent } from "./recent";
 import { ExportRefused, exportFiles, exportToUnity } from "./unityExport";
 import { snapFields } from "./snapFields";
+import { viewMatrix } from "./stage/viewMatrix";
 import { Autosaver, clearRecovery, readRecoveries, type RecoveryRecord, sourcesOf } from "./recovery";
 import { floatGroups } from "./stage/floatingGroups";
 import { clipboard, copyPose, pastePoseHere } from "./clipboard";
@@ -143,14 +144,14 @@ export function mountApp(root: HTMLElement): void {
     return b;
   };
   const showBtns = [
-    showBtn("Bones", "Draw the bones", "bones"),
-    showBtn("Constraints", "Draw the constraints", "constraints"),
     showBtn("Rulers", "Show the rulers and their guides", "rulers"),
     showBtn("Hide IK", "In animation mode, hide the bones an IK constraint drives: they are not animated, so only the targets and the free bones show", "hideIkBones"),
     showBtn("Onion", "Onion skin: the poses before (red) and after (green) the playhead, behind the skeleton (View ▸ Onion Skin)", "onion"),
   ];
   iconButton(showBtns.find((b) => b.dataset.show === "onion")!, "onion", false);
   const rulersBtn = iconButton(showBtns.find((b) => b.dataset.show === "rulers")!, "ruler", false);
+  // Bones, Images and Others: what a press picks, what is drawn, and which names show (docs/STAGE-POSE-PLAN.md step 1).
+  const matrix = viewMatrix(prefs);
   const stageTools = el("div", "stage-tools");
   let crumb: HTMLElement;
   const group = (...children: HTMLElement[]) => { const g = el("div", "group"); g.append(...children); return g; };
@@ -216,7 +217,7 @@ export function mountApp(root: HTMLElement): void {
   const lockBtn = button("Lock", "", () => { toggleLock(); });
   lockBtn.classList.add("stage-lock");
   session.onSelectionLocked = () => say(`The selection is locked: press ${keysOf("lockSelection")} or click Locked (bottom right of the stage) to pick another.`);
-  const spaceGroup = group(...spaceBtns), showGroup = group(...showBtns.filter((b) => b !== rulersBtn && b.dataset.show !== "onion"));
+  const spaceGroup = group(...spaceBtns), showGroup = group(matrix.element, ...showBtns.filter((b) => b !== rulersBtn && b.dataset.show !== "onion"));
   stageTools.append(crumb, transform.element, spaceGroup, showGroup);
   // Each panel can be dragged by its grip and folded; the corner button shows or hides all of them.
   const resetPanels = floatGroups(stagePanel, { transform: transform.element, space: spaceGroup, show: showGroup });
@@ -385,6 +386,9 @@ export function mountApp(root: HTMLElement): void {
     else document.documentElement.dataset.theme = p.theme;
     workspace.refreshTheme();
     stage.show = { rulers: p.rulers, bones: p.bones, constraints: p.constraints };
+    stage.select = { bones: p.boneSelect, images: p.imageSelect, others: p.otherSelect };
+    stage.names = { bones: p.boneNames };
+    matrix.update(p);
     stage.hideIkBones = p.hideIkBones;
     motionPanel.onion = () => ({ before: prefs.values.onionBefore, after: prefs.values.onionAfter, keyedOnly: prefs.values.onionKeyedOnly, colour: prefs.values.onionColour });
     stage.onion = p.onion ? { before: p.onionBefore, after: p.onionAfter, keyedOnly: p.onionKeyedOnly, colour: p.onionColour } : null;

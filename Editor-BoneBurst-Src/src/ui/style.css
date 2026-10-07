@@ -795,3 +795,14 @@ html.bb-gripping-row, html.bb-gripping-row * { cursor: row-resize !important; }
 dialog.panel-info p { margin: 0 0 4px; }
 dialog.panel-info ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 3px; }
 dialog.panel-info .panel-info-title { display: flex; align-items: center; gap: 6px; }
+
+/* The Select / Visible / Names matrix. */
+.view-matrix { display: grid; grid-template-columns: auto repeat(3, 26px); align-items: center; gap: 0; padding: 2px 4px; }
+.view-matrix .vm-head { display: flex; justify-content: center; color: var(--muted); }
+.view-matrix .vm-head .icon { width: 14px; height: 14px; }
+.view-matrix .vm-row { padding-right: 8px; color: var(--muted); font-size: 12px; }
+.stage-tools .group .vm-cell { width: 26px; height: 22px; padding: 0; border: 0; background: none; position: relative; text-align: center; }
+.stage-tools .group .vm-cell::after { content: ""; position: absolute; left: 50%; top: 50%; width: 8px; height: 8px; margin: -4px 0 0 -4px; border-radius: 50%; background: var(--muted); opacity: 0.45; }
+.stage-tools .group .vm-cell[aria-pressed="true"]::after { background: var(--text); opacity: 1; }
+.stage-tools .group .vm-cell:disabled::after { opacity: 0.15; }
+.stage-tools .group .vm-cell[aria-pressed="true"] { background: none; }

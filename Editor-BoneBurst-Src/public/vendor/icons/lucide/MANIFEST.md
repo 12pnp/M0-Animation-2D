@@ -55,6 +55,9 @@ files.
 | `shear.svg` | `icons/shear.svg` | the Shear tool (drawn in Lucide style) |
 | `key-round.svg` | `icons/key-round.svg` | the Auto Key button |
 | `ghost.svg` | `icons/ghost.svg` | the Onion skin button |
+| `mouse-pointer-2.svg` | `icons/mouse-pointer-2.svg` | the Stage matrix's Select column |
+| `eye.svg` | `icons/eye.svg` | the Stage matrix's Visible column |
+| `tag.svg` | `icons/tag.svg` | the Stage matrix's Names column |
 | `layout-panel-left.svg` | `icons/layout-panel-left.svg` | the activity bar's panel picker |
 | `search.svg` | `icons/search.svg` | the rig panel's search field |
 | `arrow-left.svg` | `icons/arrow-left.svg` | the rig panel's Back |
