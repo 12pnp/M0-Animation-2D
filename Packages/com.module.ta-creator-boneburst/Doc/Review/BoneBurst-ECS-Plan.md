@@ -391,7 +391,7 @@ Median frame time (ms, lower is better), release players, `Tests/Results~/2026-1
 | switch × 500 | 1.20 | 1.15 | 2.34 | 2.10 |
 | switch × 100 | 0.40 | 0.31 | 0.70 | 0.70 |
 
-**Reading it.** At 2000 skeletons the ECS port is level with the MonoBehaviour runtime (EcsGpu 3.67 against MonoGpu 3.49 idle, 5.75 against 5.58 switching; EcsCpu is between MonoCpu and MonoGpu while switching). At 500 and below it is slower in absolute terms: idle on the GPU route, ECS against mono, is 0.60 against 0.30 ms at 100, 1.70 against 1.00 at 500, 2.30 against 1.80 at 1000. The marginal cost per skeleton is lower for ECS (about 1.3 µs against 1.7) but it carries a fixed cost of about 0.1 ms plus 0.2–0.5 ms of per-frame shell. Disabling systems one at a time in a 500-idle player showed the shell (animation, pose, after-animation, GPU records, render) at about 1.5 ms of the 1.8 ms, each 0.2–0.4 ms, with Entities Graphics itself about 0.3 ms: per-entity `EntityManager` calls in main-thread loops.
+**Correction (P12, §22): the EcsCpu column in this section and in §17 measured skeletons that were posed and meshed but never drawn (P10); its real cost is far higher, see §22.** **Reading it.** At 2000 skeletons the ECS port is level with the MonoBehaviour runtime (EcsGpu 3.67 against MonoGpu 3.49 idle, 5.75 against 5.58 switching; EcsCpu is between MonoCpu and MonoGpu while switching). At 500 and below it is slower in absolute terms: idle on the GPU route, ECS against mono, is 0.60 against 0.30 ms at 100, 1.70 against 1.00 at 500, 2.30 against 1.80 at 1000. The marginal cost per skeleton is lower for ECS (about 1.3 µs against 1.7) but it carries a fixed cost of about 0.1 ms plus 0.2–0.5 ms of per-frame shell. Disabling systems one at a time in a 500-idle player showed the shell (animation, pose, after-animation, GPU records, render) at about 1.5 ms of the 1.8 ms, each 0.2–0.4 ms, with Entities Graphics itself about 0.3 ms: per-entity `EntityManager` calls in main-thread loops.
 
 **Optimisation from that measurement.** The animation, after-animation and render systems now use `ComponentLookup` and `BufferLookup` over arrays instead of per-entity `EntityManager` calls, skip the after-animation step of unstepped instances and write render bounds only when they changed. Alternating A/B (ABBA, same session, release player, build before against build after), idle on the GPU route: **100 skeletons 0.602 → 0.505 ms (−16%), 500: 1.75 → 1.50 (−14%), 2000: 3.90 → 3.74 (−4%, inside the noise)**; the mono GPU player read 0.30, 1.00, 3.41 in the same session. The remaining gap is the pose header building (about 0.8 µs per instance, `InstanceData.Header` on the main thread, as in the MonoBehaviour runtime), the staging copies and Entities Graphics' own cost; a chunk-level rewrite of those loops is the next step if small counts matter.
 
@@ -536,4 +536,41 @@ flowchart LR
     M6["M0 Editor 6000.6.4f1<br/>IL2CPP benchmark player"] -.->|"cannot load Entities 6.7"| X
 ```
 
-Checked on disk: the 7000.0.0a7 Editor has `IL2CPP` in `ScriptingImplementation` but its macOS support ships only `macos_arm64_player_{development,nondevelopment}_coreclr`, so an IL2CPP player cannot be built; the ECS packages are built on this Editor only (Entities 6.7). The MonoBehaviour benchmark is the IL2CPP player from 6000.6.4f1. A like-for-like comparison therefore needs one of: (a) the MonoBehaviour benchmark built as a CoreCLR player on 7000 (a second project or a port of the benchmark), (b) an IL2CPP module for 7000.0.0a7 when one ships, (c) the ECS port on Entities for 6000.6 (a large port). No code changed. Status: blocked on that choice.
+Checked on disk: the 7000.0.0a7 Editor has `IL2CPP` in `ScriptingImplementation` but its macOS support ships only `macos_arm64_player_{development,nondevelopment}_coreclr`, so an IL2CPP player cannot be built; the ECS packages are built on this Editor only (Entities 6.7). The MonoBehaviour benchmark is the IL2CPP player from 6000.6.4f1. A like-for-like comparison therefore needs one of: (a) the MonoBehaviour benchmark built as a CoreCLR player on 7000 (a second project or a port of the benchmark), (b) an IL2CPP module for 7000.0.0a7 when one ships, (c) the ECS port on Entities for 6000.6 (a large port). No code changed. Status: blocked on that choice; the owner chose (a) on 2026-10-07, see §22.
+
+
+## 22. P12 plan (2026-10-07): both runtimes as CoreCLR players
+
+The owner chose route (a) of §21. The MonoBehaviour runtime is built into a CoreCLR player from the 25D project, next to the ECS benchmark, and `ecs_vs_mono_bench.py` runs both players alternately. The IL2CPP numbers of §16 stay as the M0 reference; this adds a same-backend comparison.
+
+```mermaid
+flowchart LR
+    M25["M0-25DPlatformer-ECS manifest<br/>+ boneburst front · pb-creator-base · unitask (file:)"] --> FRONT["Module.PB.BoneBurst.Unity<br/>BoneBurstSystem · BoneBurstSkeleton"]
+    HARN["Assets/BoneBurstMonoBenchmark<br/>harness: BurstCpu · BurstGpu"] -->|"SetDataBytes by reflection"| FRONT
+    FRONT --> P1["CoreCLR player: mono runtime"]
+    ECSB["Assets/BoneBurstEcsBenchmark"] --> P2["CoreCLR player: ECS runtime"]
+    P1 & P2 --> PY["ecs_vs_mono_bench.py (ABBA)"]
+    PY --> RES["§22 result + BoneBurst-Performance.md"]
+```
+
+**Steps:** (1) add the front package and its dependencies to the 25D manifest and get it compiling on 7000.0.0a7 (risk: pb-creator-base and UniTask were never built there; if they do not compile, stop and report); (2) a harness in `Assets/BoneBurstMonoBenchmark` doing what the M0 `BoneBenchmark` does for BurstCpu and BurstGpu (same flags, same CSV), data fed without the AssetSystem; (3) build both players into new `Build/` folders; (4) ABBA runs, load checked before each; (5) record.
+**Gate:** both players run the same counts and animations and write their CSVs; numbers only from quiet-machine runs; no claim about IL2CPP.
+
+**Result (2026-10-07, Apple M5 Pro, Metal, 1920×1080, vsync off, ABBA × 2, median frame ms; both players CoreCLR release, Unity 7000.0.0a7):**
+
+| animation × count | MonoCpu | MonoGpu | EcsGpu | EcsCpu |
+|---|---|---|---|---|
+| idle × 2000 | 4.26 | 4.00 | **3.41** | 25.80 |
+| walk × 2000 | 4.50 | 4.06 | **3.42** | 26.10 |
+| switch × 2000 | 5.61 | 5.50 | **5.20** | 26.31 |
+| switch × 500 | 2.40 | 2.23 | **1.92** | 7.45 |
+| switch × 100 | 0.51 | 0.50 | 0.65 | 1.45 |
+
+Raw runs: `Tests/Results~/p12_same_backend_runs.csv` in the ECS package.
+
+1.  **GPU route:** the ECS port is 15–20% faster than the MonoBehaviour GPU route when idle or walking at 2000 (3.4 against 4.0), 5% faster switching at 2000, 14% faster at 500 switching, and 30% slower at 100 (0.65 against 0.50, the fixed floor of §17). Same backend, same scene, same data.
+2.  **CPU route: the ECS port is 6× slower than MonoCpu** (26 ms against 4.3 at 2000). This is the first honest EcsCpu number: until P10 CPU skeletons were posed and meshed but not drawn, so §16 and §17 understated it. With each skeleton a dynamic mesh of its own, Entities Graphics registers and draws 2000 separate meshes (500 render entities cost 7.5 ms), where the MonoBehaviour front shares one vertex-fetch buffer. This is the ECS port's biggest gap; the CPU route is not usable at scale until fixed (vertex-fetch route, still open from P6).
+3.  **Method and limits:** the mono player is the MonoBehaviour front built in this project (`Assets/BoneBurstMonoBenchmark`, data fed in memory, same grid, camera, seeded starts and switching as `EcsBenchmark`); the M0 IL2CPP player was not used. The load average was 6.5–9 for every run because three runaway `vitest` workers of another session (20 hours of CPU each) were running; the order alternation cancels drift but all rows carry that noise, so differences under about 5% are not claims. Not compared: IL2CPP for either side.
+4.  **How to run it again:** the mono harness compiles only when the project has the front package (`defineConstraints` on the `com.module.ta-creator-boneburst` version define). Adding the front and its dependencies to the 25D manifest (`com.module.ta-creator-boneburst`, `com.module.pb-creator-base`, `jp.co.cyberagent.smartaddresser`, `com.cysharp.unitask`, `com.creator.development`, `com.module.pa-motion-bursttween`, `com.unity.editorcoroutines`) works, with two costs found here: pb-creator-base's vHierarchy throws an exception every Editor update on 7000 (`Event.s_Current` is gone), and its build gate refuses a player build until Addressables settings and a KeyInt-export `IntStringMapping` exist (both created temporarily for the build and deleted afterwards). The manifest additions are not committed.
+
+Status: done for the comparison; it found the CPU-route gap (next: a vertex-fetch route or shared meshes for the CPU route).

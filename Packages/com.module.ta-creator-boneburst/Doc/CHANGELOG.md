@@ -11,6 +11,10 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-07 — **ECS port P12 recorded: same-backend comparison; ECS GPU route 5–20% faster than mono, ECS CPU route 6× slower** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
+
+Plan [BoneBurst-ECS-Plan.md](Review/BoneBurst-ECS-Plan.md) §22 (replaces the blocked check below). Both runtimes built as CoreCLR players on Unity 7000 (a mono benchmark harness in the 25D project) and run ABBA. Corrects §16 and §17: their EcsCpu numbers measured undrawn skeletons. Numbers carry the noise of another session's runaway processes; IL2CPP not compared.
+
 ### 2026-10-07 — **ECS port P12 checked: an IL2CPP ECS player cannot be built with this Editor** (docs only; no code changed)
 
 Plan [BoneBurst-ECS-Plan.md](Review/BoneBurst-ECS-Plan.md) §21. Unity 7000.0.0a7 ships only CoreCLR macOS player variations; a like-for-like backend comparison needs a CoreCLR build of the MonoBehaviour benchmark, an IL2CPP module, or an Entities 6000.6 port. Not verified: nothing was built.
