@@ -1,6 +1,6 @@
 # BoneBurst ECS port: Plan
 
-**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 (CPU route, skins, tint black, Lit2D) done 2026-10-07 except the vertex-fetch route, rim light and a player build (§15); P7 (physics input, followers, idle skipping, benchmark) done 2026-10-07 except the visibility mode, the steady shortcut and the sorting question (§16). P8 (shell overhead at small counts) done 2026-10-07: 7–16% less at 100–2000 skeletons, the rest is a fixed floor outside BoneBurst (§17). P9 (sorting) done 2026-10-07: a per-skeleton render queue orders a skeleton against sprites of one sorting layer and order; the sorting layer and order themselves stay unreachable (§18).**
+**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 (CPU route, skins, tint black, Lit2D) done 2026-10-07 except the vertex-fetch route, rim light and a player build (§15); P7 (physics input, followers, idle skipping, benchmark) done 2026-10-07 except the visibility mode, the steady shortcut and the sorting question (§16). P8 (shell overhead at small counts) done 2026-10-07: 7–16% less at 100–2000 skeletons, the rest is a fixed floor outside BoneBurst (§17). P10 (render variants in a player) done 2026-10-07: it found and fixed a CPU route that never drew and a stripped default shader (§19). P9 (sorting) done 2026-10-07: a per-skeleton render queue orders a skeleton against sprites of one sorting layer and order; the sorting layer and order themselves stay unreachable (§18).**
 
 BoneBurst's pose, constraint, timeline and mesh code (`Module.PA.BoneBurst.Core`) is already Burst-friendly pointer code with no `UnityEngine`. The port keeps that code unchanged and replaces only the managed shell around it (`BoneBurstSystem`, `BoneBurstSkeleton`, `BoneBurstAsset`, `BoneAnimationState`, the GPU and fetch buffers) with Entities 6.7 systems, bakers and Entities Graphics. The result is a new package in `M0-25DPlatformer-ECS/Packages`.
 
@@ -474,3 +474,27 @@ flowchart LR
 **Built:** `BoneBurstAuthoring.RenderQueue` (-1 keeps the shader's queue), baked into `BoneBurstRenderSettings`, applied to the material; materials are cached per `(shader, queue, variant)`.
 
 **Not reached:** a real sorting layer or order (needs a custom pass or forking Entities Graphics' filter settings), and a skeleton cannot sit between two sprites of different orders. Guard: the on-screen check above plus the full EditMode suite (the render system has no EditMode test; it needs a graphics device). Status: done for the queue; layer and order not built.
+
+## 19. P10 plan (2026-10-07): the render variants in a player
+
+The benchmark players already ran the GPU route in a release build, but nobody has looked at the pixels of each variant outside the Editor. P10 builds a player from one check scene holding every variant and compares its captured frame with the Editor's.
+
+```mermaid
+flowchart LR
+    SCN["Check scene (Sub + Main)<br/>GPU · CPU · tint black · Lit2D · queue"] --> ED["Editor play<br/>capture_game_view"]
+    SCN --> PLY["Player build, new Build/ folder<br/>-screenshot at frame N"]
+    ED --> CMP["compare PNGs<br/>per-variant region"]
+    PLY --> CMP
+    CMP --> REC["§19 result + changelog"]
+```
+
+**Steps:** (1) a check scene with one skeleton per variant at fixed positions; (2) Editor capture; (3) release player capture after a settle frame; (4) compare per region, listing any variant that differs (cyan means a shader variant was stripped); (5) record, fix what differs.
+**Gate:** each variant's region matches within a small pixel tolerance; a zero-pixel region is a failure.
+
+**Result (2026-10-07, macOS release player and Editor, one scene with four spineboy skeletons: GPU Unlit, CPU Unlit, GPU Lit2D, CPU Lit2D, tint black not covered):**
+
+1.  **The CPU route drew nothing, in the Editor too.** `BoneBurstRenderSystem`'s query required `BoneBurstGpuSkinning`, so CPU-skinned skeletons had pose and mesh but no render entities; P6's checks were data-level and an earlier "checked by eye" never covered a CPU skeleton on screen. Fixed by dropping the requirement; the Editor then drew all four.
+2.  **The Unlit skeletons were missing in the player.** The default shader was found by `Shader.Find` at run time, which a player build strips; Lit2D drew because the authoring field referenced it. The baker now always stores the shader (the authored one, else `BoneBurstEcs/Unlit` found at bake time) in `BoneBurstRenderSettings`, so the subscene content keeps it. After the fix all four drew in the player, same pose as the Editor frame.
+3.  The coloured squares in every capture are the 25D project's own demo boxes, not BoneBurst.
+
+**Not covered:** tint black, rim light, the 3D renderer's pass, IL2CPP (the player is the project's macOS build), and a regression test: the render system and the baker need a graphics device and a subscene world, so the guard is this player check only. Status: done for GPU and CPU, Unlit and Lit2D.

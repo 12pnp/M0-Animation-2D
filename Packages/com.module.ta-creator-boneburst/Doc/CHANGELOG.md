@@ -11,6 +11,10 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-07 — **ECS port P10 recorded: CPU skeletons now draw, the default shader survives a player build** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
+
+Plan [BoneBurst-ECS-Plan.md](Review/BoneBurst-ECS-Plan.md) §19. A four-variant scene (GPU/CPU × Unlit/Lit2D) in the Editor and a macOS player showed that the render query skipped CPU-skinned skeletons and that the by-name default shader was stripped from the player; both fixed and seen drawing in the player. Not verified by a unit test (needs a graphics device); tint black, rim light and IL2CPP not covered.
+
 ### 2026-10-07 — **ECS port P9 recorded: skeleton render queue orders it against sprites** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
 
 Plan [BoneBurst-ECS-Plan.md](Review/BoneBurst-ECS-Plan.md) §18. A per-skeleton material render queue decides the draw order against sprites of the same sorting layer and order (checked on screen); a real sorting layer or order is not reachable through Entities Graphics and was not built. Not verified by a unit test: the render system needs a graphics device.
