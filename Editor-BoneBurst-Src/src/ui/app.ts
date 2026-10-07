@@ -254,7 +254,7 @@ export function mountApp(root: HTMLElement): void {
   let pointerAt: { clientX: number; clientY: number } | null = null;
   window.addEventListener("pointermove", (e) => { pointerAt = e; }, true);
   window.addEventListener("pointerdown", (e) => { pointerAt = e; }, true);
-  const flashCrumb = (): void => {
+  const flashCrumb = (hold = false): void => {
     if (!crumb.childElementCount) return;
     crumb.hidden = false;
     const k = pageScale(), box = stagePanel.getBoundingClientRect();
@@ -263,7 +263,8 @@ export function mountApp(root: HTMLElement): void {
     crumb.style.left = `${Math.min(Math.max(x, half + 4), Math.max(half + 4, box.width / k - half - 4))}px`;
     crumb.style.top = `${Math.max(y - 75.6 / k, crumb.offsetHeight + 4)}px`;
     window.clearTimeout(crumbTimer);
-    crumbTimer = window.setTimeout(() => { crumb.hidden = true; }, 500);
+    // Held (the mouse button is down) it stays; the half second runs from the button coming up.
+    if (!hold) crumbTimer = window.setTimeout(() => { crumb.hidden = true; }, 500);
   };
   // Pose / Animate: one button for the mode. Pose edits the setup pose (no animation shown); Animate
   // shows the last animation used, or the first, and what is done there is keyed.
@@ -546,7 +547,8 @@ export function mountApp(root: HTMLElement): void {
 
   const say = (m: string) => { message.textContent = m; };
   stage.onStatus = say;
-  stage.onPick = () => flashCrumb();
+  stage.onPick = () => flashCrumb(true);
+  stage.onRelease = () => { if (!crumb.hidden) { window.clearTimeout(crumbTimer); crumbTimer = window.setTimeout(() => { crumb.hidden = true; }, 500); } };
   // Right-click on the stage (a drag still pans): what acts on the bone there, add a bone, the pose, the view.
   stage.onContextMenu = ([x, y], world, bone) => showContextMenu(x, y, stageMenu({
     session, status: say, keySelected: () => timeline.keySelected(), deleteSelected: () => outline.deleteSelected(),

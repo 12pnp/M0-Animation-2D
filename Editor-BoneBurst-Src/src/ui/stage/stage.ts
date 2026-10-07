@@ -103,7 +103,9 @@ export class Stage {
   /** A press picked something (a bone, an image, a constraint): the app shows its name for a moment. */
   onPick: () => void = () => {};
   /** The bone or image just picked in Pose mode, glowing for 0.4 s. */
-  glow: { kind: "bone" | "slot"; name: string; from: number } | null = null;
+  glow: { kind: "bone" | "slot"; name: string; from: number | null } | null = null;
+  /** A press that picked something ended (the button is up): the app starts the name's countdown. */
+  onRelease: () => void = () => {};
   private static readonly GLOW_MS = 400;
 
   /** The preference: whether a pick glows at all. */
@@ -111,10 +113,18 @@ export class Stage {
 
   private glowFor(what: { kind: "bone" | "slot"; name: string }): void {
     if (this.session.animation || !this.glowOn) return;
-    this.glow = { ...what, from: performance.now() };
+    // It stays lit while the button is down (`from` null); the 0.4 s run out from the button coming up.
+    this.glow = { ...what, from: null };
+    this.redraw();
+  }
+
+  /** The button came up: the glow now fades out over its 0.4 s. */
+  private glowRelease(): void {
+    if (!this.glow || this.glow.from !== null) return;
+    this.glow.from = performance.now();
     const tick = (): void => {
       if (!this.glow) return;
-      if (performance.now() - this.glow.from >= Stage.GLOW_MS) { this.glow = null; this.redraw(); return; }
+      if (this.glow.from !== null && performance.now() - this.glow.from >= Stage.GLOW_MS) { this.glow = null; this.redraw(); return; }
       this.redraw();
       this.view().requestAnimationFrame(tick);
     };
@@ -125,7 +135,7 @@ export class Stage {
   private drawGlow(g: CanvasRenderingContext2D, p: Posed, colour: string): void {
     const glow = this.glow;
     if (!glow) return;
-    const alpha = 1 - (performance.now() - glow.from) / Stage.GLOW_MS;
+    const alpha = glow.from === null ? 1 : 1 - (performance.now() - glow.from) / Stage.GLOW_MS;
     if (alpha <= 0) return;
     const at = (x: number, y: number) => toScreen(this.camera, this.size, x, y);
     g.save();
@@ -1287,6 +1297,8 @@ export class Stage {
 
   private up(e: PointerEvent): void {
     if (this.overlay.hasPointerCapture(e.pointerId)) this.overlay.releasePointerCapture(e.pointerId);
+    this.glowRelease();
+    this.onRelease();
     if (this.createDrag) { this.createUp(); return; }
     const right = this.rightDown;
     this.rightDown = null;

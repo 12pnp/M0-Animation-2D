@@ -252,3 +252,22 @@ test("the small Glow button at the stage's bottom left turns the pick glow off a
   await page.mouse.click(box.x + at.x, box.y + at.y);
   expect(await glow()).not.toBeNull();
 });
+
+test("the glow and the name stay while the mouse button is down; their countdown starts when it comes up", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 800 });
+  await open(page);
+  const glow = () => page.evaluate(() => (window as unknown as { boneburst: { stage: { glow: unknown } } }).boneburst.stage.glow);
+  const at = await page.evaluate(() => {
+    const b = (window as unknown as { boneburst: { stage: { screenBones(): { name: string; x0: number; y0: number; x1: number; y1: number }[] } } }).boneburst.stage.screenBones().find((x) => x.name === "hips")!;
+    return { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 };
+  });
+  const box = (await page.locator(".stage canvas.overlay").boundingBox())!;
+  await page.mouse.move(box.x + at.x, box.y + at.y);
+  await page.mouse.down();
+  await page.waitForTimeout(900);
+  expect(await glow()).not.toBeNull();
+  await expect(page.locator(".stage-crumb")).toBeVisible();
+  await page.mouse.up();
+  await expect.poll(glow, { timeout: 2000 }).toBeNull();
+  await expect(page.locator(".stage-crumb")).toBeHidden({ timeout: 2000 });
+});
