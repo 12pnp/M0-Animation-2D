@@ -60,8 +60,8 @@ const INFO: Readonly<Record<PanelId, { readonly what: string; readonly use: read
     keys: [],
   },
   motionPath: {
-    what: "A bone's motion drawn as a spline: nodes and legs in Edit Path, the timing in Adjust time, then Bake to the timeline.",
-    use: ["Edit Path: + adds a node; drag a number to reorder; right-click a number to merge, reverse, sort, break the legs or set the origin.", "Adjust time: cut the ring into pieces, set each piece's multiplier and speed graph, then Bake.", "Path is where the bone goes over the animation, Spline is the curve you draw, Stage draws the spline on the Stage."],
+    what: "A bone's motion drawn as a ring spline with a speed spline beside it (TwinSpline): nodes, legs and each node's speed in Edit Path, then Bake to the timeline.",
+    use: ["Edit Path: + adds a node; drag a number to reorder; right-click a number to merge, reverse, sort, break the legs or set the origin.", "The speed graph under the node numbers has a point for each node: drag it up or down (-0.99 to 5) and the bone goes 1 + that times as fast there. Drag the line between the picture and the numbers to give the graph more room.", "Path is where the bone goes over the animation, Spline is the curve you draw, Stage draws the spline on the Stage."],
     keys: ["Motion Path"],
   },
 };

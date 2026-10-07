@@ -367,7 +367,6 @@ export function mountApp(root: HTMLElement): void {
   stage.motionLine = () => motionPanel.stageLine();
   motionPanel.onStageLine = () => stage.redraw();
   stage.forceUnkeyed = () => motionPanel.drawing;
-  stage.dragLocked = () => motionPanel.timing;
   const skinsPanel = new SkinsPanel(session);
   const animationsPanel = new AnimationsPanel(session);
   // Ask AI (E5 step 9): the bridge's model with the editor's tools; sending connects the AI button.
@@ -994,7 +993,6 @@ export function mountApp(root: HTMLElement): void {
     // Motion Path's own keys: only with the pointer over it; elsewhere the key goes on to whatever else has it.
     motionAdd: () => (hovered === "motion" && motionPanel.hotkey("add") ? undefined : false),
     motionRemove: () => (hovered === "motion" && motionPanel.hotkey("remove") ? undefined : false),
-    motionMode: () => (hovered === "motion" && motionPanel.hotkey("mode") ? undefined : false),
     motionReverse: () => (hovered === "motion" && motionPanel.hotkey("reverse") ? undefined : false),
     motionMerge: () => (hovered === "motion" && motionPanel.hotkey("merge") ? undefined : false),
     motionOrigin: () => (hovered === "motion" && motionPanel.hotkey("origin") ? undefined : false),

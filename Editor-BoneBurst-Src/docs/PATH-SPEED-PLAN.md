@@ -1,5 +1,7 @@
 # Motion paths: nodes, Bake, and retiming the dots (speed, shape kept) — plan
 
+> **Replaced 2026-10-08** by `TWINSPLINE-PLAN.md` (the dots' retiming is now a speed on each node).
+
 **Status:** built 2026-10-07, not committed; **not verified by hand**. `tsc`, 13 unit tests
 (`tests/motionPath.test.ts`), 3 Playwright tests (`e2e/motionPath.spec.ts`), the whole vitest (740) and
 Playwright (63) suites pass, and a deliberate flip of the dragged progress fails the e2e. Taken as

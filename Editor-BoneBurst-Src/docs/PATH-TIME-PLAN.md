@@ -1,5 +1,7 @@
 # Time on the Timeline, node times on the path (nodeTime ≠ spineNode) — plan
 
+> **Node times replaced 2026-10-08** by `TWINSPLINE-PLAN.md`: there are no node times; each node has a speed.
+
 **Status:** built 2026-10-07 with all five recommendations; not committed; **not verified by hand**. `tsc`, vitest (741) and the
 whole Playwright suite (71) pass, and two deliberate bugs (the curve's x and y swapped; the bone-to-node sync without its guard) fail the tests.
 Deviation from the plan: dragging a node time **in time** is a field, not Shift-drag (below). Written from the owner's note (below). It changes the **timing half** of

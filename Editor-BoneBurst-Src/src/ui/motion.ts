@@ -1,4 +1,5 @@
-import { type BakedKey, bakeTranslate, curveOf, DEFAULT_FRAMES, fitChannel, keyFrames, keysSignature, pathSignature, progressAtFrame, setupXY, translateKeys } from "@/edit/motionPath";
+import { type BakedKey, bakeTranslate, curveOf, DEFAULT_FRAMES, endFrame, fitChannel, keysSignature, pathSignature, setupXY, translateKeys } from "@/edit/motionPath";
+import { arrivalFrames, progressAtFrame } from "@/edit/twinSpline";
 import { motionOf, withMotion } from "@/edit/sidecar";
 import { EditRefused } from "@/edit/history";
 import type { Skeleton } from "@/model/skeleton";
@@ -90,7 +91,7 @@ export function pathFromView(view: MotionPath, M: Matrix, stored?: MotionPath): 
   const same = (a: number | undefined, b: number | undefined): boolean => a === b || (a !== undefined && b !== undefined && Math.abs(a - b) < 1e-6);
   return { ...view, nodes: view.nodes.map((n, i) => {
     const old = stored?.nodes[i], seen = was?.nodes[i];
-    if (old && seen && n.id === old.id && same(n.x, seen.x) && same(n.y, seen.y) && same(n.tx, seen.tx) && same(n.ty, seen.ty) && same(n.bx, seen.bx) && same(n.by, seen.by)) return old;
+    if (old && seen && n.id === old.id && same(n.x, seen.x) && same(n.y, seen.y) && same(n.tx, seen.tx) && same(n.ty, seen.ty) && same(n.bx, seen.bx) && same(n.by, seen.by) && n.speed === old.speed) return old;
     // A part that did not change keeps its stored numbers (a handle dragged leaves the node's place exactly as it was).
     const placed = old && seen && same(n.x, seen.x) && same(n.y, seen.y);
     const [x, y] = placed ? [old.x, old.y] : fromView(M, n.x, n.y), out: MotionNode = { ...n, x: placed ? x : r4(x), y: placed ? y : r4(y) };
@@ -115,7 +116,7 @@ export function startMotion(s: Session, parent: string): MotionPath | null {
   const a = s.animation, bone = s.selectedBone, here = currentNode(s, parent), p = s.pose();
   if (!a || !bone || !here || !p) return null;
   const i = p.bones.get(bone)!, length = Math.max(20, p.rig.data.bones[i]!.length);
-  return { animation: a.name, bone, parent, nodes: [here, { x: here.x + length, y: here.y }], closed: true, frames: DEFAULT_FRAMES, starts: [Math.round(DEFAULT_FRAMES / 2)], speeds: [] };
+  return { animation: a.name, bone, parent, nodes: [here, { x: here.x + length, y: here.y }], closed: true, frames: DEFAULT_FRAMES };
 }
 
 /** A node after `last`: its place plus the same offset the first two have (a bone length along x). */
@@ -161,15 +162,15 @@ export function poseAtNode(s: Session, x: number, y: number, parent: string | nu
 const FIT_SAMPLES = 12;
 
 /**
- * The keys a bake to the timeline writes, with how far the baked motion strays from the path at worst (units): one
- * for each node time and one at the end of the run (on a ring the closing key, a copy of the first); each key's
- * curve to the next is fitted to the bone's local x and y over the block, sampled in the rig as it is posed then
- * (so a moving parent is in them).
+ * The keys a path bakes to (docs/TWINSPLINE-PLAN.md): one where the bone reaches each node (the frame the speed spline makes it,
+ * rounded, kept apart) and one at the end of the run, then one more in the middle of any stretch where the fitted curve strays from
+ * the bone's real motion by more than a little, down to stretches of two frames. Each stretch keeps the control values of its fit.
+ * Returns the keys and how far the baked motion strays from the path at worst.
  */
 export function bakeKeys(s: Session, m: MotionPath): { keys: BakedKey[]; stray: number } {
   const poser = s.poserFor();
   if (!poser) throw new EditRefused("Nothing is open.");
-  const fps = s.fps, curve = curveOf(m), frames = keyFrames(m), ref = refBoneName(s.doc, m);
+  const fps = s.fps, curve = curveOf(m), ref = refBoneName(s.doc, m), end = endFrame(m);
   const local = (frame: number): [number, number] => {
     const q = curve.at(progressAtFrame(m, frame) * curve.length), pose = poser.pose(s.skin, m.animation, Math.fround(frame / fps), "none"), i = pose.bones.get(m.bone);
     if (i === undefined) throw new EditRefused(`"${m.bone}" has no pose in this skin.`);
@@ -178,15 +179,34 @@ export function bakeKeys(s: Session, m: MotionPath): { keys: BakedKey[]; stray: 
     const [lx, ly] = moveDelta(P, R[4] + vx - P[4], R[5] + vy - P[5]);
     return [lx, ly];
   };
-  const keys: BakedKey[] = [];
-  let stray = 0;
-  for (let i = 0; i < frames.length; i++) {
-    const f0 = frames[i]!, [x, y] = local(f0);
-    if (i === frames.length - 1) { keys.push(m.closed ? { frame: f0, x: keys[0]!.x, y: keys[0]!.y } : { frame: f0, x, y }); break; }
-    const f1 = frames[i + 1]!, xs: number[] = [], ys: number[] = [];
+  // Where the bone reaches each node, as whole frames in order, from frame 0 to the end.
+  const frames: number[] = [0];
+  for (const f of arrivalFrames(m)) {
+    const r = Math.round(f);
+    if (r > frames.at(-1)! && r < end) frames.push(r);
+  }
+  if (frames.at(-1)! !== end) frames.push(end);
+  const tolerance = Math.max(0.1, curve.length * 0.002), fit = (f0: number, f1: number) => {
+    const xs: number[] = [], ys: number[] = [];
     for (let k = 0; k <= FIT_SAMPLES; k++) { const [px, py] = local(f0 + ((f1 - f0) * k) / FIT_SAMPLES); xs.push(px); ys.push(py); }
     const fx = fitChannel(xs), fy = fitChannel(ys);
-    stray = Math.max(stray, Math.hypot(fx.error, fy.error));
+    return { fx, fy, error: Math.hypot(fx.error, fy.error) };
+  };
+  // A stretch whose fit strays gets a key in the middle (a limited number of times over): the speed spline can bend the motion within it.
+  const refined: number[] = [];
+  const split = (f0: number, f1: number, depth: number): void => {
+    refined.push(f0);
+    if (f1 - f0 >= 2 && depth < 4 && fit(f0, f1).error > tolerance) { const mid = Math.round((f0 + f1) / 2); split(f0, mid, depth + 1); split(mid, f1, depth + 1); }
+  };
+  for (let i = 0; i + 1 < frames.length; i++) split(frames[i]!, frames[i + 1]!, 0);
+  refined.push(end);
+  const keys: BakedKey[] = [];
+  let stray = 0;
+  for (let i = 0; i < refined.length; i++) {
+    const f0 = refined[i]!, [x, y] = local(f0);
+    if (i === refined.length - 1) { keys.push(m.closed ? { frame: f0, x: keys[0]!.x, y: keys[0]!.y } : { frame: f0, x, y }); break; }
+    const { fx, fy, error } = fit(f0, refined[i + 1]!);
+    stray = Math.max(stray, error);
     keys.push({ frame: f0, x, y, control: [fx.c1, fx.c2, fy.c1, fy.c2] });
   }
   return { keys, stray };
@@ -196,7 +216,7 @@ export function bakeKeys(s: Session, m: MotionPath): { keys: BakedKey[]; stray: 
  * Bake to the timeline: write the path's keys into the bone's translate timeline (one undo step), and keep the
  * path with a signature of those keys. Returns the path kept and how far the baked motion strays from it.
  */
-export function bakeMotion(s: Session, m: MotionPath): { path: MotionPath; stray: number } {
+export function bakeMotion(s: Session, m: MotionPath): { path: MotionPath; stray: number; keys: number } {
   const h = s.history, doc = s.doc;
   if (!h || !doc) throw new EditRefused("Nothing is open.");
   const { keys: baked, stray } = bakeKeys(s, m), keys = translateKeys(setupXY(doc, m.bone), baked, s.fps);
@@ -208,7 +228,7 @@ export function bakeMotion(s: Session, m: MotionPath): { path: MotionPath; stray
     s.setSidecar(withMotion(s.sidecar, m.animation, m.bone, path));
   } finally { h.end(); }
   s.changed();
-  return { path, stray };
+  return { path, stray, keys: keys.length };
 }
 
 /** Keep a path (nodes, node times, frames or a multiplier changed) without baking: one undo step labelled `label`, and the steps of one label a moment apart (a typed field) are one. */

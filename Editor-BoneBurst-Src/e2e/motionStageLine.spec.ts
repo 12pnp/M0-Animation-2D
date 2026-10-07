@@ -94,14 +94,14 @@ test("the Spline button hides and shows the spline in Motion Path, and leaves th
   await expect.poll(() => page.evaluate(() => (window as unknown as { boneburst: { motionPath: { grabPoints: { nodes: unknown[] } } } }).boneburst.motionPath.grabPoints.nodes.length)).toBeGreaterThan(0);
 });
 
-test("Motion Path's keys, with the pointer over it: E starts the path and switches the mode, A adds, V reverses, X removes, B bakes", async ({ page }) => {
+test("Motion Path's keys, with the pointer over it: A starts the path and adds, V reverses, X removes, B bakes", async ({ page }) => {
   await open(page);
   const panel = page.locator(".panel.motion-path");
   const motion = () => page.evaluate(() => { const m = (window as unknown as { boneburst: { session: { sidecar: { motion: { nodes: { id?: number }[] }[] } } } }).boneburst.session.sidecar.motion[0]; return m ? m.nodes.map((n, i) => n.id ?? i + 1) : null; });
   await chooseParent(panel);
-  const box = (await panel.locator("canvas").boundingBox())!;
+  const box = (await panel.locator(".lp-body canvas").boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.keyboard.press("e");
+  await page.keyboard.press("a");
   expect(await motion()).toEqual([1, 2]);
   await page.keyboard.press("a");
   await page.keyboard.press("a");
@@ -111,14 +111,10 @@ test("Motion Path's keys, with the pointer over it: E starts the path and switch
   // The node added last is the picked one: X removes it.
   await page.keyboard.press("x");
   expect((await motion())!.length).toBe(3);
-  // E switches the mode, both ways.
-  await page.keyboard.press("e");
-  await expect(panel.getByRole("button", { name: "Adjust time", exact: true })).toHaveAttribute("aria-pressed", "true");
-  await page.keyboard.press("e");
-  await expect(panel.getByRole("button", { name: "Edit Path", exact: true })).toHaveAttribute("aria-pressed", "true");
-  // The digits and C are not this panel's.
+  // The digits, C and E (Adjust time is gone) are not this panel's.
   await page.keyboard.press("Digit2");
   await page.keyboard.press("c");
+  await page.keyboard.press("e");
   expect((await motion())!.length).toBe(3);
   // Away from the panel the same keys are not this panel's.
   await page.mouse.move(2, 2);
@@ -140,7 +136,7 @@ test("Break the legs: the right-click menu breaks a node's legs and mirrors them
   // Drag the way-out handle: the way in stays where it was (mirrored, it would have turned with it).
   await page.waitForTimeout(400);
   const handles = await page.evaluate(() => (window as unknown as { boneburst: { motionPath: { grabPoints: { handles: { slot: number; side: string; x: number; y: number }[] } } } }).boneburst.motionPath.grabPoints.handles.filter((h) => h.slot === 0));
-  const hin = handles.find((h) => h.side === "out")!, box = (await panel.locator("canvas").boundingBox())!;
+  const hin = handles.find((h) => h.side === "out")!, box = (await panel.locator(".lp-body canvas").boundingBox())!;
   await page.mouse.move(box.x + hin.x, box.y + hin.y);
   await page.mouse.down();
   await page.mouse.move(box.x + hin.x + 25, box.y + hin.y + 25, { steps: 4 });
@@ -180,7 +176,7 @@ test("the node numbers sit under the picture and the picked node's data under th
   expect(data.y).toBeGreaterThanOrEqual(strip.y + strip.height - 1);
   const node = (k: number) => page.evaluate((i) => (window as unknown as { boneburst: { session: { sidecar: { motion: { nodes: { x: number; y: number; bx?: number }[] }[] } } } }).boneburst.session.sidecar.motion[0]!.nodes[i]!, k);
   await panel.locator(".lp-slots button.node").nth(1).click();
-  await expect(panel.locator(".lp-data .title")).toContainText("Node 2");
+  await expect(panel.locator(".lp-fields .title")).toContainText("Node 2");
   const x = panel.locator(".lp-data").getByLabel("Node x");
   await x.fill("123.5");
   await x.press("Enter");

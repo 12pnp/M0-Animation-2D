@@ -32,9 +32,9 @@ test("no path can be made until a parent bone is chosen: Edit Path is off, and t
   await expect(pick).toBeVisible();
   await expect(pick).toHaveValue("");
   await expect(panel.getByRole("button", { name: "Edit Path", exact: true })).toBeDisabled();
-  const box = (await panel.locator("canvas").boundingBox())!;
+  const box = (await panel.locator(".lp-body canvas").boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
-  await page.keyboard.press("e");
+  await page.keyboard.press("a");
   expect(await motion(page)).toBeNull();
   await expect(page.locator(".message")).toContainText("Choose the parent bone first");
   // The bone and the bones under it are not offered.

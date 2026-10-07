@@ -342,9 +342,6 @@ export class Session {
     return true;
   }
 
-  /** The path block picked (an index into the selected bone's path blocks, -1 none): Motion Path's strip and the Timeline's tabs share it. */
-  pickedBlock = -1;
-
   get hasUnkeyed(): boolean { return this.unkeyed.size > 0; }
 
   /** Counts every change to the unkeyed poses: what tells a bone was dragged from a session change for another reason. */

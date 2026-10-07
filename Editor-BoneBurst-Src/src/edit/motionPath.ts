@@ -128,82 +128,6 @@ export function endFrame(m: Pick<MotionPath, "frames" | "closed">): number {
   return m.closed ? m.frames : m.frames - 1;
 }
 
-/** The node times' frames: the first is always 0; the others are `starts`, in order, inside the run. */
-export function nodeTimeFrames(m: Pick<MotionPath, "starts" | "frames" | "closed">): number[] {
-  const end = endFrame(m), seen = new Set<number>([0]);
-  for (const f of [...m.starts].sort((a, b) => a - b)) if (Number.isInteger(f) && f > 0 && f < end) seen.add(f);
-  return [...seen].sort((a, b) => a - b);
-}
-
-/** What the timing of a path is made of. */
-export type Timing = Pick<MotionPath, "starts" | "frames" | "closed" | "speeds" | "curves">;
-
-/** A point of a block's speed graph: how fast the bone goes (1 is even) at `u` (0..1 of the block's frames). */
-export interface SpeedPoint { readonly u: number; readonly v: number }
-
-/** The speed graph of a block: the default is a straight line at 1. */
-export const FLAT_SPEED: readonly SpeedPoint[] = [{ u: 0, v: 1 }, { u: 1, v: 1 }];
-
-/** A block: from a node time to the next (the last to the end of the run), with its time multiplier and its speed graph. */
-export interface Block { readonly start: number; readonly end: number; readonly speed: number; readonly graph: readonly SpeedPoint[] }
-
-function pointsOf(flat: readonly number[] | undefined): readonly SpeedPoint[] {
-  if (!flat || flat.length < 4 || flat.length % 2) return FLAT_SPEED;
-  const out: SpeedPoint[] = [];
-  for (let i = 0; i < flat.length; i += 2) out.push({ u: flat[i]!, v: flat[i + 1]! });
-  return out;
-}
-
-/** How much of a block's path is covered by `u` (0..1 of its frames), by the area under its speed graph, as a share of the whole area. */
-export function graphShare(graph: readonly SpeedPoint[], u: number): number {
-  const x = Math.min(1, Math.max(0, u));
-  let part = 0, all = 0;
-  for (let i = 0; i + 1 < graph.length; i++) {
-    const a = graph[i]!, b = graph[i + 1]!, w = b.u - a.u;
-    if (w <= 0) continue;
-    all += (w * (a.v + b.v)) / 2;
-    if (x <= a.u) continue;
-    const t = Math.min(w, x - a.u), vt = a.v + ((b.v - a.v) * t) / w;
-    part += (t * (a.v + vt)) / 2;
-  }
-  return all > 0 ? part / all : x;
-}
-
-export function blocksOf(m: Timing): Block[] {
-  const times = nodeTimeFrames(m), end = endFrame(m);
-  return times.map((start, i) => ({ start, end: times[i + 1] ?? end, speed: m.speeds[i] !== undefined && m.speeds[i]! > 0 ? m.speeds[i]! : 1, graph: pointsOf(m.curves?.[i]) }));
-}
-
-/** How far along the path each block begins (0..1), and the last 1: the path covered in a block is proportional to its frames × its multiplier. */
-export function boundaryProgress(m: Timing): number[] {
-  const blocks = blocksOf(m), shares = blocks.map((b) => (b.end - b.start) * b.speed), total = shares.reduce((a, b) => a + b, 0) || 1;
-  const out = [0];
-  for (const s of shares) out.push(out.at(-1)! + s / total);
-  out[out.length - 1] = 1;
-  return out;
-}
-
-/** The progress (0..1 of the path) at a frame: the block's share, spread by its speed graph (even when it is a straight line). */
-export function progressAtFrame(m: Timing, frame: number): number {
-  const blocks = blocksOf(m), bp = boundaryProgress(m), f = Math.min(endFrame(m), Math.max(0, frame));
-  for (let i = 0; i < blocks.length; i++) {
-    const b = blocks[i]!;
-    if (f <= b.end || i === blocks.length - 1) return bp[i]! + (bp[i + 1]! - bp[i]!) * graphShare(b.graph, (f - b.start) / Math.max(1, b.end - b.start));
-  }
-  return 1;
-}
-
-/** The path's point at a frame. */
-export function placeAtFrame(m: MotionPath, frame: number): Pt {
-  const c = curveOf(m);
-  return c.at(progressAtFrame(m, frame) * c.length);
-}
-
-/** The frames the keys of a bake go on: the node times, then the end of the run. */
-export function keyFrames(m: Pick<MotionPath, "starts" | "frames" | "closed">): number[] {
-  return [...nodeTimeFrames(m), endFrame(m)];
-}
-
 /** The number each node's button shows: its own once nodes have been reordered, else its place in the list. */
 export function nodeLabels(m: Pick<MotionPath, "nodes">): number[] {
   return m.nodes.map((n, i) => n.id ?? i + 1);
@@ -237,7 +161,8 @@ export function mergeNodes(m0: MotionPath, picked: readonly number[]): MotionPat
   if (at.length < 2) throw new EditRefused("Pick two or more spline nodes to merge (Command + click).");
   if (m0.nodes.length - at.length + 1 < 2) throw new EditRefused("A path keeps two spline nodes.");
   const m = withIds(m0), x = at.reduce((s, i) => s + m.nodes[i]!.x, 0) / at.length, y = at.reduce((s, i) => s + m.nodes[i]!.y, 0) / at.length;
-  const merged: MotionNode = { x: Math.round(x * 1e4) / 1e4, y: Math.round(y * 1e4) / 1e4, id: m.nodes[at[0]!]!.id! };
+  const speed = at.reduce((q, i) => q + (m.nodes[i]!.speed ?? 0), 0) / at.length;
+  const merged: MotionNode = { x: Math.round(x * 1e4) / 1e4, y: Math.round(y * 1e4) / 1e4, id: m.nodes[at[0]!]!.id!, ...(speed ? { speed: Math.round(speed * 1e4) / 1e4 } : {}) };
   return { ...m, nodes: m.nodes.flatMap((n, i) => (i === at[0] ? [merged] : at.includes(i) ? [] : [n])) };
 }
 
@@ -293,76 +218,10 @@ export function withOrigin(m0: MotionPath, i: number): MotionPath {
   return { ...m, nodes: [...m.nodes.slice(i), ...m.nodes.slice(0, i)] };
 }
 
-/** A node time added at `frame` (inside the run, not on another); the block it falls in is split in two, each keeping its multiplier. */
-export function addNodeTime(m: MotionPath, frame: number): MotionPath {
-  const times = nodeTimeFrames(m), end = endFrame(m);
-  if (!Number.isInteger(frame) || frame <= 0 || frame >= end) throw new EditRefused(`A node time goes on a frame from 1 to ${end - 1}.`);
-  if (times.includes(frame)) throw new EditRefused(`There is already a node time on frame ${frame}.`);
-  const at = times.filter((f) => f < frame).length, speeds = blocksOf(m).map((b) => b.speed);
-  return { ...m, starts: [...times.slice(1), frame].sort((a, b) => a - b), speeds: [...speeds.slice(0, at), speeds[at - 1]!, ...speeds.slice(at)], curves: curvesWith(m, (c) => [...c.slice(0, at - 1), [], [], ...c.slice(at)]) };
-}
-
-/** A node time removed (an index into `nodeTimeFrames`; the first stays, and a path keeps two). The two blocks join and take the multiplier of the earlier. */
-export function removeNodeTime(m: MotionPath, i: number): MotionPath {
-  const times = nodeTimeFrames(m);
-  if (i <= 0) throw new EditRefused("The first node time (frame 0) stays.");
-  if (times.length <= 2) throw new EditRefused("A path keeps two node times.");
-  if (i >= times.length) throw new EditRefused("There is no such node time.");
-  const speeds = blocksOf(m).map((b) => b.speed);
-  return { ...m, starts: times.slice(1).filter((_, k) => k + 1 !== i), speeds: speeds.filter((_, k) => k !== i), curves: curvesWith(m, (c) => [...c.slice(0, i - 1), [], ...c.slice(i + 1)]) };
-}
-
-/** A node time moved to `frame`, held a frame inside its neighbours (an index into `nodeTimeFrames`, not the first). */
-export function moveNodeTime(m: MotionPath, i: number, frame: number): MotionPath {
-  const times = nodeTimeFrames(m), end = endFrame(m);
-  if (i <= 0 || i >= times.length) throw new EditRefused("The first node time stays on frame 0.");
-  const lo = times[i - 1]! + 1, hi = (times[i + 1] ?? end) - 1;
-  if (lo > hi) throw new EditRefused("There is no room between its neighbours.");
-  const f = Math.min(hi, Math.max(lo, Math.round(frame)));
-  return { ...m, starts: times.slice(1).map((t, k) => (k + 1 === i ? f : t)) };
-}
-
-/** The path running `frames` frames: the node times keep their share of it (and always stay inside). */
+/** The path running `frames` frames (at least 4). The speed spline stays as it is: it is over the path, not over frames. */
 export function withFrames(m: MotionPath, frames: number): MotionPath {
   if (!Number.isInteger(frames) || frames < 4) throw new EditRefused("A path takes at least 4 frames.");
-  const before = endFrame(m), next = { ...m, frames }, end = endFrame(next), k = end / before;
-  const times = nodeTimeFrames(m).slice(1).map((f) => Math.round(f * k)), kept: number[] = [];
-  for (const f of times) if (f >= 1 && f <= end - 1 && !kept.includes(f)) kept.push(f);
-  // At least two node times: if shrinking squeezed them out, one goes in the middle.
-  if (!kept.length) kept.push(Math.max(1, Math.round(end / 2)));
-  const speeds = blocksOf(m).map((b) => b.speed);
-  return { ...next, starts: kept, speeds: speeds.slice(0, kept.length + 1), curves: curvesWith(m, (c) => c.slice(0, kept.length + 1)) };
-}
-
-/** The block graphs of `m` as one flat list per block, changed by `f`; left off when none is bent. */
-function curvesWith(m: Timing, f: (c: readonly (readonly number[])[]) => (readonly number[])[]): (readonly number[])[] | undefined {
-  const n = blocksOf(m).length, c = Array.from({ length: n }, (_, i) => m.curves?.[i] ?? []);
-  const out = f(c);
-  return out.some((q) => q.length) ? out : undefined;
-}
-
-/** A block's speed graph set (points from u 0 to 1, in order, each speed from 0.05 to 4); `null` puts the straight line back. */
-export function withBlockGraph(m: MotionPath, block: number, graph: readonly SpeedPoint[] | null): MotionPath {
-  const blocks = blocksOf(m);
-  if (block < 0 || block >= blocks.length) throw new EditRefused("There is no such block.");
-  let flat: number[] = [];
-  if (graph) {
-    if (graph.length < 2 || graph[0]!.u !== 0 || graph.at(-1)!.u !== 1) throw new EditRefused("A speed graph runs from the block's first frame to its last.");
-    for (let i = 1; i < graph.length; i++) if (!(graph[i]!.u > graph[i - 1]!.u)) throw new EditRefused("The points of a speed graph go in order.");
-    if (graph.some((p) => !(p.v >= 0.05 && p.v <= 4))) throw new EditRefused("A speed is from 0.05 to 4.");
-    if (!graph.every((p) => p.v === 1)) flat = graph.flatMap((p) => [shortFloat(p.u), shortFloat(p.v)]);
-  }
-  const curves = curvesWith(m, (c) => c.map((q, i) => (i === block ? flat : q)));
-  const { curves: _drop, ...rest } = m;
-  return curves ? { ...rest, curves } : rest;
-}
-
-/** A block's time multiplier set (1 is even; between 0.1 and 10). */
-export function withSpeed(m: MotionPath, block: number, speed: number): MotionPath {
-  const blocks = blocksOf(m);
-  if (block < 0 || block >= blocks.length) throw new EditRefused("There is no such block.");
-  if (!(speed >= 0.1 && speed <= 10)) throw new EditRefused("A time multiplier is from 0.1 to 10.");
-  return { ...m, speeds: blocks.map((b, i) => (i === block ? speed : b.speed)) };
+  return { ...m, frames };
 }
 
 /**
@@ -413,9 +272,9 @@ export function translateKeys(boneSetup: { x: number; y: number }, keys: readonl
   });
 }
 
-/** A short signature of the path's own settings (nodes, handles, frames, node times, multipliers, closed): what a bake to the timeline was made from. */
-export function pathSignature(m: Timing & Pick<MotionPath, "nodes">): string {
-  const text = JSON.stringify([m.nodes.map((n) => [n.x, n.y, n.tx ?? null, n.ty ?? null]), m.closed, m.frames, [...m.starts].sort((a, b) => a - b), m.speeds, m.curves ?? []]);
+/** A short signature of the path's own settings (nodes, handles, speeds, frames, closed): what a bake to the timeline was made from. */
+export function pathSignature(m: Pick<MotionPath, "nodes" | "closed" | "frames">): string {
+  const text = JSON.stringify([m.nodes.map((n) => [n.x, n.y, n.tx ?? null, n.ty ?? null, n.bx ?? null, n.by ?? null, n.speed ?? 0]), m.closed, m.frames]);
   let h = 5381;
   for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) | 0;
   return (h >>> 0).toString(36);

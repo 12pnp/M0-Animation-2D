@@ -1,6 +1,7 @@
 import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { EditRefused } from "@/edit/history";
-import { addNodeTime, blocksOf, curveOf, endFrame, FLAT_SPEED, handleOffsets, moveNodeTime, nodeTimeFrames, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, type SpeedPoint, moveNode, withNode, withOrigin, midAfter, mergeNodes, renumberNodes, reversePath, breakLegs, mirrorLegs, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
+import { curveOf, handleOffsets, nodeLabels, moveNode, withNode, withOrigin, midAfter, mergeNodes, renumberNodes, reversePath, breakLegs, mirrorLegs, withFrames } from "@/edit/motionPath";
+import { clampSpeed, multiplierOf, nodeProgress, progressAtFrame, SPEED_MAX, SPEED_MIN, speedAt, speedOf } from "@/edit/twinSpline";
 import { drawnVertices } from "@/engine/draw";
 import { boneInherit } from "@/model/defaults";
 import type { Skeleton } from "@/model/skeleton";
@@ -30,10 +31,13 @@ const LAYERS: readonly Layer[] = ["image", "bone", "path", "spline", "length", "
 const GIZMOS = ["rotate", "move", "scale", "shear"] as const;
 /** The path's dots and the lengths between them. */
 const DOT = "#ff2bd6";
+/** The height of what is under the picture at first, and the least of it and of the picture. */
+const DEFAULT_LOWER = 270, MIN_LOWER = 150, MIN_PICTURE = 120;
+const LOWER_KEY = "boneburst.motionPath.lower";
+/** A node's speed as the field it is stored in: nothing for 0, an even pace. */
+const speedPatch = (v: number): { speed?: number } => (v ? { speed: v } : {});
 /** The part of the spline that belongs to the picked node. */
 const SPAN = "#2f80ed";
-/** The top of the block speed graph (its canvas shows speeds 0 to this). */
-const GRAPH_TOP = 3;
 const PAST = "rgb(230, 64, 51)", FUTURE = "rgb(51, 179, 77)";
 const LAYERS_KEY = "boneburst.motionPath.layers";
 const STAGE_LINE_KEY = "boneburst.motionPath.stageLine";
@@ -172,34 +176,32 @@ export class MotionPathPanel {
   /** The motion path's own row of buttons (docs/PATH-SPEED-PLAN.md), and the node picked on the canvas (-1: none). */
   private readonly motionBar = document.createElement("div");
   private readonly motionInfo = document.createElement("span");
-  private readonly motionBtns: Record<"draw" | "time" | "add" | "del" | "addTime" | "delTime" | "bakeTl" | "drop", HTMLButtonElement>;
-  /** Total frames (14 + 0), the picked node time's frame, the picked block's time multiplier, and whether the spline is a ring. */
+  private readonly motionBtns: Record<"draw" | "add" | "del" | "bakeTl" | "drop", HTMLButtonElement>;
+  /** Total frames (14 + 0), and whether the spline is a ring. */
   private readonly framesField = document.createElement("input");
-  private readonly frameField = document.createElement("input");
-  private readonly speedField = document.createElement("input");
   private readonly closedBox = document.createElement("input");
   private readonly closedLabel = document.createElement("label");
   private readonly framesBox = document.createElement("label");
-  private readonly frameBox = document.createElement("label");
-  private readonly speedBox = document.createElement("label");
   private readonly framesHint = document.createElement("span");
   /** The capture bar (docs/PATH-CAPTURE-PLAN.md): a numbered button for each node (press: put the bone there), a green + to add a slot. */
   private readonly slotBar = document.createElement("div");
-  /** Under the node numbers: the picked node's numbers (Edit Path). */
+  /** Under the node numbers: the picked node's numbers and the speed graph (docs/TWINSPLINE-PLAN.md). */
   private readonly dataBox = document.createElement("div");
+  /** Everything under the picture (the node numbers and the data), and the line above it that is dragged to give it more or less room. */
+  private readonly lower = document.createElement("div");
+  private readonly split = document.createElement("div");
+  private lowerHeight = DEFAULT_LOWER;
+  /** The height was set by a drag (or kept from before); until then the area is the usual height, or less in a small panel. */
+  private lowerSet = false;
+  /** The speed spline's graph, and its points on the canvas as last drawn; the point being dragged. */
+  private readonly speedCanvas = document.createElement("canvas");
+  private speedDots: { i: number; x: number; y: number }[] = [];
+  private speedDrag: number | null = null;
   private slotSig = "";
   /** The path as a held number would leave it (and the two nodes), drawn dashed on the canvas while it is dragged. */
   private nodePreview: { motion: MotionPath; from: number } | null = null;
   /** The click that ends a drag of a number is ignored. */
   private suppressClick = false;
-  /** The picked block's speed graph (Adjust time): presets above a small canvas of draggable points; a straight line at 1 by default. */
-  private readonly graphBar = document.createElement("div");
-  private readonly graphCanvas = document.createElement("canvas");
-  private graphDrag = -1;
-  /** The graph's points on its canvas as last drawn (a test hook). */
-  private graphDots: { x: number; y: number }[] = [];
-  /** What the panel does with a path: Edit Path shapes the spline; Adjust time sets the node times and their multipliers (docs/PATH-FRAMES-PLAN.md). */
-  private mode: "draw" | "time" = "draw";
   private selNode = -1;
   /** Whether the Stage draws the bone's spline, and in what colour (the button and swatch in the header; kept between sessions). */
   private stageOn = false;
@@ -217,12 +219,7 @@ export class MotionPathPanel {
   private handleDrag: { slot: number; side: "out" | "in" } | null = null;
   /** A node being dragged, or a dot being slid along the path (the speed). */
   private nodeDrag: number | null = null;
-  /** The node time picked (-1: none); where the node times are on the canvas; how far the last bake to the timeline strays. */
-  /** The picked node time / block: kept on the session, where the Timeline's block tabs read it too. */
-  private get selTime(): number { return this.session.pickedBlock; }
-  private set selTime(i: number) { this.session.pickedBlock = i; }
   private syncRev = -1;
-  private timePts: { i: number; x: number; y: number }[] = [];
   private stray: number | null = null;
   /** The box the view was fitted to, as last drawn. */
   private box: Box | null = null;
@@ -282,39 +279,13 @@ export class MotionPathPanel {
     this.motionInfo.className = "lp-motion-info";
     this.motionBtns = {
       draw: this.button("Edit Path", "Edit the bone's path, a spline: two nodes to start (where it is, and an offset). A number puts the bone on that node, moving the bone moves the node, + adds a node"),
-      time: this.button("Adjust time", "Set the node times (where the ring is cut into blocks) and each block's time multiplier, then Bake to timeline"),
       add: this.button("+", "Add a spline node"),
       del: this.button("− Node", "Remove the picked spline node (a path keeps two)"),
-      addTime: this.button("+ Time", "Add a node time at the playhead's frame (a path keeps at least two)"),
-      delTime: this.button("− Time", "Remove the picked node time (the first, on frame 0, stays; a path keeps two)"),
-      bakeTl: this.button("Bake to timeline", "Write the bone's translate keys from the path: a key at each node time and one at the end (replaces its translate keys; Undo brings them back)"),
+      bakeTl: this.button("Bake to timeline", "Write the bone's translate keys from the path: a key where the bone reaches each node, one at the end, and more where the curve needs them (replaces its translate keys; Undo brings them back)"),
       drop: this.button("Remove path", "Forget this bone's path; its keys stay as they are"),
     };
     this.slotBar.className = "lp-slots";
     this.dataBox.className = "lp-data";
-    this.graphBar.className = "lp-graph";
-    this.graphBar.hidden = true;
-    const presets: [string, string, readonly SpeedPoint[]][] = [
-      ["Even", "A straight line: even speed through the block", FLAT_SPEED],
-      ["Slow in", "Start slow, end fast", [{ u: 0, v: 0.2 }, { u: 1, v: 1.8 }]],
-      ["Slow out", "Start fast, end slow", [{ u: 0, v: 1.8 }, { u: 1, v: 0.2 }]],
-      ["Slow in & out", "Slow at both ends, fast in the middle", [{ u: 0, v: 0.2 }, { u: 0.5, v: 1.8 }, { u: 1, v: 0.2 }]],
-    ];
-    const label = document.createElement("span");
-    label.textContent = "Speed";
-    label.title = "How fast the bone goes through the picked block (not how many frames it has). Drag a point; double-click to add or remove one.";
-    this.graphBar.append(label);
-    for (const [text, tip, points] of presets) {
-      const b = this.button(text, tip);
-      b.addEventListener("click", () => this.setGraph(points === FLAT_SPEED ? null : points));
-      this.graphBar.append(b);
-    }
-    this.graphCanvas.className = "lp-graph-canvas";
-    this.graphCanvas.setAttribute("aria-label", "Block speed graph");
-    this.graphCanvas.addEventListener("pointerdown", (e) => this.graphDown(e));
-    this.graphCanvas.addEventListener("pointermove", (e) => this.graphMove(e));
-    this.graphCanvas.addEventListener("pointerup", () => { this.graphDrag = -1; });
-    this.graphCanvas.addEventListener("dblclick", (e) => this.graphDouble(e));
     const field = (input: HTMLInputElement, label: HTMLLabelElement, text: string, tip: string, aria: string, step: string, min: string, run: () => void, extra?: HTMLElement): void => {
       input.type = "number";
       input.step = step;
@@ -328,8 +299,6 @@ export class MotionPathPanel {
       if (extra) label.append(extra);
     };
     field(this.framesField, this.framesBox, "Total frames", "How many frames the path takes, counting frame 0: 15 is 14 + 0 (the loop goes 0 to 14, then to 0 again)", "Total frames", "1", "4", () => this.setFrames(), this.framesHint);
-    field(this.frameField, this.frameBox, "Node time frame", "The picked node time's frame", "Node time frame", "1", "1", () => this.setPickedFrame());
-    field(this.speedField, this.speedBox, "Time ×", "The picked block's time multiplier: 1 is even; 2 covers twice as much of the path in it", "Block time multiplier", "0.1", "0.1", () => this.setPickedSpeed());
     this.closedBox.type = "checkbox";
     this.closedBox.addEventListener("change", () => this.setClosed(this.closedBox.checked));
     this.closedLabel.className = "lp-field";
@@ -339,18 +308,27 @@ export class MotionPathPanel {
     this.parentPick.setAttribute("aria-label", "Parent bone");
     this.parentPick.title = "The parent bone the path is relative to: its nodes are in that bone\'s space and follow it. Required before a path can be made";
     this.parentPick.addEventListener("change", () => this.chooseParent(this.parentPick.value));
-    this.motionBar.append(this.parentPick, this.motionBtns.draw, this.motionBtns.time, this.motionBtns.add, this.motionBtns.del, this.motionBtns.addTime, this.motionBtns.delTime, this.framesBox, this.closedLabel, this.frameBox, this.speedBox, this.motionBtns.bakeTl, this.motionBtns.drop, this.motionInfo);
-    this.motionBtns.addTime.addEventListener("click", () => this.addTimeHere());
-    this.motionBtns.delTime.addEventListener("click", () => this.removePickedTime());
+    this.motionBar.append(this.parentPick, this.motionBtns.draw, this.motionBtns.add, this.motionBtns.del, this.framesBox, this.closedLabel, this.motionBtns.bakeTl, this.motionBtns.drop, this.motionInfo);
     this.motionBtns.draw.addEventListener("click", () => this.enterDraw());
-    this.motionBtns.time.addEventListener("click", () => this.enterTime());
     this.motionBtns.bakeTl.addEventListener("click", () => this.bakeToTimeline());
     this.motionBtns.add.className = "add";
     this.motionBtns.add.addEventListener("click", () => { if (motionFor(this.session)) this.addNode(); else this.enterDraw(); });
     this.motionBtns.del.addEventListener("click", () => this.removeNode());
-    this.motionBtns.drop.addEventListener("click", () => { const m = motionFor(this.session); if (m) { dropMotion(this.session, m.animation, m.bone); this.selNode = -1; this.selTime = -1; } });
-    // The picture under the buttons; under it the node numbers, and under them the picked node's data.
-    this.element.append(this.head, this.motionBar, this.graphBar, this.body, this.slotBar, this.dataBox);
+    this.motionBtns.drop.addEventListener("click", () => { const m = motionFor(this.session); if (m) { dropMotion(this.session, m.animation, m.bone); this.selNode = -1; } });
+    // The picture on top; under it the node numbers, and under them the picked node's data.
+    this.split.className = "lp-split";
+    this.split.title = "Drag to give the node numbers and the speed graph more or less room (double-click: back to the usual)";
+    this.split.setAttribute("role", "separator");
+    this.split.setAttribute("aria-orientation", "horizontal");
+    this.lower.className = "lp-lower";
+    this.lower.append(this.slotBar, this.dataBox);
+    this.speedCanvas.className = "lp-speed-canvas";
+    try { const h = Number(localStorage.getItem(LOWER_KEY)); if (Number.isFinite(h) && h >= MIN_LOWER) { this.lowerHeight = h; this.lowerSet = true; } } catch { /* the usual */ }
+    this.applyLower();
+    this.splitDrag();
+    this.speedEvents();
+    this.element.append(this.head, this.motionBar, this.body, this.split, this.lower);
+    new ResizeObserver(() => this.schedule()).observe(this.lower);
     // The canvas is as big as its box, whatever else the panel holds (the path window under it).
     new ResizeObserver(() => this.schedule()).observe(this.body);
     for (const l of LAYERS) {
@@ -365,12 +343,15 @@ export class MotionPathPanel {
     this.canvas.addEventListener("pointermove", (e) => this.move(e));
     this.canvas.addEventListener("pointerup", (e) => this.up(e));
     this.canvas.addEventListener("pointercancel", (e) => this.up(e));
-    this.canvas.addEventListener("dblclick", (e) => { const [x, y] = localPoint(this.canvas, e); if (!this.resetHandleAt(x, y) && !this.insertNodeAt(x, y) && !this.addTimeAt(x, y)) this.fitView(); });
+    this.canvas.addEventListener("dblclick", (e) => {
+      const [x, y] = localPoint(this.canvas, e);
+      if (this.resetHandleAt(x, y) || this.insertNodeAt(x, y)) return;
+      this.fitView();
+    });
     this.canvas.tabIndex = 0;
     this.canvas.addEventListener("keydown", (e) => {
       if ((e.key !== "Delete" && e.key !== "Backspace") || !motionFor(this.session)) return;
-      if (this.mode === "draw" && this.selNode >= 0) { e.preventDefault(); e.stopPropagation(); this.removeNode(); }
-      else if (this.mode === "time" && this.selTime > 0) { e.preventDefault(); e.stopPropagation(); this.removePickedTime(); }
+      if (this.selNode >= 0) { e.preventDefault(); e.stopPropagation(); this.removeNode(); }
     });
     this.canvas.addEventListener("wheel", (e) => this.wheel(e), { passive: false });
     session.onChange(() => { this.syncFromBone(); this.schedule(); });
@@ -384,6 +365,7 @@ export class MotionPathPanel {
 
   /** The dock laid the panel out: draw again at the new size. */
   layout(_width: number, _height: number): void {
+    this.applyLower();
     this.schedule();
   }
 
@@ -398,7 +380,7 @@ export class MotionPathPanel {
   private schedule(): void {
     if (this.queued) return;
     this.queued = true;
-    requestAnimationFrame(() => { this.queued = false; this.draw(); });
+    requestAnimationFrame(() => { this.queued = false; this.draw(); this.drawSpeed(); });
   }
 
   /** The bone the selected bone's path is relative to: its path's own, else the choice made in the picker; null when none is chosen yet. */
@@ -498,7 +480,7 @@ export class MotionPathPanel {
     if (path && this.space === "parent") {
       for (const n of path.nodes) grow(n.x, n.y);
       // The curve's handles too (Edit Path), so each can be reached however the parent is turned.
-      if (this.mode === "draw") handleOffsets(path.nodes, path.closed).forEach((o, i) => { const n = path.nodes[i]!; grow(n.x + o.out.x, n.y + o.out.y); grow(n.x + o.in.x, n.y + o.in.y); });
+      handleOffsets(path.nodes, path.closed).forEach((o, i) => { const n = path.nodes[i]!; grow(n.x + o.out.x, n.y + o.out.y); grow(n.x + o.in.x, n.y + o.in.y); });
     }
     if (!Number.isFinite(minX)) { this.note.textContent = `${bone} has no pose in this animation.`; this.note.hidden = false; return; }
     if (this.hold && this.box) ({ minX, maxX, minY, maxY } = this.box);
@@ -763,8 +745,8 @@ export class MotionPathPanel {
   }
 
   /** What can be grabbed, on the canvas as last drawn: each frame's mark (x, y pairs) and the rotation handle; for tests. */
-  get grabPoints(): { marks: readonly number[]; handle: { x: number; y: number } | null; scaleHandle: { x: number; y: number } | null; shearHandle: { x: number; y: number } | null; tag: { x0: number; y0: number; x1: number; y1: number } | null; nodes: readonly { x: number; y: number }[]; handles: readonly { slot: number; side: "out" | "in"; x: number; y: number }[]; times: readonly { i: number; x: number; y: number }[]; arrows: readonly { axis: 0 | 1; x0: number; y0: number; x1: number; y1: number }[] } {
-    return { marks: [...this.marks], handle: this.handle, scaleHandle: this.scaleHandle, shearHandle: this.shearHandle, tag: this.tag, nodes: this.nodePts, handles: this.handlePts, times: this.timePts, arrows: this.arrows };
+  get grabPoints(): { marks: readonly number[]; handle: { x: number; y: number } | null; scaleHandle: { x: number; y: number } | null; shearHandle: { x: number; y: number } | null; tag: { x0: number; y0: number; x1: number; y1: number } | null; nodes: readonly { x: number; y: number }[]; handles: readonly { slot: number; side: "out" | "in"; x: number; y: number }[];  arrows: readonly { axis: 0 | 1; x0: number; y0: number; x1: number; y1: number }[] } {
+    return { marks: [...this.marks], handle: this.handle, scaleHandle: this.scaleHandle, shearHandle: this.shearHandle, tag: this.tag, nodes: this.nodePts, handles: this.handlePts, arrows: this.arrows };
   }
 
   /** The bone's space (what the panel shows) at a canvas point: the inverse of the mapping `draw` made. */
@@ -973,7 +955,7 @@ export class MotionPathPanel {
     if (name === refBoneName(s.doc, m)) return;
     const v = this.viewMotion();
     if (!v) return;
-    // The view is measured from the parent's joint: the nodes (not the handle offsets) are shifted by how far the two joints are apart.
+    // The view is measured from the parent\'s joint: the nodes (not the handle offsets) are shifted by how far the two joints are apart.
     const was = this.refM(refBoneName(s.doc, m)), now = this.refM(name), dx = was[4] - now[4], dy = was[5] - now[5];
     const moved = { ...v, parent: name, nodes: v.nodes.map((n) => ({ ...n, x: n.x + dx, y: n.y + dy })) };
     keepMotion(s, pathFromView(moved, now), `Make the path of ${bone} relative to ${name}`);
@@ -987,61 +969,51 @@ export class MotionPathPanel {
     const can = !!anim && bone !== null && !(s.doc && constraintDriving(s.doc, bone));
     this.motionBar.hidden = !can;
     this.syncParentPick();
-    const draw = !!m && this.mode === "draw", time = !!m && this.mode === "time";
-    // Without a path the one button is Edit Path (it starts one); with a path the two modes.
+    const has = !!m;
+    // Without a path the one button is Edit Path (it starts one); with a path it is the mode there is.
     this.motionBtns.draw.hidden = !can;
     // No path can be made until a parent bone is chosen.
     const needParent = !m && this.chosenParent() === null;
     this.motionBtns.draw.disabled = needParent;
     this.motionBtns.add.disabled = needParent;
-    this.motionBtns.time.hidden = !m;
     this.motionBtns.drop.hidden = !m;
-    // The green +: no path yet, it makes one (node 1 is where the bone is, node 2 that plus an offset); in Edit Path it adds a node.
-    this.motionBtns.add.hidden = !can || (!!m && !draw);
+    // The green +: no path yet, it makes one (node 1 is where the bone is, node 2 that plus an offset); with one it adds a node.
+    this.motionBtns.add.hidden = !can;
     this.motionBtns.add.setAttribute("aria-label", m ? "Add a spline node" : "Create a path");
-    this.motionBtns.add.title = m ? "Add another spline node (the last plus the offset): then move the bone or drag the node to place it" : "Make a path for this bone: node 1 is where it is, node 2 that plus an offset";
-    this.motionBtns.del.hidden = !draw;
-    for (const k of ["addTime", "delTime", "bakeTl"] as const) this.motionBtns[k].hidden = !time;
-    this.motionBtns.draw.setAttribute("aria-pressed", String(draw));
-    this.motionBtns.time.setAttribute("aria-pressed", String(time));
+    this.motionBtns.add.title = m ? "Add another spline node (after the picked one, halfway to the next): then move the bone or drag the node to place it" : "Make a path for this bone: node 1 is where it is, node 2 that plus an offset";
+    this.motionBtns.del.hidden = !has;
+    this.motionBtns.bakeTl.hidden = !has;
+    this.motionBtns.draw.setAttribute("aria-pressed", String(has));
     this.motionBtns.del.disabled = !m || m.nodes.length <= 2 || this.selNode < 0;
-    // Edit Path shapes the spline (a ring or not); Adjust time sets the timing (total frames, node times, blocks).
-    this.framesBox.hidden = !time;
-    this.closedLabel.hidden = !draw;
-    const times = m ? nodeTimeFrames(m) : [], blocks = m ? blocksOf(m) : [];
-    if (this.selTime >= times.length) this.selTime = -1;
-    this.motionBtns.delTime.disabled = this.selTime <= 0 || times.length <= 2;
-    this.frameBox.hidden = !time || this.selTime < 1;
-    this.speedBox.hidden = !time || this.selTime < 0;
+    this.framesBox.hidden = !has;
+    this.closedLabel.hidden = !has;
     const idle = (el: HTMLInputElement) => el.ownerDocument.activeElement !== el;
     if (m) {
       if (idle(this.framesField)) this.framesField.value = String(m.frames);
       this.framesHint.textContent = m.closed ? `(${m.frames - 1} + 0)` : "";
       this.closedBox.checked = m.closed;
-      if (this.selTime >= 1 && idle(this.frameField)) this.frameField.value = String(times[this.selTime]!);
-      if (this.selTime >= 0 && idle(this.speedField)) this.speedField.value = String(blocks[this.selTime]!.speed);
     }
     this.renderStrip(m);
-    this.drawGraph(m && time ? m : undefined);
     if (!m) { this.motionInfo.textContent = ""; return; }
     const stale = motionStale(s, m), unbaked = m.baked === undefined, changed = motionChanged(m);
-    this.motionInfo.textContent = `${m.nodes.length} spline nodes · ${times.length} node times${unbaked ? " · not baked to the timeline" : stale ? " · timeline keys changed since the last bake" : changed ? " · changed since the last bake to the timeline" : ""}${this.stray !== null && !unbaked && !stale && !changed ? ` · strays ${Math.round(this.stray * 10) / 10}` : ""}`;
+    this.motionInfo.textContent = `${m.nodes.length} spline nodes${unbaked ? " · not baked to the timeline" : stale ? " · timeline keys changed since the last bake" : changed ? " · changed since the last bake to the timeline" : ""}${this.stray !== null && !unbaked && !stale && !changed ? ` · strays ${Math.round(this.stray * 10) / 10}` : ""}`;
     this.motionBtns.bakeTl.classList.toggle("attention", unbaked || stale || changed);
     if (this.space !== "parent") this.motionInfo.textContent += " · nodes edit in Parent";
   }
 
   /**
    * The strip under the path row: in Edit Path a green numbered button for each spline node and the green + (the capture bar,
-   * docs/PATH-CAPTURE-PLAN.md); in Adjust time a tab for each block (its frames and its multiplier).
+   * docs/PATH-CAPTURE-PLAN.md).
    */
   private renderStrip(m: MotionPath | undefined): void {
-    // An undo can take a node or a node time away: what was picked goes with it.
+    // An undo can take a node away: what was picked goes with it.
     if (!m || this.selNode >= m.nodes.length) this.selNode = -1;
-    if (!m || this.selTime >= nodeTimeFrames(m).length) this.selTime = -1;
     if (this.multi.size) this.multi = new Set([...this.multi].filter((l) => !!m && nodeLabels(m).includes(l)));
     this.slotBar.hidden = !m;
-    this.dataBox.hidden = !m || this.mode === "time";
-    const sig = !m ? "" : (this.mode === "draw" ? `d|${JSON.stringify(m.nodes)}|${this.selNode}|${[...this.multi]}` : `t|${JSON.stringify([m.starts, m.speeds, m.frames, m.closed, m.curves ?? []])}|${this.selTime}`);
+    this.dataBox.hidden = !m;
+    this.lower.hidden = !m;
+    this.split.hidden = !m;
+    const sig = !m ? "" : `d|${JSON.stringify(m.nodes)}|${this.selNode}|${[...this.multi]}`;
     if (sig === this.slotSig) return;
     this.slotSig = sig;
     this.renderData(m);
@@ -1052,7 +1024,7 @@ export class MotionPathPanel {
       return b;
     };
     if (!m) { this.slotBar.replaceChildren(); return; }
-    if (this.mode === "draw") {
+    {
       const items = m.nodes.map((n, i) => {
         const label = nodeLabels(m)[i]!;
         const b = make(`slot node${i === this.selNode ? " picked" : ""}${this.multi.has(label) ? " multi" : ""}`, `${label}`,
@@ -1082,102 +1054,6 @@ export class MotionPathPanel {
       this.slotBar.replaceChildren(...items);
       return;
     }
-    const tabs = blocksOf(m).map((b, i) => {
-      const t = make(`slot block${i === this.selTime ? " picked" : ""}`, `${b.start}→${b.end}${b.speed !== 1 ? ` ×${b.speed}` : ""}${b.graph.some((q) => q.v !== 1) ? " ∿" : ""}`,
-        `Block ${i + 1}: frames ${b.start} to ${b.end}, time multiplier ${b.speed}. Press to pick it (its node time and its multiplier).`, () => this.pickTime(i));
-      t.setAttribute("aria-label", `Block ${i + 1}`);
-      return t;
-    });
-    this.slotBar.replaceChildren(...tabs);
-  }
-
-  /** The graph's drawing box inside its canvas, and the speeds it shows (0 to GRAPH_TOP). */
-  private graphPoint(p: SpeedPoint, w: number, h: number): { x: number; y: number } {
-    return { x: 8 + p.u * (w - 16), y: h - 8 - (p.v / GRAPH_TOP) * (h - 16) };
-  }
-
-  private drawGraph(m: MotionPath | undefined): void {
-    const block = m && this.selTime >= 0 ? blocksOf(m)[this.selTime] : undefined;
-    this.graphBar.hidden = !block;
-    // The canvas is in the page only while a block is picked (the panel's own canvas stays the only one otherwise).
-    if (!block || !m) { this.graphDots = []; this.graphCanvas.remove(); return; }
-    if (!this.graphCanvas.isConnected) this.graphBar.append(this.graphCanvas);
-    const c = this.graphCanvas, dpr = window.devicePixelRatio || 1, w = 240, h = 72;
-    if (c.width !== w * dpr) { c.width = w * dpr; c.height = h * dpr; c.style.width = `${w}px`; c.style.height = `${h}px`; }
-    const g = c.getContext("2d");
-    if (!g) return;
-    g.setTransform(dpr, 0, 0, dpr, 0, 0);
-    g.clearRect(0, 0, w, h);
-    const css = getComputedStyle(this.element), line = css.getPropertyValue("--line").trim() || "#555", accent = css.getPropertyValue("--accent").trim() || "#4a90e2", muted = css.getPropertyValue("--muted").trim() || "#999";
-    g.strokeStyle = line;
-    g.strokeRect(0.5, 0.5, w - 1, h - 1);
-    const one = this.graphPoint({ u: 0, v: 1 }, w, h).y;
-    g.setLineDash([3, 3]);
-    g.strokeStyle = muted;
-    g.beginPath(); g.moveTo(8, one); g.lineTo(w - 8, one); g.stroke();
-    g.setLineDash([]);
-    g.strokeStyle = accent;
-    g.lineWidth = 2;
-    g.beginPath();
-    block.graph.forEach((p, i) => { const q = this.graphPoint(p, w, h); if (i) g.lineTo(q.x, q.y); else g.moveTo(q.x, q.y); });
-    g.stroke();
-    g.lineWidth = 1;
-    this.graphDots = block.graph.map((p) => this.graphPoint(p, w, h));
-    g.fillStyle = accent;
-    for (const q of this.graphDots) { g.beginPath(); g.arc(q.x, q.y, 4, 0, Math.PI * 2); g.fill(); }
-  }
-
-  /** The speed graph's points on its canvas (test hook). */
-  get speedGraph(): readonly { x: number; y: number }[] {
-    return this.graphDots;
-  }
-
-  private graphAt(e: MouseEvent): { u: number; v: number; x: number; y: number } {
-    const r = this.graphCanvas.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, w = 240, h = 72;
-    return { x, y, u: Math.min(1, Math.max(0, (x - 8) / (w - 16))), v: Math.min(GRAPH_TOP, Math.max(0.05, ((h - 8 - y) / (h - 16)) * GRAPH_TOP)) };
-  }
-
-  private graphHit(x: number, y: number): number {
-    return this.graphDots.findIndex((q) => Math.hypot(q.x - x, q.y - y) <= 8);
-  }
-
-  private graphDown(e: PointerEvent): void {
-    const a = this.graphAt(e);
-    this.graphDrag = this.graphHit(a.x, a.y);
-    if (this.graphDrag >= 0) this.graphCanvas.setPointerCapture?.(e.pointerId);
-  }
-
-  private graphMove(e: PointerEvent): void {
-    const m = motionFor(this.session);
-    if (!m || this.selTime < 0 || this.graphDrag < 0 || !(e.buttons & 1)) return;
-    const graph = [...blocksOf(m)[this.selTime]!.graph], i = this.graphDrag, a = this.graphAt(e), last = graph.length - 1;
-    const u = i === 0 ? 0 : i === last ? 1 : Math.min(graph[i + 1]!.u - 0.02, Math.max(graph[i - 1]!.u + 0.02, a.u));
-    graph[i] = { u, v: a.v };
-    this.setGraph(graph);
-  }
-
-  /** A double click on a point removes it (not the two ends); on empty graph it adds one there. */
-  private graphDouble(e: MouseEvent): void {
-    const m = motionFor(this.session);
-    if (!m || this.selTime < 0) return;
-    const graph = [...blocksOf(m)[this.selTime]!.graph], a = this.graphAt(e), hit = this.graphHit(a.x, a.y);
-    if (hit >= 0) {
-      if (hit === 0 || hit === graph.length - 1) return;
-      graph.splice(hit, 1);
-    } else {
-      const at = graph.findIndex((p) => p.u > a.u);
-      if (at <= 0 || graph[at]!.u - a.u < 0.02 || a.u - graph[at - 1]!.u < 0.02) return;
-      graph.splice(at, 0, { u: a.u, v: a.v });
-    }
-    this.setGraph(graph);
-  }
-
-  /** The picked block's speed graph set (null: the straight line). */
-  private setGraph(graph: readonly SpeedPoint[] | null): void {
-    const m = motionFor(this.session);
-    if (!m || this.selTime < 0) return;
-    try { this.timeEdit(withBlockGraph(m, this.selTime, graph)); }
-    catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); }
   }
 
   private keepStageLine(): void {
@@ -1188,7 +1064,7 @@ export class MotionPathPanel {
     this.schedule();
   }
 
-  /** The bone's spline as a line in the world, for the Stage (a flat list of x, y), or null when it is off or the bone has no path or pose. Local space is the world's orientation from the parent's joint, so the parent's joint is added back. */
+  /** The bone's spline as a line in the world, for the Stage (a flat list of x, y), or null when it is off or the bone has no path or pose. The nodes are in the parent bone's space, so the parent's joint is added back. */
   stageLine(): { points: number[]; colour: string } | null {
     const s = this.session, m = motionFor(s), p = s.pose();
     if (!this.stageOn || !m || !p) return null;
@@ -1201,23 +1077,22 @@ export class MotionPathPanel {
   }
 
   /**
-   * The panel's keys (the pointer over it): what each does in Edit Path, and in Adjust time. False when the key has nothing to do here, so it
+   * The panel's keys (the pointer over it): what each does. False when the key has nothing to do here, so it
    * goes on to its other meaning.
    */
-  hotkey(id: "add" | "remove" | "mode" | "reverse" | "merge" | "origin" | "bake"): boolean {
-    const m = motionFor(this.session), draw = this.mode === "draw";
+  hotkey(id: "add" | "remove" | "reverse" | "merge" | "origin" | "bake"): boolean {
+    const m = motionFor(this.session);
     if (!m) {
-      if (id === "add" || id === "mode") { this.enterDraw(); return true; }
+      if (id === "add") { this.enterDraw(); return true; }
       return false;
     }
     switch (id) {
-      case "mode": if (draw) this.enterTime(); else this.enterDraw(); return true;
-      case "add": if (draw) this.addNode(); else this.addTimeHere(); return true;
-      case "remove": if (draw) this.removeNode(); else this.removePickedTime(); return true;
+      case "add": this.addNode(); return true;
+      case "remove": this.removeNode(); return true;
       case "bake": this.bakeToTimeline(); return true;
-      case "reverse": if (!draw) return false; this.reverse(); return true;
-      case "merge": if (!draw) return false; this.mergePicked(); return true;
-      case "origin": if (!draw) return false; if (this.selNode < 0) this.onStatus("Pick a node first (press its number)."); else this.setOrigin(this.selNode); return true;
+      case "reverse": this.reverse(); return true;
+      case "merge": this.mergePicked(); return true;
+      case "origin": if (this.selNode < 0) this.onStatus("Pick a node first (press its number)."); else this.setOrigin(this.selNode); return true;
     }
   }
 
@@ -1227,7 +1102,7 @@ export class MotionPathPanel {
    */
   private renderData(m: MotionPath | undefined): void {
     const box = this.dataBox, doc = box.ownerDocument;
-    if (!m || this.mode !== "draw") return;
+    if (!m) return;
     // Not under a field being typed in: it is drawn again once that is done.
     if (doc.activeElement instanceof HTMLInputElement && box.contains(doc.activeElement)) return;
     const i = this.selNode, n = m.nodes[i];
@@ -1278,48 +1153,235 @@ export class MotionPathPanel {
     const buttons = doc.createElement("div");
     buttons.className = "row buttons";
     buttons.append(legs, auto);
-    box.replaceChildren(title,
+    // The speed spline's value at this node: -0.99 to 5; the bone goes 1 + it times as fast here.
+    const speed = speedOf(n), sRow = doc.createElement("div"), sName = doc.createElement("span"), sRead = doc.createElement("span");
+    sRow.className = "row";
+    sName.className = "k";
+    sName.textContent = "Speed";
+    sRead.className = "read";
+    sRead.textContent = `×${Math.round(multiplierOf(speed) * 100) / 100}`;
+    sRead.title = "How many times as fast the bone goes through this node";
+    const sIn = num(speed, false, "Node speed", (v) => patch({ speed: clampSpeed(v) }, "Set the speed of a node"));
+    sIn.min = String(SPEED_MIN);
+    sIn.max = String(SPEED_MAX);
+    sIn.step = "0.05";
+    sRow.append(sName, sIn, sRead);
+    const fields = doc.createElement("div");
+    fields.className = "lp-fields";
+    fields.append(title,
       pair("Place", num(n.x, false, "Node x", (v) => patch({ x: v, y: n.y }, "Move a spline node", true)), num(n.y, false, "Node y", (v) => patch({ x: n.x, y: v }, "Move a spline node", true))),
-      pair("Way out", ox, oy), pair(broken ? "Way in" : "Way in (mirror)", ix, iy), buttons);
+      sRow, pair("Way out", ox, oy), pair(broken ? "Way in" : "Way in (mirror)", ix, iy), buttons);
+    box.replaceChildren(fields, this.speedColumn(doc));
+    this.drawSpeed();
+  }
+
+  /** The speed graph's column in the data box: a title line over the canvas. */
+  private speedColumn(doc: Document): HTMLElement {
+    const col = doc.createElement("div"), head = doc.createElement("div");
+    col.className = "lp-speed";
+    head.className = "title";
+    head.textContent = `Speed spline · ${SPEED_MIN} to ${SPEED_MAX}: the bone goes 1 + it times as fast`;
+    col.append(head, this.speedCanvas);
+    return col;
+  }
+
+  /** The height of the area under the picture: its wish as a flex basis, so a small panel takes it down (to its least) and the picture keeps its least. */
+  private applyLower(): void {
+    this.lower.style.flex = `0 1 ${Math.max(MIN_LOWER, this.lowerSet ? this.lowerHeight : DEFAULT_LOWER)}px`;
+    this.lower.style.minHeight = `${MIN_LOWER}px`;
+  }
+
+  private setLower(h: number, keep = false): void {
+    this.lowerHeight = Math.max(MIN_LOWER, Math.round(h));
+    this.lowerSet = true;
+    this.applyLower();
+    if (keep) { try { localStorage.setItem(LOWER_KEY, String(this.lowerHeight)); } catch { /* not kept */ } }
+    this.schedule();
+  }
+
+  /** The line between the picture and the node numbers is dragged: the picture takes what the area under it gives up. */
+  private splitDrag(): void {
+    const root = this.split.ownerDocument.documentElement;
+    this.split.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      this.split.setPointerCapture(e.pointerId);
+      root.classList.add("bb-gripping-row");
+      const y0 = e.clientY, h0 = this.lower.getBoundingClientRect().height / pageScale();
+      // As tall as it can get with the picture keeping its least.
+      const most = h0 + Math.max(0, this.body.getBoundingClientRect().height / pageScale() - MIN_PICTURE);
+      const move = (ev: PointerEvent): void => this.setLower(Math.min(most, h0 - (ev.clientY - y0) / pageScale()));
+      const up = (): void => {
+        this.split.removeEventListener("pointermove", move);
+        this.split.removeEventListener("pointerup", up);
+        this.split.removeEventListener("pointercancel", up);
+        root.classList.remove("bb-gripping-row");
+        this.setLower(this.lowerHeight, true);
+      };
+      this.split.addEventListener("pointermove", move);
+      this.split.addEventListener("pointerup", up);
+      this.split.addEventListener("pointercancel", up);
+    });
+    this.split.addEventListener("dblclick", () => { this.setLower(DEFAULT_LOWER, true); this.lowerSet = false; this.applyLower(); });
+  }
+
+  /** The graph's plot box on its canvas (CSS pixels): where progress 0..1 and the speed range are drawn. */
+  private plot(): { l: number; r: number; t: number; b: number } {
+    const c = this.speedCanvas;
+    return { l: 40, r: Math.max(41, c.clientWidth - 10), t: 10, b: Math.max(11, c.clientHeight - 20) };
+  }
+
+  /** Draw the speed spline: the value (-0.99 to 5) up, the path's progress across; a point for each node, the picked one lit, a line at 0 (an even pace) and where the playhead is. */
+  private drawSpeed(): void {
+    const s = this.session, m = motionFor(s), c = this.speedCanvas;
+    this.speedDots = [];
+    if (!m || !c.isConnected || this.dataBox.hidden) return;
+    const w = Math.max(1, Math.floor(c.clientWidth)), h = Math.max(1, Math.floor(c.clientHeight)), dpr = (window.devicePixelRatio || 1) * pageScale();
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+    const g = c.getContext("2d")!;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    const css = getComputedStyle(this.element), accent = css.getPropertyValue("--accent").trim() || "#4c9bff", text = css.getPropertyValue("--text").trim() || "#ddd", line = css.getPropertyValue("--line").trim() || "#555", muted = css.getPropertyValue("--muted").trim() || "#999";
+    const { l, r, t, b } = this.plot(), X = (p: number): number => l + p * (r - l), Y = (v: number): number => t + ((SPEED_MAX - v) / (SPEED_MAX - SPEED_MIN)) * (b - t);
+    g.font = `10px "JetBrains Mono", monospace`;
+    g.textBaseline = "middle";
+    g.textAlign = "right";
+    // The value lines: the limits dashed, 0 (the even pace) solid, the whole numbers between faint.
+    for (const v of [SPEED_MIN, 0, 1, 2, 3, 4, SPEED_MAX]) {
+      const y = Math.round(Y(v)) + 0.5, edge = v === SPEED_MIN || v === SPEED_MAX;
+      g.strokeStyle = v === 0 ? accent : line;
+      g.globalAlpha = v === 0 ? 0.8 : edge ? 1 : 0.5;
+      g.setLineDash(edge ? [4, 3] : []);
+      g.lineWidth = 1;
+      g.beginPath(); g.moveTo(l, y); g.lineTo(r, y); g.stroke();
+      g.globalAlpha = 1;
+      g.setLineDash([]);
+      g.fillStyle = v === 0 ? text : muted;
+      g.fillText(String(v), l - 5, y);
+    }
+    const xs = nodeProgress(m), labels = nodeLabels(m);
+    // Where each node is along the path, and the playhead's place.
+    g.textAlign = "center";
+    g.textBaseline = "top";
+    xs.forEach((p, i) => {
+      const x = Math.round(X(p)) + 0.5;
+      g.strokeStyle = line;
+      g.globalAlpha = 0.6;
+      g.beginPath(); g.moveTo(x, t); g.lineTo(x, b); g.stroke();
+      g.globalAlpha = 1;
+      g.fillStyle = i === this.selNode ? text : muted;
+      g.fillText(String(labels[i]), x, b + 4);
+    });
+    const here = Math.round(X(progressAtFrame(m, s.frame))) + 0.5;
+    g.strokeStyle = DOT;
+    g.setLineDash([3, 3]);
+    g.beginPath(); g.moveTo(here, t); g.lineTo(here, b); g.stroke();
+    g.setLineDash([]);
+    // The curve through the points.
+    g.strokeStyle = accent;
+    g.lineWidth = 2;
+    g.lineJoin = "round";
+    g.beginPath();
+    for (let k = 0; k <= 200; k++) { const p = k / 200, x = X(p), y = Y(speedAt(m, p)); if (k === 0) g.moveTo(x, y); else g.lineTo(x, y); }
+    g.stroke();
+    // A point on each node's place (a ring's last span comes back to the first).
+    xs.forEach((p, i) => {
+      const x = X(p), y = Y(speedOf(m.nodes[i]!)), on = i === this.selNode, half = on ? 6 : 5;
+      g.fillStyle = accent;
+      g.beginPath(); g.rect(x - half, y - half, half * 2, half * 2); g.fill();
+      if (on) { g.strokeStyle = "#ffffff"; g.lineWidth = 1.5; g.stroke(); }
+      this.speedDots.push({ i, x, y });
+    });
+  }
+
+  /** The speed graph's points on its canvas as last drawn (CSS pixels), for tests. */
+  get speedPoints(): readonly { i: number; x: number; y: number }[] {
+    return this.speedDots;
+  }
+
+  /** The speed value a point of the graph's canvas stands for (held to the range). */
+  private speedAtY(y: number): number {
+    const { t, b } = this.plot();
+    return clampSpeed(SPEED_MAX - ((y - t) / (b - t)) * (SPEED_MAX - SPEED_MIN));
+  }
+
+  /** The point of the graph under a canvas point, or -1. */
+  private speedDotAt(x: number, y: number): number {
+    let best = -1, bestD = 11;
+    for (const d of this.speedDots) { const q = Math.hypot(d.x - x, d.y - y); if (q <= bestD) { best = d.i; bestD = q; } }
+    return best;
+  }
+
+  /** A node's speed set (one undo step); the picked node follows. */
+  private setSpeed(i: number, v: number, join = false): void {
+    const s = this.session, m = motionFor(s);
+    if (!m?.nodes[i]) return;
+    keepMotion(s, { ...m, nodes: m.nodes.map((n, k) => (k === i ? { ...n, speed: v } : n)) }, `Set the speed of node ${nodeLabels(m)[i]}`, join);
+  }
+
+  /** Drag a point of the graph up or down to set that node's speed (Shift: in steps of 0.1); double-click puts it back to 0. */
+  private speedEvents(): void {
+    const c = this.speedCanvas, at = (e: PointerEvent | MouseEvent): [number, number] => localPoint(c, e as PointerEvent);
+    c.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      const [x, y] = at(e), i = this.speedDotAt(x, y);
+      if (i < 0) return;
+      e.preventDefault();
+      this.pickSlot(i);
+      this.speedDrag = i;
+      this.session.history?.begin(`Set the speed of node ${nodeLabels(motionFor(this.session)!)[i]}`);
+      c.setPointerCapture(e.pointerId);
+      this.slotSig = "";
+      this.schedule();
+    });
+    c.addEventListener("pointermove", (e) => {
+      const [x, y] = at(e);
+      if (this.speedDrag === null) { c.style.cursor = this.speedDotAt(x, y) >= 0 ? "ns-resize" : ""; return; }
+      const raw = this.speedAtY(y), v = e.shiftKey ? clampSpeed(Math.round(raw * 10) / 10) : Math.round(raw * 100) / 100;
+      this.setSpeed(this.speedDrag, clampSpeed(v));
+      this.schedule();
+    });
+    const end = (): void => {
+      if (this.speedDrag === null) return;
+      this.speedDrag = null;
+      this.session.history?.end();
+      this.slotSig = "";
+      this.schedule();
+    };
+    c.addEventListener("pointerup", end);
+    c.addEventListener("pointercancel", end);
+    c.addEventListener("dblclick", (e) => {
+      const [x, y] = at(e), i = this.speedDotAt(x, y);
+      if (i >= 0) { this.setSpeed(i, 0); this.slotSig = ""; this.schedule(); }
+    });
   }
 
   /** What the panel keeps of how it was left, for the project's remembered view (ui/viewMemory.ts). */
   get memory(): MotionMemory {
-    return { mode: this.mode, node: this.selNode, time: this.selTime, zoom: this.zoom, pan: { ...this.pan }, space: this.space, axes: this.axes };
+    return { node: this.selNode, zoom: this.zoom, pan: { ...this.pan }, space: this.space, axes: this.axes, lower: this.lowerHeight };
   }
 
-  /** Put that back: the mode only where a path is there to show it. */
+  /** Put that back. */
   restoreMemory(m: MotionMemory): void {
     this.zoom = Number.isFinite(m.zoom) && m.zoom > 0 ? m.zoom : 1;
     this.pan = Number.isFinite(m.pan.x) && Number.isFinite(m.pan.y) ? { x: m.pan.x, y: m.pan.y } : { x: 0, y: 0 };
     if (m.space === "parent" || m.space === "local" || m.space === "world") this.space = m.space === "local" ? "parent" : m.space;
     if (m.axes === "parent" || m.axes === "world") this.axes = m.axes;
     this.hold = false;
-    this.mode = m.mode === "time" ? "time" : "draw";
     this.selNode = m.node;
-    this.selTime = m.time;
+    if (typeof m.lower === "number" && m.lower >= MIN_LOWER) { this.lowerHeight = m.lower; this.lowerSet = true; this.applyLower(); }
     this.slotSig = "";
     this.schedule();
-  }
-
-  /** Pick a node time (and the block it starts): its frame and its multiplier show in the path row. */
-  private pickTime(i: number): void {
-    this.selTime = i;
-    this.slotSig = "";
-    this.schedule();
-    // The Timeline's block tabs show the pick too.
-    this.session.changed();
   }
 
   /**
    * An arrow key while the pointer is over this panel: in Edit Path the picked node moves by one step (Shift: the big step) and the bone
-   * goes with it; in Adjust time nothing moves. False when the bone has no path, so the key goes on to the bone as anywhere else.
+   * goes with it. False when the bone has no path, so the key goes on to the bone as anywhere else.
    */
   nudge(dir: "left" | "right" | "up" | "down", big: boolean, step: number, bigFactor: number): boolean {
-    // The arrows move the node in the parent bone's own space (the numbers it is stored in), whichever way that bone is turned on screen.
+    // The arrows move the node in the parent bone\'s own space (the numbers it is stored in), whichever way that bone is turned on screen.
     const s = this.session, m = motionFor(s);
     if (!m) return false;
-    if (this.mode !== "draw") return true;
     const n = m.nodes[this.selNode];
     if (!n) { this.onStatus("Pick a node first (press its number, or Q and W)."); return true; }
     const d = step * (big ? bigFactor : 1), dx = dir === "left" ? -d : dir === "right" ? d : 0, dy = dir === "up" ? d : dir === "down" ? -d : 0;
@@ -1330,18 +1392,16 @@ export class MotionPathPanel {
   }
 
   /**
-   * Q and W while this panel has the keys: the previous or next node (Edit Path: the bone goes to it) or node time (Adjust
-   * time). A ring goes round; an open path stops at its ends. False when there is nothing to step through here.
+   * Q and W while this panel has the keys: the previous or next node (the bone goes to it). A ring goes round; an open path stops at its ends. False when there is nothing to step through here.
    */
   stepNode(dir: -1 | 1): boolean {
     const m = motionFor(this.session);
     if (!m) return false;
-    const count = this.mode === "draw" ? m.nodes.length : nodeTimeFrames(m).length, at = this.mode === "draw" ? this.selNode : this.selTime;
+    const count = m.nodes.length, at = this.selNode;
     if (count < 1) return false;
-    const wrap = this.mode === "time" || m.closed;
     let next = at < 0 ? (dir > 0 ? 0 : count - 1) : at + dir;
-    if (next < 0 || next >= count) next = wrap ? (next + count) % count : Math.min(count - 1, Math.max(0, next));
-    if (this.mode === "draw") this.pickSlot(next); else this.pickTime(next);
+    if (next < 0 || next >= count) next = m.closed ? (next + count) % count : Math.min(count - 1, Math.max(0, next));
+    this.pickSlot(next);
     return true;
   }
 
@@ -1385,26 +1445,7 @@ export class MotionPathPanel {
       this.pickSlot(1);
       this.onStatus(`${started.bone}: two spline nodes (where it is, and an offset). Press a number to put the bone on that node, then move the bone or drag the node; + adds a node; then Bake.`);
     }
-    this.mode = "draw";
     this.slotSig = "";
-    this.schedule();
-  }
-
-  /**
-   * Adjust time (the mode button): the spline is done, so the path is baked as it stands (its nodes and handles are kept and
-   * the bone goes back to the animation's pose) and only the timing can be edited: node times, blocks, total frames. Nothing
-   * is written to the timeline until Bake to timeline.
-   */
-  private enterTime(): void {
-    const m = motionFor(this.session);
-    if (!m) return;
-    if (this.mode !== "time") this.selTime = -1;
-    this.mode = "time";
-    this.nodeDrag = null;
-    this.handleDrag = null;
-    this.session.clearUnkeyed();
-    this.slotSig = "";
-    this.onStatus(`${m.bone}: the spline is set. Adjust time: add or remove node times and set each block's multiplier, then Bake to timeline.`);
     this.schedule();
   }
 
@@ -1583,10 +1624,13 @@ export class MotionPathPanel {
     const mid = this.selNode >= 0 ? midAfter(m, this.selNode) : null;
     if (mid) {
       const at = this.selNode + 1;
-      keepMotion(s, withNode(m, { x: Math.round(mid.x * 1e4) / 1e4, y: Math.round(mid.y * 1e4) / 1e4 }, at), "Add a spline node");
+      // The new node takes the speed spline's value halfway to the next node, so the pace along the path stays as it was.
+      const xs = nodeProgress(m), pace = clampSpeed(speedAt(m, (xs[this.selNode]! + (xs[this.selNode + 1] ?? 1)) / 2));
+      keepMotion(s, withNode(m, { x: Math.round(mid.x * 1e4) / 1e4, y: Math.round(mid.y * 1e4) / 1e4, ...speedPatch(pace) }, at), "Add a spline node");
       this.selNode = at;
     } else {
-      keepMotion(s, withNode(m, nodeAfter(s, m.nodes.at(-1)!)), "Add a spline node");
+      const last = m.nodes.at(-1)!;
+      keepMotion(s, withNode(m, { ...nodeAfter(s, last), ...speedPatch(speedOf(last)) }), "Add a spline node");
       this.selNode = m.nodes.length;
     }
     this.multi.clear();
@@ -1595,25 +1639,20 @@ export class MotionPathPanel {
     this.schedule();
   }
 
-  /** Whether the path's time is being adjusted: the bone is not dragged, on the Stage or here, and its spline stays as it is. */
-  get timing(): boolean {
-    return this.mode === "time" && !!motionFor(this.session);
-  }
-
   /** Whether a path is being drawn for the selected bone: its nodes are stored by posing it, so dragging it writes no keys. */
   get drawing(): boolean {
-    return this.mode === "draw" && !!motionFor(this.session);
+    return !!motionFor(this.session);
   }
 
-  /** The ring (dashed); in Edit Path the spline nodes and their handles; in Adjust time the frames' dots and the node times, in Local space. */
+  /** The spline: its curve, the picked node's span lit, the nodes and their handles. */
   private drawMotion(g: CanvasRenderingContext2D, at: (x: number, y: number) => [number, number], accent: string): void {
     const m = this.viewMotion();
     if (!m || this.space !== "parent" || !this.show.spline) return;
-    const curve = curveOf(m), draw = this.mode === "draw";
+    const curve = curveOf(m);
     g.save();
     // The picked node's span (to the next node; the last of an open path: the span into it) lit under the curve, so a number shows which part of the path it owns.
     const lit = this.selNode;
-    if (draw && lit >= 0 && lit < m.nodes.length) {
+    if (lit >= 0 && lit < m.nodes.length) {
       const end = !m.closed && lit === m.nodes.length - 1, from = curve.nodeAt[end ? lit - 1 : lit], to = curve.nodeAt[end ? lit : lit + 1];
       if (from !== undefined && to !== undefined && to > from) {
         g.save();
@@ -1632,10 +1671,10 @@ export class MotionPathPanel {
       }
     }
     // Edit Path draws the curve as a graph editor does: a solid line in the accent colour, filled square nodes, hollow round handles on thin stems.
-    g.strokeStyle = draw ? accent : "#ffffff";
-    g.globalAlpha = draw ? 1 : 0.35;
-    g.lineWidth = draw ? 2 : 1.5;
-    g.setLineDash(draw ? [] : [5, 4]);
+    g.strokeStyle = accent;
+    g.globalAlpha = 1;
+    g.lineWidth = 2;
+    g.setLineDash([]);
     g.beginPath();
     const steps = Math.max(48, m.nodes.length * 48);
     for (let i = 0; i <= steps; i++) {
@@ -1646,7 +1685,7 @@ export class MotionPathPanel {
     g.setLineDash([]);
     g.globalAlpha = 1;
     const pre = this.nodePreview;
-    if (pre && draw) {
+    if (pre) {
       // The path a held number would make: solid in the accent colour, the node being moved ringed.
       const pc = curveOf(pre.motion);
       g.strokeStyle = accent;
@@ -1663,36 +1702,12 @@ export class MotionPathPanel {
         g.beginPath(); g.arc(x, y, 11, 0, Math.PI * 2); g.stroke();
       }
     }
-    this.timePts = [];
-    if (!draw) {
-      // Where the bone will be on each frame (even speed inside a block), and the node times: where a block begins.
-      g.fillStyle = DOT;
-      g.globalAlpha = 0.45;
-      for (let f = 0; f < endFrame(m); f++) {
-        const p = placeAtFrame(m, f), [x, y] = at(p.x, p.y);
-        g.beginPath(); g.arc(x, y, 2, 0, Math.PI * 2); g.fill();
-      }
-      g.globalAlpha = 1;
-      nodeTimeFrames(m).forEach((f, i) => {
-        const p = placeAtFrame(m, f), [x, y] = at(p.x, p.y), picked = i === this.selTime;
-        this.timePts.push({ i, x, y });
-        g.fillStyle = picked ? "#ffffff" : DOT;
-        g.strokeStyle = DOT;
-        g.lineWidth = 2;
-        g.beginPath(); g.arc(x, y, picked ? 7 : 6, 0, Math.PI * 2); g.fill(); g.stroke();
-        g.fillStyle = DOT;
-        g.font = `10px "JetBrains Mono", monospace`;
-        g.textAlign = "left";
-        g.textBaseline = "top";
-        g.fillText(`${f}`, x + 9, y + 5);
-      });
-    }
     m.nodes.forEach((n, i) => {
       const [x, y] = at(n.x, n.y);
       this.nodePts.push({ x, y });
       g.strokeStyle = accent;
       g.lineWidth = 2;
-      if (draw) {
+      {
         // A filled square in the curve's colour; the picked one a little larger, with a white edge.
         const on = i === this.selNode, half = on ? 6 : 5;
         g.fillStyle = accent;
@@ -1703,16 +1718,10 @@ export class MotionPathPanel {
         g.textAlign = "left";
         g.textBaseline = "bottom";
         g.fillText(String(nodeLabels(m)[i]), x + 7, y - 4);
-      } else {
-        // Locked while only the time is adjusted: small, hollow, not grabbed.
-        g.globalAlpha = 0.6;
-        g.lineWidth = 1.5;
-        g.beginPath(); g.rect(x - 3, y - 3, 6, 6); g.stroke();
-        g.globalAlpha = 1;
       }
     });
-    // The curve's hand tools: a handle each side of a node (Edit Path), joined to it by a line; drag one to bend the curve there.
-    if (draw) {
+    // The curve's hand tools: a handle each side of a node, joined to it by a line; drag one to bend the curve there.
+    {
       const offs = handleOffsets(m.nodes, m.closed);
       g.lineWidth = 1;
       m.nodes.forEach((n, slot) => {
@@ -1758,7 +1767,7 @@ export class MotionPathPanel {
   /** Back to the automatic handle at the one under the point (a double click on it). */
   private resetHandleAt(x: number, y: number): boolean {
     const h = this.handleAt(x, y), m = motionFor(this.session);
-    if (!h || !m || this.mode !== "draw") return false;
+    if (!h || !m) return false;
     keepMotion(this.session, { ...m, nodes: m.nodes.map((o, i) => { if (i !== h.slot) return o; const { tx: _a, ty: _b, bx: _c, by: _d, ...rest } = o; return rest; }) }, "Reset a handle");
     return true;
   }
@@ -1770,22 +1779,15 @@ export class MotionPathPanel {
     return best;
   }
 
-  /** The node time under a canvas point, or -1. */
-  private timeAt(x: number, y: number): number {
-    let best = -1, bestD = 9;
-    for (const q of this.timePts) { const d = Math.hypot(q.x - x, q.y - y); if (d <= bestD) { best = q.i; bestD = d; } }
-    return best;
-  }
-
-  /** Bake to timeline: write the keys (a key at each node time and at the end of the run) into the bone's translate timeline, one undo step. */
+  /** Bake to timeline: write the keys (where the bone reaches each node, at the end of the run, and where the curve needs them) into the bone's translate timeline, one undo step. */
   private bakeToTimeline(): void {
     const s = this.session, m = motionFor(s);
     if (!m) return;
     const a = s.animation, had = a ? (keysAt(a, { section: "bones", owner: m.bone, timeline: "translate" })?.length ?? 0) : 0, first = m.baked === undefined;
     try {
-      const { path, stray } = bakeMotion(s, m);
+      const { stray, keys } = bakeMotion(s, m);
       this.stray = stray;
-      this.onStatus(`${m.bone}: baked ${nodeTimeFrames(path).length + 1} keys to the timeline${first && had ? `; its ${had} translate key${had === 1 ? "" : "s"} were replaced (Undo brings them back)` : ""}.`);
+      this.onStatus(`${m.bone}: baked ${keys} keys to the timeline${first && had ? `; its ${had} translate key${had === 1 ? "" : "s"} were replaced (Undo brings them back)` : ""}.`);
     } catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); }
   }
 
@@ -1795,50 +1797,7 @@ export class MotionPathPanel {
     if (say) this.onStatus(say);
   }
 
-  /** + Time: a node time at the playhead's frame (or, if that is not free, in the middle of the longest block). */
-  private addTimeHere(): void {
-    const s = this.session, m = motionFor(s);
-    if (!m) return;
-    try {
-      const times = nodeTimeFrames(m), end = endFrame(m);
-      let frame = s.frame;
-      if (frame <= 0 || frame >= end || times.includes(frame)) {
-        const longest = blocksOf(m).reduce((a, b) => (b.end - b.start > a.end - a.start ? b : a));
-        frame = Math.round((longest.start + longest.end) / 2);
-      }
-      const next = addNodeTime(m, frame);
-      this.timeEdit(next, `Added a node time on frame ${frame}.`, "Add a node time");
-      this.selTime = nodeTimeFrames(next).indexOf(frame);
-    } catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); }
-  }
-
-  private removePickedTime(): void {
-    const m = motionFor(this.session);
-    if (!m || this.selTime < 0) return;
-    try { this.timeEdit(removeNodeTime(m, this.selTime), "Removed the node time.", "Remove a node time"); this.selTime = -1; }
-    catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); }
-  }
-
-  /** The picked node time's frame was typed. */
-  private setPickedFrame(): void {
-    const m = motionFor(this.session);
-    if (!m || this.selTime < 1) return;
-    try {
-      const next = moveNodeTime(m, this.selTime, Number(this.frameField.value));
-      this.timeEdit(next, undefined, "Move a node time", true);
-      this.frameField.value = String(nodeTimeFrames(next)[this.selTime]);
-    } catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); this.frameField.value = String(nodeTimeFrames(m)[this.selTime]); }
-  }
-
-  /** The picked block's time multiplier was typed. */
-  private setPickedSpeed(): void {
-    const m = motionFor(this.session);
-    if (!m || this.selTime < 0) return;
-    try { this.timeEdit(withSpeed(m, this.selTime, Number(this.speedField.value)), undefined, "Set a block multiplier", true); }
-    catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); this.speedField.value = String(blocksOf(m)[this.selTime]!.speed); }
-  }
-
-  /** Total frames was typed (a loop of 15 is 14 + 0): the node times keep their share of it. */
+  /** Total frames was typed (a loop of 15 is 14 + 0): the speed spline stays as it is. */
   private setFrames(): void {
     const m = motionFor(this.session);
     if (!m) return;
@@ -1864,38 +1823,20 @@ export class MotionPathPanel {
   /** Whether a canvas point is on the spline's curve (within 10 px), in Edit Path. */
   private onSpline(x: number, y: number): boolean {
     const m = this.viewMotion(), at = this.spaceAt(x, y);
-    if (!m || !at || this.space !== "parent" || this.mode !== "draw") return false;
+    if (!m || !at || this.space !== "parent") return false;
     return curveOf(m).project({ x: at[0], y: at[1] }).distance * (this.mapping?.k ?? 1) <= 10;
   }
 
   /** Put a spline node where a double click on the curve is (Edit Path). */
   private insertNodeAt(x: number, y: number): boolean {
     const m = this.viewMotion(), at = this.spaceAt(x, y);
-    if (!m || !at || this.space !== "parent" || this.mode !== "draw") return false;
+    if (!m || !at || this.space !== "parent") return false;
     const curve = curveOf(m), hit = curve.project({ x: at[0], y: at[1] }), k = this.mapping?.k ?? 1;
     if (hit.distance * k > 10) return false;
     const i = curve.nodeAt.slice(0, m.nodes.length).filter((v) => v <= hit.s).length, p = curve.at(hit.s);
-    this.keepView(withNode(m, { x: p.x, y: p.y }, i), "Add a spline node");
+    // The new node takes the speed spline's value where it lands, so the pace along the path stays as it was.
+    this.keepView(withNode(m, { x: p.x, y: p.y, ...speedPatch(clampSpeed(speedAt(m, hit.s / Math.max(curve.length, 1e-9)))) }, i), "Add a spline node");
     this.selNode = i;
-    return true;
-  }
-
-  /** A node time added where a double click on the ring is (Adjust time): on the frame the bone is nearest there. */
-  private addTimeAt(x: number, y: number): boolean {
-    const mv = this.viewMotion(), m = motionFor(this.session), at = this.spaceAt(x, y);
-    if (!m || !mv || !at || this.space !== "parent" || this.mode !== "time") return false;
-    const curve = curveOf(mv), hit = curve.project({ x: at[0], y: at[1] }), k = this.mapping?.k ?? 1;
-    if (hit.distance * k > 10) return false;
-    const want = hit.s / Math.max(curve.length, 1e-9), times = nodeTimeFrames(m);
-    let best = -1, bestD = Infinity;
-    for (let f = 1; f < endFrame(m); f++) {
-      if (times.includes(f)) continue;
-      const d = Math.abs(progressAtFrame(m, f) - want);
-      if (d < bestD) { best = f; bestD = d; }
-    }
-    if (best < 0) return true;
-    try { const next = addNodeTime(m, best); this.timeEdit(next, `Added a node time on frame ${best}.`, "Add a node time"); this.selTime = nodeTimeFrames(next).indexOf(best); }
-    catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); }
     return true;
   }
 
@@ -1917,7 +1858,7 @@ export class MotionPathPanel {
         this.grab(e);
         return;
       }
-      const hnd = this.mode === "draw" ? this.handleAt(x, y) : null;
+      const hnd = this.handleAt(x, y);
       if (hnd) {
         this.selNode = hnd.slot;
         this.handleDrag = hnd;
@@ -1928,9 +1869,7 @@ export class MotionPathPanel {
         this.grab(e);
         return;
       }
-      const tm = this.mode === "time" ? this.timeAt(x, y) : -1;
-      if (tm >= 0) { this.pickTime(tm); return; }
-      const node = this.mode === "draw" ? this.nodeAt(x, y) : -1;
+      const node = this.nodeAt(x, y);
       // ⌘ + click on a node: the menu for its legs (break each handle on its own, or mirror them again).
       if (node >= 0 && e.metaKey) { this.legMenu(node, e.clientX, e.clientY); return; }
       // ⌘ + click on the curve itself: the menu to insert a node there.
@@ -1940,15 +1879,15 @@ export class MotionPathPanel {
       }
       if (node >= 0) { this.pickSlot(node); this.nodeDrag = node; this.session.history?.begin("Move a spline node"); this.grab(e); return; }
       const h = this.handle;
-      if (h && !this.timing && Math.hypot(h.x - x, h.y - y) <= 11 && this.beginEdit(x, y, "rotate", this.session.frame)) { this.grab(e); return; }
+      if (h && Math.hypot(h.x - x, h.y - y) <= 11 && this.beginEdit(x, y, "rotate", this.session.frame)) { this.grab(e); return; }
       const sc = this.scaleHandle, sh = this.shearHandle;
-      if (sc && !this.timing && Math.hypot(sc.x - x, sc.y - y) <= 11 && this.beginEdit(x, y, "scale", this.session.frame)) { this.grab(e); return; }
-      if (sh && !this.timing && Math.hypot(sh.x - x, sh.y - y) <= 11 && this.beginEdit(x, y, "shear", this.session.frame)) { this.grab(e); return; }
+      if (sc && Math.hypot(sc.x - x, sc.y - y) <= 11 && this.beginEdit(x, y, "scale", this.session.frame)) { this.grab(e); return; }
+      if (sh && Math.hypot(sh.x - x, sh.y - y) <= 11 && this.beginEdit(x, y, "shear", this.session.frame)) { this.grab(e); return; }
       const arrow = this.arrowAt(x, y);
-      if (arrow !== null && !this.timing && this.beginEdit(x, y, "move", this.session.frame, arrow)) { this.grab(e); return; }
+      if (arrow !== null && this.beginEdit(x, y, "move", this.session.frame, arrow)) { this.grab(e); return; }
       const best = this.markAt(x, y);
       if (best >= 0) {
-        // With a path a dot only puts the playhead there (its node times are what is dragged, in Adjust time); with none, drag it to move the bone at that frame.
+        // With a path a dot only puts the playhead there; with none, drag it to move the bone at that frame.
         if (motionFor(this.session)) { this.session.seek(best); return; }
         if (this.beginEdit(x, y, "move", best)) { this.grab(e); return; }
         this.session.seek(best);
@@ -2005,7 +1944,7 @@ export class MotionPathPanel {
     }
     if (!this.dragging) {
       const [x, y] = localPoint(this.canvas, e), h = this.handle;
-      this.canvas.style.cursor = this.onTag(x, y) || (this.mode === "draw" && this.nodeAt(x, y) >= 0) ? "grab" : (h && Math.hypot(h.x - x, h.y - y) <= 11) || this.arrowAt(x, y) !== null || this.markAt(x, y) >= 0 ? "grab" : "";
+      this.canvas.style.cursor = this.onTag(x, y) || this.nodeAt(x, y) >= 0 ? "grab" : (h && Math.hypot(h.x - x, h.y - y) <= 11) || this.arrowAt(x, y) !== null || this.markAt(x, y) >= 0 ? "grab" : "";
       return;
     }
     this.pan = { x: this.pan.x + e.clientX - this.dragging.x, y: this.pan.y + e.clientY - this.dragging.y };

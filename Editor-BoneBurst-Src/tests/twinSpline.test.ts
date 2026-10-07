@@ -1,0 +1,83 @@
+import { describe, expect, it } from "vitest";
+import { buildCurve, endFrame } from "@/edit/motionPath";
+import { arrivalFrames, clampSpeed, multiplierOf, nodeProgress, placeAtFrame, progressAtFrame, SPEED_MAX, SPEED_MIN, speedAt, timeMap } from "@/edit/twinSpline";
+import type { MotionPath } from "@/model/sidecar";
+
+/** TwinSpline (docs/TWINSPLINE-PLAN.md): the speed spline over a ring, and the time it makes. */
+
+const nodes = [{ x: 0, y: 0 }, { x: 40, y: 60 }, { x: 100, y: 10 }, { x: 160, y: 70 }];
+const path = (speeds: readonly number[] = [], extra: Partial<MotionPath> = {}): MotionPath => ({ animation: "a", bone: "b", nodes: nodes.map((n, i) => (speeds[i] ? { ...n, speed: speeds[i]! } : n)), closed: true, frames: 15, ...extra });
+
+describe("the speed value", () => {
+  it("is held between -0.99 and 5, so the multiplier is never 0", () => {
+    expect(clampSpeed(-3)).toBe(SPEED_MIN);
+    expect(clampSpeed(99)).toBe(SPEED_MAX);
+    expect(clampSpeed(Number.NaN)).toBe(0);
+    expect(multiplierOf(-5)).toBeCloseTo(0.01, 10);
+    expect(multiplierOf(5)).toBe(6);
+    expect(multiplierOf(0)).toBe(1);
+  });
+});
+
+describe("the speed spline", () => {
+  it("is 0 everywhere when no node has a speed, and passes through every node's value", () => {
+    expect(speedAt(path(), 0.37)).toBe(0);
+    const m = path([0, 2.5, -0.6, 1]);
+    nodeProgress(m).forEach((p, i) => expect(speedAt(m, p)).toBeCloseTo([0, 2.5, -0.6, 1][i]!, 6));
+  });
+  it("never leaves the range, even where the curve would swing past it", () => {
+    const m = path([5, -0.99, 5, -0.99]);
+    for (let k = 0; k <= 400; k++) { const v = speedAt(m, k / 400); expect(v).toBeGreaterThanOrEqual(SPEED_MIN); expect(v).toBeLessThanOrEqual(SPEED_MAX); }
+  });
+  it("on a ring runs round: the end meets the start", () => {
+    const m = path([0, 2, -0.5, 1]);
+    expect(speedAt(m, 1)).toBeCloseTo(speedAt(m, 0), 6);
+    expect(Math.abs(speedAt(m, 0.9999) - speedAt(m, 0.0001))).toBeLessThan(0.05);
+  });
+  it("of an open path has the first and last node's values at its ends", () => {
+    const m = path([1, 0, 0, 3], { closed: false });
+    expect(speedAt(m, 0)).toBeCloseTo(1, 6);
+    expect(speedAt(m, 1)).toBeCloseTo(3, 6);
+  });
+});
+
+describe("the time it makes", () => {
+  it("is even when no node has a speed: progress is the frame's share of the run, from 0 to 1", () => {
+    const m = path();
+    for (const f of [0, 3, 7, 14, 15]) expect(progressAtFrame(m, f)).toBeCloseTo(f / endFrame(m), 3);
+    expect(placeAtFrame(m, 0)).toEqual(buildCurve(nodes, true).at(0));
+  });
+  it("begins at the first node on frame 0 and, on a ring, is back on it on the last frame; the run takes its frames whatever the speeds", () => {
+    const m = path([0, 3, -0.9, 2]), c = buildCurve(m.nodes, true);
+    expect(progressAtFrame(m, 0)).toBe(0);
+    expect(progressAtFrame(m, endFrame(m))).toBeCloseTo(1, 6);
+    expect(placeAtFrame(m, endFrame(m)).x).toBeCloseTo(c.at(0).x, 3);
+  });
+  it("goes faster where the speed is higher: a stretch at speed 1 (twice as fast) takes about half the time of one at 0", () => {
+    const flat = path(), fast = path([1, 1, 1, 1]);
+    // Everywhere 1 is the same pace as everywhere 0 (a constant multiplier cancels out).
+    expect(progressAtFrame(fast, 5)).toBeCloseTo(progressAtFrame(flat, 5), 3);
+    // Fast on the first span only: less time to cover it than the same span at an even pace.
+    const m = path([2, 2, 0, 0]), t = timeMap(m), xs = nodeProgress(m);
+    expect(t.time(xs[1]!)).toBeLessThan(xs[1]!);
+  });
+  it("goes slowly, never stops: where the speed is -0.99 the bone takes most of the run's time to cover a short stretch", () => {
+    const m = path([-0.99, -0.99, 0, 0]), t = timeMap(m), xs = nodeProgress(m);
+    expect(t.time(xs[1]!)).toBeGreaterThan(0.8);
+    expect(Number.isFinite(t.progress(0.5))).toBe(true);
+  });
+  it("maps progress and time back and forth", () => {
+    const t = timeMap(path([0, 3, -0.5, 1]));
+    for (const p of [0, 0.1, 0.33, 0.7, 1]) expect(t.progress(t.time(p))).toBeCloseTo(p, 2);
+    expect(t.time(0)).toBe(0);
+    expect(t.time(1)).toBeCloseTo(1, 10);
+  });
+  it("tells the frame each node is reached on, from 0 to the end (a ring adds the way back)", () => {
+    const m = path(), a = arrivalFrames(m);
+    expect(a).toHaveLength(5);
+    expect(a[0]).toBe(0);
+    expect(a.at(-1)).toBeCloseTo(endFrame(m), 6);
+    expect(a.every((f, i) => i === 0 || f > a[i - 1]!)).toBe(true);
+    expect(arrivalFrames(path([], { closed: false }))).toHaveLength(4);
+  });
+});

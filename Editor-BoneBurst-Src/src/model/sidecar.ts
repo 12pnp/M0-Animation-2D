@@ -62,6 +62,8 @@ export interface MotionNode {
   readonly by?: number;
   /** The number the node is known by (its button): set once nodes are reordered, so it keeps its number as the path's order changes; absent = its place in the list. */
   readonly id?: number;
+  /** The speed spline's value at this node (docs/TWINSPLINE-PLAN.md): -0.99 to 5, the bone goes `1 + speed` times as fast here; absent = 0, an even pace. */
+  readonly speed?: number;
 }
 
 /**
@@ -80,9 +82,6 @@ export interface MotionPath {
   readonly nodes: readonly MotionNode[];
   readonly closed: boolean;
   readonly frames: number;
-  readonly starts: readonly number[];
-  readonly speeds: readonly number[];
-  readonly curves?: readonly (readonly number[])[] | undefined;
   readonly baked?: string;
 }
 

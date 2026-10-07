@@ -90,7 +90,7 @@ test("Motion Path in Pose mode shows the bone and its image on the setup pose, t
   // A press on the canvas changes nothing: no seek, no edit.
   const state = () => page.evaluate(() => { const s = (window as unknown as { boneburst: { session: { frame: number; history: { canUndo: boolean } } } }).boneburst.session; return [s.frame, s.history.canUndo]; });
   const before = await state();
-  const box = (await panel.locator("canvas").boundingBox())!;
+  const box = (await panel.locator(".lp-body canvas").boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.down();
   await page.mouse.move(box.x + box.width / 2 + 60, box.y + box.height / 2 + 40, { steps: 4 });
@@ -142,7 +142,7 @@ test("Motion Path zooms with the wheel, pans by dragging, and Fit (top right) sh
   await page.locator(".stage-panel button.mode").click();
   await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "arm_near_fore" }));
-  const panel = page.locator(".motion-path"), canvas = panel.locator("canvas");
+  const panel = page.locator(".motion-path"), canvas = panel.locator(".lp-body canvas");
   const picture = () => canvas.evaluate((c) => (c as HTMLCanvasElement).toDataURL());
   await expect(panel.locator(".lp-note")).toBeHidden();
   await page.waitForTimeout(300);

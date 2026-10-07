@@ -7,14 +7,14 @@ import type { Session } from "./session";
  */
 
 export interface MotionMemory {
-  readonly mode: "draw" | "time";
   readonly node: number;
-  readonly time: number;
   readonly zoom: number;
   readonly pan: { readonly x: number; readonly y: number };
   /** `"local"` is what an earlier build wrote for Parent. */
   readonly space: "parent" | "local" | "world";
   readonly axes: "parent" | "world";
+  /** The height of the area under the picture (node numbers and speed graph), in pixels. */
+  readonly lower?: number;
 }
 
 export interface TimelineMemory { readonly frameWidth: number; readonly first: number; readonly scroll: number }
