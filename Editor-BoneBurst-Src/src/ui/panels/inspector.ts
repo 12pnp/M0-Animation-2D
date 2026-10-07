@@ -23,6 +23,7 @@ import type { Selection, Session } from "../session";
 import { brush, BRUSH_STRENGTH } from "../stage/weightBrush";
 import { animatedLocal, constraintNow, localUnder, Poser } from "../stage/posed";
 import { empty, heading } from "./outline";
+import { openTags, tagChip } from "../tagsPopup";
 import { keysOf } from "../shortcuts";
 import { unposed } from "../notes";
 
@@ -75,7 +76,7 @@ export class Inspector {
     // The selected object changes exactly when its values do; the frame matters in Animate mode.
     // Nothing selected: the skeleton itself (its header), E6 step 4i.
     const target = doc && sel ? selectedObject(doc, sel) : doc && !sel ? doc.header ?? doc : undefined;
-    const key = JSON.stringify([!!doc, sel, anim ? [anim.name, s.frame, s.history?.revision] : null, s.vertex, s.weightBone, this.binding]) + (target ? identity(target) : "");
+    const key = JSON.stringify([!!doc, sel, sel ? this.session.tagsOn(sel) : null, anim ? [anim.name, s.frame, s.history?.revision] : null, s.vertex, s.weightBone, this.binding]) + (target ? identity(target) : "");
     if (this.shown === key) return;
     // Not under a field being typed in, nor while playing: it shows the document once that ends.
     // A checkbox or menu commits as it changes, so keeping focus on one does not hold the panel.
@@ -106,7 +107,29 @@ export class Inspector {
     const title = sel.kind === "bone" ? (anim ? `Bone · keys at frame ${s.frame}` : "Bone") : sel.kind === "slot" ? "Slot" : sel.kind === "skin" ? "Skin"
       : sel.kind === "constraint" ? `Constraint · ${KIND_TITLES[sel.type]}${anim ? ` · keys at frame ${s.frame}` : ""}` : sel.kind === "event" ? "Event" : "Attachment";
     mergePairs(form);
+    form.prepend(this.tagsRow(sel));
     this.element.replaceChildren(heading(title), form);
+  }
+
+  /** The tags of the selection, as chips with a + that opens the tags popup (also ⌘L). */
+  private tagsRow(sel: Selection): HTMLElement {
+    const row = document.createElement("div");
+    row.className = "tags-row";
+    const label = document.createElement("span");
+    label.className = "tags-label";
+    label.textContent = "Tags";
+    const chips = document.createElement("span");
+    chips.className = "tag-chips";
+    for (const tag of this.session.tagsOn(sel)) chips.append(tagChip(document, tag, () => this.session.removeTag(sel, tag)));
+    const add = document.createElement("button");
+    add.type = "button";
+    add.className = "tag-add";
+    add.textContent = "+";
+    add.title = "Add a tag (" + keysOf("tags") + ")";
+    add.setAttribute("aria-label", "Add a tag");
+    add.addEventListener("click", () => { const r = add.getBoundingClientRect(); openTags(this.session, sel, { x: r.left, y: r.bottom + 4 }); });
+    row.append(label, chips, add);
+    return row;
   }
 
   private boneForm(form: HTMLElement, doc: Skeleton, name: string): void {
@@ -115,7 +138,7 @@ export class Inspector {
     // A bone the pose shown leaves without one says so here, as the notes do (E8-PLAN step 2).
     if (unposed(doc, s.pose()).has(name)) form.append(readOnly("Pose", "none here: a constraint it is in cannot be solved at this frame, so it is not drawn"));
     form.append(this.textField("name", "Name", bone.name, (v) => (v === name ? null : renameBone(name, v)), (v) => `Rename bone ${name} to ${v}`,
-      (v) => s.select({ kind: "bone", name: v })));
+      (v) => { s.renameTags({ kind: "bone", name }, v); s.select({ kind: "bone", name: v }); }));
     const p = anim ? s.pose() : null, index = p?.bones.get(name);
     const local = p && index !== undefined ? animatedLocal(p, index) : null;
     const time = s.keyTime;
@@ -157,7 +180,7 @@ export class Inspector {
   private eventForm(form: HTMLElement, doc: Skeleton, name: string): void {
     const s = this.session, e = doc.events!.find((x) => x.name === name)!;
     form.append(this.textField("name", "Name", name, (v) => (v === name ? null : renameEvent(name, v)), (v) => `Rename event ${name} to ${v}`,
-      (v) => s.select({ kind: "event", name: v })));
+      (v) => { s.renameTags({ kind: "event", name }, v); s.select({ kind: "event", name: v }); }));
     // A value back at its default is left out, as Spine writes it.
     const num = (key: "int" | "float" | "volume" | "balance", label: string, d: number) => this.textField(key, label, format(e[key] ?? d), (v) => {
       const n = key === "int" ? Math.round(number(v, label)) : number(v, label);
@@ -203,7 +226,7 @@ export class Inspector {
     const s = this.session, skin = doc.skins!.find((k) => k.name === name)!;
     if (name === "default") form.append(readOnly("Name", "default"));
     else form.append(this.textField("name", "Name", name, (v) => (v === name ? null : renameSkin(name, v)), (v) => `Rename skin ${name} to ${v}`,
-      (v) => { if (s.skin === name) s.skin = v; s.select({ kind: "skin", name: v }); }));
+      (v) => { s.renameTags({ kind: "skin", name }, v); if (s.skin === name) s.skin = v; s.select({ kind: "skin", name: v }); }));
     const count = (skin.attachments ?? []).reduce((n, ss) => n + ss.entries.length, 0);
     form.append(readOnly("Attachments", String(count)));
     // The bones and constraints marked skin-required: each is on only while a shown skin lists it.
@@ -265,7 +288,7 @@ export class Inspector {
     };
 
     form.append(this.textField("name", "Name", name, (v) => (v === name ? null : renameConstraint(r, v)), (v) => `Rename ${name} to ${v}`,
-      (v) => s.select({ kind: "constraint", type, name: v })));
+      (v) => { s.renameTags({ kind: "constraint", type, name }, v); s.select({ kind: "constraint", type, name: v }); }));
     const order = (doc.constraints ?? []).indexOf(c);
     form.append(readOnly("Applies", `${order + 1} of ${doc.constraints!.length}`));
     form.append(this.checkField("skin", "Skin required", c.skin === true, (on) => set({ skin: on ? true : undefined }),
@@ -370,7 +393,7 @@ export class Inspector {
   private slotForm(form: HTMLElement, doc: Skeleton, name: string): void {
     const s = this.session, slot = doc.slots!.find((x) => x.name === name)!;
     form.append(this.textField("name", "Name", slot.name, (v) => (v === name ? null : renameSlot(name, v)), (v) => `Rename slot ${name} to ${v}`,
-      (v) => s.select({ kind: "slot", name: v })));
+      (v) => { s.renameTags({ kind: "slot", name }, v); s.select({ kind: "slot", name: v }); }));
     form.append(this.selectField("bone", "Bone", (doc.bones ?? []).map((b) => [b.name, b.name]), slot.bone, (v) => updateSlot(name, { bone: v }), (v) => `Put slot ${name} on ${v}`));
     const keys = [...new Set((doc.skins ?? []).flatMap((k) => k.attachments ?? []).filter((ss) => ss.slot === name).flatMap((ss) => ss.entries.map((e) => e.key)))];
     form.append(this.selectField("attachment", "Shows", [["", "— nothing"], ...keys.map((k): [string, string] => [k, k])], slot.attachment ?? "",
@@ -384,7 +407,7 @@ export class Inspector {
   private attachmentForm(form: HTMLElement, doc: Skeleton, r: AttachmentRef): void {
     const s = this.session, a = findAttachment(doc, r)!, type = attachmentType(a);
     form.append(this.textField("name", "Name", r.key, (v) => (v === r.key ? null : renameAttachment(r, v)), (v) => `Rename attachment ${r.key} to ${v}`,
-      (v) => s.select({ kind: "attachment", skin: r.skin, slot: r.slot, key: v })));
+      (v) => { s.renameTags({ kind: "attachment", ...r }, v); s.select({ kind: "attachment", skin: r.skin, slot: r.slot, key: v }); }));
     form.append(readOnly("Type", type));
     form.append(this.selectField("skin", "Skin", (doc.skins ?? []).map((k) => [k.name, k.name]), r.skin, (v) => moveAttachment(r, v), (v) => `Move ${r.key} to skin ${v}`,
       (v) => s.select({ kind: "attachment", skin: v, slot: r.slot, key: r.key })));

@@ -11,6 +11,9 @@ import { type Selection, sameSelection, type Session } from "../session";
 import { boneColourOf, boneIconOf } from "../boneLook";
 import { newConstraint } from "./newConstraint";
 import { keysOf } from "../shortcuts";
+import { tagMatches } from "@/edit/tags";
+import { showContextMenu } from "../contextMenu";
+import { openTags, tagChip } from "../tagsPopup";
 
 type View = "tree" | "order" | "skins" | "constraints" | "events";
 
@@ -356,7 +359,7 @@ export class Outline {
       }
     }
     this.follow();
-    const sig = JSON.stringify([this.query, this.view, s.skin, [...this.closed], [...this.opened], s.selected?.kind === "attachment" ? s.selected.slot : null, this.view === "events" ? s.animation?.name ?? null : null]);
+    const sig = JSON.stringify([s.sidecar.tags, this.query, this.view, s.skin, [...this.closed], [...this.opened], s.selected?.kind === "attachment" ? s.selected.slot : null, this.view === "events" ? s.animation?.name ?? null : null]);
     // The document's own history, not only its revision: a newly opened one starts at 0 again.
     const key = doc ? `${historyId(s.history!)}|${s.history!.revision}|${sig}` : "none";
     if (key !== this.rendered) {
@@ -366,7 +369,8 @@ export class Outline {
       else {
         // A search lists the rows whose name has it, flat.
         const all = this.items(doc);
-        const items = this.query ? all.filter((it) => it.label.toLowerCase().includes(this.query)).map((it) => ({ ...it, depth: 0 })) : all;
+        // A tag counts as a name: `ik` finds what is called or tagged so, `#ik` only what has the tag IK.
+        const items = this.query ? all.filter((it) => (this.query.startsWith("#") ? false : it.label.toLowerCase().includes(this.query)) || tagMatches(s.tagsOn(it.sel), this.query)).map((it) => ({ ...it, depth: 0 })) : all;
         this.list.replaceChildren(...items.map((it) => this.row(it)));
         if (!items.length && this.query) this.list.append(empty(`Nothing here matches "${this.query}".`));
         else if (!items.length) this.list.append(empty(this.view === "order" ? "No slots yet." : this.view === "constraints" ? "No constraints yet: select a bone, choose a kind, + Constraint."
@@ -454,6 +458,13 @@ export class Outline {
       note.textContent = it.note;
       row.append(note);
     }
+    for (const tag of this.session.tagsOn(it.sel)) row.append(tagChip(document, tag));
+    // Right-click: tags of this element.
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      if (it.sel.kind !== "skin" && !sameSelection(this.session.selected, it.sel)) this.session.select(it.sel);
+      showContextMenu(e.clientX, e.clientY, [{ label: "Tags…", keys: keysOf("tags"), run: () => openTags(this.session, it.sel, { x: e.clientX, y: e.clientY }) }]);
+    });
     row.addEventListener("click", (e) => {
       if ((e.target as HTMLElement).classList.contains("twisty")) return;
       if (it.sel.kind === "skin") { this.showSkin(it.sel.name); return; }

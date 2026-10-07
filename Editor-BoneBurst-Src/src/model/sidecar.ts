@@ -15,8 +15,16 @@ export interface Sidecar {
   readonly notes: readonly Note[];
   /** A bone's preserved motion path in an animation (docs/PATH-SPEED-PLAN.md). */
   readonly motion: readonly MotionPath[];
+  /** Tags on elements of the rig (docs/TAGS-PLAN.md), by the key `edit/tags.ts` makes for the element. */
+  readonly tags: readonly TagEntry[];
   /** Keys a newer version of this file wrote at the top level, kept. */
   readonly extra: JsonObject;
+}
+
+/** One element's tags, in the order they were added. */
+export interface TagEntry {
+  readonly key: string;
+  readonly tags: readonly string[];
 }
 
 export interface Guide {
@@ -78,4 +86,4 @@ export interface MotionPath {
   readonly baked?: string;
 }
 
-export const EMPTY_SIDECAR: Sidecar = { view: new Map<string, Json>(), guides: [], references: [], notes: [], motion: [], extra: new Map<string, Json>() };
+export const EMPTY_SIDECAR: Sidecar = { view: new Map<string, Json>(), guides: [], references: [], notes: [], motion: [], tags: [], extra: new Map<string, Json>() };

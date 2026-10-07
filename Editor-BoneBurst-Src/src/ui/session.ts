@@ -2,6 +2,7 @@ import { readAtlas } from "@/io/atlas";
 import { unpackBbdata } from "@/io/bbdata";
 import { readSidecar, writeSidecar } from "@/io/sidecar";
 import { closeLoops } from "@/edit/loop";
+import { type Tagged, parseTags, renameTagged, tagKeyOf, tagsFor, withoutTag, withTags } from "@/edit/tags";
 import { addReference, type View, viewOf, withView } from "@/edit/sidecar";
 import { EMPTY_SIDECAR, type Sidecar } from "@/model/sidecar";
 import type { Page } from "@/io/pack";
@@ -178,6 +179,31 @@ export class Session {
 
   /** Guides, references or notes changed since the sidecar was read or written (the view does not count). */
   get sidecarChanged(): boolean { return contentText(this.sidecar) !== this.sidecarWritten; }
+
+  /** The tags on an element of the rig (docs/TAGS-PLAN.md). */
+  tagsOn(t: Tagged): readonly string[] {
+    return tagsFor(this.sidecar, tagKeyOf(t));
+  }
+
+  /** Add tags (typed, commas between) to an element: one undo step. Returns the ones that were new. */
+  addTags(t: Tagged, text: string): string[] {
+    const add = parseTags(text), key = tagKeyOf(t), fresh = add.filter((a) => !tagsFor(this.sidecar, key).some((h) => h.toLowerCase() === a.toLowerCase()));
+    if (!fresh.length) return [];
+    const change = (): void => this.setSidecar(withTags(this.sidecar, key, fresh));
+    if (this.history) this.history.applyBeside(`Tag ${t.kind === "attachment" ? t.key : t.name}: ${fresh.join(", ")}`, change); else change();
+    return fresh;
+  }
+
+  removeTag(t: Tagged, tag: string): void {
+    const change = (): void => this.setSidecar(withoutTag(this.sidecar, tagKeyOf(t), tag));
+    if (this.history) this.history.applyBeside(`Remove tag ${tag}`, change); else change();
+  }
+
+  /** An element was renamed: its tags go with it (one undo step of their own, after the rename's). */
+  renameTags(from: Tagged, to: string): void {
+    const change = (): void => this.setSidecar(renameTagged(this.sidecar, from, to));
+    if (this.history) this.history.applyBeside("Move the tags with the new name", change); else change();
+  }
 
   /** Replace the sidecar (a guide edit) and tell the listeners. */
   setSidecar(next: Sidecar): void {
@@ -603,7 +629,16 @@ export class Session {
     this.projectFile = null;
     this.history = new History(skeleton, this.undoSteps);
     // The motion paths live in the sidecar, beside the document: undo and redo carry them (docs/PATH-FRAMES-PLAN.md).
-    this.history.link({ read: () => this.sidecar.motion, write: (m) => this.setSidecar({ ...this.sidecar, motion: m as Sidecar["motion"] }) });
+    // Tags are kept beside the document too, so one undo step carries both (the pair is the same object while neither changed).
+    let memo: { m: Sidecar["motion"]; t: Sidecar["tags"]; pair: { motion: Sidecar["motion"]; tags: Sidecar["tags"] } } | null = null;
+    this.history.link({
+      read: () => {
+        const s = this.sidecar;
+        if (!memo || memo.m !== s.motion || memo.t !== s.tags) memo = { m: s.motion, t: s.tags, pair: { motion: s.motion, tags: s.tags } };
+        return memo.pair;
+      },
+      write: (v) => { const p = v as { motion: Sidecar["motion"]; tags: Sidecar["tags"] }; this.setSidecar({ ...this.sidecar, motion: p.motion, tags: p.tags }); },
+    });
     // A skeleton started from an atlas or a PSD is new: unsaved until saved.
     this.saved = fromFile ? this.history.doc : null;
     this.name = name;

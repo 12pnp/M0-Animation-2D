@@ -46,6 +46,7 @@ import { clipboard, copyPose, pastePoseHere } from "./clipboard";
 import { brush, resizeBrush } from "./stage/weightBrush";
 import { isPanelId, PANEL_ICONS, PANEL_TITLES, type PanelId } from "./workspace/panelIds";
 import { PanelInfo } from "./workspace/panelInfo";
+import { openTags } from "./tagsPopup";
 import { ViewMemory } from "./viewMemory";
 import { type PanelContent, Workspace } from "./workspace/workspace";
 
@@ -994,6 +995,12 @@ export function mountApp(root: HTMLElement): void {
     motionMerge: () => (hovered === "motion" && motionPanel.hotkey("merge") ? undefined : false),
     motionOrigin: () => (hovered === "motion" && motionPanel.hotkey("origin") ? undefined : false),
     motionBake: () => (hovered === "motion" && motionPanel.hotkey("bake") ? undefined : false),
+    tags: () => {
+      const sel = session.selected;
+      if (!sel) { say("Select an element first (a bone, a slot, an image…), then press the tags key."); return; }
+      const r = outline.element.getBoundingClientRect();
+      openTags(session, sel, { x: r.left + 12, y: r.top + 60 });
+    },
     shortcuts: () => sheet.open(),
   };
 

@@ -1,6 +1,6 @@
 import { isArray, isObject, type Json, type JsonObject } from "@/model/json";
 import type { Issue } from "@/model/issue";
-import { EMPTY_SIDECAR, type Guide, type MotionNode, type MotionPath, type Note, type Reference, SIDECAR_FORMAT, SIDECAR_VERSION, type Sidecar } from "@/model/sidecar";
+import { EMPTY_SIDECAR, type Guide, type MotionNode, type MotionPath, type Note, type TagEntry, type Reference, SIDECAR_FORMAT, SIDECAR_VERSION, type Sidecar } from "@/model/sidecar";
 import { parseJson, stringifyJson } from "./json";
 
 /**
@@ -60,10 +60,16 @@ export function readSidecar(text: string): { sidecar: Sidecar; issues: Issue[] }
     const curves = isArray(cv) ? cv.map((c) => (isArray(c) ? c.filter((q): q is number => typeof q === "number") : [])) : [];
     return { animation, bone, ...(parent !== undefined ? { parent } : {}), nodes: ns, closed: o.get("closed") !== false, frames, starts: numbers("starts"), speeds: numbers("speeds"), ...(curves.some((c) => c.length) ? { curves } : {}), ...(baked !== undefined ? { baked } : {}) };
   });
+  // Tags: { "bone:leg": ["IK", "left"], … }; an entry that does not read is dropped.
+  const tg = root.get("tags"), tags: TagEntry[] = [];
+  if (isObject(tg)) for (const [key, v] of tg) {
+    const list = isArray(v) ? v.filter((q): q is string => typeof q === "string" && q.trim() !== "") : [];
+    if (list.length) tags.push({ key, tags: list });
+  }
   const view = root.get("view");
   if (view !== undefined && !isObject(view)) issues.push({ where: "view", message: "not an object; ignored" });
-  const extra = new Map([...root].filter(([k]) => !["format", "version", "view", "guides", "references", "notes", "motion"].includes(k)));
-  return { sidecar: { view: isObject(view) ? view : new Map(), guides, references, notes, motion, extra }, issues };
+  const extra = new Map([...root].filter(([k]) => !["format", "version", "view", "guides", "references", "notes", "motion", "tags"].includes(k)));
+  return { sidecar: { view: isObject(view) ? view : new Map(), guides, references, notes, motion, tags, extra }, issues };
 }
 
 export function writeSidecar(s: Sidecar): string {
@@ -72,6 +78,7 @@ export function writeSidecar(s: Sidecar): string {
     ["guides", s.guides.map((g) => new Map<string, Json>([["axis", g.axis], ["at", g.at]]))],
     ["references", s.references.map((r) => new Map<string, Json>([["path", r.path], ["x", r.x], ["y", r.y], ["scale", r.scale], ["opacity", r.opacity]]))],
     ["notes", s.notes.map((n) => new Map<string, Json>([["text", n.text], ...(n.author !== undefined ? [["author", n.author] as [string, Json]] : []), ...(n.about !== undefined ? [["about", n.about] as [string, Json]] : [])]))],
+    ...(s.tags.length ? [["tags", new Map<string, Json>(s.tags.map((e) => [e.key, [...e.tags]] as [string, Json]))] as [string, Json]] : []),
     ...(s.motion.length ? [["motion", s.motion.map((m) => new Map<string, Json>([
       ["animation", m.animation], ["bone", m.bone], ...(m.parent !== undefined ? [["parent", m.parent] as [string, Json]] : []),
       ["nodes", m.nodes.map((n) => new Map<string, Json>([["x", n.x], ["y", n.y], ...(n.tx !== undefined && n.ty !== undefined ? [["tx", n.tx] as [string, Json], ["ty", n.ty] as [string, Json]] : []), ...(n.bx !== undefined && n.by !== undefined ? [["bx", n.bx] as [string, Json], ["by", n.by] as [string, Json]] : []), ...(n.id !== undefined ? [["id", n.id] as [string, Json]] : [])]))],

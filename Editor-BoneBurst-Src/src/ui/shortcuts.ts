@@ -49,6 +49,7 @@ export const SHORTCUTS = [
   { id: "copyPose", keys: "⌥⌘C", group: "Edit", what: "Copy the pose at the playhead", chord: { mod: true, alt: true, code: "KeyC" } },
   { id: "pasteKeys", keys: "⌘V", group: "Edit", what: "Paste keys at the playhead", chord: { mod: true, alt: false, code: "KeyV" } },
   { id: "pastePose", keys: "⌥⌘V", group: "Edit", what: "Paste the copied pose", chord: { mod: true, alt: true, code: "KeyV" } },
+  { id: "tags", keys: "⌘L", group: "Edit", what: "Tags of the selected element: add or remove (the rig tree finds by tag)", chord: cmd("l") },
   { id: "selectAll", keys: "⌘A", group: "Timeline", what: "Select every key of the animation", chord: cmd("a") },
   { id: "snapping", keys: "⇧⌘;", group: "View", what: "Snapping on or off", chord: { mod: true, shift: true, code: "Semicolon" } },
   { id: "fullScreen", keys: "⇧⌘F", group: "View", what: "Full screen on or off (the browser hides its address bar; Esc leaves it)", chord: { mod: true, shift: true, code: "KeyF" } },

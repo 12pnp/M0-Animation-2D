@@ -61,7 +61,7 @@ export function viewOf(s: Sidecar): View {
 }
 
 /** Whether a sidecar holds anything a person made (the view alone does not count). */
-export const hasContent = (s: Sidecar) => s.guides.length > 0 || s.references.length > 0 || s.notes.length > 0 || s.motion.length > 0;
+export const hasContent = (s: Sidecar) => s.guides.length > 0 || s.references.length > 0 || s.notes.length > 0 || s.motion.length > 0 || s.tags.length > 0;
 
 /** The motion path kept for `bone` in `animation`, or undefined. */
 export function motionOf(s: Sidecar, animation: string, bone: string): MotionPath | undefined {

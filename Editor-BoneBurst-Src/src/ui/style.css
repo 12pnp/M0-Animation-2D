@@ -815,3 +815,17 @@ dialog.preferences .pref-title { display: flex; align-items: center; gap: 12px; 
 dialog.preferences .pref-themes { display: flex; align-items: center; gap: 6px; margin-left: auto; padding-right: 10px; font-size: 12px; cursor: default; }
 dialog.preferences .pref-themes select, dialog.preferences .pref-themes button { padding: 2px 8px; font-size: 12px; }
 dialog.preferences .pref-themes .theme-now { color: var(--muted); }
+
+/* Tags (docs/TAGS-PLAN.md): chips on the rig tree's rows and the Properties panel, and the popup that edits them. */
+.tag-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.tag-chip { display: inline-flex; align-items: center; gap: 2px; padding: 0 6px; border: 1px solid var(--line); border-radius: 9px; background: var(--hover); color: var(--muted, var(--text)); font-size: 11px; line-height: 16px; white-space: nowrap; }
+.outline .row .tag-chip { margin-left: 4px; flex: none; }
+.tag-chip .tag-x { padding: 0 2px; border: 0; background: transparent; color: inherit; font-size: 12px; line-height: 1; cursor: pointer; }
+.tag-chip .tag-x:hover { color: var(--text); }
+.tags-row { display: flex; align-items: center; gap: 8px; padding: 2px 0 6px; flex-wrap: wrap; }
+.tags-row .tags-label { color: var(--muted, var(--text)); min-width: 3em; }
+.tag-add { padding: 0 8px; min-width: 22px; border-radius: 9px; }
+.tags-popup { position: fixed; z-index: 1001; width: 260px; display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); box-shadow: 0 6px 22px rgba(0, 0, 0, 0.4); font: 13px var(--font-ui); }
+.tags-popup .title { font-weight: 600; }
+.tags-popup .none { color: var(--muted, var(--text)); font-size: 12px; }
+.tags-popup input { width: 100%; box-sizing: border-box; }
