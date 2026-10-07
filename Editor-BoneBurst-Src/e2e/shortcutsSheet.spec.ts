@@ -24,8 +24,8 @@ test("the shortcuts sheet lists and filters the table; Escape closes it; the key
   await expect(sheet.locator("dt", { hasText: "⇧⌘Z" })).toBeVisible();
 
   // The filter: by what a key does.
-  await sheet.getByRole("searchbox", { name: "Filter shortcuts" }).fill("pose");
-  await expect(sheet.locator("dd")).toHaveText(["Copy the pose at the playhead", "Paste the copied pose"]);
+  await sheet.getByRole("searchbox", { name: "Filter shortcuts" }).fill("copied pose");
+  await expect(sheet.locator("dd")).toHaveText(["Paste the copied pose"]);
   await sheet.getByRole("searchbox", { name: "Filter shortcuts" }).fill("zzz");
   await expect(sheet.locator(".empty")).toHaveText("No shortcut matches.");
 

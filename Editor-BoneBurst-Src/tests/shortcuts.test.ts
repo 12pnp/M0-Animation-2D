@@ -43,6 +43,8 @@ describe("the shortcuts table", () => {
       [ev("k"), "key"], [ev("Delete"), "delete"], [ev("Backspace"), "delete"],
       [ev("t"), "toolMove"], [ev("T", { shift: true }), "toolMove"], [ev("r"), "toolRotate"], [ev("s"), "toolScale"], [ev("h"), "toolShear"],
       [ev("z"), "cycleSpace"],
+      [ev("d"), "createBone"], [ev("p"), "createPoint"], [ev("g"), "createBox"], [ev("c"), "createClipping"], [ev("n"), "createPath"], [ev("u"), "editMesh"], [ev("i"), "pinBone"],
+      [ev("c", { cmd: true }, "KeyC"), "copyKeys"],
       [ev("t", { cmd: true }), undefined], [ev("t", { alt: true }), undefined], [ev("j"), undefined], [ev("x"), "motionRemove"], [ev("a"), "motionAdd"],
       [ev("?", { shift: true }, "Slash"), "shortcuts"],
     ];

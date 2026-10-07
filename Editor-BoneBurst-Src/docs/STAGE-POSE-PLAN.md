@@ -1,6 +1,6 @@
 # Stage and Pose mode — what Spine's Stage tools have that v2 does not — plan
 
-**Status:** steps 1 and 2 done (the matrix, 2026-10-07; the Create tools, 2026-10-08, without Region); step 3 done 2026-10-08 on the plan's own defaults (Compensate and Pin; Lock length left out); step 4 done 2026-10-08 (Mesh, Weights, Path, Reset; IK handles were already there); step 5 not started; the questions below are still open. Written from the owner's picture of Spine's Stage tool panels
+**Status:** steps 1 and 2 done (the matrix, 2026-10-07; the Create tools, 2026-10-08, without Region); step 3 done 2026-10-08 on the plan's own defaults (Compensate and Pin; Lock length left out); step 4 done 2026-10-08 (Mesh, Weights, Path, Reset; IK handles were already there); step 5 done 2026-10-08 (keys, tooltips, layout); the questions below are still open. Written from the owner's picture of Spine's Stage tool panels
 (Pose mode) and from what v2 has today, read on disk. Spine's editor is not open here, so what each icon does
 is read from the picture and marked **confirm** where it is a guess; the owner confirms the list in
 "Questions" before step 1. Clean-room: no code from the old editor or the fork is read; the behaviour is
@@ -108,7 +108,7 @@ no step changes the Spine file format, so every export stays what BoneBurst's re
    Properties panels), IK handles dragged on the Stage in Pose mode, and Reset Pose (setup values back for
    the selected bone, or all). Tests: each entry turns the same mode on as its panel button; Reset Pose is one
    undo step.
-5. **Icons and layout.** Every new button gets its icon and tooltip with its key (`keysOf`), the Create
+5. **Icons and layout — done 2026-10-08.** Result: every icon was added with its step; this step gave the new tools their keys, the tooltips carry them, and the shortcuts sheet lists them from the same table. Keys, in Pose mode only (they do nothing in Animate, and the key goes on to whoever else wants it): **D** bone, **P** point, **G** bounding box, **C** clipping, **N** path, **U** edit mesh, **I** pin. The plan's first guess (B, I, P, C) clashed with the Motion Path panel's keys (B, M, X, L is Lock selection), so D, G, N and U were taken instead; Compensate, Weights, Path (the tool) and Reset have no key. The groups are floating cards with a saved place and fold like the others, and "Panels" (double-click) puts every one back. Tests: `tests/shortcuts.test.ts`, `e2e/poseTools.spec.ts`. Original text: Every new button gets its icon and tooltip with its key (`keysOf`), the Create
    group and the Bone options group are floating cards like the others (grip, fold, saved place), and the
    Pose-only groups hide in Animate. The shortcuts sheet lists the new keys.
 

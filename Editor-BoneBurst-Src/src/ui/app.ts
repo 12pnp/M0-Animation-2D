@@ -160,8 +160,9 @@ export function mountApp(root: HTMLElement): void {
     { kind: "clipping", label: "Clipping", tip: "Create a clipping polygon: drag its corners, or click for a 100 unit square; it clips the slots after it", icon: "clipping" },
     { kind: "path", label: "Path", tip: "Create a path attachment on the bone under the press", icon: "path" },
   ];
+  const CREATE_KEYS: Record<CreateKind, ShortcutId> = { bone: "createBone", point: "createPoint", boundingbox: "createBox", clipping: "createClipping", path: "createPath" };
   const createBtns = CREATES.map((c) => {
-    const b = iconButton(button(c.label, c.tip, () => setCreate(stage.createKind === c.kind ? null : c.kind)), c.icon, false);
+    const b = iconButton(button(c.label, `${c.tip} (${keysOf(CREATE_KEYS[c.kind])})`, () => setCreate(stage.createKind === c.kind ? null : c.kind)), c.icon, false);
     b.dataset.create = c.kind;
     return b;
   });
@@ -173,15 +174,16 @@ export function mountApp(root: HTMLElement): void {
   createGroup.append(...createBtns);
   // Bone options (step 3), Pose mode only: Compensate, and Pin for the selected bone.
   const compensateBtn = iconButton(button("Compensate", "Compensate: when a bone is moved, rotated, scaled or sheared, its children keep their place", () => prefs.set({ compensate: !prefs.values.compensate })), "linkedmesh", false);
-  const pinBtn = iconButton(button("Pin", "Pin the selected bone: it keeps its place when a bone above it is moved. Press again to let it go", () => {
+  const togglePin = (): void => {
     const name = session.selectedBone;
     if (name === null) { say("Select a bone to pin."); return; }
     if (session.pinned.has(name)) session.pinned.delete(name); else session.pinned.add(name);
     session.changed();
-  }), "pin", false);
+  };
+  const pinBtn = iconButton(button("Pin", `Pin the selected bone: it keeps its place when a bone above it is moved. Press again to let it go (${keysOf("pinBone")})`, togglePin), "pin", false);
   // Pose tools (step 4), Pose mode only: what Properties offers for an image, from the Stage.
   const POSE_TOOLS: ReadonlyArray<{ id: string; label: string; tip: string; icon: IconName; run: () => string }> = [
-    { id: "mesh", label: "Mesh", tip: "Edit the mesh of the selected image (a region is made a mesh first): drag its vertices on the stage", icon: "mesh", run: () => editMesh(session) },
+    { id: "mesh", label: "Mesh", tip: `Edit the mesh of the selected image (a region is made a mesh first): drag its vertices on the stage (${keysOf("editMesh")})`, icon: "mesh", run: () => editMesh(session) },
     { id: "weights", label: "Weights", tip: "Paint the weights of the mesh being edited (Properties ▸ Show weights picks the bone)", icon: "keyDeform", run: () => togglePaint(session) },
     { id: "path", label: "Path", tip: "Edit the path of the selected bone or slot: drag its points on the stage", icon: "path", run: () => editPath(session) },
     { id: "reset", label: "Reset", tip: "Put the selected bone's rotation, scale and shear back to 0, 1, 0", icon: "reset", run: () => resetPose(session) },
@@ -869,6 +871,14 @@ export function mountApp(root: HTMLElement): void {
     nudgeRight: (e?: KeyboardEvent) => nudge("right", e),
     nudgeDown: (e?: KeyboardEvent) => nudge("down", e),
     nudgeUp: (e?: KeyboardEvent) => nudge("up", e),
+    // The Pose-mode keys do nothing (and the key goes on) while an animation is shown.
+    createBone: () => poseKey(() => setCreate(stage.createKind === "bone" ? null : "bone")),
+    createPoint: () => poseKey(() => setCreate(stage.createKind === "point" ? null : "point")),
+    createBox: () => poseKey(() => setCreate(stage.createKind === "boundingbox" ? null : "boundingbox")),
+    createClipping: () => poseKey(() => setCreate(stage.createKind === "clipping" ? null : "clipping")),
+    createPath: () => poseKey(() => setCreate(stage.createKind === "path" ? null : "path")),
+    editMesh: () => poseKey(() => say(editMesh(session))),
+    pinBone: () => poseKey(togglePin),
     cycleSpace: () => {
       const next = SPACES[(SPACES.findIndex((x) => x.space === stage.space) + 1) % SPACES.length]!;
       setSpace(next.space);
@@ -927,6 +937,11 @@ export function mountApp(root: HTMLElement): void {
     if (hovered === "motion" && motionPanel.nudge(dir, !!e?.shiftKey, sizes.step, sizes.bigFactor)) return;
     transform.nudge(stage.tool, dir, !!e?.shiftKey, { step: prefs.values.nudgeStep, scaleStep: prefs.values.nudgeScaleStep, bigFactor: prefs.values.nudgeBigFactor });
   };
+
+  function poseKey(run: () => void): boolean | void {
+    if (session.animation || !session.doc) return false;
+    run();
+  }
 
   window.addEventListener("keydown", onKey);
   function onKey(e: KeyboardEvent): void {

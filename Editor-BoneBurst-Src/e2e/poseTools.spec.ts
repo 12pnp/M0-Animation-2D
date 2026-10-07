@@ -78,3 +78,24 @@ test("the Pose tools are hidden in Animate mode", async ({ page }) => {
   await page.locator(".stage-panel button.mode").click();
   await expect(page.locator(".stage-tools .poses")).toBeHidden();
 });
+
+test("keys: D, P, G, C and N pick the Create tools, U edits the mesh, I pins; in Animate they do nothing; tooltips carry them", async ({ page }) => {
+  await open(page);
+  await page.locator("body").click({ position: { x: 5, y: 5 } });
+  for (const [key, kind] of [["d", "bone"], ["p", "point"], ["g", "boundingbox"], ["c", "clipping"], ["n", "path"]] as const) {
+    await page.keyboard.press(key);
+    await expect(page.locator(`[data-create="${kind}"]`)).toHaveAttribute("aria-pressed", "true");
+    await expect(page.locator(`[data-create="${kind}"]`)).toHaveAttribute("title", new RegExp(`\\(${key.toUpperCase()}\\)$`));
+  }
+  await page.keyboard.press("n");
+  await expect(page.locator('[data-create="path"]')).toHaveAttribute("aria-pressed", "false");
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "hips" }));
+  await page.keyboard.press("i");
+  await expect(page.locator(".stage-tools .options button").nth(1)).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("i");
+  await expect(page.locator(".stage-tools .options button").nth(1)).toHaveAttribute("aria-pressed", "false");
+  await page.locator(".stage-panel button.mode").click();
+  await page.locator("body").click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press("d");
+  expect(await page.evaluate(() => (window as unknown as { boneburst: { stage: { createKind: string | null } } }).boneburst.stage.createKind)).toBeNull();
+});
