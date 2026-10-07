@@ -246,6 +246,11 @@ export function reversePath(m0: MotionPath): MotionPath {
   return { ...m, nodes: nodes.map(flip) };
 }
 
+/** Only the numbers on the buttons put back in order (1, 4, 3, 2 shown as 1, 2, 3, 4): every node keeps its place, its position and its handle. */
+export function renumberNodes(m: MotionPath): MotionPath {
+  return { ...m, nodes: m.nodes.map((n) => { const { id: _id, ...rest } = n; return rest; }) };
+}
+
 /** The node at place `from` moved to place `to` (the others shift by one): it keeps its handle and its number; the path is the same set of places run in another order. */
 export function moveNode(m0: MotionPath, from: number, to: number): MotionPath {
   if (from === to || from < 0 || to < 0 || from >= m0.nodes.length || to >= m0.nodes.length) throw new EditRefused("There is no such spline node.");

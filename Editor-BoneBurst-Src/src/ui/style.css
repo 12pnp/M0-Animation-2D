@@ -778,3 +778,6 @@ html .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash.dv-ena
 /* While a line is held the resize cursor stays, wherever the pointer runs. */
 html.bb-gripping-col, html.bb-gripping-col * { cursor: col-resize !important; }
 html.bb-gripping-row, html.bb-gripping-row * { cursor: row-resize !important; }
+
+/* The Motion Path header's swatch for the path line drawn on the Stage. */
+.stage-line-colour { width: 18px; height: 18px; min-width: 18px; padding: 0; border: 1px solid var(--line); border-radius: 3px; }

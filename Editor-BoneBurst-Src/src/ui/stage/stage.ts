@@ -94,6 +94,8 @@ export class Stage {
   show = { rulers: true, bones: true, constraints: true };
   /** With an animation shown, the bones IK constraints drive are neither drawn nor picked (they are not animated). */
   hideIkBones = false;
+  /** The motion path's line to draw over the skeleton (world points, x then y), or null. */
+  motionLine: () => { points: readonly number[]; colour: string } | null = () => null;
   /** Onion skin (E6 step 4d): which ghosts to draw, or null when off. */
   onion: OnionOptions | null = null;
   /** Snapping (E6 step 4e): what a dragged origin or vertex snaps to, or null when off. */
@@ -272,6 +274,7 @@ export class Stage {
       }
     }
     if (this.show.constraints) this.drawConstraints(g, p, css, selected);
+    this.drawMotionLine(g);
     const sel = this.selectedIndex();
     // No gizmo on a bone without a pose: nothing to grab it by (E8-PLAN step 2).
     if (sel >= 0 && boneMatrix(p, sel).every(Number.isFinite)) this.drawGizmo(g, sel, this.selectedBoneColour ?? selected);
@@ -283,6 +286,23 @@ export class Stage {
     if (this.snapped && (this.drag || this.vertexDrag)) this.drawSnapped(g, this.snapped, selected);
     this.drawChosenReference(g, selected);
     if (this.show.rulers) this.drawRulers(g, css);
+  }
+
+  /** The motion path of the selected bone, as a line in the colour chosen in the Motion Path panel. */
+  private drawMotionLine(g: CanvasRenderingContext2D): void {
+    const line = this.motionLine();
+    if (!line || line.points.length < 4) return;
+    g.save();
+    g.strokeStyle = line.colour;
+    g.lineWidth = 2;
+    g.lineJoin = "round";
+    g.beginPath();
+    for (let i = 0; i + 1 < line.points.length; i += 2) {
+      const [x, y] = toScreen(this.camera, this.size, line.points[i]!, line.points[i + 1]!);
+      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+    }
+    g.stroke();
+    g.restore();
   }
 
   /** Each reference with its picture's size; null where the picture is missing. */

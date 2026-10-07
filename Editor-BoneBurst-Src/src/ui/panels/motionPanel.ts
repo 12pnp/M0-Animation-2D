@@ -1,6 +1,6 @@
 import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { EditRefused } from "@/edit/history";
-import { addNodeTime, blocksOf, curveOf, endFrame, FLAT_SPEED, handleOffsets, moveNodeTime, nodeTimeFrames, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, type SpeedPoint, moveNode, withNode, withOrigin, midAfter, mergeNodes, reversePath, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
+import { addNodeTime, blocksOf, curveOf, endFrame, FLAT_SPEED, handleOffsets, moveNodeTime, nodeTimeFrames, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, type SpeedPoint, moveNode, withNode, withOrigin, midAfter, mergeNodes, renumberNodes, reversePath, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
 import { drawnVertices } from "@/engine/draw";
 import { boneInherit } from "@/model/defaults";
 import type { Skeleton } from "@/model/skeleton";
@@ -9,6 +9,7 @@ import { frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
 import { iconButton } from "../icons";
 import { showContextMenu } from "../contextMenu";
 import type { MenuItem } from "../menubar";
+import { pickColour } from "../colourPopup";
 import { bakeMotion, currentNode, dropMotion, keepMotion, motionChanged, motionFor, motionStale, nodeAfter, poseAtNode, startMotion } from "../motion";
 import { keysAt } from "@/model/timelines";
 import { localPoint, pageScale } from "../pageScale";
@@ -32,6 +33,7 @@ const DOT = "#ff2bd6";
 const GRAPH_TOP = 3;
 const PAST = "rgb(230, 64, 51)", FUTURE = "rgb(51, 179, 77)";
 const LAYERS_KEY = "boneburst.motionPath.layers";
+const STAGE_LINE_KEY = "boneburst.motionPath.stageLine";
 const AXES_KEY = "boneburst.motionPath.axes";
 const AXIS_COLOURS = ["#e5484d", "#30a46c"] as const;
 
@@ -188,6 +190,13 @@ export class MotionPathPanel {
   /** What the panel does with a path: Edit Path shapes the spline; Adjust time sets the node times and their multipliers (docs/PATH-FRAMES-PLAN.md). */
   private mode: "draw" | "time" = "draw";
   private selNode = -1;
+  /** Whether the Stage draws the bone's spline, and in what colour (the button and swatch in the header; kept between sessions). */
+  private stageOn = false;
+  private stageColour = "#ff9f1c";
+  private readonly stageBtn = document.createElement("button");
+  private readonly stageSwatch = document.createElement("button");
+  /** The Stage's redraw: called when the line is toggled or recoloured. */
+  onStageLine: () => void = () => {};
   /** The numbers of the spline nodes picked together with Command + click (for Merge); empty = just the picked node. */
   private multi = new Set<number>();
   /** The path's nodes on the canvas as last drawn (Local space only). */
@@ -221,7 +230,23 @@ export class MotionPathPanel {
       const saved = JSON.parse(localStorage.getItem(LAYERS_KEY) ?? "{}") as Partial<Record<Layer, unknown>>;
       for (const l of LAYERS) if (typeof saved[l] === "boolean") this.show[l] = saved[l] as boolean;
     } catch { /* storage blocked: all shown */ }
+    try {
+      const k = JSON.parse(localStorage.getItem(STAGE_LINE_KEY) ?? "{}") as { on?: unknown; colour?: unknown };
+      if (typeof k.on === "boolean") this.stageOn = k.on;
+      if (typeof k.colour === "string" && /^#[0-9a-f]{6}$/i.test(k.colour)) this.stageColour = k.colour;
+    } catch { /* storage blocked: the defaults */ }
     this.head.className = "lp-head";
+    this.stageBtn.type = "button";
+    this.stageBtn.textContent = "Stage";
+    this.stageBtn.title = "Show this bone's path as a line on the Stage";
+    this.stageBtn.setAttribute("aria-pressed", String(this.stageOn));
+    this.stageBtn.addEventListener("click", () => { this.stageOn = !this.stageOn; this.keepStageLine(); });
+    this.stageSwatch.type = "button";
+    this.stageSwatch.className = "stage-line-colour";
+    this.stageSwatch.title = "The colour of the path line on the Stage";
+    this.stageSwatch.setAttribute("aria-label", "Path line colour on the Stage");
+    this.stageSwatch.style.background = this.stageColour;
+    this.stageSwatch.addEventListener("click", () => pickColour(this.stageSwatch, this.stageColour, (hex) => { this.stageColour = hex; this.keepStageLine(); }));
     this.spaceBtns = { local: this.button("Local", "The world's orientation, from the parent's joint: the parent's own movement is not in it"), world: this.button("World", "In the skeleton's space, as the Stage shows it") };
     this.layerBtns = { image: this.button("Image", "Show the bone's image"), bone: this.button("Bone", "Show the bone"), path: this.button("Path", "Show the bone's path over the animation"), length: this.button("Length", "Show the distance between each pair of dots along the path (in the panel's space)"), onion: this.button("Onion", "Show the bone at the frames before (red) and after (green) the playhead; the count is set in Preferences ▸ Behavior"), children: this.button("Children", "Show every bone under the selected one, with their images"), rotate: this.button("Rotate", "Show the rotation handle (the ring beyond the bone's tip)"), move: this.button("Move", "Show the move arrows (when the bone has no path)"), scale: this.button("Scale", "Show the scale handle (the square beside the bone's tip)"), shear: this.button("Shear", "Show the shear handle (the diamond on the other side of the tip)") };
     for (const g of GIZMOS) {
@@ -235,7 +260,7 @@ export class MotionPathPanel {
       try { localStorage.setItem(AXES_KEY, this.axes); } catch { /* not kept */ }
       this.schedule();
     });
-    this.head.append(this.title, this.layerBtns.image, this.layerBtns.bone, this.layerBtns.path, this.layerBtns.length, this.layerBtns.onion, this.layerBtns.children, this.layerBtns.rotate, this.layerBtns.move, this.layerBtns.scale, this.layerBtns.shear, this.spaceBtns.local, this.spaceBtns.world, this.axesBtn);
+    this.head.append(this.title, this.layerBtns.image, this.layerBtns.bone, this.layerBtns.path, this.layerBtns.length, this.layerBtns.onion, this.layerBtns.children, this.layerBtns.rotate, this.layerBtns.move, this.layerBtns.scale, this.layerBtns.shear, this.spaceBtns.local, this.spaceBtns.world, this.axesBtn, this.stageBtn, this.stageSwatch);
     this.body.className = "lp-body";
     this.note.className = "empty lp-note";
     const fit = iconButton(this.button("Fit", "Fit the whole path in the panel (double-click does the same)"), "fit", false);
@@ -951,6 +976,7 @@ export class MotionPathPanel {
           const items: MenuItem[] = [];
           if (picked.length >= 2 && this.multi.has(label)) items.push({ label: `Merge ${picked.map((k) => nodeLabels(cur!)[k]).join(" + ")}`, run: () => this.mergePicked() });
           if (cur) items.push({ label: `Reverse Direction (${nodeLabels(reversePath(cur)).join(" ")})`, run: () => this.reverse() });
+          if (cur) items.push({ label: `Sort Numbers (${nodeLabels(renumberNodes(cur)).join(" ")})`, disabled: nodeLabels(cur).every((l, k) => l === k + 1), run: () => this.sortNumbers() });
           items.push({ label: `Set ${label} to Origin`, disabled: i === 0 || !ring, run: () => this.setOrigin(i) });
           showContextMenu(e.clientX, e.clientY, items);
         });
@@ -1055,6 +1081,24 @@ export class MotionPathPanel {
     if (!m || this.selTime < 0) return;
     try { this.timeEdit(withBlockGraph(m, this.selTime, graph)); }
     catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); }
+  }
+
+  private keepStageLine(): void {
+    this.stageBtn.setAttribute("aria-pressed", String(this.stageOn));
+    this.stageSwatch.style.background = this.stageColour;
+    try { localStorage.setItem(STAGE_LINE_KEY, JSON.stringify({ on: this.stageOn, colour: this.stageColour })); } catch { /* not kept */ }
+    this.onStageLine();
+  }
+
+  /** The bone's spline as a line in the world, for the Stage (a flat list of x, y), or null when it is off or the bone has no path or pose. Local space is the world's orientation from the parent's joint, so the parent's joint is added back. */
+  stageLine(): { points: number[]; colour: string } | null {
+    const s = this.session, m = motionFor(s), p = s.pose();
+    if (!this.stageOn || !m || !p) return null;
+    const i = p.bones.get(m.bone);
+    if (i === undefined || !p.rig.active[i]) return null;
+    const curve = curveOf(m), at = parentMatrix(p, i), steps = Math.max(24, Math.min(400, m.nodes.length * 48)), points: number[] = [];
+    for (let k = 0; k <= steps; k++) { const q = curve.at((curve.length * k) / steps); points.push(q.x + at[4], q.y + at[5]); }
+    return points.every(Number.isFinite) ? { points, colour: this.stageColour } : null;
   }
 
   /** Pick a node time (and the block it starts): its frame and its multiplier show in the path row. */
@@ -1290,6 +1334,17 @@ export class MotionPathPanel {
       this.onStatus(`Merged: the path now runs ${nodeLabels(next).join(", ")}.`);
       this.schedule();
     } catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); }
+  }
+
+  /** Only the numbers are put back in order; the nodes, their places and the path stay as they are. */
+  private sortNumbers(): void {
+    const s = this.session, m = motionFor(s);
+    if (!m) return;
+    keepMotion(s, renumberNodes(m));
+    this.multi.clear();
+    this.slotSig = "";
+    this.onStatus("The numbers are 1 to " + m.nodes.length + " again; the path is unchanged.");
+    this.schedule();
   }
 
   /** The path runs the other way round; the picked node stays the picked one. */

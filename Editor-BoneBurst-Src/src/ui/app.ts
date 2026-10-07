@@ -248,6 +248,8 @@ export function mountApp(root: HTMLElement): void {
   const history = new HistoryPanel(session);
   const motionPanel = new MotionPathPanel(session);
   motionPanel.autoKey = () => stage.autoKey;
+  stage.motionLine = () => motionPanel.stageLine();
+  motionPanel.onStageLine = () => stage.redraw();
   stage.forceUnkeyed = () => motionPanel.drawing;
   stage.dragLocked = () => motionPanel.timing;
   const skinsPanel = new SkinsPanel(session);

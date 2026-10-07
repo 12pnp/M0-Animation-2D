@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addNodeTime, bakeTranslate, blocksOf, boundaryProgress, buildCurve, curveOf, endFrame, fitChannel, handleOffsets, keyFrames, keysSignature, moveNodeTime, nodeTimeFrames, pathSignature, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, moveNode, withOrigin, midAfter, mergeNodes, reversePath, translateKeys, withNode, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
+import { addNodeTime, bakeTranslate, blocksOf, boundaryProgress, buildCurve, curveOf, endFrame, fitChannel, handleOffsets, keyFrames, keysSignature, moveNodeTime, nodeTimeFrames, pathSignature, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, moveNode, withOrigin, midAfter, mergeNodes, renumberNodes, reversePath, translateKeys, withNode, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
 import type { MotionPath } from "@/model/sidecar";
 import type { Animation, Key, Skeleton } from "@/model/skeleton";
 import { keyLists, keyTime, timeFrame } from "@/model/timelines";
@@ -330,5 +330,13 @@ describe("insert after, merge and reverse", () => {
     expect(nodeLabels(r)).toEqual([1, 4, 3, 2]);
     expect(r.nodes[3]).toMatchObject({ tx: -5, ty: -6 });
     expect(nodeLabels(reversePath(motion({ closed: false })))).toEqual([4, 3, 2, 1]);
+  });
+});
+
+describe("sorting the numbers", () => {
+  it("renumbers 1 4 3 2 as 1 2 3 4 and touches nothing else", () => {
+    const r = reversePath(motion({ nodes: nodes.map((n, i) => (i === 1 ? { ...n, tx: 5, ty: 6 } : n)) })), s = renumberNodes(r);
+    expect(nodeLabels(s)).toEqual([1, 2, 3, 4]);
+    expect(s.nodes).toEqual(r.nodes.map(({ id: _id, ...n }) => n));
   });
 });
