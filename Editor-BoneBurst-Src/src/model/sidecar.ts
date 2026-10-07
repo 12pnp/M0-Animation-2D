@@ -67,6 +67,8 @@ export interface MotionNode {
 export interface MotionPath {
   readonly animation: string;
   readonly bone: string;
+  /** The bone whose space the nodes are in (docs/MOTION-PARENT-PLAN.md); absent in a path made before: the bone's own parent. */
+  readonly parent?: string;
   readonly nodes: readonly MotionNode[];
   readonly closed: boolean;
   readonly frames: number;

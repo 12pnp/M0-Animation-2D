@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { chooseParent, startEditPath } from "./motionHelpers";
 
 /** The Motion Path header's Stage toggle: the bone's spline drawn as a line on the Stage, in a colour of its own. */
 
@@ -28,7 +29,7 @@ const line = (page: Page): Promise<Line> => page.evaluate(() => (window as unkno
 test("the Stage button draws the bone's spline on the Stage in the swatch's colour, and is kept", async ({ page }) => {
   await open(page);
   const panel = page.locator(".panel.motion-path");
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   const toggle = panel.getByRole("button", { name: "Stage", exact: true });
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
   expect(await line(page)).toBeNull();
@@ -53,7 +54,7 @@ test("every Motion Path step is in the History and can be undone: a node dragged
   await open(page);
   const panel = page.locator(".panel.motion-path"), nodes = () => page.evaluate(() => (window as unknown as { boneburst: { session: { sidecar: { motion: { nodes: unknown[] }[] } } } }).boneburst.session.sidecar.motion[0]?.nodes.length ?? 0);
   const labels = () => page.evaluate(() => (window as unknown as { boneburst: { session: { history: { entries: { labels: string[]; done: number } } } } }).boneburst.session.history.entries);
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   expect(await nodes()).toBe(2);
   await panel.getByRole("button", { name: "Add a spline node" }).click();
   await panel.getByRole("button", { name: "Add a spline node" }).click();
@@ -78,7 +79,7 @@ test("every Motion Path step is in the History and can be undone: a node dragged
 test("the Spline button hides and shows the spline in Motion Path, and leaves the bone's own path (Path) as it is", async ({ page }) => {
   await open(page);
   const panel = page.locator(".panel.motion-path"), spline = panel.getByRole("button", { name: "Spline", exact: true }), path = panel.getByRole("button", { name: "Path", exact: true });
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   await expect(spline).toHaveAttribute("aria-pressed", "true");
   await spline.click();
   await expect(spline).toHaveAttribute("aria-pressed", "false");
@@ -95,6 +96,7 @@ test("Motion Path's keys, with the pointer over it: E starts the path and switch
   await open(page);
   const panel = page.locator(".panel.motion-path");
   const motion = () => page.evaluate(() => { const m = (window as unknown as { boneburst: { session: { sidecar: { motion: { nodes: { id?: number }[] }[] } } } }).boneburst.session.sidecar.motion[0]; return m ? m.nodes.map((n, i) => n.id ?? i + 1) : null; });
+  await chooseParent(panel);
   const box = (await panel.locator("canvas").boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.keyboard.press("e");
@@ -127,7 +129,7 @@ test("Break the legs: the right-click menu breaks a node's legs and mirrors them
   const panel = page.locator(".panel.motion-path");
   type N = { tx?: number; ty?: number; bx?: number; by?: number };
   const node = (i: number) => page.evaluate((k) => (window as unknown as { boneburst: { session: { sidecar: { motion: { nodes: N[] }[] } } } }).boneburst.session.sidecar.motion[0]!.nodes[k]!, i);
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   expect((await node(0)).bx).toBeUndefined();
   await panel.locator(".lp-slots button.node").nth(0).click({ button: "right" });
   await page.getByRole("menuitem", { name: "Break the legs of 1" }).click();

@@ -11,7 +11,7 @@ import { showContextMenu } from "../contextMenu";
 import type { MenuItem } from "../menubar";
 import { pickColour } from "../colourPopup";
 import type { MotionMemory } from "../viewMemory";
-import { bakeMotion, currentNode, dropMotion, keepMotion, motionChanged, motionFor, motionStale, nodeAfter, poseAtNode, startMotion } from "../motion";
+import { bakeMotion, currentNode, dropMotion, keepMotion, motionChanged, motionFor, motionStale, nodeAfter, parentChoices, pathFromView, pathToView, poseAtNode, refBoneName, refMatrix, startMotion, toView } from "../motion";
 import { keysAt } from "@/model/timelines";
 import { localPoint, pageScale } from "../pageScale";
 import type { Session } from "../session";
@@ -47,6 +47,8 @@ interface BoneEdit {
   readonly frame: number;
   readonly from: LocalPose;
   readonly parent: Matrix;
+  /** The panel's origin in the world: the parent bone's joint (Parent space). */
+  readonly origin: Point;
   /** Move only: the axis (0: x, 1: y) of `axes` the drag is held to, or null for a free drag; the axes as world unit vectors. */
   readonly axis: 0 | 1 | null;
   readonly axes: readonly [Point, Point];
@@ -82,7 +84,7 @@ function withChildren(p: Posed, bone: number, children: boolean): number[] {
  * The box round the bone's images and the bone itself at some frames of the trail, in `space`: the
  * panel is scaled to hold them all, so what is drawn does not change size from frame to frame.
  */
-function extentOf(poser: Poser, skin: string | null, animation: string | null, bone: string, space: TrailSpace, fps: number, frames: number, children: boolean): Box | null {
+function extentOf(poser: Poser, skin: string | null, animation: string | null, bone: string, space: TrailSpace, origin: string | null, fps: number, frames: number, children: boolean): Box | null {
   let box: Box | null = null;
   const grow = (x: number, y: number) => {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
@@ -93,7 +95,7 @@ function extentOf(poser: Poser, skin: string | null, animation: string | null, b
   for (let f = 0; f <= last; f += stride) {
     const p = poser.pose(skin, animation, animation === null ? 0 : Math.fround(frameTime(f, fps)), "none"), i = p.bones.get(bone);
     if (i === undefined) return null;
-    const to = (x: number, y: number): [number, number] => (space === "local" ? fromParent(p, i, x, y) : [x, y]);
+    const to = (x: number, y: number): [number, number] => (space === "parent" ? fromParent(p, i, x, y, origin) : [x, y]);
     const set = withChildren(p, i, children);
     for (const d of slotsOf(p, set)) {
       const v = new Float64Array(d.vertexCount * 2);
@@ -129,7 +131,11 @@ export class MotionPathPanel {
   private readonly note = document.createElement("p");
   private readonly spaceBtns: Record<TrailSpace, HTMLButtonElement>;
   private readonly layerBtns: Record<Layer, HTMLButtonElement>;
-  private space: TrailSpace = "local";
+  private space: TrailSpace = "parent";
+  /** The parent bone picker: the bone whose space the path's nodes are in (docs/MOTION-PARENT-PLAN.md); required before a path can be made. */
+  private readonly parentPick = document.createElement("select");
+  /** The parent chosen for a bone before its path exists, by "animation|bone". */
+  private readonly parentChoice = new Map<string, string>();
   private show: Record<Layer, boolean> = { image: true, bone: true, path: true, spline: true, length: true, onion: false, children: false, rotate: true, move: true, scale: true, shear: true };
   /** What onion skin shows (frames before and after, keyed only, colour-coded); set by the app from the preferences. */
   onion: () => OnionOptions = () => ({ before: 2, after: 2, keyedOnly: false, colour: true });
@@ -140,7 +146,7 @@ export class MotionPathPanel {
   private zoom = 1;
   private pan = { x: 0, y: 0 };
   private dragging: { x: number; y: number } | null = null;
-  private cached: { doc: Skeleton; images: unknown; skin: string | null; animation: string | null; bone: string; space: TrailSpace; trail: BoneTrail | null; extent: Box | null; children: boolean } | null = null;
+  private cached: { doc: Skeleton; images: unknown; skin: string | null; animation: string | null; bone: string; space: TrailSpace; origin: string | null; trail: BoneTrail | null; extent: Box | null; children: boolean } | null = null;
   private poser: { doc: Skeleton; images: unknown; value: Poser } | null = null;
   private queued = false;
   /** Each frame's mark on the canvas as last drawn, for a click. */
@@ -248,7 +254,7 @@ export class MotionPathPanel {
     this.stageSwatch.setAttribute("aria-label", "Path line colour on the Stage");
     this.stageSwatch.style.background = this.stageColour;
     this.stageSwatch.addEventListener("click", () => pickColour(this.stageSwatch, this.stageColour, (hex) => { this.stageColour = hex; this.keepStageLine(); }));
-    this.spaceBtns = { local: this.button("Local", "The world's orientation, from the parent's joint: the parent's own movement is not in it"), world: this.button("World", "In the skeleton's space, as the Stage shows it") };
+    this.spaceBtns = { parent: this.button("Parent", "Relative to the parent bone chosen for the path: its joint is the origin, and the path is drawn through its own turn and scale, so it follows it"), world: this.button("World", "In the skeleton's space, as the Stage shows it") };
     this.layerBtns = { image: this.button("Image", "Show the bone's image"), bone: this.button("Bone", "Show the bone"), path: this.button("Path", "Show the bone's path over the animation (where it goes, frame by frame)"), spline: this.button("Spline", "Show the spline you draw with Edit Path: its curve, nodes and handles"), length: this.button("Length", "Show the distance between each pair of dots along the path (in the panel's space)"), onion: this.button("Onion", "Show the bone at the frames before (red) and after (green) the playhead; the count is set in Preferences ▸ Behavior"), children: this.button("Children", "Show every bone under the selected one, with their images"), rotate: this.button("Rotate", "Show the rotation handle (the ring beyond the bone's tip)"), move: this.button("Move", "Show the move arrows (when the bone has no path)"), scale: this.button("Scale", "Show the scale handle (the square beside the bone's tip)"), shear: this.button("Shear", "Show the shear handle (the diamond on the other side of the tip)") };
     for (const g of GIZMOS) {
       this.layerBtns[g].setAttribute("aria-label", `Show ${g} handle`);
@@ -261,7 +267,7 @@ export class MotionPathPanel {
       try { localStorage.setItem(AXES_KEY, this.axes); } catch { /* not kept */ }
       this.schedule();
     });
-    this.head.append(this.title, this.layerBtns.image, this.layerBtns.bone, this.layerBtns.path, this.layerBtns.spline, this.layerBtns.length, this.layerBtns.onion, this.layerBtns.children, this.layerBtns.rotate, this.layerBtns.move, this.layerBtns.scale, this.layerBtns.shear, this.spaceBtns.local, this.spaceBtns.world, this.axesBtn, this.stageBtn, this.stageSwatch);
+    this.head.append(this.title, this.layerBtns.image, this.layerBtns.bone, this.layerBtns.path, this.layerBtns.spline, this.layerBtns.length, this.layerBtns.onion, this.layerBtns.children, this.layerBtns.rotate, this.layerBtns.move, this.layerBtns.scale, this.layerBtns.shear, this.spaceBtns.parent, this.spaceBtns.world, this.axesBtn, this.stageBtn, this.stageSwatch);
     this.body.className = "lp-body";
     this.note.className = "empty lp-note";
     const fit = iconButton(this.button("Fit", "Fit the whole path in the panel (double-click does the same)"), "fit", false);
@@ -324,7 +330,11 @@ export class MotionPathPanel {
     this.closedLabel.className = "lp-field";
     this.closedLabel.title = "A ring: the last spline node joins the first, so the path comes back to where it began (on by default)";
     this.closedLabel.append(this.closedBox, " Closed");
-    this.motionBar.append(this.motionBtns.draw, this.motionBtns.time, this.motionBtns.add, this.motionBtns.del, this.motionBtns.addTime, this.motionBtns.delTime, this.framesBox, this.closedLabel, this.frameBox, this.speedBox, this.motionBtns.bakeTl, this.motionBtns.drop, this.motionInfo);
+    this.parentPick.className = "lp-parent";
+    this.parentPick.setAttribute("aria-label", "Parent bone");
+    this.parentPick.title = "The parent bone the path is relative to: its nodes are in that bone\'s space and follow it. Required before a path can be made";
+    this.parentPick.addEventListener("change", () => this.chooseParent(this.parentPick.value));
+    this.motionBar.append(this.parentPick, this.motionBtns.draw, this.motionBtns.time, this.motionBtns.add, this.motionBtns.del, this.motionBtns.addTime, this.motionBtns.delTime, this.framesBox, this.closedLabel, this.frameBox, this.speedBox, this.motionBtns.bakeTl, this.motionBtns.drop, this.motionInfo);
     this.motionBtns.addTime.addEventListener("click", () => this.addTimeHere());
     this.motionBtns.delTime.addEventListener("click", () => this.removePickedTime());
     this.motionBtns.draw.addEventListener("click", () => this.enterDraw());
@@ -344,7 +354,7 @@ export class MotionPathPanel {
         this.schedule();
       });
     }
-    for (const s of ["local", "world"] as const) this.spaceBtns[s].addEventListener("click", () => { this.space = s; this.schedule(); });
+    for (const s of ["parent", "world"] as const) this.spaceBtns[s].addEventListener("click", () => { this.space = s; this.schedule(); });
     this.canvas.addEventListener("pointerdown", (e) => this.down(e));
     this.canvas.addEventListener("pointermove", (e) => this.move(e));
     this.canvas.addEventListener("pointerup", (e) => this.up(e));
@@ -385,6 +395,39 @@ export class MotionPathPanel {
     requestAnimationFrame(() => { this.queued = false; this.draw(); });
   }
 
+  /** The bone the selected bone's path is relative to: its path's own, else the choice made in the picker; null when none is chosen yet. */
+  private chosenParent(): string | null {
+    const s = this.session, a = s.animation, bone = s.selectedBone;
+    if (!bone || !a) return null;
+    const m = motionFor(s);
+    return m ? refBoneName(s.doc, m) : this.parentChoice.get(`${a.name}|${bone}`) ?? null;
+  }
+
+  /** The bone the panel measures from: the chosen parent, else the bone's own parent (null: the skeleton's origin). */
+  private originName(): string | null {
+    const s = this.session, bone = s.selectedBone, chosen = this.chosenParent();
+    if (chosen !== null || !bone) return chosen;
+    return s.doc?.bones?.find((b) => b.name === bone)?.parent ?? null;
+  }
+
+  /** The parent bone's matrix at the playhead (the skeleton's own space when there is none). */
+  private refM(parent: string | null): Matrix {
+    const p = this.session.pose();
+    return p ? refMatrix(p, parent) : [1, 0, 0, 1, 0, 0];
+  }
+
+  /** The selected bone's path with its nodes and handles as the panel shows them: through the parent bone's matrix at the playhead. */
+  private viewMotion(): MotionPath | undefined {
+    const s = this.session, m = motionFor(s);
+    return m ? pathToView(m, this.refM(refBoneName(s.doc, m))) : undefined;
+  }
+
+  /** A path changed in the view, kept in the parent bone's space (a node that did not move keeps its stored numbers). */
+  private keepView(next: MotionPath, label?: string, join = false): void {
+    const s = this.session;
+    keepMotion(s, pathFromView(next, this.refM(refBoneName(s.doc, next)), motionFor(s)), label, join);
+  }
+
   private posers(): Poser {
     const s = this.session, doc = s.closedDoc()!;
     if (this.poser?.doc !== doc || this.poser.images !== s.images) this.poser = { doc, images: s.images, value: new Poser(doc, s.images) };
@@ -397,13 +440,13 @@ export class MotionPathPanel {
     if (!doc) return "Nothing open.";
     if (bone === null) return anim ? "Select a bone to see its path." : "Select a bone to see it on the setup pose.";
     const name = anim?.name ?? null, c = this.cached;
-    if (!c || c.doc !== doc || c.images !== s.images || c.skin !== s.skin || c.animation !== name || c.bone !== bone || c.space !== this.space || c.children !== this.show.children) {
+    if (!c || c.doc !== doc || c.images !== s.images || c.skin !== s.skin || c.animation !== name || c.bone !== bone || c.space !== this.space || c.origin !== this.originName() || c.children !== this.show.children) {
       const poser = this.posers();
-      const trail = anim ? boneTrail(poser, s.skin, anim.name, bone, s.fps, s.length(anim), this.space) : null;
-      const extent = extentOf(poser, s.skin, name, bone, this.space, s.fps, trail?.frames ?? 0, this.show.children);
-      this.cached = { doc, images: s.images, skin: s.skin, animation: name, bone, space: this.space, trail, extent, children: this.show.children };
+      const origin = this.originName(), trail = anim ? boneTrail(poser, s.skin, anim.name, bone, s.fps, s.length(anim), this.space, origin) : null;
+      const extent = extentOf(poser, s.skin, name, bone, this.space, origin, s.fps, trail?.frames ?? 0, this.show.children);
+      this.cached = { doc, images: s.images, skin: s.skin, animation: name, bone, space: this.space, origin, trail, extent, children: this.show.children };
       // New content: shown whole.
-      if (!c || c.bone !== bone || c.animation !== name || c.space !== this.space) { this.zoom = 1; this.pan = { x: 0, y: 0 }; this.hold = false; }
+      if (!c || c.bone !== bone || c.animation !== name || c.space !== this.space || c.origin !== origin) { this.zoom = 1; this.pan = { x: 0, y: 0 }; this.hold = false; }
     }
     const c2 = this.cached!;
     return c2.trail || (!anim && c2.extent) ? { trail: c2.trail, bone, extent: c2.extent } : `${bone} has no pose in this skin.`;
@@ -411,7 +454,7 @@ export class MotionPathPanel {
 
   private draw(): void {
     const s = this.session, r = this.trail();
-    for (const k of ["local", "world"] as const) this.spaceBtns[k].setAttribute("aria-pressed", String(this.space === k));
+    for (const k of ["parent", "world"] as const) this.spaceBtns[k].setAttribute("aria-pressed", String(this.space === k));
     for (const l of LAYERS) this.layerBtns[l].setAttribute("aria-pressed", String(this.show[l]));
     this.updateMotionBar();
     this.axesBtn.textContent = this.axes === "parent" ? "Axes: Parent" : "Axes: World";
@@ -438,15 +481,19 @@ export class MotionPathPanel {
     this.note.hidden = true;
     const { trail, bone, extent } = r, css = style;
     const accent = css.getPropertyValue("--accent").trim() || "#4c9bff", muted = css.getPropertyValue("--muted").trim() || "#999", text = css.getPropertyValue("--text").trim() || "#ddd", boneColour = css.getPropertyValue("--bone").trim() || "#ccc";
-    this.title.textContent = `${bone} · ${this.space === "local" ? "Local" : "World"}${trail ? "" : " · Pose"}`;
+    this.title.textContent = `${bone} · ${this.space === "parent" ? `Parent${this.originName() ? ` ${this.originName()}` : ""}` : "World"}${trail ? "" : " · Pose"}`;
     // The box round the trails and the bone's image, drawn at one scale (y up) with room round it.
     let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
     const grow = (x: number, y: number) => { if (Number.isFinite(x) && Number.isFinite(y)) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); } };
     for (const a of trail ? [trail.joint, trail.tip] : []) for (let i = 0; i < a.length; i += 2) grow(a[i]!, a[i + 1]!);
     if (extent) { grow(extent.minX, extent.minY); grow(extent.maxX, extent.maxY); }
     // The stored poses are in view too, so a node can always be reached.
-    const path = motionFor(s);
-    if (path && this.space === "local") for (const n of path.nodes) grow(n.x, n.y);
+    const path = this.viewMotion();
+    if (path && this.space === "parent") {
+      for (const n of path.nodes) grow(n.x, n.y);
+      // The curve's handles too (Edit Path), so each can be reached however the parent is turned.
+      if (this.mode === "draw") handleOffsets(path.nodes, path.closed).forEach((o, i) => { const n = path.nodes[i]!; grow(n.x + o.out.x, n.y + o.out.y); grow(n.x + o.in.x, n.y + o.in.y); });
+    }
     if (!Number.isFinite(minX)) { this.note.textContent = `${bone} has no pose in this animation.`; this.note.hidden = false; return; }
     if (this.hold && this.box) ({ minX, maxX, minY, maxY } = this.box);
     else this.box = { minX, maxX, minY, maxY };
@@ -468,7 +515,7 @@ export class MotionPathPanel {
     const here = trail ? Math.min(s.frame, trail.frames) : 0;
     // At the playhead: the pose the image and the bone are drawn from (the setup pose in Pose mode).
     const poser = this.posers(), p = trail ? poser.pose(s.skin, s.animation!.name, Math.fround(frameTime(here, trail.fps)), "none") : poser.pose(s.skin, null, 0, "none"), index = p.bones.get(bone);
-    const to = (x: number, y: number): [number, number] => (this.space === "local" && index !== undefined ? fromParent(p, index, x, y) : [x, y]);
+    const to = (x: number, y: number): [number, number] => (this.space === "parent" && index !== undefined ? fromParent(p, index, x, y, this.originName()) : [x, y]);
     if (this.show.onion && trail && index !== undefined) this.drawOnion(g, poser, bone, trail, here, at, dpr, boneColour);
     const set = index === undefined ? [] : withChildren(p, index, this.show.children);
     if (this.show.image && index !== undefined) this.drawImage(g, p, set, to, at, dpr);
@@ -503,7 +550,7 @@ export class MotionPathPanel {
     for (const f of frames) {
       const p = poser.pose(s.skin, a.name, Math.fround(frameTime(f.frame, trail.fps)), "none"), i = p.bones.get(bone);
       if (i === undefined) continue;
-      const to = (x: number, y: number): [number, number] => (this.space === "local" ? fromParent(p, i, x, y) : [x, y]);
+      const to = (x: number, y: number): [number, number] => (this.space === "parent" ? fromParent(p, i, x, y, this.originName()) : [x, y]);
       const colour = o.colour ? (f.side === "before" ? PAST : FUTURE) : null;
       if (this.show.image) {
         // The image into a scratch canvas, then a silhouette in the ghost's colour when colour-coded, then onto the panel faint.
@@ -749,11 +796,11 @@ export class MotionPathPanel {
     if (kind === "move") s.seek(frame);
     const p = s.pose(), index = p?.bones.get(bone), b = doc.bones?.find((o) => o.name === bone);
     if (!p || index === undefined || !b) return false;
-    const parent = parentMatrix(p, index), matrix = boneMatrix(p, index), unkeyed = !this.autoKey() || this.drawing;
-    const to = (px: number, py: number): [number, number] => (this.space === "local" ? fromParent(p, index, px, py) : [px, py]);
+    const parent = parentMatrix(p, index), matrix = boneMatrix(p, index), unkeyed = !this.autoKey() || this.drawing, [ox, oy] = fromParent(p, index, 0, 0, this.originName());
+    const to = (px: number, py: number): [number, number] => (this.space === "parent" ? fromParent(p, index, px, py, this.originName()) : [px, py]);
     const joint = to(matrix[4], matrix[5]), at = this.spaceAt(x, y) ?? joint;
     this.edit = {
-      bone, kind, frame: s.frame, from: animatedLocal(p, index), parent, axis, axes: spaceAxes(this.axes, matrix, parent), start: [x, y],
+      bone, kind, frame: s.frame, from: animatedLocal(p, index), parent, origin: [-ox, -oy], axis, axes: spaceAxes(this.axes, matrix, parent), start: [x, y],
       key: unkeyed ? null : { animation: anim.name, time: s.keyTime },
       joint, matrix, sign: turnSign(parent, boneInherit(b), p.rig.scaleX * p.rig.scaleY < 0), inherit: boneInherit(b), last: at, turned: 0, lock: null,
     };
@@ -783,7 +830,7 @@ export class MotionPathPanel {
       // As on the Stage: the drag's world points about the bone's joint (the panel's Local space is the world's, moved to the parent's joint).
       const here = this.spaceAt(x, y), began = this.spaceAt(e.start[0], e.start[1]);
       if (!here || !began) return;
-      const world = (q: Point): Point => (this.space === "local" ? [q[0] + e.parent[4], q[1] + e.parent[5]] : q), p0 = world(began), p1 = world(here);
+      const world = (q: Point): Point => (this.space === "parent" ? [q[0] + e.origin[0], q[1] + e.origin[1]] : q), p0 = world(began), p1 = world(here);
       if (e.kind === "scale") {
         let fx: number, fy: number;
         if (this.axes === "parent" || shift) [fx, fy] = scaleFactors(e.matrix, p0, p1, shift, 12 / m.k);
@@ -899,14 +946,48 @@ export class MotionPathPanel {
     if (best >= 0 && best !== this.session.frame) this.session.seek(best);
   }
 
+  /** The picker's bones (every bone but the selected one and those under it), and what is chosen. */
+  private syncParentPick(): void {
+    const s = this.session, bone = s.selectedBone, chosen = this.chosenParent() ?? "";
+    const names = bone ? parentChoices(s.doc, bone) : [], sig = `${bone}|${names.join(",")}`;
+    if (this.parentPick.dataset.sig !== sig) {
+      this.parentPick.dataset.sig = sig;
+      this.parentPick.replaceChildren(new Option("Parent bone…", ""), ...names.map((n) => new Option(n, n)));
+    }
+    this.parentPick.value = names.includes(chosen) ? chosen : "";
+    this.parentPick.classList.toggle("attention", !this.parentPick.value && !motionFor(s));
+  }
+
+  /** A parent bone was picked: the choice for a bone with no path yet; for one with a path, the path moves to the new bone's space and stays where it is on screen (one undo step). */
+  private chooseParent(name: string): void {
+    const s = this.session, a = s.animation, bone = s.selectedBone;
+    if (!a || !bone || !name) return;
+    const m = motionFor(s);
+    if (!m) { this.parentChoice.set(`${a.name}|${bone}`, name); this.schedule(); return; }
+    if (name === refBoneName(s.doc, m)) return;
+    const v = this.viewMotion();
+    if (!v) return;
+    // The view is measured from the parent's joint: the nodes (not the handle offsets) are shifted by how far the two joints are apart.
+    const was = this.refM(refBoneName(s.doc, m)), now = this.refM(name), dx = was[4] - now[4], dy = was[5] - now[5];
+    const moved = { ...v, parent: name, nodes: v.nodes.map((n) => ({ ...n, x: n.x + dx, y: n.y + dy })) };
+    keepMotion(s, pathFromView(moved, now), `Make the path of ${bone} relative to ${name}`);
+    this.onStatus(`The path of ${bone} is relative to ${name} now, and stays where it is on screen at this frame.`);
+    this.schedule();
+  }
+
   /** The row of path buttons: what can be done for the selected bone in the animation shown, and what the path is. */
   private updateMotionBar(): void {
     const s = this.session, m = motionFor(s), bone = s.selectedBone, anim = s.animation;
     const can = !!anim && bone !== null && !(s.doc && constraintDriving(s.doc, bone));
     this.motionBar.hidden = !can;
+    this.syncParentPick();
     const draw = !!m && this.mode === "draw", time = !!m && this.mode === "time";
     // Without a path the one button is Edit Path (it starts one); with a path the two modes.
     this.motionBtns.draw.hidden = !can;
+    // No path can be made until a parent bone is chosen.
+    const needParent = !m && this.chosenParent() === null;
+    this.motionBtns.draw.disabled = needParent;
+    this.motionBtns.add.disabled = needParent;
     this.motionBtns.time.hidden = !m;
     this.motionBtns.drop.hidden = !m;
     // The green +: no path yet, it makes one (node 1 is where the bone is, node 2 that plus an offset); in Edit Path it adds a node.
@@ -940,7 +1021,7 @@ export class MotionPathPanel {
     const stale = motionStale(s, m), unbaked = m.baked === undefined, changed = motionChanged(m);
     this.motionInfo.textContent = `${m.nodes.length} spline nodes · ${times.length} node times${unbaked ? " · not baked to the timeline" : stale ? " · timeline keys changed since the last bake" : changed ? " · changed since the last bake to the timeline" : ""}${this.stray !== null && !unbaked && !stale && !changed ? ` · strays ${Math.round(this.stray * 10) / 10}` : ""}`;
     this.motionBtns.bakeTl.classList.toggle("attention", unbaked || stale || changed);
-    if (this.space !== "local") this.motionInfo.textContent += " · nodes edit in Local";
+    if (this.space !== "parent") this.motionInfo.textContent += " · nodes edit in Parent";
   }
 
   /**
@@ -1105,8 +1186,9 @@ export class MotionPathPanel {
     if (!this.stageOn || !m || !p) return null;
     const i = p.bones.get(m.bone);
     if (i === undefined || !p.rig.active[i]) return null;
-    const curve = curveOf(m), at = parentMatrix(p, i), steps = Math.max(24, Math.min(400, m.nodes.length * 48)), points: number[] = [];
-    for (let k = 0; k <= steps; k++) { const q = curve.at((curve.length * k) / steps); points.push(q.x + at[4], q.y + at[5]); }
+    // The nodes are in the parent bone's space: through that bone's matrix as it is now, so the line follows it.
+    const curve = curveOf(m), R = refMatrix(p, refBoneName(s.doc, m)), steps = Math.max(24, Math.min(400, m.nodes.length * 48)), points: number[] = [];
+    for (let k = 0; k <= steps; k++) { const q = curve.at((curve.length * k) / steps), [vx, vy] = toView(R, q.x, q.y); points.push(R[4] + vx, R[5] + vy); }
     return points.every(Number.isFinite) ? { points, colour: this.stageColour } : null;
   }
 
@@ -1140,7 +1222,7 @@ export class MotionPathPanel {
   restoreMemory(m: MotionMemory): void {
     this.zoom = Number.isFinite(m.zoom) && m.zoom > 0 ? m.zoom : 1;
     this.pan = Number.isFinite(m.pan.x) && Number.isFinite(m.pan.y) ? { x: m.pan.x, y: m.pan.y } : { x: 0, y: 0 };
-    if (m.space === "local" || m.space === "world") this.space = m.space;
+    if (m.space === "parent" || m.space === "local" || m.space === "world") this.space = m.space === "local" ? "parent" : m.space;
     if (m.axes === "parent" || m.axes === "world") this.axes = m.axes;
     this.hold = false;
     this.mode = m.mode === "time" ? "time" : "draw";
@@ -1164,6 +1246,7 @@ export class MotionPathPanel {
    * goes with it; in Adjust time nothing moves. False when the bone has no path, so the key goes on to the bone as anywhere else.
    */
   nudge(dir: "left" | "right" | "up" | "down", big: boolean, step: number, bigFactor: number): boolean {
+    // The arrows move the node in the parent bone's own space (the numbers it is stored in), whichever way that bone is turned on screen.
     const s = this.session, m = motionFor(s);
     if (!m) return false;
     if (this.mode !== "draw") return true;
@@ -1172,7 +1255,7 @@ export class MotionPathPanel {
     const d = step * (big ? bigFactor : 1), dx = dir === "left" ? -d : dir === "right" ? d : 0, dy = dir === "up" ? d : dir === "down" ? -d : 0;
     const x = Math.round((n.x + dx) * 1e4) / 1e4, y = Math.round((n.y + dy) * 1e4) / 1e4;
     keepMotion(s, { ...m, nodes: m.nodes.map((q, i) => (i === this.selNode ? { ...q, x, y } : q)) }, "Move a spline node", true);
-    poseAtNode(s, x, y);
+    poseAtNode(s, x, y, this.chosenParent());
     return true;
   }
 
@@ -1201,7 +1284,7 @@ export class MotionPathPanel {
     this.selNode = i;
     if (!n) return;
     s.pause();
-    poseAtNode(s, n.x, n.y);
+    poseAtNode(s, n.x, n.y, this.chosenParent());
   }
 
   /** The bone was dragged (unkeyed) on the Stage while a node is picked: the node follows it. */
@@ -1213,7 +1296,7 @@ export class MotionPathPanel {
     this.syncRev = s.unkeyedRevision;
     const m = motionFor(s), n = m?.nodes[this.selNode];
     if (!m || !n) return;
-    const cur = currentNode(s);
+    const cur = currentNode(s, this.chosenParent());
     if (!cur || Math.hypot(cur.x - n.x, cur.y - n.y) < 1e-3) return;
     keepMotion(s, { ...m, nodes: m.nodes.map((x, i) => (i === this.selNode ? { ...n, x: cur.x, y: cur.y } : x)) }, "Move a spline node", true);
   }
@@ -1222,7 +1305,10 @@ export class MotionPathPanel {
   private enterDraw(): void {
     const s = this.session, m = motionFor(s);
     if (!m) {
-      const started = startMotion(s);
+      // No path can be made until the parent bone it is relative to is chosen.
+      const parent = this.chosenParent();
+      if (parent === null) { this.onStatus("Choose the parent bone first (Parent bone ▾ in the panel's head): the path is drawn relative to it."); this.parentPick.focus(); return; }
+      const started = startMotion(s, parent);
       if (!started) { this.onStatus("Select a bone in Animate mode, then Edit Path."); return; }
       keepMotion(s, started, `Start a path for ${started.bone}`);
       // Node 2 is picked and the bone goes to it; node 1 is one press away.
@@ -1451,8 +1537,8 @@ export class MotionPathPanel {
 
   /** The ring (dashed); in Edit Path the spline nodes and their handles; in Adjust time the frames' dots and the node times, in Local space. */
   private drawMotion(g: CanvasRenderingContext2D, at: (x: number, y: number) => [number, number], accent: string): void {
-    const m = motionFor(this.session);
-    if (!m || this.space !== "local" || !this.show.spline) return;
+    const m = this.viewMotion();
+    if (!m || this.space !== "parent" || !this.show.spline) return;
     const curve = curveOf(m), draw = this.mode === "draw";
     g.save();
     // Edit Path draws the curve as a graph editor does: a solid line in the accent colour, filled square nodes, hollow round handles on thin stems.
@@ -1569,14 +1655,14 @@ export class MotionPathPanel {
 
   /** The handle follows the pointer: the node's tangent is the pointer's offset from it (mirrored for the way in). */
   private dragHandle(x: number, y: number): void {
-    const hd = this.handleDrag, m = motionFor(this.session), at = this.spaceAt(x, y);
+    const hd = this.handleDrag, m = this.viewMotion(), at = this.spaceAt(x, y);
     if (!hd || !m || !at) return;
     const n = m.nodes[hd.slot];
     if (!n) return;
     const dx = at[0] - n.x, dy = at[1] - n.y, broken = n.bx !== undefined;
     // A broken leg is moved on its own; a mirrored pair moves together (the way in is the way out turned round).
     const patch = broken && hd.side === "in" ? { bx: dx, by: dy } : { tx: (hd.side === "out" ? 1 : -1) * dx, ty: (hd.side === "out" ? 1 : -1) * dy };
-    keepMotion(this.session, { ...m, nodes: m.nodes.map((o, i) => (i === hd.slot ? { ...o, ...patch } : o)) }, "Bend the path");
+    this.keepView({ ...m, nodes: m.nodes.map((o, i) => (i === hd.slot ? { ...o, ...patch } : o)) }, "Bend the path");
   }
 
   /** Back to the automatic handle at the one under the point (a double click on it). */
@@ -1694,21 +1780,21 @@ export class MotionPathPanel {
 
   /** Put a spline node where a double click on the curve is (Edit Path). */
   private insertNodeAt(x: number, y: number): boolean {
-    const m = motionFor(this.session), at = this.spaceAt(x, y);
-    if (!m || !at || this.space !== "local" || this.mode !== "draw") return false;
+    const m = this.viewMotion(), at = this.spaceAt(x, y);
+    if (!m || !at || this.space !== "parent" || this.mode !== "draw") return false;
     const curve = curveOf(m), hit = curve.project({ x: at[0], y: at[1] }), k = this.mapping?.k ?? 1;
     if (hit.distance * k > 10) return false;
     const i = curve.nodeAt.slice(0, m.nodes.length).filter((v) => v <= hit.s).length, p = curve.at(hit.s);
-    keepMotion(this.session, withNode(m, { x: p.x, y: p.y }, i), "Add a spline node");
+    this.keepView(withNode(m, { x: p.x, y: p.y }, i), "Add a spline node");
     this.selNode = i;
     return true;
   }
 
   /** A node time added where a double click on the ring is (Adjust time): on the frame the bone is nearest there. */
   private addTimeAt(x: number, y: number): boolean {
-    const m = motionFor(this.session), at = this.spaceAt(x, y);
-    if (!m || !at || this.space !== "local" || this.mode !== "time") return false;
-    const curve = curveOf(m), hit = curve.project({ x: at[0], y: at[1] }), k = this.mapping?.k ?? 1;
+    const mv = this.viewMotion(), m = motionFor(this.session), at = this.spaceAt(x, y);
+    if (!m || !mv || !at || this.space !== "parent" || this.mode !== "time") return false;
+    const curve = curveOf(mv), hit = curve.project({ x: at[0], y: at[1] }), k = this.mapping?.k ?? 1;
     if (hit.distance * k > 10) return false;
     const want = hit.s / Math.max(curve.length, 1e-9), times = nodeTimeFrames(m);
     let best = -1, bestD = Infinity;
@@ -1813,11 +1899,12 @@ export class MotionPathPanel {
       return;
     }
     if (this.nodeDrag !== null) {
-      const [x, y] = localPoint(this.canvas, e), at = this.spaceAt(x, y), m = motionFor(this.session);
+      const [x, y] = localPoint(this.canvas, e), at = this.spaceAt(x, y), m = this.viewMotion();
       if (at && m) {
-        keepMotion(this.session, { ...m, nodes: m.nodes.map((n, i) => (i === this.nodeDrag && n ? { ...n, x: at[0], y: at[1] } : n)) });
-        // The bone goes with the node (at the playhead's frame).
-        poseAtNode(this.session, at[0], at[1]);
+        this.keepView({ ...m, nodes: m.nodes.map((n, i) => (i === this.nodeDrag && n ? { ...n, x: at[0], y: at[1] } : n)) });
+        // The bone goes with the node (at the playhead's frame): the node as stored, in the parent bone's space.
+        const kept = motionFor(this.session)?.nodes[this.nodeDrag];
+        if (kept) poseAtNode(this.session, kept.x, kept.y, this.chosenParent());
       }
       return;
     }

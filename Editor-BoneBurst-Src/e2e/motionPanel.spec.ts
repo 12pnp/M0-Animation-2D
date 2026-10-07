@@ -13,7 +13,7 @@ const drawnPixels = (page: import("@playwright/test").Page) => page.evaluate(() 
   return n;
 });
 
-test("Motion Path shows the selected bone's path over the animation, Local or World; a click on a mark seeks", async ({ page }) => {
+test("Motion Path shows the selected bone's path over the animation, Parent or World; a click on a mark seeks", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
@@ -25,7 +25,7 @@ test("Motion Path shows the selected bone's path over the animation, Local or Wo
   const panel = page.locator(".motion-path");
   await expect(panel.locator(".lp-note")).toContainText("Select a bone");
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head" }));
-  await expect(panel.locator(".lp-head > span")).toHaveText("head · Local");
+  await expect(panel.locator(".lp-head > span")).toHaveText(/^head · Parent \S+$/);
   await expect(panel.locator(".lp-note")).toBeHidden();
   await panel.getByRole("button", { name: "World", exact: true }).click();
   await expect(panel.locator(".lp-head > span")).toHaveText("head · World");
@@ -78,7 +78,7 @@ test("Motion Path in Pose mode shows the bone and its image on the setup pose, t
   const panel = page.locator(".motion-path");
   await expect(panel.locator(".lp-note")).toContainText("Select a bone");
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head_art" }));
-  await expect(panel.locator(".lp-head > span")).toHaveText("head_art · Local · Pose");
+  await expect(panel.locator(".lp-head > span")).toHaveText(/^head_art · Parent \S+ · Pose$/);
   await expect(panel.locator(".lp-note")).toBeHidden();
   const drawn = () => drawnPixels(page);
   await expect.poll(drawn).toBeGreaterThan(20000);

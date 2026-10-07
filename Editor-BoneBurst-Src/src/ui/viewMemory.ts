@@ -12,7 +12,8 @@ export interface MotionMemory {
   readonly time: number;
   readonly zoom: number;
   readonly pan: { readonly x: number; readonly y: number };
-  readonly space: "local" | "world";
+  /** `"local"` is what an earlier build wrote for Parent. */
+  readonly space: "parent" | "local" | "world";
   readonly axes: "parent" | "world";
 }
 

@@ -35,8 +35,8 @@ describe("a bone's trail over an animation", () => {
     expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(0.5);
     expect(xs.every(Number.isFinite)).toBe(true);
   });
-  it("in Local is the world point with the parent's joint taken away: the world's orientation, the parent's movement out", () => {
-    const poser = new Poser(doc, images), world = boneTrail(poser, null, anim.name, "head", fps, duration, "world")!, local = boneTrail(poser, null, anim.name, "head", fps, duration, "local")!;
+  it("in Parent is the world point with the parent's joint taken away: the world's orientation, the parent's movement out", () => {
+    const poser = new Poser(doc, images), world = boneTrail(poser, null, anim.name, "head", fps, duration, "world")!, local = boneTrail(poser, null, anim.name, "head", fps, duration, "parent")!;
     for (const f of [0, 3, local.frames]) {
       const p = poser.pose(null, anim.name, Math.fround(frameTime(f, fps)), "none"), i = p.bones.get("head")!, parent = parentMatrix(p, i);
       expect(local.joint[f * 2]).toBeCloseTo(world.joint[f * 2]! - parent[4], 6);
@@ -55,7 +55,7 @@ describe("a bone's trail over an animation", () => {
     expect(y).toBeCloseTo(boneMatrix(p0, i)[5] - parent[5], 9);
   });
   it("is null for a bone the rig does not have, and is cut at the most frames", () => {
-    expect(boneTrail(new Poser(doc, images), null, anim.name, "nope", fps, duration, "local")).toBeNull();
+    expect(boneTrail(new Poser(doc, images), null, anim.name, "nope", fps, duration, "parent")).toBeNull();
     expect(boneTrail(new Poser(doc, images), null, anim.name, "head", fps, 1e6, "world")!.frames).toBe(MAX_TRAIL_FRAMES);
   });
 });

@@ -1,4 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
+import { chooseParent, startEditPath } from "./motionHelpers";
 
 /**
  * A bone's motion path (docs/PATH-FRAMES-PLAN.md): Edit Path (a spline of nodes, a ring), Bake, then Adjust time (node times, blocks,
@@ -53,14 +54,15 @@ const steps = (page: Page) => page.evaluate(() => {
   return e.labels.slice(0, e.done).filter((l) => !/^(Start a path|Add a spline|Move a spline|Remove a spline|Bend the path|Reset a handle|Edit the|Add a node time|Remove a node time|Move a node time|Set a block|Set the total|Close the path|Open the ring|Reverse the path|Merge spline|Sort the node|Reorder the|Set \d+ to origin|Remove the path)/.test(l)).length;
 });
 
-/** The bone's joint at `frame` in the panel's Local space (from its parent's joint, the world's orientation). */
+/** The bone's joint at `frame` in its own parent's space (the parent bone the path is relative to, as these tests choose it: its axes, rotation and scale included). */
 const localJoint = (page: Page, bone: string, frame: number) => page.evaluate(async ([b, f]) => {
-  const posedUrl = "/src/ui/stage/posed.ts", trailUrl = "/src/ui/stage/trail.ts";
-  const posed: any = await import(/* @vite-ignore */ posedUrl), trail: any = await import(/* @vite-ignore */ trailUrl);
+  const posedUrl = "/src/ui/stage/posed.ts";
+  const posed: any = await import(/* @vite-ignore */ posedUrl);
   const s = (window as unknown as Live).boneburst.session;
   s.seek(f);
-  const p = s.pose() as any, i = p.bones.get(b)!, m = posed.boneMatrix(p, i);
-  return trail.fromParent(p, i, m[4], m[5]) as [number, number];
+  const p = s.pose() as any, i = p.bones.get(b)!, m = posed.boneMatrix(p, i), P = posed.parentMatrix(p, i);
+  const det = P[0] * P[3] - P[1] * P[2], dx = m[4] - P[4], dy = m[5] - P[5];
+  return [(P[3] * dx - P[1] * dy) / det, (P[0] * dy - P[2] * dx) / det] as [number, number];
 }, [bone, frame] as const);
 
 /** Pose `bone` unkeyed at frame 0, `dx`, `dy` from where the animation has it (the bone is dragged; nothing is keyed). */
@@ -81,7 +83,7 @@ const blocks = (page: Page) => page.locator(".lp-slots button.block");
 
 /** Edit Path, the bone dragged a little and its node stored, then Bake (into Adjust time): a path of 2 spline nodes. */
 async function drawn(page: Page): Promise<void> {
-  await panelOf(page).getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panelOf(page));
   await expect(reds(page)).toHaveCount(2);
   await panelOf(page).getByRole("button", { name: "Adjust time", exact: true }).click();
   await expect(panelOf(page).getByRole("button", { name: "Adjust time", exact: true })).toHaveAttribute("aria-pressed", "true");
@@ -92,7 +94,7 @@ test("Edit Path starts with two spline nodes and a green +: [the bone's place] [
   const panel = panelOf(page);
   expect(await path(page)).toBeNull();
   const done = await steps(page), keys = await translate(page, "head"), here = await localJoint(page, "head", 0);
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   await expect(reds(page)).toHaveCount(2);
   await expect(panel.getByRole("button", { name: "Add a spline node" })).toBeVisible();
   const p = (await path(page))!;
@@ -113,7 +115,7 @@ test("Edit Path starts with two spline nodes and a green +: [the bone's place] [
 test("edit the spline: + adds a node, the bone drags the picked node, − Node removes one, never below two", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   const before = (await path(page))!.nodes;
   await panel.getByRole("button", { name: "Add a spline node" }).click();
   await expect(reds(page)).toHaveCount(3);
@@ -170,7 +172,7 @@ test("Adjust time: + Time adds a node time at the playhead's frame, − Time rem
 test("Total frames is set in Motion Path (14 + 0); the node times keep their share; Closed off ends the path on the last frame shown", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   // Edit Path shapes the spline: Closed is here, Total frames is not.
   await expect(panel.getByRole("spinbutton", { name: "Total frames" })).toBeHidden();
   await expect(panel.locator("label.lp-field input[type=checkbox]")).toBeVisible();
@@ -187,7 +189,7 @@ test("Total frames is set in Motion Path (14 + 0); the node times keep their sha
   await expect(panel.getByText("(29 + 0)")).toBeVisible();
   // No path field on the Timeline bar any more.
   await expect(page.getByRole("spinbutton", { name: "Path time (s)" })).toHaveCount(0);
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   await panel.locator("label.lp-field input[type=checkbox]").uncheck();
   await expect.poll(async () => (await path(page))!.closed).toBe(false);
   await panel.getByRole("button", { name: "Adjust time", exact: true }).click();
@@ -230,7 +232,7 @@ test("a block's time multiplier: the block covers more of the ring; Bake to time
 test("the baked bone follows the ring between its keys: within a few units of the path at every frame", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   await panel.getByRole("button", { name: "Add a spline node" }).click();
   await panel.getByRole("button", { name: "Adjust time", exact: true }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.seek(5));
@@ -262,7 +264,7 @@ test("Remove path forgets the path and keeps the keys", async ({ page }) => {
 
 test("in Edit Path the bone and the picked node follow each other: drag the bone, the node moves; drag the node, the bone moves", async ({ page }) => {
   await open(page);
-  await panelOf(page).getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panelOf(page));
   const stored = (await path(page))!.nodes;
   // The bone dragged on the Stage (unkeyed, as Edit Path poses it): the picked node (the second) follows, without pressing red.
   await drag(page, "head", 30, 50);
@@ -285,7 +287,7 @@ test("in Edit Path the bone and the picked node follow each other: drag the bone
 test("hand tools: on a ring every node has both handles; dragging one bends the curve and keeps the node; a double click puts it back to automatic", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   await panel.getByRole("button", { name: "Add a spline node" }).click();
   await page.waitForTimeout(400);
   const handles = () => page.evaluate(() => (window as unknown as Live).boneburst.motionPath.grabPoints.handles);
@@ -365,6 +367,7 @@ test("no path yet: one green + creates it (node 1 is the bone, node 2 the bone p
   const panel = panelOf(page);
   expect(await path(page)).toBeNull();
   await expect(reds(page)).toHaveCount(0);
+  await chooseParent(panel);
   const create = panel.getByRole("button", { name: "Create a path" });
   await expect(create).toBeVisible();
   const here = await localJoint(page, "head", 0);
@@ -383,7 +386,10 @@ test("no path yet: one green + creates it (node 1 is the bone, node 2 the bone p
     const posedUrl = "/src/ui/stage/posed.ts", trailUrl = "/src/ui/stage/trail.ts";
     const posed: any = await import(/* @vite-ignore */ posedUrl), trail: any = await import(/* @vite-ignore */ trailUrl);
     const p = (window as unknown as Live).boneburst.session.pose() as any, i = p.bones.get("head")!, m = posed.boneMatrix(p, i);
-    return trail.fromParent(p, i, m[4], m[5]) as [number, number];
+    // In the parent bone\'s own space: the inverse of its matrix.
+    const P = posed.parentMatrix(p, i), det = P[0] * P[3] - P[1] * P[2], dx = m[4] - P[4], dy = m[5] - P[5];
+    void trail;
+    return [(P[3] * dx - P[1] * dy) / det, (P[0] * dy - P[2] * dx) / det] as [number, number];
   });
   await reds(page).nth(1).click();
   await expect.poll(async () => (await joint())[0]).toBeCloseTo(moved[1]!.x, 1);
@@ -434,8 +440,12 @@ test("a red number moves the bone on the Stage: the session announces each pose,
     const posedUrl = "/src/ui/stage/posed.ts", trailUrl = "/src/ui/stage/trail.ts";
     const posed: any = await import(/* @vite-ignore */ posedUrl), trail: any = await import(/* @vite-ignore */ trailUrl);
     const p = (window as unknown as Live).boneburst.session.pose() as any, i = p.bones.get("head")!, m = posed.boneMatrix(p, i);
-    return trail.fromParent(p, i, m[4], m[5]) as [number, number];
+    // In the parent bone\'s own space: the inverse of its matrix.
+    const P = posed.parentMatrix(p, i), det = P[0] * P[3] - P[1] * P[2], dx = m[4] - P[4], dy = m[5] - P[5];
+    void trail;
+    return [(P[3] * dx - P[1] * dy) / det, (P[0] * dy - P[2] * dx) / det] as [number, number];
   });
+  await chooseParent(panel);
   await panel.getByRole("button", { name: "Create a path" }).click();
   const nodes = (await path(page))!.nodes;
   // Created: the bone is on node 2 (the picked one), not left on node 1.
@@ -461,7 +471,7 @@ test("a red number moves the bone on the Stage: the session announces each pose,
 test("Adjust time edits the timing only: the bone is not dragged on the Stage or in Motion Path, the spline stays, and the bone is back on the animation's pose", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   await drag(page, "head", 50, 20);
   await expect.poll(async () => (await path(page))!.nodes[1]).toBeDefined();
   const nodes = (await path(page))!.nodes;
@@ -497,14 +507,14 @@ test("Adjust time edits the timing only: the bone is not dragged on the Stage or
   expect((await path(page))!.nodes).toEqual(nodes);
   expect(await page.evaluate(() => (window as unknown as { boneburst: { session: { hasUnkeyed: boolean } } }).boneburst.session.hasUnkeyed)).toBe(false);
   // Back in Edit Path the bone drags again.
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   expect(await page.evaluate(() => (window as unknown as { boneburst: { motionPath: { timing: boolean } } }).boneburst.motionPath.timing)).toBe(false);
 });
 
 test("the numbered node buttons are green and alone in their strip (the + is in the upper row), and dragging one to another place moves it there", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   await panel.getByRole("button", { name: "Add a spline node" }).click();
   await expect(reds(page)).toHaveCount(3);
   // The + is in the upper row with the mode buttons; the strip holds the numbers only.
@@ -550,7 +560,7 @@ async function dragNode(page: Page, from: number, to: number, hold = false): Pro
 test("dragging a number is guided: a red arrow carrying its number marks the gap it would go into, the status line and the canvas show the new order before the drop; Escape or letting go outside leaves it", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   await panel.getByRole("button", { name: "Add a spline node" }).click();
   await expect(reds(page)).toHaveCount(3);
   const nodes = (await path(page))!.nodes;
@@ -599,7 +609,7 @@ test("dragging a number is guided: a red arrow carrying its number marks the gap
 test("a number dragged along the strip lands in the gap the red arrow shows, the others shifting: 3, 1, 2, 4 with 1 dropped after 2 gives 3, 2, 1, 4", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   for (let k = 0; k < 2; k++) await panel.getByRole("button", { name: "Add a spline node" }).click();
   await expect(reds(page)).toHaveCount(4);
   const nodes = (await path(page))!.nodes;
@@ -626,7 +636,7 @@ test("a number dragged along the strip lands in the gap the red arrow shows, the
 test("right-click a number: Set to Origin starts the ring there and goes round in the same order: 3, 1, 2, 4 with 2 gives 2, 4, 3, 1", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   for (let k = 0; k < 2; k++) await panel.getByRole("button", { name: "Add a spline node" }).click();
   await dragNode(page, 2, 0);
   await expect(reds(page)).toHaveText(["3", "1", "2", "4"]);
@@ -650,7 +660,7 @@ test("right-click a number: Set to Origin starts the ring there and goes round i
 test("Q and W: the previous and next node while the pointer is over Motion Path, the previous and next frame over the Timeline", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   await panel.getByRole("button", { name: "Add a spline node" }).click();
   await expect(reds(page)).toHaveCount(3);
   const frame = () => page.evaluate(() => (window as unknown as Live).boneburst.session.frame);
@@ -688,7 +698,7 @@ test("Q and W: the previous and next node while the pointer is over Motion Path,
 test("F and the arrow keys belong to the panel under the pointer: over Motion Path, F fits its view and an arrow moves the picked node (the bone with it); over the Stage they are the Stage's", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await startEditPath(panel);
   await page.waitForTimeout(300);
   const canvas = page.locator(".motion-path canvas").first(), box = (await canvas.boundingBox())!;
   const picture = () => canvas.evaluate((c) => (c as HTMLCanvasElement).toDataURL());

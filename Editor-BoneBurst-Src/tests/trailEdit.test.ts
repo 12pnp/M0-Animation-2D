@@ -53,7 +53,7 @@ describe("moving a joint by dragging its mark", () => {
     const edited = keyBone(anim.name, bone, ["translate"], { ...from, ...shiftedLocal(parent, from, 6, 3) } as LocalPose, frameTime(frame, fps))(doc);
     const dur = animationDuration(anim);
     const w0 = boneTrail(new Poser(doc, images), null, anim.name, bone, fps, dur, "world")!, w1 = boneTrail(new Poser(edited, images), null, anim.name, bone, fps, dur, "world")!;
-    const l0 = boneTrail(new Poser(doc, images), null, anim.name, bone, fps, dur, "local")!, l1 = boneTrail(new Poser(edited, images), null, anim.name, bone, fps, dur, "local")!;
+    const l0 = boneTrail(new Poser(doc, images), null, anim.name, bone, fps, dur, "parent")!, l1 = boneTrail(new Poser(edited, images), null, anim.name, bone, fps, dur, "parent")!;
     expect(l1.joint[frame * 2]! - l0.joint[frame * 2]!).toBeCloseTo(w1.joint[frame * 2]! - w0.joint[frame * 2]!, 6);
     expect(l1.joint[frame * 2]! - l0.joint[frame * 2]!).toBeCloseTo(6, 1);
   });
