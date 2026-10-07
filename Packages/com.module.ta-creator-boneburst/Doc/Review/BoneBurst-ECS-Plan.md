@@ -1,6 +1,6 @@
 # BoneBurst ECS port: Plan
 
-**P13 (CPU route vertex fetch) done 2026-10-07: EcsCpu 25.8 → 4.85 ms at 2000 skeletons, 1.14× the mono CPU route (§23). Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 (CPU route, skins, tint black, Lit2D) done 2026-10-07 except the vertex-fetch route, rim light and a player build (§15); P7 (physics input, followers, idle skipping, benchmark) done 2026-10-07 except the visibility mode, the steady shortcut and the sorting question (§16). P8 (shell overhead at small counts) done 2026-10-07: 7–16% less at 100–2000 skeletons, the rest is a fixed floor outside BoneBurst (§17). P11 (tint black and rim light in a player) done 2026-10-07: rim light built and both seen in a player (§20). P10 (render variants in a player) done 2026-10-07: it found and fixed a CPU route that never drew and a stripped default shader (§19). P9 (sorting) done 2026-10-07: a per-skeleton render queue orders a skeleton against sprites of one sorting layer and order; the sorting layer and order themselves stay unreachable (§18).**
+**P14 (pose system cost) done 2026-10-07: the header loop and the frame job overlap; pose −27% (GPU) and −22% (CPU) at 2000, EcsGpu 2.91 ms against MonoGpu 3.95 (§24). P13 (CPU route vertex fetch) done 2026-10-07: EcsCpu 25.8 → 4.85 ms at 2000 skeletons, 1.14× the mono CPU route (§23). Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 (CPU route, skins, tint black, Lit2D) done 2026-10-07 except the vertex-fetch route, rim light and a player build (§15); P7 (physics input, followers, idle skipping, benchmark) done 2026-10-07 except the visibility mode, the steady shortcut and the sorting question (§16). P8 (shell overhead at small counts) done 2026-10-07: 7–16% less at 100–2000 skeletons, the rest is a fixed floor outside BoneBurst (§17). P11 (tint black and rim light in a player) done 2026-10-07: rim light built and both seen in a player (§20). P10 (render variants in a player) done 2026-10-07: it found and fixed a CPU route that never drew and a stripped default shader (§19). P9 (sorting) done 2026-10-07: a per-skeleton render queue orders a skeleton against sprites of one sorting layer and order; the sorting layer and order themselves stay unreachable (§18).**
 
 BoneBurst's pose, constraint, timeline and mesh code (`Module.PA.BoneBurst.Core`) is already Burst-friendly pointer code with no `UnityEngine`. The port keeps that code unchanged and replaces only the managed shell around it (`BoneBurstSystem`, `BoneBurstSkeleton`, `BoneBurstAsset`, `BoneAnimationState`, the GPU and fetch buffers) with Entities 6.7 systems, bakers and Entities Graphics. The result is a new package in `M0-25DPlatformer-ECS/Packages`.
 
@@ -609,5 +609,53 @@ Raw runs: `Tests/Results~/p13_vertex_fetch_runs.csv` (ECS package).
 2.  **The profile drove one change away from the plan.** First version: one `SetData` of the used span a frame. At 2000 idle the render thread fell from 16.9 to 1.1 ms (the 2000 dynamic mesh updates are gone) and the frame from 25.6 to 7.9 ms, but a timer around the upload showed 2.7 of the CPU system's 2.8 ms: 20 MB a frame. It became the front's ring: three `LockBufferForWrite` buffers, filled by a parallel Burst copy of every used vertex. Upload 2.7 → 0.5 ms, frame 7.9 → 4.9 ms.
 3.  **Where the CPU route stands:** 1.14× the mono CPU route at 2000 idle, 1.2× switching at 2000, 1.09× at 500, 1.3× at 100 (the fixed floor). The gate (within 1.5×) is met. What is left at 2000 is the pose system (2.1 ms, 1.5 of it the job) and the animation system (0.8 ms): not CPU-route specific.
 4.  **Guards:** the 24-fixture CPU-route tests now read the fetched vertices from the shared list (a helper in `SystemRig`) and must see the fetched path (a control: more than half of the frames with vertices are fetched); a deliberate bug (the fetched write shifted by one vertex) failed 30 tests. Seen on screen: the Editor (tint black and rim on the CPU route, fetched) and a player (2000 and 100 skeletons, the benchmark's picture matches the GPU route's). 383 EditMode tests pass. **Not covered:** a pixel-for-pixel player comparison of fetch against the per-mesh upload (the per-mesh upload no longer runs except on a range overflow, which is covered by the vertex tests only), the ring under more than two queued frames, platforms without structured buffers in vertex shaders (they keep the per-mesh upload; untested), and IL2CPP.
+
+Status: done.
+
+## 24. P14 plan (2026-10-07): the pose system's cost
+
+After P13 the pose system is the largest part of the ECS frame at 2000 skeletons. A `-shell 1` run of the current player (build 38, load average 5, ms per frame):
+
+| 2000 skeletons | frame | animation | pose | of which headers | of which job | gpu / cpu mesh | render |
+|---|---|---|---|---|---|---|---|
+| GPU idle | 3.40 | 0.75 | 1.53 | 0.59 | 0.93 | 0.27 | 0.34 |
+| CPU idle | 4.90 | 0.77 | 2.16 | 0.66 | 1.50 | 0.61 | 0.49 |
+| GPU switch | 5.00 | 2.03 | 1.90 | 0.69 | 1.20 | 0.33 | 0.52 |
+| CPU switch | 6.60 | 1.87 | 2.55 | 0.81 | 1.74 | 0.63 | 0.62 |
+
+```mermaid
+flowchart LR
+    Q["EntityQuery<br/>handles"] --> TH["store.TakeHeader per instance<br/>main thread: headers 0.6-0.8 ms"]
+    TH --> PF["PointFetch / pose pointer"]
+    PF --> JB["BoneBurstFrameJob.Schedule(n, batch 16).Complete()<br/>PoseStep + GpuRecord or CpuMesh: 0.9-1.7 ms"]
+    JB --> AF["After · Gpu · CpuMesh · Render systems"]
+    SW["P14 levers"] -.-> B["job batch size<br/>(runtime switch -batch)"]
+    SW -.-> C["per-instance native calls in TakeHeader<br/>(QualitySettings.activeColorSpace)"]
+    SW -.-> D["header fields rebuilt every frame"]
+```
+
+The job runs Core's strict-float Burst code (parity-bound), so its arithmetic is not touched. What can move: (1) the job's batch size (now a fixed 16 for 2000 items), swept at run time through a `-batch N` benchmark switch; (2) the header loop's per-instance costs: native calls and field rebuilding that do not change from frame to frame (the colour-space query is made once per instance per frame); (3) whether the headers loop can run less work for instances that do not change. The animation system (2.0 ms when switching, 1.1 of it applying requests) is outside this phase.
+
+**Steps:** (1) a `JobBatch` setting and the `-batch` switch; sweep 2/4/8/16/32/64 at 2000 on both routes; (2) profile `TakeHeader` and remove the per-frame constants; (3) re-measure with the same method; (4) tests (header contents unchanged: the 383 tests, which compare every pose to the managed reference) and a deliberate bug (a wrong colour-space flag must fail the tint and Lit tests).
+**Gate:** the pose system's total at 2000 idle falls by at least 10% on both routes without a test change, or the phase reports that the floor is in the job and says why.
+
+**Result (2026-10-07, same machine and method as §22, CoreCLR players; load average up to 12 from another session's processes, so differences under about 5% are not claims):**
+
+1.  **Two levers did nothing.** The job's batch size is flat from 2 to 16 work items (0.90–0.94 ms at 2000, worse at 32 and 64), and reading the colour space once a frame instead of per instance moved the header loop by nothing (0.59–0.66 ms before and after). Both stay as they are (the batch is a setting, 16; the colour space is read once a frame).
+2.  **The lever that worked: overlapping the header loop with the job.** Both ran back to back on the main thread's critical path (headers 0.6 ms, then the workers 0.9–1.5 ms with the main thread waiting). The frame job now runs per chunk of 256 headers, each scheduled as soon as its headers exist, so the workers pose the first chunks while the main thread builds the later ones. Two details found on the way: fetch ranges must all be attached before the first job is scheduled (an attach may move the shared lists), and `JobHandle.ScheduleBatchedJobs()` after each chunk, since scheduled jobs wait for a flush; without it the first version showed no gain at all (pose 1.53–1.65 against 1.53–1.66).
+3.  **Pose system at 2000 idle, A/B (same session, old and new builds alternated):** GPU route 1.57 → 1.15 ms (−27%), CPU route 2.17 → 1.70 ms (−22%); the frame 3.40 → 3.05 (−10%) and 4.95 → 4.65 (−6%). The gate (pose −10% on both routes) is met. The chunk size is flat from 64 to 512 (256 kept).
+4.  **Against the mono runtime now** (ABBA × 2, median frame ms; before P14 in brackets):
+
+| animation × count | MonoCpu | MonoGpu | EcsGpu | EcsCpu |
+|---|---|---|---|---|
+| idle × 2000 | 4.30 | 3.95 | **2.91** (3.36) | 4.60 (4.85) |
+| walk × 2000 | 4.36 | 4.16 | **3.20** (3.26) | 4.55 (4.94) |
+| switch × 2000 | 5.80 | 5.36 | **4.45** (5.00) | 6.14 (6.55) |
+| switch × 500 | 2.41 | 2.25 | **1.85** (2.30) | 2.30 (2.50) |
+| switch × 100 | 0.54 | 0.55 | **0.50** (0.54) | 0.70 (0.65) |
+
+    The ECS GPU route is now 17–26% faster than the mono GPU route at 2000 and level at 100; the ECS CPU route is within 7% of the mono one at 2000 idle and faster at 500. Raw runs: `Tests/Results~/p14_pipelined_pose_runs.csv`.
+5.  **Guards:** the 383 tests passed unchanged, but a deliberate bug (the chunk offset ignored) passed all of them: no test had more instances than one chunk. A new test, `ChunkedFrameJobs_PoseEveryInstanceLikeTheReference` (nine instances, chunk of 2, batch of 1: five jobs at offsets, each instance with its own animation and time, compared with the managed reference), passes with the code (384 tests) and, with the same deliberate bug, took the Editor down (the duplicate writers corrupted memory) instead of failing cleanly. The Editor was restarted and 384 tests pass on the restored code.
+6.  **Not covered:** the animation system (2.0 ms when switching, 1.1 of it applying requests) is untouched; other systems between the pose and mesh systems could overlap with the job further (the benchmark scene has none); IL2CPP; the race the chunking could introduce under another system writing instance data during the loop (nothing does today).
 
 Status: done.

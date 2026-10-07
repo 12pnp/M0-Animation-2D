@@ -11,6 +11,10 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-07 — **ECS port P14 recorded: pose system overlaps its header loop with the job, pose −22 to −27%** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
+
+Plan [BoneBurst-ECS-Plan.md](Review/BoneBurst-ECS-Plan.md) §24; [BoneBurst-ECS-Summary.md](Review/BoneBurst-ECS-Summary.md) updated. The frame job runs per chunk of headers, flushed as scheduled; at 2000 idle EcsGpu is 2.91 ms against MonoGpu 3.95. A new chunked-job test guards it (the deliberate bug crashed the Editor instead of failing cleanly). Batch size and the colour-space cache gave nothing; the animation system and IL2CPP are not covered.
+
 ### 2026-10-07 — **ECS port P13 recorded: CPU route vertex fetch, EcsCpu 25.8 → 4.85 ms at 2000 skeletons** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
 
 Plan [BoneBurst-ECS-Plan.md](Review/BoneBurst-ECS-Plan.md) §23; [BoneBurst-ECS-Summary.md](Review/BoneBurst-ECS-Summary.md) updated. The ECS CPU route now keeps vertices in one shared list (ring-uploaded) and draws topology-only meshes, 1.14× the mono CPU route at 2000 idle. Guarded by the fixture tests (deliberate bug failed 30) and Editor and player captures; per-mesh-upload fallback, platforms without vertex-shader structured buffers and IL2CPP not covered.

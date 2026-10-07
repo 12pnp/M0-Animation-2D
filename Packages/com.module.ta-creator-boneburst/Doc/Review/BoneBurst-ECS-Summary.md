@@ -52,6 +52,7 @@ flowchart LR
 | P11 tint black, rim light | Rim light built on the ECS Lit2D shader (per-material rim); tint black seen on both routes; both match between Editor and a player. | 20 |
 | P12 same-backend comparison | Both runtimes as CoreCLR players, ABBA; see the numbers below. | 21, 22 |
 | P13 CPU route vertex fetch | Shared vertex list, topology-only meshes, a `BONE_BURST_FETCH` shader variant, a three-buffer ring filled by a parallel copy: EcsCpu 25.8 → 4.85 ms at 2000 (1.14× MonoCpu). | 23 |
+| P14 pose system cost | The header loop and the frame job overlap (chunks of 256, flushed as scheduled): pose −27% GPU, −22% CPU; at 2000 idle EcsGpu 2.91 ms against MonoGpu 3.95, EcsCpu 4.60 against MonoCpu 4.30. | 24 |
 
 ## Performance (P12, CoreCLR players, median frame ms, 1920×1080, vsync off)
 
@@ -79,7 +80,7 @@ xychart-beta
 
 | Item | Why it matters |
 |---|---|
-| Remaining ECS gap at small counts and in the pose and animation systems | 0.65 against 0.50 ms at 100 skeletons (a fixed floor); the pose system takes 2.1 ms and animation 0.8 ms at 2000. |
+| Animation system, CPU route at small counts | The animation system takes 0.8 ms idle and 2.0 ms switching at 2000; EcsCpu is 0.70 against 0.54 ms at 100. |
 | Real sorting layer and order | Needs a custom render pass or a fork of Entities Graphics' filter settings; the render queue only orders against sprites of one layer and order. |
 | Visibility mode | Not built (P7 left it open). |
 | Painted rim masks, rotated atlas regions and flipped skeletons on screen | Rim was seen with white masks only. |
