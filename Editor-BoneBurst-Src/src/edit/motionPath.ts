@@ -192,8 +192,14 @@ export function reversePath(m0: MotionPath): MotionPath {
     if (n.bx !== undefined && n.by !== undefined) return { ...n, tx: n.bx, ty: n.by, bx: r(h[k]!.out.x), by: r(h[k]!.out.y) };
     return n.tx === undefined && n.ty === undefined ? n : { ...n, tx: -(n.tx ?? 0) || 0, ty: -(n.ty ?? 0) || 0 };
   };
+  // The speed spline runs the other way too: its legs swap sides and their slopes change sign.
+  const flipSpeed = (n: MotionNode): MotionNode => {
+    if (n.ss === undefined) return n;
+    const { ss, sb, ...rest } = n, neg = (v: number): number => -v || 0;
+    return sb === undefined ? { ...rest, ss: neg(ss) } : { ...rest, ss: neg(sb), sb: neg(ss) };
+  };
   const order = m.nodes.map((_, k) => k), turned = m.closed ? [0, ...order.slice(1).reverse()] : order.slice().reverse();
-  return { ...m, nodes: turned.map((k) => flip(m.nodes[k]!, k)) };
+  return { ...m, nodes: turned.map((k) => flipSpeed(flip(m.nodes[k]!, k))) };
 }
 
 /** Only the numbers on the buttons put back in order (1, 4, 3, 2 shown as 1, 2, 3, 4): every node keeps its place, its position and its handle. */

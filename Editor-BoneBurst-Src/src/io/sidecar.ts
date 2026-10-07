@@ -53,9 +53,9 @@ export function readSidecar(text: string): { sidecar: Sidecar; issues: Issue[] }
     for (const n of nodes) {
       if (!isObject(n) || typeof n.get("x") !== "number" || typeof n.get("y") !== "number") return null;
       const tx = num(n, "tx"), ty = num(n, "ty"), bx = num(n, "bx"), by = num(n, "by");
-      const id = num(n, "id"), speed = num(n, "speed");
+      const id = num(n, "id"), speed = num(n, "speed"), ss = num(n, "ss"), sb = num(n, "sb");
       // A path timed the old way (node times, blocks) keeps its nodes and frames; the timing is not read (docs/TWINSPLINE-PLAN.md).
-      ns.push({ x: n.get("x") as number, y: n.get("y") as number, ...(tx !== undefined && ty !== undefined ? { tx, ty } : {}), ...(bx !== undefined && by !== undefined ? { bx, by } : {}), ...(id !== undefined && Number.isInteger(id) && id > 0 ? { id } : {}), ...(speed !== undefined && Number.isFinite(speed) && speed !== 0 ? { speed: Math.min(SPEED_MAX, Math.max(SPEED_MIN, speed)) } : {}) });
+      ns.push({ x: n.get("x") as number, y: n.get("y") as number, ...(tx !== undefined && ty !== undefined ? { tx, ty } : {}), ...(bx !== undefined && by !== undefined ? { bx, by } : {}), ...(id !== undefined && Number.isInteger(id) && id > 0 ? { id } : {}), ...(speed !== undefined && Number.isFinite(speed) && speed !== 0 ? { speed: Math.min(SPEED_MAX, Math.max(SPEED_MIN, speed)) } : {}), ...(ss !== undefined && Number.isFinite(ss) ? { ss, ...(sb !== undefined && Number.isFinite(sb) ? { sb } : {}) } : {}) });
     }
     const baked = str(o, "baked"), parent = str(o, "parent");
     return { animation, bone, ...(parent !== undefined ? { parent } : {}), nodes: ns, closed: o.get("closed") !== false, frames, ...(baked !== undefined ? { baked } : {}) };
@@ -81,7 +81,7 @@ export function writeSidecar(s: Sidecar): string {
     ...(s.tags.length ? [["tags", new Map<string, Json>(s.tags.map((e) => [e.key, [...e.tags]] as [string, Json]))] as [string, Json]] : []),
     ...(s.motion.length ? [["motion", s.motion.map((m) => new Map<string, Json>([
       ["animation", m.animation], ["bone", m.bone], ...(m.parent !== undefined ? [["parent", m.parent] as [string, Json]] : []),
-      ["nodes", m.nodes.map((n) => new Map<string, Json>([["x", n.x], ["y", n.y], ...(n.tx !== undefined && n.ty !== undefined ? [["tx", n.tx] as [string, Json], ["ty", n.ty] as [string, Json]] : []), ...(n.bx !== undefined && n.by !== undefined ? [["bx", n.bx] as [string, Json], ["by", n.by] as [string, Json]] : []), ...(n.id !== undefined ? [["id", n.id] as [string, Json]] : []), ...(n.speed !== undefined && n.speed !== 0 ? [["speed", n.speed] as [string, Json]] : [])]))],
+      ["nodes", m.nodes.map((n) => new Map<string, Json>([["x", n.x], ["y", n.y], ...(n.tx !== undefined && n.ty !== undefined ? [["tx", n.tx] as [string, Json], ["ty", n.ty] as [string, Json]] : []), ...(n.bx !== undefined && n.by !== undefined ? [["bx", n.bx] as [string, Json], ["by", n.by] as [string, Json]] : []), ...(n.id !== undefined ? [["id", n.id] as [string, Json]] : []), ...(n.speed !== undefined && n.speed !== 0 ? [["speed", n.speed] as [string, Json]] : []), ...(n.ss !== undefined ? [["ss", n.ss] as [string, Json]] : []), ...(n.ss !== undefined && n.sb !== undefined ? [["sb", n.sb] as [string, Json]] : [])]))],
       ["closed", m.closed], ["frames", m.frames],
       ...(m.baked !== undefined ? [["baked", m.baked] as [string, Json]] : []),
     ]))] as [string, Json]] : []),

@@ -554,3 +554,39 @@ test("the baked bone follows the ring with a speed on its nodes: within a few un
   }
   expect(worst).toBeLessThan(4);
 });
+
+test("the speed graph's menu (right-click or ⌘ + click) adds a node where the pointer is, breaks a node's legs and deletes it; the green line under it sets the graph's height", async ({ page }) => {
+  await open(page);
+  const panel = panelOf(page);
+  await startEditPath(panel);
+  const canvas = panel.locator(".lp-speed-canvas");
+  const dots = () => page.evaluate(() => (window as unknown as { boneburst: { motionPath: { speedPoints: { i: number; x: number; y: number }[] } } }).boneburst.motionPath.speedPoints);
+  const nodes = async () => (await path(page))!.nodes;
+  expect(await nodes()).toHaveLength(2);
+  // Add: a point between the two (right-click on the empty graph).
+  await expect.poll(async () => (await dots()).length).toBe(2);
+  const d0 = await dots();
+  await canvas.click({ button: "right", position: { x: (d0[0]!.x + d0[1]!.x) / 2, y: 40 } });
+  await page.getByRole("menuitem", { name: "Add a node here" }).click();
+  await expect.poll(async () => (await nodes()).length).toBe(3);
+  // Break the legs of the node under the pointer.
+  await expect.poll(async () => (await dots()).length).toBe(3);
+  const d1 = await dots();
+  await canvas.click({ button: "right", position: { x: d1[1]!.x, y: d1[1]!.y } });
+  await page.getByRole("menuitem", { name: /^Break the legs of/ }).click();
+  await expect.poll(async () => (await page.evaluate(() => (window as unknown as Live).boneburst.session.sidecar.motion[0]!.nodes)).some((n) => "sb" in n)).toBe(true);
+  // Delete it with ⌘ + click.
+  await canvas.click({ modifiers: ["Meta"], position: { x: d1[1]!.x, y: d1[1]!.y } });
+  await page.getByRole("menuitem", { name: /^Delete node/ }).click();
+  await expect.poll(async () => (await nodes()).length).toBe(2);
+  // The green line: down makes the graph taller.
+  await reds(page).nth(0).click();
+  const grip = panel.locator(".lp-grip");
+  await grip.scrollIntoViewIfNeeded();
+  const before = (await canvas.boundingBox())!.height, g = (await grip.boundingBox())!;
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(g.x + g.width / 2, g.y + g.height / 2 + 40, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => (await canvas.boundingBox())!.height).toBeGreaterThan(before + 30);
+});

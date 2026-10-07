@@ -564,7 +564,7 @@ dialog.shortcuts .actions { display: flex; justify-content: flex-end; }
 .stage-crumb > span:not(.sep) { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .outline .row.ping { animation: row-ping 1.1s ease-out; }
 @keyframes row-ping { 0% { box-shadow: inset 0 0 0 2px var(--accent); background: color-mix(in srgb, var(--accent) 35%, transparent); } 100% { box-shadow: inset 0 0 0 2px transparent; } }
-.context-menu { position: fixed; z-index: 30; top: 0; left: 0; }
+.context-menu { position: fixed; z-index: 1000; top: 0; left: 0; }
 .stage-tools .group button.mode { min-width: 96px; }
 
 /* A note about a thing selects it (E8 step 1). */
@@ -614,7 +614,7 @@ dialog.open-project .op-buttons { flex: none; display: flex; justify-content: ce
 
 .lp-body canvas { cursor: grab; touch-action: none; }
 /* Same as the stage's Fit: a 22 px square flush in the top-right corner, solid, above what is drawn. */
-.lp-fit { position: absolute; top: 0; right: 0; z-index: 3; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-left: 1px solid var(--line); border-bottom: 1px solid var(--line); border-radius: 0; background: var(--panel); color: var(--text); }
+.lp-fit { margin-left: auto; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 0; background: var(--panel); color: var(--text); }
 .lp-fit .icon { width: 15px; height: 15px; margin: 0; }
 .lp-fit:hover { background: var(--hover); }
 
@@ -846,7 +846,7 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 
 /* Motion Path: the node numbers sit under the picture, and the picked node's data under them. */
 .motion-path .lp-slots { border-top: 1px solid var(--line); border-bottom: 0; }
-.lp-data { flex: 1; min-height: 0; display: flex; flex-direction: row; gap: 10px; padding: 6px 10px; border-top: 1px solid var(--line); font-size: 12px; overflow: hidden; }
+.lp-data { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--line); font-size: 12px; overflow-x: hidden; overflow-y: auto; }
 .lp-data[hidden] { display: none; }
 .lp-data .title { font-weight: 600; }
 .lp-data .hint { color: var(--muted, var(--text)); }
@@ -859,9 +859,18 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 .lp-split { flex: none; height: 7px; margin: -3px 0; position: relative; z-index: 2; cursor: row-resize; touch-action: none; }
 .lp-split:hover, .lp-split:active { background: linear-gradient(var(--accent), var(--accent)) center / 100% 3px no-repeat; }
 .lp-lower { flex: none; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.lp-fields { flex: none; display: flex; flex-direction: column; gap: 4px; min-width: 0; overflow-y: auto; }
+.lp-fields { flex: none; display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 18px; min-width: 0; }
+.lp-fields .title { flex-basis: 100%; }
 .lp-data .row .read { color: var(--muted, var(--text)); font-family: var(--font-mono); }
-.lp-speed { flex: 1; min-width: 140px; min-height: 0; display: flex; flex-direction: column; gap: 2px; }
+.lp-speed { flex: 1; min-width: 0; min-height: 120px; display: flex; flex-direction: column; gap: 2px; }
+.lp-data.tall .lp-speed { flex: none; }
+/* The green line under the speed graph: drag it for the graph's height. */
+.lp-grip { flex: none; height: 7px; margin-top: 2px; cursor: ns-resize; touch-action: none; background: linear-gradient(#2fa84f, #2fa84f) center / 100% 3px no-repeat; border-radius: 2px; opacity: 0.55; }
+.lp-grip:hover, .lp-grip:active { opacity: 1; }
+/* The view bar over the picture (zoom out, the zoom, zoom in, Fit). */
+.lp-viewbar { flex: none; display: flex; align-items: center; gap: 4px; padding: 2px 6px; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); font-size: 12px; }
+.lp-viewbar .lp-zoom { padding: 0 8px; min-width: 24px; }
+.lp-zoom-label { min-width: 3.5em; text-align: center; color: var(--muted); font-family: var(--font-mono); }
 .lp-speed .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lp-speed-canvas { flex: 1; min-height: 0; width: 100%; display: block; touch-action: none; }
 .lp-lower[hidden], .lp-split[hidden] { display: none; }
@@ -888,3 +897,8 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 .lp-sect:not(:has(> :not([hidden]))) { display: none; }
 .lp-motion .lp-motion-info { flex: 1 0 100%; margin: 0; }
 .lp-motion .lp-parent { max-width: 11em; }
+
+/* The speed graph's header: its title, and the buttons that fit the graph to the whole path or to the picked node's section. */
+.lp-speed-bar { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.lp-speed-bar .title { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lp-speed-bar button { flex: none; padding: 0 8px; font-size: 11px; }

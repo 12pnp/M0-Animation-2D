@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildCurve, endFrame } from "@/edit/motionPath";
-import { arrivalFrames, clampSpeed, multiplierOf, nodeProgress, placeAtFrame, progressAtFrame, SPEED_MAX, SPEED_MIN, speedAt, timeMap } from "@/edit/twinSpline";
+import { buildCurve, endFrame, reversePath } from "@/edit/motionPath";
+import { arrivalFrames, clampSpeed, multiplierOf, nodeProgress, placeAtFrame, progressAtFrame, setSpeedLegs, SPEED_MAX, SPEED_MIN, slopesOf, speedAt, timeMap, withSpeedSlope } from "@/edit/twinSpline";
 import type { MotionPath } from "@/model/sidecar";
 
 /** TwinSpline (docs/TWINSPLINE-PLAN.md): the speed spline over a ring, and the time it makes. */
@@ -79,5 +79,38 @@ describe("the time it makes", () => {
     expect(a.at(-1)).toBeCloseTo(endFrame(m), 6);
     expect(a.every((f, i) => i === 0 || f > a[i - 1]!)).toBe(true);
     expect(arrivalFrames(path([], { closed: false }))).toHaveLength(4);
+  });
+});
+
+describe("the speed spline's legs", () => {
+  const m = path([0, 2, -0.5, 1]);
+
+  it("are automatic until set: setting none leaves the curve as it was", () => {
+    expect(slopesOf(m, 1)).toMatchObject({ broken: false, own: false });
+    const same = setSpeedLegs(m, 1, "auto");
+    for (const p of [0.1, 0.4, 0.8]) expect(speedAt(same, p)).toBe(speedAt(m, p));
+  });
+
+  it("bend the curve when a leg is set, and the curve still passes through the node's value", () => {
+    const steep = withSpeedSlope(m, 1, "out", 20), xs = nodeProgress(steep);
+    expect(slopesOf(steep, 1)).toMatchObject({ out: 20, into: 20, own: true, broken: false });
+    expect(speedAt(steep, xs[1]!)).toBeCloseTo(speedAt(m, xs[1]!), 6);
+    expect(speedAt(steep, (xs[1]! + xs[2]!) / 2)).not.toBeCloseTo(speedAt(m, (xs[1]! + xs[2]!) / 2), 3);
+  });
+
+  it("break (each leg on its own, the curve unchanged), then mirror (the way out wins)", () => {
+    const steep = withSpeedSlope(m, 1, "out", 3), broken = setSpeedLegs(steep, 1, "break"), xs = nodeProgress(m);
+    expect(slopesOf(broken, 1)).toMatchObject({ out: 3, into: 3, broken: true });
+    expect(speedAt(broken, (xs[0]! + xs[1]!) / 2)).toBeCloseTo(speedAt(steep, (xs[0]! + xs[1]!) / 2), 9);
+    const moved = withSpeedSlope(broken, 1, "in", -4);
+    expect(slopesOf(moved, 1)).toMatchObject({ out: 3, into: -4, broken: true });
+    expect(slopesOf(setSpeedLegs(moved, 1, "mirror"), 1)).toMatchObject({ out: 3, into: 3, broken: false });
+    expect(slopesOf(setSpeedLegs(moved, 1, "auto"), 1).own).toBe(false);
+  });
+
+  it("run the other way when the path is reversed: the slopes change sign and swap sides", () => {
+    const broken = setSpeedLegs(withSpeedSlope(m, 1, "out", 3), 1, "break"), moved = withSpeedSlope(broken, 1, "in", -4), back = reversePath({ ...moved, closed: false });
+    const at = back.nodes.findIndex((n) => n.speed === 2);
+    expect(back.nodes[at]).toMatchObject({ ss: 4, sb: -3 });
   });
 });

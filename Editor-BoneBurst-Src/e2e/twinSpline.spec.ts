@@ -55,8 +55,10 @@ test("a speed for each node: a point in the graph, the Speed field, a drag, a do
   await field.press("Enter");
   await expect.poll(async () => (await nodes(page))[1]!.speed).toBe(-0.99);
   // Drag node 3's point up with the mouse: its speed rises.
-  const box = (await panel.locator(".lp-speed-canvas").boundingBox())!;
+  // The graph is under the node's fields; in a narrow panel the area scrolls to it.
+  await panel.locator(".lp-speed-canvas").scrollIntoViewIfNeeded();
   await page.waitForTimeout(200);
+  const box = (await panel.locator(".lp-speed-canvas").boundingBox())!;
   const d = (await dots(page)).find((q) => q.i === 2)!;
   await page.mouse.move(box.x + d.x, box.y + d.y);
   await page.mouse.down();
@@ -67,8 +69,8 @@ test("a speed for each node: a point in the graph, the Speed field, a drag, a do
   expect(raised).toBeLessThanOrEqual(5);
   // A double click on the point puts it back to 0.
   await page.waitForTimeout(200);
-  const e = (await dots(page)).find((q) => q.i === 2)!;
-  await page.mouse.dblclick(box.x + e.x, box.y + e.y);
+  const e = (await dots(page)).find((q) => q.i === 2)!, now = (await panel.locator(".lp-speed-canvas").boundingBox())!;
+  await page.mouse.dblclick(now.x + e.x, now.y + e.y);
   await expect.poll(async () => (await nodes(page))[2]!.speed ?? 0).toBe(0);
   // Undo takes the double click back, then the drag as one step.
   await page.evaluate(() => { const s = (window as unknown as Live).boneburst.session; s.history.undo(); s.changed(); });
@@ -135,4 +137,50 @@ test("the line above the node numbers is dragged: the area under it grows and th
   const s3 = (await split.boundingBox())!;
   await page.mouse.dblclick(s3.x + s3.width / 2, s3.y + s3.height / 2);
   await expect.poll(async () => Math.round((await lower.boundingBox())!.height)).toBe(Math.round(h0));
+});
+
+test("the speed graph: the cap on its ruler scrubs the playhead and says the length along the ring; the graph zooms and pans along the path; Node fits one section; each node has two legs that bend the curve", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 950 });
+  await open(page);
+  const panel = page.locator(".panel.motion-path"), canvas = panel.locator(".lp-speed-canvas");
+  await startEditPath(panel);
+  await panel.getByRole("button", { name: "Add a spline node" }).click();
+  await expect.poll(async () => (await dots(page)).length).toBe(3);
+  await panel.locator(".lp-slots button.node").nth(0).click();
+  await canvas.scrollIntoViewIfNeeded();
+  const frame = () => page.evaluate(() => (window as unknown as { boneburst: { session: { frame: number } } }).boneburst.session.frame);
+  const handles = () => page.evaluate(() => (window as unknown as { boneburst: { motionPath: { speedHandles: { i: number; side: string; x: number; y: number }[] } } }).boneburst.motionPath.speedHandles);
+  const box = async () => (await canvas.boundingBox())!;
+  // The cap: pressing the ruler (the band above the plot) puts the playhead there, a frame by the bone's own pace.
+  const b0 = await box();
+  expect(await frame()).toBe(0);
+  await page.mouse.click(b0.x + b0.width / 2, b0.y + 8);
+  await expect.poll(frame).toBeGreaterThan(0);
+  // Every node has two legs (a ring): six handles for three nodes.
+  await expect.poll(async () => (await handles()).length).toBe(6);
+  // Bend: drag node 2's way-out leg up; its slope is stored, and the curve past the node changes.
+  const leg = (await handles()).find((h) => h.i === 1 && h.side === "out")!, b1 = await box();
+  await page.mouse.move(b1.x + leg.x, b1.y + leg.y);
+  await page.mouse.down();
+  await page.mouse.move(b1.x + leg.x + 10, b1.y + leg.y - 50, { steps: 5 });
+  await page.mouse.up();
+  await expect.poll(async () => ((await nodes(page))[1] as { ss?: number }).ss).toBeGreaterThan(0);
+  // Wheel zooms along the path: the nodes spread apart; Fit puts the whole path back.
+  const gap = async () => { const d = await dots(page); return Math.abs(d[1]!.x - d[0]!.x); };
+  const before = await gap(), b2 = await box();
+  await page.mouse.move(b2.x + b2.width / 2, b2.y + b2.height / 2);
+  await page.mouse.wheel(0, -400);
+  await expect.poll(gap).toBeGreaterThan(before * 1.3);
+  // Pan by dragging empty graph: the points move sideways.
+  const x0 = (await dots(page))[0]!.x, b3 = await box();
+  await page.mouse.move(b3.x + b3.width / 2, b3.y + b3.height - 8);
+  await page.mouse.down();
+  await page.mouse.move(b3.x + b3.width / 2 + 60, b3.y + b3.height - 8, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(async () => (await dots(page))[0]!.x).toBeGreaterThan(x0 + 30);
+  await panel.locator(".lp-speed-bar").getByRole("button", { name: "Fit" }).click();
+  await expect.poll(gap).toBeCloseTo(before, 0);
+  // Node: the picked node's section fills the graph (the gap to the next node is wider than the whole path's).
+  await panel.locator(".lp-speed-bar").getByRole("button", { name: "Node" }).click();
+  await expect.poll(gap).toBeGreaterThan(before * 1.5);
 });

@@ -84,3 +84,22 @@ Handles on the speed spline (its own curve shape per node), a speed graph per an
 - Removed with Adjust time: the mode and its buttons and fields, `speedGrid.ts` and its spec, the Timeline's block tabs, `Session.pickedBlock`, `Stage.dragLocked`, the E shortcut, `MotionMemory.mode` and `time`.
 - Tests: `tests/twinSpline.test.ts`, `e2e/twinSpline.spec.ts`; `e2e/motionPath.spec.ts` lost its Adjust time tests and gained the bake and total-frames ones.
 - The speed graph shares the data box with the node numbers' fields side by side, so in a narrow panel (under about 480 px) the graph is small.
+
+## Graph cap, pan, fit and legs (2026-10-08, built, not verified by hand)
+
+Asked: a cap to drag like the Timeline's, but showing the length along the ring and not the frame; the graph pans sideways; a button that fits one node's section; legs on the graph's nodes. Also earlier the same day: the graph spans the full width, a green line under it sets its height, a view bar over the picture, and a right-click / ⌘ + click menu on the graph (add a node, delete it, break its legs).
+
+```mermaid
+flowchart LR
+    RULER["ruler: lengths along the ring<br/>(progress × curveOf(m).length)"] --> CAP["cap = the playhead at progressAtFrame<br/>drag → seek(timeMap.time(p) × endFrame)"]
+    VIEW["gView {x0, x1} in progress<br/>wheel zooms · sideways wheel, Shift + wheel, drag on empty graph pan"] --> PLOT["gx(p) · gp(x)"]
+    FIT["Fit · Node buttons<br/>fitGraph(section)"] --> VIEW
+    NODE["MotionNode.ss / .sb<br/>slope out / broken slope in"] --> SLOPES["slopesOf(m, i)<br/>(edit/twinSpline.ts)"]
+    SLOPES --> SPD["speedAt: cubic Hermite<br/>out slope at a span's start, in slope at its end"]
+    SLOPES --> LEGS["two hollow handles per node on the graph<br/>drag bends · Alt + drag breaks · double-click: automatic"]
+```
+
+- **Legs.** `MotionNode` gets `ss` (the slope, speed per unit of progress, the curve leaves a node by; the way in mirrors it) and `sb` (a broken leg's own way in, only with `ss`). Absent = the automatic slope from the neighbours, so a path with no legs draws exactly as before. `slopesOf`, `withSpeedSlope`, `setSpeedLegs` (break / mirror / auto) are in `edit/twinSpline.ts`; `reversePath` swaps and negates them; the sidecar writes `ss` and `sb`.
+- **Cap and ruler.** The ruler's x is the length along the ring in the path's own units. The cap shows the playhead's length (not its frame); pressing or dragging the ruler seeks the frame the bone passes that place on (the time map's inverse).
+- **View.** Pan and zoom are the graph's own (`gView`), reset when another path is shown; the Fit button shows the whole path, Node the picked node's section, double-click on empty graph fits all.
+- **Guards.** `tests/twinSpline.test.ts` (legs), `tests/sidecar.test.ts` (round trip), `e2e/twinSpline.spec.ts` (cap, zoom, pan, fit, leg drag), `e2e/motionPath.spec.ts` (the graph's menu, the green line).

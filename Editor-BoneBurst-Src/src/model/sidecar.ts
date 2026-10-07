@@ -64,6 +64,10 @@ export interface MotionNode {
   readonly id?: number;
   /** The speed spline's value at this node (docs/TWINSPLINE-PLAN.md): -0.99 to 5, the bone goes `1 + speed` times as fast here; absent = 0, an even pace. */
   readonly speed?: number;
+  /** The speed spline's leg at this node (docs/TWINSPLINE-PLAN.md, "Legs"): the slope (speed per unit of progress) it leaves by; the way in mirrors it. Absent = automatic. */
+  readonly ss?: number;
+  /** A broken speed leg: the slope the speed spline arrives by, no longer the mirror of `ss`. Only with `ss`. */
+  readonly sb?: number;
 }
 
 /**

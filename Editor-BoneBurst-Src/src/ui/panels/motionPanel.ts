@@ -1,7 +1,7 @@
 import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { EditRefused } from "@/edit/history";
-import { curveOf, handleOffsets, nodeLabels, moveNode, withNode, withOrigin, midAfter, mergeNodes, renumberNodes, reversePath, breakLegs, mirrorLegs, withFrames } from "@/edit/motionPath";
-import { clampSpeed, multiplierOf, nodeProgress, progressAtFrame, SPEED_MAX, SPEED_MIN, speedAt, speedOf } from "@/edit/twinSpline";
+import { curveOf, endFrame, handleOffsets, nodeLabels, moveNode, withNode, withOrigin, midAfter, mergeNodes, renumberNodes, reversePath, breakLegs, mirrorLegs, withFrames } from "@/edit/motionPath";
+import { clampSpeed, multiplierOf, nodeProgress, progressAtFrame, setSpeedLegs, SPEED_MAX, SPEED_MIN, slopesOf, speedAt, speedOf, timeMap, withSpeedSlope } from "@/edit/twinSpline";
 import { drawnVertices } from "@/engine/draw";
 import { boneInherit } from "@/model/defaults";
 import type { Skeleton } from "@/model/skeleton";
@@ -32,8 +32,9 @@ const GIZMOS = ["rotate", "move", "scale", "shear"] as const;
 /** The path's dots and the lengths between them. */
 const DOT = "#ff2bd6";
 /** The height of what is under the picture at first, and the least of it and of the picture. */
-const DEFAULT_LOWER = 270, MIN_LOWER = 150, MIN_PICTURE = 120;
+const DEFAULT_LOWER = 270, MIN_LOWER = 150, MIN_PICTURE = 120, MIN_GRAPH = 60;
 const LOWER_KEY = "boneburst.motionPath.lower";
+const GRAPH_KEY = "boneburst.motionPath.graphHeight";
 /** A node's speed as the field it is stored in: nothing for 0, an even pace. */
 const speedPatch = (v: number): { speed?: number } => (v ? { speed: v } : {});
 /** The part of the spline that belongs to the picked node. */
@@ -195,8 +196,21 @@ export class MotionPathPanel {
   private lowerSet = false;
   /** The speed spline's graph, and its points on the canvas as last drawn; the point being dragged. */
   private readonly speedCanvas = document.createElement("canvas");
+  /** The green line under the speed graph: drag it to make the graph taller or shorter (double-click: it fills the room again). */
+  private readonly speedGrip = document.createElement("div");
+  /** The graph's own height in pixels, or null to fill what the area gives it. */
+  private graphHeight: number | null = null;
+  private readonly viewBar = document.createElement("div");
+  private readonly zoomLabel = document.createElement("span");
   private speedDots: { i: number; x: number; y: number }[] = [];
   private speedDrag: number | null = null;
+  /** The speed graph's legs as last drawn, the one being dragged, the visible window along the path (0..1), a pan in progress and the cap being dragged. */
+  private speedLegs: { i: number; side: "out" | "in"; x: number; y: number }[] = [];
+  private legDrag: { i: number; side: "out" | "in" } | null = null;
+  private gView = { x0: 0, x1: 1 };
+  private graphPan: { x: number; x0: number; x1: number } | null = null;
+  private capDrag = false;
+  private gViewFor = "";
   private slotSig = "";
   /** The path as a held number would leave it (and the two nodes), drawn dashed on the canvas while it is dragged. */
   private nodePreview: { motion: MotionPath; from: number } | null = null;
@@ -284,7 +298,18 @@ export class MotionPathPanel {
     const fit = iconButton(this.button("Fit", "Fit the whole path in the panel (double-click does the same)"), "fit", false);
     fit.className = "lp-fit";
     fit.addEventListener("click", () => this.fitView());
-    this.body.append(this.canvas, this.note, fit);
+    // The view bar over the picture: zoom out, the zoom, zoom in, Fit.
+    this.viewBar.className = "lp-viewbar";
+    const zoomBtn = (text: string, tip: string, factor: number): HTMLButtonElement => {
+      const b = this.button(text, tip);
+      b.className = "lp-zoom";
+      b.addEventListener("click", () => this.zoomBy(factor));
+      return b;
+    };
+    this.zoomLabel.className = "lp-zoom-label";
+    this.zoomLabel.title = "The picture's zoom (1 = the whole path fitted)";
+    this.viewBar.append(zoomBtn("−", "Zoom out", 1 / 1.25), this.zoomLabel, zoomBtn("+", "Zoom in", 1.25), fit);
+    this.body.append(this.canvas, this.note);
     this.motionBar.className = "lp-motion";
     this.motionInfo.className = "lp-motion-info";
     this.motionBtns = {
@@ -336,10 +361,16 @@ export class MotionPathPanel {
     this.lower.append(this.slotBar, this.dataBox);
     this.speedCanvas.className = "lp-speed-canvas";
     try { const h = Number(localStorage.getItem(LOWER_KEY)); if (Number.isFinite(h) && h >= MIN_LOWER) { this.lowerHeight = h; this.lowerSet = true; } } catch { /* the usual */ }
+    try { const h = Number(localStorage.getItem(GRAPH_KEY)); if (Number.isFinite(h) && h >= MIN_GRAPH) this.graphHeight = h; } catch { /* the usual */ }
+    this.speedGrip.className = "lp-grip";
+    this.speedGrip.title = "Drag to make the speed graph taller or shorter (double-click: it fills the room again)";
+    this.speedGrip.setAttribute("role", "separator");
+    this.applyGraph();
+    this.gripDrag();
     this.applyLower();
     this.splitDrag();
     this.speedEvents();
-    this.element.append(this.head, this.motionBar, this.body, this.split, this.lower);
+    this.element.append(this.head, this.motionBar, this.viewBar, this.body, this.split, this.lower);
     new ResizeObserver(() => this.schedule()).observe(this.lower);
     // The canvas is as big as its box, whatever else the panel holds (the path window under it).
     new ResizeObserver(() => this.schedule()).observe(this.body);
@@ -470,6 +501,7 @@ export class MotionPathPanel {
   }
 
   private draw(): void {
+    this.zoomLabel.textContent = `${Math.round(this.zoom * 100)}%`;
     const s = this.session, r = this.trail();
     for (const l of LAYERS) this.layerBtns[l].setAttribute("aria-pressed", String(this.show[l]));
     this.updateMotionBar();
@@ -1224,10 +1256,53 @@ export class MotionPathPanel {
   private speedColumn(doc: Document): HTMLElement {
     const col = doc.createElement("div"), head = doc.createElement("div");
     col.className = "lp-speed";
-    head.className = "title";
-    head.textContent = `Speed spline · ${SPEED_MIN} to ${SPEED_MAX}: the bone goes 1 + it times as fast`;
-    col.append(head, this.speedCanvas);
+    head.className = "lp-speed-bar";
+    const title = doc.createElement("span");
+    title.className = "title";
+    title.textContent = `Speed spline · ${SPEED_MIN} to ${SPEED_MAX}: the bone goes 1 + it times as fast`;
+    const fitAll = this.button("Fit", "Show the whole path across the graph (double-click on the graph does the same)"), fitNode = this.button("Node", "Fit the picked node's section: from it to the next node");
+    fitAll.addEventListener("click", () => this.fitGraph(false));
+    fitNode.addEventListener("click", () => this.fitGraph(true));
+    fitNode.disabled = this.selNode < 0;
+    head.append(title, fitAll, fitNode);
+    col.append(head, this.speedCanvas, this.speedGrip);
     return col;
+  }
+
+  /** The graph's own height, when set; the area under the picture then scrolls if the graph is taller than it. */
+  private applyGraph(): void {
+    this.speedCanvas.style.flex = this.graphHeight === null ? "" : "none";
+    this.speedCanvas.style.height = this.graphHeight === null ? "" : `${this.graphHeight}px`;
+    this.dataBox.classList.toggle("tall", this.graphHeight !== null);
+  }
+
+  /** The green line under the graph is dragged: down makes the graph taller, up shorter. */
+  private gripDrag(): void {
+    const g = this.speedGrip, root = g.ownerDocument.documentElement;
+    g.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      g.setPointerCapture(e.pointerId);
+      root.classList.add("bb-gripping-row");
+      const y0 = e.clientY, h0 = this.speedCanvas.getBoundingClientRect().height / pageScale();
+      const move = (ev: PointerEvent): void => { this.graphHeight = Math.max(MIN_GRAPH, Math.round(h0 + (ev.clientY - y0) / pageScale())); this.applyGraph(); this.schedule(); };
+      const up = (): void => {
+        g.removeEventListener("pointermove", move);
+        g.removeEventListener("pointerup", up);
+        g.removeEventListener("pointercancel", up);
+        root.classList.remove("bb-gripping-row");
+        try { if (this.graphHeight !== null) localStorage.setItem(GRAPH_KEY, String(this.graphHeight)); } catch { /* not kept */ }
+      };
+      g.addEventListener("pointermove", move);
+      g.addEventListener("pointerup", up);
+      g.addEventListener("pointercancel", up);
+    });
+    g.addEventListener("dblclick", () => {
+      this.graphHeight = null;
+      this.applyGraph();
+      try { localStorage.removeItem(GRAPH_KEY); } catch { /* not kept */ }
+      this.schedule();
+    });
   }
 
   /** The height of the area under the picture: its wish as a flex basis, so a small panel takes it down (to its least) and the picture keeps its least. */
@@ -1270,24 +1345,55 @@ export class MotionPathPanel {
     this.split.addEventListener("dblclick", () => { this.setLower(DEFAULT_LOWER, true); this.lowerSet = false; this.applyLower(); });
   }
 
-  /** The graph's plot box on its canvas (CSS pixels): where progress 0..1 and the speed range are drawn. */
+  /** The graph's plot box on its canvas (CSS pixels): where the visible progress and the speed range are drawn; a ruler of lengths runs above it. */
   private plot(): { l: number; r: number; t: number; b: number } {
     const c = this.speedCanvas;
-    return { l: 40, r: Math.max(41, c.clientWidth - 10), t: 10, b: Math.max(11, c.clientHeight - 20) };
+    return { l: 40, r: Math.max(41, c.clientWidth - 10), t: 28, b: Math.max(29, c.clientHeight - 20) };
   }
 
-  /** Draw the speed spline: the value (-0.99 to 5) up, the path's progress across; a point for each node, the picked one lit, a line at 0 (an even pace) and where the playhead is. */
+  /** The canvas x of a progress (0..1 along the ring) in the visible window, and back. */
+  private gx(p: number): number {
+    const { l, r } = this.plot(), { x0, x1 } = this.gView;
+    return l + ((p - x0) / (x1 - x0)) * (r - l);
+  }
+
+  private gp(x: number): number {
+    const { l, r } = this.plot(), { x0, x1 } = this.gView;
+    return x0 + ((x - l) / (r - l)) * (x1 - x0);
+  }
+
+  /** The visible window set (at least 2% of the path, inside 0..1). */
+  private setView(x0: number, x1: number): void {
+    const w = Math.min(1, Math.max(0.02, x1 - x0)), a = Math.min(1 - w, Math.max(0, x0));
+    this.gView = { x0: a, x1: a + w };
+    this.schedule();
+  }
+
+  /** The whole path across the graph, or (with `section`) the picked node's section: from it to the next node. */
+  private fitGraph(section: boolean): void {
+    const m = motionFor(this.session);
+    if (!section || !m || this.selNode < 0) { this.setView(0, 1); return; }
+    const xs = nodeProgress(m), a = xs[this.selNode] ?? 0, b = xs[this.selNode + 1] ?? (m.closed ? 1 : a), pad = Math.max(0.01, (b - a) * 0.08);
+    if (b - a < 1e-6) { this.setView(0, 1); return; }
+    this.setView(a - pad, b + pad);
+  }
+
+  /** Draw the speed spline: the value (-0.99 to 5) up, the path's length across (the ruler above shows it, and the cap is the playhead); a point and two legs for each node, the picked one lit, a line at 0 (an even pace). */
   private drawSpeed(): void {
     const s = this.session, m = motionFor(s), c = this.speedCanvas;
     this.speedDots = [];
+    this.speedLegs = [];
     if (!m || !c.isConnected || this.dataBox.hidden) return;
+    // Another path starts with the whole of it in view.
+    if (this.gViewFor !== `${m.animation}/${m.bone}`) { this.gViewFor = `${m.animation}/${m.bone}`; this.gView = { x0: 0, x1: 1 }; }
     const w = Math.max(1, Math.floor(c.clientWidth)), h = Math.max(1, Math.floor(c.clientHeight)), dpr = (window.devicePixelRatio || 1) * pageScale();
     if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
     const g = c.getContext("2d")!;
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     g.clearRect(0, 0, w, h);
     const css = getComputedStyle(this.element), accent = css.getPropertyValue("--accent").trim() || "#4c9bff", text = css.getPropertyValue("--text").trim() || "#ddd", line = css.getPropertyValue("--line").trim() || "#555", muted = css.getPropertyValue("--muted").trim() || "#999";
-    const { l, r, t, b } = this.plot(), X = (p: number): number => l + p * (r - l), Y = (v: number): number => t + ((SPEED_MAX - v) / (SPEED_MAX - SPEED_MIN)) * (b - t);
+    const { l, r, t, b } = this.plot(), X = (p: number): number => this.gx(p), Y = (v: number): number => t + ((SPEED_MAX - v) / (SPEED_MAX - SPEED_MIN)) * (b - t);
+    const length = curveOf(m).length, { x0, x1 } = this.gView, kx = (r - l) / (x1 - x0), ky = (b - t) / (SPEED_MAX - SPEED_MIN);
     g.font = `10px "JetBrains Mono", monospace`;
     g.textBaseline = "middle";
     g.textAlign = "right";
@@ -1304,31 +1410,54 @@ export class MotionPathPanel {
       g.fillStyle = v === 0 ? text : muted;
       g.fillText(String(v), l - 5, y);
     }
-    const xs = nodeProgress(m), labels = nodeLabels(m);
-    // Where each node is along the path, and the playhead's place.
+    // The ruler: the length along the ring (the path's own units), not frames.
+    g.fillStyle = muted;
+    g.strokeStyle = line;
     g.textAlign = "center";
     g.textBaseline = "top";
-    xs.forEach((p, i) => {
+    const raw = ((x1 - x0) * length) / Math.max(1, (r - l) / 80), mag = 10 ** Math.floor(Math.log10(Math.max(raw, 1e-6))), step = (raw / mag <= 1 ? 1 : raw / mag <= 2 ? 2 : raw / mag <= 5 ? 5 : 10) * mag;
+    g.beginPath(); g.moveTo(l, 18.5); g.lineTo(r, 18.5); g.stroke();
+    if (length > 0 && step > 0) for (let v = Math.ceil((x0 * length) / step) * step; v <= x1 * length + 1e-9; v += step) {
+      const x = Math.round(X(v / length)) + 0.5;
+      g.beginPath(); g.moveTo(x, 14); g.lineTo(x, 19); g.stroke();
+      g.fillText(String(Math.round(v * 1e3) / 1e3), x, 3);
+    }
+    g.save();
+    g.beginPath(); g.rect(l, t, r - l, b - t); g.clip();
+    const xs = nodeProgress(m), labels = nodeLabels(m);
+    // Where each node is along the path.
+    xs.forEach((p) => {
       const x = Math.round(X(p)) + 0.5;
       g.strokeStyle = line;
       g.globalAlpha = 0.6;
       g.beginPath(); g.moveTo(x, t); g.lineTo(x, b); g.stroke();
       g.globalAlpha = 1;
-      g.fillStyle = i === this.selNode ? text : muted;
-      g.fillText(String(labels[i]), x, b + 4);
     });
-    const here = Math.round(X(progressAtFrame(m, s.frame))) + 0.5;
-    g.strokeStyle = DOT;
-    g.setLineDash([3, 3]);
-    g.beginPath(); g.moveTo(here, t); g.lineTo(here, b); g.stroke();
-    g.setLineDash([]);
     // The curve through the points.
     g.strokeStyle = accent;
     g.lineWidth = 2;
     g.lineJoin = "round";
     g.beginPath();
-    for (let k = 0; k <= 200; k++) { const p = k / 200, x = X(p), y = Y(speedAt(m, p)); if (k === 0) g.moveTo(x, y); else g.lineTo(x, y); }
+    const steps = Math.max(200, Math.round(r - l));
+    for (let k = 0; k <= steps; k++) { const p = x0 + ((x1 - x0) * k) / steps, x = X(p), y = Y(speedAt(m, p)); if (k === 0) g.moveTo(x, y); else g.lineTo(x, y); }
     g.stroke();
+    // The legs: a hollow round handle each side of a node, on a thin stem, in the slope the curve leaves and arrives by.
+    const LEG = 34;
+    xs.forEach((p, i) => {
+      const sl = slopesOf(m, i), x = X(p), y = Y(speedOf(m.nodes[i]!)), on = i === this.selNode;
+      for (const side of ["out", "in"] as const) {
+        if ((side === "in" && i === 0 && !m.closed) || (side === "out" && i === xs.length - 1 && !m.closed)) continue;
+        const slope = side === "out" ? sl.out : sl.into, dx = kx, dy = -slope * ky, len = Math.hypot(dx, dy) || 1, sign = side === "out" ? 1 : -1;
+        const hx = x + (sign * dx * LEG) / len, hy = y + (sign * dy * LEG) / len;
+        g.strokeStyle = accent;
+        g.lineWidth = 1;
+        g.globalAlpha = on ? 1 : 0.55;
+        g.beginPath(); g.moveTo(x, y); g.lineTo(hx, hy); g.stroke();
+        g.beginPath(); g.arc(hx, hy, on ? 5 : 4, 0, Math.PI * 2); g.stroke();
+        g.globalAlpha = 1;
+        this.speedLegs.push({ i, side, x: hx, y: hy });
+      }
+    });
     // A point on each node's place (a ring's last span comes back to the first).
     xs.forEach((p, i) => {
       const x = X(p), y = Y(speedOf(m.nodes[i]!)), on = i === this.selNode, half = on ? 6 : 5;
@@ -1337,6 +1466,31 @@ export class MotionPathPanel {
       if (on) { g.strokeStyle = "#ffffff"; g.lineWidth = 1.5; g.stroke(); }
       this.speedDots.push({ i, x, y });
     });
+    g.restore();
+    g.textAlign = "center";
+    g.textBaseline = "top";
+    xs.forEach((p, i) => {
+      const x = X(p);
+      if (x < l - 4 || x > r + 4) return;
+      g.fillStyle = i === this.selNode ? text : muted;
+      g.fillText(String(labels[i]), Math.round(x) + 0.5, b + 4);
+    });
+    // The cap: the playhead, as on the Timeline, dragged along the ruler; it says how far along the ring the bone is, in the path's units, not the frame.
+    const hp = progressAtFrame(m, s.frame), hx = Math.round(X(hp)) + 0.5;
+    if (hx >= l - 1 && hx <= r + 1) {
+      g.strokeStyle = DOT;
+      g.setLineDash([3, 3]);
+      g.lineWidth = 1;
+      g.beginPath(); g.moveTo(hx, 19); g.lineTo(hx, b); g.stroke();
+      g.setLineDash([]);
+      const label = String(Math.round(hp * length * 100) / 100), cw = Math.max(26, label.length * 6 + 10);
+      g.fillStyle = DOT;
+      g.beginPath();
+      g.moveTo(hx - cw / 2, 1); g.lineTo(hx + cw / 2, 1); g.lineTo(hx + cw / 2, 14); g.lineTo(hx, 20); g.lineTo(hx - cw / 2, 14); g.closePath(); g.fill();
+      g.fillStyle = "#ffffff";
+      g.textBaseline = "middle";
+      g.fillText(label, hx, 8);
+    }
   }
 
   /** The speed graph's points on its canvas as last drawn (CSS pixels), for tests. */
@@ -1344,16 +1498,33 @@ export class MotionPathPanel {
     return this.speedDots;
   }
 
+  /** The speed graph's legs on its canvas as last drawn (CSS pixels), for tests. */
+  get speedHandles(): readonly { i: number; side: "out" | "in"; x: number; y: number }[] {
+    return this.speedLegs;
+  }
+
+  /** The speed value a point of the graph's canvas stands for, not held to the range. */
+  private valueAtY(y: number): number {
+    const { t, b } = this.plot();
+    return SPEED_MAX - ((y - t) / (b - t)) * (SPEED_MAX - SPEED_MIN);
+  }
+
   /** The speed value a point of the graph's canvas stands for (held to the range). */
   private speedAtY(y: number): number {
-    const { t, b } = this.plot();
-    return clampSpeed(SPEED_MAX - ((y - t) / (b - t)) * (SPEED_MAX - SPEED_MIN));
+    return clampSpeed(this.valueAtY(y));
   }
 
   /** The point of the graph under a canvas point, or -1. */
   private speedDotAt(x: number, y: number): number {
     let best = -1, bestD = 11;
     for (const d of this.speedDots) { const q = Math.hypot(d.x - x, d.y - y); if (q <= bestD) { best = d.i; bestD = q; } }
+    return best;
+  }
+
+  /** The leg under a canvas point, or null. */
+  private speedLegAt(x: number, y: number): { i: number; side: "out" | "in" } | null {
+    let best: { i: number; side: "out" | "in" } | null = null, bestD = 9;
+    for (const d of this.speedLegs) { const q = Math.hypot(d.x - x, d.y - y); if (q <= bestD) { best = { i: d.i, side: d.side }; bestD = q; } }
     return best;
   }
 
@@ -1364,12 +1535,63 @@ export class MotionPathPanel {
     keepMotion(s, { ...m, nodes: m.nodes.map((n, k) => (k === i ? { ...n, speed: v } : n)) }, `Set the speed of node ${nodeLabels(m)[i]}`, join);
   }
 
-  /** Drag a point of the graph up or down to set that node's speed (Shift: in steps of 0.1); double-click puts it back to 0. */
+  /** A leg dragged to the pointer: the slope from its node to the pointer (Alt breaks the node's legs first, so only the one held moves). */
+  private dragLeg(x: number, y: number): void {
+    const d = this.legDrag, s = this.session, m = motionFor(s);
+    if (!d || !m?.nodes[d.i]) return;
+    const np = nodeProgress(m)[d.i]!, v0 = speedOf(m.nodes[d.i]!), dp = d.side === "out" ? this.gp(x) - np : np - this.gp(x), dv = d.side === "out" ? this.valueAtY(y) - v0 : v0 - this.valueAtY(y);
+    keepMotion(s, withSpeedSlope(m, d.i, d.side, dv / Math.max(0.004, dp)), "Bend the speed spline", true);
+  }
+
+  /** The playhead goes to where the ruler was pressed: the frame the bone passes that place on. */
+  private scrubGraph(x: number): void {
+    const s = this.session, m = motionFor(s);
+    if (!m) return;
+    const p = Math.min(1, Math.max(0, this.gp(x)));
+    s.seek(Math.round(timeMap(m).time(p) * Math.max(1, endFrame(m))));
+  }
+
+  /**
+   * The graph's mouse: the ruler's cap scrubs, a leg bends the curve (Alt + drag breaks it first; double-click: automatic), a point drags up or down
+   * for its speed (Shift: in steps of 0.1; double-click: 0), empty graph pans along the path (the middle button too); the wheel zooms along the
+   * path (a sideways wheel or Shift + wheel pans); ⌘ + click or right-click opens the menu.
+   */
   private speedEvents(): void {
     const c = this.speedCanvas, at = (e: PointerEvent | MouseEvent): [number, number] => localPoint(c, e as PointerEvent);
+    c.addEventListener("contextmenu", (e) => { e.preventDefault(); const [x, y] = at(e); this.graphMenu(x, y, e.clientX, e.clientY); });
     c.addEventListener("pointerdown", (e) => {
+      const [x, y] = at(e), { t } = this.plot();
+      if (e.button === 1 || (e.button === 0 && !e.metaKey && y >= t && this.speedLegAt(x, y) === null && this.speedDotAt(x, y) < 0)) {
+        e.preventDefault();
+        this.graphPan = { x: e.clientX, x0: this.gView.x0, x1: this.gView.x1 };
+        c.setPointerCapture(e.pointerId);
+        c.style.cursor = "grabbing";
+        return;
+      }
       if (e.button !== 0) return;
-      const [x, y] = at(e), i = this.speedDotAt(x, y);
+      if (e.metaKey) { e.preventDefault(); this.graphMenu(x, y, e.clientX, e.clientY); return; }
+      if (y < t && this.speedLegAt(x, y) === null && this.speedDotAt(x, y) < 0) {
+        e.preventDefault();
+        this.session.pause();
+        this.capDrag = true;
+        c.setPointerCapture(e.pointerId);
+        this.scrubGraph(x);
+        return;
+      }
+      const leg = this.speedLegAt(x, y);
+      if (leg) {
+        e.preventDefault();
+        this.pickSlot(leg.i);
+        this.legDrag = leg;
+        this.session.history?.begin("Bend the speed spline");
+        const cur = motionFor(this.session);
+        if (e.altKey && cur) keepMotion(this.session, setSpeedLegs(cur, leg.i, "break"));
+        c.setPointerCapture(e.pointerId);
+        this.slotSig = "";
+        this.schedule();
+        return;
+      }
+      const i = this.speedDotAt(x, y);
       if (i < 0) return;
       e.preventDefault();
       this.pickSlot(i);
@@ -1381,12 +1603,23 @@ export class MotionPathPanel {
     });
     c.addEventListener("pointermove", (e) => {
       const [x, y] = at(e);
-      if (this.speedDrag === null) { c.style.cursor = this.speedDotAt(x, y) >= 0 ? "ns-resize" : ""; return; }
+      if (this.graphPan) {
+        const { l, r } = this.plot(), span = this.graphPan.x1 - this.graphPan.x0, d = ((e.clientX - this.graphPan.x) / pageScale() / (r - l)) * span;
+        this.setView(this.graphPan.x0 - d, this.graphPan.x1 - d);
+        return;
+      }
+      if (this.capDrag) { this.scrubGraph(x); return; }
+      if (this.legDrag) { this.dragLeg(x, y); this.schedule(); return; }
+      if (this.speedDrag === null) { c.style.cursor = y < this.plot().t ? "ew-resize" : this.speedLegAt(x, y) ? "pointer" : this.speedDotAt(x, y) >= 0 ? "ns-resize" : "grab"; return; }
       const raw = this.speedAtY(y), v = e.shiftKey ? clampSpeed(Math.round(raw * 10) / 10) : Math.round(raw * 100) / 100;
       this.setSpeed(this.speedDrag, clampSpeed(v));
       this.schedule();
     });
     const end = (): void => {
+      this.graphPan = null;
+      this.capDrag = false;
+      c.style.cursor = "";
+      if (this.legDrag) { this.legDrag = null; this.session.history?.end(); this.slotSig = ""; this.schedule(); return; }
       if (this.speedDrag === null) return;
       this.speedDrag = null;
       this.session.history?.end();
@@ -1395,10 +1628,62 @@ export class MotionPathPanel {
     };
     c.addEventListener("pointerup", end);
     c.addEventListener("pointercancel", end);
+    c.addEventListener("wheel", (e) => {
+      e.preventDefault();
+      const [x] = at(e), { l, r } = this.plot(), { x0, x1 } = this.gView, span = x1 - x0;
+      if (e.shiftKey || Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        const d = (e.shiftKey && Math.abs(e.deltaX) < Math.abs(e.deltaY) ? e.deltaY : e.deltaX) / pageScale();
+        this.setView(x0 + (d / (r - l)) * span, x1 + (d / (r - l)) * span);
+        return;
+      }
+      const k = Math.exp(e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), anchor = this.gp(x), w = Math.min(1, Math.max(0.02, span * k)), f = (x - l) / (r - l);
+      this.setView(anchor - f * w, anchor + (1 - f) * w);
+    }, { passive: false });
     c.addEventListener("dblclick", (e) => {
-      const [x, y] = at(e), i = this.speedDotAt(x, y);
-      if (i >= 0) { this.setSpeed(i, 0); this.slotSig = ""; this.schedule(); }
+      const [x, y] = at(e), leg = this.speedLegAt(x, y), i = this.speedDotAt(x, y), m = motionFor(this.session);
+      if (leg && m) { keepMotion(this.session, setSpeedLegs(m, leg.i, "auto"), "Automatic speed legs"); this.slotSig = ""; this.schedule(); return; }
+      if (i >= 0) { this.setSpeed(i, 0); this.slotSig = ""; this.schedule(); return; }
+      if (y >= this.plot().t) this.fitGraph(false);
     });
+  }
+
+  /** The menu of the speed graph at a canvas point: a node added at that place along the path, and over a point its delete and its legs (the curve's, drawn on the graph). */
+  private graphMenu(x: number, y: number, cx: number, cy: number): void {
+    const m = motionFor(this.session);
+    if (!m) return;
+    const i = this.speedDotAt(x, y), p = Math.min(1, Math.max(0, this.gp(x))), items: MenuItem[] = [];
+    items.push({ label: "Add a node here", run: () => this.addNodeAtProgress(p) });
+    if (i >= 0) {
+      const label = nodeLabels(m)[i]!, sl = slopesOf(m, i);
+      this.pickSlot(i);
+      items.push({ label: `Delete node ${label}`, disabled: m.nodes.length <= 2, run: () => this.removeNode() });
+      items.push({ label: sl.broken ? `Mirror the legs of ${label}` : `Break the legs of ${label}`, run: () => this.setSpeedLegsOf(i, sl.broken ? "mirror" : "break") });
+      items.push({ label: `Automatic legs for ${label}`, disabled: !sl.own, run: () => this.setSpeedLegsOf(i, "auto") });
+    }
+    showContextMenu(cx, cy, items);
+  }
+
+  /** Break, mirror or automatic: the speed spline's legs at node `i`, one undo step. */
+  private setSpeedLegsOf(i: number, how: "break" | "mirror" | "auto"): void {
+    const m = motionFor(this.session);
+    if (!m?.nodes[i]) return;
+    keepMotion(this.session, setSpeedLegs(m, i, how), how === "break" ? "Break the speed legs" : how === "mirror" ? "Mirror the speed legs" : "Automatic speed legs");
+    this.slotSig = "";
+    this.schedule();
+  }
+
+  /** A spline node on the ring where `p` (0 to 1 along its length) is, keeping the speed the graph shows there. */
+  private addNodeAtProgress(p: number): void {
+    const s = this.session, m = motionFor(s);
+    if (!m) return;
+    const curve = curveOf(m), at = curve.length * p, q = curve.at(at);
+    const i = curve.nodeAt.slice(0, m.nodes.length).filter((v) => v <= at).length, speed = Math.round(speedAt(m, p) * 100) / 100;
+    const next = withNode(m, { x: Math.round(q.x * 1e4) / 1e4, y: Math.round(q.y * 1e4) / 1e4 }, i);
+    keepMotion(s, { ...next, nodes: next.nodes.map((n, k) => (k === i ? { ...n, speed } : n)) }, "Add a spline node");
+    this.selNode = i;
+    this.multi.clear();
+    this.slotSig = "";
+    this.schedule();
   }
 
   /** What the panel keeps of how it was left, for the project's remembered view (ui/viewMemory.ts). */
@@ -2014,6 +2299,14 @@ export class MotionPathPanel {
     this.dragging = null;
     this.canvas.style.cursor = "";
     if (this.canvas.hasPointerCapture?.(e.pointerId)) this.canvas.releasePointerCapture(e.pointerId);
+  }
+
+  /** Zoom about the picture's centre by `factor` (the + and − buttons in the view bar). */
+  private zoomBy(factor: number): void {
+    const next = Math.min(200, Math.max(0.05, this.zoom * factor)), ratio = next / this.zoom;
+    this.pan = { x: this.pan.x * ratio, y: this.pan.y * ratio };
+    this.zoom = next;
+    this.schedule();
   }
 
   /** The wheel zooms about the pointer: the point under it stays put. A trackpad's pinch comes as ctrl + wheel with small steps. */

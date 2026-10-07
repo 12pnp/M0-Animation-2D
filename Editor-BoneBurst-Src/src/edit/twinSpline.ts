@@ -39,21 +39,52 @@ export function speedAt(m: Pick<MotionPath, "nodes" | "closed">, p: number): num
   const xs = nodeProgress(m), vs = m.nodes.map(speedOf);
   if (n === 1) return vs[0]!;
   const x = Math.min(1, Math.max(0, p));
-  // The points the curve runs through: on a ring, the first again at 1, and a neighbour a lap away at each end for the tangents.
+  // The points the curve runs through: on a ring, the first again at 1.
   const px = m.closed ? [...xs, 1] : xs, pv = m.closed ? [...vs, vs[0]!] : vs, last = px.length - 1;
-  const before = (i: number): [number, number] => (i > 0 ? [px[i - 1]!, pv[i - 1]!] : m.closed ? [xs[n - 1]! - 1, vs[n - 1]!] : [px[0]!, pv[0]!]);
-  const after = (i: number): [number, number] => (i < last ? [px[i + 1]!, pv[i + 1]!] : m.closed ? [1 + xs[1 % n]!, vs[1 % n]!] : [px[last]!, pv[last]!]);
-  const tangent = (i: number): number => {
-    const [x0, v0] = before(i), [x1, v1] = after(i), dx = x1 - x0;
-    return dx > 1e-9 ? (v1 - v0) / dx : 0;
-  };
   let i = 0;
   while (i < last - 1 && x > px[i + 1]!) i++;
   const x0 = px[i]!, x1 = px[i + 1]!, h = x1 - x0;
   if (h <= 1e-9) return clampSpeed(pv[i]!);
   const t = (x - x0) / h, t2 = t * t, t3 = t2 * t;
-  const v = (2 * t3 - 3 * t2 + 1) * pv[i]! + (t3 - 2 * t2 + t) * h * tangent(i) + (-2 * t3 + 3 * t2) * pv[i + 1]! + (t3 - t2) * h * tangent(i + 1);
+  // The way out of the span's start and the way in at its end: a node's own leg, or the automatic one.
+  const out = slopesOf(m, i % n).out, into = slopesOf(m, (i + 1) % n).into;
+  const v = (2 * t3 - 3 * t2 + 1) * pv[i]! + (t3 - 2 * t2 + t) * h * out + (-2 * t3 + 3 * t2) * pv[i + 1]! + (t3 - t2) * h * into;
   return clampSpeed(v);
+}
+
+/** The automatic slope at node `i`: from its neighbours (a ring runs round, so its end meets its start). */
+function autoSlope(m: Pick<MotionPath, "nodes" | "closed">, i: number): number {
+  const n = m.nodes.length, xs = nodeProgress(m), vs = m.nodes.map(speedOf);
+  if (n < 2) return 0;
+  const prev: [number, number] = i > 0 ? [xs[i - 1]!, vs[i - 1]!] : m.closed ? [xs[n - 1]! - 1, vs[n - 1]!] : [xs[0]!, vs[0]!];
+  const next: [number, number] = i < n - 1 ? [xs[i + 1]!, vs[i + 1]!] : m.closed ? [1 + xs[0]!, vs[0]!] : [xs[n - 1]!, vs[n - 1]!];
+  const dx = next[0] - prev[0];
+  return dx > 1e-9 ? (next[1] - prev[1]) / dx : 0;
+}
+
+/** The legs of the speed spline at node `i`: the slope it leaves by and the one it arrives by (equal unless broken), and whether the leg is the person's or automatic. */
+export function slopesOf(m: Pick<MotionPath, "nodes" | "closed">, i: number): { out: number; into: number; broken: boolean; own: boolean } {
+  const n = m.nodes[i]!, auto = autoSlope(m, i), out = n.ss ?? auto, broken = n.ss !== undefined && n.sb !== undefined;
+  return { out, into: broken ? n.sb! : out, broken, own: n.ss !== undefined };
+}
+
+const clampSlope = (v: number): number => (Number.isFinite(v) ? Math.round(Math.min(1e3, Math.max(-1e3, v)) * 1e3) / 1e3 : 0);
+
+/** A leg of the speed spline at node `i` set to `slope` (its way out or its way in; while the legs are mirrored, both move). */
+export function withSpeedSlope<T extends Pick<MotionPath, "nodes" | "closed">>(m: T, i: number, side: "out" | "in", slope: number): T {
+  const v = clampSlope(slope);
+  return { ...m, nodes: m.nodes.map((n, k) => (k !== i ? n : side === "in" && n.ss !== undefined && n.sb !== undefined ? { ...n, sb: v } : { ...n, ss: v })) };
+}
+
+/** The legs of the speed spline at node `i` broken (each on its own; the curve stays as it is), mirrored again (the way out wins), or both back to automatic. */
+export function setSpeedLegs<T extends Pick<MotionPath, "nodes" | "closed">>(m: T, i: number, how: "break" | "mirror" | "auto"): T {
+  const s = slopesOf(m, i);
+  return { ...m, nodes: m.nodes.map((n, k) => {
+    if (k !== i) return n;
+    const { ss: _a, sb: _b, ...rest } = n;
+    if (how === "auto") return rest;
+    return how === "break" ? { ...rest, ss: clampSlope(s.out), sb: clampSlope(s.into) } : { ...rest, ss: clampSlope(s.out) };
+  }) };
 }
 
 /** Samples of the time table: the cumulative time to each of them. */
