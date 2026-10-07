@@ -63,6 +63,8 @@ export class Inspector {
   /** The bones chosen to bind the selected unweighted mesh to (the slot's bone first), until Bind. */
   private binding: string[] = [];
   private bindingFor = "";
+  /** The tab shown under the panel's header: the selection's (or the skeleton's) properties, or the Snapping settings. */
+  private tab: "properties" | "snapping" = "properties";
 
   constructor(private readonly session: Session) {
     this.element = document.createElement("div");
@@ -76,7 +78,7 @@ export class Inspector {
     // The selected object changes exactly when its values do; the frame matters in Animate mode.
     // Nothing selected: the skeleton itself (its header), E6 step 4i.
     const target = doc && sel ? selectedObject(doc, sel) : doc && !sel ? doc.header ?? doc : undefined;
-    const key = JSON.stringify([!!doc, sel, sel ? this.session.tagsOn(sel) : null, anim ? [anim.name, s.frame, s.history?.revision] : null, s.vertex, s.weightBone, this.binding]) + (target ? identity(target) : "");
+    const key = JSON.stringify([!!doc, sel, sel ? this.session.tagsOn(sel) : null, anim ? [anim.name, s.frame, s.history?.revision] : null, s.vertex, s.weightBone, this.binding, this.tab]) + (target ? identity(target) : "");
     if (this.shown === key) return;
     // Not under a field being typed in, nor while playing: it shows the document once that ends.
     // A checkbox or menu commits as it changes, so keeping focus on one does not hold the panel.
@@ -85,15 +87,23 @@ export class Inspector {
     if (!force && (typing || s.playing)) return;
     this.shown = key;
     this.inputs.clear();
+    const tabs = this.tabBar();
+    if (this.tab === "snapping") {
+      const form = document.createElement("div");
+      form.className = "fields";
+      if (doc) form.append(this.snapFields(this.element));
+      this.element.replaceChildren(tabs, doc ? form : empty("Nothing open."));
+      return;
+    }
     if (doc && !sel) {
       const form = document.createElement("div");
       form.className = "fields";
       this.skeletonForm(form, doc);
-      this.element.replaceChildren(heading("Skeleton"), form, empty("Select a bone, slot, attachment, skin, constraint or event to see its properties."));
+      this.element.replaceChildren(tabs, heading("Skeleton"), form, empty("Select a bone, slot, attachment, skin, constraint or event to see its properties."));
       return;
     }
     if (!doc || !sel || !target) {
-      this.element.replaceChildren(heading("Properties"), empty(doc ? "Select a bone, slot, attachment, skin, constraint or event." : "Nothing open."));
+      this.element.replaceChildren(tabs, heading("Properties"), empty(doc ? "Select a bone, slot, attachment, skin, constraint or event." : "Nothing open."));
       return;
     }
     const form = document.createElement("div");
@@ -108,7 +118,24 @@ export class Inspector {
       : sel.kind === "constraint" ? `Constraint · ${KIND_TITLES[sel.type]}${anim ? ` · keys at frame ${s.frame}` : ""}` : sel.kind === "event" ? "Event" : "Attachment";
     mergePairs(form);
     form.prepend(this.tagsRow(sel));
-    this.element.replaceChildren(heading(title), form);
+    this.element.replaceChildren(tabs, heading(title), form);
+  }
+
+  /** The horizontal tabs at the top of the panel: Properties, and Snapping (which shows whatever is selected). */
+  private tabBar(): HTMLElement {
+    const bar = document.createElement("div");
+    bar.className = "inspector-tabs";
+    bar.setAttribute("role", "tablist");
+    for (const [id, text] of [["properties", "Properties"], ["snapping", "Snapping"]] as const) {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = text;
+      b.setAttribute("role", "tab");
+      b.setAttribute("aria-selected", String(this.tab === id));
+      b.addEventListener("click", () => { if (this.tab === id) return; this.tab = id; this.update(true); });
+      bar.append(b);
+    }
+    return bar;
   }
 
   /** The tags of the selection, as chips with a + that opens the tags popup (also ⌘L). */
@@ -219,7 +246,6 @@ export class Inspector {
     size.addEventListener("change", () => { const n = Number(size.value); if (size.value.trim() !== "" && Number.isFinite(n)) this.onBoneSize(n); size.value = format(s.boneSize); });
     form.append(field("Bone size", size));
     form.append(readOnly("Hash", doc.header?.hash ?? "—"));
-    form.append(this.snapFields(this.element));
   }
 
   private skinForm(form: HTMLElement, doc: Skeleton, name: string): void {

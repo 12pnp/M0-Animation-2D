@@ -68,6 +68,7 @@ test("Snapping settings sit in Properties (nothing selected) and in Preferences 
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select(null));
   const stored = () => page.evaluate(() => JSON.parse(localStorage.getItem("boneburst.preferences") ?? "{}"));
+  await page.locator(".inspector").getByRole("tab", { name: "Snapping" }).click();
   const size = page.locator(".inspector").getByRole("textbox", { name: "Snap size" });
   await size.fill("25");
   await size.press("Enter");

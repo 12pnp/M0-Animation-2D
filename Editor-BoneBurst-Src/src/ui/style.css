@@ -836,3 +836,9 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 .tags-panel .tag-row input { flex: 1; min-width: 0; }
 .tags-panel .tag-tool { margin-left: 2px; padding: 0 4px; min-width: 20px; font-size: 12px; }
 .tags-panel .tag-element { cursor: pointer; }
+
+/* The Properties panel's tab strip, under the panel's header. */
+.inspector-tabs { display: flex; gap: 2px; padding: 4px 10px 0; border-bottom: 1px solid var(--line); }
+.inspector-tabs button { padding: 4px 12px; font-size: 12px; background: transparent; border: 0; border-bottom: 2px solid transparent; border-radius: 0; color: var(--muted); }
+.inspector-tabs button:hover { color: var(--text); }
+.inspector-tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); }
