@@ -482,7 +482,8 @@ export class MotionPathPanel {
     }
     if (this.show.path && trail) this.drawPath(g, trail, bone, at, here, { accent, muted });
     // The spline is its own layer: it shows with the bone's path off, and the path with the spline off.
-    if (trail) this.drawMotion(g, at, accent);
+    // The spline's curve, nodes and handles are in the colour set for the Stage's line (the swatch in the header).
+    if (trail) this.drawMotion(g, at, this.stageColour);
     if (trail && index !== undefined && p.rig.active[index] && !constraintDriving(s.doc!, bone)) {
       if (!motionFor(s) && this.show.move) this.drawArrows(g, p, index, to, at);
       if (this.show.rotate) this.drawHandle(g, p, index, to, at, accent);
@@ -1095,6 +1096,7 @@ export class MotionPathPanel {
     this.stageSwatch.style.background = this.stageColour;
     try { localStorage.setItem(STAGE_LINE_KEY, JSON.stringify({ on: this.stageOn, colour: this.stageColour })); } catch { /* not kept */ }
     this.onStageLine();
+    this.schedule();
   }
 
   /** The bone's spline as a line in the world, for the Stage (a flat list of x, y), or null when it is off or the bone has no path or pose. Local space is the world's orientation from the parent's joint, so the parent's joint is added back. */
@@ -1683,6 +1685,13 @@ export class MotionPathPanel {
     this.selNode = -1;
   }
 
+  /** Whether a canvas point is on the spline's curve (within 10 px), in Edit Path. */
+  private onSpline(x: number, y: number): boolean {
+    const m = this.viewMotion(), at = this.spaceAt(x, y);
+    if (!m || !at || this.space !== "parent" || this.mode !== "draw") return false;
+    return curveOf(m).project({ x: at[0], y: at[1] }).distance * (this.mapping?.k ?? 1) <= 10;
+  }
+
   /** Put a spline node where a double click on the curve is (Edit Path). */
   private insertNodeAt(x: number, y: number): boolean {
     const m = motionFor(this.session), at = this.spaceAt(x, y);
@@ -1746,6 +1755,13 @@ export class MotionPathPanel {
       const tm = this.mode === "time" ? this.timeAt(x, y) : -1;
       if (tm >= 0) { this.pickTime(tm); return; }
       const node = this.mode === "draw" ? this.nodeAt(x, y) : -1;
+      // ⌘ + click on a node: the menu for its legs (break each handle on its own, or mirror them again).
+      if (node >= 0 && e.metaKey) { this.legMenu(node, e.clientX, e.clientY); return; }
+      // ⌘ + click on the curve itself: the menu to insert a node there.
+      if (node < 0 && e.metaKey && this.onSpline(x, y)) {
+        showContextMenu(e.clientX, e.clientY, [{ label: "Insert a node here", run: () => { if (this.insertNodeAt(x, y)) { this.slotSig = ""; this.schedule(); } } }]);
+        return;
+      }
       if (node >= 0) { this.pickSlot(node); this.nodeDrag = node; this.session.history?.begin("Move a spline node"); this.grab(e); return; }
       const h = this.handle;
       if (h && !this.timing && Math.hypot(h.x - x, h.y - y) <= 11 && this.beginEdit(x, y, "rotate", this.session.frame)) { this.grab(e); return; }
@@ -1766,6 +1782,16 @@ export class MotionPathPanel {
     this.dragging = { x: e.clientX, y: e.clientY };
     try { this.canvas.setPointerCapture(e.pointerId); } catch { /* no such pointer: the pan still follows moves over the canvas */ }
     this.canvas.style.cursor = "grabbing";
+  }
+
+  /** The menu of a node's legs, opened by ⌘ + click on the node: the node is picked, and its legs broken or mirrored from the menu. */
+  private legMenu(i: number, cx: number, cy: number): void {
+    const m = motionFor(this.session);
+    if (!m) return;
+    this.multi.clear();
+    this.pickSlot(i);
+    const label = nodeLabels(m)[i]!, broken = m.nodes[i]?.bx !== undefined;
+    showContextMenu(cx, cy, [{ label: broken ? `Mirror the legs of ${label}` : `Break the legs of ${label}`, run: () => this.setLegs(i, !broken) }]);
   }
 
   /** Keep the pointer for an edit drag. */
@@ -1802,7 +1828,7 @@ export class MotionPathPanel {
     }
     if (!this.dragging) {
       const [x, y] = localPoint(this.canvas, e), h = this.handle;
-      this.canvas.style.cursor = this.onTag(x, y) ? "grab" : (h && Math.hypot(h.x - x, h.y - y) <= 11) || this.arrowAt(x, y) !== null || this.markAt(x, y) >= 0 ? "grab" : "";
+      this.canvas.style.cursor = this.onTag(x, y) || (this.mode === "draw" && this.nodeAt(x, y) >= 0) ? "grab" : (h && Math.hypot(h.x - x, h.y - y) <= 11) || this.arrowAt(x, y) !== null || this.markAt(x, y) >= 0 ? "grab" : "";
       return;
     }
     this.pan = { x: this.pan.x + e.clientX - this.dragging.x, y: this.pan.y + e.clientY - this.dragging.y };
