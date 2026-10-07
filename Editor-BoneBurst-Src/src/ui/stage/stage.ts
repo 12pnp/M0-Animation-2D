@@ -83,7 +83,7 @@ export class Stage {
   autoKey = true;
   /** True while a motion path is being drawn: the bone is posed to store it, so a drag writes no keys (docs/PATH-CAPTURE-PLAN.md). */
   forceUnkeyed: () => boolean = () => false;
-  /** Whether the bone cannot be dragged now (Local Path's Adjust time edits the path's timing only). */
+  /** Whether the bone cannot be dragged now (Motion Path's Adjust time edits the path's timing only). */
   dragLocked: () => boolean = () => false;
   /** The Move tool's axes: parent's is the free drag; local and world hold it to one axis. */
   space: Space = "parent";

@@ -9,7 +9,7 @@ import { deleteKeys, type KeyRef, onAnimation, withKeys } from "./keys";
  * A bone's preserved motion path (docs/PATH-FRAMES-PLAN.md): a spline through its nodes (a ring unless
  * opened), cut into blocks by node times at frames, a time multiplier for each block, and the keys baked
  * from them. Pure: the curve, the blocks and the key edit. Posing the parent to turn a point into a bone's
- * local x and y is the Local Path panel's business (`ui/motion.ts`).
+ * local x and y is the Motion Path panel's business (`ui/motion.ts`).
  */
 
 export interface Pt { readonly x: number; readonly y: number }

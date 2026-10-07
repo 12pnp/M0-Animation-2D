@@ -22,7 +22,7 @@ flowchart LR
     CURVE --> BAKE["Bake: a Spine translate key<br/>at each nodeTime (frame = round(t · fps)),<br/>its curve fitted to follow the path"]
     RANGE --> NT
     BAKE --> KEYS["the bone's translate keys<br/>(as many as nodeTimes)"]
-    KEYS --> DOTS["Local Path: a dot at each nodeTime<br/>(Adjust time drags it along the path)"]
+    KEYS --> DOTS["Motion Path: a dot at each nodeTime<br/>(Adjust time drags it along the path)"]
 ```
 
 ## What was asked
@@ -87,7 +87,7 @@ flowchart LR
    nodeTimes), `bakeKeys` (one key per nodeTime, its channel curves fitted to the path between), `bakeError`.
 3. `src/ui/motion.ts`: `startMotion` (two end nodeTimes, 3 s), `addTime`, `removeTime`, Bake from the nodeTimes.
 4. The Timeline bar: one field, **Path time (s)**; the old three fields go.
-5. Local Path: the nodeTime dots (only these), their labels, + Time / double click, remove, Adjust time (along the path / Shift in time); the
+5. Motion Path: the nodeTime dots (only these), their labels, + Time / double click, remove, Adjust time (along the path / Shift in time); the
    per-frame dots and the Length numbers (a distance per frame) go or become the distance between nodeTimes.
 6. Guards: unit tests for the monotone map, the fit (a single cubic path segment bakes to the same channel curves; the stray readout), add and
    remove; e2e: make a path, add a nodeTime, Bake: as many keys as nodeTimes at the right frames, the bone on the path at each; the Timeline field

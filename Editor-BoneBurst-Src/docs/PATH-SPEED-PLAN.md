@@ -9,7 +9,7 @@ per animation; Q1 by the owner: saved per bone in the `.bbdata`. **Added by the 
 Timeline bar to set the frames the path is baked over and the key count. **Not built:** the "Thin keys"
 option, the per-node corner switch, rotation along the path, and the SPEC / changelog lines (for the commit).
 
-In the Local Path panel a bone's path is a chain of magenta dots, one per frame; **the gap between
+In the Motion Path panel a bone's path is a chain of magenta dots, one per frame; **the gap between
 neighbouring dots is the speed** (far apart is fast). Keys alone cannot keep a smooth path's shape once
 it is retimed, so the editor keeps the shape itself: a few **nodes**, a **timing** over them, and a **Bake**
 that writes the bone's keys from the two. Dragging a dot then changes the timing only.
@@ -19,7 +19,7 @@ flowchart LR
     NODES["path nodes<br/>(default 3: start · middle · end;<br/>add · remove · drag)"] --> BAKE["Bake<br/>edit/motion.ts: bakePath(path, timing, fps)"]
     TIMING["timing: frame → progress<br/>(monotone; starts linear)"] --> BAKE
     BAKE --> KEYS["the bone's translate keys<br/>(a key per frame, or fitted: see Q2)"]
-    KEYS --> TRAIL["boneTrail: the dots<br/>(localPath.ts)"]
+    KEYS --> TRAIL["boneTrail: the dots<br/>(motionPanel.ts)"]
     TRAIL -->|"drag a dot along the path"| FIT["retime(timing, frame, newProgress)<br/>pure: the least-change monotone timing<br/>through the dragged dot"]
     FIT --> TIMING
     PRESERVED["preserved per bone in the project<br/>(.bbdata → the sidecar's motion list)"] --- NODES
@@ -46,7 +46,7 @@ flowchart LR
 
 ## My reading, to confirm
 
-1. **A bone gets a motion path on demand** (a "Make path" button in the Local Path panel's header, on a bone
+1. **A bone gets a motion path on demand** (a "Make path" button in the Motion Path panel's header, on a bone
    in Animate mode). It starts with **three nodes**: the bone's position at the animation's first frame, at its
    middle frame, and at its last frame, read from the pose as it is now (a bone with no keys: all three at
    its setup place, in a line the user then pulls into shape).
@@ -103,13 +103,13 @@ tells how far off the polygon is (the largest gap to the path) before the owner 
   before or after). That one new pin, with the existing ones, is the whole timing: the "best" answer is the
   unique monotone cubic through them, the smoothest fit with no free parameter to tune.
 - **Bake.** For each frame `f`: `point(p(f) · L)` in the bone's parent space (through `moveDelta` and the
-  parent's matrix at that frame, as the Local Path drag already does), written as the bone's translate
+  parent's matrix at that frame, as the Motion Path drag already does), written as the bone's translate
   key at `f` (linear between frames). Frames with no change from the neighbours' straight line are kept
   anyway in this version (a key per frame: exact, simple; thinning is Q2).
 
 ## What exists (to check on disk before building)
 
-`boneTrail` and the dots (`stage/trail.ts`, `panels/localPath.ts`: `marks`, `beginEdit`, `editTo`),
+`boneTrail` and the dots (`stage/trail.ts`, `panels/motionPanel.ts`: `marks`, `beginEdit`, `editTo`),
 `shiftedLocal` and the parent-space maths (`stage/trailEdit.ts`), `keyBone` / `setKey` / `deleteKeys`
 (`edit/boneKeys.ts`, `edit/keys.ts`), the history's `begin` / `apply` / `end`, the sidecar's view and its
 `extra` map (`edit/sidecar.ts`), `Animation.extra` (model, round-tripped as written).
@@ -127,12 +127,12 @@ tells how far off the polygon is (the largest gap to the path) before the owner 
   places for the pointer; the slide takes the one nearer where the dot is now (`project(p, near)`).
 - **Where the code is:** `edit/motionPath.ts` (curve, timing, bake keys), `ui/motion.ts` (make, bake, stale; poses the
   rig), the sidecar's `motion` list (`model/sidecar.ts`, `io/sidecar.ts`, `edit/sidecar.ts`), the panel's button
-  row and drawing (`panels/localPath.ts`), the fields (`timeline/timeline.ts`).
+  row and drawing (`panels/motionPanel.ts`), the fields (`timeline/timeline.ts`).
 - **Not undoable on its own:** nodes and pins are in the sidecar; Bake and Retime are undo steps of the keys.
 
 ## Two modes (owner's request, later the same day)
 
-The Local Path panel's path row now has two modes, as buttons that show when a bone has a path:
+The Motion Path panel's path row now has two modes, as buttons that show when a bone has a path:
 
 - **Draw path:** shape the path: drag, add (+ Node, or a double click on the curve) and remove nodes, then
   **Bake** (the Spine keys). A press on a dot only puts the playhead there. The move arrows are hidden while a
@@ -160,7 +160,7 @@ Make path starts in Draw path; **Bake switches to Adjust time**. The mode is a p
 5. Guards: the unit tests above; an e2e that makes a path on the stickman, drags a dot and reads the baked
    keys back (the dots' shape unchanged, the dragged dot where it was dropped), then Undo; **a deliberate
    bug must fail it** (project onto the wrong segment once and see the shape-invariance test fail).
-6. Docs: SPEC §7 (the preserved path), the Local Path tooltip, a dated changelog entry on commit.
+6. Docs: SPEC §7 (the preserved path), the Motion Path tooltip, a dated changelog entry on commit.
 
 ## Risks
 

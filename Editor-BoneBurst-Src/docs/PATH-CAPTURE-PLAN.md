@@ -10,7 +10,7 @@ sidecar) stays. Nothing is built.
 Today a path starts with three nodes the editor places. The owner wants the artist to **place the nodes by
 posing the bone**: pose it, press a red button to store that pose as a node, add another button, pose
 again, store again, until Bake. The screenshot shows the two buttons at the start, a red box and a green box
-at the top-left of the Local Path panel.
+at the top-left of the Motion Path panel.
 
 ```mermaid
 stateDiagram-v2
@@ -93,7 +93,7 @@ stateDiagram-v2
 
 ## Sync between the bone and the nodes (owner's request, later the same day)
 
-In Draw path the bone on the Stage and the picked node in the Local Path panel follow each other:
+In Draw path the bone on the Stage and the picked node in the Motion Path panel follow each other:
 
 - **Drag the bone** (it poses unkeyed): the picked node, when the playhead is on its frame, takes the bone's new place live. No red press.
 - **Drag a node** on the canvas (or press it): the playhead goes to the node's frame and the bone is posed there, and moves with the node.
@@ -117,7 +117,7 @@ to put it back to automatic. The pose (the node) does not move, only the curve r
 
 ## Steps
 
-1. **The capture bar** in `panels/localPath.ts`: the red and green buttons as a row under the path row (red box: store; green box:
+1. **The capture bar** in `panels/motionPanel.ts`: the red and green buttons as a row under the path row (red box: store; green box:
    add), their states from the preserved nodes (`MotionPath.nodes`), the hover text, the picked slot (shown on the canvas as the picked node).
 2. **Store:** read the joint now (`boneMatrix` of `session.pose()`, then `fromParent` for Local) and set the slot's node (and,
    per Q1, its frame); keep the path in the sidecar (`keepMotion`); a path with a single stored node is allowed, but cannot Bake.

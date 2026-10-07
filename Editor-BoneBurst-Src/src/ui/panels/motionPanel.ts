@@ -27,8 +27,8 @@ const DOT = "#ff2bd6";
 /** The top of the block speed graph (its canvas shows speeds 0 to this). */
 const GRAPH_TOP = 3;
 const PAST = "rgb(230, 64, 51)", FUTURE = "rgb(51, 179, 77)";
-const LAYERS_KEY = "boneburst.localPath.layers";
-const AXES_KEY = "boneburst.localPath.axes";
+const LAYERS_KEY = "boneburst.motionPath.layers";
+const AXES_KEY = "boneburst.motionPath.axes";
 const AXIS_COLOURS = ["#e5484d", "#30a46c"] as const;
 
 interface Box { minX: number; minY: number; maxX: number; maxY: number }
@@ -102,7 +102,7 @@ function extentOf(poser: Poser, skin: string | null, animation: string | null, b
 }
 
 /**
- * The Local Path panel (docs/MOTION-PREVIEW-PLAN.md): only the selected bone, over every frame of the
+ * The Motion Path panel (docs/MOTION-PREVIEW-PLAN.md): only the selected bone, over every frame of the
  * animation shown. Three layers, each a button in the header: its image (the slots on the bone, at
  * the playhead), the bone itself, and its path (the joint's trail with a mark for each frame, larger
  * where the animation keys the bone, lit at the playhead; the tip's trail fainter). Local measures
@@ -111,7 +111,7 @@ function extentOf(poser: Poser, skin: string | null, animation: string | null, b
  * why, with no bone selected. In Pose mode (no animation) it shows the bone and its image on the setup
  * pose, with the same buttons and no path; it only shows: nothing in it is dragged.
  */
-export class LocalPathPanel {
+export class MotionPathPanel {
   readonly element: HTMLElement;
   private readonly canvas = document.createElement("canvas");
   private readonly head = document.createElement("div");
@@ -201,7 +201,7 @@ export class LocalPathPanel {
 
   constructor(private readonly session: Session) {
     this.element = document.createElement("div");
-    this.element.className = "panel local-path";
+    this.element.className = "panel motion-path";
     try {
       const saved = JSON.parse(localStorage.getItem(LAYERS_KEY) ?? "{}") as Partial<Record<Layer, unknown>>;
       for (const l of LAYERS) if (typeof saved[l] === "boolean") this.show[l] = saved[l] as boolean;
@@ -382,7 +382,7 @@ export class LocalPathPanel {
     const style = getComputedStyle(this.element), stageBg = style.getPropertyValue("--stage-bg").trim() || "#4f4f4f";
     if (typeof r === "string") {
       drawBackdrop(g, { width, height, left: -width / 2, right: width / 2, top: height / 2, bottom: -height / 2, scale: 1, ...this.background(), background: stageBg, light: lightColour(stageBg) });
-      this.title.textContent = "Local Path";
+      this.title.textContent = "Motion Path";
       this.note.textContent = r;
       this.note.hidden = false;
       return;

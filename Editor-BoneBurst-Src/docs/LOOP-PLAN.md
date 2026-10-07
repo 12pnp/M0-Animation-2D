@@ -18,7 +18,7 @@ as the hand-made 0–14.
 flowchart LR
     DOC["working document<br/>keys 0..13 (what you edit)"] --> CLOSE["closeLoops(doc, flags)<br/>pure: adds a closing key = frame 0<br/>at last+1, per timeline"]
     FLAG["Loop tick per animation<br/>(sidecar view, default on)"] --> CLOSE
-    CLOSE --> POSER["Poser / playback<br/>(session.poserFor, trails, Local Path)"]
+    CLOSE --> POSER["Poser / playback<br/>(session.poserFor, trails, Motion Path)"]
     CLOSE --> EXPORT["exportFiles · Export Spine JSON · Unity export<br/>(the closing key is in the file)"]
     DOC -->|"Save Project (.bbdata)"| KEEP["the .bbdata keeps the document as edited<br/>+ the flags in the sidecar"]
     TRIM["Trim end frame (one click)<br/>an old 0..14 copy → 0..13"] --> DOC
@@ -68,7 +68,7 @@ sidecar view (`edit/sidecar.ts`: skin, animation, bone), the timeline's end mark
 - **The tick is called "Closed loop"**, not "Loop": the Timeline bar already has a Loop button (playback
   repeats), and two buttons both called Loop would be read as one.
 - **Everything that poses or plays uses the closed document** (`Session.closedDoc()`, memoised on the
-  document and the ticks): the Stage, playback, the Local Path trail and onion skin, the Timeline's
+  document and the ticks): the Stage, playback, the Motion Path trail and onion skin, the Timeline's
   length and Fit, the Animations panel's seconds. `Session.length(anim)` is the length with the
   closing key. **Not changed:** the AI tools (`src/agent/*`) read the document as edited, so an AI keying
   frames sees 0–13, not the closing frame.

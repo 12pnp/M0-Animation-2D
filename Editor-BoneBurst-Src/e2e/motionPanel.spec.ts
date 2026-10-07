@@ -1,19 +1,19 @@
 import { expect, test } from "@playwright/test";
 
-/** The Local Path panel (docs/MOTION-PREVIEW-PLAN.md): only the selected bone, over every frame of the animation shown. */
+/** The Motion Path panel (docs/MOTION-PREVIEW-PLAN.md): only the selected bone, over every frame of the animation shown. */
 
 type Live = { boneburst: { session: { select(s: unknown): void; showAnimation(n: string | null): void; frame: number } } };
 
-/** How many pixels of Local Path's canvas are drawn in: not the stage background, nor its faint checkerboard, grid or axes. */
+/** How many pixels of Motion Path's canvas are drawn in: not the stage background, nor its faint checkerboard, grid or axes. */
 const drawnPixels = (page: import("@playwright/test").Page) => page.evaluate(() => {
-  const panel = document.querySelector(".local-path")!, cv = panel.querySelector("canvas") as HTMLCanvasElement, d = cv.getContext("2d")!.getImageData(0, 0, cv.width, cv.height).data;
+  const panel = document.querySelector(".motion-path")!, cv = panel.querySelector("canvas") as HTMLCanvasElement, d = cv.getContext("2d")!.getImageData(0, 0, cv.width, cv.height).data;
   const bg = parseInt(getComputedStyle(panel).getPropertyValue("--stage-bg").trim().slice(1), 16), br = (bg >> 16) & 255, bgn = (bg >> 8) & 255, bb = bg & 255;
   let n = 0;
   for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i]! - br) + Math.abs(d[i + 1]! - bgn) + Math.abs(d[i + 2]! - bb) > 90) n++;
   return n;
 });
 
-test("Local Path shows the selected bone's path over the animation, Local or World; a click on a mark seeks", async ({ page }) => {
+test("Motion Path shows the selected bone's path over the animation, Local or World; a click on a mark seeks", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
@@ -21,8 +21,8 @@ test("Local Path shows the selected bone's path over the animation, Local or Wor
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   // In Animate; the panel is a tab behind Properties.
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
-  const panel = page.locator(".local-path");
+  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  const panel = page.locator(".motion-path");
   await expect(panel.locator(".lp-note")).toContainText("Select a bone");
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head" }));
   await expect(panel.locator(".lp-head span")).toHaveText("head · Local");
@@ -31,7 +31,7 @@ test("Local Path shows the selected bone's path over the animation, Local or Wor
   await expect(panel.locator(".lp-head span")).toHaveText("head · World");
   // A mark: sweep the canvas for one (the page's own pointer events); the playhead moves off frame 0.
   const moved = await page.evaluate(() => {
-    const live = (window as unknown as Live).boneburst, cv = document.querySelector(".local-path canvas")!, r = cv.getBoundingClientRect(), before = live.session.frame;
+    const live = (window as unknown as Live).boneburst, cv = document.querySelector(".motion-path canvas")!, r = cv.getBoundingClientRect(), before = live.session.frame;
     for (let x = 6; x < r.width - 6; x += 5) {
       for (let y = 6; y < r.height - 6; y += 5) {
         cv.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, clientX: r.left + x, clientY: r.top + y, pointerId: 1 }));
@@ -43,16 +43,16 @@ test("Local Path shows the selected bone's path over the animation, Local or Wor
   expect(moved).toBe(true);
 });
 
-test("Local Path's Image, Bone and Path buttons show and hide each layer, and are remembered", async ({ page }) => {
+test("Motion Path's Image, Bone and Path buttons show and hide each layer, and are remembered", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head_art" }));
-  const panel = page.locator(".local-path");
+  const panel = page.locator(".motion-path");
   for (const name of ["Image", "Bone", "Path"]) await expect(panel.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true");
   const drawn = () => drawnPixels(page);
   await expect.poll(drawn).toBeGreaterThan(20000);
@@ -64,18 +64,18 @@ test("Local Path's Image, Bone and Path buttons show and hide each layer, and ar
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
-  await expect(page.locator(".local-path").getByRole("button", { name: "Image", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await expect(page.locator(".motion-path").getByRole("button", { name: "Image", exact: true })).toHaveAttribute("aria-pressed", "false");
 });
 
-test("Local Path in Pose mode shows the bone and its image on the setup pose, the buttons toggle, nothing drags", async ({ page }) => {
+test("Motion Path in Pose mode shows the bone and its image on the setup pose, the buttons toggle, nothing drags", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
-  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
-  const panel = page.locator(".local-path");
+  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  const panel = page.locator(".motion-path");
   await expect(panel.locator(".lp-note")).toContainText("Select a bone");
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head_art" }));
   await expect(panel.locator(".lp-head span")).toHaveText("head_art · Local · Pose");
@@ -98,7 +98,7 @@ test("Local Path in Pose mode shows the bone and its image on the setup pose, th
   expect(await state()).toEqual(before);
 });
 
-test("Onion: a button on the Timeline bar turns onion skin on and off, and Local Path's Onion shows the bone before (red) and after (green) the playhead", async ({ page }) => {
+test("Onion: a button on the Timeline bar turns onion skin on and off, and Motion Path's Onion shows the bone before (red) and after (green) the playhead", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
@@ -113,10 +113,10 @@ test("Onion: a button on the Timeline bar turns onion skin on and off, and Local
   await expect(stageOnion).toHaveAttribute("aria-pressed", "false");
 
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
   await page.evaluate(() => { const s = (window as unknown as Live).boneburst.session; s.select({ kind: "bone", name: "arm_near_fore" }); });
   const tints = () => page.evaluate(() => {
-    const cv = document.querySelector(".local-path canvas") as HTMLCanvasElement, d = cv.getContext("2d")!.getImageData(0, 0, cv.width, cv.height).data;
+    const cv = document.querySelector(".motion-path canvas") as HTMLCanvasElement, d = cv.getContext("2d")!.getImageData(0, 0, cv.width, cv.height).data;
     let red = 0, green = 0;
     for (let i = 0; i < d.length; i += 4) {
       const r = d[i]!, g = d[i + 1]!, b = d[i + 2]!;
@@ -128,21 +128,21 @@ test("Onion: a button on the Timeline bar turns onion skin on and off, and Local
   await page.evaluate(() => (window as unknown as { boneburst: { session: { seek(f: number): void } } }).boneburst.session.seek(10));
   await page.waitForTimeout(300);
   const off = await tints();
-  await page.locator(".local-path").getByRole("button", { name: "Onion", exact: true }).click();
+  await page.locator(".motion-path").getByRole("button", { name: "Onion", exact: true }).click();
   await expect.poll(async () => (await tints()).red).toBeGreaterThan(off.red + 50);
   expect((await tints()).green).toBeGreaterThan(off.green + 50);
 });
 
-test("Local Path zooms with the wheel, pans by dragging, and Fit (top right) shows it whole again", async ({ page }) => {
+test("Motion Path zooms with the wheel, pans by dragging, and Fit (top right) shows it whole again", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "arm_near_fore" }));
-  const panel = page.locator(".local-path"), canvas = panel.locator("canvas");
+  const panel = page.locator(".motion-path"), canvas = panel.locator("canvas");
   const picture = () => canvas.evaluate((c) => (c as HTMLCanvasElement).toDataURL());
   await expect(panel.locator(".lp-note")).toBeHidden();
   await page.waitForTimeout(300);
@@ -166,17 +166,17 @@ test("Local Path zooms with the wheel, pans by dragging, and Fit (top right) sho
   await expect.poll(picture).toBe(whole);
 });
 
-test("Local Path's Children button shows every bone under the selected one, with their images", async ({ page }) => {
+test("Motion Path's Children button shows every bone under the selected one, with their images", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
   // The chest has no image of its own; its children (arms, head) do.
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "chest" }));
-  const panel = page.locator(".local-path"), children = panel.getByRole("button", { name: "Children", exact: true });
+  const panel = page.locator(".motion-path"), children = panel.getByRole("button", { name: "Children", exact: true });
   await expect(children).toHaveAttribute("aria-pressed", "false");
   const drawn = () => drawnPixels(page);
   await page.waitForTimeout(300);
@@ -189,11 +189,11 @@ test("Local Path's Children button shows every bone under the selected one, with
   await expect.poll(drawn).toBeLessThan(alone * 1.5);
 });
 
-test("Local Path has the Stage's backdrop: the stage background, checkerboard, grid and centre axes, from the same settings", async ({ page }) => {
+test("Motion Path has the Stage's backdrop: the stage background, checkerboard, grid and centre axes, from the same settings", async ({ page }) => {
   const colours = () => page.evaluate(() => {
-    const cv = document.querySelector(".local-path canvas") as HTMLCanvasElement, d = cv.getContext("2d")!.getImageData(0, 0, cv.width, cv.height).data, seen = new Set<string>();
+    const cv = document.querySelector(".motion-path canvas") as HTMLCanvasElement, d = cv.getContext("2d")!.getImageData(0, 0, cv.width, cv.height).data, seen = new Set<string>();
     for (let y = 0; y < cv.height; y += 7) for (let x = 0; x < cv.width; x += 7) { const i = (y * cv.width + x) * 4; seen.add(`${d[i]},${d[i + 1]},${d[i + 2]},${d[i + 3]}`); }
-    return { seen: seen.size, corner: [...d.slice((cv.height - 4) * cv.width * 4 + (cv.width - 4) * 4, (cv.height - 4) * cv.width * 4 + (cv.width - 4) * 4 + 3)], stage: getComputedStyle(document.querySelector(".local-path")!).getPropertyValue("--stage-bg").trim() };
+    return { seen: seen.size, corner: [...d.slice((cv.height - 4) * cv.width * 4 + (cv.width - 4) * 4, (cv.height - 4) * cv.width * 4 + (cv.width - 4) * 4 + 3)], stage: getComputedStyle(document.querySelector(".motion-path")!).getPropertyValue("--stage-bg").trim() };
   });
   const open = async (prefs: object) => {
     await page.goto("/");
@@ -201,7 +201,7 @@ test("Local Path has the Stage's backdrop: the stage background, checkerboard, g
     await page.reload();
     await page.getByRole("button", { name: "Open the stickman fixture" }).click();
     await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
-    await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
+    await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
     await page.waitForTimeout(400);
   };
   // Everything off: the stage background alone, one colour.

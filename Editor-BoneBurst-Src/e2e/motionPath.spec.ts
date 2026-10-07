@@ -25,7 +25,7 @@ type Live = {
     };
     stage: { forceUnkeyed(): boolean };
     timeline: { blockTabs: { x0: number; x1: number; y: number }[] };
-    localPath: { speedGraph: { x: number; y: number }[]; grabPoints: { nodes: { x: number; y: number }[]; times: { i: number; x: number; y: number }[]; handles: { slot: number; side: string; x: number; y: number }[] } };
+    motionPath: { speedGraph: { x: number; y: number }[]; grabPoints: { nodes: { x: number; y: number }[]; times: { i: number; x: number; y: number }[]; handles: { slot: number; side: string; x: number; y: number }[] } };
   };
 };
 
@@ -36,9 +36,9 @@ async function open(page: Page, bone = "head"): Promise<void> {
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Local Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
   await page.evaluate((b) => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: b }), bone);
-  await expect(page.locator(".local-path .lp-head span")).toContainText(bone);
+  await expect(page.locator(".motion-path .lp-head span")).toContainText(bone);
 }
 
 const translate = (page: Page, bone: string) => page.evaluate((b) => {
@@ -71,7 +71,7 @@ async function drag(page: Page, bone: string, dx: number, dy: number): Promise<v
   }, [bone, dx, dy] as const);
 }
 
-const panelOf = (page: Page) => page.locator(".local-path");
+const panelOf = (page: Page) => page.locator(".motion-path");
 const reds = (page: Page) => page.locator(".lp-slots button.red");
 const blocks = (page: Page) => page.locator(".lp-slots button.block");
 
@@ -165,7 +165,7 @@ test("Adjust time: + Time adds a node time at the playhead's frame, − Time rem
   await expect(panel.getByRole("button", { name: "− Time" })).toBeDisabled();
 });
 
-test("Total frames is set in Local Path (14 + 0); the node times keep their share; Closed off ends the path on the last frame shown", async ({ page }) => {
+test("Total frames is set in Motion Path (14 + 0); the node times keep their share; Closed off ends the path on the last frame shown", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
   await panel.getByRole("button", { name: "Draw path", exact: true }).click();
@@ -268,8 +268,8 @@ test("in Draw path the bone and the picked node follow each other: drag the bone
   expect((await path(page))!.nodes[0]).toEqual(stored[0]);
   // A node dragged on the canvas: the bone is posed at it and goes with it.
   await page.waitForTimeout(400);
-  const nodes = await page.evaluate(() => (window as unknown as Live).boneburst.localPath.grabPoints.nodes);
-  const box = (await page.locator(".local-path canvas").first().boundingBox())!;
+  const nodes = await page.evaluate(() => (window as unknown as Live).boneburst.motionPath.grabPoints.nodes);
+  const box = (await page.locator(".motion-path canvas").first().boundingBox())!;
   const local = () => page.evaluate(() => { const s = (window as unknown as Live).boneburst.session, p = s.pose()!, k = p.bones.get("head")! * 7; return [p.local[k]!, p.local[k + 1]!]; });
   await page.mouse.move(box.x + nodes[0]!.x, box.y + nodes[0]!.y);
   await page.mouse.down();
@@ -286,13 +286,13 @@ test("hand tools: on a ring every node has both handles; dragging one bends the 
   await panel.getByRole("button", { name: "Draw path", exact: true }).click();
   await panel.getByRole("button", { name: "Add a spline node" }).click();
   await page.waitForTimeout(400);
-  const handles = () => page.evaluate(() => (window as unknown as Live).boneburst.localPath.grabPoints.handles);
+  const handles = () => page.evaluate(() => (window as unknown as Live).boneburst.motionPath.grabPoints.handles);
   const hs = await handles();
   expect(hs.map((h) => `${h.slot}:${h.side}`).sort()).toEqual(["0:in", "0:out", "1:in", "1:out", "2:in", "2:out"]);
   const before = (await path(page))!.nodes;
   expect(before[1]!.tx).toBeUndefined();
   const out = hs.find((h) => h.slot === 1 && h.side === "out")!;
-  const box = (await page.locator(".local-path canvas").first().boundingBox())!;
+  const box = (await page.locator(".motion-path canvas").first().boundingBox())!;
   await page.mouse.move(box.x + out.x, box.y + out.y);
   await page.mouse.down();
   await page.mouse.move(box.x + out.x, box.y + out.y - 60, { steps: 6 });
@@ -315,7 +315,7 @@ test("a block's speed graph: a straight line at 1 by default; presets and dragge
   await expect(page.locator(".lp-graph")).toBeHidden();
   await blocks(page).first().click();
   await expect(page.locator(".lp-graph")).toBeVisible();
-  const dots = () => page.evaluate(() => (window as unknown as Live).boneburst.localPath.speedGraph);
+  const dots = () => page.evaluate(() => (window as unknown as Live).boneburst.motionPath.speedGraph);
   await expect.poll(async () => (await dots()).length).toBe(2);
   const flat = await dots();
   expect(flat[0]!.y).toBeCloseTo(flat[1]!.y, 6);
@@ -392,7 +392,7 @@ test("no path yet: one green + creates it (node 1 is the bone, node 2 the bone p
   expect((await path(page))!.nodes).toEqual(moved);
 });
 
-test("the Timeline's tab strip shows the path's blocks (not the key gaps) and picking a tab picks the block in Local Path too", async ({ page }) => {
+test("the Timeline's tab strip shows the path's blocks (not the key gaps) and picking a tab picks the block in Motion Path too", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
   await drawn(page);
@@ -408,12 +408,12 @@ test("the Timeline's tab strip shows the path's blocks (not the key gaps) and pi
   expect(t[2]!.x1 - t[2]!.x0).toBeGreaterThan(t[1]!.x1 - t[1]!.x0);
   await blocks(page).first().click();
   await expect(blocks(page).first()).toHaveClass(/picked/);
-  // Pick the middle one on the Timeline: Local Path's strip has it picked.
+  // Pick the middle one on the Timeline: Motion Path's strip has it picked.
   const canvas = page.locator(".timeline canvas").first(), box = (await canvas.boundingBox())!;
   await page.mouse.click(box.x + (t[1]!.x0 + t[1]!.x1) / 2, box.y + t[1]!.y);
   await expect(blocks(page).nth(1)).toHaveClass(/picked/);
   await expect(panel.getByRole("spinbutton", { name: "Block time multiplier" })).toBeVisible();
-  // And the other way: pick the third in Local Path; the Timeline's picked block follows.
+  // And the other way: pick the third in Motion Path; the Timeline's picked block follows.
   await blocks(page).nth(2).click();
   expect(await page.evaluate(() => (window as unknown as Live).boneburst.session.pickedBlock)).toBe(2);
   // The Timeline paints it (a 2 px accent outline on the third tab): its canvas changed.
@@ -456,7 +456,7 @@ test("a red number moves the bone on the Stage: the session announces each pose,
   expect((await stage.screenshot()).equals(one)).toBe(false);
 });
 
-test("Adjust time edits the timing only: the bone is not dragged on the Stage or in Local Path, the spline stays, and the bone is back on the animation's pose", async ({ page }) => {
+test("Adjust time edits the timing only: the bone is not dragged on the Stage or in Motion Path, the spline stays, and the bone is back on the animation's pose", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
   await panel.getByRole("button", { name: "Draw path", exact: true }).click();
@@ -466,7 +466,7 @@ test("Adjust time edits the timing only: the bone is not dragged on the Stage or
   await panel.getByRole("button", { name: "Adjust time", exact: true }).click();
   // The unkeyed pose from drawing is dropped: the bone is where the animation has it.
   expect(await page.evaluate(() => (window as unknown as { boneburst: { session: { hasUnkeyed: boolean } } }).boneburst.session.hasUnkeyed)).toBe(false);
-  expect(await page.evaluate(() => (window as unknown as { boneburst: { localPath: { timing: boolean } } }).boneburst.localPath.timing)).toBe(true);
+  expect(await page.evaluate(() => (window as unknown as { boneburst: { motionPath: { timing: boolean } } }).boneburst.motionPath.timing)).toBe(true);
   const keys = await translate(page, "head"), done = await steps(page);
   // A drag of the bone on the Stage: nothing is keyed, nothing is posed.
   const at = await page.evaluate(async () => {
@@ -484,8 +484,8 @@ test("Adjust time edits the timing only: the bone is not dragged on the Stage or
   // The spline is not touched by the panel either: its canvas has no node or handle to grab.
   expect((await path(page))!.nodes).toEqual(nodes);
   await page.waitForTimeout(300);
-  const g = await page.evaluate(() => (window as unknown as Live).boneburst.localPath.grabPoints);
-  const box = (await page.locator(".local-path canvas").first().boundingBox())!;
+  const g = await page.evaluate(() => (window as unknown as Live).boneburst.motionPath.grabPoints);
+  const box = (await page.locator(".motion-path canvas").first().boundingBox())!;
   if (g.nodes[0]) {
     await page.mouse.move(box.x + g.nodes[0].x, box.y + g.nodes[0].y);
     await page.mouse.down();
@@ -496,5 +496,5 @@ test("Adjust time edits the timing only: the bone is not dragged on the Stage or
   expect(await page.evaluate(() => (window as unknown as { boneburst: { session: { hasUnkeyed: boolean } } }).boneburst.session.hasUnkeyed)).toBe(false);
   // Back in Draw path the bone drags again.
   await panel.getByRole("button", { name: "Draw path", exact: true }).click();
-  expect(await page.evaluate(() => (window as unknown as { boneburst: { localPath: { timing: boolean } } }).boneburst.localPath.timing)).toBe(false);
+  expect(await page.evaluate(() => (window as unknown as { boneburst: { motionPath: { timing: boolean } } }).boneburst.motionPath.timing)).toBe(false);
 });

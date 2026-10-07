@@ -7,7 +7,7 @@ import { setTickSeries } from "./timeline/layout";
 import { PreferencesDialog } from "./preferencesDialog";
 import { AnimationsPanel } from "./panels/animationsPanel";
 import { HistoryPanel } from "./panels/history";
-import { LocalPathPanel } from "./panels/localPath";
+import { MotionPathPanel } from "./panels/motionPanel";
 import { SkinsPanel } from "./panels/skinsPanel";
 import { References } from "./panels/references";
 import { droppedFiles } from "./dropFiles";
@@ -218,10 +218,10 @@ export function mountApp(root: HTMLElement): void {
   timeline.addTools(autoKeyBtn, showBtns.find((b) => b.dataset.show === "onion")!);
   const references = new References(session);
   const history = new HistoryPanel(session);
-  const localPath = new LocalPathPanel(session);
-  localPath.autoKey = () => stage.autoKey;
-  stage.forceUnkeyed = () => localPath.drawing;
-  stage.dragLocked = () => localPath.timing;
+  const motionPanel = new MotionPathPanel(session);
+  motionPanel.autoKey = () => stage.autoKey;
+  stage.forceUnkeyed = () => motionPanel.drawing;
+  stage.dragLocked = () => motionPanel.timing;
   const skinsPanel = new SkinsPanel(session);
   const animationsPanel = new AnimationsPanel(session);
   // Ask AI (E5 step 9): the bridge's model with the editor's tools; sending connects the AI button.
@@ -311,7 +311,7 @@ export function mountApp(root: HTMLElement): void {
     ["reference", { element: references.element }],
     ["ai", { element: askAi.element }],
     ["history", { element: history.element }],
-    ["localPath", { element: localPath.element, layout: (w, h) => localPath.layout(w, h) }],
+    ["motionPath", { element: motionPanel.element, layout: (w, h) => motionPanel.layout(w, h) }],
     ["skins", { element: skinsPanel.element }],
     ["animations", { element: animationsPanel.element }],
   ]), (w) => w.addEventListener("keydown", onKey));
@@ -348,7 +348,7 @@ export function mountApp(root: HTMLElement): void {
     workspace.refreshTheme();
     stage.show = { rulers: p.rulers, bones: p.bones, constraints: p.constraints };
     stage.hideIkBones = p.hideIkBones;
-    localPath.onion = () => ({ before: prefs.values.onionBefore, after: prefs.values.onionAfter, keyedOnly: prefs.values.onionKeyedOnly, colour: prefs.values.onionColour });
+    motionPanel.onion = () => ({ before: prefs.values.onionBefore, after: prefs.values.onionAfter, keyedOnly: prefs.values.onionKeyedOnly, colour: prefs.values.onionColour });
     stage.onion = p.onion ? { before: p.onionBefore, after: p.onionAfter, keyedOnly: p.onionKeyedOnly, colour: p.onionColour } : null;
     stage.grid = p.grid ? p.gridSize : null;
     // The interface size: CSS zoom on the page (the pointer maths in `pageScale.ts` follows it).
@@ -362,8 +362,8 @@ export function mountApp(root: HTMLElement): void {
     outline.setLook(p.treeIndent, p.treeColours);
     session.defaultFps = p.defaultFps;
     stage.look = lookOf(p);
-    localPath.background = () => ({ look: lookOf(prefs.values), grid: prefs.values.grid ? prefs.values.gridSize : null });
-    localPath.refresh();
+    motionPanel.background = () => ({ look: lookOf(prefs.values), grid: prefs.values.grid ? prefs.values.gridSize : null });
+    motionPanel.refresh();
     stage.boneColour = p.boneColour === "auto" ? null : p.boneColour;
     if (session.boneSize !== p.boneSize) { session.boneSize = p.boneSize; session.changed(); }
     stageTools.hidden = !p.stagePanels;
@@ -411,7 +411,7 @@ export function mountApp(root: HTMLElement): void {
   inspector.snapFields = (owner) => snapFields(prefs, owner);
   outline.onStatus = say;
   skinsPanel.onStatus = say;
-  localPath.onStatus = say;
+  motionPanel.onStatus = say;
   animationsPanel.onStatus = say;
   references.onStatus = say;
   references.centre = () => [stage.camera.x, stage.camera.y];
@@ -603,7 +603,7 @@ export function mountApp(root: HTMLElement): void {
   );
   if (import.meta.env.DEV) {
     // For inspecting the live editor from the browser console; not in a build.
-    (window as unknown as { boneburst: unknown }).boneburst = { session, stage, localPath, timeline, get workspace() { return workspace; } };
+    (window as unknown as { boneburst: unknown }).boneburst = { session, stage, motionPath: motionPanel, timeline, get workspace() { return workspace; } };
     const dev = button("Open the stickman fixture", "Dev only: tests/fixtures/stickman", () => void openStickman());
     const devNew = button("New skeleton on the stickman's atlas", "Dev only: tests/fixtures/stickman, atlas and image", () => void openStickman(false));
     // Kept apart and quiet: they are for developing the editor, not for opening a rig.

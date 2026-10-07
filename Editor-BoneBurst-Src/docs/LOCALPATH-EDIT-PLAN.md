@@ -1,8 +1,8 @@
-# Editing a bone's motion from the Local Path panel — plan
+# Editing a bone's motion from the Motion Path panel — plan
 
 **Status:** built 2026-10-07, not committed; **not verified in a person's hands**: `tsc`, the unit
-tests (`tests/trailEdit.test.ts`) and four Playwright tests (`e2e/localPathEdit.spec.ts`) pass, the
-existing Local Path suite still passes, and a deliberate sign flip in the drag fails the e2e. Done:
+tests (`tests/trailEdit.test.ts`) and four Playwright tests (`e2e/motionPanelEdit.spec.ts`) pass, the
+existing Motion Path suite still passes, and a deliberate sign flip in the drag fails the e2e. Done:
 dragging a mark (World and Local), the **move arrows** with a Parent / World axes button, the **rotation handle** (added at the owner's request, "go, use
 your recommendations, but it need rotation handle too"), Shift (axis lock, or 15° steps on the
 handle), the constraint-driven check, Auto Key off. **Left:** snapping while dragging (World only,
@@ -10,7 +10,7 @@ as planned; not built), and step 6's doc lines (SPEC §7, the v2 plan's cut list
 The panel and the trail are in `docs/MOTION-PREVIEW-PLAN.md` (done): this plan makes what they only
 show *editable*, in **Local** and in **World**.
 
-The Local Path panel draws the selected bone's joint over every frame of the animation: a mark per
+The Motion Path panel draws the selected bone's joint over every frame of the animation: a mark per
 frame, larger where the animation keys the bone. Today a click on a mark moves the playhead and
 nothing else. The plan: **drag a mark, and the bone's translate key at that frame moves with it**,
 measured in whichever space the panel is in, so a motion is reshaped on its path instead of being
@@ -18,7 +18,7 @@ nudged frame by frame on the stage.
 
 ```mermaid
 flowchart LR
-    DRAG["drag a mark in the panel<br/>(localPath.ts: down · move · up)"] --> PT["canvas point → world point<br/>(the panel's fit · zoom · pan)"]
+    DRAG["drag a mark in the panel<br/>(motionPanel.ts: down · move · up)"] --> PT["canvas point → world point<br/>(the panel's fit · zoom · pan)"]
     PT --> SP{"panel space"}
     SP -- "World" --> W["target = the point"]
     SP -- "Local" --> L["target = the point + the parent's joint<br/>at that frame, frozen at drag start"]
@@ -62,7 +62,7 @@ one lit at the playhead.)
 |---|---|---|
 | `boneTrail(poser, skin, animation, bone, fps, duration, space)` | `src/ui/stage/trail.ts` | joint and tip at every frame, Local or World |
 | `fromParent(p, bone, x, y)` | `src/ui/stage/trail.ts` | a world point as Local shows it (minus the parent's joint) |
-| the mark list and `down()` hit test | `src/ui/panels/localPath.ts` (`this.marks`, nearest within a radius, then `session.seek`) | where a drag starts |
+| the mark list and `down()` hit test | `src/ui/panels/motionPanel.ts` (`this.marks`, nearest within a radius, then `session.seek`) | where a drag starts |
 | `moveDelta(parent, dx, dy)` | `src/ui/stage/gizmo.ts` | a world shift in the parent's space: what the bone's x and y add |
 | `animatedLocal(p, bone)` | `src/ui/stage/posed.ts` | the bone's local pose as animated at the playhead |
 | `keyBone(animation, bone, properties, local, time)` | `src/edit/boneKeys.ts` | sets or adds the bone's key at `time` |
@@ -73,7 +73,7 @@ one lit at the playhead.)
 **Where the code goes.** The maths is pure and goes where it can be tested without a DOM:
 `src/edit/trailEdit.ts` (new, tiny): `translateForJoint(parent, from, targetWorld): { x, y }`, the
 bone's local x and y that put its joint at a world point under a given parent matrix. The panel
-(`localPath.ts`) owns the pointer and calls it. No new window (CLAUDE.md §8: the panel exists).
+(`motionPanel.ts`) owns the pointer and calls it. No new window (CLAUDE.md §8: the panel exists).
 
 **The drag.**
 - *Pointer down* on a mark (nearest within the existing radius): if the bone is constraint-driven,
@@ -123,7 +123,7 @@ drag elsewhere (a mark wins over pan within its radius).
   on release (e2e: the mark ends where the pointer let go).
 - **Where the maths lives:** `src/ui/stage/trailEdit.ts` (`constraintDriving`, `shiftedLocal`,
   `axisLocked`), not `src/edit`, because it uses the Stage's `moveDelta` (the edit layer imports nothing from the UI).
-- **Test hook:** `window.boneburst.localPath.grabPoints` (the marks and the handle on the canvas), for the e2e.
+- **Test hook:** `window.boneburst.motionPath.grabPoints` (the marks and the handle on the canvas), for the e2e.
 - **Cost, not measured:** each drag step re-poses every frame of the animation (`boneTrail`); fine for
   the fixtures (tens of frames), unmeasured for a 2000-frame animation.
 
@@ -134,13 +134,13 @@ drag elsewhere (a mark wins over pan within its radius).
 1. **`src/ui/stage/trailEdit.ts`** and `tests/trailEdit.test.ts`: `translateForJoint` over a rotated,
    scaled, mirrored parent, and a root (no parent); round-trip against `boneTrail` (set the key from
    a target, re-pose, the joint is within 1e-6 of the target).
-2. **The drag in `localPath.ts`**: down / move / up as above, behind the IK check; World first.
+2. **The drag in `motionPanel.ts`**: down / move / up as above, behind the IK check; World first.
 3. **Local** (the frozen parent offset), then the axis lock and the snap.
 4. **Feedback**: larger mark, status text, cursor.
-5. **`e2e/localPathEdit.spec.ts`** (Playwright, the stickman fixture): a drag of a mark keys the bone
+5. **`e2e/motionPanelEdit.spec.ts`** (Playwright, the stickman fixture): a drag of a mark keys the bone
    at that frame, seeks there, is one undo step and the mark follows the pointer; Shift; the handle
    keys `rotate`; an IK-driven bone has no handle and its marks do not edit. **Not covered:** Auto Key off (no e2e).
-6. **Docs:** the v2 plan's cut list and SPEC §7 gain a line; the Local Path panel's tooltip in
+6. **Docs:** the v2 plan's cut list and SPEC §7 gain a line; the Motion Path panel's tooltip in
    Preferences' help is updated; a dated entry in `Assets/Docs-Plan/CHANGELOG.md` when committed.
 
 ## Guards (how it stays right)

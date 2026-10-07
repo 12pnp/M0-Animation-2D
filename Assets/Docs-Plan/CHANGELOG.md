@@ -13,6 +13,8 @@ flowchart LR
 
 ## 2026-10-07
 
+- **BoneBurst Editor v2: the Local Path panel is now Motion Path** (`Editor-BoneBurst-Src/`, [plan](../../Editor-BoneBurst-Src/docs/PATH-FRAMES-PLAN.md)). The panel does a bone's motion path (spline, node times, blocks), not only a trail in Local space; the name now matches `MotionPath`, `motion.ts` and the sidecar's `motion`. Panel id `motionPath`, `panels/motionPanel.ts`, `MotionPathPanel`, `.motion-path`, `window.boneburst.motionPath`, the e2e files `motionPanel*.spec.ts`; the Local | World switch stays. **A saved layout that placed the old panel id forgets that placement** (the panel comes in at its default place), and its saved layer and axis choices reset. 749 unit and 76 browser tests passed.
+
 - **BoneBurst Editor v2: Draw path and Adjust time split into two duties, block tabs on the Timeline, the Path window removed, the Stage repaints when a node is pressed** (`Editor-BoneBurst-Src/`, [plan](../../Editor-BoneBurst-Src/docs/PATH-FRAMES-PLAN.md)).
   - **Draw path** shapes the spline (red numbers put the bone on a node, + creates and adds, handles, Closed); the **Adjust time** button replaces Bake and edits timing only (node times, block multipliers and speed graphs, Total frames): the bone cannot be dragged on the Stage (`Stage.dragLocked`) or in Local Path.
   - **Timeline:** with a path on the selected bone the strip under the ruler shows its blocks, picked together with Local Path (`Session.pickedBlock`).

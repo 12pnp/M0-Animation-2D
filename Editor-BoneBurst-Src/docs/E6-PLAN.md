@@ -210,7 +210,7 @@ the timeline (keys, eases, play, loop), docking and popouts, preferences, the AI
 | v1 has | why cut |
 |---|---|
 | Symbols, groups, masks, the Library, Convert to Symbol, Swap Instance | D4: v2 is Spine-native, no nested symbols |
-| Bone paths, the Local Path and World Path panels, Show Bone Paths | D5: dropped from the contract; Spine has no bone paths |
+| Bone paths, the Motion Path and World Path panels, Show Bone Paths | D5: dropped from the contract; Spine has no bone paths |
 | The Preview panel | v2's stage is the runtime |
 | The Poses panel (frames marked for the AI to animate between) | no contract tool uses it in v2; the AI keys with `set_keys` and `apply_motion` |
 | Document size and background (Document Settings…) | not in Spine's file; v2 keeps its view in the sidecar |

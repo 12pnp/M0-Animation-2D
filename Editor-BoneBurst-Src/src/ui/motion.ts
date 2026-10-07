@@ -12,7 +12,7 @@ import { fromParent } from "./stage/trail";
  * A bone's motion path in the open project (docs/PATH-SPEED-PLAN.md): finding it, making the first
  * one from the motion the bone has now, and baking its keys. The curve, the timing and the key
  * edit are pure (`edit/motionPath.ts`); this is where the rig is posed to turn the path's points,
- * which are in the Local Path panel's Local space, into the bone's local x and y.
+ * which are in the Motion Path panel's Local space, into the bone's local x and y.
  */
 
 /** The path kept for the selected bone in the animation shown, or undefined. */
