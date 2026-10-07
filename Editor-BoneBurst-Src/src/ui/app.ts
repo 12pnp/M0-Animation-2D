@@ -445,14 +445,14 @@ export function mountApp(root: HTMLElement): void {
 
   // The docking shell (D6): every panel is a Dockview panel.
   const workspace = new Workspace(main, new Map<PanelId, PanelContent>([
-    ["stage", { element: stagePanel, layout: (w, h) => stage.resize(w, h) }],
-    ["timeline", { element: timeline.element, layout: () => timeline.redraw() }],
-    ["rigTree", { element: outline.element }],
+    ["stage", { element: stagePanel, layout: (w, h) => stage.resize(w, h), reset: () => { panels.reset(); setCreate(null); stage.fitView(); } }],
+    ["timeline", { element: timeline.element, layout: () => timeline.redraw(), reset: () => timeline.resetLayout() }],
+    ["rigTree", { element: outline.element, reset: () => outline.resetView() }],
     ["properties", { element: inspector.element }],
     ["reference", { element: references.element }],
     ["ai", { element: askAi.element }],
     ["history", { element: history.element }],
-    ["motionPath", { element: motionPanel.element, layout: (w, h) => motionPanel.layout(w, h) }],
+    ["motionPath", { element: motionPanel.element, layout: (w, h) => motionPanel.layout(w, h), reset: () => motionPanel.fitView() }],
     ["skins", { element: skinsPanel.element }],
     ["animations", { element: animationsPanel.element }],
   ]), (w) => w.addEventListener("keydown", onKey), (id) => panelInfo.open(id));

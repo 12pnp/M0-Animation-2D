@@ -150,3 +150,24 @@ test("the picked name floats about 2 cm (76 px) above the pointer", async ({ pag
   expect(Math.abs(name.x + name.width / 2 - at.x)).toBeLessThan(6);
   expect(Math.abs(name.y + name.height - (at.y - 75.6))).toBeLessThan(6);
 });
+
+test("the panel menu (⋮) has Reset This Panel's Layout, Put This Panel Back and Reset All Panels", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 800 });
+  await open(page);
+  // The Stage's: a hidden panel comes back, and the cards go where they started.
+  await page.locator('[data-panel-id="create"]').click();
+  await expect(page.locator(".stage-tools .create")).toBeHidden();
+  const stageGroup = page.locator(".dv-groupview", { has: page.locator(".stage-panel") });
+  await stageGroup.locator(".panel-menu-button").click();
+  await expect(page.getByText("Reset This Panel's Layout")).toBeVisible();
+  await expect(page.getByText("Put This Panel Back")).toBeVisible();
+  await expect(page.getByText("Reset All Panels")).toBeVisible();
+  await page.getByText("Reset This Panel's Layout").click();
+  await expect(page.locator(".stage-tools .create")).toBeVisible();
+  // Reset All Panels: a closed panel is back.
+  await page.locator('button[data-panel="timeline"]').click();
+  await expect(page.locator(".timeline")).toBeHidden();
+  await stageGroup.locator(".panel-menu-button").click();
+  await page.getByText("Reset All Panels").click();
+  await expect(page.locator(".timeline").first()).toBeVisible();
+});

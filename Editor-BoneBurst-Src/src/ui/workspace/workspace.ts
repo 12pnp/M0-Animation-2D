@@ -22,6 +22,8 @@ export interface PanelContent {
   readonly element: HTMLElement;
   /** The panel's size, whenever Dockview lays it out (also in a floating group or popout window). */
   layout?(width: number, height: number): void;
+  /** Put the panel's own layout back (its view, columns, floating cards): the panel menu's Reset This Panel's Layout. */
+  reset?(): void;
 }
 
 /** The first-time sizes of the default layout's side panels, in pixels. */
@@ -60,7 +62,18 @@ export class Workspace {
       createComponent: ({ name }) => this.renderer(name as PanelId),
       createTabComponent: ({ id }) => tabRenderer(id as PanelId),
       defaultTabComponent: "tab",
-      createRightHeaderActionComponent: panelMenu(onInfo),
+      createRightHeaderActionComponent: panelMenu({
+        info: onInfo,
+        canReset: (id) => this.panels.has(id),
+        // A panel without a layout of its own is scrolled back to its top and left.
+        reset: (id) => {
+          const p = this.panels.get(id);
+          if (p?.reset) { p.reset(); return; }
+          p?.element.querySelectorAll<HTMLElement>("*").forEach((n) => { n.scrollTop = 0; n.scrollLeft = 0; });
+        },
+        putBack: (id) => { this.close(id); this.show(id); },
+        resetLayout: () => this.reset(),
+      }),
       getTabContextMenuItems: () => ["float", "popout", "maximize", "separator", "close"],
     });
     const scheme = window.matchMedia("(prefers-color-scheme: dark)");

@@ -167,6 +167,15 @@ export class Timeline {
     this.bar.append(sep(), ...buttons);
   }
 
+  /** The panel's own layout back: the names column at its default width, the whole animation in the track. */
+  resetLayout(): void {
+    try { localStorage.removeItem("bb.timelineLabels"); } catch { /* storage blocked: nothing kept to remove */ }
+    this.element.style.removeProperty("--tl-labels");
+    this.body.scrollTop = 0;
+    this.fit();
+    this.redraw();
+  }
+
   /** The names column's width: dragged at the splitter, kept in this browser. */
   private attachSplit(split: HTMLElement): void {
     const KEY = "bb.timelineLabels";

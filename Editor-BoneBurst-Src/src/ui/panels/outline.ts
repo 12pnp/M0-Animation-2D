@@ -150,6 +150,15 @@ export class Outline {
     this.forward.disabled = this.at >= this.trail.length - 1;
   }
 
+  /** The panel's own layout back: the tree view, the search cleared, the list at the top. */
+  resetView(): void {
+    this.query = "";
+    const input = this.element.querySelector<HTMLInputElement>("input[type=search]");
+    if (input) input.value = "";
+    this.setView("tree");
+    this.element.querySelectorAll<HTMLElement>("*").forEach((n) => { if (n.scrollTop) n.scrollTop = 0; if (n.scrollLeft) n.scrollLeft = 0; });
+  }
+
   private setView(v: View): void { this.view = v; this.rendered = ""; this.update(); }
 
   private apply(label: string, edit: Edit<Skeleton>): boolean {
