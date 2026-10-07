@@ -88,6 +88,19 @@ function withChildren(p: Posed, bone: number, children: boolean): number[] {
 }
 
 /**
+ * The bones from `parent` down to `bone` along the tree, `parent` first and `bone` left out: the parent, then each bone under it on the
+ * way (hips, thigh, shin for a foot). A parent that is not above the bone is alone.
+ */
+function chainTo(p: Posed, parent: number, bone: number): number[] {
+  const up: number[] = [];
+  for (let b = p.rig.data.bones[bone]!.parent, guard = 0; b >= 0 && guard < 1000; b = p.rig.data.bones[b]!.parent, guard++) {
+    up.push(b);
+    if (b === parent) return up.reverse();
+  }
+  return [parent];
+}
+
+/**
  * The box round the bone's images and the bone itself at some frames of the trail, in `space`: the
  * panel is scaled to hold them all, so what is drawn does not change size from frame to frame.
  */
@@ -269,7 +282,7 @@ export class MotionPathPanel {
     this.stageSwatch.setAttribute("aria-label", "Path line colour on the Stage");
     this.stageSwatch.style.background = this.stageColour;
     this.stageSwatch.addEventListener("click", () => pickColour(this.stageSwatch, this.stageColour, (hex) => { this.stageColour = hex; this.keepStageLine(); }));
-    this.layerBtns = { image: this.button("Image", "Show the bone's image"), bone: this.button("Bone", "Show the bone"), parentBone: this.button("Bone", "Show the parent bone the path is relative to (fainter), where it is at the playhead"), parentImage: this.button("Image", "Show the parent bone's image (behind the bone's own)"), path: this.button("Path", "Show the bone's path over the animation (where it goes, frame by frame)"), spline: this.button("Spline", "Show the spline you draw with Edit Path: its curve, nodes and handles"), length: this.button("Length", "Show the distance between each pair of dots along the path (in the panel's space)"), onion: this.button("Onion", "Show the bone at the frames before (red) and after (green) the playhead; the count is set in Preferences ▸ Behavior"), children: this.button("Children", "Show every bone under the selected one, with their images"), rotate: this.button("Rotate", "Show the rotation handle (the ring beyond the bone's tip)"), move: this.button("Move", "Show the move arrows (when the bone has no path)"), scale: this.button("Scale", "Show the scale handle (the square beside the bone's tip)"), shear: this.button("Shear", "Show the shear handle (the diamond on the other side of the tip)") };
+    this.layerBtns = { image: this.button("Image", "Show the bone's image"), bone: this.button("Bone", "Show the bone"), parentBone: this.button("Bone", "Show the parent bone the path is relative to and the bones from it down to this bone (fainter), where they are at the playhead"), parentImage: this.button("Image", "Show the images of the parent bone and the bones from it down to this bone (behind the bone's own)"), path: this.button("Path", "Show the bone's path over the animation (where it goes, frame by frame)"), spline: this.button("Spline", "Show the spline you draw with Edit Path: its curve, nodes and handles"), length: this.button("Length", "Show the distance between each pair of dots along the path (in the panel's space)"), onion: this.button("Onion", "Show the bone at the frames before (red) and after (green) the playhead; the count is set in Preferences ▸ Behavior"), children: this.button("Children", "Show every bone under the selected one, with their images"), rotate: this.button("Rotate", "Show the rotation handle (the ring beyond the bone's tip)"), move: this.button("Move", "Show the move arrows (when the bone has no path)"), scale: this.button("Scale", "Show the scale handle (the square beside the bone's tip)"), shear: this.button("Shear", "Show the shear handle (the diamond on the other side of the tip)") };
     for (const g of GIZMOS) {
       this.layerBtns[g].setAttribute("aria-label", `Show ${g} handle`);
       iconButton(this.layerBtns[g], g, false);
@@ -540,8 +553,12 @@ export class MotionPathPanel {
     if ((this.show.parentBone || this.show.parentImage) && parentName && trail) {
       const pp = this.posers().pose(s.skin, s.animation!.name, Math.fround(frameTime(Math.min(s.frame, trail.frames), trail.fps)), "none"), pi = pp.bones.get(parentName), bi = pp.bones.get(bone);
       if (pi !== undefined && pp.rig.active[pi]) {
-        const mm = boneMatrix(pp, pi), tip = boneTip(pp, pi);
-        for (const [x, y] of [[mm[4], mm[5]], tip] as const) { const [qx, qy] = this.space === "parent" && bi !== undefined ? fromParent(pp, bi, x, y, parentName) : [x, y]; grow(qx, qy); }
+        // The parent and the bones under it on the way down to the bone (not the branches beside them).
+        for (const b of bi === undefined ? [pi] : chainTo(pp, pi, bi)) {
+          if (!pp.rig.active[b]) continue;
+          const mm = boneMatrix(pp, b), tip = boneTip(pp, b);
+          for (const [x, y] of [[mm[4], mm[5]], tip] as const) { const [qx, qy] = this.space === "parent" && bi !== undefined ? fromParent(pp, bi, x, y, parentName) : [x, y]; grow(qx, qy); }
+        }
       }
     }
     // The stored poses are in view too, so a node can always be reached.
@@ -575,13 +592,16 @@ export class MotionPathPanel {
     const to = (x: number, y: number): [number, number] => (this.space === "parent" && index !== undefined ? fromParent(p, index, x, y, this.originName()) : [x, y]);
     if (this.show.onion && trail && index !== undefined) this.drawOnion(g, poser, bone, trail, here, at, dpr, boneColour);
     const set = index === undefined ? [] : withChildren(p, index, this.show.children);
-    // The parent bone the path is relative to, behind the bone's own: its image, then the bone, fainter.
+    // The parent bone the path is relative to and the bones under it down to the bone (hips, thigh, shin for a foot), behind the bone's own: the images, then the bones, fainter.
     const parentIdx = parentName ? p.bones.get(parentName) : undefined;
     if (parentIdx !== undefined && p.rig.active[parentIdx] && parentIdx !== index) {
-      if (this.show.parentImage) { g.save(); g.globalAlpha = 0.6; this.drawImage(g, p, [parentIdx], to, at, dpr); g.restore(); }
+      const tree = (index === undefined ? [parentIdx] : chainTo(p, parentIdx, index)).filter((b) => p.rig.active[b]);
+      if (this.show.parentImage) { g.save(); g.globalAlpha = 0.6; this.drawImage(g, p, tree, to, at, dpr); g.restore(); }
       if (this.show.parentBone) {
-        const m = boneMatrix(p, parentIdx), [jx, jy] = at(...to(m[4], m[5])), [tx, ty] = at(...to(...boneTip(p, parentIdx)));
-        if ([jx, jy, tx, ty].every(Number.isFinite)) { g.save(); g.globalAlpha = 0.55; this.drawBone(g, jx, jy, tx, ty, boneColour); g.restore(); }
+        for (const b of tree) {
+          const m = boneMatrix(p, b), [jx, jy] = at(...to(m[4], m[5])), [tx, ty] = at(...to(...boneTip(p, b)));
+          if ([jx, jy, tx, ty].every(Number.isFinite)) { g.save(); g.globalAlpha = b === parentIdx ? 0.6 : 0.4; this.drawBone(g, jx, jy, tx, ty, boneColour); g.restore(); }
+        }
       }
     }
     if (this.show.image && index !== undefined) this.drawImage(g, p, set, to, at, dpr);
@@ -1491,6 +1511,15 @@ export class MotionPathPanel {
       g.textBaseline = "middle";
       g.fillText(label, hx, 8);
     }
+  }
+
+  /** The names of the bones the Parent buttons draw: the parent, then the bones under it down to the selected bone (for tests). */
+  get parentTree(): string[] {
+    const s = this.session, bone = s.selectedBone, name = this.originName(), anim = s.animation;
+    if (!bone || !name || !anim) return [];
+    const p = this.posers().pose(s.skin, anim.name, 0, "none"), pi = p.bones.get(name), bi = p.bones.get(bone);
+    if (pi === undefined || bi === undefined) return [];
+    return chainTo(p, pi, bi).map((b) => p.rig.data.bones[b]!.name);
   }
 
   /** The speed graph's points on its canvas as last drawn (CSS pixels), for tests. */

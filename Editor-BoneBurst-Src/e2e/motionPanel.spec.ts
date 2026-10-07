@@ -222,7 +222,7 @@ test("Motion Path has the Stage's backdrop: the stage background, checkerboard, 
   expect((await colours()).seen).toBeGreaterThan(1);
 });
 
-test("Motion Path's Parent bone and Parent image buttons show the parent bone the path is relative to, fainter and behind the bone's own; off until pressed, and remembered", async ({ page }) => {
+test("Motion Path's Parent bone and Parent image buttons show the parent bone the path is relative to and the bones down to the bone, fainter and behind the bone's own; off until pressed, and remembered", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
@@ -242,10 +242,30 @@ test("Motion Path's Parent bone and Parent image buttons show the parent bone th
   await bone.click();
   await expect(bone).toHaveAttribute("aria-pressed", "true");
   await expect.poll(drawn).not.toBe(before);
-  // (Parent image draws the parent's picture where it has one; the head's parent, the chest, has none.)
+  // (Parent image draws the pictures of the parent and the bones down to the bone; the head's parent, the chest, has none.)
   await image.click();
   await expect(image).toHaveAttribute("aria-pressed", "true");
   await image.click();
   await expect(image).toHaveAttribute("aria-pressed", "false");
   expect(await page.evaluate(() => localStorage.getItem("boneburst.motionPath.layers"))).toContain('"parentBone":true');
+});
+
+test("Motion Path's Parent buttons draw the bones from the parent down to the bone along the tree, not the whole body: hips to the foot is the one leg", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.evaluate(() => localStorage.clear());
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  await page.locator(".stage-panel button.mode").click();
+  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "shin_near" }));
+  const panel = page.locator(".motion-path");
+  await panel.getByRole("combobox", { name: "Parent bone" }).selectOption("hips");
+  await panel.getByRole("button", { name: "Parent bone", exact: true }).click();
+  const tree = () => page.evaluate(() => (window as unknown as { boneburst: { motionPath: { parentTree: string[] } } }).boneburst.motionPath.parentTree);
+  await expect.poll(tree).toEqual(["hips", "leg_near_thigh", "leg_near_shin"]);
+  // A nearer parent: just the bone's own parent.
+  await panel.getByRole("combobox", { name: "Parent bone" }).selectOption("leg_near_shin");
+  await expect.poll(tree).toEqual(["leg_near_shin"]);
 });
