@@ -102,6 +102,72 @@ export class Stage {
   names = { bones: false };
   /** A press picked something (a bone, an image, a constraint): the app shows its name for a moment. */
   onPick: () => void = () => {};
+  /** The bone or image just picked in Pose mode, glowing for 0.4 s. */
+  glow: { kind: "bone" | "slot"; name: string; from: number } | null = null;
+  private static readonly GLOW_MS = 400;
+
+  /** The preference: whether a pick glows at all. */
+  glowOn = true;
+
+  private glowFor(what: { kind: "bone" | "slot"; name: string }): void {
+    if (this.session.animation || !this.glowOn) return;
+    this.glow = { ...what, from: performance.now() };
+    const tick = (): void => {
+      if (!this.glow) return;
+      if (performance.now() - this.glow.from >= Stage.GLOW_MS) { this.glow = null; this.redraw(); return; }
+      this.redraw();
+      this.view().requestAnimationFrame(tick);
+    };
+    this.view().requestAnimationFrame(tick);
+  }
+
+  /** An outline glow round what was just picked, fading out. */
+  private drawGlow(g: CanvasRenderingContext2D, p: Posed, colour: string): void {
+    const glow = this.glow;
+    if (!glow) return;
+    const alpha = 1 - (performance.now() - glow.from) / Stage.GLOW_MS;
+    if (alpha <= 0) return;
+    const at = (x: number, y: number) => toScreen(this.camera, this.size, x, y);
+    g.save();
+    g.globalAlpha = Math.min(1, alpha);
+    g.strokeStyle = colour;
+    g.shadowColor = colour;
+    g.shadowBlur = 16;
+    g.lineWidth = 3;
+    g.lineJoin = "round";
+    g.lineCap = "round";
+    if (glow.kind === "bone") {
+      const b = this.screenBones().find((x) => x.name === glow.name);
+      if (b) {
+        const unit = this.session.boneUnit(), half = boneHalfWidth(unit, this.session.boneSize, this.camera.zoom);
+        g.lineWidth = half * 2 + 6;
+        g.beginPath(); g.moveTo(b.x0, b.y0); g.lineTo(b.x1, b.y1); g.stroke();
+      }
+    } else {
+      // The image's outline: the edges only one of its triangles has.
+      const slot = p.rig.data.slots.findIndex((x) => x.name === glow.name), d = p.draw.slots.find((x) => x.slot === slot);
+      if (d) {
+        const v = new Float32Array(d.vertexCount * 2);
+        drawnVertices(p.rig, d, v);
+        const count = new Map<string, [number, number, number]>();
+        for (let t = 0; t < d.triangles.length; t += 3) {
+          for (let e = 0; e < 3; e++) {
+            const a = d.triangles[t + e]!, b = d.triangles[t + ((e + 1) % 3)]!, key = a < b ? `${a},${b}` : `${b},${a}`, n = count.get(key);
+            count.set(key, [a, b, (n?.[2] ?? 0) + 1]);
+          }
+        }
+        g.beginPath();
+        for (const [a, b, n] of count.values()) {
+          if (n !== 1) continue;
+          const [x0, y0] = at(v[a * 2]!, v[a * 2 + 1]!), [x1, y1] = at(v[b * 2]!, v[b * 2 + 1]!);
+          g.moveTo(x0, y0); g.lineTo(x1, y1);
+        }
+        g.stroke();
+      }
+    }
+    g.restore();
+  }
+
   /** The Create group's tool: what a press on the stage makes (null: none, the transform tools work). */
   createKind: CreateKind | null = null;
   /** The atlas region the Region tool places (chosen in the Create panel). */
@@ -298,6 +364,7 @@ export class Stage {
       }
     }
     if (this.session.pinned.size && !this.session.animation) this.drawPins(g);
+    this.drawGlow(g, p, this.selectedBoneColour ?? selected);
     if (this.names.bones) this.drawBoneNames(g, css.getPropertyValue("--text").trim() || "#ffffff");
     if (this.show.constraints) { this.drawShapes(g, p, selected); this.drawConstraints(g, p, css, selected); }
     this.drawMotionLine(g);
@@ -1083,6 +1150,7 @@ export class Stage {
         this.session.selectReference(null);
         this.session.select({ kind: "slot", name: slot });
         this.onPick();
+        this.glowFor({ kind: "slot", name: slot });
         this.panning = { x: sx, y: sy };
         return;
       }
@@ -1094,6 +1162,7 @@ export class Stage {
     }
     this.session.selectBone(name);
     this.onPick();
+    this.glowFor({ kind: "bone", name });
     this.session.pause();
     if (this.dragLocked()) return;
     const p = this.session.pose()!, index = p.bones.get(name)!;

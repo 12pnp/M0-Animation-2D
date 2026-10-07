@@ -44,6 +44,8 @@ export interface PreferenceValues {
   readonly imageSelect: boolean;
   readonly otherSelect: boolean;
   readonly boneNames: boolean;
+  /** A bone or image picked on the stage in Pose mode glows for 0.4 s. */
+  readonly pickGlow: boolean;
   /** Bone options ▸ Compensate: a moved bone's children keep their place (Pose mode). */
   readonly compensate: boolean;
   /** Constraints drawn on the stage (E4 step 12). */
@@ -104,7 +106,7 @@ export interface PreferenceValues {
 export const UI_SCALE_RANGE = [60, 140] as const;
 /** 95: a twentieth smaller than the browser's own size; a browser under automation (the browser tests) keeps 100, so what they measure is in the pixels they see. */
 const DEFAULT_UI_SCALE = typeof navigator !== "undefined" && navigator.webdriver ? 100 : 95;
-export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, uiScale: DEFAULT_UI_SCALE, fontSize: "medium", toolbarLabels: "auto", toolbarPosition: "left", fewerTicks: false, defaultFps: 30, treeColours: true, treeIndent: 14, stagePanels: true, fullScreenOnStart: true, boneColour: "auto", boneSize: 1, selectedBoneColour: "auto", bones: true, constraints: true, hideIkBones: false, boneSelect: true, imageSelect: true, otherSelect: true, boneNames: false, compensate: false, rulerColour: "auto", rulerOpacity: 0, rulerTextColour: "auto", undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, saveTo: "browser", onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
+export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, uiScale: DEFAULT_UI_SCALE, fontSize: "medium", toolbarLabels: "auto", toolbarPosition: "left", fewerTicks: false, defaultFps: 30, treeColours: true, treeIndent: 14, stagePanels: true, fullScreenOnStart: true, boneColour: "auto", boneSize: 1, selectedBoneColour: "auto", bones: true, constraints: true, hideIkBones: false, boneSelect: true, imageSelect: true, otherSelect: true, boneNames: false, pickGlow: true, compensate: false, rulerColour: "auto", rulerOpacity: 0, rulerTextColour: "auto", undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, saveTo: "browser", onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
   grid: false, nudgeStep: 0.35, nudgeScaleStep: 0.01, nudgeBigFactor: 10, checker: true, axes: true, checkerColour: "auto", gridColour: "auto", gridThickness: 1, axisXColour: "#303030", axisYColour: "#303030", axisThickness: 1, tabBarColour: "#201f24", tabActiveColour: "auto", tabTextColour: "auto", tabDimTextColour: "auto", gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
 export { BONE_SIZE_RANGE } from "./stage/boneScale";
 import { BONE_SIZE_RANGE } from "./stage/boneScale";
@@ -148,6 +150,7 @@ export function readPreferences(text: string | null): PreferenceValues {
     imageSelect: bool("imageSelect", DEFAULTS.imageSelect),
     otherSelect: bool("otherSelect", DEFAULTS.otherSelect),
     boneNames: bool("boneNames", DEFAULTS.boneNames),
+    pickGlow: bool("pickGlow", DEFAULTS.pickGlow),
     compensate: bool("compensate", DEFAULTS.compensate),
     hideIkBones: bool("hideIkBones", DEFAULTS.hideIkBones),
     rulerColour: colour("rulerColour", DEFAULTS.rulerColour),

@@ -209,3 +209,46 @@ test("the small panel buttons follow the mode: Create, Bone options and Pose too
   await page.locator(".stage-panel button.mode").click();
   await expect(page.locator('[data-panel-id="create"]')).toBeVisible();
 });
+
+test("Pose mode: a picked bone glows for 0.4 s, then not; in Animate mode it does not", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 800 });
+  await open(page);
+  const glow = () => page.evaluate(() => (window as unknown as { boneburst: { stage: { glow: { kind: string; name: string } | null } } }).boneburst.stage.glow);
+  const mid = () => page.evaluate(() => {
+    const b = (window as unknown as { boneburst: { stage: { screenBones(): { name: string; x0: number; y0: number; x1: number; y1: number }[] } } }).boneburst.stage.screenBones().find((x) => x.name === "hips")!;
+    return { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 };
+  });
+  const box = (await page.locator(".stage canvas.overlay").boundingBox())!;
+  const at = await mid();
+  await page.mouse.click(box.x + at.x, box.y + at.y);
+  expect(await glow()).toMatchObject({ kind: "bone" });
+  await expect.poll(glow, { timeout: 2000 }).toBeNull();
+  await page.locator(".stage-panel button.mode").click();
+  await page.locator("body").click({ position: { x: 5, y: 5 } });
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select(null));
+  const at2 = await mid();
+  await page.mouse.click(box.x + at2.x, box.y + at2.y);
+  expect(await glow()).toBeNull();
+});
+
+test("the small Glow button at the stage's bottom left turns the pick glow off and on", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 800 });
+  await open(page);
+  const glow = () => page.evaluate(() => (window as unknown as { boneburst: { stage: { glow: unknown } } }).boneburst.stage.glow);
+  const mid = () => page.evaluate(() => {
+    const b = (window as unknown as { boneburst: { stage: { screenBones(): { name: string; x0: number; y0: number; x1: number; y1: number }[] } } }).boneburst.stage.screenBones().find((x) => x.name === "hips")!;
+    return { x: (b.x0 + b.x1) / 2, y: (b.y0 + b.y1) / 2 };
+  });
+  const button = page.getByRole("button", { name: "Glow" });
+  await expect(button).toHaveAttribute("aria-pressed", "true");
+  await button.click();
+  await expect(button).toHaveAttribute("aria-pressed", "false");
+  const box = (await page.locator(".stage canvas.overlay").boundingBox())!;
+  const at = await mid();
+  await page.mouse.click(box.x + at.x, box.y + at.y);
+  expect(await glow()).toBeNull();
+  await button.click();
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select(null));
+  await page.mouse.click(box.x + at.x, box.y + at.y);
+  expect(await glow()).not.toBeNull();
+});
