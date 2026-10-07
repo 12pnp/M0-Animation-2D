@@ -12,7 +12,7 @@ import { bakeMotion, currentNode, dropMotion, keepMotion, motionChanged, motionF
 import { keysAt } from "@/model/timelines";
 import { localPoint, pageScale } from "../pageScale";
 import type { Session } from "../session";
-import { type Matrix, type Point, localRotation, spaceAxes, tidy, turn, turnSign } from "../stage/gizmo";
+import { type Matrix, type Point, localRotation, scaleAlong, scaleFactors, shearAlong, shearDelta, spaceAxes, tidy, turn, turnSign } from "../stage/gizmo";
 import { animatedLocal, boneMatrix, boneTip, parentMatrix, type Posed, Poser } from "../stage/posed";
 import { axisLocked, constraintDriving, shiftedLocal } from "../stage/trailEdit";
 import { drawBackdrop } from "../stage/canvasBackdrop";
@@ -21,8 +21,10 @@ import { type OnionOptions, onionFrames } from "../stage/onion";
 import { type BoneTrail, boneTrail, fromParent, type TrailSpace } from "../stage/trail";
 
 /** The layers the panel can show: the bone's image, the bone itself, its path, and onion skin (the bone at frames either side of the playhead). */
-export type Layer = "image" | "bone" | "path" | "length" | "onion" | "children";
-const LAYERS: readonly Layer[] = ["image", "bone", "path", "length", "onion", "children"];
+export type Layer = "image" | "bone" | "path" | "length" | "onion" | "children" | "rotate" | "move" | "scale" | "shear";
+const LAYERS: readonly Layer[] = ["image", "bone", "path", "length", "onion", "children", "rotate", "move", "scale", "shear"];
+/** The four handles the panel can show on the bone (each a toggle in the header, the Stage's tool icons): rotate ring, move arrows, scale square, shear diamond. */
+const GIZMOS = ["rotate", "move", "scale", "shear"] as const;
 /** The path's dots and the lengths between them. */
 const DOT = "#ff2bd6";
 /** The top of the block speed graph (its canvas shows speeds 0 to this). */
@@ -37,7 +39,7 @@ interface Box { minX: number; minY: number; maxX: number; maxY: number }
 /** A drag of a mark (move) or of the rotation handle, from what the bone was at that frame. */
 interface BoneEdit {
   readonly bone: string;
-  readonly kind: "move" | "rotate";
+  readonly kind: "move" | "rotate" | "scale" | "shear";
   readonly frame: number;
   readonly from: LocalPose;
   readonly parent: Matrix;
@@ -55,6 +57,8 @@ interface BoneEdit {
   readonly inherit: string;
   last: [number, number];
   turned: number;
+  /** Scale and Shear in the Local or World axes: the axis the drag is held to once it has gone far enough (0: x, 1: y), or null. */
+  lock: 0 | 1 | null;
 }
 
 /** The slots of `bones` that draw an image in `p`. */
@@ -122,7 +126,7 @@ export class MotionPathPanel {
   private readonly spaceBtns: Record<TrailSpace, HTMLButtonElement>;
   private readonly layerBtns: Record<Layer, HTMLButtonElement>;
   private space: TrailSpace = "local";
-  private show: Record<Layer, boolean> = { image: true, bone: true, path: true, length: true, onion: false, children: false };
+  private show: Record<Layer, boolean> = { image: true, bone: true, path: true, length: true, onion: false, children: false, rotate: true, move: true, scale: true, shear: true };
   /** What onion skin shows (frames before and after, keyed only, colour-coded); set by the app from the preferences. */
   onion: () => OnionOptions = () => ({ before: 2, after: 2, keyedOnly: false, colour: true });
   /** What the Stage draws behind the skeleton (checkerboard, grid, centre axes), from the preferences; set by the app. */
@@ -145,6 +149,9 @@ export class MotionPathPanel {
   private mapping: { width: number; height: number; k: number; cx: number; cy: number } | null = null;
   /** The rotation handle beyond the bone's tip at the playhead, on the canvas, when the bone can be turned. */
   private handle: { x: number; y: number } | null = null;
+  /** The scale square and the shear diamond on the canvas as last drawn (null when hidden). */
+  private scaleHandle: { x: number; y: number } | null = null;
+  private shearHandle: { x: number; y: number } | null = null;
   /** The drag in progress that edits the animation (docs/LOCALPATH-EDIT-PLAN.md). */
   private edit: BoneEdit | null = null;
   /** The frame tag at the playhead's dot, on the canvas as last drawn; a press on it scrubs along the path. */
@@ -213,7 +220,11 @@ export class MotionPathPanel {
     } catch { /* storage blocked: all shown */ }
     this.head.className = "lp-head";
     this.spaceBtns = { local: this.button("Local", "The world's orientation, from the parent's joint: the parent's own movement is not in it"), world: this.button("World", "In the skeleton's space, as the Stage shows it") };
-    this.layerBtns = { image: this.button("Image", "Show the bone's image"), bone: this.button("Bone", "Show the bone"), path: this.button("Path", "Show the bone's path over the animation"), length: this.button("Length", "Show the distance between each pair of dots along the path (in the panel's space)"), onion: this.button("Onion", "Show the bone at the frames before (red) and after (green) the playhead; the count is set in Preferences ▸ Behavior"), children: this.button("Children", "Show every bone under the selected one, with their images") };
+    this.layerBtns = { image: this.button("Image", "Show the bone's image"), bone: this.button("Bone", "Show the bone"), path: this.button("Path", "Show the bone's path over the animation"), length: this.button("Length", "Show the distance between each pair of dots along the path (in the panel's space)"), onion: this.button("Onion", "Show the bone at the frames before (red) and after (green) the playhead; the count is set in Preferences ▸ Behavior"), children: this.button("Children", "Show every bone under the selected one, with their images"), rotate: this.button("Rotate", "Show the rotation handle (the ring beyond the bone's tip)"), move: this.button("Move", "Show the move arrows (when the bone has no path)"), scale: this.button("Scale", "Show the scale handle (the square beside the bone's tip)"), shear: this.button("Shear", "Show the shear handle (the diamond on the other side of the tip)") };
+    for (const g of GIZMOS) {
+      this.layerBtns[g].setAttribute("aria-label", `Show ${g} handle`);
+      iconButton(this.layerBtns[g], g, false);
+    }
     try { if (localStorage.getItem(AXES_KEY) === "world") this.axes = "world"; } catch { /* storage blocked: the default */ }
     this.axesBtn.type = "button";
     this.axesBtn.addEventListener("click", () => {
@@ -221,7 +232,7 @@ export class MotionPathPanel {
       try { localStorage.setItem(AXES_KEY, this.axes); } catch { /* not kept */ }
       this.schedule();
     });
-    this.head.append(this.title, this.layerBtns.image, this.layerBtns.bone, this.layerBtns.path, this.layerBtns.length, this.layerBtns.onion, this.layerBtns.children, this.spaceBtns.local, this.spaceBtns.world, this.axesBtn);
+    this.head.append(this.title, this.layerBtns.image, this.layerBtns.bone, this.layerBtns.path, this.layerBtns.length, this.layerBtns.onion, this.layerBtns.children, this.layerBtns.rotate, this.layerBtns.move, this.layerBtns.scale, this.layerBtns.shear, this.spaceBtns.local, this.spaceBtns.world, this.axesBtn);
     this.body.className = "lp-body";
     this.note.className = "empty lp-note";
     const fit = iconButton(this.button("Fit", "Fit the whole path in the panel (double-click does the same)"), "fit", false);
@@ -418,6 +429,8 @@ export class MotionPathPanel {
     const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
     this.mapping = { width, height, k, cx, cy };
     this.handle = null;
+    this.scaleHandle = null;
+    this.shearHandle = null;
     this.arrows = [];
     this.tag = null;
     this.nodePts = [];
@@ -439,7 +452,11 @@ export class MotionPathPanel {
       }
     }
     if (this.show.path && trail) this.drawPath(g, trail, bone, at, here, { accent, muted });
-    if (trail && index !== undefined && p.rig.active[index] && !constraintDriving(s.doc!, bone)) { if (!motionFor(s)) this.drawArrows(g, p, index, to, at); this.drawHandle(g, p, index, to, at, accent); }
+    if (trail && index !== undefined && p.rig.active[index] && !constraintDriving(s.doc!, bone)) {
+      if (!motionFor(s) && this.show.move) this.drawArrows(g, p, index, to, at);
+      if (this.show.rotate) this.drawHandle(g, p, index, to, at, accent);
+      if (this.show.scale || this.show.shear) this.drawScaleShear(g, p, index, to, at, accent);
+    }
     g.fillStyle = text;
     g.font = `11px "JetBrains Mono", monospace`;
     g.textBaseline = "top";
@@ -633,9 +650,37 @@ export class MotionPathPanel {
     g.restore();
   }
 
+  /**
+   * The scale handle (a square) and the shear handle (a diamond), either side of the bone's tip: drag one to scale or shear the bone at the
+   * playhead, as on the Stage (the same maths, in this panel's axes).
+   */
+  private drawScaleShear(g: CanvasRenderingContext2D, p: Posed, index: number, to: (x: number, y: number) => [number, number], at: (x: number, y: number) => [number, number], accent: string): void {
+    const m = boneMatrix(p, index), [jx, jy] = at(...to(m[4], m[5])), [tx, ty] = at(...to(...boneTip(p, index)));
+    if (![jx, jy, tx, ty].every(Number.isFinite)) return;
+    const len = Math.hypot(tx - jx, ty - jy), ux = len > 1e-6 ? (tx - jx) / len : 1, uy = len > 1e-6 ? (ty - jy) / len : 0, nx = -uy, ny = ux;
+    g.save();
+    g.lineWidth = 2;
+    g.strokeStyle = accent;
+    if (this.show.scale) {
+      const x = tx + nx * 22, y = ty + ny * 22, on = this.edit?.kind === "scale";
+      this.scaleHandle = { x, y };
+      g.globalAlpha = 0.7; g.lineWidth = 1; g.beginPath(); g.moveTo(tx, ty); g.lineTo(x, y); g.stroke(); g.globalAlpha = 1; g.lineWidth = 2;
+      g.fillStyle = on ? accent : "#ffffff";
+      g.beginPath(); g.rect(x - 5, y - 5, 10, 10); g.fill(); g.stroke();
+    }
+    if (this.show.shear) {
+      const x = tx - nx * 22, y = ty - ny * 22, on = this.edit?.kind === "shear";
+      this.shearHandle = { x, y };
+      g.globalAlpha = 0.7; g.lineWidth = 1; g.beginPath(); g.moveTo(tx, ty); g.lineTo(x, y); g.stroke(); g.globalAlpha = 1; g.lineWidth = 2;
+      g.fillStyle = on ? accent : "#ffffff";
+      g.beginPath(); g.moveTo(x, y - 7); g.lineTo(x + 7, y); g.lineTo(x, y + 7); g.lineTo(x - 7, y); g.closePath(); g.fill(); g.stroke();
+    }
+    g.restore();
+  }
+
   /** What can be grabbed, on the canvas as last drawn: each frame's mark (x, y pairs) and the rotation handle; for tests. */
-  get grabPoints(): { marks: readonly number[]; handle: { x: number; y: number } | null; tag: { x0: number; y0: number; x1: number; y1: number } | null; nodes: readonly { x: number; y: number }[]; handles: readonly { slot: number; side: "out" | "in"; x: number; y: number }[]; times: readonly { i: number; x: number; y: number }[]; arrows: readonly { axis: 0 | 1; x0: number; y0: number; x1: number; y1: number }[] } {
-    return { marks: [...this.marks], handle: this.handle, tag: this.tag, nodes: this.nodePts, handles: this.handlePts, times: this.timePts, arrows: this.arrows };
+  get grabPoints(): { marks: readonly number[]; handle: { x: number; y: number } | null; scaleHandle: { x: number; y: number } | null; shearHandle: { x: number; y: number } | null; tag: { x0: number; y0: number; x1: number; y1: number } | null; nodes: readonly { x: number; y: number }[]; handles: readonly { slot: number; side: "out" | "in"; x: number; y: number }[]; times: readonly { i: number; x: number; y: number }[]; arrows: readonly { axis: 0 | 1; x0: number; y0: number; x1: number; y1: number }[] } {
+    return { marks: [...this.marks], handle: this.handle, scaleHandle: this.scaleHandle, shearHandle: this.shearHandle, tag: this.tag, nodes: this.nodePts, handles: this.handlePts, times: this.timePts, arrows: this.arrows };
   }
 
   /** The bone's space (what the panel shows) at a canvas point: the inverse of the mapping `draw` made. */
@@ -659,7 +704,7 @@ export class MotionPathPanel {
    * Begin editing the selected bone from a press: on the rotation handle, turn the bone at the
    * playhead; on a mark, go to that frame and move the joint. True when the press was an edit's.
    */
-  private beginEdit(x: number, y: number, kind: "move" | "rotate", frame: number, axis: 0 | 1 | null = null): boolean {
+  private beginEdit(x: number, y: number, kind: "move" | "rotate" | "scale" | "shear", frame: number, axis: 0 | 1 | null = null): boolean {
     const s = this.session, bone = s.selectedBone, doc = s.doc, anim = s.animation;
     if (!doc || bone === null || !anim) return false;
     const driver = constraintDriving(doc, bone);
@@ -679,10 +724,10 @@ export class MotionPathPanel {
     this.edit = {
       bone, kind, frame: s.frame, from: animatedLocal(p, index), parent, axis, axes: spaceAxes(this.axes, matrix, parent), start: [x, y],
       key: unkeyed ? null : { animation: anim.name, time: s.keyTime },
-      joint, matrix, sign: turnSign(parent, boneInherit(b), p.rig.scaleX * p.rig.scaleY < 0), inherit: boneInherit(b), last: at, turned: 0,
+      joint, matrix, sign: turnSign(parent, boneInherit(b), p.rig.scaleX * p.rig.scaleY < 0), inherit: boneInherit(b), last: at, turned: 0, lock: null,
     };
     if (unkeyed) this.onStatus(`Unkeyed pose of ${bone}: press Key to key it; moving the playhead drops it.`);
-    else s.history!.begin(kind === "move" ? `Move ${bone} at frame ${s.frame}` : `Rotate ${bone} at frame ${s.frame}`);
+    else s.history!.begin(`${{ move: "Move", rotate: "Rotate", scale: "Scale", shear: "Shear" }[kind]} ${bone} at frame ${s.frame}`);
     return true;
   }
 
@@ -703,6 +748,26 @@ export class MotionPathPanel {
       local = { ...e.from, ...moved };
       property = "translate";
       said = `${e.bone} · frame ${e.frame} · x ${moved.x}, y ${moved.y}${e.axis !== null ? ` · along the ${this.axes} ${e.axis === 0 ? "x" : "y"}` : ""}`;
+    } else if (e.kind === "scale" || e.kind === "shear") {
+      // As on the Stage: the drag's world points about the bone's joint (the panel's Local space is the world's, moved to the parent's joint).
+      const here = this.spaceAt(x, y), began = this.spaceAt(e.start[0], e.start[1]);
+      if (!here || !began) return;
+      const world = (q: Point): Point => (this.space === "local" ? [q[0] + e.parent[4], q[1] + e.parent[5]] : q), p0 = world(began), p1 = world(here);
+      if (e.kind === "scale") {
+        let fx: number, fy: number;
+        if (this.axes === "parent" || shift) [fx, fy] = scaleFactors(e.matrix, p0, p1, shift, 12 / m.k);
+        else { const held = scaleAlong(this.axes, e.matrix, e.parent, p0, p1, e.lock, 4 / m.k, 12 / m.k); [fx, fy] = held.factors; e.lock = held.lock; }
+        local = { ...e.from, scaleX: tidy(e.from.scaleX * fx, 3), scaleY: tidy(e.from.scaleY * fy, 3) };
+        property = "scale";
+        said = `${e.bone} · frame ${e.frame} · scale ${local.scaleX}, ${local.scaleY}`;
+      } else {
+        let lx: number, ly: number;
+        if (this.axes === "parent") [lx, ly] = shearDelta((Math.atan2(e.matrix[2], e.matrix[0]) * 180) / Math.PI, p1[0] - p0[0], p1[1] - p0[1], shift);
+        else { const held = shearAlong(this.axes, e.matrix, e.parent, p0, p1, e.lock, 4 / m.k); [lx, ly] = held.delta; e.lock = held.lock; }
+        local = { ...e.from, shearX: tidy(e.from.shearX + lx, 2), shearY: tidy(e.from.shearY + ly, 2) };
+        property = "shear";
+        said = `${e.bone} · frame ${e.frame} · shear ${local.shearX}, ${local.shearY}`;
+      }
     } else {
       const at = this.spaceAt(x, y);
       if (!at) return;
@@ -1492,6 +1557,9 @@ export class MotionPathPanel {
       if (node >= 0) { this.pickSlot(node); this.nodeDrag = node; this.grab(e); return; }
       const h = this.handle;
       if (h && !this.timing && Math.hypot(h.x - x, h.y - y) <= 11 && this.beginEdit(x, y, "rotate", this.session.frame)) { this.grab(e); return; }
+      const sc = this.scaleHandle, sh = this.shearHandle;
+      if (sc && !this.timing && Math.hypot(sc.x - x, sc.y - y) <= 11 && this.beginEdit(x, y, "scale", this.session.frame)) { this.grab(e); return; }
+      if (sh && !this.timing && Math.hypot(sh.x - x, sh.y - y) <= 11 && this.beginEdit(x, y, "shear", this.session.frame)) { this.grab(e); return; }
       const arrow = this.arrowAt(x, y);
       if (arrow !== null && !this.timing && this.beginEdit(x, y, "move", this.session.frame, arrow)) { this.grab(e); return; }
       const best = this.markAt(x, y);

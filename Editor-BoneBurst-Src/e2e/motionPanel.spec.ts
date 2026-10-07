@@ -25,10 +25,10 @@ test("Motion Path shows the selected bone's path over the animation, Local or Wo
   const panel = page.locator(".motion-path");
   await expect(panel.locator(".lp-note")).toContainText("Select a bone");
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head" }));
-  await expect(panel.locator(".lp-head span")).toHaveText("head · Local");
+  await expect(panel.locator(".lp-head > span")).toHaveText("head · Local");
   await expect(panel.locator(".lp-note")).toBeHidden();
   await panel.getByRole("button", { name: "World", exact: true }).click();
-  await expect(panel.locator(".lp-head span")).toHaveText("head · World");
+  await expect(panel.locator(".lp-head > span")).toHaveText("head · World");
   // A mark: sweep the canvas for one (the page's own pointer events); the playhead moves off frame 0.
   const moved = await page.evaluate(() => {
     const live = (window as unknown as Live).boneburst, cv = document.querySelector(".motion-path canvas")!, r = cv.getBoundingClientRect(), before = live.session.frame;
@@ -78,7 +78,7 @@ test("Motion Path in Pose mode shows the bone and its image on the setup pose, t
   const panel = page.locator(".motion-path");
   await expect(panel.locator(".lp-note")).toContainText("Select a bone");
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head_art" }));
-  await expect(panel.locator(".lp-head span")).toHaveText("head_art · Local · Pose");
+  await expect(panel.locator(".lp-head > span")).toHaveText("head_art · Local · Pose");
   await expect(panel.locator(".lp-note")).toBeHidden();
   const drawn = () => drawnPixels(page);
   await expect.poll(drawn).toBeGreaterThan(20000);
@@ -86,7 +86,7 @@ test("Motion Path in Pose mode shows the bone and its image on the setup pose, t
   await panel.getByRole("button", { name: "Image", exact: true }).click();
   await expect.poll(drawn).toBeLessThan(all / 2);
   await panel.getByRole("button", { name: "World", exact: true }).click();
-  await expect(panel.locator(".lp-head span")).toHaveText("head_art · World · Pose");
+  await expect(panel.locator(".lp-head > span")).toHaveText("head_art · World · Pose");
   // A press on the canvas changes nothing: no seek, no edit.
   const state = () => page.evaluate(() => { const s = (window as unknown as { boneburst: { session: { frame: number; history: { canUndo: boolean } } } }).boneburst.session; return [s.frame, s.history.canUndo]; });
   const before = await state();

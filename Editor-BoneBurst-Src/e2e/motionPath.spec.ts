@@ -38,7 +38,7 @@ async function open(page: Page, bone = "head"): Promise<void> {
   await page.locator(".stage-panel button.mode").click();
   await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
   await page.evaluate((b) => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: b }), bone);
-  await expect(page.locator(".motion-path .lp-head span")).toContainText(bone);
+  await expect(page.locator(".motion-path .lp-head > span")).toContainText(bone);
 }
 
 const translate = (page: Page, bone: string) => page.evaluate((b) => {

@@ -23,7 +23,7 @@ async function open(page: import("@playwright/test").Page, bone: string): Promis
   await page.locator(".stage-panel button.mode").click();
   await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
   await page.evaluate((b) => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: b }), bone);
-  await expect(page.locator(".motion-path .lp-head span")).toContainText(bone);
+  await expect(page.locator(".motion-path .lp-head > span")).toContainText(bone);
   await expect.poll(() => page.evaluate(() => (window as unknown as Live).boneburst.motionPath.grabPoints.marks.length)).toBeGreaterThan(4);
 }
 

@@ -13,6 +13,8 @@ flowchart LR
 
 ## 2026-10-07
 
+- **BoneBurst Editor v2: four handle toggles in the Motion Path header, and Scale and Shear handles in the panel** (`Editor-BoneBurst-Src/`). Rotate, Move, Scale and Shear icons (the Stage's tool icons) show or hide the rotate ring, the move arrows (bones without a path), a scale square and a shear diamond beside the bone's tip; the choice is kept in the browser. The new square and diamond drag like the Stage's (`scaleFactors` / `scaleAlong`, `shearDelta` / `shearAlong`, in the panel's Local or World axes, Shift for uniform or snapped), keyed or unkeyed as the other handles are, and locked in Adjust time. Guarded by `e2e/motionGizmos.spec.ts` (ignoring the toggle fails it); 91 browser tests passed, 755 unit tests (one stress test timed out once under load, passes alone); not tried by hand.
+
 - **BoneBurst Editor v2: resize lines turn blue at once with a resize cursor, and full screen (View ▸ Full Screen, ⇧⌘F; on by default from the first click)** (`Editor-BoneBurst-Src/`).
   - **Resize lines:** a panel sash or the Timeline's names splitter is blue the moment the pointer is on it (Dockview's half-second wait is off), shows `col-resize` / `row-resize`, and stays blue with that cursor everywhere while held (`workspace/grips.ts`). No grip icon.
   - **Full screen:** View ▸ Full Screen and ⇧⌘F use the browser's full screen (it hides the address and tab bars; Esc leaves it). By default the first click or key in the page goes full screen, once per load; the preference "Go full screen on the first click or key" (Preferences ▸ General, View ▸ Full Screen on Start) changes the default. A browser under automation is skipped unless the address has `?fullscreen`.
