@@ -13,6 +13,11 @@ flowchart LR
 
 ## 2026-10-07
 
+- **BoneBurst Editor v2: Motion Path node buttons are green numbers that swap by dragging, each node keeps its number, and the + moves to the upper row** (`Editor-BoneBurst-Src/`, [plan](../../Editor-BoneBurst-Src/docs/PATH-FRAMES-PLAN.md)).
+  - The strip under the buttons holds only the numbered nodes (solid green); the green + is in the upper row (it creates the path when there is none, adds a node in Edit Path, hidden in Adjust time).
+  - Dragging a number onto another swaps the two places; a node keeps its number (`MotionNode.id`, saved in the sidecar), so dragging 3 onto 2 reads 1, 3, 2 and the spline runs that way. The keys on the timeline stay the old route until Bake to timeline, which highlights.
+  - Guarded by `tests/motionPath.test.ts`, `tests/sidecar.test.ts`, `e2e/motionPath.spec.ts` (removing the swap fails it); 751 unit and 77 browser tests passed; not tried by hand.
+
 - **BoneBurst Editor v2: the Motion Path panel's Draw path button is now Edit Path** (`Editor-BoneBurst-Src/`, [plan](../../Editor-BoneBurst-Src/docs/PATH-FRAMES-PLAN.md)). Label, hover text, status line and the path plans only; the modes are Edit Path and Adjust time. Guarded by `e2e/motionPath.spec.ts`; 749 unit and 76 browser tests passed.
 
 - **BoneBurst Editor v2: the Local Path panel is now Motion Path** (`Editor-BoneBurst-Src/`, [plan](../../Editor-BoneBurst-Src/docs/PATH-FRAMES-PLAN.md)). The panel does a bone's motion path (spline, node times, blocks), not only a trail in Local space; the name now matches `MotionPath`, `motion.ts` and the sidecar's `motion`. Panel id `motionPath`, `panels/motionPanel.ts`, `MotionPathPanel`, `.motion-path`, `window.boneburst.motionPath`, the e2e files `motionPanel*.spec.ts`; the Local | World switch stays. **A saved layout that placed the old panel id forgets that placement** (the panel comes in at its default place), and its saved layer and axis choices reset. 749 unit and 76 browser tests passed.

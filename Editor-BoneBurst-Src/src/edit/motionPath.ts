@@ -1,6 +1,6 @@
 import { boneNumber } from "@/model/defaults";
 import type { Key, Skeleton } from "@/model/skeleton";
-import type { MotionPath } from "@/model/sidecar";
+import type { MotionNode, MotionPath } from "@/model/sidecar";
 import { frameTime, keyLists, keyTime, shortFloat } from "@/model/timelines";
 import { EditRefused, type Edit } from "./history";
 import { deleteKeys, type KeyRef, onAnimation, withKeys } from "./keys";
@@ -200,6 +200,35 @@ export function placeAtFrame(m: MotionPath, frame: number): Pt {
 /** The frames the keys of a bake go on: the node times, then the end of the run. */
 export function keyFrames(m: Pick<MotionPath, "starts" | "frames" | "closed">): number[] {
   return [...nodeTimeFrames(m), endFrame(m)];
+}
+
+/** The number each node's button shows: its own once nodes have been reordered, else its place in the list. */
+export function nodeLabels(m: Pick<MotionPath, "nodes">): number[] {
+  return m.nodes.map((n, i) => n.id ?? i + 1);
+}
+
+/** Every node given the number it shows now, so it keeps it when the order changes. */
+function withIds(m: MotionPath): MotionPath {
+  return m.nodes.every((n) => n.id !== undefined) ? m : { ...m, nodes: m.nodes.map((n, i) => ({ ...n, id: n.id ?? i + 1 })) };
+}
+
+/** A node added at the end (`at` undefined) or before place `at`; it gets the next free number. */
+export function withNode(m: MotionPath, node: MotionNode, at?: number): MotionPath {
+  const i = at ?? m.nodes.length;
+  // Appending to a path never reordered needs no numbers: the new one is next in the list.
+  const plain = at === undefined && m.nodes.every((n) => n.id === undefined), base = plain ? m : withIds(m);
+  const id = plain ? undefined : Math.max(...nodeLabels(base)) + 1;
+  const added = id === undefined ? node : { ...node, id };
+  return { ...base, nodes: [...base.nodes.slice(0, i), added, ...base.nodes.slice(i)] };
+}
+
+/** The nodes `i` and `j` of the path swapped: each keeps its handle and its number; the path is the same set of places run in another order. */
+export function swapNodes(m0: MotionPath, i: number, j: number): MotionPath {
+  if (i === j || i < 0 || j < 0 || i >= m0.nodes.length || j >= m0.nodes.length) throw new EditRefused("There is no such spline node.");
+  const m = withIds(m0), nodes = m.nodes.slice();
+  nodes[i] = m.nodes[j]!;
+  nodes[j] = m.nodes[i]!;
+  return { ...m, nodes };
 }
 
 /** A node time added at `frame` (inside the run, not on another); the block it falls in is split in two, each keeping its multiplier. */

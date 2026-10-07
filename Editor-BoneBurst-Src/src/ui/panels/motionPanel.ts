@@ -1,6 +1,6 @@
 import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { EditRefused } from "@/edit/history";
-import { addNodeTime, blocksOf, curveOf, endFrame, FLAT_SPEED, handleOffsets, moveNodeTime, nodeTimeFrames, placeAtFrame, progressAtFrame, removeNodeTime, type SpeedPoint, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
+import { addNodeTime, blocksOf, curveOf, endFrame, FLAT_SPEED, handleOffsets, moveNodeTime, nodeTimeFrames, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, type SpeedPoint, swapNodes, withNode, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
 import { drawnVertices } from "@/engine/draw";
 import { boneInherit } from "@/model/defaults";
 import type { Skeleton } from "@/model/skeleton";
@@ -152,7 +152,7 @@ export class MotionPathPanel {
   /** The motion path's own row of buttons (docs/PATH-SPEED-PLAN.md), and the node picked on the canvas (-1: none). */
   private readonly motionBar = document.createElement("div");
   private readonly motionInfo = document.createElement("span");
-  private readonly motionBtns: Record<"draw" | "time" | "del" | "addTime" | "delTime" | "bakeTl" | "drop", HTMLButtonElement>;
+  private readonly motionBtns: Record<"draw" | "time" | "add" | "del" | "addTime" | "delTime" | "bakeTl" | "drop", HTMLButtonElement>;
   /** Total frames (14 + 0), the picked node time's frame, the picked block's time multiplier, and whether the spline is a ring. */
   private readonly framesField = document.createElement("input");
   private readonly frameField = document.createElement("input");
@@ -163,7 +163,7 @@ export class MotionPathPanel {
   private readonly frameBox = document.createElement("label");
   private readonly speedBox = document.createElement("label");
   private readonly framesHint = document.createElement("span");
-  /** The capture bar (docs/PATH-CAPTURE-PLAN.md): a red button for each slot (press: store the bone's pose now), a green one to add a slot. */
+  /** The capture bar (docs/PATH-CAPTURE-PLAN.md): a numbered button for each node (press: put the bone there), a green + to add a slot. */
   private readonly slotBar = document.createElement("div");
   private slotSig = "";
   /** The picked block's speed graph (Adjust time): presets above a small canvas of draggable points; a straight line at 1 by default. */
@@ -226,8 +226,9 @@ export class MotionPathPanel {
     this.motionBar.className = "lp-motion";
     this.motionInfo.className = "lp-motion-info";
     this.motionBtns = {
-      draw: this.button("Edit Path", "Edit the bone's path, a spline: two nodes to start (where it is, and an offset). A red number puts the bone on that node, moving the bone moves the node, + adds a node"),
+      draw: this.button("Edit Path", "Edit the bone's path, a spline: two nodes to start (where it is, and an offset). A number puts the bone on that node, moving the bone moves the node, + adds a node"),
       time: this.button("Adjust time", "Set the node times (where the ring is cut into blocks) and each block's time multiplier, then Bake to timeline"),
+      add: this.button("+", "Add a spline node"),
       del: this.button("− Node", "Remove the picked spline node (a path keeps two)"),
       addTime: this.button("+ Time", "Add a node time at the playhead's frame (a path keeps at least two)"),
       delTime: this.button("− Time", "Remove the picked node time (the first, on frame 0, stays; a path keeps two)"),
@@ -278,12 +279,14 @@ export class MotionPathPanel {
     this.closedLabel.className = "lp-field";
     this.closedLabel.title = "A ring: the last spline node joins the first, so the path comes back to where it began (on by default)";
     this.closedLabel.append(this.closedBox, " Closed");
-    this.motionBar.append(this.motionBtns.draw, this.motionBtns.time, this.motionBtns.del, this.motionBtns.addTime, this.motionBtns.delTime, this.framesBox, this.closedLabel, this.frameBox, this.speedBox, this.motionBtns.bakeTl, this.motionBtns.drop, this.motionInfo);
+    this.motionBar.append(this.motionBtns.draw, this.motionBtns.time, this.motionBtns.add, this.motionBtns.del, this.motionBtns.addTime, this.motionBtns.delTime, this.framesBox, this.closedLabel, this.frameBox, this.speedBox, this.motionBtns.bakeTl, this.motionBtns.drop, this.motionInfo);
     this.motionBtns.addTime.addEventListener("click", () => this.addTimeHere());
     this.motionBtns.delTime.addEventListener("click", () => this.removePickedTime());
     this.motionBtns.draw.addEventListener("click", () => this.enterDraw());
     this.motionBtns.time.addEventListener("click", () => this.enterTime());
     this.motionBtns.bakeTl.addEventListener("click", () => this.bakeToTimeline());
+    this.motionBtns.add.className = "add";
+    this.motionBtns.add.addEventListener("click", () => { if (motionFor(this.session)) this.addNode(); else this.enterDraw(); });
     this.motionBtns.del.addEventListener("click", () => this.removeNode());
     this.motionBtns.drop.addEventListener("click", () => { const m = motionFor(this.session); if (m) { dropMotion(this.session, m.animation, m.bone); this.selNode = -1; this.selTime = -1; } });
     this.element.append(this.head, this.motionBar, this.slotBar, this.graphBar, this.body);
@@ -805,6 +808,10 @@ export class MotionPathPanel {
     this.motionBtns.draw.hidden = !can;
     this.motionBtns.time.hidden = !m;
     this.motionBtns.drop.hidden = !m;
+    // The green +: no path yet, it makes one (node 1 is where the bone is, node 2 that plus an offset); in Edit Path it adds a node.
+    this.motionBtns.add.hidden = !can || (!!m && !draw);
+    this.motionBtns.add.setAttribute("aria-label", m ? "Add a spline node" : "Create a path");
+    this.motionBtns.add.title = m ? "Add another spline node (the last plus the offset): then move the bone or drag the node to place it" : "Make a path for this bone: node 1 is where it is, node 2 that plus an offset";
     this.motionBtns.del.hidden = !draw;
     for (const k of ["addTime", "delTime", "bakeTl"] as const) this.motionBtns[k].hidden = !time;
     this.motionBtns.draw.setAttribute("aria-pressed", String(draw));
@@ -836,13 +843,12 @@ export class MotionPathPanel {
   }
 
   /**
-   * The strip under the path row: in Edit Path a red button for each spline node and the green + (the capture bar,
+   * The strip under the path row: in Edit Path a green numbered button for each spline node and the green + (the capture bar,
    * docs/PATH-CAPTURE-PLAN.md); in Adjust time a tab for each block (its frames and its multiplier).
    */
   private renderStrip(m: MotionPath | undefined): void {
-    const can = !!this.session.animation && this.session.selectedBone !== null;
-    this.slotBar.hidden = !m && !can;
-    const sig = !m ? `c|${can}` : (this.mode === "draw" ? `d|${JSON.stringify(m.nodes)}|${this.selNode}` : `t|${JSON.stringify([m.starts, m.speeds, m.frames, m.closed, m.curves ?? []])}|${this.selTime}`);
+    this.slotBar.hidden = !m;
+    const sig = !m ? "" : (this.mode === "draw" ? `d|${JSON.stringify(m.nodes)}|${this.selNode}` : `t|${JSON.stringify([m.starts, m.speeds, m.frames, m.closed, m.curves ?? []])}|${this.selTime}`);
     if (sig === this.slotSig) return;
     this.slotSig = sig;
     const make = (cls: string, text: string, title: string, run: (e: MouseEvent) => void): HTMLButtonElement => {
@@ -851,24 +857,22 @@ export class MotionPathPanel {
       b.addEventListener("click", run);
       return b;
     };
-    if (!m) {
-      // No path for this bone yet: one green + makes it (node 1 is where the bone is, node 2 that plus an offset).
-      const create = make("slot green", "+", "Make a path for this bone: node 1 is where it is, node 2 that plus an offset", () => this.enterDraw());
-      create.setAttribute("aria-label", "Create a path");
-      this.slotBar.replaceChildren(create);
-      return;
-    }
+    if (!m) { this.slotBar.replaceChildren(); return; }
     if (this.mode === "draw") {
       const items = m.nodes.map((n, i) => {
-        const b = make(`slot red stored${i === this.selNode ? " picked" : ""}`, `${i + 1}`,
-          `Spline node ${i + 1}: x ${n.x}, y ${n.y}. Press to put the bone there; then moving the bone moves the node.`,
+        const label = nodeLabels(m)[i]!;
+        const b = make(`slot node${i === this.selNode ? " picked" : ""}`, `${label}`,
+          `Spline node ${label}: x ${n.x}, y ${n.y}. Press to put the bone there; then moving the bone moves the node. Drag onto another number to swap their places.`,
           () => this.pickSlot(i));
-        b.setAttribute("aria-label", `Spline node ${i + 1}`);
+        b.setAttribute("aria-label", `Spline node ${label}`);
+        // Drag a number onto another: the two nodes swap places in the path (and the order it runs in).
+        b.draggable = true;
+        b.addEventListener("dragstart", (e) => { e.dataTransfer?.setData("text/plain", String(i)); if (e.dataTransfer) e.dataTransfer.effectAllowed = "move"; });
+        b.addEventListener("dragover", (e) => { e.preventDefault(); if (e.dataTransfer) e.dataTransfer.dropEffect = "move"; });
+        b.addEventListener("drop", (e) => { e.preventDefault(); this.swapNodes(Number(e.dataTransfer?.getData("text/plain")), i); });
         return b;
       });
-      const add = make("slot green", "+", "Add another spline node (the last plus the offset): then move the bone and press its red button", () => this.addNode());
-      add.setAttribute("aria-label", "Add a spline node");
-      this.slotBar.replaceChildren(...items, add);
+      this.slotBar.replaceChildren(...items);
       return;
     }
     const tabs = blocksOf(m).map((b, i) => {
@@ -1013,7 +1017,7 @@ export class MotionPathPanel {
       keepMotion(s, started);
       // Node 2 is picked and the bone goes to it; node 1 is one press away.
       this.pickSlot(1);
-      this.onStatus(`${started.bone}: two spline nodes (where it is, and an offset). Press a red number to put the bone on that node, then move the bone or drag the node; + adds a node; then Bake.`);
+      this.onStatus(`${started.bone}: two spline nodes (where it is, and an offset). Press a number to put the bone on that node, then move the bone or drag the node; + adds a node; then Bake.`);
     }
     this.mode = "draw";
     this.slotSig = "";
@@ -1038,11 +1042,23 @@ export class MotionPathPanel {
     this.schedule();
   }
 
+  /** Two spline nodes swap places (a number dragged onto another); the picked node stays the one picked. */
+  private swapNodes(from: number, to: number): void {
+    const s = this.session, m = motionFor(s);
+    if (!m || !Number.isInteger(from) || from === to || from < 0 || to < 0 || from >= m.nodes.length || to >= m.nodes.length) return;
+    keepMotion(s, swapNodes(m, from, to));
+    if (this.selNode === from) this.selNode = to; else if (this.selNode === to) this.selNode = from;
+    this.slotSig = "";
+    const labels = nodeLabels(m);
+    this.onStatus(`Swapped spline nodes ${labels[from]} and ${labels[to]}: the path now runs ${nodeLabels(swapNodes(m, from, to)).join(", ")}.`);
+    this.schedule();
+  }
+
   /** The green +: another spline node, after the last by the same offset. */
   private addNode(): void {
     const s = this.session, m = motionFor(s);
     if (!m) return;
-    keepMotion(s, { ...m, nodes: [...m.nodes, nodeAfter(s, m.nodes.at(-1)!)] });
+    keepMotion(s, withNode(m, nodeAfter(s, m.nodes.at(-1)!)));
     this.selNode = m.nodes.length;
     this.onStatus("Added a spline node: move the bone (or drag the node) to place it.");
   }
@@ -1112,7 +1128,7 @@ export class MotionPathPanel {
         g.font = `10px "JetBrains Mono", monospace`;
         g.textAlign = "left";
         g.textBaseline = "bottom";
-        g.fillText(String(i + 1), x + 7, y - 4);
+        g.fillText(String(nodeLabels(m)[i]), x + 7, y - 4);
       } else {
         // Locked while only the time is adjusted: small, hollow, not grabbed.
         g.globalAlpha = 0.6;
@@ -1274,7 +1290,7 @@ export class MotionPathPanel {
     const curve = curveOf(m), hit = curve.project({ x: at[0], y: at[1] }), k = this.mapping?.k ?? 1;
     if (hit.distance * k > 10) return false;
     const i = curve.nodeAt.slice(0, m.nodes.length).filter((v) => v <= hit.s).length, p = curve.at(hit.s);
-    keepMotion(this.session, { ...m, nodes: [...m.nodes.slice(0, i), { x: p.x, y: p.y }, ...m.nodes.slice(i)] });
+    keepMotion(this.session, withNode(m, { x: p.x, y: p.y }, i));
     this.selNode = i;
     return true;
   }

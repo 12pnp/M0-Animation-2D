@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addNodeTime, bakeTranslate, blocksOf, boundaryProgress, buildCurve, curveOf, endFrame, fitChannel, handleOffsets, keyFrames, keysSignature, moveNodeTime, nodeTimeFrames, pathSignature, placeAtFrame, progressAtFrame, removeNodeTime, translateKeys, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
+import { addNodeTime, bakeTranslate, blocksOf, boundaryProgress, buildCurve, curveOf, endFrame, fitChannel, handleOffsets, keyFrames, keysSignature, moveNodeTime, nodeTimeFrames, pathSignature, placeAtFrame, progressAtFrame, nodeLabels, removeNodeTime, swapNodes, translateKeys, withNode, withBlockGraph, withFrames, withSpeed } from "@/edit/motionPath";
 import type { MotionPath } from "@/model/sidecar";
 import type { Animation, Key, Skeleton } from "@/model/skeleton";
 import { keyLists, keyTime, timeFrame } from "@/model/timelines";
@@ -255,5 +255,29 @@ describe("a block's speed graph", () => {
   });
   it("changes the path's signature", () => {
     expect(pathSignature(withBlockGraph(motion(), 0, slowIn))).not.toBe(pathSignature(motion()));
+  });
+});
+
+describe("swapping spline nodes", () => {
+  it("exchanges two nodes with their handles; each keeps its number, so 1, 2, 3 with 3 dragged to 2 reads 1, 3, 2", () => {
+    const m = motion({ nodes: [{ x: 0, y: 0 }, { x: 5, y: 5, tx: 1, ty: 2 }, { x: 9, y: 9 }] });
+    expect(nodeLabels(m)).toEqual([1, 2, 3]);
+    const s = swapNodes(m, 2, 1);
+    expect(s.nodes.map((n) => [n.x, n.y, n.id])).toEqual([[0, 0, 1], [9, 9, 3], [5, 5, 2]]);
+    expect(s.nodes[2]!.tx).toBe(1);
+    expect(nodeLabels(s)).toEqual([1, 3, 2]);
+    // The same places, another order: the curve differs.
+    expect(pathSignature(s)).not.toBe(pathSignature(m));
+    expect(swapNodes(s, 2, 1).nodes.map((n) => [n.x, n.y])).toEqual(m.nodes.map((n) => [n.x, n.y]));
+    expect(() => swapNodes(m, 0, 3)).toThrow();
+    expect(() => swapNodes(m, 1, 1)).toThrow();
+  });
+  it("gives a node added later the next free number, in the middle too", () => {
+    const m = motion({ nodes: [{ x: 0, y: 0 }, { x: 5, y: 5 }] });
+    expect(nodeLabels(withNode(m, { x: 9, y: 9 }))).toEqual([1, 2, 3]);
+    expect(withNode(m, { x: 9, y: 9 }).nodes.every((n) => n.id === undefined)).toBe(true);
+    const sw = swapNodes(withNode(m, { x: 9, y: 9 }), 2, 1);
+    expect(nodeLabels(withNode(sw, { x: 7, y: 7 }))).toEqual([1, 3, 2, 4]);
+    expect(nodeLabels(withNode(m, { x: 2, y: 2 }, 1))).toEqual([1, 3, 2]);
   });
 });

@@ -734,12 +734,11 @@ dialog.preferences .slider input[type="number"] { width: 64px; }
 /* The capture bar: a red button per pose slot, a green one to add a slot (docs/PATH-CAPTURE-PLAN.md). */
 .lp-slots { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--line); flex: none; }
 .lp-slots[hidden] { display: none; }
-.lp-slots button.slot { min-width: 26px; height: 22px; padding: 0 7px; font-size: 12px; background: transparent; border-radius: 4px; border-width: 2px; border-style: solid; }
-.lp-slots button.red { border-color: #e03e3e; color: #e03e3e; }
-.lp-slots button.red.stored { background: #e03e3e; color: #ffffff; }
-.lp-slots button.red.picked { outline: 2px solid var(--accent); outline-offset: 1px; }
-.lp-slots button.green { border-color: #2e9e4f; color: #2e9e4f; font-weight: 700; }
-.lp-slots button.green:hover { background: #2e9e4f; color: #ffffff; }
+.lp-slots button.slot { min-width: 22px; height: 22px; padding: 0 5px; font-size: 12px; background: transparent; border-radius: 4px; border-width: 2px; border-style: solid; }
+.lp-slots button.node { border-color: #2e9e4f; background: #2e9e4f; color: #ffffff; cursor: grab; }
+.lp-slots button.node.picked { outline: 2px solid var(--accent); outline-offset: 1px; }
+.lp-motion button.add { min-width: 22px; border: 2px solid #2e9e4f; color: #2e9e4f; font-weight: 700; background: transparent; }
+.lp-motion button.add:hover { background: #2e9e4f; color: #ffffff; }
 .lp-motion input.time-field { width: 5em; padding: 1px 3px; font-size: 12px; }
 .lp-motion .lp-field { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; }
 .lp-motion .lp-field[hidden] { display: none; }

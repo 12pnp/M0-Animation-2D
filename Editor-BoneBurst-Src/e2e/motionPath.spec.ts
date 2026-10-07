@@ -72,7 +72,7 @@ async function drag(page: Page, bone: string, dx: number, dy: number): Promise<v
 }
 
 const panelOf = (page: Page) => page.locator(".motion-path");
-const reds = (page: Page) => page.locator(".lp-slots button.red");
+const reds = (page: Page) => page.locator(".lp-slots button.node");
 const blocks = (page: Page) => page.locator(".lp-slots button.block");
 
 /** Edit Path, the bone dragged a little and its node stored, then Bake (into Adjust time): a path of 2 spline nodes. */
@@ -90,8 +90,6 @@ test("Edit Path starts with two spline nodes and a green +: [the bone's place] [
   const done = await steps(page), keys = await translate(page, "head"), here = await localJoint(page, "head", 0);
   await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
   await expect(reds(page)).toHaveCount(2);
-  await expect(reds(page).first()).toHaveClass(/stored/);
-  await expect(reds(page).nth(1)).toHaveClass(/stored/);
   await expect(panel.getByRole("button", { name: "Add a spline node" })).toBeVisible();
   const p = (await path(page))!;
   expect(p.nodes).toHaveLength(2);
@@ -497,4 +495,31 @@ test("Adjust time edits the timing only: the bone is not dragged on the Stage or
   // Back in Edit Path the bone drags again.
   await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
   expect(await page.evaluate(() => (window as unknown as { boneburst: { motionPath: { timing: boolean } } }).boneburst.motionPath.timing)).toBe(false);
+});
+
+test("the numbered node buttons are green and alone in their strip (the + is in the upper row), and dragging one onto another swaps the two nodes' places", async ({ page }) => {
+  await open(page);
+  const panel = panelOf(page);
+  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await panel.getByRole("button", { name: "Add a spline node" }).click();
+  await expect(reds(page)).toHaveCount(3);
+  // The + is in the upper row with the mode buttons; the strip holds the numbers only.
+  await expect(page.locator(".lp-slots").getByRole("button", { name: "Add a spline node" })).toHaveCount(0);
+  await expect(page.locator(".lp-motion").getByRole("button", { name: "Add a spline node" })).toBeVisible();
+  await expect(reds(page)).toHaveText(["1", "2", "3"]);
+  const green = await reds(page).first().evaluate((b) => getComputedStyle(b).backgroundColor);
+  expect(green).toBe("rgb(46, 158, 79)");
+  const before = (await path(page))!.nodes;
+  await drag(page, "head", 60, 30);
+  await expect.poll(async () => (await path(page))!.nodes[2]).not.toEqual(before[2]);
+  const nodes = (await path(page))!.nodes;
+  // Node 3 dragged onto node 2: the path runs 1, 3, 2: the buttons read so, each place keeps its number.
+  await reds(page).nth(2).dragTo(reds(page).nth(1));
+  await expect.poll(async () => (await path(page))!.nodes[1]).toMatchObject({ x: nodes[2]!.x, y: nodes[2]!.y });
+  const after = (await path(page))!.nodes;
+  expect(after[0]).toEqual({ ...nodes[0]!, id: 1 });
+  expect(after[2]).toMatchObject({ x: nodes[1]!.x, y: nodes[1]!.y, id: 2 });
+  await expect(reds(page)).toHaveText(["1", "3", "2"]);
+  // The keys on the timeline are the old order's until Bake to timeline.
+  await expect(panel.getByRole("button", { name: "Add a spline node" })).toBeVisible();
 });

@@ -16,7 +16,7 @@ const FULL: Sidecar = {
   guides: [{ axis: "x", at: 12.5 }],
   references: [{ path: "ref/run.png", x: 10, y: -4, scale: 0.5, opacity: 0.4 }],
   notes: [{ text: "hips lead", author: "AI", about: "hip" }, { text: "plain" }],
-  motion: [{ animation: "run", bone: "hip", nodes: [{ x: 0, y: 0 }, { x: 5, y: 8, tx: 2, ty: -3 }, { x: 10, y: 0 }], closed: false, frames: 15, starts: [5, 10], speeds: [1, 2, 1], curves: [[], [0, 0.2, 0.5, 1.5, 1, 0.4], []], baked: "abc|def" }],
+  motion: [{ animation: "run", bone: "hip", nodes: [{ x: 0, y: 0 }, { x: 5, y: 8, tx: 2, ty: -3 }, { x: 10, y: 0, id: 4 }], closed: false, frames: 15, starts: [5, 10], speeds: [1, 2, 1], curves: [[], [0, 0.2, 0.5, 1.5, 1, 0.4], []], baked: "abc|def" }],
   extra: new Map([["later", true]]),
 };
 
