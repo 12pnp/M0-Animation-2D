@@ -100,6 +100,8 @@ export class Stage {
   select = { bones: true, images: true, others: true };
   /** The Names column: bones draw their names. */
   names = { bones: false };
+  /** A press picked something (a bone, an image, a constraint): the app shows its name for a moment. */
+  onPick: () => void = () => {};
   /** The Create group's tool: what a press on the stage makes (null: none, the transform tools work). */
   createKind: CreateKind | null = null;
   private createDrag: { from: Point; to: Point | null; target: string | null; screen: [number, number] } | null = null;
@@ -486,7 +488,7 @@ export class Stage {
   private constraintDown(sx: number, sy: number): boolean {
     const p = this.session.pose();
     const hit = this.show.constraints && this.select.others && p ? hitConstraint(this.shownShapes(p), (x, y) => toScreen(this.camera, this.size, x, y), sx, sy) : null;
-    if (hit) this.session.select({ kind: "constraint", type: hit.type, name: hit.name });
+    if (hit) { this.session.select({ kind: "constraint", type: hit.type, name: hit.name }); this.onPick(); }
     return !!hit;
   }
 
@@ -1077,6 +1079,7 @@ export class Stage {
       if (slot !== null) {
         this.session.selectReference(null);
         this.session.select({ kind: "slot", name: slot });
+        this.onPick();
         this.panning = { x: sx, y: sy };
         return;
       }
@@ -1087,6 +1090,7 @@ export class Stage {
       return;
     }
     this.session.selectBone(name);
+    this.onPick();
     this.session.pause();
     if (this.dragLocked()) return;
     const p = this.session.pose()!, index = p.bones.get(name)!;

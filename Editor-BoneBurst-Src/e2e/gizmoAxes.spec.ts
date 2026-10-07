@@ -80,9 +80,9 @@ test("F centres the view on the selected bone; Z cycles the space with a short l
   });
   expect(Math.abs(centred[0]!)).toBeLessThan(1);
   expect(Math.abs(centred[1]!)).toBeLessThan(1);
-  await expect(page.getByRole("button", { name: "Parent" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "Parent", exact: true })).toHaveAttribute("aria-pressed", "true");
   await page.keyboard.press("z");
-  await expect(page.getByRole("button", { name: "World" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("button", { name: "World", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect(page.locator(".stage-flash")).toHaveText("World");
   await expect(page.locator(".stage-flash")).toHaveCount(0, { timeout: 2000 });
   await page.keyboard.press("z");

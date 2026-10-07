@@ -806,3 +806,6 @@ dialog.panel-info .panel-info-title { display: flex; align-items: center; gap: 6
 .stage-tools .group .vm-cell[aria-pressed="true"]::after { background: var(--text); opacity: 1; }
 .stage-tools .group .vm-cell:disabled::after { opacity: 0.15; }
 .stage-tools .group .vm-cell[aria-pressed="true"] { background: none; }
+.stage-tools .group.user-hidden { display: none; }
+/* The picked name floats about 2 cm above the pointer (placed in app.ts). */
+.stage-crumb { position: absolute; z-index: 5; transform: translate(-50%, -100%); flex: none; }

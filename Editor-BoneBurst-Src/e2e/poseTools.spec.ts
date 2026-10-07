@@ -99,3 +99,54 @@ test("keys: D, P, G, C and N pick the Create tools, U edits the mesh, I pins; in
   await page.keyboard.press("d");
   expect(await page.evaluate(() => (window as unknown as { boneburst: { stage: { createKind: string | null } } }).boneburst.stage.createKind)).toBeNull();
 });
+
+test("the picked name shows for half a second; small buttons on the stage's left edge show and hide each panel", async ({ page }) => {
+  await open(page);
+  await expect(page.locator(".stage-crumb")).toBeHidden();
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "hips" }));
+  await expect(page.locator(".stage-crumb")).toBeVisible();
+  await expect(page.locator(".stage-crumb")).toContainText("hips");
+  await expect(page.locator(".stage-crumb")).toBeHidden({ timeout: 2000 });
+  const create = page.locator('[data-panel-id="create"]');
+  await expect(create).toHaveAttribute("aria-pressed", "true");
+  await create.click();
+  await expect(page.locator(".stage-tools .create")).toBeHidden();
+  await expect(create).toHaveAttribute("aria-pressed", "false");
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".stage-tools .create")).toBeHidden();
+  await page.locator('[data-panel-id="create"]').click();
+  await expect(page.locator(".stage-tools .create")).toBeVisible();
+});
+
+test("a panel dragged onto another stops at its edge: cards never overlap; a free place works", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 800 });
+  await open(page);
+  const rect = async (sel: string) => (await page.locator(sel).boundingBox())!;
+  const overlap = (a: { x: number; y: number; width: number; height: number }, b: typeof a) =>
+    Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x)) * Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
+  const grip = (await page.locator(".stage-tools .create > .grip").boundingBox())!;
+  const target = await rect(".stage-tools .options");
+  await page.mouse.move(grip.x + grip.width / 2, grip.y + grip.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2, { steps: 20 });
+  await page.mouse.up();
+  const create = await rect(".stage-tools .create");
+  expect(overlap(create, await rect(".stage-tools .options"))).toBeLessThan(2);
+  expect(overlap(create, await rect(".stage-tools .poses"))).toBeLessThan(2);
+  expect(overlap(create, await rect(".stage-tools .transform"))).toBeLessThan(2);
+  // It did move (toward the target) rather than stay put.
+  expect(Math.abs(create.x - grip.x) + Math.abs(create.y - grip.y)).toBeGreaterThan(5);
+});
+
+test("the picked name floats about 2 cm (76 px) above the pointer", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 800 });
+  await open(page);
+  const box = (await page.locator(".stage canvas.overlay").boundingBox())!;
+  const at = { x: box.x + 300, y: box.y + 300 };
+  await page.mouse.move(at.x, at.y);
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "hips" }));
+  const name = (await page.locator(".stage-crumb").boundingBox())!;
+  expect(Math.abs(name.x + name.width / 2 - at.x)).toBeLessThan(6);
+  expect(Math.abs(name.y + name.height - (at.y - 75.6))).toBeLessThan(6);
+});

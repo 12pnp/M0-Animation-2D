@@ -35,6 +35,7 @@ import { download, saveProject } from "./project";
 import { OpenDialog } from "./openDialog";
 import { folders, type Recent, recent, type RecentHandle, readRecent } from "./recent";
 import { ExportRefused, exportFiles, exportToUnity } from "./unityExport";
+import { localPoint, pageScale } from "./pageScale";
 import { snapFields } from "./snapFields";
 import type { CreateKind } from "./stage/create";
 import { editMesh, editPath, resetPose, togglePaint } from "./stage/poseTools";
@@ -229,6 +230,23 @@ export function mountApp(root: HTMLElement): void {
   const transform = new TransformStrip(session, new Map(TOOLS.map((t, i) => [t.tool, toolBtns[i]!] as const)), { autoKey: () => stage.autoKey, status: (m) => say(m) });
   // What is selected, as a path above the panels: bone, then slot, then attachment.
   crumb = el("div", "stage-crumb");
+  crumb.hidden = true;
+  let shownPick = "", crumbTimer = 0;
+  // Where the pointer last was, to put the name above it: 2 cm up (about 76 pixels at 96 dpi), kept inside the stage.
+  let pointerAt: { clientX: number; clientY: number } | null = null;
+  window.addEventListener("pointermove", (e) => { pointerAt = e; }, true);
+  window.addEventListener("pointerdown", (e) => { pointerAt = e; }, true);
+  const flashCrumb = (): void => {
+    if (!crumb.childElementCount) return;
+    crumb.hidden = false;
+    const k = pageScale(), box = stagePanel.getBoundingClientRect();
+    const [x, y] = pointerAt ? localPoint(stagePanel, pointerAt) : [stagePanel.clientWidth / 2, stagePanel.clientHeight / 2];
+    const half = crumb.offsetWidth / 2;
+    crumb.style.left = `${Math.min(Math.max(x, half + 4), Math.max(half + 4, box.width / k - half - 4))}px`;
+    crumb.style.top = `${Math.max(y - 75.6 / k, crumb.offsetHeight + 4)}px`;
+    window.clearTimeout(crumbTimer);
+    crumbTimer = window.setTimeout(() => { crumb.hidden = true; }, 500);
+  };
   // Pose / Animate: one button for the mode. Pose edits the setup pose (no animation shown); Animate
   // shows the last animation used, or the first, and what is done there is keyed.
   const modeBtn = button("Pose", "", () => {
@@ -265,18 +283,37 @@ export function mountApp(root: HTMLElement): void {
   lockBtn.classList.add("stage-lock");
   session.onSelectionLocked = () => say(`The selection is locked: press ${keysOf("lockSelection")} or click Locked (bottom right of the stage) to pick another.`);
   const spaceGroup = group(...spaceBtns), showGroup = group(matrix.element, ...showBtns.filter((b) => b !== rulersBtn && b.dataset.show !== "onion"));
-  stageTools.append(crumb, createGroup, optionsGroup, poseGroup, transform.element, spaceGroup, showGroup);
+  stageTools.append(createGroup, optionsGroup, poseGroup, transform.element, spaceGroup, showGroup);
   // Each panel can be dragged by its grip and folded; the corner button shows or hides all of them.
-  const resetPanels = floatGroups(stagePanel, { create: createGroup, options: optionsGroup, poses: poseGroup, transform: transform.element, space: spaceGroup, show: showGroup });
+  const panels = floatGroups(stagePanel, { create: createGroup, options: optionsGroup, poses: poseGroup, transform: transform.element, space: spaceGroup, show: showGroup }, () => syncPanelBtns());
   // Fit stays in the panel's top right corner, whatever its size.
   const fitCorner = el("div", "stage-fit");
   const panelsBtn = iconButton(button("Panels", "Show or hide the tool panels over the stage (View ▸ Stage Panels); double-click to put them back where they started", () => prefs.set({ stagePanels: !prefs.values.stagePanels })), "panels", false);
-  panelsBtn.addEventListener("dblclick", () => { resetPanels(); say("Stage panels put back."); });
+  panelsBtn.addEventListener("dblclick", () => { panels.reset(); say("Stage panels put back."); });
   fitCorner.append(fitBtn);
   // Two small buttons in the stage's bottom-left corner, stacked upward: show or hide the panels, then the rulers.
   const rulerTools = el("div", "stage-ruler-tools");
   rulerTools.append(panelsBtn, rulersBtn);
-  stagePanel.append(rulerTools, lockBtn, modeBtn);
+  // One small button per panel on the stage's left edge, to show or hide it (the first appended sits lowest).
+  const PANEL_BTNS: ReadonlyArray<{ id: string; label: string; icon: IconName }> = [
+    { id: "show", label: "Select · Visible · Names", icon: "visible" },
+    { id: "space", label: "Local · Parent · World", icon: "rotate" },
+    { id: "transform", label: "Transform", icon: "move" },
+    { id: "poses", label: "Pose tools", icon: "mesh" },
+    { id: "options", label: "Bone options", icon: "pin" },
+    { id: "create", label: "Create", icon: "bone" },
+  ];
+  const panelBtns = PANEL_BTNS.map((p) => {
+    const b = iconButton(button(p.label, `Show or hide the ${p.label} panel`, () => panels.toggle(p.id)), p.icon, false);
+    b.dataset.panelId = p.id;
+    return b;
+  });
+  function syncPanelBtns(): void {
+    for (const b of panelBtns) b.setAttribute("aria-pressed", String(!panels.isHidden(b.dataset.panelId!)));
+  }
+  syncPanelBtns();
+  rulerTools.append(...panelBtns);
+  stagePanel.append(rulerTools, lockBtn, modeBtn, crumb);
   stagePanel.append(fitCorner);
   // "Automatic" text labels: hidden while the stage is narrow.
   new ResizeObserver(() => stageTools.classList.toggle("narrow", stagePanel.clientWidth < 560)).observe(stagePanel);
@@ -484,6 +521,7 @@ export function mountApp(root: HTMLElement): void {
 
   const say = (m: string) => { message.textContent = m; };
   stage.onStatus = say;
+  stage.onPick = () => flashCrumb();
   // Right-click on the stage (a drag still pans): what acts on the bone there, add a bone, the pose, the view.
   stage.onContextMenu = ([x, y], world, bone) => showContextMenu(x, y, stageMenu({
     session, status: say, keySelected: () => timeline.keySelected(), deleteSelected: () => outline.deleteSelected(),
@@ -745,8 +783,11 @@ export function mountApp(root: HTMLElement): void {
       else if (sel.kind === "attachment") parts.push(slotBone(sel.slot) ?? "", sel.slot, sel.key);
       else parts.push(sel.name);
     }
-    crumb.hidden = !parts.length;
     crumb.replaceChildren(...parts.filter(Boolean).flatMap((p, i) => [...(i ? [Object.assign(document.createElement("span"), { className: "sep", textContent: "▸" })] : []), Object.assign(document.createElement("span"), { textContent: p, title: p })]));
+    // The name shows for half a second when something is picked, then goes.
+    const picked = parts.length ? JSON.stringify(sel) : "";
+    if (!picked) { crumb.hidden = true; shownPick = ""; }
+    else if (picked !== shownPick) { shownPick = picked; flashCrumb(); }
   }
   session.onChange(refresh);
 
