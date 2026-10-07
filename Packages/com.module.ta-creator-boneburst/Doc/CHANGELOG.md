@@ -11,6 +11,9 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-07 — **ECS port P8 recorded: less shell overhead at small counts** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
+- [BoneBurst-ECS-Plan](Review/BoneBurst-ECS-Plan.md) §17: a per-system timer showed the managed shell at 1.1 of 1.7 ms at 500 idle skeletons; the steady animation shortcut, one frame job (pose, GPU record, CPU mesh) and staging without copies cut the frame time 7–12% at idle (100–2000) in alternating release-player A/Bs, with a better tail while switching; the rest is a fixed floor outside BoneBurst (0.30 ms for one skeleton against 0.19 for the MonoBehaviour runtime). 382 tests; deliberate bugs failed 29, 8 and 208. Core is unchanged by this step.
+
 ### 2026-10-07 — **ECS port P7 recorded: physics input, followers, idle skipping and the benchmark** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
 - [BoneBurst-ECS-Plan](Review/BoneBurst-ECS-Plan.md) §16: physics requests and movement inheritance, bone followers and idle skipping, each against the managed reference (309 tests; three deliberate bugs failed 2, 1 and 1). A benchmark player mirroring `BoneBenchmark` (same content, grid, seeds and switch sequence) ran alternating against the existing IL2CPP BoneBurst players: level at 2000 skeletons (ECS GPU 3.67 against mono GPU 3.49 ms idle), slower at 500 and below (1.70 against 1.00 at 500 idle) because of main-thread shell cost, which a lookup-based pass cut by 14–16% at 100–500. The backends differ (CoreCLR against IL2CPP) and the machine was not quiet; both are stated in the plan. Core is unchanged by this step.
 

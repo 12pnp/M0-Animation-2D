@@ -1,6 +1,6 @@
 # BoneBurst ECS port: Plan
 
-**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 (CPU route, skins, tint black, Lit2D) done 2026-10-07 except the vertex-fetch route, rim light and a player build (§15); P7 (physics input, followers, idle skipping, benchmark) done 2026-10-07 except the visibility mode, the steady shortcut and the sorting question (§16). P8 (shell overhead at small counts) in progress (§17).**
+**Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 (CPU route, skins, tint black, Lit2D) done 2026-10-07 except the vertex-fetch route, rim light and a player build (§15); P7 (physics input, followers, idle skipping, benchmark) done 2026-10-07 except the visibility mode, the steady shortcut and the sorting question (§16). P8 (shell overhead at small counts) done 2026-10-07: 7–16% less at 100–2000 skeletons, the rest is a fixed floor outside BoneBurst (§17).**
 
 BoneBurst's pose, constraint, timeline and mesh code (`Module.PA.BoneBurst.Core`) is already Burst-friendly pointer code with no `UnityEngine`. The port keeps that code unchanged and replaces only the managed shell around it (`BoneBurstSystem`, `BoneBurstSkeleton`, `BoneBurstAsset`, `BoneAnimationState`, the GPU and fetch buffers) with Entities 6.7 systems, bakers and Entities Graphics. The result is a new package in `M0-25DPlatformer-ECS/Packages`.
 
@@ -404,7 +404,7 @@ Median frame time (ms, lower is better), release players, `Tests/Results~/2026-1
 
 ## 17. P8 plan (2026-10-07): cut the shell overhead at small counts
 
-**Status: in progress.** §16 measured the ECS port level with the MonoBehaviour runtime at 2000 skeletons but 0.2–0.7 ms slower at 100–500, with the shell (the managed per-entity work around Core's jobs) at about 1.5 ms of 1.8 ms at 500 idle. Goal: shrink that shell without touching Core's maths.
+**Status: done 2026-10-07 (results at the end of this section).** §16 measured the ECS port level with the MonoBehaviour runtime at 2000 skeletons but 0.2–0.7 ms slower at 100–500, with the shell (the managed per-entity work around Core's jobs) at about 1.5 ms of 1.8 ms at 500 idle. Goal: shrink that shell without touching Core's maths.
 
 ```mermaid
 flowchart LR
@@ -420,3 +420,37 @@ flowchart LR
 **Steps.** (1) A static timer that each system wraps its `OnUpdate` in, enabled by the benchmark after warm-up, with the per-system milliseconds written into its result row. (2) Rank the systems and change the largest first, one change at a time, keeping a change only when an alternating A/B in a release player shows it. (3) Correctness: the 309 EditMode tests, with a deliberate bug where a change touches a path no test reaches.
 
 **Gate.** An alternating (ABBA) release-player run at 100, 500 and 2000 skeletons, idle and switching, before against after, on the same machine in the same session; frame time lower at 100 and 500 and not worse at 2000; all tests green.
+
+### P8 result (2026-10-07)
+
+**Measured first.** `BoneBurstShellTimer` (a stopwatch per system and per phase, off by default so it costs nothing, switched on by the benchmark's `-shell 1` after warm-up) gave, for the ECS GPU route, milliseconds per frame (build before P8):
+
+| | animation | pose | after-animation | GPU | render | shell total | frame |
+|---|---|---|---|---|---|---|---|
+| idle × 100 | 0.05 | 0.13 | 0.01 | 0.05 | 0.03 | 0.27 | 0.51 |
+| idle × 500 | 0.25 | 0.39 | 0.07 | 0.25 | 0.13 | 1.09 | 1.69 |
+| idle × 2000 | 0.75 | 1.36 | 0.31 | 0.60 | 0.41 | 3.48 | 3.60 |
+| switch × 500 | 0.74 | 0.47 | 0.16 | 0.25 | 0.20 | 1.83 | 2.49 |
+
+Inside them (500 idle): animation 0.02 requests, 0.03 update, 0.03 apply, 0.06 stage, the rest per-entity loop overhead; pose 0.10 headers and 0.27 job; GPU 0.09 record job, 0.05 loop, 0.05 upload. Switching adds 0.31 in `Apply` and 0.17 in staging at 500. At 1 skeleton the whole frame is 0.30 ms (mono 0.19): a floor that is not BoneBurst's.
+
+**Changes (25D repo, in the order measured):**
+1.  **Steady animation shortcut** (`TryAdvanceSteady`, ported from the managed state with the same conditions and the same Fast command; `AfterApply` knows the frame was steady). A second fuzz run (a lone track-0 entry so the shortcut is taken, compared against the managed general path): 72 more cases, 381 tests; a deliberate bug (steady completions ignored) failed 29.
+2.  **One frame job.** The pose step, the GPU record and classification, and the CPU mesh build (also for a GPU instance the classifier sends to the CPU) run in the same work item of one job: one parallel job and one sync per frame instead of three. A new spineboy test pins the GPU-to-CPU fallback mesh, which no earlier test required (a deliberate bug there failed 8; the same bug had passed all 381 earlier because a stale compile was running: see below).
+3.  **No staging copies.** The instance's header points at the track state's own command, mode, hold-factor and rotation lists, and the pose job writes the rotation memory back into the state's list, instead of copying four lists per instance per frame (382 tests; a header with zero commands failed 208).
+
+**Alternating A/B (ABBA, release players, same session, build before against build after):**
+
+| step | 100 idle | 500 idle | 2000 idle | 500 switch | 2000 switch |
+|---|---|---|---|---|---|
+| steady shortcut (`_9` → `_10`) | 0.60 → 0.60 | 1.59 → 1.50 | 3.82 → 3.65 | 2.50 → 2.15 | 5.50 → 5.45 |
+| one frame job (`_10` → `_11`) | 0.50 → 0.50 | 1.50 → 1.40 | 3.55 → 3.40 | 1.96 → 1.94 | 5.15 → 4.90 |
+| no copies (`_11` → `_12`) | 0.61 → 0.64 (noise) | 1.40 → 1.40 | 3.40 → 3.40 | 2.05 → 1.85 | 4.99 → 5.00 |
+| **whole P8 (`_9` → `_12`, 3 repeats)** | **0.55 → 0.50 (−9%)** | **1.50 → 1.40 (−7%)** | **3.80 → 3.34 (−12%)** | 2.19 → 2.15 (inside noise) | 5.35 → 4.9–5.0 median; p95 11.1–12.8 → 9.9–10.5 ms |
+
+**Readings and limits.**
+*   The timer's resolution is 0.1 ms, so single-digit percentages at 100 skeletons are about one tick; the 500 and 2000 rows are repeated and consistent.
+*   One A/B row (2000 switching, `_9` → `_12`) first read +11% because build `_12` had stray 6.8 ms runs; repeating `_11` and `_12` side by side four times each showed both at about 4.9 ms (the strays appear in `_11` too, on the first launch after a pause) and `_12`'s p95 lower. The machine was not quiet: three `vitest` workers of another session ran at 100% throughout and the load average sat at 8–11, so the row is reported as unchanged median, better tail, not as a gain.
+*   **What is left is mostly not the shell.** At 100 skeletons the frame is 0.50 ms of which about 0.30 is the floor measured with one skeleton (Entities Graphics, the transform system, Netcode's local world, the demo's idle systems, the player loop), against 0.19 for the MonoBehaviour runtime; the pose job's latency at 100 instances is 0.11 ms. Our systems at 100 are 0.2 ms. Going further would mean a chunk-level rewrite of the loops (a change-filtered request query, no per-entity buffer access) worth about 0.1 ms at 500, not done: below what this measurement can resolve on this machine.
+
+**Process notes.** My "wait for the compile" loop twice returned a stale "completed" and the runs that followed used old binaries, which made two deliberate bugs look uncaught; `Tests/Tools~` was not changed, but the A/B and test helpers now wait on `isCompiling` and require the full test count. A deliberate bug that left the rotation pointer null corrupted the Editor's heap and crashed it (two Editor crashes in the session; the other was a hung pipeline). Both are why §17 states which results were rerun.
