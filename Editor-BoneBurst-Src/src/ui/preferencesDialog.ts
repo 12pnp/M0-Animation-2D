@@ -1,5 +1,5 @@
 import { pickColour } from "./colourPopup";
-import { AUTOSAVE_RANGE, BONE_SIZE_RANGE, DEFAULTS, GRID_RANGE, NUDGE_FACTOR_RANGE, NUDGE_RANGE, ONION_RANGE, DEFAULT_FPS_RANGE, type FontSize, type Preferences, type PreferenceValues, type SaveTo, TREE_INDENT_RANGE, type ToolbarLabels, type ToolbarPosition, THICKNESS_RANGE, type Theme, UI_SCALE_RANGE, UNDO_RANGE } from "./preferences";
+import { AUTOSAVE_RANGE, BUILT_IN_THEMES, type ThemeBase, BONE_SIZE_RANGE, DEFAULTS, GRID_RANGE, NUDGE_FACTOR_RANGE, NUDGE_RANGE, ONION_RANGE, DEFAULT_FPS_RANGE, type FontSize, type Preferences, type PreferenceValues, type SaveTo, TREE_INDENT_RANGE, type ToolbarLabels, type ToolbarPosition, THICKNESS_RANGE, UI_SCALE_RANGE, UNDO_RANGE } from "./preferences";
 import { toStyle } from "./pageScale";
 
 /**
@@ -34,7 +34,6 @@ export class PreferencesDialog {
     const note = (text: string) => { const n = document.createElement("p"); n.className = "note"; n.textContent = text; return n; };
     const sections: Record<string, readonly HTMLElement[]> = {
       general: [
-        select("Theme", [["system", "Follow the system"], ["light", "Light"], ["dark", "Dark"]], p.theme, (v) => this.prefs.set({ theme: v as Theme })),
         number(`Undo steps kept (${UNDO_RANGE[0]}–${UNDO_RANGE[1]})`, p.undoSteps, 1, (n) => this.prefs.set({ undoSteps: n })),
         note("Takes effect for the next document opened."),
         number("New references' opacity (%)", Math.round(p.referenceOpacity * 100), 1, (n) => this.prefs.set({ referenceOpacity: n / 100 })),
@@ -59,6 +58,7 @@ export class PreferencesDialog {
         check("Tree colours", p.treeColours, (on) => this.prefs.set({ treeColours: on })),
         note("Names and icons in the rig tree take each bone's colour."),
         slider(`Tree indentation (pixels, ${TREE_INDENT_RANGE[0]}–${TREE_INDENT_RANGE[1]})`, p.treeIndent, TREE_INDENT_RANGE[0], TREE_INDENT_RANGE[1], 1, (n) => this.prefs.set({ treeIndent: n })),
+        colourPicker("Indent guide colour", p.treeGuideColour, (c) => this.prefs.set({ treeGuideColour: c }), true, themeColour("--bb-field-border")),
       ],
       files: [
         select("Save keeps the project in", [["browser", "This browser"], ["file", "A file"]], p.saveTo, (v) => this.prefs.set({ saveTo: v as SaveTo })),
@@ -129,7 +129,7 @@ export class PreferencesDialog {
     bar.className = "pref-title";
     const tab = document.createElement("span");
     tab.textContent = "Preferences";
-    bar.append(tab);
+    bar.append(tab, this.themeBar());
     this.dragBy(bar);
 
     // The left list: a category shows all of its sections; a section inside it, only that one.
@@ -185,10 +185,63 @@ export class PreferencesDialog {
     content.scrollTop = scroll;
   }
 
+  /**
+   * The theme controls in the title bar, over every section: pick the theme in use (every colour and size below belongs to it), make a new one as a
+   * copy, rename or delete one of your own, and choose the scheme (Light or Dark) it starts from.
+   */
+  private themeBar(): HTMLElement {
+    const box = document.createElement("div");
+    box.className = "pref-themes";
+    const label = document.createElement("span");
+    label.textContent = "Theme";
+    const pick = document.createElement("select");
+    pick.setAttribute("aria-label", "Theme");
+    pick.append(new Option("Follow the system", "system"), ...this.prefs.themes.map((t) => new Option(t.name, t.id)));
+    pick.value = this.prefs.values.theme;
+    pick.addEventListener("change", () => this.prefs.set({ theme: pick.value }));
+    const active = this.prefs.active, own = this.prefs.themes.findIndex((t) => t.id === active.id) >= BUILT_IN_THEMES.length;
+    const btn = (text: string, title: string, run: () => void, disabled = false) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.textContent = text;
+      b.title = title;
+      b.disabled = disabled;
+      b.addEventListener("click", run);
+      return b;
+    };
+    const base = document.createElement("select");
+    base.setAttribute("aria-label", "Starts from");
+    base.title = "The colour scheme this theme starts from; its own colours are set below";
+    base.append(new Option("Based on Light", "light"), new Option("Based on Dark", "dark"));
+    base.value = active.base;
+    base.disabled = !own;
+    base.addEventListener("change", () => this.prefs.setThemeBase(active.id, base.value as ThemeBase));
+    box.append(
+      label, pick,
+      btn("New", `A new theme: a copy of ${active.name}, which you then change below`, () => {
+        const name = prompt(`Name of the new theme (a copy of "${active.name}"):`, uniqueName(active.name, this.prefs.themes.map((t) => t.name)))?.trim();
+        if (name) this.prefs.addTheme(name);
+      }),
+      btn("Rename", "Rename this theme", () => {
+        const name = prompt(`Rename "${active.name}" to:`, active.name)?.trim();
+        if (name) this.prefs.renameTheme(active.id, name);
+      }, !own),
+      btn("Delete", "Delete this theme", () => { if (confirm(`Delete the theme "${active.name}"?`)) this.prefs.deleteTheme(active.id); }, !own),
+      base,
+    );
+    if (this.prefs.values.theme === "system") {
+      const hint = document.createElement("span");
+      hint.className = "theme-now";
+      hint.textContent = `now ${active.name}`;
+      box.append(hint);
+    }
+    return box;
+  }
+
   /** Drag the dialog by `handle`: it leaves the centre on the first move and stays where it was put. */
   private dragBy(handle: HTMLElement): void {
     handle.addEventListener("pointerdown", (e) => {
-      if (e.button !== 0) return;
+      if (e.button !== 0 || (e.target as HTMLElement).closest("select, button, input")) return;
       const box = this.element.getBoundingClientRect();
       const dx = e.clientX - box.left, dy = e.clientY - box.top;
       handle.setPointerCapture(e.pointerId);
@@ -208,10 +261,10 @@ export class PreferencesDialog {
 
 /** The preferences each section holds: what its Reset puts back. */
 const KEYS: Readonly<Record<string, readonly (keyof PreferenceValues)[]>> = {
-  general: ["theme", "undoSteps", "referenceOpacity", "fullScreenOnStart"],
+  general: ["undoSteps", "referenceOpacity", "fullScreenOnStart"],
   interface: ["fontSize", "uiScale", "toolbarPosition", "toolbarLabels"],
   timeline: ["defaultFps", "fewerTicks"],
-  tree: ["treeColours", "treeIndent"],
+  tree: ["treeColours", "treeIndent", "treeGuideColour"],
   files: ["saveTo", "autosave", "autosaveSeconds"],
   display: ["rulers", "rulerColour", "rulerOpacity", "rulerTextColour", "stagePanels", "bones", "boneColour", "boneSize", "selectedBoneColour", "constraints", "compensate", "pickGlow", "boneNames", "boneSelect", "imageSelect", "otherSelect"],
   background: ["checker", "checkerColour", "gridColour", "gridThickness", "axes", "axisXColour", "axisYColour", "axisThickness"],
@@ -229,6 +282,13 @@ const NAV: readonly NavNode[] = [
   { id: "ui", label: "User interface", children: [{ id: "interface", label: "Interface" }, { id: "timeline", label: "Timeline" }, { id: "tree", label: "Tree" }, { id: "tabs", label: "Panel tabs" }] },
   { id: "behavior", label: "Behavior", children: [{ id: "onion", label: "Onion skin" }] },
 ];
+
+/** `base` with a number after it until no name in `taken` is the same. */
+function uniqueName(base: string, taken: readonly string[]): string {
+  let n = 2;
+  while (taken.includes(`${base} ${n}`)) n++;
+  return `${base} ${n}`;
+}
 
 function row(label: string, control: HTMLElement): HTMLLabelElement {
   const l = document.createElement("label");

@@ -279,6 +279,16 @@ html .dockview-theme-light {
   white-space: nowrap;
   cursor: default;
 }
+/* Indent guides: one thin vertical line per level, under the parent's twisty, so a deep tree reads at a glance. */
+.outline .row { position: relative; }
+.outline .row::before {
+  content: "";
+  position: absolute;
+  left: 13px; top: 0; bottom: 0;
+  width: var(--guides, 0);
+  background: repeating-linear-gradient(to right, var(--tree-guide, var(--bb-field-border, var(--line))) 0 1px, transparent 1px var(--step, 14px));
+  pointer-events: none;
+}
 .outline .row:hover { background: var(--hover); }
 .outline .row .name { overflow: hidden; text-overflow: ellipsis; }
 .outline .row .note { margin-left: auto; color: var(--muted); font-size: 11px; }
@@ -392,7 +402,7 @@ dialog.preferences form { display: flex; flex-direction: column; flex: 1; min-wi
 /* The title bar: an accent tab with the window's name; drag it to move the window. */
 dialog.preferences .pref-title { background: var(--panel); border-bottom: 1px solid var(--line); cursor: grab; user-select: none; touch-action: none; }
 dialog.preferences .pref-title:active { cursor: grabbing; }
-dialog.preferences .pref-title span { display: inline-block; padding: 6px 34px 6px 14px; background: var(--accent); color: var(--accent-text); font-size: 14px; font-weight: 600; clip-path: polygon(0 0, 100% 0, calc(100% - 18px) 100%, 0 100%); }
+dialog.preferences .pref-title > span { display: inline-block; padding: 6px 34px 6px 14px; background: var(--accent); color: var(--accent-text); font-size: 14px; font-weight: 600; clip-path: polygon(0 0, 100% 0, calc(100% - 18px) 100%, 0 100%); }
 dialog.preferences .pref-body { display: flex; flex: 1; min-height: 0; gap: 8px; padding: 8px; }
 dialog.preferences .pref-nav { display: flex; flex-direction: column; gap: 2px; width: 150px; flex: none; padding: 6px; background: var(--hover); border-radius: 6px; overflow-y: auto; }
 dialog.preferences .pref-nav button { text-align: left; background: none; border-color: transparent; padding: 5px 8px; font-size: 14px; }
@@ -799,3 +809,9 @@ dialog.panel-info .panel-info-title { display: flex; align-items: center; gap: 6
 .stage-tools .group.dragging { z-index: 2; }
 .stage-tools .group.transform > .t-row:first-child { border-radius: 11px 11px 0 0; }
 .stage-ruler-tools button[hidden] { display: none; }
+
+/* The Preferences title bar's theme controls. */
+dialog.preferences .pref-title { display: flex; align-items: center; gap: 12px; }
+dialog.preferences .pref-themes { display: flex; align-items: center; gap: 6px; margin-left: auto; padding-right: 10px; font-size: 12px; cursor: default; }
+dialog.preferences .pref-themes select, dialog.preferences .pref-themes button { padding: 2px 8px; font-size: 12px; }
+dialog.preferences .pref-themes .theme-now { color: var(--muted); }

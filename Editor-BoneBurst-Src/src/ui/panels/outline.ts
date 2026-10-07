@@ -424,6 +424,9 @@ export class Outline {
     row.className = `row ${it.kind}`;
     row.setAttribute("role", "treeitem");
     row.style.paddingLeft = `${6 + it.depth * this.indent}px`;
+    // Indent guides: a thin line under each parent's twisty, drawn by the row's ::before (style.css).
+    row.style.setProperty("--guides", `${it.depth * this.indent}px`);
+    row.style.setProperty("--step", `${this.indent}px`);
     if (it.toggle) {
       row.setAttribute("aria-expanded", String(!!it.open));
       const t = button(it.open ? "▾" : "▸", it.open ? "Fold" : "Unfold", () => {

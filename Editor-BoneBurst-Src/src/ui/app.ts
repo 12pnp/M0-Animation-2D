@@ -81,7 +81,7 @@ export function mountApp(root: HTMLElement): void {
   const sheet = new ShortcutsSheet();
   const panelInfo = new PanelInfo();
   // The theme before the dock is built, so it starts in it.
-  if (prefs.values.theme !== "system") document.documentElement.dataset.theme = prefs.values.theme;
+  if (prefs.scheme) document.documentElement.dataset.theme = prefs.scheme;
   const outline = new Outline(session);
   const inspector = new Inspector(session);
 
@@ -488,10 +488,13 @@ export function mountApp(root: HTMLElement): void {
   });
   refreshPanels();
 
+  // Following the system: the operating system's light or dark swaps the built-in theme in force.
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => prefs.resync());
+
   /** Each preference where it applies; on start, and whenever one changes. */
   const applyPrefs = (p: PreferenceValues) => {
-    if (p.theme === "system") delete document.documentElement.dataset.theme;
-    else document.documentElement.dataset.theme = p.theme;
+    if (prefs.scheme) document.documentElement.dataset.theme = prefs.scheme;
+    else delete document.documentElement.dataset.theme;
     workspace.refreshTheme();
     stage.show = { rulers: p.rulers, bones: p.bones, constraints: p.constraints };
     stage.select = { bones: p.boneSelect, images: p.imageSelect, others: p.otherSelect };
@@ -528,6 +531,8 @@ export function mountApp(root: HTMLElement): void {
     for (const [name, value] of [["--tab-bar-bg", p.tabBarColour], ["--tab-active-bg", p.tabActiveColour], ["--tab-text", p.tabTextColour], ["--tab-dim-text", p.tabDimTextColour]] as const) {
       if (value === "auto") rootStyle.removeProperty(name); else rootStyle.setProperty(name, value);
     }
+    // The rig tree's indent guides: "auto" leaves the theme's line colour.
+    if (p.treeGuideColour === "auto") rootStyle.removeProperty("--tree-guide"); else rootStyle.setProperty("--tree-guide", p.treeGuideColour);
     // The rulers' background: the colour at its opacity ("auto" is the panel colour); the stage and the Fit button read it.
     rootStyle.setProperty("--ruler-bg", rulerBackground(p.rulerColour === "auto" ? getComputedStyle(document.documentElement).getPropertyValue("--panel").trim() : p.rulerColour, p.rulerOpacity));
     if (p.rulerTextColour === "auto") rootStyle.removeProperty("--ruler-text"); else rootStyle.setProperty("--ruler-text", p.rulerTextColour);

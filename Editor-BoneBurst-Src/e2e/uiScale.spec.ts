@@ -76,5 +76,5 @@ test("User interface settings: row height, tree indent, toolbar labels, font siz
   await expect(page.locator(".stage-tools").first()).toHaveAttribute("data-labels", "hide");
   await dialog.getByText("Tree", { exact: true }).first().click();
   await set(/^Tree indentation/, "24");
-  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("boneburst.preferences")!).treeIndent)).toBe(24);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("boneburst.preferences")!).themes.find((t: { id: string }) => t.id === "light").values.treeIndent)).toBe(24);
 });
