@@ -54,11 +54,11 @@ test("box-select keys, copy, paste at the playhead with their spacing (one undo)
   await page.keyboard.press("ControlOrMeta+z");
   await expect.poll(() => frames(page, "run", "hips", "rotate")).toEqual(before);
 
-  // ⌘A selects every key of the channels shown: copying says how many.
+  // ⌘A selects every key of the channels shown (hips' translate is FramePath's, not the graph's): copying says how many.
   await page.locator(".timeline-track canvas").click({ position: { x: 300, y: 5 } });
   await page.keyboard.press("ControlOrMeta+a");
   await page.keyboard.press("ControlOrMeta+c");
-  await expect(page.locator(".message").getByText(/Copied \d{2,} keys/)).toBeVisible();
+  await expect(page.locator(".message").getByText(/Copied \d+ keys/)).toBeVisible();
 
   // A pose: the head in run at frame 3, pasted into dance at frame 10.
   await page.evaluate(() => { const s = (window as unknown as Live).boneburst.session; s.selectBone("head"); s.seek(3); });

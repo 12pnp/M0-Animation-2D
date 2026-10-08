@@ -154,3 +154,26 @@ flowchart LR
 - **Always shown**: the frame strip, the speed graph and the key data stay for any selection. With no animation, no bone, a bone a constraint places, or split x/y keys, they are empty, the ◆ toggle is off, and the data says why (`keyHint`).
 - **The resize line** (`lp-split`) moves from above the strip to right under the picture, above the zoom bar; dragging it still trades the picture's height for the strip and graph's.
 - e2e: `motionModes.spec.ts` checks both with no bone selected, and that dragging the line up gives the lower area more room. All e2e (119) pass.
+
+## Step 7: the speed graph's points move in time; the Timeline's graph leaves translate to FramePath (2026-10-09, the owner's eighth note)
+
+> now it has 3 graphs: FramePath, SpeedGraph, Timeline graph. Reduce the Timeline graph's duty; make SpeedGraph free drag.
+
+The owner chose: a point on the speed graph drags **sideways too**, moving its key to another frame (legs stay up and down, the speed); and the Timeline's graph **no longer shows or edits a bone's combined translate curves**, which FramePath owns.
+
+```mermaid
+flowchart LR
+    DRAG["drag a key's point<br/>on the speed graph"] -->|"sideways: frames"| MOVE["moveKeys(translate, key, Δframes)<br/>held between its neighbours"]
+    DRAG -->|"up / down: speed"| SPEED["setTranslateKeySpeeds"]
+    TL["Timeline graph"] -->|"bones · translate"| OUT["left out: a note points to Motion Path"]
+    TL -->|"rotate · scale · shear · split x/y · the rest"| KEEP["as before"]
+```
+
+- **Sideways**: the key moves to the frame under the pointer, held between the keys either side (never onto one) and inside the animation; its curves follow (`moveKeys` settles them, so the handles stay at the thirds and the speeds keep). Up and down sets the speed as before; both in one drag, one undo step.
+- **The Timeline's graph** leaves out the `translate` timeline of bones; a line on the graph says the selected bone's translate is edited in Motion Path (FramePath). Split `translatex` / `translatey` keys, which FramePath does not handle, stay on the Timeline. The dope sheet rows are not changed.
+
+### Result (step 7)
+
+- `motionPanel.ts`: `moveKeyTo` moves the dragged key with `moveKeys` (held between its neighbours, inside the animation; the playhead follows it); sideways movement under 6 px is ignored so an up-and-down drag does not nudge the key.
+- `timeline/timeline.ts`: `graphChannels` leaves out bones' `translate`; `translateLeftOut` draws the note. ⌘A on the graph therefore selects no translate keys either.
+- e2e: a new test in `motionModes.spec.ts` drags a point sideways (the key moves earlier) and past its neighbour (it stops one frame after it). `graph.spec.ts`'s geometry helper leaves translate out as the graph now does, and its "dragged up" check asks for a smaller rise (the value scale is tighter without translate's large values); `copyPaste.spec.ts`'s ⌘A count no longer needs ten keys. vitest 766 and e2e 120 pass.

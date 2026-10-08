@@ -202,3 +202,30 @@ test("the strip and the speed graph always show, with no bone selected too; the 
   await page.mouse.up();
   expect((await lower.boundingBox())!.height).toBeGreaterThan(h0 + 40);
 });
+
+test("a point on the speed graph drags sideways too: its key moves to the frame under it, held between its neighbours", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 950 });
+  await open(page, "hips");
+  const panel = panelOf(page);
+  const times = await hipsKeys(page), fps = await page.evaluate(() => (window as unknown as Seek).boneburst.session.fps);
+  const frame = (t: number): number => Math.round(t * fps);
+  await expect.poll(() => page.evaluate(() => (window as unknown as Points).boneburst.motionPath.speedPoints.length)).toBe(times.length);
+  const p = await page.evaluate(() => (window as unknown as Points).boneburst.motionPath.speedPoints.find((q) => q.i === 3)!);
+  const box = (await panel.locator(".lp-speed-canvas").boundingBox())!, prev = (await page.evaluate(() => (window as unknown as Points).boneburst.motionPath.speedPoints.find((q) => q.i === 2)!));
+  // Halfway towards key 3 (index 2): the key moves earlier, but not onto its neighbour.
+  await page.mouse.move(box.x + p.x, box.y + p.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + (p.x + prev.x) / 2, box.y + p.y, { steps: 5 });
+  await page.mouse.up();
+  const after = await hipsKeys(page);
+  expect(after).toHaveLength(times.length);
+  expect(frame(after[3]!)).toBeLessThan(frame(times[3]!));
+  expect(frame(after[3]!)).toBeGreaterThan(frame(times[2]!));
+  // Dragged past the neighbour, it stops one frame after it.
+  const q = await page.evaluate(() => (window as unknown as Points).boneburst.motionPath.speedPoints.find((r) => r.i === 3)!);
+  await page.mouse.move(box.x + q.x, box.y + q.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + prev.x - 40, box.y + q.y, { steps: 5 });
+  await page.mouse.up();
+  expect(frame((await hipsKeys(page))[3]!)).toBe(frame(times[2]!) + 1);
+});

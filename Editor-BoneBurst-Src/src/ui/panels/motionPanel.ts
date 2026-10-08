@@ -10,7 +10,7 @@ import type { MenuItem } from "../menubar";
 import type { MotionMemory } from "../viewMemory";
 import { deleteTranslateKeys, translateKeyCount } from "@/edit/pathKeys";
 import { clampSpeed, keyChords, keyHandles, keySpeedPairs, multiplierOf, setKeyHandles, setTranslateKeySpeeds, spanSpeedSamples, SPEED_MAX, SPEED_MIN, translateNodes, type Vec } from "@/edit/keySpeed";
-import { deleteKeys, setKey } from "@/edit/keys";
+import { deleteKeys, moveKeys, setKey } from "@/edit/keys";
 import { localPoint, pageScale } from "../pageScale";
 import { labelStep, RULER, secondsSinceLastKey } from "../timeline/layout";
 import type { Session } from "../session";
@@ -199,6 +199,8 @@ export class MotionPathPanel {
   private readonly zoomLabel = document.createElement("span");
   private speedDots: { i: number; x: number; y: number }[] = [];
   private speedDrag: number | null = null;
+  /** Where that drag began across the graph: a sideways move under a few pixels does not move the key (an up-and-down drag wobbles). */
+  private speedDragX = 0;
   /** The speed graph's legs as last drawn, the one being dragged, the visible window over the animation (0..1), a pan in progress and the cap being dragged. */
   private speedLegs: { i: number; side: "out" | "in"; x: number; y: number }[] = [];
   private legDrag: { i: number; side: "out" | "in" } | null = null;
@@ -1256,6 +1258,27 @@ export class MotionPathPanel {
     else this.setKeySpeed(i, v);
   }
 
+  /** Key `i` moved to the frame under the speed graph's x, held between the keys either side and inside the animation; its curves follow. */
+  private moveKeyTo(i: number, x: number): void {
+    const s = this.session, a = s.animation, bone = s.selectedBone, keys = this.keyNodes(), k = keys?.[i];
+    if (!a || bone === null || !keys || !k || !s.history) return;
+    const end = timeFrame(s.length(a), s.fps), from = timeFrame(keyTime(k), s.fps);
+    const lo = i > 0 ? timeFrame(keyTime(keys[i - 1]!), s.fps) + 1 : 0, hi = i < keys.length - 1 ? timeFrame(keyTime(keys[i + 1]!), s.fps) - 1 : end;
+    const to = Math.min(hi, Math.max(lo, Math.round(Math.min(1, Math.max(0, this.gp(x))) * s.length(a) * s.fps)));
+    if (to === from) return;
+    try {
+      s.history.apply(`Move key ${i + 1} of ${bone}`, moveKeys(a.name, [{ path: { section: "bones", owner: bone, timeline: "translate" }, time: keyTime(k) }], to - from, s.fps));
+    } catch (err) {
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+      return;
+    }
+    // The playhead goes with the key, so the key stays the picked one.
+    s.seek(to);
+    s.changed();
+    this.onStatus(`${bone}: key ${i + 1} on frame ${to}.`);
+  }
+
   /** Delete FramePath key `i` (Shift + click on its point or diamond); one undo step. */
   private deleteKeyAt(i: number): void {
     const s = this.session, a = s.animation, bone = s.selectedBone, k = this.keyNodes()?.[i];
@@ -1863,6 +1886,7 @@ export class MotionPathPanel {
       e.preventDefault();
       this.pickKey(i);
       this.speedDrag = i;
+      this.speedDragX = x;
       this.session.history?.begin(`Set the speed of key ${i + 1}`);
       c.setPointerCapture(e.pointerId);
       this.slotSig = "";
@@ -1888,7 +1912,9 @@ export class MotionPathPanel {
         const over = this.speedLegAt(x, y);
         if (over?.i !== this.speedHover?.i || over?.side !== this.speedHover?.side) { this.speedHover = over; this.schedule(); }
       }
-      if (this.speedDrag === null) { c.style.cursor = y < this.plot().t ? "ew-resize" : this.speedLegAt(x, y) ? "pointer" : this.speedDotAt(x, y) >= 0 ? "ns-resize" : ""; return; }
+      if (this.speedDrag === null) { c.style.cursor = y < this.plot().t ? "ew-resize" : this.speedLegAt(x, y) ? "pointer" : this.speedDotAt(x, y) >= 0 ? "move" : ""; return; }
+      // Sideways the key moves to the frame under the pointer; up and down sets its speed (docs/FRAMEPATH-SPEED-PLAN.md, step 7).
+      if (Math.abs(x - this.speedDragX) >= 6) this.moveKeyTo(this.speedDrag, x);
       const raw = this.speedAtY(y), v = e.shiftKey ? clampSpeed(Math.round(raw * 10) / 10) : Math.round(raw * 100) / 100;
       this.setKeySpeed(this.speedDrag, clampSpeed(v));
       this.schedule();

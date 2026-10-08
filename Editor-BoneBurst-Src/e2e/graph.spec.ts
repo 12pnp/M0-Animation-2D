@@ -14,7 +14,8 @@ const geometry = (page: Page, label: string, i: number) => page.evaluate(async (
   const graphUrl = "/src/ui/timeline/graph.ts", timelinesUrl = "/src/model/timelines.ts";
   const g: any = await import(/* @vite-ignore */ graphUrl), tl: any = await import(/* @vite-ignore */ timelinesUrl);
   const s = (window as unknown as Live).boneburst.session, a = s.animation;
-  const chs = g.channelsOf(tl.keyLists(a).filter((l: any) => l.path.section === "bones" && l.path.owner === "hips"));
+  // The graph leaves combined translate to FramePath (docs/FRAMEPATH-SPEED-PLAN.md, step 7).
+  const chs = g.channelsOf(tl.keyLists(a).filter((l: any) => l.path.section === "bones" && l.path.owner === "hips" && l.path.timeline !== "translate"));
   const ch = chs.find((c: any) => c.label === lab)!;
   const canvas = document.querySelector(".timeline-track canvas") as HTMLCanvasElement, box = canvas.getBoundingClientRect();
   const height = Math.max(24 + 22 + 60, (document.querySelector(".timeline-body") as HTMLElement).clientHeight), top = 24 + 22 + 14, bottom = Math.max(24 + 22 + 44, height - 10), fit = g.fitValues(chs);
@@ -65,7 +66,7 @@ test("Timeline graph: the selected bone's channels; a handle dragged makes a cur
   await page.mouse.move(k.key.x, k.key.y - 20, { steps: 4 });
   await page.mouse.up();
   const raised = (await rotateKey(page, 1)).value ?? 0;
-  expect(raised).toBeGreaterThan(k.value + 0.5);
+  expect(raised).toBeGreaterThan(k.value + 0.1);
   // Straight up: the key stays on its frame.
   expect(Math.round(((await rotateKey(page, 1)).time ?? 0) * 24)).toBe(2);
   await page.keyboard.press("ControlOrMeta+z");

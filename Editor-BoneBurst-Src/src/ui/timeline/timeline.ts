@@ -636,7 +636,15 @@ export class Timeline {
     const chosen = sel?.kind === "bone" ? lists.filter((l) => l.path.section === "bones" && l.path.owner === sel.name)
       : sel?.kind === "constraint" ? lists.filter((l) => l.path.section === sel.type && "owner" in l.path && l.path.owner === sel.name)
         : lists.filter((l) => picked.has(pathId(l.path)));
-    return channelsOf(chosen);
+    // A bone's combined translate is FramePath's (docs/FRAMEPATH-SPEED-PLAN.md, step 7): edited in Motion Path, not on this graph.
+    return channelsOf(chosen.filter((l) => !(l.path.section === "bones" && l.path.timeline === "translate")));
+  }
+
+  /** The selected bone's name when it has combined translate keys, which this graph leaves to Motion Path. */
+  private translateLeftOut(): string | null {
+    const s = this.session, a = s.animation, sel = s.selected;
+    if (!a || sel?.kind !== "bone") return null;
+    return keyLists(a).some((l) => l.path.section === "bones" && l.path.owner === sel.name && l.path.timeline === "translate" && l.keys.length) ? sel.name : null;
   }
 
   /** The graph's height: the timeline body as seen (it does not scroll in graph mode). */
@@ -652,6 +660,15 @@ export class Timeline {
     const fps = this.session.fps, v = this.view, chs = this.graphChannels(), [top, bottom] = this.graphBand(height);
     const fit = this.graphFit ?? fitValues(chs), y = (val: number) => valueY(fit, top, bottom, val), x = (t: number) => frameX(v, t * fps);
     this.paintTabs(g, chs, col);
+    const away = this.translateLeftOut();
+    if (away) {
+      g.save();
+      g.font = `11px ${col("--font-mono")}`;
+      g.fillStyle = col("--muted");
+      g.textBaseline = "top";
+      g.fillText(`${away} · translate: edit it in Motion Path (FramePath)`, 8, top - 10);
+      g.restore();
+    }
     // Zero, when it is in view.
     if (fit.min < 0 && fit.max > 0) { g.strokeStyle = col("--line"); g.beginPath(); g.moveTo(0, Math.round(y(0)) + 0.5); g.lineTo(width, Math.round(y(0)) + 0.5); g.stroke(); }
     chs.forEach((ch, n) => {
