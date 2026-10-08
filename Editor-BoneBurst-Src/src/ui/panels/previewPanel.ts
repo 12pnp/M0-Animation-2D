@@ -5,8 +5,8 @@ import { bounds } from "../stage/posed";
 import { Renderer } from "../stage/renderer";
 import type { Session } from "../session";
 
-const BG_KEY = "boneburst.preview.background";
-const DEFAULT_BG: readonly [string, string] = ["#ffffff", "#c8c8c8"];
+const BG_KEY = "boneburst.preview.colour";
+const DEFAULT_BG = "#d9d9d9";
 
 /**
  * The Preview panel: the animation playing on its own, only the picture (no bones, handles or paths).
@@ -22,7 +22,6 @@ export class PreviewPanel {
   private readonly clock = document.createElement("span");
   private readonly fitBtn = document.createElement("button");
   private readonly colourA = document.createElement("input");
-  private readonly colourB = document.createElement("input");
   private readonly resetBg = document.createElement("button");
   private readonly view = document.createElement("div");
   private readonly canvas = document.createElement("canvas");
@@ -39,7 +38,7 @@ export class PreviewPanel {
   private last = 0;
   private lastDoc: unknown = null;
   private optionsKey = "";
-  private colours: [string, string] = [...DEFAULT_BG];
+  private colour = DEFAULT_BG;
 
   constructor(private readonly session: Session) {
     const e = this.element;
@@ -60,26 +59,22 @@ export class PreviewPanel {
     this.fitBtn.setAttribute("aria-label", "Fit");
     iconButton(this.fitBtn, "fit", false);
     this.fitBtn.addEventListener("click", () => this.fitView());
-    // The background is a checker of two colours, white and grey to start; the same twice is a flat colour.
-    const colour = (input: HTMLInputElement, tip: string, i: 0 | 1): void => {
-      input.type = "color";
-      input.className = "pv-colour";
-      input.title = tip;
-      input.setAttribute("aria-label", tip);
-      input.addEventListener("input", () => { this.colours[i] = input.value; this.applyBg(); });
-    };
-    colour(this.colourA, "Background colour 1 (white to start)", 0);
-    colour(this.colourB, "Background colour 2 (grey to start); the same as colour 1 makes it flat", 1);
+    // The background is one solid colour.
+    this.colourA.type = "color";
+    this.colourA.className = "pv-colour";
+    this.colourA.title = "Background colour";
+    this.colourA.setAttribute("aria-label", "Background colour");
+    this.colourA.addEventListener("input", () => { this.colour = this.colourA.value; this.applyBg(); });
     this.resetBg.type = "button";
     this.resetBg.textContent = "↺";
-    this.resetBg.title = "Back to the white and grey checker";
+    this.resetBg.title = "Back to the first background colour";
     this.resetBg.setAttribute("aria-label", "Reset background");
-    this.resetBg.addEventListener("click", () => { this.colours = [...DEFAULT_BG]; this.applyBg(); });
+    this.resetBg.addEventListener("click", () => { this.colour = DEFAULT_BG; this.applyBg(); });
     try {
-      const k = JSON.parse(localStorage.getItem(BG_KEY) ?? "null") as unknown;
-      if (Array.isArray(k) && k.length === 2 && k.every((c) => typeof c === "string" && /^#[0-9a-f]{6}$/i.test(c))) this.colours = [k[0] as string, k[1] as string];
+      const k = localStorage.getItem(BG_KEY);
+      if (k && /^#[0-9a-f]{6}$/i.test(k)) this.colour = k;
     } catch { /* the default */ }
-    this.bar.append(this.pick, this.playBtn, label, this.colourA, this.colourB, this.resetBg, this.clock, this.fitBtn);
+    this.bar.append(this.pick, this.playBtn, label, this.colourA, this.resetBg, this.clock, this.fitBtn);
     this.view.className = "pv-view";
     this.canvas.className = "pv-canvas";
     this.view.append(this.canvas);
@@ -96,13 +91,11 @@ export class PreviewPanel {
 
   fitView(): void { this.fitted = false; this.touched = false; }
 
-  /** The two colours on the picture's back: a CSS checker under the clear canvas, so its squares stay the same size whatever the zoom. */
+  /** The picture's back: one solid colour under the clear canvas. */
   private applyBg(): void {
-    const [a, b] = this.colours;
-    this.colourA.value = a;
-    this.colourB.value = b;
-    this.view.style.background = `repeating-conic-gradient(${a} 0% 25%, ${b} 0% 50%) 0 0 / 24px 24px`;
-    try { localStorage.setItem(BG_KEY, JSON.stringify(this.colours)); } catch { /* not kept */ }
+    this.colourA.value = this.colour;
+    this.view.style.background = this.colour;
+    try { localStorage.setItem(BG_KEY, this.colour); } catch { /* not kept */ }
   }
 
   private get animationName(): string | null {
