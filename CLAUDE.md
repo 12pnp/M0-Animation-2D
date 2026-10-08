@@ -67,6 +67,12 @@ flowchart LR
 *   **Benchmark**: `Tools › BoneBenchmark › Build Player (Release, IL2CPP)`, then `open -n Build/<folder>/BoneBenchmark.app --args -boneBench`, then `python3 Assets/BoneBenchmark/compare.py`. `-loadBench N` times BoneBurst's first use against stock. Addressables does **not** build with the player here (`m_BuildAddressablesWithPlayerBuild: 0`): build the content first (`AddressableAssetSettings.BuildPlayerContent`), or the player has no data to load.
 *   **Gates** (`.claude/skills/`): `assembly-tier-check`, `managed-reference-check`, `unity-playtest`, `parity-harness` (BoneBurst's strict-float parity with stock, outside Unity). Each `SKILL.md` says when to run it.
 
+## Player builds: 720p only, never lock or hide the mouse (owner rule, 2026-10-08)
+
+*   **Every player build is 1280×720, windowed, not resizable, with no fullscreen switch.** Set it where the build is made (the build menu or script sets `PlayerSettings.defaultScreenWidth = 1280`, `defaultScreenHeight = 720`, `fullScreenMode = Windowed`, `resizableWindow = false`, `allowFullscreenSwitch = false`) **and** enforce it when the player starts (`Screen.SetResolution(1280, 720, FullScreenMode.Windowed)`), because a resolution saved in Player Prefs would otherwise win. No other resolution, no native-resolution default.
+*   **Never lock or hide the mouse.** No `Cursor.lockState = Locked` or `Confined`, no `Cursor.visible = false`, in the Editor, in a player or in a bot. Look-around uses a held button (right mouse) or a pointer-delta read that works with a visible, free cursor. If a feature seems to need a locked cursor, ask the owner first.
+*   **Check it on every build you make**: the build log or the check names the 720p setting, and a search of the code for `lockState` and `visible = false` finds nothing new.
+
 ## Driving the live Editor (`com.unity.pipeline`)
 
 The project has `com.unity.pipeline`, so an open Editor serves the `unity` CLI (port file

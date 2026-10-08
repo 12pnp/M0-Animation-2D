@@ -72,3 +72,7 @@ the editor's URL talks to a bridge on another port.
 - Comment only what is not obvious; no mannered prose.
 - Licences: keep `LICENSE` and `THIRD-PARTY-NOTICES.md` current; anything that ships is listed
   there before it lands. Spine's official runtimes are dev-only oracles at most.
+
+## Player builds: 720p only, never lock or hide the mouse (owner rule, 2026-10-08)
+
+This is not a Unity project, but the owner's rule for every Unity player build under `Project Unity` applies to anything built from here or beside it: **720p (1280×720, windowed) only, and never lock or hide the mouse** (no `Cursor.lockState`, no `Cursor.visible = false`; in a web page, no Pointer Lock and no cursor hiding). Where the rule is spelled out: any Unity sibling's `CLAUDE.md`, section "Player builds".
