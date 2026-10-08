@@ -9,6 +9,7 @@ This is the single canonical guidance file for AI agents working in this Unity p
 *   **Why a separate project**: moved out of M1-Plugins-Custom on 2026-09-30, so Spine work can be built, tested and benchmarked on its own. M1-Plugins-Custom's git history keeps everything before the move.
 *   **Primary Language**: C#; Python for the gate and test scripts.
 *   **Status**: **BETA.** Two projects take BoneBurst from this folder (see §1), so an edit here is live there.
+*   **Sample status (owner, 2026-10-08):** `com.module.ta-creator-boneburst` (the MonoBehaviour front) is kept as a sample and not developed; new BoneBurst work goes to `com.module.ta-creator-boneburst-ecs` (in `M0-25DPlatformer-ECS`) on `com.module.ta-creator-boneburst-core`. What it freezes and what is still open: `Packages/com.module.ta-creator-boneburst/Doc/Review/D2-FrontPackageSample-Decision.md`.
 
 ```mermaid
 flowchart LR

@@ -11,6 +11,10 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-08 — **The MonoBehaviour front is kept as a sample; new work goes to `com.module.ta-creator-boneburst-ecs`** (docs only, no code changed)
+
+Owner decision [D2-FrontPackageSample-Decision.md](Review/D2-FrontPackageSample-Decision.md): this package, the timeline package and the import Editor bake (which references the front) are frozen and get no new features; `-core` and the ECS package (in `M0-25DPlatformer-ECS`) are live; M2-Creator-All and M2-Sample-25DL-Shader stay on the frozen copy. The root `CLAUDE.md` says so in one line. Four points are left open for the owner in the decision (where the ECS plans live, whether the ECS package moves into M0, the editor's Unity proof, the two consumers). Nothing built or run.
+
 ### 2026-10-07 — **ECS port P14 recorded: pose system overlaps its header loop with the job, pose −22 to −27%** (docs only in this package; code is in `M0-25DPlatformer-ECS`)
 
 Plan [BoneBurst-ECS-Plan.md](Review/BoneBurst-ECS-Plan.md) §24; [BoneBurst-ECS-Summary.md](Review/BoneBurst-ECS-Summary.md) updated. The frame job runs per chunk of headers, flushed as scheduled; at 2000 idle EcsGpu is 2.91 ms against MonoGpu 3.95. A new chunked-job test guards it (the deliberate bug crashed the Editor instead of failing cleanly). Batch size and the colour-space cache gave nothing; the animation system and IL2CPP are not covered.
