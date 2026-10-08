@@ -8,7 +8,8 @@ import type { Skeleton } from "@/model/skeleton";
 import type { MotionNode, MotionPath } from "@/model/sidecar";
 import type { Session } from "./session";
 import { type Matrix, moveDelta } from "./stage/gizmo";
-import { boneMatrix, parentMatrix, type Posed } from "./stage/posed";
+import { boneMatrix, parentMatrix, type Poser, type Posed } from "./stage/posed";
+import { type KeysOver, keysOver } from "./pathKeysOver";
 
 /**
  * A bone's motion path in the open project (docs/PATH-SPEED-PLAN.md): finding it, making the first
@@ -246,11 +247,29 @@ export function pathDrive(doc: Skeleton | null | undefined, motion: readonly Mot
   for (const m of motion) {
     const i = m.animation === animation ? p.bones.get(m.bone) : undefined;
     if (i === undefined) continue;
-    const q = pathPose(m, pathTime(m, t)), R = refMatrix(p, refBoneName(doc, m)), P = parentMatrix(p, i), [vx, vy] = toView(R, q.x, q.y);
-    const [lx, ly] = moveDelta(P, R[4] + vx - P[4], R[5] + vy - P[5]), l = p.local, k = i * 7;
+    const q = pathPose(m, pathTime(m, t)), [lx, ly] = pathLocal(doc, m, p, i, q.x, q.y), l = p.local, k = i * 7;
     if ([lx, ly].every(Number.isFinite)) out.set(m.bone, { x: lx, y: ly, rotation: l[k + 2]!, scaleX: l[k + 3]!, scaleY: l[k + 4]!, shearX: l[k + 5]!, shearY: l[k + 6]! });
   }
   return out;
+}
+
+/** A path's point (the reference bone's space) as the bone `i` of pose `p` has it: through the reference bone to the world, then into the bone's own parent's space. */
+function pathLocal(doc: Skeleton | null | undefined, m: MotionPath, p: Posed, i: number, x: number, y: number): readonly [number, number] {
+  const R = refMatrix(p, refBoneName(doc, m)), P = parentMatrix(p, i), [vx, vy] = toView(R, x, y);
+  return moveDelta(P, R[4] + vx - P[4], R[5] + vy - P[5]);
+}
+
+/**
+ * The path as translate keys over `length` seconds (docs/UNITY-EXPORT-PLAN.md, step 1): what `pathDrive` gives the bone's x and y, sampled
+ * where the bone reaches each node and wherever a fitted curve strays, in exact seconds, the key animation posed at each time.
+ */
+export function pathKeysOver(poser: Poser, doc: Skeleton, skin: string | null, m: MotionPath, length: number, fps: number): KeysOver {
+  const place = (time: number, x: number, y: number): readonly [number, number] => {
+    const pose = poser.pose(skin, m.animation, Math.fround(time), "none"), i = pose.bones.get(m.bone);
+    if (i === undefined) throw new EditRefused(`"${m.bone}" has no pose in this skin.`);
+    return pathLocal(doc, m, pose, i, x, y);
+  };
+  return keysOver(m, length, fps, place);
 }
 
 /** How many samples a segment's curve is fitted to. */

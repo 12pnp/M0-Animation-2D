@@ -43,17 +43,31 @@ export interface PathKey {
   readonly control?: readonly [number, number, number, number];
 }
 
+/** A key made from a path at an exact time in seconds (the export's; `PathKey` is in whole frames). */
+export interface TimedKey {
+  readonly time: number;
+  readonly x: number;
+  readonly y: number;
+  /** [x's c1, x's c2, y's c1, y's c2], as in `PathKey`; absent = a straight (linear) move to the next key. */
+  readonly control?: readonly [number, number, number, number];
+}
+
 /** The translate keys for `keys` at `fps`, as offsets from the setup pose, each with its curve to the next key (control times at thirds). */
 export function translateKeys(boneSetup: { x: number; y: number }, keys: readonly PathKey[], fps: number): Key[] {
+  return translateKeysAt(boneSetup, keys.map((k) => ({ time: frameTime(k.frame, fps), x: k.x, y: k.y, ...(k.control ? { control: k.control } : {}) })));
+}
+
+/** The same for keys at exact times: a key at time 0 has no `time`; the curve to the next key has its control times a third and two thirds along. */
+export function translateKeysAt(boneSetup: { x: number; y: number }, keys: readonly TimedKey[]): Key[] {
   return keys.map((k, i) => {
-    const time = k.frame === 0 ? undefined : frameTime(k.frame, fps), next = keys[i + 1];
+    const next = keys[i + 1];
     let curve: number[] | undefined;
     if (k.control && next) {
-      const t0 = frameTime(k.frame, fps), t1 = frameTime(next.frame, fps), ta = t0 + (t1 - t0) / 3, tb = t0 + ((t1 - t0) * 2) / 3;
+      const t0 = k.time, t1 = next.time, ta = t0 + (t1 - t0) / 3, tb = t0 + ((t1 - t0) * 2) / 3;
       const [xc1, xc2, yc1, yc2] = k.control;
       curve = [ta, keyed(xc1 - boneSetup.x), tb, keyed(xc2 - boneSetup.x), ta, keyed(yc1 - boneSetup.y), tb, keyed(yc2 - boneSetup.y)].map((v) => shortFloat(v));
     }
-    return { ...(time !== undefined ? { time } : {}), x: keyed(k.x - boneSetup.x), y: keyed(k.y - boneSetup.y), ...(curve ? { curve } : {}), extra: new Map() } as Key;
+    return { ...(k.time !== 0 ? { time: k.time } : {}), x: keyed(k.x - boneSetup.x), y: keyed(k.y - boneSetup.y), ...(curve ? { curve } : {}), extra: new Map() } as Key;
   });
 }
 
