@@ -127,6 +127,17 @@ A bone's **path** (`motion` in the sidecar, `MotionPath`) is the path system's d
   about the document as it is now is `Session.notes()` (`ui/notes.ts`): the profile, the regions the
   atlas lacks, what the engine skips, and the bones the pose shown leaves without one, worked out
   again after every change, each with the thing it is about (a click selects it).
+- **Export to Unity (docs/UNITY-EXPORT-PLAN.md)**: the file Unity gets is made from `closedDoc()` (the closing frames of looping
+  animations) and is never the document itself; the document, Save and the sidecar are untouched by an export. Two modes. **Keys**
+  (the default; File ▸ Export Spine JSON…, Export to Unity…, the AI's `export_to_unity`): `ui/exportPaths.ts` `exportDoc` replaces the
+  translate timelines of each bone that uses a path (`active` not false) with keys made from it over the animation's length
+  (`ui/pathKeysOver.ts`, exact seconds, a Bézier fit per stretch, the same maths as the Stage's driven pose through `pathLocal`); a
+  document with nothing to bake exports as the same object, byte for byte as the document writes. The status line and the AI's `report`
+  say what was baked and warn per looping path whose runs do not fill the animation. **TwinSpline** (File ▸ Export TwinSpline JSON…,
+  Export to Unity as TwinSpline…, `mode: "twinspline"`): `edit/exportTwin.ts` writes `name.twinspline.json` (version 1, §3) for every
+  bone with a path or convertible translate keys (a conversion that strays over 0.5 units stays as keys and is listed) and removes
+  those bones' translate timelines from the skeleton copy, which stays plain Spine. Unity plays the keys mode today; nothing in
+  Unity reads the TwinSpline file yet. The `.bbdata` project copy is the document as it is, not an export.
 - **Round-trip test:** every sample skeleton the format specs' tests use, read then written,
   equals the original after normalisation: numbers compared as float32, `nonessential` fields as
   the file has them, key order per the spec.
@@ -212,6 +223,7 @@ flowchart TB
 
 - **One driver per bone, chosen by the person.** A bone's translation comes from its keys or from its path, never both: the path's `active` flag (absent = the path) says which, and the Motion Path panel's tabs set it. The path drives only x and y; the rest of the pose is the keys'. Both datasets are kept; the one not in use is left untouched (the Timeline draws the keys dim while the path is in use).
 - **No bridge.** There is no bake, no signature, no stale state. Each ⋮ menu has a one-time copy (*Create new Key frame from TwinSpline*, *Create new TwinSpline from Key frame*), one undo step; neither follows the other afterwards, and each can be deleted on its own.
+- **To Unity.** The sidecar is not exported as it is. An export either bakes the used path into translate keys (the default) or writes the paths in `name.twinspline.json` (§5); neither changes the document.
 - **Guards.** `scripts/check.sh` (`layer motion`, no DOM) and `tests/motionLayer.test.ts`: `src/motion/` imports no rig, document, edit layer or interface, and `edit`, `engine`, `model` never import it.
 - **Limits.** A path's reference bone is read from the key pose; the picture's Path layer for a silenced bone is the keys' trail; a key made on a silenced bone is not warned about.
 
@@ -413,7 +425,7 @@ in v2 the stage is that runtime (a meaning change in the version note).
 (numbered atlas images as Spine sequences, and their keys), `agent/meshes.ts` (meshes from the
 image's opaque outline, `edit/trace.ts`; bound by the editor's Bind; linked meshes),
 `agent/unity.ts` with `ui/unityExport.ts` (Export to Unity: a folder picked once with the
-browser's folder picker, kept in IndexedDB; the atlas and pages, then the skeleton). Every tool of
+browser's folder picker, kept in IndexedDB; the atlas and pages, then the skeleton; an optional `mode`, §5). Every tool of
 contract version 2 is built; `tests/agentHost.test.ts` holds the two lists equal.
 
 **Ask AI (E5 step 9).** The `ai` panel (`ui/panels/askAi.ts`) sends the conversation to the

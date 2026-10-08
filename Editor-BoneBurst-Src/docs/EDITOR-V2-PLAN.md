@@ -220,4 +220,4 @@ undo, onion skins — these are ideas every editor shares. The rules:
       tag keep the source, AGPL's offer included); this plan moved here first. v2's oracle scripts
       extract the folder from the tag into the ignored `.oracle-v1/` when they run. Executed in
       `E6-PLAN.md` step 7.
-- [x] D9 Path motion as its own system: **Decided 2026-10-08 (owner): split key animation (K) and path motion (P) into two pure systems, the path stays in the sidecar, own clock in seconds, no bake bridge, one-time Make keys from path.** The five answers and the steps are in `TWO-SYSTEMS-PLAN.md`.
+- [x] D9 Path motion as its own system: **Decided 2026-10-08 (owner): split key animation (K) and path motion (P) into two pure systems, the path stays in the sidecar, own clock in seconds, no bake bridge, one-time Make keys from path.** The five answers and the steps are in `TWO-SYSTEMS-PLAN.md`; the export to Unity (keys baked from the path, or a TwinSpline file) is `UNITY-EXPORT-PLAN.md`.

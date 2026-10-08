@@ -1,6 +1,6 @@
 # Two pure systems: Key animation and Path motion — plan
 
-**Status: planned 2026-10-08; the five questions were answered the same day (all five recommendations, with the owner's additions under "Decided"). Steps 1 to 7 are built (each has a section below); step 8, the Unity side, is its own plan and not started.** Written from the owner's note (below). It splits what is today one tangled thing, a bone's path that is only a recipe for keys, into two systems that never read each other.
+**Status: planned 2026-10-08; the five questions were answered the same day (all five recommendations, with the owner's additions under "Decided"). Steps 1 to 7 are built (each has a section below); step 8, the Unity side, is its own plan, `UNITY-EXPORT-PLAN.md` (the export is built: a path bone baked into keys, or the paths written in a TwinSpline file; a Unity player for that file is not).** Written from the owner's note (below). It splits what is today one tangled thing, a bone's path that is only a recipe for keys, into two systems that never read each other.
 
 ```mermaid
 flowchart LR
@@ -51,7 +51,7 @@ The owner's second system is **not a system yet**: it is a way to *author* keys.
 | Clock | the animation's time (Timeline) | the path's own time (seconds, `duration`, loop on or off) |
 | Plays | Timeline Play | Play in the Motion panel, no keys needed |
 | Edits / undo | document history | the same history (sidecar edits already are steps) |
-| Unity | exported, played by BoneBurst | not yet (a later plan: Q1) |
+| Unity | exported, played by BoneBurst | baked into keys at export, or written in `name.twinspline.json` (`UNITY-EXPORT-PLAN.md`); no Unity player yet |
 
 ```mermaid
 flowchart TB
@@ -87,7 +87,7 @@ Each step leaves the editor working; tests and `npm run check` pass before the n
 5. **One driver per bone** (P5). The rule above: Silence or Delete asked once when a path is made on a bone with translate keys (Q2); the silenced keys drawn dimmed in the Timeline, a badge on the bone's row; Remove path makes them play again; a test that remove-then-undo-then-remove leaves the keys byte-for-byte as they were.
 6. **The graph and the cap on P's clock** (P6). Cap, ruler and scrub use `PathClock`; the picture's frame ticks follow P's time.
 7. **Docs and guards.** `SPEC.md` gets a section for the two systems; `TWINSPLINE-PLAN.md` and `PATH-*-PLAN.md` point here; the changelog on commit.
-8. **Later, its own plan (Q1):** the Unity side: a format for paths in the export, the importer in `com.module.ta-creator-boneburst-import`, and a Burst system that plays P next to K (it would sit beside the animation system in `BoneBurst-ECS-P15-AnimationSystem-Plan.md`; the two must be planned together).
+8. **Its own plan, `UNITY-EXPORT-PLAN.md` (export built 2026-10-08; the Unity player is still later):** the Unity side: a format for paths in the export, the importer in `com.module.ta-creator-boneburst-import`, and a Burst system that plays P next to K (it would sit beside the animation system in `BoneBurst-ECS-P15-AnimationSystem-Plan.md`; the two must be planned together).
 
 ## What each step touches
 
@@ -177,7 +177,7 @@ Outside this project nothing changes in steps 1 to 7: the sidecar is not exporte
 
 - **Q1 Where a path lives: the sidecar, as today.** The document stays byte-exact Spine JSON. Each path is shaped as plain numbers keyed by animation and bone, so moving it into the export later (the Unity plan, step 8) is only a writer change.
 - **Q2 A bone with translate keys that gets a path: ask once, silence or delete.** The silenced keys are shown dimmed in the Timeline. **Removing the path makes the keys resume** (silencing is a state of "a path exists for this bone", never a change to the keys), so no key data is touched unless the person chose Delete.
-- **Q3 Path to keys: a one-time "Make keys from path" that copies and forgets.** This is how a path-driven bone reaches Unity today (the sidecar is not exported).
+- **Q3 Path to keys: a one-time "Make keys from path" that copies and forgets.** This was how a path-driven bone reached Unity before the export baked it (`UNITY-EXPORT-PLAN.md`: an export now bakes the used path into keys itself).
 - **Q4 Timeline Play runs K only; P has its own Play.** Added by the owner: a **"play both clocks"** convenience right after step 3: one button that starts the two clocks together. It is UI (two `play()` calls), not a data bridge: neither clock reads the other, and each keeps its own time, loop and speed.
 - **Q5 The path's time unit: seconds with a `duration`**, matching the Spine JSON's key times and freeing P from any animation's fps.
 
