@@ -89,12 +89,13 @@ test("FramePath: no green buttons but a frame strip; the key on the playhead's f
   // A press on the strip at key 2's frame puts the playhead there.
   await page.evaluate((t) => { const s = (window as unknown as Seek).boneburst.session; s.seek(Math.round(t * s.fps)); }, times[1]!);
   await expect(panel.locator(".lp-fields .title")).toContainText(`Key 2 of ${count}`);
-  const speed = panel.getByRole("spinbutton", { name: "Key speed" });
+  // In Mirror the out speed is the in speed too.
+  const speed = panel.getByRole("spinbutton", { name: "Speed out" });
   await speed.fill("2");
   await speed.press("Enter");
   const curves = () => page.evaluate(() => ((window as unknown as Live).boneburst.session.doc.animations[0]!.bones!.find((b) => b.name === "hips")!.timelines.find((t) => t.name === "translate")!.keys as { curve?: unknown }[]).slice(0, 2).map((k) => Array.isArray(k.curve)));
   await expect.poll(curves).toEqual([true, true]);
-  await expect(panel.locator(".lp-fields .read")).toHaveText("×3");
+  await expect(panel.locator(".lp-fields .read")).toHaveText(["×3", "×3"]);
   // One undo step takes the speed back out of both curves.
   await page.evaluate(() => { const s = (window as unknown as { boneburst: { session: { history: { undo(): void }; changed(): void } } }).boneburst.session; s.history.undo(); s.changed(); });
   await expect.poll(curves).toEqual([false, false]);
@@ -114,4 +115,54 @@ test("FramePath ◆ keys the bone's place on a frame with no key and deletes the
   await expect(panel.locator(".lp-fields .title")).toContainText(`frame ${free}`);
   await panel.getByRole("button", { name: "Toggle key" }).click();
   await expect.poll(async () => (await hipsKeys(page)).length).toBe(times.length);
+});
+
+type Points = { boneburst: { motionPath: { speedPoints: readonly { i: number; x: number; y: number }[]; stripPoints: readonly { i: number; x: number }[] } } };
+const goToKey = async (page: Page, n: number): Promise<void> => {
+  const times = await hipsKeys(page);
+  await page.evaluate((t) => { const s = (window as unknown as Seek).boneburst.session; s.seek(Math.round(t * s.fps)); }, times[n]!);
+};
+
+test("FramePath's three modes: a key starts Plain (no handles); Break lets out differ from in, Mirror links them, Plain puts both to 0 and hides the handles", async ({ page }) => {
+  await open(page, "hips");
+  const panel = panelOf(page);
+  await goToKey(page, 2);
+  const speedIn = panel.getByRole("spinbutton", { name: "Speed in" }), speedOut = panel.getByRole("spinbutton", { name: "Speed out" });
+  const handles = () => page.evaluate(() => (window as unknown as { boneburst: { motionPath: { speedHandles: readonly { i: number }[] } } }).boneburst.motionPath.speedHandles.filter((h) => h.i === 2).length);
+  await expect(panel.getByRole("button", { name: "Plain", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(handles).toBe(0);
+  await panel.getByRole("button", { name: "Break", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Break", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await speedOut.fill("1.5");
+  await speedOut.press("Enter");
+  await expect(speedOut).toHaveValue("1.5");
+  await expect(speedIn).toHaveValue("0");
+  await panel.getByRole("button", { name: "Mirror", exact: true }).click();
+  await expect(speedIn).toHaveValue("1.5");
+  await expect(panel.getByRole("button", { name: "Mirror", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect.poll(handles).toBe(2);
+  await panel.getByRole("button", { name: "Plain", exact: true }).click();
+  await expect(speedIn).toHaveValue("0");
+  await expect(speedOut).toHaveValue("0");
+  await expect.poll(handles).toBe(0);
+});
+
+test("FramePath: Shift + click deletes a key, on the speed graph's point and on the strip's diamond", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 950 });
+  await open(page, "hips");
+  const panel = panelOf(page);
+  const before = (await hipsKeys(page)).length;
+  const click = async (where: "graph" | "strip", i: number): Promise<void> => {
+    const canvas = panel.locator(where === "graph" ? ".lp-speed-canvas" : ".lp-keystrip"), box = (await canvas.boundingBox())!;
+    const p = await page.evaluate(([w, n]) => { const m = (window as unknown as Points).boneburst.motionPath; return w === "graph" ? m.speedPoints.find((q) => q.i === n)! : { ...m.stripPoints.find((q) => q.i === n)!, y: 35 }; }, [where, i] as const);
+    await page.keyboard.down("Shift");
+    await page.mouse.move(box.x + p.x, box.y + p.y);
+    await page.mouse.down();
+    await page.mouse.up();
+    await page.keyboard.up("Shift");
+  };
+  await click("graph", 3);
+  await expect.poll(async () => (await hipsKeys(page)).length).toBe(before - 1);
+  await click("strip", 2);
+  await expect.poll(async () => (await hipsKeys(page)).length).toBe(before - 2);
 });

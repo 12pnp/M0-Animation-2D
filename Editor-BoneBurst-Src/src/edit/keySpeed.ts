@@ -89,13 +89,26 @@ function curveFor(a: number, b: number, s: Segment): number[] | undefined {
   return shapeCurve(shape, s);
 }
 
+/** Each key's speed arriving (`in`, null on the first key or after a stepped span) and leaving (`out`, null on the last key or into a stepped span). */
+export function keySpeedPairs(bone: string, keys: readonly Key[]): { in: number | null; out: number | null }[] {
+  return keys.map((k, i) => {
+    const prev = keys[i - 1], next = keys[i + 1];
+    return { in: prev ? spanEnds(bone, prev, k)?.end ?? null : null, out: next ? spanEnds(bone, k, next)?.start ?? null : null };
+  });
+}
+
 /**
- * The speed at the bone's translate key `index` set: the span before it gets that speed at its end, the span after it at its
- * start; each span's other end keeps the speed it had (a stepped span's other end: 0).
+ * The speed at the bone's translate key `index` set, on both sides: the span before it ends at that speed and the span after it
+ * starts at it; each span's other end keeps the speed it had (a stepped span's other end: 0).
  */
 export function setTranslateKeySpeed(animation: string, bone: string, index: number, speed: number): Edit<Skeleton> {
+  return setTranslateKeySpeeds(animation, bone, index, { in: speed, out: speed });
+}
+
+/** The speed arriving at (`in`) and leaving (`out`) the bone's translate key `index`; a side left out keeps what it has. */
+export function setTranslateKeySpeeds(animation: string, bone: string, index: number, speeds: { in?: number | undefined; out?: number | undefined }): Edit<Skeleton> {
   return (doc) => {
-    if (!Number.isFinite(speed)) throw new EditRefused("A speed must be a number.");
+    if ([speeds.in, speeds.out].some((v) => v !== undefined && !Number.isFinite(v))) throw new EditRefused("A speed must be a number.");
     return onAnimation(animation, (a) => {
       const keys = translateNodes(a, bone);
       if (keys === null) throw new EditRefused(`${bone} keys translate as separate x and y: a speed needs the combined translate keys.`);
@@ -103,9 +116,11 @@ export function setTranslateKeySpeed(animation: string, bone: string, index: num
       if (keys.length < 2) throw new EditRefused(`${bone} has one translate key in ${animation}: a speed needs a span to the next key.`);
       const next = keys.map((k, j) => {
         const after = keys[j + 1];
-        if (!after || (j !== index && j !== index - 1)) return k;
+        // Only the spans a given side touches: the one before for `in`, the one after for `out`.
+        if (!after || !((j === index && speeds.out !== undefined) || (j === index - 1 && speeds.in !== undefined))) return k;
         const was = spanEnds(bone, k, after) ?? { start: 0, end: 0 };
-        const curve = curveFor(j === index ? speed : was.start, j + 1 === index ? speed : was.end, segmentOf(bone, k, after));
+        const start = j === index ? speeds.out ?? was.start : was.start, end = j + 1 === index ? speeds.in ?? was.end : was.end;
+        const curve = curveFor(start, end, segmentOf(bone, k, after));
         const { curve: _, ...rest } = k;
         return (curve ? { ...rest, curve } : rest) as Key;
       });

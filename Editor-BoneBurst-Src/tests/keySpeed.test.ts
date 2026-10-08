@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keySpeeds, setTranslateKeySpeed, spanSpeedSamples, translateNodes } from "@/edit/keySpeed";
+import { keySpeedPairs, keySpeeds, setTranslateKeySpeed, setTranslateKeySpeeds, spanSpeedSamples, translateNodes } from "@/edit/keySpeed";
 import { plainJson } from "@/io/json";
 import { readSkeleton } from "@/io/skeletonRead";
 import { skeletonToJson } from "@/io/skeletonWrite";
@@ -79,5 +79,19 @@ describe("setTranslateKeySpeed", () => {
     expect(() => setTranslateKeySpeed("walk", "hip", 5, 1)(doc(THREE))).toThrow(/no translate key 6/);
     expect(() => setTranslateKeySpeed("walk", "hip", 0, 1)(doc([{ x: 1 }]))).toThrow(/one translate key/);
     expect(() => setTranslateKeySpeed("walk", "hip", 0, Number.NaN)(doc(THREE))).toThrow(/number/);
+  });
+});
+
+describe("two speeds per key", () => {
+  it("in and out are set and read on their own; a side left out keeps its span as it was (a stepped one too)", () => {
+    const s = setTranslateKeySpeeds("walk", "hip", 1, { in: 1, out: -0.5 })(doc(THREE));
+    expect(keySpeedPairs("hip", nodes(s))[1]).toEqual({ in: 1, out: -0.5 });
+    const only = setTranslateKeySpeeds("walk", "hip", 1, { out: 2 })(doc([{ x: 0, curve: "stepped" }, { time: 1, x: 10 }, { time: 2, x: 20 }]));
+    expect(nodes(only)[0]!.curve).toBe("stepped");
+    expect(keySpeedPairs("hip", nodes(only))[1]).toEqual({ in: null, out: 2 });
+  });
+
+  it("the ends have one side: the first key no in, the last no out", () => {
+    expect(keySpeedPairs("hip", nodes(doc(THREE)))).toEqual([{ in: null, out: 0 }, { in: 0, out: 0 }, { in: 0, out: null }]);
   });
 });
