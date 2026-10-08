@@ -1001,6 +1001,7 @@ namespace BoneBurst.Anim
             {
                 case TimelineKind.BoneRotate:
                 case TimelineKind.BoneTranslate:
+                case TimelineKind.BoneTranslateSpline:
                 case TimelineKind.BoneTranslateX:
                 case TimelineKind.BoneTranslateY:
                 case TimelineKind.BoneScale:

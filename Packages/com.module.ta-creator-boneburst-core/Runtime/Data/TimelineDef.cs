@@ -41,7 +41,15 @@ namespace BoneBurst.Data
         Sequence,
         DrawOrder,
         DrawOrderFolder,
-        Event
+        Event,
+
+        /// <summary>
+        ///     A bone's translation played from a TwinSpline path (<c>BoneBurst.TwinSpline</c>) instead of keys: no frames,
+        ///     the baked path table in <see cref="TimelineDef.Spline" />. It keys the same properties as
+        ///     <see cref="BoneTranslate" />, so mixing and hold treat the two alike. Appended at the end so the stored
+        ///     number of every other kind stays what it was.
+        /// </summary>
+        BoneTranslateSpline
     }
 
     /// <summary>
@@ -85,6 +93,13 @@ namespace BoneBurst.Data
         ///     <see cref="CurveType.BezierSize" /> floats.
         /// </summary>
         public float[] Curves;
+
+        /// <summary>
+        ///     BoneTranslateSpline: the path's table (<c>TwinSplineBake.Build</c>); the offsets from the setup pose are taken
+        ///     at play time from the blob's bone. Not stored in the .sbdata format; set when a skeleton is put together
+        ///     in memory (the ECS bake).
+        /// </summary>
+        public float[] Spline;
 
         /// <summary>
         ///     Deform: vertex floats per frame. Weighted: offsets per influence. Unweighted: absolute positions.

@@ -3,6 +3,7 @@ using BoneBurst.Blob;
 using BoneBurst.Constraints;
 using BoneBurst.Data;
 using BoneBurst.Instance;
+using BoneBurst.TwinSpline;
 using Unity.Mathematics;
 
 namespace BoneBurst.Anim
@@ -288,6 +289,9 @@ namespace BoneBurst.Anim
                 case TimelineKind.BoneTranslate:
                 case TimelineKind.BoneShear:
                     BoneTwo(h, t, frames, c);
+                    return;
+                case TimelineKind.BoneTranslateSpline:
+                    BoneSpline(h, t, c);
                     return;
                 case TimelineKind.BoneScale:
                     BoneScale(h, t, frames, c);
@@ -649,6 +653,36 @@ namespace BoneBurst.Anim
             {
                 p->X = x;
                 p->Y = y;
+            }
+        }
+
+        /// <summary>
+        ///     A bone's translation from a TwinSpline path, mixed as <see cref="BoneTwo" /> mixes keyed translation: the
+        ///     path's point at the animation's time is the bone's place, so (setup + value) in the keyed formulas is
+        ///     that point. There is no first frame to be before: a path has a place at every time.
+        /// </summary>
+        private static void BoneSpline(in InstanceHeader h, TimelineBlob* t, in ApplyCommand c)
+        {
+            int bone = t->Target;
+            if (!h.BoneActive[bone]) return;
+            BoneLocal* p = h.Local + bone;
+            BoneSetup setup = h.Blob.Bones[bone];
+            TwinSplineMath.Pose(h.Blob.DeformFrames + t->ExtraStart, c.Time, out float px, out float py);
+            float alpha = c.Alpha;
+            if (c.From == MixFrom.Setup)
+            {
+                p->X = setup.X + (px - setup.X) * alpha;
+                p->Y = setup.Y + (py - setup.Y) * alpha;
+            }
+            else if (c.Add)
+            {
+                p->X += (px - setup.X) * alpha;
+                p->Y += (py - setup.Y) * alpha;
+            }
+            else
+            {
+                p->X += (px - p->X) * alpha;
+                p->Y += (py - p->Y) * alpha;
             }
         }
 

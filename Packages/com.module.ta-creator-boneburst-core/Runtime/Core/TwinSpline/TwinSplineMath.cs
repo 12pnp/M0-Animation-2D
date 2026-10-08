@@ -4,7 +4,7 @@ namespace BoneBurst.TwinSpline
     ///     Plays a baked TwinSpline path (<see cref="TwinSplineBake.Build" />): two binary searches and one
     ///     interpolation per sample, on the float table, with pointers and no allocation so Burst can compile it. The
     ///     result is the path's point in its reference bone's space; for a path relative to the bone's own parent that
-    ///     is the bone's local place, from which the setup pose is subtracted (<see cref="SetupX" />, <see cref="SetupY" />).
+    ///     is the bone's local place directly.
     /// </summary>
     public static unsafe class TwinSplineMath
     {
@@ -16,16 +16,6 @@ namespace BoneBurst.TwinSpline
         public static bool Loops(float* table)
         {
             return table[1] > 0.5f;
-        }
-
-        public static float SetupX(float* table)
-        {
-            return table[5];
-        }
-
-        public static float SetupY(float* table)
-        {
-            return table[6];
         }
 
         /// <summary>

@@ -35,8 +35,7 @@ namespace BoneBurst.TwinSpline
         public const int TimeSamples = 512;
 
         /// <summary>
-        ///     Floats before the tables: duration, loop, curve length, curve point count, time table steps, setup x,
-        ///     setup y, reserved.
+        ///     Floats before the tables: duration, loop, curve length, curve point count, time table steps, three reserved.
         /// </summary>
         public const int HeaderFloats = 8;
 
@@ -44,10 +43,10 @@ namespace BoneBurst.TwinSpline
 
         /// <summary>
         ///     The flat float table of one path: header, then the curve (x, y and cumulative length of each sample), then
-        ///     the time table (<see cref="TimeSamples" /> + 1 cumulative shares). <paramref name="setupX" /> and
-        ///     <paramref name="setupY" /> are the bone's setup pose, which the runtime subtracts.
+        ///     the time table (<see cref="TimeSamples" /> + 1 cumulative shares). The bone's setup pose is not in it: the
+        ///     runtime takes it from the blob's bone, the one place it is kept.
         /// </summary>
-        public static float[] Build(TwinNode[] nodes, bool closed, double duration, bool loop, double setupX, double setupY)
+        public static float[] Build(TwinNode[] nodes, bool closed, double duration, bool loop)
         {
             if (nodes == null || nodes.Length < 2) throw new ArgumentException("A path needs at least two nodes.");
             if (!(duration > 0)) throw new ArgumentException("A path runs for more than 0 seconds.");
@@ -60,8 +59,6 @@ namespace BoneBurst.TwinSpline
             table[2] = (float)curve.Length;
             table[3] = points;
             table[4] = TimeSamples;
-            table[5] = (float)setupX;
-            table[6] = (float)setupY;
             for (int i = 0; i < points; i++)
             {
                 table[HeaderFloats + 3 * i] = (float)curve.X[i];

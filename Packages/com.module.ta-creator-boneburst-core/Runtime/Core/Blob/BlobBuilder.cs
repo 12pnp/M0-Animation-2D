@@ -237,7 +237,7 @@ namespace BoneBurst.Blob
                         Kind = t.Kind, Target = t.Target, FrameCount = t.FrameCount, Entries = t.FrameEntries,
                         FramesStart = frames.Count, CurvesStart = -1, ExtraStart = -1, FolderStart = -1, Attachment = -1
                     };
-                    frames.AddRange(t.Frames);
+                    if (t.Frames != null) frames.AddRange(t.Frames);
                     if (t.Curves != null)
                     {
                         tb.CurvesStart = curves.Count;
@@ -266,6 +266,12 @@ namespace BoneBurst.Blob
 
                             break;
                         }
+                        case TimelineKind.BoneTranslateSpline:
+                            // The path's table lives in the shared float pool the deform timelines use.
+                            tb.ExtraStart = deform.Count;
+                            tb.ExtraLength = t.Spline.Length;
+                            deform.AddRange(t.Spline);
+                            break;
                         case TimelineKind.Sequence:
                             tb.Attachment = indexOf[t.Attachment];
                             break;
@@ -378,7 +384,8 @@ namespace BoneBurst.Blob
             switch (t.Kind)
             {
                 case TimelineKind.BoneRotate: return new[] { Id(Rotate) };
-                case TimelineKind.BoneTranslate: return new[] { Id(X), Id(Y) };
+                case TimelineKind.BoneTranslate:
+                case TimelineKind.BoneTranslateSpline: return new[] { Id(X), Id(Y) };
                 case TimelineKind.BoneTranslateX: return new[] { Id(X) };
                 case TimelineKind.BoneTranslateY: return new[] { Id(Y) };
                 case TimelineKind.BoneScale: return new[] { Id(ScaleX), Id(ScaleY) };
@@ -694,7 +701,8 @@ namespace BoneBurst.Blob
                 for (int t = animation.TimelineStart; t < animation.TimelineStart + animation.TimelineCount; t++)
                 {
                     TimelineBlob tb = blob.Timelines[t];
-                    if (tb.Kind < TimelineKind.BoneRotate || tb.Kind > TimelineKind.BoneInherit) continue;
+                    if ((tb.Kind < TimelineKind.BoneRotate || tb.Kind > TimelineKind.BoneInherit) &&
+                        tb.Kind != TimelineKind.BoneTranslateSpline) continue;
                     if (animationBones.IndexOf(tb.Target, animation.BonesStart) < 0) animationBones.Add(tb.Target);
                 }
 

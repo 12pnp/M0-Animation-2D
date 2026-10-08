@@ -139,6 +139,7 @@ namespace BoneBurst.Constraints
                 switch (tb.Kind)
                 {
                     case >= TimelineKind.BoneRotate and <= TimelineKind.BoneInherit:
+                    case TimelineKind.BoneTranslateSpline:
                         b.Sorted[tb.Target] = false;
                         b.SortResetChildren(tb.Target);
                         result.BoneConstrained[tb.Target] = true;
