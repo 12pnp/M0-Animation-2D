@@ -146,3 +146,11 @@ flowchart LR
 - `motionPanel.ts`: `keyMode` reads Plain · Mirror · Break from the handles; `setKeyLegs` does Plain (handles back on the chords) and Mirror (the in handle turned opposite at the same speed); the picture draws each non-Plain key's handles (`drawKeyHandles`, through the parent's matrix at the key, cached per document) and a tip drags (`dragKeyHandle`; Mirror turns the other handle, Alt + drag breaks first).
 - e2e: `motionModes.spec.ts` checks that Mirror gives a key two handles on the picture, that dragging a tip curves both spans and turns the other handle, and that Plain makes both spans straight again (no curve) with no handles. vitest 848 and e2e 158 pass.
 - In the browser: on Stickman_IK's `hips` Mirror · Break · Plain switch, but no handles could be seen: key 5 sits on the same place as its neighbours (a chord of 0, so its handles have no length); a bone that travels shows the curve better.
+
+## Step 6: the strip and graph always shown, the resize line under the picture (2026-10-09, the owner's seventh note)
+
+> this panel must always show, and move drag able at blue line to red line
+
+- **Always shown**: the frame strip, the speed graph and the key data stay for any selection. With no animation, no bone, a bone a constraint places, or split x/y keys, they are empty, the ◆ toggle is off, and the data says why (`keyHint`).
+- **The resize line** (`lp-split`) moves from above the strip to right under the picture, above the zoom bar; dragging it still trades the picture's height for the strip and graph's.
+- e2e: `motionModes.spec.ts` checks both with no bone selected, and that dragging the line up gives the lower area more room. All e2e (119) pass.

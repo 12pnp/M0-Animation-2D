@@ -353,7 +353,8 @@ export class MotionPathPanel {
     this.keyToggle.addEventListener("click", () => this.toggleKey());
     // Shift pressed or let go with the pointer still over a key: it turns red or back.
     for (const type of ["keydown", "keyup"] as const) window.addEventListener(type, (e) => { if (e.key === "Shift") this.updateDelHover(e.shiftKey); });
-    this.element.append(this.head, this.motionBar, this.body, this.viewBar, this.split, this.lower);
+    // The line that gives the picture or the strip and graph more room sits right under the picture, above the zoom bar (the owner, 2026-10-09).
+    this.element.append(this.head, this.motionBar, this.body, this.split, this.viewBar, this.lower);
     new ResizeObserver(() => this.schedule()).observe(this.lower);
     // The canvas is as big as its box, whatever else the panel holds (the path window under it).
     new ResizeObserver(() => this.schedule()).observe(this.body);
@@ -1061,7 +1062,12 @@ export class MotionPathPanel {
 
   /** The line under the header: what FramePath shows, or why there are no numbered keys to pick. */
   private keyHint(): string {
-    const s = this.session, a = s.animation, bone = s.selectedBone, keys = a && bone !== null ? translateNodes(a, bone) : [];
+    const s = this.session, a = s.animation, bone = s.selectedBone;
+    if (!a) return "FramePath: open an animation (Animate mode) to see a bone's keys here.";
+    if (bone === null) return "FramePath: select a bone to see its keys here.";
+    const driver = s.doc ? constraintDriving(s.doc, bone) : null;
+    if (driver) return `FramePath: ${bone} is placed by the ${driver.type} constraint ${driver.name}, so its translate keys do not move it.`;
+    const keys = translateNodes(a, bone);
     if (keys === null) return `FramePath: ${bone} keys translate as separate x and y, so it has no frame strip or speed graph yet.`;
     if (keys.length < 2) return `FramePath: ${bone} has ${keys.length === 0 ? "no translate keys" : "one translate key"} in ${a?.name ?? "this animation"}; ◆ keys its place on the playhead's frame.`;
     return "FramePath: the bone's keyed motion.";
@@ -1277,22 +1283,19 @@ export class MotionPathPanel {
 
   /** FramePath's lower area (docs/FRAMEPATH-SPEED-PLAN.md, step 2): the ◆ toggle and the frame strip, the key on the playhead's frame and the speed graph. */
   private renderKeyStrip(): void {
+    // Always shown (the owner, 2026-10-09): with no bone, no animation or split keys the strip and the graph are empty and the data says why.
     const s = this.session, a = s.animation, bone = s.selectedBone, keys = this.keyNodes(), show = !!keys;
     // The picked key is the one on the playhead's frame; a hand-broken leg is remembered only while the bone and animation stay.
     this.selKey = keys ? this.keyAtFrame(s.frame) : -1;
     if (`${a?.name}/${bone}` !== this.keyBrokenFor) { this.keyBrokenFor = `${a?.name}/${bone}`; this.keyModes.clear(); }
-    this.slotBar.hidden = !show;
-    this.dataBox.hidden = !show;
-    this.lower.hidden = !show;
-    this.split.hidden = !show;
-    if (show && this.keyStrip.parentElement !== this.slotBar) this.slotBar.replaceChildren(this.keyToggle, this.keyStrip);
+    if (this.keyStrip.parentElement !== this.slotBar) this.slotBar.replaceChildren(this.keyToggle, this.keyStrip);
+    this.keyToggle.disabled = !show;
     this.keyToggle.classList.toggle("on", this.selKey >= 0);
     this.keyToggle.title = this.selKey >= 0 ? `Delete the translate key on frame ${s.frame}` : `Key ${bone ?? "the bone"}'s place on frame ${s.frame} (where it is there now, so the motion does not change)`;
     const sig = !show ? "k" : `k|${a?.name}/${bone}|${JSON.stringify(keys)}|${s.frame}|${this.framesClosed}|${[...this.keyModes]}`;
     if (sig === this.slotSig) return;
     this.slotSig = sig;
-    if (!show) { this.slotBar.replaceChildren(); return; }
-    this.renderKeyData(keys);
+    this.renderKeyData(keys ?? []);
   }
 
   /** ◆: key the bone's place on the playhead's frame, or delete the translate key there; one undo step. */
@@ -1459,7 +1462,7 @@ export class MotionPathPanel {
       const hint = doc.createElement("span");
       // Not the Stage's .hint, which is placed over the whole box.
       hint.className = "lp-keyhint";
-      hint.textContent = `Frame ${s.frame}: no translate key. ◆ keys the bone's place here; a diamond on the strip, a point on the graph or a dot in the picture goes to a key.`;
+      hint.textContent = !this.keyNodes() ? this.keyHint() : `Frame ${s.frame}: no translate key. ◆ keys the bone's place here; a diamond on the strip, a point on the graph or a dot in the picture goes to a key.`;
       box.replaceChildren(this.speedColumn(doc), hint);
       this.drawSpeed();
       return;

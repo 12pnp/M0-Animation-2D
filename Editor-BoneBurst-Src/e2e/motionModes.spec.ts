@@ -181,3 +181,24 @@ test("FramePath's modes on the picture: Mirror gives a key two handles in line a
   await expect.poll(curves).toEqual([false, false]);
   await expect.poll(async () => (await tips()).length).toBe(0);
 });
+
+test("the strip and the speed graph always show, with no bone selected too; the line that resizes them sits under the picture, above the zoom bar", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 1100 });
+  await open(page, "hips");
+  const panel = panelOf(page);
+  await page.evaluate(() => (window as unknown as { boneburst: { session: { select(s: unknown): void } } }).boneburst.session.select(null));
+  await expect(panel.locator(".lp-keystrip")).toBeVisible();
+  await expect(panel.locator(".lp-speed-canvas")).toBeVisible();
+  await expect(panel.locator(".lp-keyhint")).toContainText(/open an animation|select a bone/);
+  await expect(panel.getByRole("button", { name: "Toggle key" })).toBeDisabled();
+  const order = await panel.evaluate((el) => [...el.children].map((c) => c.className));
+  expect(order.indexOf("lp-split")).toBe(order.indexOf("lp-viewbar") - 1);
+  // Dragging the line up gives the strip and the graph more room.
+  const split = panel.locator(".lp-split"), lower = panel.locator(".lp-lower");
+  const h0 = (await lower.boundingBox())!.height, box = (await split.boundingBox())!;
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2 - 60, { steps: 4 });
+  await page.mouse.up();
+  expect((await lower.boundingBox())!.height).toBeGreaterThan(h0 + 40);
+});
