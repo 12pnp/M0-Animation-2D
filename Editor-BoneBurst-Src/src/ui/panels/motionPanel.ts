@@ -3,7 +3,7 @@ import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { EditRefused } from "@/edit/history";
 import { drawnVertices } from "@/engine/draw";
 import { boneInherit } from "@/model/defaults";
-import type { Skeleton } from "@/model/skeleton";
+import type { Key, Skeleton } from "@/model/skeleton";
 import type { MotionNode, MotionPath } from "@/model/sidecar";
 import { frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
 import { iconButton } from "../icons";
@@ -13,6 +13,8 @@ import { pickColour } from "../colourPopup";
 import type { MotionMemory } from "../viewMemory";
 import { makeKeysFromPath, pathDrive, pathFromKeys, currentNode, dropMotion, keepMotion, motionFor, nodeAfter, parentChoices, pathFromView, pathToView, poseAtNode, refBoneName, refMatrix, startMotion, toView } from "../motion";
 import { deleteTranslateKeys, translateKeyCount } from "@/edit/pathKeys";
+import { keySpeeds, setTranslateKeySpeed, spanSpeedSamples, translateNodes } from "@/edit/keySpeed";
+import { setKey } from "@/edit/keys";
 import { localPoint, pageScale } from "../pageScale";
 import type { Session } from "../session";
 import { type Matrix, type Point, localRotation, scaleAlong, scaleFactors, shearAlong, shearDelta, spaceAxes, tidy, turn, turnSign } from "../stage/gizmo";
@@ -239,6 +241,9 @@ export class MotionPathPanel {
   /** The click that ends a drag of a number is ignored. */
   private suppressClick = false;
   private selNode = -1;
+  /** FramePath: the translate key picked (-1: none), and the animation and bone it was picked in (docs/FRAMEPATH-SPEED-PLAN.md). */
+  private selKey = -1;
+  private selKeyFor = "";
   /** Whether the Stage draws the bone's spline, and in what colour (the button and swatch in the header; kept between sessions). */
   private stageOn = false;
   private stageColour = "#ff9f1c";
@@ -1364,6 +1369,7 @@ export class MotionPathPanel {
    * docs/PATH-CAPTURE-PLAN.md).
    */
   private renderStrip(m: MotionPath | undefined): void {
+    if (this.tab === "keys") { this.renderKeyStrip(); return; }
     // An undo can take a node away: what was picked goes with it.
     if (!m || this.selNode >= m.nodes.length) this.selNode = -1;
     if (this.multi.size) this.multi = new Set([...this.multi].filter((l) => !!m && nodeLabels(m).includes(l)));
@@ -1411,6 +1417,229 @@ export class MotionPathPanel {
       });
       this.slotBar.replaceChildren(...items);
       return;
+    }
+  }
+
+  /** FramePath's nodes: the bone's combined translate keys in the animation shown; null when not on FramePath, nothing to show, or the keys are split x and y. */
+  private keyNodes(): readonly Key[] | null {
+    const s = this.session, a = s.animation, bone = s.selectedBone;
+    if (this.tab !== "keys" || !a || bone === null || (s.doc && constraintDriving(s.doc, bone))) return null;
+    return translateNodes(a, bone);
+  }
+
+  /** The FramePath node keyed on `frame`, or -1. */
+  private keyAtFrame(frame: number): number {
+    return this.keyNodes()?.findIndex((k) => timeFrame(keyTime(k), this.session.fps) === frame) ?? -1;
+  }
+
+  /** Pick FramePath node `i`: the playhead goes to its frame. */
+  private pickKey(i: number): void {
+    const s = this.session, k = this.keyNodes()?.[i];
+    this.selKey = i;
+    this.slotSig = "";
+    if (k) { s.pause(); s.seek(timeFrame(keyTime(k), s.fps)); }
+    this.schedule();
+  }
+
+  /** The edits at FramePath node `i`, and in a closed FramePath at its twin at the other end too, as one undo step. */
+  private applyAtKey(i: number, label: string, edit: (index: number, k: Key) => (d: Skeleton) => Skeleton): void {
+    const s = this.session, keys = this.keyNodes(), k = keys?.[i];
+    if (!keys || !k || !s.history) return;
+    const last = keys.length - 1, twin = this.framesClosed && last > 0 && (i === 0 || i === last) ? (i === 0 ? last : 0) : -1;
+    try {
+      s.history.apply(label, (d) => { const one = edit(i, k)(d); return twin >= 0 ? edit(twin, keys[twin]!)(one) : one; });
+    } catch (err) {
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+      return;
+    }
+    s.changed();
+  }
+
+  /** FramePath node `i`'s speed set (docs/FRAMEPATH-SPEED-PLAN.md): written into the curves of the spans either side of its key. */
+  private setKeySpeed(i: number, v: number): void {
+    const a = this.session.animation, bone = this.session.selectedBone;
+    if (!a || bone === null) return;
+    this.applyAtKey(i, `Set the speed of key ${i + 1}`, (index) => setTranslateKeySpeed(a.name, bone, index, clampSpeed(v)));
+  }
+
+  /** FramePath's lower area: a numbered button for each translate key, the picked key's data and the speed graph. */
+  private renderKeyStrip(): void {
+    const s = this.session, a = s.animation, bone = s.selectedBone, keys = this.keyNodes(), show = !!keys && keys.length >= 2;
+    const at = `${a?.name ?? ""}/${bone ?? ""}`;
+    if (at !== this.selKeyFor) { this.selKeyFor = at; this.selKey = -1; }
+    if (!keys || this.selKey >= keys.length) this.selKey = -1;
+    this.slotBar.hidden = !show;
+    this.dataBox.hidden = !show;
+    this.lower.hidden = !show;
+    this.split.hidden = !show;
+    const sig = !show ? "k" : `k|${at}|${JSON.stringify(keys)}|${this.selKey}|${this.framesClosed}`;
+    if (sig === this.slotSig) return;
+    this.slotSig = sig;
+    if (!show) { this.slotBar.replaceChildren(); return; }
+    this.renderKeyData(keys);
+    this.slotBar.replaceChildren(...keys.map((k, i) => {
+      const b = this.button(String(i + 1), `Key ${i + 1} at frame ${timeFrame(keyTime(k), s.fps)}: x ${k.x ?? 0}, y ${k.y ?? 0}. Press to see its data and go to its frame.`);
+      b.className = `slot node${i === this.selKey ? " picked" : ""}`;
+      b.setAttribute("aria-label", `Key ${i + 1}`);
+      b.addEventListener("click", () => this.pickKey(i));
+      return b;
+    }));
+  }
+
+  /** The picked FramePath key's data beside the speed graph: its frame, its place and its speed. A field commits on Enter or when it loses focus. */
+  private renderKeyData(keys: readonly Key[]): void {
+    const box = this.dataBox, doc = box.ownerDocument, s = this.session, a = s.animation, bone = s.selectedBone;
+    if (doc.activeElement instanceof HTMLInputElement && box.contains(doc.activeElement)) return;
+    const i = this.selKey, k = keys[i];
+    if (!k || !a || bone === null) {
+      const hint = doc.createElement("span");
+      hint.className = "hint";
+      hint.textContent = "Press a number to see that key's data.";
+      box.replaceChildren(this.speedColumn(doc), hint);
+      this.drawSpeed();
+      return;
+    }
+    const r4 = (v: number): number => Math.round(v * 1e4) / 1e4;
+    const num = (value: number, aria: string, run: (v: number) => void): HTMLInputElement => {
+      const input = doc.createElement("input");
+      input.type = "number";
+      input.step = "0.1";
+      input.value = String(r4(value));
+      input.setAttribute("aria-label", aria);
+      input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); input.blur(); } if (e.key === "Escape") { input.value = String(r4(value)); input.blur(); } });
+      input.addEventListener("change", () => { const v = Number(input.value); if (Number.isFinite(v)) run(r4(v)); else input.value = String(r4(value)); });
+      return input;
+    };
+    const row = (name: string, ...kids: (HTMLElement | string)[]): HTMLElement => {
+      const r = doc.createElement("div"), l = doc.createElement("span");
+      r.className = "row";
+      l.className = "k";
+      l.textContent = name;
+      r.append(l, ...kids.map((c) => { if (typeof c !== "string") return c; const t = doc.createElement("span"); t.textContent = c; return t; }));
+      return r;
+    };
+    const path = { section: "bones" as const, owner: bone, timeline: "translate" };
+    const place = (x: number, y: number): void => this.applyAtKey(i, `Move key ${i + 1} of ${bone}`, (_, key) => setKey(a.name, path, keyTime(key), { x, y }));
+    const title = doc.createElement("div");
+    title.className = "title";
+    const frame = timeFrame(keyTime(k), s.fps), end = timeFrame(s.length(a), s.fps);
+    title.textContent = `Key ${i + 1} of ${keys.length} · frame ${frame} of ${end}${this.framesClosed && (i === 0 || i === keys.length - 1) ? " · closed: moves with key " + (i === 0 ? keys.length : 1) : ""}`;
+    const speed = keySpeeds(bone, keys)[i] ?? null, sRead = doc.createElement("span");
+    sRead.className = "read";
+    sRead.textContent = speed === null ? "stepped" : `×${Math.round(multiplierOf(clampSpeed(speed)) * 100) / 100}`;
+    sRead.title = speed === null ? "The span is stepped: a speed makes it a curve" : "How many times as fast as the span's even pace the bone goes at this key";
+    const sIn = num(speed === null ? 0 : clampSpeed(speed), "Key speed", (v) => this.setKeySpeed(i, v));
+    sIn.min = String(SPEED_MIN);
+    sIn.max = String(SPEED_MAX);
+    sIn.step = "0.05";
+    const fields = doc.createElement("div");
+    fields.className = "lp-fields";
+    fields.append(title,
+      row("Place", "x", num(k.x ?? 0, "Key x", (v) => place(v, k.y ?? 0)), "y", num(k.y ?? 0, "Key y", (v) => place(k.x ?? 0, v))),
+      row("Speed", sIn, sRead));
+    box.replaceChildren(this.speedColumn(doc), fields);
+    this.drawSpeed();
+  }
+
+  /** FramePath's speed graph: the speed the keys' curves give across the animation's frames, a point on each key (the picked one lit). */
+  private drawKeySpeed(): void {
+    const s = this.session, a = s.animation, bone = s.selectedBone, keys = this.keyNodes(), c = this.speedCanvas;
+    this.speedDots = [];
+    this.speedLegs = [];
+    if (!keys || keys.length < 2 || !a || bone === null || !c.isConnected || this.dataBox.hidden) return;
+    const d = s.length(a);
+    if (d <= 0) return;
+    if (this.gViewFor !== `keys:${a.name}/${bone}`) { this.gViewFor = `keys:${a.name}/${bone}`; this.gView = { x0: 0, x1: 1 }; }
+    const w = Math.max(1, Math.floor(c.clientWidth)), h = Math.max(1, Math.floor(c.clientHeight)), dpr = (window.devicePixelRatio || 1) * pageScale();
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+    const g = c.getContext("2d")!;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    const css = getComputedStyle(this.element), accent = css.getPropertyValue("--accent").trim() || "#4c9bff", text = css.getPropertyValue("--text").trim() || "#ddd", line = css.getPropertyValue("--line").trim() || "#555", muted = css.getPropertyValue("--muted").trim() || "#999";
+    const { l, r, t, b } = this.plot(), X = (time: number): number => this.gx(time / d), Y = (v: number): number => t + ((SPEED_MAX - Math.min(SPEED_MAX, Math.max(SPEED_MIN, v))) / (SPEED_MAX - SPEED_MIN)) * (b - t);
+    g.font = `10px "JetBrains Mono", monospace`;
+    g.textBaseline = "middle";
+    g.textAlign = "right";
+    for (const v of [SPEED_MIN, 0, 1, 2, 3, 4, SPEED_MAX]) {
+      const y = Math.round(Y(v)) + 0.5, edge = v === SPEED_MIN || v === SPEED_MAX;
+      g.strokeStyle = v === 0 ? accent : line;
+      g.globalAlpha = v === 0 ? 0.8 : edge ? 1 : 0.5;
+      g.setLineDash(edge ? [4, 3] : []);
+      g.lineWidth = 1;
+      g.beginPath(); g.moveTo(l, y); g.lineTo(r, y); g.stroke();
+      g.globalAlpha = 1;
+      g.setLineDash([]);
+      g.fillStyle = v === 0 ? text : muted;
+      g.fillText(String(v), l - 5, y);
+    }
+    // The ruler: the animation's frames.
+    const frames = d * s.fps, { x0, x1 } = this.gView;
+    g.fillStyle = muted;
+    g.strokeStyle = line;
+    g.textAlign = "center";
+    g.textBaseline = "top";
+    const raw = ((x1 - x0) * frames) / Math.max(1, (r - l) / 60), step = Math.max(1, raw <= 1 ? 1 : raw <= 2 ? 2 : raw <= 5 ? 5 : raw <= 10 ? 10 : Math.ceil(raw / 10) * 10);
+    g.beginPath(); g.moveTo(l, 18.5); g.lineTo(r, 18.5); g.stroke();
+    for (let f = Math.ceil((x0 * frames) / step) * step; f <= x1 * frames + 1e-9; f += step) {
+      const x = Math.round(X(f / s.fps)) + 0.5;
+      g.beginPath(); g.moveTo(x, 14); g.lineTo(x, 19); g.stroke();
+      g.fillText(String(f), x, 3);
+    }
+    g.save();
+    g.beginPath(); g.rect(l, t, r - l, b - t); g.clip();
+    const speeds = keySpeeds(bone, keys);
+    keys.forEach((k) => {
+      const x = Math.round(X(keyTime(k))) + 0.5;
+      g.strokeStyle = line;
+      g.globalAlpha = 0.6;
+      g.beginPath(); g.moveTo(x, t); g.lineTo(x, b); g.stroke();
+      g.globalAlpha = 1;
+    });
+    // Each span's speed across its time; a stepped span has none.
+    g.strokeStyle = this.stageColour;
+    g.lineWidth = 2;
+    g.lineJoin = "round";
+    keys.forEach((k, i) => {
+      const next = keys[i + 1];
+      if (!next) return;
+      const pts = spanSpeedSamples(bone, k, next, Math.max(8, Math.round(((keyTime(next) - keyTime(k)) / d) * (r - l) / ((x1 - x0) * 4))));
+      if (!pts.length) return;
+      g.beginPath();
+      pts.forEach((q, j) => { if (j === 0) g.moveTo(X(q.t), Y(q.v)); else g.lineTo(X(q.t), Y(q.v)); });
+      g.stroke();
+    });
+    keys.forEach((k, i) => {
+      const x = X(keyTime(k)), v = speeds[i], y = Y(v ?? 0), on = i === this.selKey, half = on ? 6 : 5;
+      g.fillStyle = v === null ? muted : accent;
+      g.beginPath(); g.rect(x - half, y - half, half * 2, half * 2); g.fill();
+      if (on) { g.strokeStyle = "#ffffff"; g.lineWidth = 1.5; g.stroke(); }
+      this.speedDots.push({ i, x, y });
+    });
+    g.restore();
+    g.textAlign = "center";
+    g.textBaseline = "top";
+    keys.forEach((k, i) => {
+      const x = X(keyTime(k));
+      if (x < l - 4 || x > r + 4) return;
+      g.fillStyle = i === this.selKey ? text : muted;
+      g.fillText(String(i + 1), Math.round(x) + 0.5, b + 4);
+    });
+    // The cap: the animation's playhead, in frames.
+    const hx = Math.round(X(frameTime(s.frame, s.fps))) + 0.5;
+    if (hx >= l - 1 && hx <= r + 1) {
+      g.strokeStyle = DOT;
+      g.setLineDash([3, 3]);
+      g.lineWidth = 1;
+      g.beginPath(); g.moveTo(hx, 19); g.lineTo(hx, b); g.stroke();
+      g.setLineDash([]);
+      const label = String(s.frame), cw = Math.max(26, label.length * 6 + 10);
+      g.fillStyle = DOT;
+      g.beginPath();
+      g.moveTo(hx - cw / 2, 1); g.lineTo(hx + cw / 2, 1); g.lineTo(hx + cw / 2, 14); g.lineTo(hx, 20); g.lineTo(hx - cw / 2, 14); g.closePath(); g.fill();
+      g.fillStyle = "#ffffff";
+      g.textBaseline = "middle";
+      g.fillText(label, hx, 8);
     }
   }
 
@@ -1544,7 +1773,7 @@ export class MotionPathPanel {
     const fitAll = this.button("Fit", "Show the whole path across the graph (double-click on the graph does the same)"), fitNode = this.button("Node", "Fit the picked node's section: from it to the next node");
     fitAll.addEventListener("click", () => this.fitGraph(false));
     fitNode.addEventListener("click", () => this.fitGraph(true));
-    fitNode.disabled = this.selNode < 0;
+    fitNode.disabled = (this.tab === "keys" ? this.selKey : this.selNode) < 0;
     head.append(title, fitAll, fitNode);
     col.append(head, this.speedCanvas, this.speedGrip);
     return col;
@@ -1652,6 +1881,13 @@ export class MotionPathPanel {
 
   /** The whole path across the graph, or (with `section`) the picked node's section: from it to the next node. */
   private fitGraph(section: boolean): void {
+    if (this.tab === "keys") {
+      const keys = this.keyNodes(), a = this.session.animation, d = a ? this.session.length(a) : 0, k = keys?.[this.selKey], next = keys?.[this.selKey + 1];
+      if (!section || !k || !next || d <= 0) { this.setView(0, 1); return; }
+      const p0 = keyTime(k) / d, p1 = keyTime(next) / d, pad = Math.max(0.01, (p1 - p0) * 0.08);
+      this.setView(p0 - pad, p1 + pad);
+      return;
+    }
     const m = this.path();
     if (!section || !m || this.selNode < 0) { this.setView(0, 1); return; }
     const xs = nodeProgress(m), a = xs[this.selNode] ?? 0, b = xs[this.selNode + 1] ?? (m.closed ? 1 : a), pad = Math.max(0.01, (b - a) * 0.08);
@@ -1661,6 +1897,7 @@ export class MotionPathPanel {
 
   /** Draw the speed spline: the value (-0.99 to 5) up, the path's length across (the ruler above shows it, and the cap is the playhead); a point and two legs for each node, the picked one lit, a line at 0 (an even pace). */
   private drawSpeed(): void {
+    if (this.tab === "keys") { this.drawKeySpeed(); return; }
     const s = this.session, m = this.path(), c = this.speedCanvas;
     this.speedDots = [];
     this.speedLegs = [];
@@ -1824,6 +2061,7 @@ export class MotionPathPanel {
 
   /** A node's speed set (one undo step); the picked node follows. */
   private setSpeed(i: number, v: number, join = false): void {
+    if (this.tab === "keys") { this.setKeySpeed(i, v); return; }
     const s = this.session, m = this.path();
     if (!m?.nodes[i]) return;
     keepMotion(s, { ...m, nodes: m.nodes.map((n, k) => (k === i ? { ...n, speed: v } : n)) }, `Set the speed of node ${nodeLabels(m)[i]}`, join);
@@ -1839,6 +2077,11 @@ export class MotionPathPanel {
 
   /** The playhead goes to where the ruler was pressed: the frame the bone passes that place on. */
   private scrubGraph(x: number): void {
+    if (this.tab === "keys") {
+      const a = this.session.animation;
+      if (a) this.session.seek(timeFrame(Math.min(1, Math.max(0, this.gp(x))) * this.session.length(a), this.session.fps));
+      return;
+    }
     const s = this.session, m = this.path();
     if (!m) return;
     const p = Math.min(1, Math.max(0, this.gp(x)));
@@ -1890,7 +2133,7 @@ export class MotionPathPanel {
       e.preventDefault();
       this.pickSlot(i);
       this.speedDrag = i;
-      this.session.history?.begin(`Set the speed of node ${nodeLabels(this.path()!)[i]}`);
+      this.session.history?.begin(this.tab === "keys" ? `Set the speed of key ${i + 1}` : `Set the speed of node ${nodeLabels(this.path()!)[i]}`);
       c.setPointerCapture(e.pointerId);
       this.slotSig = "";
       this.schedule();
@@ -1948,6 +2191,7 @@ export class MotionPathPanel {
 
   /** The menu of the speed graph at a canvas point: a node added at that place along the path, and over a point its delete and its legs (the curve's, drawn on the graph). */
   private graphMenu(x: number, y: number, cx: number, cy: number): void {
+    if (this.tab === "keys") return;
     const m = this.path();
     if (!m) return;
     const i = this.speedDotAt(x, y), p = Math.min(1, Math.max(0, this.gp(x))), items: MenuItem[] = [];
@@ -2038,6 +2282,7 @@ export class MotionPathPanel {
    * the playhead's frame: then dragging the bone moves the node and dragging the node moves the bone.
    */
   private pickSlot(i: number): void {
+    if (this.tab === "keys") { this.pickKey(i); return; }
     const s = this.session, n = this.path()?.nodes[i];
     this.selNode = i;
     if (!n) return;
@@ -2598,6 +2843,7 @@ export class MotionPathPanel {
       if (best >= 0) {
         // With a path a dot only puts the path's clock there; with none, drag it to move the bone at that frame.
         if (this.path()) { this.session.seekPath(best / this.session.fps); return; }
+        if (this.tab === "keys") { const k = this.keyAtFrame(best); if (k !== this.selKey && k >= 0) { this.selKey = k; this.slotSig = ""; } }
         if (this.beginEdit(x, y, "move", best)) { this.grab(e); return; }
         this.session.seek(best);
         return;

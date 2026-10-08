@@ -29,7 +29,7 @@ test("Adjust time is gone: Edit Path is the one mode, with Duration beside it, C
   await expect(panel.getByRole("button", { name: /Time$/ })).toHaveCount(0);
   await expect(panel.getByRole("spinbutton", { name: "Duration" })).toBeVisible();
   await panel.getByRole("button", { name: "TwinSpline menu" }).click();
-  await expect(page.getByRole("menuitem", { name: "Create new Key frame from TwinSpline" })).toBeEnabled();
+  await expect(page.getByRole("menuitem", { name: "Create new FramePath from TwinSpline" })).toBeEnabled();
   await expect(page.getByRole("menuitem", { name: "Delete TwinSpline data" })).toBeEnabled();
   await expect(page.getByRole("menuitemcheckbox", { name: "Closed" })).toBeEnabled();
   await expect(page.getByRole("menuitemcheckbox", { name: "Loop" })).toBeEnabled();

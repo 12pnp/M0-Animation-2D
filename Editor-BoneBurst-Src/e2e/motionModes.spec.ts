@@ -76,3 +76,18 @@ test("FramePath ⋮ Closed puts the last frame's translate key where the first o
   await panel.getByRole("button", { name: "FramePath menu" }).click();
   await expect(page.getByRole("menuitemcheckbox", { name: "Closed" })).toHaveAttribute("aria-checked", "true");
 });
+
+test("FramePath: a numbered button per translate key; pressing one shows its data, and a speed typed there is written into the keys' curves", async ({ page }) => {
+  await open(page, "hips");
+  const panel = panelOf(page);
+  const count = await page.evaluate(() => (window as unknown as Live).boneburst.session.doc.animations[0]!.bones!.find((b) => b.name === "hips")!.timelines.find((t) => t.name === "translate")!.keys.length);
+  await expect(panel.locator(".lp-slots button.node")).toHaveCount(count);
+  await panel.getByRole("button", { name: "Key 2", exact: true }).click();
+  await expect(panel.locator(".lp-fields .title")).toContainText(`Key 2 of ${count}`);
+  const speed = panel.getByRole("spinbutton", { name: "Key speed" });
+  await speed.fill("2");
+  await speed.press("Enter");
+  const curves = () => page.evaluate(() => ((window as unknown as Live).boneburst.session.doc.animations[0]!.bones!.find((b) => b.name === "hips")!.timelines.find((t) => t.name === "translate")!.keys as { curve?: unknown }[]).slice(0, 2).map((k) => Array.isArray(k.curve)));
+  await expect.poll(curves).toEqual([true, true]);
+  await expect(panel.locator(".lp-fields .read")).toHaveText("×3");
+});
