@@ -1,6 +1,6 @@
 # BoneBurst ECS P15: the animation system's cost — plan
 
-**Status: plan only, nothing built (2026-10-07); a TwinSpline-readiness section added 2026-10-08 (§7), after the owner moved the work to the ECS package (`D2-FrontPackageSample-Decision.md`).** Part of [BoneBurst-ECS-Plan.md](BoneBurst-ECS-Plan.md) (after §24, P14); the summary of all phases is [BoneBurst-ECS-Summary.md](BoneBurst-ECS-Summary.md).
+**Status: step 1 (baseline) and step 2 (native track state) done 2026-10-08, steps 3 to 6 not started; first written as a plan on 2026-10-07; a TwinSpline-readiness section added 2026-10-08 (§7), after the owner moved the work to the ECS package (`D2-FrontPackageSample-Decision.md`).** Part of [BoneBurst-ECS-Plan.md](BoneBurst-ECS-Plan.md) (after §24, P14); the summary of all phases is [BoneBurst-ECS-Summary.md](BoneBurst-ECS-Summary.md).
 
 After P14 the animation system is the largest piece of the ECS frame at 2000 skeletons: 0.75 ms when they idle and 2.0 ms when they keep switching animation, of a 2.9 to 4.5 ms frame. It is a single-threaded, managed loop over the entities. The plan is to keep the request handling on the main thread (it is rare) and move everything that happens every frame, for every skeleton, into Burst jobs, the way P14 did for the pose.
 
@@ -161,3 +161,12 @@ What it says, against §1 (the readings of the void 1080p run, which this run ag
 *   **Frame share at 2000 (GPU route):** animation plus after is 0.97 of 3.12 ms idle (a third) and 2.44 of 4.90 ms switching (half).
 
 **Targets (the gate, §5, with the after-animation figure added):** animation 0.79 to 0.40 ms or less idle and 2.03 to 1.0 or less switching; after-animation 0.18 to 0.09 or less idle and 0.41 to 0.20 or less switching; together at least 0.5 ms off the idle frame and 1.0 ms off the switching frame at 2000 skeletons, in an ABBA run against build 59 at 720p, load noted.
+
+## 9. Step 2 result: the native track state (2026-10-08)
+
+**Done, in `ECS-0-25D-Platformer` (uncommitted there: that repository has no commits yet).** Each instance's `BoneTrackState` now lives in its own native allocation instead of a field of the managed `InstanceSlot` class, so a job can hold a pointer to it.
+
+*   **The change:** `BoneBurstInstanceStore.InstanceSlot.Track` is a `BoneTrackState*`. `CreateInstance` allocates it (`UnsafeUtility.MallocTracked`, `Allocator.Persistent`, aligned for the struct) and constructs the state in it; `DestroyInstance` and `Dispose` go through one `FreeTrack` (dispose the state's lists, free the allocation, null the pointer). `store.Track(index)` still returns `ref BoneTrackState`, so no caller changed. Two small additions for the tests: `BoneTrackState.ListAllocator` (the allocator its lists were made with) and `BoneBurstInstanceStore.TrackAddress(index)`. The state's logic is untouched.
+*   **Guards.** All 384 existing tests pass unchanged (the assembly was 384 of 384 before the edit and 386 of 386 after). `TrackStorageTests` (2, new): every instance's state has the persistent allocator and its own allocation, and the addresses stay the same across 30 frames and 40 more spawns; a destroyed instance leaves the others' states in place and still animating, and the reused slot gets a fresh state of its own.
+*   **Deliberate bug:** the state made with `Allocator.TempJob`: the new test fails (385 of 386, one failed), and the restored source is green again (386 of 386, checked against a saved copy). A first attempt at this check read a stale test status (the previous run's) and proved nothing; the second waited for a status different from the one before the run. The other bugs of §4 (stale physics bit, scratch map not cleared, animate job skipping `Apply`) belong to the steps that introduce those pieces.
+*   **Not measured.** Step 2 changes storage, not work: the benchmark is run with step 3, where the speed changes. The Editor was the only thing run; no player was built.
