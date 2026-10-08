@@ -8,6 +8,8 @@ import type { Session } from "../session";
 const BG_KEY = "boneburst.preview.colour";
 const MINE_KEY = "boneburst.preview.mine";
 const WHITE = "#ffffff";
+/** What the − and + buttons step through: times the animation's own pace. */
+const SPEEDS = [0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4] as const;
 const GREY = "#808080";
 
 /**
@@ -20,10 +22,15 @@ export class PreviewPanel {
   private readonly bar = document.createElement("div");
   private readonly pick = document.createElement("select");
   private readonly playBtn = document.createElement("button");
-  private readonly loopBox = document.createElement("input");
+  private readonly loopBtn = document.createElement("button");
   private readonly clock = document.createElement("span");
   private readonly fitBtn = document.createElement("button");
   private readonly colourA = document.createElement("input");
+  private readonly prevBtn = document.createElement("button");
+  private readonly nextBtn = document.createElement("button");
+  private readonly slower = document.createElement("button");
+  private readonly faster = document.createElement("button");
+  private readonly rate = document.createElement("button");
   private readonly whiteBtn = document.createElement("button");
   private readonly greyBtn = document.createElement("button");
   private readonly view = document.createElement("div");
@@ -41,6 +48,7 @@ export class PreviewPanel {
   private last = 0;
   private lastDoc: unknown = null;
   private optionsKey = "";
+  private speedAt = SPEEDS.indexOf(1);
   private colour = WHITE;
   /** The adjustable slot's colour. */
   private mine = "#4f8cff";
@@ -53,11 +61,11 @@ export class PreviewPanel {
     this.pick.addEventListener("change", () => { this.chosen = this.pick.value === "" ? null : this.pick.value; this.time = 0; });
     this.playBtn.type = "button";
     this.playBtn.addEventListener("click", () => { this.playing = !this.playing; this.update(); });
-    const label = document.createElement("label");
-    this.loopBox.type = "checkbox";
-    this.loopBox.checked = true;
-    this.loopBox.addEventListener("change", () => { this.loop = this.loopBox.checked; });
-    label.append(this.loopBox, " Loop");
+    this.loopBtn.type = "button";
+    this.loopBtn.title = "Loop: start over at the end (on) or stop there (off)";
+    this.loopBtn.setAttribute("aria-label", "Loop");
+    iconButton(this.loopBtn, "loop", false);
+    this.loopBtn.addEventListener("click", () => { this.loop = !this.loop; this.update(); });
     this.clock.className = "pv-clock";
     this.fitBtn.type = "button";
     this.fitBtn.title = "Fit the whole rig in the panel (double-click the picture does the same)";
@@ -86,7 +94,17 @@ export class PreviewPanel {
       const m = localStorage.getItem(MINE_KEY);
       if (m && /^#[0-9a-f]{6}$/i.test(m)) this.mine = m;
     } catch { /* the default */ }
-    this.bar.append(this.pick, this.playBtn, label, this.whiteBtn, this.greyBtn, this.colourA, this.clock, this.fitBtn);
+    // Quick change of animation (the one before, the one after, round), and the speed it plays at.
+    const small = (b: HTMLButtonElement, text: string, tip: string, run: () => void): void => { b.type = "button"; b.textContent = text; b.title = tip; b.setAttribute("aria-label", tip); b.addEventListener("click", run); };
+    small(this.prevBtn, "", "Previous animation", () => this.step(-1));
+    small(this.nextBtn, "", "Next animation", () => this.step(1));
+    iconButton(this.prevBtn, "back", false);
+    iconButton(this.nextBtn, "forward", false);
+    small(this.slower, "−", "Slower", () => this.setSpeed(this.speedAt - 1));
+    small(this.faster, "+", "Faster", () => this.setSpeed(this.speedAt + 1));
+    small(this.rate, "×1", "Playing speed (click: back to ×1)", () => this.setSpeed(SPEEDS.indexOf(1)));
+    this.rate.className = "pv-rate";
+    this.bar.append(this.prevBtn, this.pick, this.nextBtn, this.playBtn, this.slower, this.rate, this.faster, this.loopBtn, this.whiteBtn, this.greyBtn, this.colourA, this.clock, this.fitBtn);
     this.view.className = "pv-view";
     this.canvas.className = "pv-canvas";
     this.view.append(this.canvas);
@@ -114,6 +132,23 @@ export class PreviewPanel {
     try { localStorage.setItem(BG_KEY, this.colour); localStorage.setItem(MINE_KEY, this.mine); } catch { /* not kept */ }
   }
 
+  /** The animation before or after the one shown, round; the clock starts over. */
+  private step(by: number): void {
+    const names = (this.session.doc?.animations ?? []).map((a) => a.name);
+    if (!names.length) return;
+    const at = names.indexOf(this.animationName ?? ""), next = at < 0 ? (by > 0 ? 0 : names.length - 1) : (at + by + names.length) % names.length;
+    this.chosen = names[next]!;
+    this.time = 0;
+    this.playing = true;
+    this.update();
+  }
+
+  /** The speed steps: a place in SPEEDS, kept inside it. */
+  private setSpeed(i: number): void {
+    this.speedAt = Math.max(0, Math.min(SPEEDS.length - 1, i));
+    this.update();
+  }
+
   private get animationName(): string | null {
     const names = (this.session.doc?.animations ?? []).map((a) => a.name);
     const want = this.chosen === undefined ? this.session.animation?.name ?? null : this.chosen;
@@ -130,13 +165,21 @@ export class PreviewPanel {
   }
 
   private update(): void {
-    this.playBtn.textContent = this.playing ? "❚❚ Pause" : "▶ Play";
+    this.playBtn.title = this.playing ? "Pause" : "Play";
+    this.playBtn.setAttribute("aria-label", this.playing ? "Pause" : "Play");
+    iconButton(this.playBtn, this.playing ? "pause" : "play", false);
+    this.loopBtn.setAttribute("aria-pressed", String(this.loop));
     const names = (this.session.doc?.animations ?? []).map((a) => a.name), key = names.join("\u0000");
     if (key !== this.optionsKey) {
       this.optionsKey = key;
       this.pick.replaceChildren(new Option("Setup pose", ""), ...names.map((n) => new Option(n, n)));
     }
     this.pick.value = this.animationName ?? "";
+    const k = SPEEDS[this.speedAt]!;
+    this.rate.textContent = `×${k}`;
+    this.slower.disabled = this.speedAt <= 0;
+    this.faster.disabled = this.speedAt >= SPEEDS.length - 1;
+    this.prevBtn.disabled = this.nextBtn.disabled = names.length === 0;
   }
 
   private wheel(): void {
@@ -171,7 +214,7 @@ export class PreviewPanel {
     const name = this.animationName, anim = name !== null ? this.session.doc?.animations?.find((a) => a.name === name) : undefined;
     const end = anim ? this.session.length(anim) : 0;
     if (this.playing && anim && end > 0) {
-      this.time += dt;
+      this.time += dt * SPEEDS[this.speedAt]!;
       if (this.time >= end) { if (this.loop) this.time %= end; else { this.time = end; this.playing = false; this.update(); } }
     }
     this.clock.textContent = anim ? `${this.time.toFixed(2)} / ${end.toFixed(2)} s` : "setup pose";

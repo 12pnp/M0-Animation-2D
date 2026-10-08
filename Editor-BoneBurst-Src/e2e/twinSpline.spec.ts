@@ -165,6 +165,13 @@ test("the speed graph: the cap on its ruler scrubs the path's own clock and says
   expect(await frame()).toBe(0);
   // Every node has two legs (a ring): six handles for three nodes.
   await expect.poll(async () => (await handles()).length).toBe(6);
+  // A leg glows while the pointer is over it, and stops when it leaves.
+  const glow = () => page.evaluate(() => (window as unknown as { boneburst: { motionPath: { legGlow: { speed: { i: number; side: string } | null } } } }).boneburst.motionPath.legGlow.speed);
+  const hov = (await handles()).find((h) => h.i === 1 && h.side === "out")!, bh = await box();
+  await page.mouse.move(bh.x + hov.x, bh.y + hov.y);
+  await expect.poll(glow).toEqual({ i: 1, side: "out" });
+  await page.mouse.move(bh.x + bh.width / 2, bh.y + 40);
+  await expect.poll(glow).toBeNull();
   // Bend: drag node 2's way-out leg up; its slope is stored, and the curve past the node changes.
   const leg = (await handles()).find((h) => h.i === 1 && h.side === "out")!, b1 = await box();
   await page.mouse.move(b1.x + leg.x, b1.y + leg.y);
@@ -195,4 +202,22 @@ test("the speed graph: the cap on its ruler scrubs the path's own clock and says
   // Node: the picked node's section fills the graph (the gap to the next node is wider than the whole path's).
   await panel.locator(".lp-speed-bar").getByRole("button", { name: "Node" }).click();
   await expect.poll(gap).toBeGreaterThan(before * 1.5);
+});
+
+test("a spline leg on the picture glows while the pointer is over it", async ({ page }) => {
+  await open(page);
+  const panel = page.locator(".panel.motion-path");
+  await startEditPath(panel);
+  await twinMenu(panel, "Add a spline node");
+  await expect.poll(async () => (await dots(page)).length).toBe(3);
+  const live = () => page.evaluate(() => {
+    const m = (window as unknown as { boneburst: { motionPath: { grabPoints: { handles: { slot: number; side: string; x: number; y: number }[] }; legGlow: { picture: { slot: number; side: string } | null } } } }).boneburst.motionPath;
+    return { h: m.grabPoints.handles, glow: m.legGlow.picture };
+  });
+  await expect.poll(async () => (await live()).h.length).toBeGreaterThan(0);
+  const h = (await live()).h[0]!, box = (await panel.locator(".lp-body canvas").first().boundingBox())!;
+  await page.mouse.move(box.x + h.x, box.y + h.y);
+  await expect.poll(async () => (await live()).glow).toEqual({ slot: h.slot, side: h.side });
+  await page.mouse.move(box.x + 3, box.y + 3);
+  await expect.poll(async () => (await live()).glow).toBeNull();
 });

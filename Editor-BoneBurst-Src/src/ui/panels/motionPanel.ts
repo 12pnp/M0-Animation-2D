@@ -264,6 +264,9 @@ export class MotionPathPanel {
   /** The curve's handles at the nodes on the canvas (Edit Path, Local), and the one being dragged. */
   private handlePts: { slot: number; side: "out" | "in"; x: number; y: number }[] = [];
   private handleDrag: { slot: number; side: "out" | "in" } | null = null;
+  /** The legs the pointer is over (the picture's, the speed graph's): drawn glowing. */
+  private legHover: { slot: number; side: "out" | "in" } | null = null;
+  private speedHover: { i: number; side: "out" | "in" } | null = null;
   /** A node being dragged, or a dot being slid along the path (the speed). */
   private nodeDrag: number | null = null;
   private syncRev = -1;
@@ -452,6 +455,7 @@ export class MotionPathPanel {
     }
     this.canvas.addEventListener("pointerdown", (e) => this.down(e));
     this.canvas.addEventListener("pointermove", (e) => this.move(e));
+    this.canvas.addEventListener("pointerleave", () => this.hoverLeg(null));
     this.canvas.addEventListener("pointerup", (e) => this.up(e));
     this.canvas.addEventListener("pointercancel", (e) => this.up(e));
     this.canvas.addEventListener("dblclick", (e) => {
@@ -1640,12 +1644,15 @@ export class MotionPathPanel {
         if ((side === "in" && i === 0 && !m.closed) || (side === "out" && i === xs.length - 1 && !m.closed)) continue;
         const slope = side === "out" ? sl.out : sl.into, dx = kx, dy = -slope * ky, len = Math.hypot(dx, dy) || 1, sign = side === "out" ? 1 : -1;
         const hx = x + (sign * dx * LEG) / len, hy = y + (sign * dy * LEG) / len;
-        g.strokeStyle = this.stageColour;
-        g.lineWidth = 1;
-        g.globalAlpha = on ? 1 : 0.55;
+        const lit = (this.speedHover?.i === i && this.speedHover.side === side) || (this.legDrag?.i === i && this.legDrag.side === side);
+        g.save();
+        g.strokeStyle = lit ? "#ffffff" : this.stageColour;
+        g.lineWidth = lit ? 2 : 1;
+        g.globalAlpha = lit || on ? 1 : 0.55;
+        if (lit) { g.shadowColor = this.stageColour; g.shadowBlur = 14; }
         g.beginPath(); g.moveTo(x, y); g.lineTo(hx, hy); g.stroke();
-        g.beginPath(); g.arc(hx, hy, on ? 5 : 4, 0, Math.PI * 2); g.stroke();
-        g.globalAlpha = 1;
+        g.beginPath(); g.arc(hx, hy, lit ? 6.5 : on ? 5 : 4, 0, Math.PI * 2); g.stroke();
+        g.restore();
         this.speedLegs.push({ i, side, x: hx, y: hy });
       }
     });
@@ -1810,6 +1817,10 @@ export class MotionPathPanel {
       }
       if (this.capDrag) { this.scrubGraph(x); return; }
       if (this.legDrag) { this.dragLeg(x, y); this.schedule(); return; }
+      if (this.speedDrag === null) {
+        const over = this.speedLegAt(x, y);
+        if (over?.i !== this.speedHover?.i || over?.side !== this.speedHover?.side) { this.speedHover = over; this.schedule(); }
+      }
       if (this.speedDrag === null) { c.style.cursor = y < this.plot().t ? "ew-resize" : this.speedLegAt(x, y) ? "pointer" : this.speedDotAt(x, y) >= 0 ? "ns-resize" : ""; return; }
       const raw = this.speedAtY(y), v = e.shiftKey ? clampSpeed(Math.round(raw * 10) / 10) : Math.round(raw * 100) / 100;
       this.setSpeed(this.speedDrag, clampSpeed(v));
@@ -1839,6 +1850,7 @@ export class MotionPathPanel {
       const k = Math.exp(e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), anchor = this.gp(x), w = Math.min(1, Math.max(0.02, span * k)), f = (x - l) / (r - l);
       this.setView(anchor - f * w, anchor + (1 - f) * w);
     }, { passive: false });
+    c.addEventListener("pointerleave", () => { if (this.speedHover) { this.speedHover = null; this.schedule(); } });
     c.addEventListener("dblclick", (e) => {
       const [x, y] = at(e), leg = this.speedLegAt(x, y), i = this.speedDotAt(x, y), m = this.path();
       if (leg && m) { keepMotion(this.session, setSpeedLegs(m, leg.i, "auto"), "Automatic speed legs"); this.slotSig = ""; this.schedule(); return; }
@@ -2320,13 +2332,17 @@ export class MotionPathPanel {
           const o = offs[slot]![side];
           if (!o.x && !o.y) continue;
           const [hx, hy] = at(n.x + o.x, n.y + o.y);
-          g.strokeStyle = accent;
-          g.globalAlpha = slot === this.selNode ? 1 : 0.6;
-          g.lineWidth = 1;
+          const lit = (this.legHover?.slot === slot && this.legHover.side === side) || (this.handleDrag?.slot === slot && this.handleDrag.side === side);
+          g.save();
+          g.strokeStyle = lit ? "#ffffff" : accent;
+          g.globalAlpha = lit || slot === this.selNode ? 1 : 0.6;
+          if (lit) { g.shadowColor = accent; g.shadowBlur = 14; }
+          g.lineWidth = lit ? 2 : 1;
           g.beginPath(); g.moveTo(nx, ny); g.lineTo(hx, hy); g.stroke();
           // A hollow ring: the curve shows through it.
-          g.lineWidth = 1.5;
-          g.beginPath(); g.arc(hx, hy, 5, 0, Math.PI * 2); g.stroke();
+          g.lineWidth = lit ? 2.5 : 1.5;
+          g.beginPath(); g.arc(hx, hy, lit ? 6.5 : 5, 0, Math.PI * 2); g.stroke();
+          g.restore();
           this.handlePts.push({ slot, side, x: hx, y: hy });
         }
       });
@@ -2526,11 +2542,22 @@ export class MotionPathPanel {
     }
     if (!this.dragging) {
       const [x, y] = localPoint(this.canvas, e), h = this.handle;
+      this.hoverLeg(this.handleAt(x, y));
       this.canvas.style.cursor = this.onTag(x, y) || this.nodeAt(x, y) >= 0 ? "grab" : (h && Math.hypot(h.x - x, h.y - y) <= 11) || this.arrowAt(x, y) !== null || this.markAt(x, y) >= 0 ? "grab" : "";
       return;
     }
     this.pan = { x: this.pan.x + e.clientX - this.dragging.x, y: this.pan.y + e.clientY - this.dragging.y };
     this.dragging = { x: e.clientX, y: e.clientY };
+    this.schedule();
+  }
+
+  /** The legs glowing under the pointer, for tests. */
+  get legGlow(): { picture: { slot: number; side: "out" | "in" } | null; speed: { i: number; side: "out" | "in" } | null } { return { picture: this.legHover, speed: this.speedHover }; }
+
+  /** The leg under the pointer glows; a redraw only when it changes. */
+  private hoverLeg(h: { slot: number; side: "out" | "in" } | null): void {
+    if (h?.slot === this.legHover?.slot && h?.side === this.legHover?.side) return;
+    this.legHover = h;
     this.schedule();
   }
 

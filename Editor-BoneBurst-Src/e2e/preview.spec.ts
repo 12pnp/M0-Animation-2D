@@ -18,7 +18,7 @@ test("Preview plays the animation on its own clock: it advances, Pause holds it,
   await expect(clock).toContainText(" / ");
   const first = await clock.textContent();
   await expect.poll(() => clock.textContent()).not.toBe(first);
-  await panel.getByRole("button", { name: /Pause/ }).click();
+  await panel.getByRole("button", { name: "Pause" }).click();
   const held = await clock.textContent();
   await page.waitForTimeout(300);
   expect(await clock.textContent()).toBe(held);
@@ -45,4 +45,30 @@ test("Preview's background is one solid colour from three slots: white, grey and
   await expect(view).toHaveCSS("background-color", "rgb(255, 255, 255)");
   // The adjustable slot keeps its colour.
   await expect(panel.getByLabel("Background colour")).toHaveValue("#102030");
+});
+
+test("Preview: ◀ and ▶ change the animation, − and + change the speed it plays at", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await page.locator(".dv-tab", { hasText: "Preview" }).click();
+  const panel = page.locator(".panel.preview"), pick = panel.getByLabel("Preview animation");
+  await panel.getByRole("button", { name: "Next animation" }).click();
+  const a = await pick.inputValue();
+  expect(a).not.toBe("");
+  await panel.getByRole("button", { name: "Next animation" }).click();
+  const b = await pick.inputValue();
+  expect(b).not.toBe(a);
+  await panel.getByRole("button", { name: "Previous animation" }).click();
+  expect(await pick.inputValue()).toBe(a);
+  const rate = panel.locator(".pv-rate");
+  await expect(rate).toHaveText("×1");
+  await panel.getByRole("button", { name: "Faster" }).click();
+  await expect(rate).toHaveText("×1.5");
+  await panel.getByRole("button", { name: "Slower" }).click();
+  await panel.getByRole("button", { name: "Slower" }).click();
+  await expect(rate).toHaveText("×0.75");
+  await rate.click();
+  await expect(rate).toHaveText("×1");
 });
