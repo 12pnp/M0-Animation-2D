@@ -14,7 +14,7 @@ import type { MotionMemory } from "../viewMemory";
 import { makeKeysFromPath, pathDrive, pathFromKeys, currentNode, dropMotion, keepMotion, motionFor, nodeAfter, parentChoices, pathFromView, pathToView, poseAtNode, refBoneName, refMatrix, startMotion, toView } from "../motion";
 import { deleteTranslateKeys, translateKeyCount } from "@/edit/pathKeys";
 import { keySpeeds, setTranslateKeySpeed, spanSpeedSamples, translateNodes } from "@/edit/keySpeed";
-import { setKey } from "@/edit/keys";
+import { deleteKeys, setKey } from "@/edit/keys";
 import { localPoint, pageScale } from "../pageScale";
 import type { Session } from "../session";
 import { type Matrix, type Point, localRotation, scaleAlong, scaleFactors, shearAlong, shearDelta, spaceAxes, tidy, turn, turnSign } from "../stage/gizmo";
@@ -39,6 +39,8 @@ const LAYERS: readonly Layer[] = ["image", "bone", "path", "spline", "length", "
 const GIZMOS = ["rotate", "move", "scale", "shear"] as const;
 /** The path's dots and the lengths between them. */
 const DOT = "#ff2bd6";
+/** The Timeline's playhead green, for FramePath's frame strip. */
+const PLAYHEAD_GREEN = "#30a46c";
 /** The height of what is under the picture at first, and the least of it and of the picture. */
 const DEFAULT_LOWER = 270, MIN_LOWER = 150, MIN_PICTURE = 120, MIN_GRAPH = 60;
 const LOWER_KEY = "boneburst.motionPath.lower";
@@ -243,7 +245,9 @@ export class MotionPathPanel {
   private selNode = -1;
   /** FramePath: the translate key picked (-1: none), and the animation and bone it was picked in (docs/FRAMEPATH-SPEED-PLAN.md). */
   private selKey = -1;
-  private selKeyFor = "";
+  /** FramePath's frame strip (drawn like the Timeline's ruler) and its ◆ toggle. */
+  private readonly keyStrip = document.createElement("canvas");
+  private readonly keyToggle = document.createElement("button");
   /** Whether the Stage draws the bone's spline, and in what colour (the button and swatch in the header; kept between sessions). */
   private stageOn = false;
   private stageColour = "#ff9f1c";
@@ -452,6 +456,13 @@ export class MotionPathPanel {
     this.applyLower();
     this.splitDrag();
     this.speedEvents();
+    this.keyStrip.className = "lp-keystrip";
+    this.keyStripEvents();
+    this.keyToggle.type = "button";
+    this.keyToggle.className = "lp-keytoggle";
+    this.keyToggle.textContent = "◆";
+    this.keyToggle.setAttribute("aria-label", "Toggle key");
+    this.keyToggle.addEventListener("click", () => this.toggleKey());
     this.element.append(this.head, this.motionBar, this.body, this.viewBar, this.split, this.lower);
     new ResizeObserver(() => this.schedule()).observe(this.lower);
     // The canvas is as big as its box, whatever else the panel holds (the path window under it).
@@ -1423,8 +1434,8 @@ export class MotionPathPanel {
   /** The line under FramePath's tab: what it shows, or why there are no numbered keys to pick. */
   private keyHint(): string {
     const s = this.session, a = s.animation, bone = s.selectedBone, keys = a && bone !== null ? translateNodes(a, bone) : [];
-    if (keys === null) return `FramePath: ${bone} keys translate as separate x and y, so it has no numbered keys or speed graph yet.`;
-    if (keys.length < 2) return `FramePath: ${bone} has ${keys.length === 0 ? "no translate keys" : "one translate key"} in ${a?.name ?? "this animation"}; the numbered keys and the speed graph need two.`;
+    if (keys === null) return `FramePath: ${bone} keys translate as separate x and y, so it has no frame strip or speed graph yet.`;
+    if (keys.length < 2) return `FramePath: ${bone} has ${keys.length === 0 ? "no translate keys" : "one translate key"} in ${a?.name ?? "this animation"}; ◆ keys its place on the playhead's frame.`;
     return "FramePath: the bone's keyed motion. A tab's ⋮ makes the other kind from it.";
   }
 
@@ -1443,7 +1454,6 @@ export class MotionPathPanel {
   /** Pick FramePath node `i`: the playhead goes to its frame. */
   private pickKey(i: number): void {
     const s = this.session, k = this.keyNodes()?.[i];
-    this.selKey = i;
     this.slotSig = "";
     if (k) { s.pause(); s.seek(timeFrame(keyTime(k), s.fps)); }
     this.schedule();
@@ -1471,28 +1481,118 @@ export class MotionPathPanel {
     this.applyAtKey(i, `Set the speed of key ${i + 1}`, (index) => setTranslateKeySpeed(a.name, bone, index, clampSpeed(v)));
   }
 
-  /** FramePath's lower area: a numbered button for each translate key, the picked key's data and the speed graph. */
+  /** FramePath's lower area (docs/FRAMEPATH-SPEED-PLAN.md, step 2): the ◆ toggle and the frame strip, the key on the playhead's frame and the speed graph. */
   private renderKeyStrip(): void {
-    const s = this.session, a = s.animation, bone = s.selectedBone, keys = this.keyNodes(), show = !!keys && keys.length >= 2;
-    const at = `${a?.name ?? ""}/${bone ?? ""}`;
-    if (at !== this.selKeyFor) { this.selKeyFor = at; this.selKey = -1; }
-    if (!keys || this.selKey >= keys.length) this.selKey = -1;
+    const s = this.session, a = s.animation, bone = s.selectedBone, keys = this.keyNodes(), show = !!keys;
+    // The picked key is the one on the playhead's frame.
+    this.selKey = keys ? this.keyAtFrame(s.frame) : -1;
     this.slotBar.hidden = !show;
     this.dataBox.hidden = !show;
     this.lower.hidden = !show;
     this.split.hidden = !show;
-    const sig = !show ? "k" : `k|${at}|${JSON.stringify(keys)}|${this.selKey}|${this.framesClosed}`;
+    if (show && this.keyStrip.parentElement !== this.slotBar) this.slotBar.replaceChildren(this.keyToggle, this.keyStrip);
+    this.keyToggle.classList.toggle("on", this.selKey >= 0);
+    this.keyToggle.title = this.selKey >= 0 ? `Delete the translate key on frame ${s.frame}` : `Key ${bone ?? "the bone"}'s place on frame ${s.frame} (where it is there now, so the motion does not change)`;
+    const sig = !show ? "k" : `k|${a?.name}/${bone}|${JSON.stringify(keys)}|${s.frame}|${this.framesClosed}`;
     if (sig === this.slotSig) return;
     this.slotSig = sig;
     if (!show) { this.slotBar.replaceChildren(); return; }
     this.renderKeyData(keys);
-    this.slotBar.replaceChildren(...keys.map((k, i) => {
-      const b = this.button(String(i + 1), `Key ${i + 1} at frame ${timeFrame(keyTime(k), s.fps)}: x ${k.x ?? 0}, y ${k.y ?? 0}. Press to see its data and go to its frame.`);
-      b.className = `slot node${i === this.selKey ? " picked" : ""}`;
-      b.setAttribute("aria-label", `Key ${i + 1}`);
-      b.addEventListener("click", () => this.pickKey(i));
-      return b;
-    }));
+  }
+
+  /** ◆: key the bone's place on the playhead's frame, or delete the translate key there; one undo step. */
+  private toggleKey(): void {
+    const s = this.session, a = s.animation, bone = s.selectedBone, h = s.history, keys = this.keyNodes();
+    if (!a || bone === null || !h || !keys) return;
+    const i = this.keyAtFrame(s.frame), path = { section: "bones" as const, owner: bone, timeline: "translate" };
+    try {
+      if (i >= 0) h.apply(`Delete the translate key of ${bone} on frame ${s.frame}`, deleteKeys(a.name, [{ path, time: keyTime(keys[i]!) }]));
+      else {
+        const p = s.pose(), index = p?.bones.get(bone);
+        if (!p || index === undefined) return;
+        h.apply(`Key ${bone}'s place on frame ${s.frame}`, keyBone(a.name, bone, ["translate"], animatedLocal(p, index), s.keyTime));
+      }
+    } catch (err) {
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+      return;
+    }
+    s.changed();
+    this.onStatus(i >= 0 ? `${bone}: the translate key on frame ${s.frame} is deleted.` : `${bone}: keyed on frame ${s.frame}.`);
+  }
+
+  /** The strip's x of a frame: the speed graph's x of it, moved by how far the graph's canvas is from the strip's (so both line up). */
+  private stripX(frame: number): number {
+    const a = this.session.animation, d = a ? this.session.length(a) : 0;
+    const k = pageScale(), off = (this.speedCanvas.getBoundingClientRect().left - this.keyStrip.getBoundingClientRect().left) / k;
+    return off + this.gx(d > 0 ? frame / this.session.fps / d : 0);
+  }
+
+  /** The frame under a strip x (held to the animation). */
+  private stripFrame(x: number): number {
+    const s = this.session, a = s.animation, d = a ? s.length(a) : 0;
+    const k = pageScale(), off = (this.speedCanvas.getBoundingClientRect().left - this.keyStrip.getBoundingClientRect().left) / k;
+    return Math.min(timeFrame(d, s.fps), Math.max(0, Math.round(this.gp(x - off) * d * s.fps)));
+  }
+
+  /** FramePath's frame strip, drawn like the Timeline's ruler: the frames, a diamond on each translate key, the green playhead tag. */
+  private drawKeyStrip(): void {
+    const s = this.session, a = s.animation, keys = this.keyNodes(), c = this.keyStrip;
+    if (!keys || !a || !c.isConnected) return;
+    const w = Math.max(1, Math.floor(c.clientWidth)), h = Math.max(1, Math.floor(c.clientHeight)), dpr = (window.devicePixelRatio || 1) * pageScale();
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+    const g = c.getContext("2d")!;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    g.clearRect(0, 0, w, h);
+    const css = getComputedStyle(this.element), line = css.getPropertyValue("--line").trim() || "#555", muted = css.getPropertyValue("--muted").trim() || "#999", accent = css.getPropertyValue("--accent").trim() || "#4c9bff";
+    const end = timeFrame(s.length(a), s.fps), fw = Math.abs(this.stripX(1) - this.stripX(0)), step = fw >= 24 ? 1 : fw >= 10 ? 5 : fw >= 4 ? 10 : 50;
+    const KEY_Y = 27;
+    g.font = `10px "JetBrains Mono", monospace`;
+    g.textBaseline = "middle";
+    g.textAlign = "center";
+    g.strokeStyle = line;
+    g.beginPath(); g.moveTo(0, h - 0.5); g.lineTo(w, h - 0.5); g.stroke();
+    for (let f = 0; f <= end; f++) {
+      const x = Math.round(this.stripX(f)) + 0.5;
+      if (x < -2 || x > w + 2) continue;
+      const major = f % step === 0;
+      if (!major && fw < 5) continue;
+      g.strokeStyle = line;
+      g.beginPath(); g.moveTo(x, major ? 16 : 18); g.lineTo(x, 20); g.stroke();
+      if (major) { g.fillStyle = muted; g.fillText(String(f), x, 9); }
+    }
+    // A diamond on each keyed frame, white on the playhead's.
+    for (const k of keys) {
+      const f = timeFrame(keyTime(k), s.fps), x = this.stripX(f);
+      if (x < -6 || x > w + 6) continue;
+      g.fillStyle = f === s.frame ? "#ffffff" : accent;
+      g.beginPath(); g.moveTo(x, KEY_Y - 5); g.lineTo(x + 5, KEY_Y); g.lineTo(x, KEY_Y + 5); g.lineTo(x - 5, KEY_Y); g.closePath(); g.fill();
+    }
+    // The playhead: the Timeline's green tag with the frame number, a line down through the keys.
+    const px = Math.round(this.stripX(s.frame)) + 0.5;
+    if (px >= -20 && px <= w + 20) {
+      const label = String(s.frame);
+      g.font = `600 11px "JetBrains Mono", monospace`;
+      const tw = Math.ceil(g.measureText(label).width) + 10, tx = Math.min(Math.max(px, tw / 2), w - tw / 2);
+      g.strokeStyle = PLAYHEAD_GREEN;
+      g.beginPath(); g.moveTo(px, 16); g.lineTo(px, h); g.stroke();
+      g.fillStyle = PLAYHEAD_GREEN;
+      g.beginPath(); g.roundRect(tx - tw / 2, 2, tw, 15, 4); g.fill();
+      g.fillStyle = "#ffffff";
+      g.fillText(label, tx, 10);
+    }
+  }
+
+  /** The strip's mouse: a press or a drag puts the playhead on the frame under it. */
+  private keyStripEvents(): void {
+    const c = this.keyStrip;
+    let held = false;
+    const go = (e: PointerEvent): void => { const [x] = localPoint(c, e), f = this.stripFrame(x); if (f !== this.session.frame) this.session.seek(f); };
+    c.addEventListener("pointerdown", (e) => { if (e.button !== 0) return; e.preventDefault(); held = true; this.session.pause(); c.setPointerCapture(e.pointerId); go(e); });
+    c.addEventListener("pointermove", (e) => { if (held) go(e); });
+    const up = (): void => { held = false; };
+    c.addEventListener("pointerup", up);
+    c.addEventListener("pointercancel", up);
   }
 
   /** The picked FramePath key's data beside the speed graph: its frame, its place and its speed. A field commits on Enter or when it loses focus. */
@@ -1504,7 +1604,7 @@ export class MotionPathPanel {
       const hint = doc.createElement("span");
       // Not the Stage's .hint, which is placed over the whole box.
       hint.className = "lp-keyhint";
-      hint.textContent = "Press a number to see that key's data.";
+      hint.textContent = `Frame ${s.frame}: no translate key. ◆ keys the bone's place here; a diamond on the strip, a point on the graph or a dot in the picture goes to a key.`;
       box.replaceChildren(this.speedColumn(doc), hint);
       this.drawSpeed();
       return;
@@ -1556,7 +1656,7 @@ export class MotionPathPanel {
     const s = this.session, a = s.animation, bone = s.selectedBone, keys = this.keyNodes(), c = this.speedCanvas;
     this.speedDots = [];
     this.speedLegs = [];
-    if (!keys || keys.length < 2 || !a || bone === null || !c.isConnected || this.dataBox.hidden) return;
+    if (!keys || !a || bone === null || !c.isConnected || this.dataBox.hidden) return;
     const d = s.length(a);
     if (d <= 0) return;
     if (this.gViewFor !== `keys:${a.name}/${bone}`) { this.gViewFor = `keys:${a.name}/${bone}`; this.gView = { x0: 0, x1: 1 }; }
@@ -1906,7 +2006,7 @@ export class MotionPathPanel {
 
   /** Draw the speed spline: the value (-0.99 to 5) up, the path's length across (the ruler above shows it, and the cap is the playhead); a point and two legs for each node, the picked one lit, a line at 0 (an even pace). */
   private drawSpeed(): void {
-    if (this.tab === "keys") { this.drawKeySpeed(); return; }
+    if (this.tab === "keys") { this.drawKeySpeed(); this.drawKeyStrip(); return; }
     const s = this.session, m = this.path(), c = this.speedCanvas;
     this.speedDots = [];
     this.speedLegs = [];

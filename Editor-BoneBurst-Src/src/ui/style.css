@@ -730,6 +730,9 @@ dialog.preferences .slider input[type="number"] { width: 64px; }
 /* The strip is a row of cells from the left edge, hairlines between: a node is a square (width = height); a block is as wide as its label. */
 .lp-slots { position: relative; display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: stretch; gap: 0; padding: 0; border-bottom: 1px solid var(--line); flex: none; }
 .lp-slots[hidden] { display: none; }
+.lp-slots .lp-keytoggle { flex: none; width: 40px; height: 36px; padding: 0; border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--muted); font-size: 14px; }
+.lp-slots .lp-keytoggle.on { color: var(--accent); }
+.lp-slots .lp-keystrip { flex: 1; min-width: 0; height: 36px; display: block; cursor: ew-resize; touch-action: none; }
 .lp-slots button.slot { min-width: 0; height: 28px; padding: 0 4px; flex: none; font-size: 12px; background: transparent; border-radius: 0; border: 0; border-right: 1px solid var(--line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .lp-slots button.slot:last-child { border-right: 0; }
 .lp-slots button.node { width: 28px; padding: 0; background: #2e9e4f; color: #ffffff; cursor: grab; border-right-color: rgba(255, 255, 255, 0.35); }
