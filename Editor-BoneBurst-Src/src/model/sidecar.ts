@@ -13,8 +13,6 @@ export interface Sidecar {
   readonly guides: readonly Guide[];
   readonly references: readonly Reference[];
   readonly notes: readonly Note[];
-  /** A bone's preserved motion path in an animation (docs/PATH-SPEED-PLAN.md). */
-  readonly motion: readonly MotionPath[];
   /** Tags on elements of the rig (docs/TAGS-PLAN.md), by the key `edit/tags.ts` makes for the element. */
   readonly tags: readonly TagEntry[];
   /** Keys a newer version of this file wrote at the top level, kept. */
@@ -50,44 +48,4 @@ export interface Note {
   readonly about?: string;
 }
 
-/** A spline node (spineNode): where the bone's joint was when it was stored (Local space), and the curve's handle there when one was dragged. It says where, not when. */
-export interface MotionNode {
-  readonly x: number;
-  readonly y: number;
-  /** The curve's handle at this node, as an offset from it (the way out; the way in is its mirror): set by dragging a handle, automatic when absent. */
-  readonly tx?: number;
-  readonly ty?: number;
-  /** A broken leg (docs/PATH-FRAMES-PLAN.md): the handle on the way in, as an offset from the node, no longer the mirror of the way out. Both or neither. */
-  readonly bx?: number;
-  readonly by?: number;
-  /** The number the node is known by (its button): set once nodes are reordered, so it keeps its number as the path's order changes; absent = its place in the list. */
-  readonly id?: number;
-  /** The speed spline's value at this node (docs/TWINSPLINE-PLAN.md): -0.99 to 5, the bone goes `1 + speed` times as fast here; absent = 0, an even pace. */
-  readonly speed?: number;
-  /** The speed spline's leg at this node (docs/TWINSPLINE-PLAN.md, "Legs"): the slope (speed per unit of progress) it leaves by; the way in mirrors it. Absent = automatic. */
-  readonly ss?: number;
-  /** A broken speed leg: the slope the speed spline arrives by, no longer the mirror of `ss`. Only with `ss`. */
-  readonly sb?: number;
-}
-
-/**
- * One bone's motion in one animation (docs/TWO-SYSTEMS-PLAN.md): the path system's data, kept in the sidecar. The
- * path is a spline through `nodes` (at least two), a ring unless `closed` is off, and the speed spline runs over it (each node's `speed`).
- * It runs `duration` seconds.
- */
-export interface MotionPath {
-  readonly animation: string;
-  readonly bone: string;
-  /** The bone whose space the nodes are in (docs/MOTION-PARENT-PLAN.md); absent in a path made before: the bone's own parent. */
-  readonly parent?: string;
-  readonly nodes: readonly MotionNode[];
-  readonly closed: boolean;
-  /** How long the run takes, in seconds (docs/TWO-SYSTEMS-PLAN.md): the path's own time, not any animation's frames. A ring ends where it began. */
-  readonly duration: number;
-  /** Whether the path's clock starts over at the end (the default) or stops there. */
-  readonly loop: boolean;
-  /** Which system the bone uses (docs/MOTION-MODES-PLAN.md): the path (the default), or, when false, the bone's key frames; the path is kept either way. */
-  readonly active?: boolean;
-}
-
-export const EMPTY_SIDECAR: Sidecar = { view: new Map<string, Json>(), guides: [], references: [], notes: [], motion: [], tags: [], extra: new Map<string, Json>() };
+export const EMPTY_SIDECAR: Sidecar = { view: new Map<string, Json>(), guides: [], references: [], notes: [], tags: [], extra: new Map<string, Json>() };

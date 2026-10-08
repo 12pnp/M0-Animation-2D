@@ -45,7 +45,7 @@ describe("the shortcuts table", () => {
       [ev("z"), "cycleSpace"],
       [ev("d"), "createBone"], [ev("p"), "createPoint"], [ev("g"), "createBox"], [ev("c"), "createClipping"], [ev("n"), "createPath"], [ev("u"), "editMesh"], [ev("i"), "pinBone"],
       [ev("c", { cmd: true }, "KeyC"), "copyKeys"],
-      [ev("t", { cmd: true }), undefined], [ev("t", { alt: true }), undefined], [ev("j"), undefined], [ev("x"), "motionRemove"], [ev("a"), "motionAdd"],
+      [ev("t", { cmd: true }), undefined], [ev("t", { alt: true }), undefined], [ev("j"), undefined], [ev("x"), undefined], [ev("a"), undefined],
       [ev("?", { shift: true }, "Slash"), "shortcuts"],
     ];
     for (const [e, id] of table) expect(first(e), JSON.stringify(e)).toBe(id);

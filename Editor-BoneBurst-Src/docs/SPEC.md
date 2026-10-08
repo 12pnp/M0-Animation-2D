@@ -18,16 +18,13 @@ flowchart TB
         EDIT["src/edit<br/>Edit = (doc) → doc · History"]
         IO["src/io<br/>readSkeleton · writeSkeleton<br/>atlas · sidecar · normalise"]
         ENGINE["src/engine<br/>posing (runtime, lifted in E2)"]
-        MOTION["src/motion<br/>path motion: curve · nodes · speed spline<br/>(apart from the key animation)"]
     end
     UI["src/ui<br/>stage · timeline · inspector · outline"]
     AGENT["src/agent<br/>tool contract v2 (D5) · bridge"]
     IO --> MODEL
     EDIT --> MODEL
     ENGINE --> MODEL
-    MOTION -.->|"sidecar types only"| MODEL
-    IO --> MOTION
-    UI --> EDIT & ENGINE & IO & MOTION
+    UI --> EDIT & ENGINE & IO
     AGENT --> EDIT & ENGINE & IO
     FILE[("name.json · name.atlas · pages<br/>name.bb.json")] <--> IO
 ```
@@ -40,11 +37,10 @@ flowchart TB
 | `src/io` | Spine JSON and atlas reading and writing; the sidecar; round-trip normalisation | `model` |
 | `src/edit` | edits (pure functions document → document) and the history | `model` |
 | `src/engine` | posing a document at a time: bones, constraints, physics, meshes; reads plain Spine JSON | `model` |
-| `src/motion` | the path motion, the second system beside the key animation (docs/TWO-SYSTEMS-PLAN.md): the curve, the nodes and the speed spline, numbers in and out | `model/sidecar` (types) and `model/refused` only; not `edit`, not `engine`; `edit` and `engine` never import it |
 | `src/ui` | everything with a DOM | anything above |
 | `src/agent` | the AI tools and their bridge | `model`, `io`, `edit`, `engine` |
 
-`model`, `io`, `edit`, `engine` and `motion` touch no DOM, so all of them run in vitest under Node. The
+`model`, `io`, `edit` and `engine` touch no DOM, so all of them run in vitest under Node. The
 check script enforces the import direction once there is code to enforce it on (E1).
 
 ## 2. Document
@@ -84,7 +80,7 @@ row in the Reference panel, or a double-click on its picture) is dragged on the 
 and by a corner to size it (step 13); only the chosen one takes presses, so the stage still pans
 over the others. Sidecar changes are not undo steps.
 
-A bone's **path** (`motion` in the sidecar, `MotionPath`) is the path system's data (§6a): nodes with their handles and speeds, `closed`, `duration` in seconds, `loop`, and the `animation` and `bone` it belongs to. It is plain numbers. The sidecar itself is not exported to Unity; the TwinSpline export (docs/UNITY-EXPORT-PLAN.md) writes the paths in a file of their own, `name.twinspline.json` (`edit/exportTwin.ts`: `{ "twinspline": 1, "animations": { animation: { bone: { parent?, duration, loop, closed, nodes } } } }`, seconds; the nodes are the sidecar's without the editor's `id`). The file's fields, the maths both sides compute and how BoneBurst plays it are specified in `Packages/com.module.ta-creator-boneburst/Doc/Format/TwinSpline.md`.
+A sidecar written before 2026-10-09 may hold TwinSpline's paths under a top-level `motion`: it is read and dropped (not kept in `extra`), so the next save leaves it out (docs/REMOVE-TWINSPLINE-PLAN.md). A bone's motion is its keys alone (§6a).
 
 ## 4. Editing and history
 
@@ -127,17 +123,11 @@ A bone's **path** (`motion` in the sidecar, `MotionPath`) is the path system's d
   about the document as it is now is `Session.notes()` (`ui/notes.ts`): the profile, the regions the
   atlas lacks, what the engine skips, and the bones the pose shown leaves without one, worked out
   again after every change, each with the thing it is about (a click selects it).
-- **Export to Unity (docs/UNITY-EXPORT-PLAN.md)**: the file Unity gets is made from `closedDoc()` (the closing frames of looping
-  animations) and is never the document itself; the document, Save and the sidecar are untouched by an export. Two modes. **Keys**
-  (the default; File ▸ Export Spine JSON…, Export to Unity…, the AI's `export_to_unity`): `ui/exportPaths.ts` `exportDoc` replaces the
-  translate timelines of each bone that uses a path (`active` not false) with keys made from it over the animation's length
-  (`ui/pathKeysOver.ts`, exact seconds, a Bézier fit per stretch, the same maths as the Stage's driven pose through `pathLocal`); a
-  document with nothing to bake exports as the same object, byte for byte as the document writes. The status line and the AI's `report`
-  say what was baked and warn per looping path whose runs do not fill the animation. **TwinSpline** (File ▸ Export TwinSpline JSON…,
-  Export to Unity as TwinSpline…, `mode: "twinspline"`): `edit/exportTwin.ts` writes `name.twinspline.json` (version 1, §3) for every
-  bone with a path or convertible translate keys (a conversion that strays over 0.5 units stays as keys and is listed) and removes
-  those bones' translate timelines from the skeleton copy, which stays plain Spine. Unity plays the keys mode today; nothing in
-  Unity reads the TwinSpline file yet. The `.bbdata` project copy is the document as it is, not an export.
+- **Export to Unity**: the file Unity gets (File ▸ Export Spine JSON…, Export as Zip…, Export to Unity…, the AI's
+  `export_to_unity`; `ui/unityExport.ts` `exportFiles`) is made from `closedDoc()` (the closing frames of looping animations) and is
+  never the document itself; the document, Save and the sidecar are untouched by an export. FramePath's speeds are in the keys' own
+  curves, so they export as plain Spine data. The TwinSpline export mode was removed on 2026-10-09 (docs/REMOVE-TWINSPLINE-PLAN.md).
+  The `.bbdata` project copy is the document as it is, not an export.
 - **Round-trip test:** every sample skeleton the format specs' tests use, read then written,
   equals the original after normalisation: numbers compared as float32, `nonessential` fields as
   the file has them, key order per the spec.
@@ -193,39 +183,24 @@ or line, and comments pointing at the old editor.
 | `rigData.ts`, `rigAnimation.ts`, `rigAttachments.ts`, `rigJson.ts`, `rigTypes.ts` | same names | comments; atlas types from `regions.ts` |
 | `regions.ts` | — (replaces `atlasRead.ts`) | new: the regions from the model's atlas |
 
-## 6a. Two systems: key animation and path motion
+## 6a. A bone's motion: FramePath
 
-A bone's motion has two sources that never read each other (docs/TWO-SYSTEMS-PLAN.md, decisions Q1 to Q5 of 2026-10-08, D9 in `EDITOR-V2-PLAN.md`).
+A bone's motion is its keys: the Spine JSON animations, posed by `engine/` on `Session.time`. The second system beside them,
+TwinSpline (a path in the sidecar with a speed spline and a clock of its own, docs/TWO-SYSTEMS-PLAN.md), was removed on
+2026-10-09 (docs/REMOVE-TWINSPLINE-PLAN.md). What it did, FramePath does in the keys themselves (docs/FRAMEPATH-SPEED-PLAN.md):
 
 ```mermaid
-flowchart TB
-    subgraph K["K · key animation"]
-        KJ["Spine JSON animations<br/>(the document)"] --> KE["engine/ · Poser.pose<br/>clock: Session.time (Timeline)"]
-    end
-    subgraph P["P · path motion"]
-        PD["MotionPath (sidecar)<br/>nodes · legs · speeds · closed · duration · loop"] --> PC["src/motion/<br/>curve · nodes · speed spline · timeMap · pathPose"]
-        CLK["Session.pathClock<br/>(PathClock, seconds, own Play)"] --> PT["pathTime(m, t)"]
-        PC --> PT
-    end
-    KE --> SES["Session.pose():<br/>K for every bone, then pathDrive<br/>(ui/motion.ts) sets x y of each path's bone"]
-    PT --> SES
-    SES --> VIEW["Stage · Motion panel · Timeline"]
-    MK["Make keys from path<br/>(one-time copy: edit/pathKeys.ts)"] -.->|"writes translate keys, remembers nothing"| KJ
-    PD -.-> MK
+flowchart LR
+    K["translate keys of the bone<br/>(the document)"] -->|"keyHandles · keySpeedPairs"| FP["edit/keySpeed.ts"]
+    FP --> UI["Motion Path panel<br/>frame strip · speed graph · handles on the picture"]
+    UI -->|"setKeyHandles · setTranslateKeySpeeds"| K
+    K -->|"exported as is"| U["Spine JSON → Unity bake"]
 ```
 
-| | K · key animation | P · path motion |
-|---|---|---|
-| Data | `animations` in the document | `Sidecar.motion`, one `MotionPath` per bone and animation |
-| Pure code | `engine/`, `edit/keys*` | `src/motion/` (imports the sidecar types and `EditRefused` only) |
-| Clock | `Session.time`, the Timeline's Play | `Session.pathClock`, Play, Pause, Stop and Loop in the Motion panel; in seconds |
-| Together | — | **Both** in the Motion panel starts the two clocks with one button (UI, not a data bridge) |
-
-- **One driver per bone, chosen by the person.** A bone's translation comes from its keys or from its path, never both: the path's `active` flag (absent = the path) says which, and the Motion Path panel's tabs set it. The path drives only x and y; the rest of the pose is the keys'. Both datasets are kept; the one not in use is left untouched (the Timeline draws the keys dim while the path is in use).
-- **No bridge.** There is no bake, no signature, no stale state. Each ⋮ menu has a one-time copy (*Create new Key frame from TwinSpline*, *Create new TwinSpline from Key frame*), one undo step; neither follows the other afterwards, and each can be deleted on its own.
-- **To Unity.** The sidecar is not exported as it is. An export either bakes the used path into translate keys (the default) or writes the paths in `name.twinspline.json` (§5); neither changes the document.
-- **Guards.** `scripts/check.sh` (`layer motion`, no DOM) and `tests/motionLayer.test.ts`: `src/motion/` imports no rig, document, edit layer or interface, and `edit`, `engine`, `model` never import it.
-- **Limits.** A path's reference bone is read from the key pose; the picture's Path layer for a silenced bone is the keys' trail; a key made on a silenced bone is not warned about.
+- A key's handles (in and out) are vectors in the bone's translate units, written as each span's Bezier curve; a speed is a
+  handle's length over a third of its span's chord, minus 1, held to −0.99…5 (`SPEED_MIN`, `SPEED_MAX`, `clampSpeed` in
+  `edit/keySpeed.ts`). Mirror, Break and Plain are read from the handles.
+- No sidecar data, no bake, no clock of its own: what plays in the editor is what Spine and Unity play.
 
 ## 7. Interface (E2–E4)
 
@@ -317,25 +292,15 @@ the skeleton's when nothing is selected) and Snapping (the snapping settings, `u
 **The outline** draws a thin guide line per level of the tree under each parent's fold arrow, in
 the colour set under Tree (`treeGuideColour`).
 
-**The Motion Path panel** (`ui/panels/motionPanel.ts`) is the path system's editor (§6a), for the
-selected bone and the animation shown, in two tabs (docs/MOTION-MODES-PLAN.md): **Key frame** (the
-bone's keyed motion, a Spine import's included; its ⋮ makes a TwinSpline from the keys, or deletes them)
-and **TwinSpline** (the path editor below; its ⋮ makes keys from the path, or deletes it). Both are
-kept; pressing a tab chooses which one the bone uses (`MotionPath.active`). Under the TwinSpline tab, from the top: the header (the two tabs, with the Path and Spline layer
-toggles as icons beside them, then what else the picture shows (Image, Bone and Onion with a count either side: tiers of
-bones above and below, or frames before and after, `ui/stage/tiers.ts`; docs/SHOW-STEPPERS-PLAN.md), the handles
-toggles, the Stage line); the path bar (the parent bone the path is relative to, − Node, Duration
-and Closed and Loop; making a path or a node, making key frames from the path and deleting it are in
-the tab's ⋮ menu); the view bar (zoom − and +, the zoom, the path's Play / Pause, Both, Stop and clock, Fit); the
-picture (the ring spline with its nodes and legs, the bone and its image at the path's own time,
-the path's frame dots; wheel zooms, the middle button pans); the node strip (a number per node,
-dragged to reorder); and under a splitter you drag, the picked node's data (place, speed, both
-legs) with the **speed graph**: the speed spline over the path's length, a ruler in the path's own
-units with the cap (the path clock), a point and two legs per node, wheel to zoom, a drag on empty
-graph to pan, Fit and Node to fit the whole path or the picked node's section, a right-click or
-⌘ + click menu (add a node there, delete one, break or mirror its legs) and a green line under it
-that sets the graph's height. Edits are history steps (`keepMotion`), like every other sidecar
-edit that goes through `History.applyBeside`.
+**The Motion Path panel** (`ui/panels/motionPanel.ts`) is FramePath's editor (§6a, docs/FRAMEPATH-SPEED-PLAN.md), for the
+selected bone and the animation shown. From the top: the header (the Path layer toggle, FramePath's name with its ⋮ menu: Closed,
+Delete FramePath data; then what else the picture shows: Image, Bone and Onion with a count either side, tiers of bones above and
+below or frames before and after, `ui/stage/tiers.ts`, docs/SHOW-STEPPERS-PLAN.md; Length; the handle toggles and their axes); a
+line saying what FramePath shows for the bone; the picture (the bone's trail with a dot per frame, the bone and its image at the
+playhead, onion skin, the rotate, move, scale and shear handles, each non-Plain key's handles; wheel zooms, the middle button pans,
+F or Fit fits); the view bar (zoom − and +, Fit); and under a splitter you drag, the ◆ toggle and the frame strip (drawn as the
+Timeline's top), the key on the playhead's frame (place, speed in and out, Mirror · Break · Plain) and the speed graph (a point and
+two legs per key; Shift + click deletes a key). Edits are history steps.
 
 ## 8. AI tools (E5)
 

@@ -1,4 +1,3 @@
-import { TRANSLATE_TIMELINES } from "@/edit/pathKeys";
 import { addAnimation, deleteAnimation, renameAnimation } from "@/edit/animations";
 import type { TimelineMemory } from "../viewMemory";
 import { BONE_PROPERTIES, keyBone } from "@/edit/boneKeys";
@@ -380,15 +379,9 @@ export class Timeline {
     const live = new Set(a ? keyLists(a).flatMap((l) => l.keys.map((k) => refId({ path: l.path, time: keyTime(k) }, s.fps))) : []);
     for (const id of [...this.selected.keys()]) if (!live.has(id)) this.selected.delete(id);
     // The labels are DOM: rebuilt only when the channels shown change, not every frame.
-    const sig = `${this.graphChannels().map((c) => channelId(c) + (this.silenced(c) ? "!" : "")).join(",")}|${a?.name}|${s.selectedBone}|${!!doc}`;
+    const sig = `${this.graphChannels().map((c) => channelId(c)).join(",")}|${a?.name}|${s.selectedBone}|${!!doc}`;
     if (sig !== this.labelSig) { this.labelSig = sig; this.renderLabels(); }
     this.redraw();
-  }
-
-  /** Whether a path drives the bone this channel is a translate key of: the keys are silenced while it exists. */
-  private silenced(ch: Channel): boolean {
-    const p = ch.path;
-    return p.section === "bones" && (TRANSLATE_TIMELINES as readonly string[]).includes(p.timeline) && this.session.pathDrives(p.owner);
   }
 
   private renderLabels(): void {
@@ -413,14 +406,6 @@ export class Timeline {
       const name = document.createElement("span");
       name.textContent = ch.label;
       el.append(swatch, name);
-      if (this.silenced(ch)) {
-        el.classList.add("silenced");
-        const badge = document.createElement("span");
-        badge.className = "path-badge";
-        badge.textContent = "silenced by path";
-        badge.title = "A path drives this bone's translation, so these keys do not play. They are kept: remove the path and they play again.";
-        el.append(badge);
-      }
       return el;
     });
     if (!rows.length) rows.push(Object.assign(document.createElement("p"), { className: "empty", textContent: "Select a bone (or a constraint) with keys to see its curves." }));
@@ -672,9 +657,7 @@ export class Timeline {
     chs.forEach((ch, n) => {
       const colour = CHANNEL_COLOURS[n % CHANNEL_COLOURS.length]!;
       const ivs = intervals(ch);
-      // A path drives this bone's translation: its keys are silenced, so they are drawn dim (docs/TWO-SYSTEMS-PLAN.md).
-      const dim = this.silenced(ch) ? 0.3 : 1;
-      g.globalAlpha = dim;
+      g.globalAlpha = 1;
       g.strokeStyle = colour;
       g.lineWidth = 1.5;
       g.beginPath();
@@ -690,10 +673,10 @@ export class Timeline {
       g.lineWidth = 1;
       for (const iv of ivs) {
         if (iv.kind === "stepped") continue;
-        g.globalAlpha = dim * (iv.kind === "bezier" ? 0.9 : 0.4);
+        g.globalAlpha = iv.kind === "bezier" ? 0.9 : 0.4;
         g.beginPath(); g.moveTo(x(iv.t0), y(iv.v0)); g.lineTo(x(iv.h[0]), y(iv.h[1])); g.moveTo(x(iv.t1), y(iv.v1)); g.lineTo(x(iv.h[2]), y(iv.h[3])); g.stroke();
         for (const [ht, hv] of [[iv.h[0], iv.h[1]], [iv.h[2], iv.h[3]]] as const) { g.beginPath(); g.arc(x(ht), y(hv), 3, 0, Math.PI * 2); g.stroke(); }
-        g.globalAlpha = dim;
+        g.globalAlpha = 1;
       }
       for (const k of ch.keys) {
         const kx = x(keyTime(k)), ky = y(channelValues(ch.path, k, "start")[ch.c]!), on = this.selected.has(refId({ path: ch.path, time: keyTime(k) }, this.session.fps));

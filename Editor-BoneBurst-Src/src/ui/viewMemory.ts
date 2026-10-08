@@ -6,13 +6,13 @@ import type { Session } from "./session";
  * again puts it all back. The panel layout is kept apart, by the workspace.
  */
 
+/** A `node` an earlier build wrote (TwinSpline's picked node) is read and ignored. */
 export interface MotionMemory {
-  readonly node: number;
   readonly zoom: number;
   readonly pan: { readonly x: number; readonly y: number };
   /** `"local"` is what an earlier build wrote for Parent. */
   readonly axes: "parent" | "world";
-  /** The height of the area under the picture (node numbers and speed graph), in pixels. */
+  /** The height of the area under the picture (the frame strip and the speed graph), in pixels. */
   readonly lower?: number;
 }
 

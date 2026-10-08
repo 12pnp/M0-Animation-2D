@@ -85,8 +85,6 @@ export class Stage {
   tool: Tool = "move";
   /** With an animation chosen: a drag keys it (on), or poses the bone unkeyed until Key (off). */
   autoKey = true;
-  /** True while a motion path is being drawn: the bone is posed to store it, so a drag writes no keys (docs/PATH-CAPTURE-PLAN.md). */
-  forceUnkeyed: () => boolean = () => false;
   /** The Move tool's axes: parent's is the free drag; local and world hold it to one axis. */
   space: Space = "parent";
   camera: Camera = { x: 0, y: 0, zoom: 1 };
@@ -192,8 +190,6 @@ export class Stage {
   }
   /** With an animation shown, the bones IK constraints drive are neither drawn nor picked (they are not animated). */
   hideIkBones = false;
-  /** The motion path's line to draw over the skeleton (world points, x then y), or null. */
-  motionLine: () => { points: readonly number[]; colour: string } | null = () => null;
   /** Onion skin (E6 step 4d): which ghosts to draw, or null when off. */
   onion: OnionOptions | null = null;
   /** Snapping (E6 step 4e): what a dragged origin or vertex snaps to, or null when off. */
@@ -376,7 +372,6 @@ export class Stage {
     this.drawGlow(g, p, this.selectedBoneColour ?? selected);
     if (this.names.bones) this.drawBoneNames(g, css.getPropertyValue("--text").trim() || "#ffffff");
     if (this.show.constraints) { this.drawShapes(g, p, selected); this.drawConstraints(g, p, css, selected); }
-    this.drawMotionLine(g);
     const sel = this.selectedIndex();
     // No gizmo on a bone without a pose: nothing to grab it by (E8-PLAN step 2).
     if (sel >= 0 && boneMatrix(p, sel).every(Number.isFinite)) this.drawGizmo(g, sel, this.selectedBoneColour ?? selected);
@@ -389,23 +384,6 @@ export class Stage {
     if (this.snapped && (this.drag || this.vertexDrag)) this.drawSnapped(g, this.snapped, selected);
     this.drawChosenReference(g, selected);
     if (this.show.rulers) this.drawRulers(g, css);
-  }
-
-  /** The motion path of the selected bone, as a line in the colour chosen in the Motion Path panel. */
-  private drawMotionLine(g: CanvasRenderingContext2D): void {
-    const line = this.motionLine();
-    if (!line || line.points.length < 4) return;
-    g.save();
-    g.strokeStyle = line.colour;
-    g.lineWidth = 2;
-    g.lineJoin = "round";
-    g.beginPath();
-    for (let i = 0; i + 1 < line.points.length; i += 2) {
-      const [x, y] = toScreen(this.camera, this.size, line.points[i]!, line.points[i + 1]!);
-      if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
-    }
-    g.stroke();
-    g.restore();
   }
 
   /** Each reference with its picture's size; null where the picture is missing. */
@@ -1177,7 +1155,7 @@ export class Stage {
     const p = this.session.pose()!, index = p.bones.get(name)!;
     const b = this.session.doc!.bones!.find((x) => x.name === name)!;
     const at = toWorld(this.camera, this.size, sx, sy), parent = parentMatrix(p, index);
-    const anim = this.session.animation?.name ?? null, unkeyed = anim !== null && (!this.autoKey || this.forceUnkeyed());
+    const anim = this.session.animation?.name ?? null, unkeyed = anim !== null && !this.autoKey;
     // Animate mode starts from the pose at the playhead; setup mode from the setup values.
     const from = anim !== null ? animatedLocal(p, index) : {
       x: boneNumber(b, "x"), y: boneNumber(b, "y"), rotation: boneNumber(b, "rotation"),

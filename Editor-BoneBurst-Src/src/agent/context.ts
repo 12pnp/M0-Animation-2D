@@ -65,7 +65,7 @@ export interface AgentContext {
   /** An atlas image's alpha at its original size, rows top first; null when its page's pixels are not to hand. */
   pixels(image: string): Promise<ImageAlpha | null>;
   /** Write the rig into the Unity folder chosen in the editor (Export to Unity…); refuses, saying what to press, when none is chosen or allowed. */
-  exportToUnity(mode: "keys" | "twinspline"): Promise<{ folder: string; files: readonly string[]; note?: string }>;
+  exportToUnity(): Promise<{ folder: string; files: readonly string[] }>;
 }
 
 /** Alpha per pixel (0–255), `width` × `height`, rows top first. */

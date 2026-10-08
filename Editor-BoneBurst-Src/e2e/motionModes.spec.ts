@@ -1,9 +1,8 @@
 import { expect, type Page, test } from "@playwright/test";
-import { chooseParent } from "./motionHelpers";
 
-/** The Motion Path panel's two tabs (docs/MOTION-MODES-PLAN.md): FramePath and TwinSpline, each with a ⋮ menu; both kept, the tab chooses which is used. */
+/** The Motion Path panel's one mode, FramePath (docs/FRAMEPATH-SPEED-PLAN.md): its ⋮ menu, its frame strip and speed graph, and its handles on the picture. */
 
-type Live = { boneburst: { session: { sidecar: { motion: { bone: string; nodes: unknown[]; closed: boolean; duration: number; active?: boolean }[] }; doc: { animations: { bones?: { name: string; timelines: { name: string; keys: unknown[] }[] }[] }[] }; select(s: unknown): void; changed(): void } } };
+type Live = { boneburst: { session: { sidecar: Record<string, unknown>; doc: { animations: { bones?: { name: string; timelines: { name: string; keys: unknown[] }[] }[] }[] }; select(s: unknown): void; changed(): void } } };
 
 async function open(page: Page, bone: string): Promise<void> {
   await page.goto("/");
@@ -17,49 +16,39 @@ async function open(page: Page, bone: string): Promise<void> {
 }
 
 const panelOf = (page: Page) => page.locator(".panel.motion-path");
-const path = (page: Page) => page.evaluate(() => (window as unknown as Live).boneburst.session.sidecar.motion[0] ?? null);
-const selected = (panel: ReturnType<typeof panelOf>) => panel.getByRole("tab", { selected: true });
 
-test("the tab opens by what the bone has: keys open FramePath (no path editor), nothing opens TwinSpline with a Create new card; the choice stays", async ({ page }) => {
+test("FramePath is the panel's one mode: no tabs, no TwinSpline, no path controls; a bone with no keys gets the strip and a hint", async ({ page }) => {
   await open(page, "hips");
   const panel = panelOf(page);
-  await expect(selected(panel)).toHaveText("FramePath");
-  await expect(panel.getByRole("button", { name: "Edit Path", exact: true })).toBeHidden();
-  await expect(panel.locator(".lp-card")).toBeHidden();
+  await expect(panel.getByRole("tab")).toHaveCount(0);
+  await expect(panel.getByText("TwinSpline")).toHaveCount(0);
+  await expect(panel.getByRole("combobox", { name: "Parent bone" })).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: /Play|Both|Stop|Stage/ })).toHaveCount(0);
+  await expect(panel.locator(".lp-keystrip")).toBeVisible();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head" }));
-  await expect(selected(panel)).toHaveText("TwinSpline");
-  await expect(panel.locator(".lp-card")).toContainText("No TwinSpline for head");
-  await expect(panel.locator(".lp-card").getByRole("button", { name: "Create new" })).toBeVisible();
-  await expect(panel.locator(".lp-card").getByRole("button", { name: /Create from FramePath/ })).toHaveCount(0);
-  await panel.getByRole("tab", { name: "FramePath" }).click();
-  await expect(selected(panel)).toHaveText("FramePath");
+  await expect(panel.locator(".lp-motion .lp-hint")).toContainText("no translate keys");
+  await expect(panel.locator(".lp-keystrip")).toBeVisible();
+  expect(await page.evaluate(() => "motion" in (window as unknown as Live).boneburst.session.sidecar)).toBe(false);
 });
 
-test("Create new on the card makes the path; the FramePath tab then uses the keys, with no card", async ({ page }) => {
-  await open(page, "head");
-  const panel = panelOf(page);
-  await chooseParent(panel);
-  await panel.locator(".lp-card").getByRole("button", { name: "Create new" }).click();
-  await expect.poll(async () => (await path(page))?.bone).toBe("head");
-  await expect(panel.locator(".lp-card")).toBeHidden();
-  await panel.getByRole("tab", { name: "FramePath" }).click();
-  await expect(panel.locator(".lp-card")).toBeHidden();
-  await expect(panel.getByRole("button", { name: "Edit Path", exact: true })).toBeHidden();
-  await panel.getByRole("tab", { name: "TwinSpline" }).click();
-  await expect(selected(panel)).toHaveText("TwinSpline");
-  expect((await path(page))?.active).toBeUndefined();
-});
-
-test("the ⋮ menus are the two conversions and the two deletes, each off when there is nothing to act on", async ({ page }) => {
+test("the ⋮ menu is Closed and Delete FramePath data, both off when the bone has no translate keys; Delete takes the keys out in one undo step", async ({ page }) => {
   await open(page, "head");
   const panel = panelOf(page);
   await panel.getByRole("button", { name: "FramePath menu" }).click();
-  await expect(page.getByRole("menuitem", { name: "Create new TwinSpline from FramePath" })).toBeDisabled();
+  await expect(page.getByRole("menuitem", { name: /TwinSpline/ })).toHaveCount(0);
+  await expect(page.getByRole("menuitemcheckbox", { name: "Closed" })).toBeDisabled();
   await expect(page.getByRole("menuitem", { name: "Delete FramePath data" })).toBeDisabled();
   await page.keyboard.press("Escape");
-  await panel.getByRole("button", { name: "TwinSpline menu" }).click();
-  await expect(page.getByRole("menuitem", { name: "Create new FramePath from TwinSpline" })).toBeDisabled();
-  await expect(page.getByRole("menuitem", { name: "Delete TwinSpline data" })).toBeDisabled();
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "hips" }));
+  const count = () => page.evaluate(() => (window as unknown as Live).boneburst.session.doc.animations[0]!.bones!.find((b) => b.name === "hips")?.timelines.find((t) => t.name === "translate")?.keys.length ?? 0);
+  const before = await count();
+  expect(before).toBeGreaterThan(1);
+  page.once("dialog", (d) => void d.accept());
+  await panel.getByRole("button", { name: "FramePath menu" }).click();
+  await page.getByRole("menuitem", { name: "Delete FramePath data" }).click();
+  await expect.poll(count).toBe(0);
+  await page.evaluate(() => { const s = (window as unknown as { boneburst: { session: { history: { undo(): void }; changed(): void } } }).boneburst.session; s.history.undo(); s.changed(); });
+  await expect.poll(count).toBe(before);
 });
 
 test("FramePath ⋮ Closed puts the last frame's translate key where the first one is; and it shows as checked", async ({ page }) => {

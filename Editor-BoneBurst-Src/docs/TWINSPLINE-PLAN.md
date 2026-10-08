@@ -1,5 +1,7 @@
 # TwinSpline: one Edit Path, a ring spline and its speed spline
 
+**Removed 2026-10-09** with the rest of TwinSpline: docs/REMOVE-TWINSPLINE-PLAN.md.
+
 > **Note 2026-10-08:** the path is now one of two separate systems (key animation and path motion): it has its own clock in seconds, no bake, and a one-time Make keys from path; see `TWO-SYSTEMS-PLAN.md` and SPEC §6a. What follows is the history of this plan.
 
 **Status: done 2026-10-08, not verified by hand** (the owner went ahead with the three assumptions at the end as written). `tsc`, 787 unit tests and 129 Playwright tests pass; the panel was looked at in a screenshot only. Steps 1 to 6 below were all done. What changed from the plan is under "Built".

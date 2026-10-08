@@ -1,5 +1,7 @@
 # Slice the ring where you click: cuts on the ring, a length in frames for each piece, no fixed frame count — plan
 
+**Removed 2026-10-09** with the rest of TwinSpline: docs/REMOVE-TWINSPLINE-PLAN.md.
+
 > **Dropped 2026-10-08, not built:** node times and cuts are gone; see `TWINSPLINE-PLAN.md`.
 
 **Status:** planned 2026-10-07; not started. From the owner's note (below); three questions at the end settle the details. It changes the **timing model**

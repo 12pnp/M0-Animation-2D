@@ -1,6 +1,6 @@
 import { type Shortcut, type ShortcutGroup, SHORTCUTS } from "./shortcuts";
 
-const GROUPS: readonly ShortcutGroup[] = ["File", "Edit", "View", "Tools", "Stage", "Timeline", "Playback", "Motion Path", "Help"];
+const GROUPS: readonly ShortcutGroup[] = ["File", "Edit", "View", "Tools", "Stage", "Timeline", "Playback", "Help"];
 
 /**
  * Help ▸ Keyboard Shortcuts (E7-PLAN step 2): the shortcuts table, by group, in a native

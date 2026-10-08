@@ -1,5 +1,7 @@
 # Motion paths: nodes, Bake, and retiming the dots (speed, shape kept) — plan
 
+**Removed 2026-10-09** with the rest of TwinSpline: docs/REMOVE-TWINSPLINE-PLAN.md.
+
 > **Replaced 2026-10-08** by `TWINSPLINE-PLAN.md` (the dots' retiming is now a speed on each node).
 
 **Status:** built 2026-10-07, not committed; **not verified by hand**. `tsc`, 13 unit tests

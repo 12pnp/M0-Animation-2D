@@ -1,5 +1,7 @@
 # Export to Unity: two modes, clean Spine keys or pure TwinSpline — plan
 
+**Removed 2026-10-09** with the rest of TwinSpline (the TwinSpline mode, and the keys mode's baking of paths; the export now writes the document as it is): docs/REMOVE-TWINSPLINE-PLAN.md.
+
 **Status: planned 2026-10-08; the owner answered E2–E8 "all recommended" the same day (see "Decided"). Step 0, the TwinSpline mode, is built (see "Result of step 0"); step 1, keys over a length, step 2, the Spine keys export, and step 3, the report and the AI contract note, are built (see "Result of step 1" to "Result of step 3"); step 6, the docs, is done (see "Result of step 6"); only step 5, the Unity proof, remains; step 4 needed nothing. Revised the same day (the owner: "every bone we can bake to TwinSpline, add an option for export pure TwinSpline JSON").** This is step 8 of `TWO-SYSTEMS-PLAN.md`. The export gets a **mode**: **Spine keys** (clean JSON: a bone that uses a TwinSpline reaches Unity as translate keys made at export) and **TwinSpline** (pure: every bone that can be a path leaves as one, in a TwinSpline JSON file). Either way the work is done on the exported copy, never on the document.
 
 ```mermaid

@@ -38,19 +38,11 @@ describe("the agent host (E5 step 2)", () => {
     expect(c.exports).toBe(1);
     expect(await refused(callTool("export_to_unity", {}, ctx(null)))).toMatch(/Nothing is open/);
   });
-  it("export_to_unity takes a mode: keys by default, twinspline when asked, nothing else", async () => {
-    const c = ctx(new History(newSkeleton("h")));
-    await callTool("export_to_unity", {}, c);
-    expect(c.exportMode).toBe("keys");
-    await callTool("export_to_unity", { mode: "twinspline" }, c);
-    expect(c.exportMode).toBe("twinspline");
-    expect(await refused(callTool("export_to_unity", { mode: "bake" }, c))).toMatch(/mode/);
-  });
-  it("export_to_unity passes on the report of what the export baked, and has none to give when nothing was", async () => {
+  it("export_to_unity takes no mode (TwinSpline's went with it) and gives no report", async () => {
     const c = ctx(new History(newSkeleton("h")));
     expect(await callTool("export_to_unity", {}, c)).not.toHaveProperty("report");
-    c.exportNote = "1 bone from their TwinSpline (14 keys), 9 from their key frames";
-    expect(await callTool("export_to_unity", {}, c)).toMatchObject({ report: "1 bone from their TwinSpline (14 keys), 9 from their key frames" });
+    expect(await refused(callTool("export_to_unity", { mode: "twinspline" }, c))).toMatch(/mode is not an argument/);
+    expect(c.exports).toBe(1);
   });
   it("checks arguments the way the contract's schemas say", () => {
     const ease = { oneOf: [{ type: "string", enum: ["linear", "in"] }, { type: "array", items: { type: "number" }, minItems: 4, maxItems: 4 }] };

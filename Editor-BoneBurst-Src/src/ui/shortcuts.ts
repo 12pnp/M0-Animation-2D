@@ -16,7 +16,7 @@ export interface Chord {
   readonly code?: string;
 }
 
-export type ShortcutGroup = "File" | "Edit" | "View" | "Tools" | "Playback" | "Timeline" | "Stage" | "Motion Path" | "Help";
+export type ShortcutGroup = "File" | "Edit" | "View" | "Tools" | "Playback" | "Timeline" | "Stage" | "Help";
 
 export interface Shortcut {
   readonly id: string;
@@ -61,8 +61,8 @@ export const SHORTCUTS = [
   { id: "brushSmaller", keys: "[", group: "Stage", what: "Weight brush smaller (while painting weights)", chord: plain("[") },
   { id: "brushLarger", keys: "]", group: "Stage", what: "Weight brush larger (while painting weights)", chord: plain("]") },
   { id: "play", keys: "Space", group: "Playback", what: "Play or pause", chord: { mod: false, alt: false, code: "Space" } },
-  { id: "prevFrame", keys: "Q", group: "Playback", what: "Previous frame (also ,); in the Motion Path panel, the previous node", chord: plain(["q", ","]) },
-  { id: "nextFrame", keys: "W", group: "Playback", what: "Next frame (also .); in the Motion Path panel, the next node", chord: plain(["w", "."]) },
+  { id: "prevFrame", keys: "Q", group: "Playback", what: "Previous frame (also ,)", chord: plain(["q", ","]) },
+  { id: "nextFrame", keys: "W", group: "Playback", what: "Next frame (also .)", chord: plain(["w", "."]) },
   { id: "firstFrame", keys: "Home", group: "Playback", what: "First frame", chord: plain("home") },
   { id: "lastFrame", keys: "End", group: "Playback", what: "Last frame", chord: plain("end") },
   { id: "key", keys: "K", group: "Timeline", what: "Key the selection at the playhead, or fire the selected event", chord: plain("k") },
@@ -75,12 +75,6 @@ export const SHORTCUTS = [
   { id: "nudgeRight", keys: "→", group: "Stage", what: "Nudge the selected bone's value for the chosen tool up (Rotate: +; Move, Scale, Shear: x)", chord: plain("arrowright") },
   { id: "nudgeDown", keys: "↓", group: "Stage", what: "Nudge the selected bone's second value (y) down; Rotate: down", chord: plain("arrowdown") },
   { id: "nudgeUp", keys: "↑", group: "Stage", what: "Nudge the selected bone's second value (y) up; Rotate: up", chord: plain("arrowup") },
-  // The Motion Path panel's keys, with the pointer over it: the left hand on the letters, the right on the arrows (they nudge the picked node) and the mouse.
-  { id: "motionAdd", keys: "A", group: "Motion Path", what: "Add a spline node after the picked one; makes the path when there is none", chord: plain("a") },
-  { id: "motionRemove", keys: "X", group: "Motion Path", what: "Remove the picked spline node", chord: plain("x") },
-  { id: "motionReverse", keys: "V", group: "Motion Path", what: "Run the path the other way round (1 2 3 4 becomes 1 4 3 2)", chord: plain("v") },
-  { id: "motionMerge", keys: "M", group: "Motion Path", what: "Merge the picked spline nodes into one", chord: plain("m") },
-  { id: "motionOrigin", keys: "O", group: "Motion Path", what: "Make the picked spline node the origin (the ring starts there)", chord: plain("o") },
   { id: "createBone", keys: "D", group: "Tools", what: "Create bones on the stage (Pose mode): press and drag; press again to leave", chord: plain("d") },
   { id: "createRegion", keys: "Y", group: "Tools", what: "Create a region: an image of the atlas (Pose mode)", chord: plain("y") },
   { id: "createPoint", keys: "P", group: "Tools", what: "Create a point attachment (Pose mode)", chord: plain("p") },

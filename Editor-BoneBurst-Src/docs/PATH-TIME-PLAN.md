@@ -1,5 +1,7 @@
 # Time on the Timeline, node times on the path (nodeTime ≠ spineNode) — plan
 
+**Removed 2026-10-09** with the rest of TwinSpline: docs/REMOVE-TWINSPLINE-PLAN.md.
+
 > **Node times replaced 2026-10-08** by `TWINSPLINE-PLAN.md`: there are no node times; each node has a speed.
 
 **Status:** built 2026-10-07 with all five recommendations; not committed; **not verified by hand**. `tsc`, vitest (741) and the

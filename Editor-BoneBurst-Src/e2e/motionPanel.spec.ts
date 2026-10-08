@@ -2,6 +2,9 @@ import { expect, test } from "@playwright/test";
 
 /** The Motion Path panel (docs/MOTION-PREVIEW-PLAN.md): only the selected bone, over every frame of the animation shown. */
 
+// FramePath's strip and speed graph sit under the picture for every bone in Animate mode: a taller window keeps the picture big enough to count its pixels.
+test.use({ viewport: { width: 1280, height: 1100 } });
+
 type Live = { boneburst: { session: { select(s: unknown): void; showAnimation(n: string | null): void; frame: number } } };
 
 /** How many pixels of Motion Path's canvas are drawn in: not the stage background, nor its faint checkerboard, grid or axes. */
@@ -53,7 +56,7 @@ test("Motion Path's Image, Bone and Path buttons show and hide each layer, and a
   await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head_art" }));
   const panel = page.locator(".motion-path");
-  for (const name of ["Image", "Bone", "Path", "Spline"]) await expect(panel.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true");
+  for (const name of ["Image", "Bone", "Path"]) await expect(panel.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true");
   const drawn = () => drawnPixels(page);
   await expect.poll(drawn).toBeGreaterThan(20000);
   const all = await drawn();
@@ -128,11 +131,11 @@ test("Onion: a button on the Timeline bar turns onion skin on and off, and Motio
   const off = await tints();
   await page.locator(".motion-path").getByRole("button", { name: "Onion", exact: true }).click();
   await expect.poll(async () => (await tints()).red).toBeGreaterThan(off.red + 50);
-  // The path bar keeps its height on every tab now (a hint in it for a bone with no path), so the picture is a little smaller and the ghosts with it.
+  // The line under the header keeps its height (a hint in it), so the picture is a little smaller and the ghosts with it.
   expect((await tints()).green).toBeGreaterThan(off.green + 20);
 });
 
-test("Motion Path zooms with the wheel, pans only with the middle button (a left drag on empty canvas does nothing), and Fit (top right) shows it whole again", async ({ page }) => {
+test("Motion Path zooms with the wheel, pans only with the middle button (a left drag on empty canvas does nothing), and Fit (top right) or F over it shows it whole again", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
@@ -168,6 +171,12 @@ test("Motion Path zooms with the wheel, pans only with the middle button (a left
   await page.mouse.up({ button: "middle" });
   await expect.poll(picture).not.toBe(zoomed);
   await panel.locator(".lp-fit").click();
+  await expect.poll(picture).toBe(whole);
+  // F with the pointer over the panel fits it too (over the Stage, F is the Stage's).
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.wheel(0, -400);
+  await expect.poll(picture).not.toBe(whole);
+  await page.keyboard.press("f");
   await expect.poll(picture).toBe(whole);
 });
 

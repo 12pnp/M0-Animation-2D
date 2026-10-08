@@ -4,7 +4,7 @@ import { readSidecar, writeSidecar } from "@/io/sidecar";
 import { closeLoops } from "@/edit/loop";
 import { deleteTag, renameTag, type Tagged, parseTags, renameTagged, tagKeyOf, tagsFor, withoutTag, withTags } from "@/edit/tags";
 import { addReference, type View, viewOf, withView } from "@/edit/sidecar";
-import { EMPTY_SIDECAR, type MotionPath, type Sidecar } from "@/model/sidecar";
+import { EMPTY_SIDECAR, type Sidecar } from "@/model/sidecar";
 import type { Page } from "@/io/pack";
 import { readSkeleton } from "@/io/skeletonRead";
 import type { LocalPose } from "@/edit/boneKeys";
@@ -24,8 +24,6 @@ import { matchReferences, referenceFile } from "./stage/references";
 import { boneUnitOf } from "./stage/boneScale";
 import { documentNotes, type Note, poseNotes } from "./notes";
 import { bounds, boneMatrix, Poser, type Posed } from "./stage/posed";
-import { PathClock } from "@/motion";
-import { pathDrive } from "./motion";
 
 /** A selection in the rig: what the rig tree, the stage and the properties panel show. */
 export type Selection =
@@ -120,7 +118,7 @@ export class Session {
   private step: PhysicsMode = "none";
   private poser: { doc: Skeleton; value: Poser } | null = null;
   private previewer: { doc: Skeleton; images: AtlasImages; value: Poser } | null = null;
-  private posed: { key: string; motion?: unknown; value: Posed } | null = null;
+  private posed: { key: string; value: Posed } | null = null;
   /** The animations whose Loop tick is off (docs/LOOP-PLAN.md); every other animation is a loop. Kept in the sidecar's view. */
   private loopOffSet: ReadonlySet<string> = new Set();
   /** Counts changes to the ticks, so a cached pose is not served across one. */
@@ -129,12 +127,6 @@ export class Session {
   /** Poses dragged with Auto Key off (by bone): shown over the animation, in no document, until keyed or the playhead moves. */
   private readonly unkeyed = new Map<string, LocalPose>();
   private unkeyedRev = 0;
-  /**
-   * The path system's clock (docs/TWO-SYSTEMS-PLAN.md, P): seconds that never wrap (each path takes its own time from it), apart from the
-   * animation's `time`. A bone with a path in the animation shown is driven by the path alone (its x and y; its translate keys are silenced, not
-   * touched), so Stop puts it at the path's start and removing the path gives it back to its keys (docs/TWO-SYSTEMS-PLAN.md, one driver per bone).
-   */
-  readonly pathClock = new PathClock();
   private setup: { key: string; value: BoneWorlds } | null = null;
   private readonly listeners = new Set<() => void>();
 
@@ -459,16 +451,13 @@ export class Session {
 
   /**
    * `animation` (null: the setup pose) at `time` seconds, posed by a rig of its own: the Preview panel plays on its own clock without
-   * touching the playhead or the pose the stage shows. Paths drive their bones from the same time; physics does not step.
+   * touching the playhead or the pose the stage shows; physics does not step.
    */
   previewPose(animation: string | null, time: number): Posed | null {
     const doc = this.closedDoc();
     if (!doc) return null;
     if (this.previewer?.doc !== doc || this.previewer.images !== this.images) this.previewer = { doc, images: this.images, value: new Poser(doc, this.images) };
-    const poser = this.previewer.value, paths = animation !== null ? this.usedPaths(animation) : [];
-    if (animation === null || !paths.length) return poser.pose(this.skin, animation, time);
-    const keys = poser.pose(this.skin, animation, time);
-    return poser.pose(this.skin, animation, time, "none", pathDrive(doc, paths, animation, keys, time));
+    return this.previewer.value.pose(this.skin, animation, time);
   }
 
   /** The unit bones are drawn in (`boneUnitOf`), worked out once for each open document and skin from its setup pose. */
@@ -503,87 +492,9 @@ export class Session {
     if (!poser) return null;
     const anim = this.animation?.name ?? null;
     const step = this.playing ? this.step : "none";
-    const driven = anim !== null && this.usedPaths(anim).length > 0;
-    const key = `${this.history!.revision}|${this.loopRev}|${this.skin}|${anim}|${this.time}|${this.tick}|${step}|${this.unkeyedRev}|${driven ? this.pathClock.time : "-"}`;
-    if (this.posed?.key !== key || (driven && this.posed.motion !== this.sidecar.motion)) {
-      let value: Posed;
-      if (driven) {
-        // The key animation first (no physics step), then the paths' x and y over it, then the pose that is shown.
-        const keys = poser.pose(this.skin, anim, this.time, "none", this.unkeyed);
-        const drive = pathDrive(this.doc, this.usedPaths(anim!), anim!, keys, this.pathClock.time);
-        value = poser.pose(this.skin, anim, this.time, step, new Map([...drive, ...this.unkeyed]));
-      } else value = poser.pose(this.skin, anim, this.time, step, this.unkeyed);
-      this.posed = { key, motion: this.sidecar.motion, value };
-    }
+    const key = `${this.history!.revision}|${this.loopRev}|${this.skin}|${anim}|${this.time}|${this.tick}|${step}|${this.unkeyedRev}`;
+    if (this.posed?.key !== key) this.posed = { key, value: poser.pose(this.skin, anim, this.time, step, this.unkeyed) };
     return this.posed.value;
-  }
-
-  /** The paths of `animation` the bones use (not the ones set aside for the key frames, docs/MOTION-MODES-PLAN.md). */
-  private usedPaths(animation: string): readonly MotionPath[] {
-    return this.sidecar.motion.filter((m) => m.animation === animation && m.active !== false);
-  }
-
-  /** Whether a path drives `bone` in the animation shown: its translate keys are silenced then (they stay in the document). */
-  pathDrives(bone: string): boolean {
-    const a = this.animation?.name;
-    return a !== undefined && this.sidecar.motion.some((m) => m.animation === a && m.bone === bone && m.active !== false);
-  }
-
-  /** Whether the animation shown has a path to play. */
-  get hasPaths(): boolean {
-    const a = this.animation?.name;
-    return a !== undefined && this.usedPaths(a).length > 0;
-  }
-
-  /** Play the paths of the animation shown on the path clock: no keys needed. The animation's own playback stops. */
-  playPath(keepKeys = false): void {
-    if (!this.hasPaths) return;
-    if (this.playing && !keepKeys) this.pause();
-    this.clearUnkeyed();
-    const used = this.usedPaths(this.animation!.name), longest = Math.max(...used.map((m) => m.duration));
-    if (this.pathClock.time >= longest && !used.some((m) => m.loop)) this.pathClock.time = 0;
-    this.pathClock.playing = true;
-    this.changed();
-  }
-
-  /** One button, two clocks (docs/TWO-SYSTEMS-PLAN.md, Q4): the animation's playback and the path clock start together. Neither reads the other. */
-  playBoth(): void {
-    if (!this.hasPaths) return;
-    this.play();
-    this.playPath(true);
-  }
-
-  /** Put the path clock on `t` seconds and hold it there (the animation's playhead is not moved). */
-  seekPath(t: number): void {
-    this.clearUnkeyed();
-    this.pathClock.playing = false;
-    this.pathClock.time = Math.max(0, t);
-    this.changed();
-  }
-
-  /** Hold the path clock where it is. */
-  pausePath(): void {
-    if (!this.pathClock.playing) return;
-    this.pathClock.playing = false;
-    this.changed();
-  }
-
-  /** Stop the path clock, back to 0: the paths' bones are at their starts. */
-  stopPath(): void {
-    if (!this.pathClock.playing && this.pathClock.time === 0) return;
-    this.pathClock.playing = false;
-    this.pathClock.time = 0;
-    this.changed();
-  }
-
-  /** One step of the path clock, `dt` seconds on: it stops when no path of the animation loops and every run has ended. */
-  advancePath(dt: number): void {
-    if (!this.pathClock.playing) return;
-    const a = this.animation?.name, mine = a === undefined ? [] : this.usedPaths(a);
-    if (!mine.length) { this.pathClock.playing = false; this.changed(); return; }
-    this.pathClock.advance(dt, Infinity);
-    if (!mine.some((m) => m.loop) && this.pathClock.time >= Math.max(...mine.map((m) => m.duration))) { this.pathClock.time = Math.max(...mine.map((m) => m.duration)); this.pathClock.playing = false; }
-    this.changed();
   }
 
   /**
@@ -648,7 +559,7 @@ export class Session {
     }
     let sidecar: Sidecar = EMPTY_SIDECAR;
     if (picked.sidecar) {
-      const read = readSidecar(await picked.sidecar.text(), skeleton.header?.fps && skeleton.header.fps > 0 ? skeleton.header.fps : DEFAULT_FPS);
+      const read = readSidecar(await picked.sidecar.text());
       sidecar = read.sidecar;
       all.push(...read.issues.map((i) => ({ where: `${picked.sidecar!.name}: ${i.where}`, message: i.message })));
     }
@@ -746,16 +657,10 @@ export class Session {
     this.referenceBlobs = new Map();
     this.projectFile = null;
     this.history = new History(skeleton, this.undoSteps);
-    // The motion paths live in the sidecar, beside the document: undo and redo carry them (docs/PATH-FRAMES-PLAN.md).
-    // Tags are kept beside the document too, so one undo step carries both (the pair is the same object while neither changed).
-    let memo: { m: Sidecar["motion"]; t: Sidecar["tags"]; pair: { motion: Sidecar["motion"]; tags: Sidecar["tags"] } } | null = null;
+    // Tags are kept beside the document: undo and redo carry them.
     this.history.link({
-      read: () => {
-        const s = this.sidecar;
-        if (!memo || memo.m !== s.motion || memo.t !== s.tags) memo = { m: s.motion, t: s.tags, pair: { motion: s.motion, tags: s.tags } };
-        return memo.pair;
-      },
-      write: (v) => { const p = v as { motion: Sidecar["motion"]; tags: Sidecar["tags"] }; this.setSidecar({ ...this.sidecar, motion: p.motion, tags: p.tags }); },
+      read: () => this.sidecar.tags,
+      write: (v) => { this.setSidecar({ ...this.sidecar, tags: v as Sidecar["tags"] }); },
     });
     // A skeleton started from an atlas or a PSD is new: unsaved until saved.
     this.saved = fromFile ? this.history.doc : null;

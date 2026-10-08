@@ -16,7 +16,6 @@ const FULL: Sidecar = {
   guides: [{ axis: "x", at: 12.5 }],
   references: [{ path: "ref/run.png", x: 10, y: -4, scale: 0.5, opacity: 0.4 }],
   notes: [{ text: "hips lead", author: "AI", about: "hip" }, { text: "plain" }],
-  motion: [{ animation: "run", bone: "hip", parent: "root", nodes: [{ x: 0, y: 0 }, { x: 5, y: 8, tx: 2, ty: -3, bx: -4, by: 1 }, { x: 10, y: 0, id: 4, speed: 2.5, ss: 1.5, sb: -2 }], closed: false, duration: 0.625, loop: false }],
   tags: [{ key: "bone:hip", tags: ["IK", "left leg"] }, { key: "attachment:default/eye/open", tags: ["face"] }],
   extra: new Map([["later", true]]),
 };
@@ -67,30 +66,18 @@ describe("sidecar edits", () => {
     expect(viewOf(withView(back, {}))).toEqual({});
     expect(viewOf({ ...EMPTY_SIDECAR, view: new Map<string, Json>([["camera", new Map<string, Json>([["x", 1], ["y", 2], ["zoom", 0]])], ["skin", 3]]) })).toEqual({});
   });
-  it("reads a path stored with frames once, as seconds at the skeleton's rate (a ring: frames, an open path: frames - 1), and writes it back as a duration", () => {
-    const old = (closed: boolean) => JSON.stringify({ format: "boneburst-sidecar", version: 1, motion: [{ animation: "run", bone: "hip", nodes: [{ x: 0, y: 0 }, { x: 5, y: 8 }], closed, frames: 15 }] });
-    const ring = readSidecar(old(true), 30).sidecar.motion[0]!, open = readSidecar(old(false), 24).sidecar.motion[0]!;
-    expect(ring).toMatchObject({ duration: 0.5, loop: true, closed: true });
-    expect(open).toMatchObject({ duration: 0.5833, closed: false });
-    expect(ring).not.toHaveProperty("frames");
-    const text = writeSidecar({ ...EMPTY_SIDECAR, motion: [ring] });
-    expect(text).toContain('"duration"');
-    expect(text).not.toContain('"frames"');
-    expect(readSidecar(text, 12).sidecar.motion[0]).toEqual(ring);
-  });
-  it("ignores the mark an earlier build left of a bake, and does not write it back", () => {
-    const text = JSON.stringify({ format: "boneburst-sidecar", version: 1, motion: [{ animation: "a", bone: "b", nodes: [{ x: 0, y: 0 }, { x: 1, y: 1 }], duration: 1, baked: "abc|def" }] });
-    const path = readSidecar(text).sidecar.motion[0]!;
-    expect(path).not.toHaveProperty("baked");
-    expect(writeSidecar({ ...EMPTY_SIDECAR, motion: [path] })).not.toContain("baked");
-  });
-  it("keeps the loop switch, and drops a path with no duration, one too short, or too few frames", () => {
-    const one = (m: object) => readSidecar(JSON.stringify({ format: "boneburst-sidecar", version: 1, motion: [{ animation: "a", bone: "b", nodes: [{ x: 0, y: 0 }, { x: 1, y: 1 }], ...m }] })).sidecar.motion;
-    expect(one({ duration: 1, loop: false })[0]).toMatchObject({ duration: 1, loop: false });
-    expect(one({ duration: 1 })[0]!.loop).toBe(true);
-    expect(one({})).toHaveLength(0);
-    expect(one({ duration: 0.01 })).toHaveLength(0);
-    expect(one({ frames: 1 })).toHaveLength(0);
+  it("drops TwinSpline's paths (a top-level `motion`, docs/REMOVE-TWINSPLINE-PLAN.md) on reading, and writes none back", () => {
+    const text = JSON.stringify({ format: "boneburst-sidecar", version: 1, notes: [{ text: "kept" }], motion: [{ animation: "run", bone: "hip", nodes: [{ x: 0, y: 0 }, { x: 5, y: 8, speed: 2 }], closed: true, duration: 0.5 }], later: 1 });
+    const { sidecar, issues } = readSidecar(text);
+    expect(issues).toEqual([]);
+    expect(sidecar).not.toHaveProperty("motion");
+    expect(sidecar.extra.has("motion")).toBe(false);
+    expect(sidecar.extra.get("later")).toBe(1);
+    expect(sidecar.notes).toEqual([{ text: "kept" }]);
+    const back = writeSidecar(sidecar);
+    expect(back).not.toContain('"motion"');
+    expect(back).not.toContain("speed");
+    expect(readSidecar(back).sidecar).toEqual(sidecar);
   });
   it("never changes the skeleton: its text is the same with any sidecar beside it", () => {
     const text = readFileSync(join(STICKMAN, "Stickman_IK.json"), "utf8");

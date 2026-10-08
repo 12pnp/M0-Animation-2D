@@ -716,49 +716,21 @@ dialog.preferences .slider input[type="number"] { width: 64px; }
 .timeline-bar .closed-loop { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); cursor: pointer; white-space: nowrap; }
 .timeline-bar .closed-loop:has(input:checked) { color: var(--text); }
 
-/* The Motion Path panel's row of motion-path buttons (docs/PATH-SPEED-PLAN.md). */
+/* The Motion Path panel's line under its header: what FramePath shows, or why there is nothing. */
 .lp-motion { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 3px 8px; border-bottom: 1px solid var(--line); flex: none; }
-.lp-motion[hidden], .lp-motion button[hidden] { display: none; }
-.lp-motion button { padding: 1px 8px; font-size: 12px; }
-.lp-motion button.attention { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-.lp-motion-info { color: var(--muted); font-size: 11px; margin-left: 4px; }
-.timeline-bar .path-keys { display: flex; align-items: center; gap: 3px; font-size: 12px; color: var(--muted); white-space: nowrap; }
-.timeline-bar .path-keys[hidden] { display: none; }
-.timeline-bar .path-keys input { width: 3.4em; padding: 1px 3px; font-size: 12px; }
 
-/* The capture bar: a red button per pose slot, a green one to add a slot (docs/PATH-CAPTURE-PLAN.md). */
-/* The strip is a row of cells from the left edge, hairlines between: a node is a square (width = height); a block is as wide as its label. */
+/* FramePath's strip: the ◆ toggle, then the frame strip drawn as the Timeline's top. */
 .lp-slots { position: relative; display: flex; flex-wrap: wrap; justify-content: flex-start; align-items: stretch; gap: 0; padding: 0; border-bottom: 1px solid var(--line); flex: none; }
 .lp-slots[hidden] { display: none; }
 .lp-slots .lp-keytoggle { flex: none; width: 40px; height: 46px; padding: 0; border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--muted); font-size: 14px; }
 .lp-slots .lp-keytoggle.on { color: var(--accent); }
 .lp-slots .lp-keystrip { flex: 1; min-width: 0; height: 46px; display: block; cursor: ew-resize; touch-action: none; }
-.lp-slots button.slot { min-width: 0; height: 28px; padding: 0 4px; flex: none; font-size: 12px; background: transparent; border-radius: 0; border: 0; border-right: 1px solid var(--line); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.lp-slots button.slot:last-child { border-right: 0; }
-.lp-slots button.node { width: 28px; padding: 0; background: #2e9e4f; color: #ffffff; cursor: grab; border-right-color: rgba(255, 255, 255, 0.35); }
-.lp-slots button.node { touch-action: none; user-select: none; }
-.lp-slots button.node.dragging { opacity: 0.35; }
-.lp-slots button.node.multi { outline: 2px dashed var(--accent); outline-offset: -2px; }
-.lp-slots button.node.picked { outline: 2px solid var(--accent); outline-offset: -2px; }
-.lp-motion button.add { min-width: 22px; border: 2px solid #2e9e4f; color: #2e9e4f; font-weight: 700; background: transparent; }
-.lp-motion button.add:hover { background: #2e9e4f; color: #ffffff; }
-.lp-motion input.time-field { width: 5em; padding: 1px 3px; font-size: 12px; }
-.lp-motion .lp-field { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); white-space: nowrap; }
-.lp-motion .lp-field[hidden] { display: none; }
-.lp-slots button.block { padding: 0 6px; color: var(--text); }
-.lp-slots button.block.picked { background: var(--accent); color: var(--accent-text); }
 
 .lp-graph { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--line); flex: none; }
 .lp-graph[hidden] { display: none; }
 .lp-graph button { padding: 1px 8px; font-size: 12px; }
 .lp-graph span { color: var(--muted); font-size: 12px; }
 .lp-graph-canvas { display: block; touch-action: none; cursor: crosshair; }
-
-/* The gap a dragged number would go into: a red line through the strip exactly on the boundary, an arrow under it pointing up at it, the number in the arrow. */
-.lp-drop-arrow { position: absolute; top: 0; bottom: 0; width: 3px; margin-left: -1.5px; background: #e03e3e; border-radius: 1px; pointer-events: none; z-index: 5; }
-.lp-drop-arrow::after { content: ""; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); width: 0; height: 0; margin-top: 1px; border-left: 6px solid transparent; border-right: 6px solid transparent; border-bottom: 7px solid #e03e3e; }
-.lp-drop-arrow span { position: absolute; top: calc(100% + 8px); left: 50%; transform: translateX(-50%); min-width: 18px; height: 18px; padding: 0 4px; box-sizing: border-box; display: flex; align-items: center; justify-content: center; border-radius: 4px; background: #e03e3e; color: #fff; font-size: 12px; font-weight: 700; line-height: 1; }
-.lp-drop-arrow[hidden] { display: none; }
 
 /* The lines you drag to resize (workspace/grips.ts): blue at once under the pointer, held blue through the drag, a resize cursor. */
 .dv-sash.bb-held { background-color: var(--accent); }
@@ -770,9 +742,6 @@ html .dv-split-view-container.dv-vertical > .dv-sash-container > .dv-sash.dv-ena
 html.bb-gripping-col, html.bb-gripping-col * { cursor: col-resize !important; }
 html.bb-gripping-row, html.bb-gripping-row * { cursor: row-resize !important; }
 
-
-/* The Motion Path header's swatch for the path line drawn on the Stage. */
-.stage-line-colour { width: 18px; height: 18px; min-width: 18px; padding: 0; border: 1px solid var(--line); border-radius: 3px; }
 
 /* The note Save flashes: in the middle of the window, over everything, gone after a moment. */
 .flash { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); z-index: 1000; padding: 10px 18px; border-radius: 8px; background: var(--panel); color: var(--text); border: 1px solid var(--line); box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35); pointer-events: none; transition: opacity 0.2s; }
@@ -852,14 +821,13 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 .lp-data { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--line); font-size: 12px; overflow-x: hidden; overflow-y: auto; }
 .lp-data[hidden] { display: none; }
 .lp-data .title { font-weight: 600; }
-.lp-data .hint { color: var(--muted, var(--text)); }
 .lp-data .lp-keyhint { color: var(--muted, var(--text)); }
 .lp-data .row { display: flex; align-items: center; gap: 6px; }
 .lp-data .row .k { width: 6.5em; flex: none; color: var(--muted, var(--text)); }
 .lp-data input[type=number] { width: 70px; font-family: var(--font-mono); font-size: 12px; padding: 1px 4px; }
 .lp-data .row.buttons button { padding: 1px 10px; font-size: 12px; }
 
-/* TwinSpline: the line above the node numbers is dragged; under it the node numbers, the picked node's data and the speed graph. */
+/* The line above the frame strip is dragged; under it the strip, the key's data and the speed graph. */
 .lp-split { flex: none; height: 7px; margin: -3px 0; position: relative; z-index: 2; cursor: row-resize; touch-action: none; }
 .lp-split:hover, .lp-split:active { background: linear-gradient(var(--accent), var(--accent)) center / 100% 3px no-repeat; }
 .lp-lower { flex: none; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
@@ -880,7 +848,7 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 .lp-lower[hidden], .lp-split[hidden] { display: none; }
 .motion-path .lp-body { min-height: 120px; }
 
-/* Motion Path's header, in groups: a small label and a segmented row of toggles for each (what is shown, the parent's, the handles, the Stage line). */
+/* Motion Path's header, in groups: a small label and a segmented row of toggles for each (what is shown, the handles). */
 .lp-head { gap: 6px 10px; padding: 6px 8px 4px; }
 .lp-head > span { flex: 1 1 80px; }
 .lp-tools { flex: 1 0 100%; display: flex; flex-wrap: wrap; align-items: flex-end; gap: 6px 14px; }
@@ -894,62 +862,33 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 .lp-seg > button:last-child { border-radius: 0 5px 5px 0; }
 .lp-seg > button:only-child { border-radius: 5px; }
 .lp-seg > button[aria-pressed="true"] { position: relative; z-index: 1; }
-/* The path bar: its three sections with a line between them; what the path says on a row of its own. */
 .lp-motion { gap: 6px 12px; padding: 5px 8px; }
-.lp-sect { display: flex; align-items: center; gap: 5px; padding-right: 12px; border-right: 1px solid var(--line); }
-.lp-sect:last-of-type { border-right: 0; padding-right: 0; }
-.lp-sect:not(:has(> :not([hidden]))) { display: none; }
-.lp-motion .lp-motion-info { flex: 1 0 100%; margin: 0; }
-.lp-motion .lp-parent { max-width: 11em; }
 
-/* The speed graph's header: its title, and the buttons that fit the graph to the whole path or to the picked node's section. */
+/* The speed graph's header: its title, and the buttons that fit the graph to the whole animation or to the picked key's span. */
 .lp-speed-bar { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .lp-speed-bar .title { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lp-speed-bar button { flex: none; padding: 0 8px; font-size: 11px; }
 
-/* The path's own Play, in the path bar. */
-.lp-play { min-width: 5.6em; }
-.lp-clock { min-width: 3.8em; text-align: right; font-family: var(--font-mono); color: var(--muted); }
-
-/* A Timeline channel whose keys a path silences: the label dimmed, with a badge. */
-.timeline-labels .row.silenced { opacity: 0.6; }
-.timeline-labels .path-badge { margin-left: auto; padding-left: 8px; font-size: 10px; color: var(--muted); white-space: nowrap; }
-
-/* The Key frame and TwinSpline tabs in the Motion Path header, each with a ⋮ at its end. */
+/* FramePath's name in the Motion Path header, with a ⋮ at its end. */
 .lp-tabs { display: flex; gap: 6px; flex: 0 0 auto; }
 .lp-tab { display: flex; align-items: stretch; border: 1px solid var(--bb-field-border, var(--line)); border-radius: 6px; overflow: hidden; }
 .lp-tab button { border: 0; border-radius: 0; background: transparent; }
-.lp-tab button.on { background: var(--accent); color: var(--accent-text); }
+.lp-tab .main { display: flex; align-items: center; padding: 1px 8px; }
+.lp-tab .main.on { background: var(--accent); color: var(--accent-text); }
 .lp-tab .more { padding: 1px 6px; border-left: 1px solid var(--bb-field-border, var(--line)); font-weight: 700; }
 .lp-tabs[hidden] { display: none; }
-/* The card over the picture when the open tab has nothing to edit. */
-.lp-card { position: absolute; right: 8px; top: 8px; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 8px; max-width: 280px; padding: 8px 10px; pointer-events: none; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 2px 10px rgb(0 0 0 / 0.3); font-size: 12px; text-align: center; }
-.lp-card p { margin: 0; flex: 1 0 100%; text-align: right; }
-.lp-card button { pointer-events: auto; }
-.lp-card[hidden] { display: none; }
-.lp-card button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
-
-/* Path and Spline layer toggles, as icons beside the tab they belong to. */
+/* The Path layer toggle, as an icon before FramePath's name. */
 .lp-tabs { align-items: center; }
 .lp-tabs .lp-layer { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 24px; padding: 0; }
 .lp-tabs .lp-layer .icon { width: 15px; height: 15px; margin: 0; }
 
-/* The path's transport in the view bar, between the zoom and Fit. */
+/* The view bar: a line between the zoom and Fit. */
 .lp-viewbar .lp-gap { width: 1px; align-self: stretch; margin: 2px 6px; background: var(--line); }
-.lp-viewbar .lp-gap:has(+ [hidden]) { display: none; }
 .lp-viewbar button { padding: 1px 8px; font-size: 12px; }
 .lp-viewbar .lp-fit { padding: 0; }
-.lp-viewbar button[hidden], .lp-viewbar .lp-clock[hidden], .lp-viewbar .lp-field[hidden] { display: none; }
-.lp-viewbar .lp-field { margin-left: 8px; white-space: nowrap; }
 
-/* The path bar keeps its two rows whatever the tab: controls and the node count, or a hint and an empty line. */
-.lp-sect[hidden] { display: none; }
 .lp-motion .lp-hint { flex: 1 0 100%; color: var(--muted); font-size: 12px; }
-.lp-hint[hidden] { display: none; }
 .lp-tabs button:disabled, .lp-tabs .lp-layer:disabled { opacity: 0.45; }
-
-/* The Stage line under the speed graph. */
-.lp-stagerow { flex: none; display: flex; align-items: center; padding: 2px 0; }
 
 /* The Preview panel: the picture only, with a slim bar. */
 .panel.preview { display: flex; flex-direction: column; min-height: 0; }

@@ -1,5 +1,5 @@
 import type { Json } from "@/model/json";
-import type { Guide, MotionPath, Reference, Sidecar } from "@/model/sidecar";
+import type { Guide, Reference, Sidecar } from "@/model/sidecar";
 import { EditRefused } from "./history";
 
 /**
@@ -61,19 +61,7 @@ export function viewOf(s: Sidecar): View {
 }
 
 /** Whether a sidecar holds anything a person made (the view alone does not count). */
-export const hasContent = (s: Sidecar) => s.guides.length > 0 || s.references.length > 0 || s.notes.length > 0 || s.motion.length > 0 || s.tags.length > 0;
-
-/** The motion path kept for `bone` in `animation`, or undefined. */
-export function motionOf(s: Sidecar, animation: string, bone: string): MotionPath | undefined {
-  return s.motion.find((m) => m.animation === animation && m.bone === bone);
-}
-
-/** The sidecar with `m` kept for its bone and animation (replacing the one there), or, with null, that path dropped. */
-export function withMotion(s: Sidecar, animation: string, bone: string, m: MotionPath | null): Sidecar {
-  const rest = s.motion.filter((x) => !(x.animation === animation && x.bone === bone));
-  const motion = m ? [...rest, m] : rest;
-  return motion.length === s.motion.length && m === null ? s : { ...s, motion };
-}
+export const hasContent = (s: Sidecar) => s.guides.length > 0 || s.references.length > 0 || s.notes.length > 0 || s.tags.length > 0;
 
 /** The fields of a reference an edit may set. */
 export type ReferencePatch = { -readonly [K in Exclude<keyof Reference, "path">]?: Reference[K] };

@@ -1,5 +1,7 @@
 # Motion Path relative to a parent bone — plan
 
+**Removed 2026-10-09** with the rest of TwinSpline: docs/REMOVE-TWINSPLINE-PLAN.md.
+
 > **Note 2026-10-08:** the path is now one of two separate systems (key animation and path motion): it has its own clock in seconds, no bake, and a one-time Make keys from path; see `TWO-SYSTEMS-PLAN.md` and SPEC §6a. What follows is the history of this plan.
 
 **Status:** done 2026-10-08 (see "Result" at the end). The owner's ask: replace the Motion Path panel's

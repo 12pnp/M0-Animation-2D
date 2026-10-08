@@ -1,5 +1,7 @@
 # Motion Path panel: two modes, Key frame and TwinSpline — plan
 
+**Removed 2026-10-09** with the rest of TwinSpline: docs/REMOVE-TWINSPLINE-PLAN.md.
+
 **Status: planned 2026-10-08 from the owner's note; built the same day (see "Result"), then revised the same day ("Revised", last section: both kept, the tab chooses which is used).** Follows `TWO-SYSTEMS-PLAN.md`: the two systems get two tabs in the panel, so a bone is looked at and edited as one or the other, never a mix.
 
 ```mermaid

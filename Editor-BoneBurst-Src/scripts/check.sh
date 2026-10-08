@@ -47,16 +47,13 @@ layer() { # folder, allowed import prefixes (regex)
   if [ -n "$bad" ]; then echo "$bad"; echo "error: src/$1 imports above its layer" >&2; exit 1; fi
 }
 layer model '@/model/|\./'
-layer io '@/model/|@/io/|@/motion|\./'
+layer io '@/model/|@/io/|\./'
 layer edit '@/model/|@/edit/|\./'
 layer engine '@/model/|@/engine/|\./'
-# The path motion (docs/TWO-SYSTEMS-PLAN.md): its own system, apart from the key animation: only the path's own data (the sidecar's types) and the error
-# class; no rig, no document, no edit layer. edit and engine do not import it either (their layers above do not list it).
-layer motion '@/model/sidecar|@/model/refused|@/motion/|\./'
 # The AI tools (E5): pure like the document's layers, above them, below the interface.
 layer agent '@/model/|@/io/|@/edit/|@/engine/|@/agent/|\./'
 pure=""
-for d in src/model src/io src/edit src/engine src/agent src/motion; do if [ -d "$d" ]; then pure="$pure $d"; fi; done
+for d in src/model src/io src/edit src/engine src/agent; do if [ -d "$d" ]; then pure="$pure $d"; fi; done
 dom=$(grep -rnE '\b(document|window|navigator)\.[a-zA-Z]|\bHTML[A-Za-z]*Element\b|requestAnimationFrame' $pure \
   | grep -vE '^[^:]+:[0-9]+:\s*(\*|//|/\*)' || true)
 if [ -n "$dom" ]; then echo "$dom"; echo "error: a pure layer touches the DOM" >&2; exit 1; fi

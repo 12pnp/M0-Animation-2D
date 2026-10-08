@@ -1,5 +1,7 @@
 # Two pure systems: Key animation and Path motion — plan
 
+**Removed 2026-10-09** with the rest of TwinSpline: docs/REMOVE-TWINSPLINE-PLAN.md.
+
 **Status: planned 2026-10-08; the five questions were answered the same day (all five recommendations, with the owner's additions under "Decided"). Steps 1 to 7 are built (each has a section below); step 8, the Unity side, is its own plan, `UNITY-EXPORT-PLAN.md` (the export is built: a path bone baked into keys, or the paths written in a TwinSpline file; a Unity player for that file is not).** Written from the owner's note (below). It splits what is today one tangled thing, a bone's path that is only a recipe for keys, into two systems that never read each other.
 
 ```mermaid

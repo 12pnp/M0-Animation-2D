@@ -14,6 +14,19 @@ import { onAnimation, withKeys } from "./keys";
 
 export type Vec = readonly [number, number];
 
+/** A key's speed is held between these, so the multiplier `1 + speed` is never 0. */
+export const SPEED_MIN = -0.99;
+export const SPEED_MAX = 5;
+
+/** A speed value held to its range, to four places. */
+export function clampSpeed(v: number): number {
+  if (!Number.isFinite(v)) return 0;
+  return Math.round(Math.min(SPEED_MAX, Math.max(SPEED_MIN, v)) * 1e4) / 1e4;
+}
+
+/** The multiplier a speed value makes: 0.01 to 6. */
+export const multiplierOf = (speed: number): number => 1 + clampSpeed(speed);
+
 const translatePath = (bone: string): TimelinePath => ({ section: "bones", owner: bone, timeline: "translate" });
 
 /** The bone's combined translate keys in the animation, or null when it keys translate as split x and y (not handled). */

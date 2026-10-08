@@ -20,7 +20,7 @@ test("every panel group has a ⋮ menu; Info opens that panel's info window; Max
   const info = page.getByRole("dialog", { name: "Motion Path info" });
   await expect(info).toBeVisible();
   await expect(info).toContainText("How it works");
-  await expect(info).toContainText("Add a spline node");
+  await expect(info).toContainText("Delete FramePath data");
   await page.keyboard.press("Escape");
   await expect(info).toBeHidden();
   // Another panel's menu says its own thing.

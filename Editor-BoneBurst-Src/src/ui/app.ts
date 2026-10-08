@@ -35,7 +35,7 @@ import { download, saveProject } from "./project";
 import { zipStore } from "@/io/zip";
 import { OpenDialog } from "./openDialog";
 import { folders, type Recent, recent, type RecentHandle, readRecent } from "./recent";
-import { type ExportMode, ExportRefused, NoFolderPicker, exportBundle, exportToUnity } from "./unityExport";
+import { ExportRefused, NoFolderPicker, exportFiles, exportToUnity } from "./unityExport";
 import { localPoint, pageScale } from "./pageScale";
 import { snapFields } from "./snapFields";
 import type { CreateKind } from "./stage/create";
@@ -372,9 +372,6 @@ export function mountApp(root: HTMLElement): void {
   tagsPanel.onStatus = (m) => say(m);
   const motionPanel = new MotionPathPanel(session);
   motionPanel.autoKey = () => stage.autoKey;
-  stage.motionLine = () => motionPanel.stageLine();
-  motionPanel.onStageLine = () => stage.redraw();
-  stage.forceUnkeyed = () => motionPanel.drawing;
   const skinsPanel = new SkinsPanel(session);
   const animationsPanel = new AnimationsPanel(session);
   // Ask AI (E5 step 9): the bridge's model with the editor's tools; sending connects the AI button.
@@ -405,9 +402,6 @@ export function mountApp(root: HTMLElement): void {
       { label: "Export to Unity…", disabled: !session.doc, run: () => void toUnity(false) },
       { label: "Export to Unity, another folder…", disabled: !session.doc, run: () => void toUnity(true) },
       { label: "Export as Zip…", disabled: !session.doc, run: () => void exportZip() },
-      { label: "Export TwinSpline JSON…", disabled: !session.doc, run: () => void exportSpine("twinspline") },
-      { label: "Export TwinSpline as Zip…", disabled: !session.doc, run: () => void exportZip("twinspline") },
-      { label: "Export to Unity as TwinSpline…", disabled: !session.doc, run: () => void toUnity(false, "twinspline") },
     ] },
     { label: "Edit", items: () => [
       { label: "Undo", keys: keysOf("undo"), disabled: !session.history?.canUndo, run: () => undoBtn.click() },
@@ -602,7 +596,6 @@ export function mountApp(root: HTMLElement): void {
   const tick = (now: number) => {
     const dt = Math.min(0.1, last ? (now - last) / 1000 : 0);
     if (session.playing) session.advance(dt);
-    session.advancePath(dt);
     last = now;
     requestAnimationFrame(tick);
   };
@@ -704,22 +697,22 @@ export function mountApp(root: HTMLElement): void {
   }
 
   /** File ▸ Export as Zip…: the same files as Export Spine JSON, in one .zip that downloads (for a browser that cannot write to a folder, or to send them on). */
-  async function exportZip(mode: ExportMode = "keys", after?: string): Promise<void> {
+  async function exportZip(after?: string): Promise<void> {
     try {
-      const { files, note } = await exportBundle(session, true, mode), name = `${session.name}${mode === "twinspline" ? ".twinspline" : ""}.zip`;
+      const files = await exportFiles(session), name = `${session.name}.zip`;
       download(name, new Blob([zipStore(files) as BlobPart], { type: "application/zip" }));
-      say(`Exported ${name}: ${files.map((f) => f.name).join(", ")}.${note ? ` ${note}.` : ""}${after ? ` ${after}` : ""}`);
+      say(`Exported ${name}: ${files.map((f) => f.name).join(", ")}.${after ? ` ${after}` : ""}`);
     } catch (err) {
       say(err instanceof ExportRefused ? err.message : `Export failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
   /** File ▸ Export Spine JSON…: the skeleton, atlas and pages as Spine reads them, not marked saved. */
-  async function exportSpine(mode: ExportMode = "keys", after?: string): Promise<void> {
+  async function exportSpine(): Promise<void> {
     try {
-      const { files, note } = await exportBundle(session, true, mode);
+      const files = await exportFiles(session);
       for (const f of files) download(f.name, new Blob([f.data as BlobPart], { type: typeof f.data === "string" ? "text/plain" : "image/png" }));
-      say(`Exported ${files.map((f) => f.name).join(", ")}.${note ? ` ${note}.` : ""}${after ? ` ${after}` : ""}`);
+      say(`Exported ${files.map((f) => f.name).join(", ")}.`);
     } catch (err) {
       say(err instanceof ExportRefused ? err.message : `Export failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -770,13 +763,13 @@ export function mountApp(root: HTMLElement): void {
     }
   }
 
-  async function toUnity(choose: boolean, mode: ExportMode = "keys"): Promise<void> {
+  async function toUnity(choose: boolean): Promise<void> {
     try {
-      const out = await exportToUnity(session, true, choose, mode);
-      say(`Exported to ${out.folder}: ${out.files.join(", ")}. ${out.note ? `${out.note}. ` : ""}Unity rebakes the folder on its next refresh.`);
+      const out = await exportToUnity(session, true, choose);
+      say(`Exported to ${out.folder}: ${out.files.join(", ")}. Unity rebakes the folder on its next refresh.`);
     } catch (err) {
       // No folder picker here: the files are saved to the downloads, to copy into the Unity folder.
-      if (err instanceof NoFolderPicker) { await exportZip(mode, "This browser cannot write to a folder, so they were saved as one zip: unzip it into your Unity folder (Chrome or Edge write to it directly)."); return; }
+      if (err instanceof NoFolderPicker) { await exportZip("This browser cannot write to a folder, so they were saved as one zip: unzip it into your Unity folder (Chrome or Edge write to it directly)."); return; }
       say(err instanceof ExportRefused ? err.message : `Export failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
@@ -1011,9 +1004,8 @@ export function mountApp(root: HTMLElement): void {
     brushSmaller: () => { if (!brush.on) return false; say(`Brush ${resizeBrush(-1)} px.`); stage.redraw(); },
     brushLarger: () => { if (!brush.on) return false; say(`Brush ${resizeBrush(1)} px.`); stage.redraw(); },
     play: () => timeline.togglePlay(),
-    // Q and W step the nodes while the Motion Path panel is the one last pressed, and the frames anywhere else (, and . always step frames).
-    prevFrame: (e?: KeyboardEvent) => { if (hovered === "motion" && /^q$/i.test(e?.key ?? "") && motionPanel.stepNode(-1)) return; session.seek(session.frame - 1); },
-    nextFrame: (e?: KeyboardEvent) => { if (hovered === "motion" && /^w$/i.test(e?.key ?? "") && motionPanel.stepNode(1)) return; session.seek(session.frame + 1); },
+    prevFrame: () => session.seek(session.frame - 1),
+    nextFrame: () => session.seek(session.frame + 1),
     firstFrame: () => session.seek(0),
     lastFrame: () => { const a = session.animation; if (a) session.seek(timeFrame(session.length(a), session.fps)); },
     key: () => timeline.keySelected(),
@@ -1030,12 +1022,6 @@ export function mountApp(root: HTMLElement): void {
     toolRotate: () => setTool("rotate"),
     toolScale: () => setTool("scale"),
     toolShear: () => setTool("shear"),
-    // Motion Path's own keys: only with the pointer over it; elsewhere the key goes on to whatever else has it.
-    motionAdd: () => (hovered === "motion" && motionPanel.hotkey("add") ? undefined : false),
-    motionRemove: () => (hovered === "motion" && motionPanel.hotkey("remove") ? undefined : false),
-    motionReverse: () => (hovered === "motion" && motionPanel.hotkey("reverse") ? undefined : false),
-    motionMerge: () => (hovered === "motion" && motionPanel.hotkey("merge") ? undefined : false),
-    motionOrigin: () => (hovered === "motion" && motionPanel.hotkey("origin") ? undefined : false),
     tags: () => {
       const sel = session.selected;
       if (!sel) { say("Select an element first (a bone, a slot, an image…), then press the tags key."); return; }
@@ -1045,8 +1031,8 @@ export function mountApp(root: HTMLElement): void {
     shortcuts: () => sheet.open(),
   };
 
-  // The keys belong to the panel the pointer is over (a press leaves it there): Motion Path takes F, the arrows and Q and W for its own
-  // view and nodes, the Timeline takes F, and everywhere else they are the Stage's and the frames'.
+  // F belongs to the panel the pointer is over (a press leaves it there): Motion Path and the Timeline fit their own view, and
+  // everywhere else it is the Stage's.
   let hovered: "motion" | "timeline" | "stage" | "other" = "other";
   const track = (e: Event): void => {
     const at = e.target as Node;
@@ -1061,8 +1047,7 @@ export function mountApp(root: HTMLElement): void {
   const nudge = (dir: "left" | "right" | "up" | "down", e?: KeyboardEvent): boolean | void => {
     if ((e?.target as HTMLElement | null)?.tagName === "SELECT") return false;
     const sizes = { step: prefs.values.nudgeStep, scaleStep: prefs.values.nudgeScaleStep, bigFactor: prefs.values.nudgeBigFactor };
-    if (hovered === "motion" && motionPanel.nudge(dir, !!e?.shiftKey, sizes.step, sizes.bigFactor)) return;
-    transform.nudge(stage.tool, dir, !!e?.shiftKey, { step: prefs.values.nudgeStep, scaleStep: prefs.values.nudgeScaleStep, bigFactor: prefs.values.nudgeBigFactor });
+    transform.nudge(stage.tool, dir, !!e?.shiftKey, sizes);
   };
 
   function poseKey(run: () => void): boolean | void {

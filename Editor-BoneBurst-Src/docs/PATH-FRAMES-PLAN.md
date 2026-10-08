@@ -1,5 +1,7 @@
 # A path in frames and blocks: a closed spline, totalFrame in Motion Path, node times, a time multiplier per block — plan
 
+**Removed 2026-10-09** with the rest of TwinSpline: docs/REMOVE-TWINSPLINE-PLAN.md.
+
 > **Timing half replaced 2026-10-08:** node times, blocks and per-block multipliers are gone (Adjust time was removed); a speed on each node of the ring takes their place, see `TWINSPLINE-PLAN.md`. The ring, total frames, Closed and Bake to timeline stand.
 
 **Status:** built 2026-10-07; the panel was renamed **Motion Path** (was Local Path: panel id `motionPath`, `panels/motionPanel.ts`, `MotionPathPanel`, `.motion-path`, `e2e/motionPanel*.spec.ts`; older plans keep the old name in the owner's quotes), not committed; **not verified by hand**. `tsc`, vitest (743) and the whole Playwright suite (71) pass, and a deliberate bug

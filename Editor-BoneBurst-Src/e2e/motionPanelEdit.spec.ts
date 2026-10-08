@@ -143,7 +143,7 @@ test("the frame tag at the playhead's dot is dragged along the path and the play
   await page.waitForTimeout(400);
   const g = await page.evaluate(() => (window as unknown as Live).boneburst.motionPath.grabPoints as unknown as { marks: number[]; tag: { x0: number; y0: number; x1: number; y1: number } | null });
   expect(g.tag).not.toBeNull();
-  const box = (await page.locator(".motion-path canvas").boundingBox())!;
+  const box = (await page.locator(".motion-path .lp-body canvas").boundingBox())!;
   // The dot of a frame other than the playhead's whose dot no other frame shares (a path that doubles back puts two on one spot), and the tag's middle.
   const n = g.marks.length / 2, here = await page.evaluate(() => (window as unknown as Live).boneburst.session.frame);
   const gap = (f: number) => { let d = Infinity; for (let k = 0; k < n; k++) if (k !== f) d = Math.min(d, Math.hypot(g.marks[k * 2]! - g.marks[f * 2]!, g.marks[k * 2 + 1]! - g.marks[f * 2 + 1]!)); return d; };
