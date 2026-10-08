@@ -1333,7 +1333,7 @@ export class MotionPathPanel {
     this.motionBar.hidden = false;
     for (const el of this.barSections) el.hidden = !controls;
     this.hint.hidden = controls;
-    this.hint.textContent = !can ? (anim ? "Select a bone to see its motion." : "Select a bone in Animate mode to see its motion.") : "FramePath: the bone's keyed motion. A tab's ⋮ makes the other kind from it.";
+    this.hint.textContent = !can ? (anim ? "Select a bone to see its motion." : "Select a bone in Animate mode to see its motion.") : this.keyHint();
     this.updateCard();
     this.syncParentPick();
     const has = !!m;
@@ -1420,6 +1420,14 @@ export class MotionPathPanel {
     }
   }
 
+  /** The line under FramePath's tab: what it shows, or why there are no numbered keys to pick. */
+  private keyHint(): string {
+    const s = this.session, a = s.animation, bone = s.selectedBone, keys = a && bone !== null ? translateNodes(a, bone) : [];
+    if (keys === null) return `FramePath: ${bone} keys translate as separate x and y, so it has no numbered keys or speed graph yet.`;
+    if (keys.length < 2) return `FramePath: ${bone} has ${keys.length === 0 ? "no translate keys" : "one translate key"} in ${a?.name ?? "this animation"}; the numbered keys and the speed graph need two.`;
+    return "FramePath: the bone's keyed motion. A tab's ⋮ makes the other kind from it.";
+  }
+
   /** FramePath's nodes: the bone's combined translate keys in the animation shown; null when not on FramePath, nothing to show, or the keys are split x and y. */
   private keyNodes(): readonly Key[] | null {
     const s = this.session, a = s.animation, bone = s.selectedBone;
@@ -1494,7 +1502,8 @@ export class MotionPathPanel {
     const i = this.selKey, k = keys[i];
     if (!k || !a || bone === null) {
       const hint = doc.createElement("span");
-      hint.className = "hint";
+      // Not the Stage's .hint, which is placed over the whole box.
+      hint.className = "lp-keyhint";
       hint.textContent = "Press a number to see that key's data.";
       box.replaceChildren(this.speedColumn(doc), hint);
       this.drawSpeed();

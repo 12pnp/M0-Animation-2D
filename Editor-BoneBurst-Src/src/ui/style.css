@@ -850,6 +850,7 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 .lp-data[hidden] { display: none; }
 .lp-data .title { font-weight: 600; }
 .lp-data .hint { color: var(--muted, var(--text)); }
+.lp-data .lp-keyhint { color: var(--muted, var(--text)); }
 .lp-data .row { display: flex; align-items: center; gap: 6px; }
 .lp-data .row .k { width: 6.5em; flex: none; color: var(--muted, var(--text)); }
 .lp-data input[type=number] { width: 70px; font-family: var(--font-mono); font-size: 12px; padding: 1px 4px; }

@@ -90,4 +90,7 @@ test("FramePath: a numbered button per translate key; pressing one shows its dat
   const curves = () => page.evaluate(() => ((window as unknown as Live).boneburst.session.doc.animations[0]!.bones!.find((b) => b.name === "hips")!.timelines.find((t) => t.name === "translate")!.keys as { curve?: unknown }[]).slice(0, 2).map((k) => Array.isArray(k.curve)));
   await expect.poll(curves).toEqual([true, true]);
   await expect(panel.locator(".lp-fields .read")).toHaveText("×3");
+  // One undo step takes the speed back out of both curves.
+  await page.evaluate(() => { const s = (window as unknown as { boneburst: { session: { history: { undo(): void }; changed(): void } } }).boneburst.session; s.history.undo(); s.changed(); });
+  await expect.poll(curves).toEqual([false, false]);
 });
