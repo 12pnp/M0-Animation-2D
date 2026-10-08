@@ -84,7 +84,7 @@ row in the Reference panel, or a double-click on its picture) is dragged on the 
 and by a corner to size it (step 13); only the chosen one takes presses, so the stage still pans
 over the others. Sidecar changes are not undo steps.
 
-A bone's **path** (`motion` in the sidecar, `MotionPath`) is the path system's data (§6a): nodes with their handles and speeds, `closed`, `duration` in seconds, `loop`, and the `animation` and `bone` it belongs to. It is plain numbers, so a later writer can put it in the export; today the sidecar is not exported to Unity.
+A bone's **path** (`motion` in the sidecar, `MotionPath`) is the path system's data (§6a): nodes with their handles and speeds, `closed`, `duration` in seconds, `loop`, and the `animation` and `bone` it belongs to. It is plain numbers. The sidecar itself is not exported to Unity; the TwinSpline export (docs/UNITY-EXPORT-PLAN.md) writes the paths in a file of their own, `name.twinspline.json` (`edit/exportTwin.ts`: `{ "twinspline": 1, "animations": { animation: { bone: { parent?, duration, loop, closed, nodes } } } }`, seconds; the nodes are the sidecar's without the editor's `id`).
 
 ## 4. Editing and history
 

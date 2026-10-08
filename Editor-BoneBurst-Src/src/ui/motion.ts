@@ -139,11 +139,27 @@ export function nodeOfPose(p: Posed, bone: string, parent: string | null): Motio
  * move it, or they are too close in time.
  */
 export function pathFromKeys(s: Session, parent: string | null): { path: MotionPath; stray: number } | null {
-  const a = s.animation, bone = s.selectedBone, poser = s.poserFor();
-  if (!a || !bone || !poser) return null;
+  return s.animation && s.selectedBone ? pathFromKeysOf(s, s.animation.name, s.selectedBone, parent) : null;
+}
+
+/** The most nodes the export adds to a converted path while refining it. */
+const REFINE_NODES = 12;
+
+/**
+ * `pathFromKeys` for any bone of any animation (the export converts every bone, not the selected one). Null when there is no such animation or pose.
+ * With `refine` (units), nodes are added where the path is furthest from the keyed motion until it is within that.
+ */
+export function pathFromKeysOf(s: Session, animation: string, bone: string, parent: string | null, doc: Skeleton | null | undefined = s.doc, refine?: number): { path: MotionPath; stray: number } | null {
+  const a = doc?.animations?.find((x) => x.name === animation), poser = s.poserFor();
+  if (!a || !poser) return null;
   const fps = s.fps, frames = [...new Set(keyLists(a).filter((l) => l.path.section === "bones" && l.path.owner === bone && (TRANSLATE_TIMELINES as readonly string[]).includes(l.path.timeline)).flatMap((l) => l.keys.map((k) => timeFrame(keyTime(k), fps))))].sort((x, y) => x - y);
   if (frames.length < 2) throw new EditRefused(`${bone} has fewer than two translate key frames in ${a.name}: there is no motion to convert.`);
-  const at = (f: number): MotionNode | null => nodeOfPose(poser.pose(s.skin, a.name, Math.fround(frameTime(f, fps)), "none"), bone, parent);
+  // The keyed place at a frame, posed once: the refining export asks for every frame again after each node it adds.
+  const placed = new Map<number, MotionNode | null>();
+  const at = (f: number): MotionNode | null => {
+    if (!placed.has(f)) placed.set(f, nodeOfPose(poser.pose(s.skin, a.name, Math.fround(frameTime(f, fps)), "none"), bone, parent));
+    return placed.get(f)!;
+  };
   // A node for each key frame where the bone has moved (a key that holds the place adds no node, only time to the span before it).
   const kept: { frame: number; node: MotionNode }[] = [];
   for (const f of frames) {
@@ -156,24 +172,51 @@ export function pathFromKeys(s: Session, parent: string | null): { path: MotionP
   const f0 = frames[0]!, f1 = frames.at(-1)!;
   if (kept.length < 2) throw new EditRefused(`The translate keys of ${bone} do not move it.`);
   if ((f1 - f0) / fps < MIN_DURATION) throw new EditRefused(`The translate keys of ${bone} are less than ${MIN_DURATION} s apart.`);
-  // A ring when the bone ends where it began: the last node is the first again.
-  const ring = Math.hypot(kept.at(-1)!.node.x - kept[0]!.node.x, kept.at(-1)!.node.y - kept[0]!.node.y) < 1e-3 && kept.length > 2;
-  const nodes = (ring ? kept.slice(0, -1) : kept).map((k) => k.node), times = kept.map((k) => (k.frame - f0) / (f1 - f0));
-  const shape: MotionPath = { animation: a.name, bone, ...(parent !== null ? { parent } : {}), nodes, closed: ring, duration: Math.round(((f1 - f0) / fps) * 1e4) / 1e4, loop: true };
-  const xs = nodeProgress(shape), spans = nodes.length - (ring ? 0 : 1);
-  const withSpeed = nodes.map((n, i) => {
-    const j = Math.min(i, spans - 1), p0 = xs[j]!, p1 = j + 1 < nodes.length ? xs[j + 1]! : 1, dt = times[j + 1]! - times[j]!, dp = p1 - p0;
-    const speed = dt > 1e-9 && dp > 1e-9 ? clampSpeed(dp / dt - 1) : 0;
-    return speed === 0 ? n : { ...n, speed };
-  });
-  const path: MotionPath = { ...shape, nodes: withSpeed };
-  // How far the path is from the keyed motion, at every frame of the run.
-  let stray = 0;
-  for (let f = f0; f <= f1; f++) {
-    const want = at(f), got = pathPose(path, (f - f0) / fps);
-    if (want) stray = Math.max(stray, Math.hypot(got.x - want.x, got.y - want.y));
+  const build = (): { path: MotionPath; stray: number; errors: Map<number, number> } => {
+    // A ring when the bone ends where it began: the last node is the first again.
+    const ring = Math.hypot(kept.at(-1)!.node.x - kept[0]!.node.x, kept.at(-1)!.node.y - kept[0]!.node.y) < 1e-3 && kept.length > 2;
+    const nodes = (ring ? kept.slice(0, -1) : kept).map((k) => k.node), times = kept.map((k) => (k.frame - f0) / (f1 - f0));
+    const shape: MotionPath = { animation: a.name, bone, ...(parent !== null ? { parent } : {}), nodes, closed: ring, duration: Math.round(((f1 - f0) / fps) * 1e4) / 1e4, loop: true };
+    const xs = nodeProgress(shape), spans = nodes.length - (ring ? 0 : 1);
+    const withSpeed = nodes.map((n, i) => {
+      const j = Math.min(i, spans - 1), p0 = xs[j]!, p1 = j + 1 < nodes.length ? xs[j + 1]! : 1, dt = times[j + 1]! - times[j]!, dp = p1 - p0;
+      const speed = dt > 1e-9 && dp > 1e-9 ? clampSpeed(dp / dt - 1) : 0;
+      return speed === 0 ? n : { ...n, speed };
+    });
+    const path: MotionPath = { ...shape, nodes: withSpeed };
+    // How far the path is from the keyed motion, at every frame of the run.
+    let stray = 0;
+    const errors = new Map<number, number>();
+    for (let f = f0; f <= f1; f++) {
+      const want = at(f), got = pathPose(path, (f - f0) / fps);
+      if (!want) continue;
+      const e = Math.hypot(got.x - want.x, got.y - want.y);
+      stray = Math.max(stray, e);
+      errors.set(f, e);
+    }
+    return { path, stray, errors };
+  };
+  let made = build();
+  // The export refines (docs/UNITY-EXPORT-PLAN.md): a node more at the frame furthest from the path (one not yet tried, and not already a node), until within `refine` or none is left.
+  if (refine !== undefined) {
+    const tried = new Set<number>();
+    // At most so many nodes more: each one is a rebuild of the path and its error at every frame.
+    while (tried.size < REFINE_NODES) {
+      const onNode = new Set(kept.map((k) => k.frame));
+      let f = -1, worst = refine;
+      for (const [frame, e] of made.errors) if (e > worst && !onNode.has(frame) && !tried.has(frame)) { worst = e; f = frame; }
+      if (f < 0) break;
+      tried.add(f);
+      const node = at(f), i = kept.findIndex((k) => k.frame > f);
+      if (!node || i <= 0) continue;
+      const before = kept[i - 1]!.node, after = kept[i]!.node;
+      // A frame that holds a neighbour's place adds a pause, which a path cannot make: left to the speed.
+      if (Math.hypot(node.x - before.x, node.y - before.y) < 1e-3 || Math.hypot(node.x - after.x, node.y - after.y) < 1e-3) continue;
+      kept.splice(i, 0, { frame: f, node });
+      made = build();
+    }
   }
-  return { path, stray };
+  return { path: made.path, stray: made.stray };
 }
 
 /**

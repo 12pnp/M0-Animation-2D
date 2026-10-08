@@ -1,7 +1,9 @@
 import { writeAtlas } from "@/io/atlas";
 import { encodePng } from "@/io/png";
 import { writeSkeleton } from "@/io/skeletonWrite";
+import { DEFAULT_MAX_STRAY, exportTwin, twinSummary, writeTwinSpline } from "@/edit/exportTwin";
 import { idbGet, idbSet } from "./idb";
+import { pathFromKeysOf } from "./motion";
 import type { Session } from "./session";
 
 const KEY = "unity-folder";
@@ -26,8 +28,16 @@ export interface Folder {
 
 export interface ExportFile { readonly name: string; readonly data: string | Uint8Array }
 
-/** The files an export writes, in order: the atlas and its pages, then the skeleton. */
-export async function exportFiles(session: Session, closed = true): Promise<ExportFile[]> {
+/**
+ * What an export makes of the motion (docs/UNITY-EXPORT-PLAN.md): `keys` writes the skeleton as it is; `twinspline` writes every bone with
+ * translate motion as a path in `name.twinspline.json`, the skeleton without those bones' translate timelines.
+ */
+export type ExportMode = "keys" | "twinspline";
+
+export interface ExportBundle { readonly files: ExportFile[]; /** What the mode did, for the status line and the AI; absent in `keys`. */ readonly note?: string }
+
+/** The files an export writes, in order: the atlas and its pages, the TwinSpline file (`twinspline` mode), then the skeleton. */
+export async function exportBundle(session: Session, closed = true, mode: ExportMode = "keys"): Promise<ExportBundle> {
   const doc = closed ? session.closedDoc() : session.doc;
   if (!doc) throw new ExportRefused("Nothing is open to export.");
   const files: ExportFile[] = [];
@@ -39,8 +49,19 @@ export async function exportFiles(session: Session, closed = true): Promise<Expo
       files.push({ name: p.name, data: await encodePng(px) });
     }
   }
+  if (mode === "twinspline") {
+    const out = exportTwin(doc, session.sidecar.motion, (animation, bone) => pathFromKeysOf(session, animation, bone, doc.bones?.find((b) => b.name === bone)?.parent ?? null, doc, DEFAULT_MAX_STRAY / 2));
+    files.push({ name: `${session.name}.twinspline.json`, data: writeTwinSpline(out.file) });
+    files.push({ name: `${session.name}.json`, data: writeSkeleton(out.skeleton) });
+    return { files, note: twinSummary(out.report) };
+  }
   files.push({ name: `${session.name}.json`, data: writeSkeleton(doc) });
-  return files;
+  return { files };
+}
+
+/** The files an export writes (`exportBundle` without the note). */
+export async function exportFiles(session: Session, closed = true, mode: ExportMode = "keys"): Promise<ExportFile[]> {
+  return (await exportBundle(session, closed, mode)).files;
 }
 
 /** Write the files into the folder, one after another; their names. */
@@ -77,7 +98,7 @@ type Picker = (o: { id: string; mode: "readwrite" }) => Promise<Folder>;
  * may be picked (`choose`, or none chosen yet) and access asked for; without it (the AI's call)
  * either missing is a refusal saying what to press.
  */
-export async function exportToUnity(session: Session, gesture: boolean, choose = false): Promise<{ folder: string; files: string[] }> {
+export async function exportToUnity(session: Session, gesture: boolean, choose = false, mode: ExportMode = "keys"): Promise<{ folder: string; files: string[]; note?: string }> {
   if (!session.doc) throw new ExportRefused("Nothing is open to export.");
   let folder = choose ? null : await unityFolder.get();
   if (!folder) {
@@ -94,6 +115,7 @@ export async function exportToUnity(session: Session, gesture: boolean, choose =
   let state = (await folder.queryPermission?.({ mode: "readwrite" })) ?? "granted";
   if (state !== "granted" && gesture) state = (await folder.requestPermission?.({ mode: "readwrite" })) ?? "denied";
   if (state !== "granted") throw new ExportRefused(`The editor may not write to "${folder.name}" now (the browser asks again after a reload): press Export to Unity… (the button after Save in the toolbar) once to allow it.`);
-  const files = await writeFiles(folder, await exportFiles(session));
-  return { folder: folder.name, files };
+  const bundle = await exportBundle(session, true, mode);
+  const files = await writeFiles(folder, bundle.files);
+  return { folder: folder.name, files, ...(bundle.note ? { note: bundle.note } : {}) };
 }

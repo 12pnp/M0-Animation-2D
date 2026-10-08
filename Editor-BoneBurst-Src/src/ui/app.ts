@@ -34,7 +34,7 @@ import type { View } from "@/edit/sidecar";
 import { download, saveProject } from "./project";
 import { OpenDialog } from "./openDialog";
 import { folders, type Recent, recent, type RecentHandle, readRecent } from "./recent";
-import { ExportRefused, exportFiles, exportToUnity } from "./unityExport";
+import { type ExportMode, ExportRefused, exportBundle, exportToUnity } from "./unityExport";
 import { localPoint, pageScale } from "./pageScale";
 import { snapFields } from "./snapFields";
 import type { CreateKind } from "./stage/create";
@@ -396,6 +396,8 @@ export function mountApp(root: HTMLElement): void {
       { label: "Export Spine JSON…", disabled: !session.doc, run: () => void exportSpine() },
       { label: "Export to Unity…", disabled: !session.doc, run: () => void toUnity(false) },
       { label: "Export to Unity, another folder…", disabled: !session.doc, run: () => void toUnity(true) },
+      { label: "Export TwinSpline JSON…", disabled: !session.doc, run: () => void exportSpine("twinspline") },
+      { label: "Export to Unity as TwinSpline…", disabled: !session.doc, run: () => void toUnity(false, "twinspline") },
     ] },
     { label: "Edit", items: () => [
       { label: "Undo", keys: keysOf("undo"), disabled: !session.history?.canUndo, run: () => undoBtn.click() },
@@ -691,11 +693,11 @@ export function mountApp(root: HTMLElement): void {
   }
 
   /** File ▸ Export Spine JSON…: the skeleton, atlas and pages as Spine reads them, not marked saved. */
-  async function exportSpine(): Promise<void> {
+  async function exportSpine(mode: ExportMode = "keys"): Promise<void> {
     try {
-      const files = await exportFiles(session);
+      const { files, note } = await exportBundle(session, true, mode);
       for (const f of files) download(f.name, new Blob([f.data as BlobPart], { type: typeof f.data === "string" ? "text/plain" : "image/png" }));
-      say(`Exported ${files.map((f) => f.name).join(", ")}.`);
+      say(`Exported ${files.map((f) => f.name).join(", ")}.${note ? ` ${note}.` : ""}`);
     } catch (err) {
       say(err instanceof ExportRefused ? err.message : `Export failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -745,10 +747,10 @@ export function mountApp(root: HTMLElement): void {
     }
   }
 
-  async function toUnity(choose: boolean): Promise<void> {
+  async function toUnity(choose: boolean, mode: ExportMode = "keys"): Promise<void> {
     try {
-      const out = await exportToUnity(session, true, choose);
-      say(`Exported to ${out.folder}: ${out.files.join(", ")}. Unity rebakes the folder on its next refresh.`);
+      const out = await exportToUnity(session, true, choose, mode);
+      say(`Exported to ${out.folder}: ${out.files.join(", ")}. ${out.note ? `${out.note}. ` : ""}Unity rebakes the folder on its next refresh.`);
     } catch (err) {
       say(err instanceof ExportRefused ? err.message : `Export failed: ${err instanceof Error ? err.message : String(err)}`);
     }

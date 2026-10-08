@@ -82,9 +82,9 @@ export function sessionContext(session: Session): AgentContext {
       const page = r ? await session.pagePixels(r.page.name) : null;
       return r && page ? regionAlpha(r, page) : null;
     },
-    exportToUnity: async () => {
+    exportToUnity: async (mode) => {
       try {
-        return await exportToUnity(session, false);
+        return await exportToUnity(session, false, false, mode);
       } catch (err) {
         if (err instanceof ExportRefused) throw new AgentRefused(err.message);
         throw err;

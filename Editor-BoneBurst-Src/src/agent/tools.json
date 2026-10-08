@@ -131,8 +131,8 @@
       },
       {
         "tool": "export_to_unity",
-        "change": "meaning",
-        "what": "The folder is the one chosen with the toolbar's Export to Unity… (the button after Save; Shift-click chooses another); the AI cannot choose it. The atlas and pages are written first, the skeleton last."
+        "change": "reshaped",
+        "what": "The folder is the one chosen with the toolbar's Export to Unity… (the button after Save; Shift-click chooses another); the AI cannot choose it. The atlas and pages are written first, the skeleton last. An optional `mode`: \"keys\" (the default, as before) or \"twinspline\" (every bone with translate motion written as a path in NAME.twinspline.json, docs/UNITY-EXPORT-PLAN.md). Calls without `mode` are unchanged."
       }
     ]
   },
@@ -517,10 +517,19 @@
     },
     {
       "name": "export_to_unity",
-      "description": "Export the document into its Unity folder (the one the toolbar's Export to Unity… chose; the user must have done that once in this browser): the skeleton JSON, the .atlas.txt and the page images, the skeleton written last. Unity's BoneBurst import package rebakes a folder it has baked before on its next refresh, so a change made here reaches the game's baked asset. Returns the folder and the files written.",
+      "description": "Export the document into its Unity folder (the one the toolbar's Export to Unity… chose; the user must have done that once in this browser): the skeleton JSON, the .atlas.txt and the page images, the skeleton written last. Unity's BoneBurst import package rebakes a folder it has baked before on its next refresh, so a change made here reaches the game's baked asset. Returns the folder and the files written. `mode` \"twinspline\" writes every bone with translate motion as a path in NAME.twinspline.json instead (the skeleton then has no translate timelines for those bones; a bone it cannot convert closely enough stays as keys and is listed in `note`); the default \"keys\" is the Spine file as it is.",
       "input_schema": {
         "type": "object",
-        "properties": {},
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": [
+              "keys",
+              "twinspline"
+            ],
+            "description": "keys (default): the skeleton as it is. twinspline: translate motion as paths in a separate file."
+          }
+        },
         "additionalProperties": false
       }
     },
