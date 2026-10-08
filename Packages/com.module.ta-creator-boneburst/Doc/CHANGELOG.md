@@ -11,6 +11,10 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-08 — **ECS P16 step 1: the TwinSpline maths in the core package, checked against the editor's numbers** (`com.module.ta-creator-boneburst-core` and the editor; the tests are in `ECS-0-25D-Platformer`)
+
+[BoneBurst-ECS-P16-TwinSpline-Plan.md](Review/BoneBurst-ECS-P16-TwinSpline-Plan.md) (new, with the whole phase) §6. New `BoneBurst.TwinSpline.TwinSplineBake` (a double-precision port of the editor's curve and speed-spline maths into one float table: header, the curve at 64 samples a span with cumulative length, the time table at 512 steps) and `TwinSplineMath` (pointer-based, allocation-free evaluation for the pose job: two binary searches and an interpolation; loop wraps, otherwise the end is held), in `Module.PA.BoneBurst.Core`; the editor's `scripts/twin-fixtures.ts` writes the fixtures from its own `src/motion/`. Guarded by `TwinSplineTests` (20; eight paths, 311 times each, the C# within 1e-4 of the editor) and four deliberate bugs that fail 4, 1, 14 and 2 tests; the ECS assembly passes 408 of 408. **Not verified:** Burst compilation of `TwinSplineMath`, and nothing reads `name.twinspline.json` or plays a spline in a pose yet (steps 2 to 6 of the plan).
+
 ### 2026-10-08 — **ECS P15 step 5 examined and not built: pipelining the animate job would save at most 0.03 to 0.09 ms** (docs only)
 
 [BoneBurst-ECS-P15-AnimationSystem-Plan.md](Review/BoneBurst-ECS-P15-AnimationSystem-Plan.md) §12. The plan made step 5 conditional on the numbers. From the build 61 timers (2000 skeletons, ms per frame) the animation system's remaining time is the main-thread tail (clock, stage, events; 0.12 to 0.17) and the gather and loop (0.07 to 0.10), not the job (0.03 to 0.09); the after-animation system (0.22 to 0.57) is now larger than the animation system. A different step is proposed (4b: the slot's mutable state in native memory so a job can do the tail and the after-animation step), not decided; a profile of `AfterApply` and the tail is recommended first. Nothing built or run for this entry.
