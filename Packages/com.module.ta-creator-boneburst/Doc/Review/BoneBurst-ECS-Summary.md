@@ -1,6 +1,6 @@
 # BoneBurst ECS port: Summary of everything (S0, P1–P12)
 
-BoneBurst's pose, constraint, timeline and mesh code was already Burst pointer code with no `UnityEngine`. The port kept it unchanged (moved into `com.module.ta-creator-boneburst-core`) and replaced only the managed shell with Entities 6.7 systems, bakers and Entities Graphics, in a new package `com.module.ta-creator-boneburst-ecs` in `M0-25DPlatformer-ECS`. All twelve phases ran on 2026-10-07; the detail, evidence and per-phase tables are in [BoneBurst-ECS-Plan.md](BoneBurst-ECS-Plan.md) (§ numbers below point there).
+BoneBurst's pose, constraint, timeline and mesh code was already Burst pointer code with no `UnityEngine`. The port kept it unchanged (moved into `com.module.ta-creator-boneburst-core`) and replaced only the managed shell with Entities 6.7 systems, bakers and Entities Graphics, in a new package `com.module.ta-creator-boneburst-ecs` in `ECS-0-25D-Platformer`. All twelve phases ran on 2026-10-07; the detail, evidence and per-phase tables are in [BoneBurst-ECS-Plan.md](BoneBurst-ECS-Plan.md) (§ numbers below point there).
 
 ```mermaid
 flowchart LR
@@ -11,7 +11,7 @@ flowchart LR
         DATA --> CORE
         CORE --> FRONT
     end
-    subgraph P25["M0-25DPlatformer-ECS"]
+    subgraph P25["ECS-0-25D-Platformer"]
         ECS["Module.PB.BoneBurst.Ecs<br/>blob · instance store · animation · pose · GPU · CPU · render systems"]
         AUTH["Authoring + Baker<br/>BoneBurstAuthoring"]
         SH["BoneBurstEcs/Unlit · Lit2D<br/>DOTS instanced"]

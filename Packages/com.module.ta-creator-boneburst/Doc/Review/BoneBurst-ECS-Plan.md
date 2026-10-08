@@ -2,7 +2,7 @@
 
 **P14 (pose system cost) done 2026-10-07: the header loop and the frame job overlap; pose −27% (GPU) and −22% (CPU) at 2000, EcsGpu 2.91 ms against MonoGpu 3.95 (§24). P13 (CPU route vertex fetch) done 2026-10-07: EcsCpu 25.8 → 4.85 ms at 2000 skeletons, 1.14× the mono CPU route (§23). Status: S0 spike ran 2026-10-07: it draws on the URP 2D Renderer; batching and sorting still unverified (see §8). D-ECS-1 = option 1 and D-ECS-2 = option A were chosen by the owner on 2026-10-07. P1 (core split) and P2 (blob bake and authoring) done 2026-10-07, see §9 and §10; P3 (pose system) done 2026-10-07, see §11; P4 (animation state) done 2026-10-07, see §12; P5 (render) done 2026-10-07 except a player build and the 3D renderer's pass (§13, §14); P6 (CPU route, skins, tint black, Lit2D) done 2026-10-07 except the vertex-fetch route, rim light and a player build (§15); P7 (physics input, followers, idle skipping, benchmark) done 2026-10-07 except the visibility mode, the steady shortcut and the sorting question (§16). P8 (shell overhead at small counts) done 2026-10-07: 7–16% less at 100–2000 skeletons, the rest is a fixed floor outside BoneBurst (§17). P11 (tint black and rim light in a player) done 2026-10-07: rim light built and both seen in a player (§20). P10 (render variants in a player) done 2026-10-07: it found and fixed a CPU route that never drew and a stripped default shader (§19). P9 (sorting) done 2026-10-07: a per-skeleton render queue orders a skeleton against sprites of one sorting layer and order; the sorting layer and order themselves stay unreachable (§18).**
 
-BoneBurst's pose, constraint, timeline and mesh code (`Module.PA.BoneBurst.Core`) is already Burst-friendly pointer code with no `UnityEngine`. The port keeps that code unchanged and replaces only the managed shell around it (`BoneBurstSystem`, `BoneBurstSkeleton`, `BoneBurstAsset`, `BoneAnimationState`, the GPU and fetch buffers) with Entities 6.7 systems, bakers and Entities Graphics. The result is a new package in `M0-25DPlatformer-ECS/Packages`.
+BoneBurst's pose, constraint, timeline and mesh code (`Module.PA.BoneBurst.Core`) is already Burst-friendly pointer code with no `UnityEngine`. The port keeps that code unchanged and replaces only the managed shell around it (`BoneBurstSystem`, `BoneBurstSkeleton`, `BoneBurstAsset`, `BoneAnimationState`, the GPU and fetch buffers) with Entities 6.7 systems, bakers and Entities Graphics. The result is a new package in `ECS-0-25D-Platformer/Packages`.
 
 ```mermaid
 flowchart LR
@@ -14,7 +14,7 @@ flowchart LR
         DATA --> CORE --> UNITY
         IMPORT -->|".sbdata"| DATA
     end
-    subgraph NEW["M0-25DPlatformer-ECS/Packages"]
+    subgraph NEW["ECS-0-25D-Platformer/Packages"]
         ECS["Module.PB.BoneBurst.Ecs<br/>components · systems · jobs"]
         AUTH["Module.TA.BoneBurstEcs.Authoring<br/>BoneBurstAuthoring + Baker"]
         TESTS["Module.PB.BoneBurst.Ecs.Tests"]
@@ -28,7 +28,7 @@ flowchart LR
 
 ## 1. What was found
 
-### Target project (`M0-25DPlatformer-ECS`)
+### Target project (`ECS-0-25D-Platformer`)
 
 | Fact | Value | Consequence |
 |---|---|---|
@@ -125,7 +125,7 @@ Sorting: draw order stays baked into per-vertex z (`ZSpacing`); inter-skeleton o
 
 ## 3. Package layout
 
-`M0-25DPlatformer-ECS/Packages/com.module.ta-creator-boneburst-ecs/`, `Runtime/`, `Authoring/`, `Shaders/`, `Tests/`, `Doc/`, beside `package.json` (`unity: 6000.6`). Assemblies follow §4 of `CLAUDE.md`:
+`ECS-0-25D-Platformer/Packages/com.module.ta-creator-boneburst-ecs/`, `Runtime/`, `Authoring/`, `Shaders/`, `Tests/`, `Doc/`, beside `package.json` (`unity: 6000.6`). Assemblies follow §4 of `CLAUDE.md`:
 
 | Assembly | Code | References |
 |---|---|---|
@@ -185,7 +185,7 @@ Editor preview, Timeline tracks (`TB.BoneBurstTimeline`), AssetSystem loading (r
 
 ## 8. S0 result (2026-10-07)
 
-Spike code: `M0-25DPlatformer-ECS/Assets/BoneBurstEcsSpike/` (throwaway; delete once S0 is closed). It creates 200 entities with `RenderMeshUtility.AddComponents`, a custom shader (`LightMode` `Universal2D`, DOTS instancing) with `[MaterialProperty]` `_BaseColor` and `_SpikePoseOffset`, and a Burst job that writes a pose per entity into a global `GraphicsBuffer` read in the vertex shader.
+Spike code: `ECS-0-25D-Platformer/Assets/BoneBurstEcsSpike/` (throwaway; delete once S0 is closed). It creates 200 entities with `RenderMeshUtility.AddComponents`, a custom shader (`LightMode` `Universal2D`, DOTS instancing) with `[MaterialProperty]` `_BaseColor` and `_SpikePoseOffset`, and a Burst job that writes a pose per entity into a global `GraphicsBuffer` read in the vertex shader.
 
 | Check | Result |
 |---|---|
@@ -226,7 +226,7 @@ Changed beside the move:
 
 ## 10. P2 result (2026-10-07): blob bake and authoring
 
-Built in `M0-25DPlatformer-ECS/Packages/com.module.ta-creator-boneburst-ecs/` (commit `c3d997e` in that repo), assemblies `Module.PB.BoneBurst.Ecs` (runtime), `Module.TA.BoneBurstEcs.Authoring` and `Module.TA.BoneBurstEcs.Tests.Editor`.
+Built in `ECS-0-25D-Platformer/Packages/com.module.ta-creator-boneburst-ecs/` (commit `c3d997e` in that repo), assemblies `Module.PB.BoneBurst.Ecs` (runtime), `Module.TA.BoneBurstEcs.Authoring` and `Module.TA.BoneBurstEcs.Tests.Editor`.
 
 *   `SkeletonBlobData`: the 28 arrays of Core's `SkeletonBlob` as `BlobArray<T>`, plus the scalars, the skins (bones, constraints, entries sorted by slot and name id), name ids from `BoneBurstKey.IdOf`, timeline property ids, event strings, physics constraint list. `SkeletonBlobView.Create(ref data)` fills Core's own `BlobView`, so the solvers are untouched.
 *   `BoneBurstBlobConverter.Convert(byte[] sbdata | BlobContent, allocator)` copies from Core's `BlobBuilder.BuildContent`; it never re-derives. It throws if two animation or skin names, or two placeholders of one slot, hash to the same id.
@@ -545,7 +545,7 @@ The owner chose route (a) of §21. The MonoBehaviour runtime is built into a Cor
 
 ```mermaid
 flowchart LR
-    M25["M0-25DPlatformer-ECS manifest<br/>+ boneburst front · pb-creator-base · unitask (file:)"] --> FRONT["Module.PB.BoneBurst.Unity<br/>BoneBurstSystem · BoneBurstSkeleton"]
+    M25["ECS-0-25D-Platformer manifest<br/>+ boneburst front · pb-creator-base · unitask (file:)"] --> FRONT["Module.PB.BoneBurst.Unity<br/>BoneBurstSystem · BoneBurstSkeleton"]
     HARN["Assets/BoneBurstMonoBenchmark<br/>harness: BurstCpu · BurstGpu"] -->|"SetDataBytes by reflection"| FRONT
     FRONT --> P1["CoreCLR player: mono runtime"]
     ECSB["Assets/BoneBurstEcsBenchmark"] --> P2["CoreCLR player: ECS runtime"]

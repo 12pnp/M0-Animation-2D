@@ -127,33 +127,37 @@ P16 (its own plan when started, nothing built):
 
 What P16 does not need from P15 is a gate: P15 can be built, measured and committed first. The reverse also holds: P15 should not wait for P16.
 
-## 8. Step 1 result: the baseline (2026-10-08)
+## 8. Step 1 result: the baseline (2026-10-08, redone at 720p)
 
-**Done.** Player `M0-25DPlatformer-ECS/Build/macOS_BoneBurstEcsBenchmark_57` built from the unmodified ECS package (HEAD `f99cf49`, P14; 10 s, 0 errors) and kept as the "A" build for every later A/B. Runner: ABBA over two repeats (the second in reverse order), Apple M5 Pro, Metal, 1920×1080, vsync off, CoreCLR release, 60 warm-up and 600 measured frames; first pass with the shell timers off, second pass with `-shell 1`. The raw per-run CSVs are in the session's scratchpad (`p15_baseline.py`, `base57/`), not committed. **Load caveat:** the machine carried another session's player loop; load before the runs was 5 to 8 for the timers-on pass and 6 to 14 for the timers-off pass (its second repeat ran at 10 to 14), so the frame figures below are not claims under about 10%, the second repeat of the timers-off pass is the noisier one, and the timers-on pass (load 5 to 7) is the cleaner. Three orphaned `vitest` runs (44 hours at 100% CPU each) were found and stopped before the runs.
+**Done, and redone.** The first baseline (build 57) ran at 1920×1080, which breaks the owner's rule that every player build is **1280×720, windowed, not resizable** (CLAUDE.md, "Player builds", 2026-10-08); the session had started from an older copy of that file. It is **void** and not kept. The build menus now set 720p and restore the project's settings, the benchmark players call `Screen.SetResolution(1280, 720, Windowed)` at start, every result row has a `resolution` column, and the runner passes 720p. The earlier phases' figures (P12 to P14, §21 to §24 of the ECS plan) were taken at 1080p and are not comparable with any figure below; the next phase to compare with them should say so.
+
+**The baseline:** player `ECS-0-25D-Platformer/Build/macOS_BoneBurstEcsBenchmark_59` (the unmodified package at HEAD `f99cf49`, P14, plus the 720p and `resolution` changes in the benchmark project only), kept as the "A" build for every later A/B. ABBA over two repeats (the second reversed), Apple M5 Pro, Metal, **1280×720**, vsync off, CoreCLR release, 60 warm-up and 600 measured frames; one pass with the shell timers off, one with `-shell 1`. Raw CSVs are in the session scratchpad (`p15_baseline.py`, `base59/`), not committed.
+
+**Load caveat, which is large:** another session's player loop and a repo scan ran during these runs; the load average before the runs ranged **8.7 to 26.4**. The two runs of a configuration differ by up to 25% (EcsGpu 2000 idle 2.68 and 3.40 ms). Frame figures here are indications only, not claims under about 25%; the per-system timers are CPU time on one thread and move less. Before the gate run the baseline pass is repeated on a quiet machine (load under 4), or both builds are run in the same ABBA session, which is the plan's method anyway.
 
 Frame time, timers off (median of the two runs, ms; the runs in brackets):
 
 | | EcsGpu | EcsCpu |
 |---|---|---|
-| idle × 2000 | 2.89 [2.88, 2.90] | 4.99 [4.50, 5.49] |
-| switch × 2000 | 4.60 [5.00, 4.19] | 6.55 [6.40, 6.70] |
-| switch × 500 | 1.76 [2.00, 1.51] | 2.35 [2.41, 2.29] |
-| switch × 100 | 0.50 [0.50, 0.50] | 0.65 [0.70, 0.60] |
+| idle × 2000 | 3.04 [2.68, 3.40] | 4.36 [4.41, 4.31] |
+| switch × 2000 | 4.66 [4.31, 5.01] | 6.05 [5.70, 6.40] |
+| switch × 500 | 1.71 [1.50, 1.91] | 2.25 [2.10, 2.40] |
+| switch × 100 | 0.60 [0.50, 0.71] | 0.70 [0.60, 0.80] |
 
-Timers on, 2000 skeletons (median of two runs, ms per frame, per system):
+Timers on, 2000 skeletons (median of two runs, ms per frame):
 
-| | animation | requests | update | apply | stage | after | pose | frame (timers on) |
-|---|---|---|---|---|---|---|---|---|
-| Gpu idle | **0.73** | 0.053 | 0.121 | 0.029 | 0.043 | **0.17** | 1.11 | 2.76 |
-| Cpu idle | 0.74 | 0.044 | 0.127 | 0.027 | 0.037 | 0.20 | 1.66 | 4.45 |
-| Gpu switch | **1.84** | 0.058 | 0.212 | 1.03 | 0.044 | **0.39** | 1.48 | 4.40 |
-| Cpu switch | 1.79 | 0.049 | 0.244 | 0.96 | 0.038 | 0.40 | 1.96 | 5.90 |
+| | animation | after | pose | `Apply` | frame |
+|---|---|---|---|---|---|
+| Gpu idle | **0.79** | **0.18** | 1.19 | 0.03 | 3.12 |
+| Cpu idle | 0.85 | 0.23 | 2.14 | 0.03 | 5.41 |
+| Gpu switch | **2.03** | **0.41** | 1.64 | 1.10 | 4.90 |
+| Cpu switch | 2.03 | 0.44 | 2.21 | 1.12 | 6.60 |
 
-What it says, against §1:
+What it says, against §1 (the readings of the void 1080p run, which this run agrees with):
 
-*   **The plumbing reading holds.** Idle, the four per-entity phase timers add up to 0.24 ms against 0.73 for the system: about 0.5 ms is the loop around them (lookups, copies, and the timers' own cost, which the timers-off frame times bound: the frame is the same with them off).
-*   **Switching: `Apply` is the cost,** 1.0 of 1.8 ms, as the plan said. Update 0.2, the rest plumbing.
-*   **The after-animation system is not small:** 0.17 to 0.20 ms idle and 0.39 to 0.40 ms switching, about a fifth of the animation system's cost, for work that is nearly all skipping unstepped instances. That is why §E2 folds it in and the gate counts it.
-*   **Frame share at 2000 idle (GPU route):** animation 0.73 plus after 0.17 is 0.90 of 2.76 ms, a third of the frame; at 2000 switching, 2.23 of 4.40 ms, half.
+*   **Idle, the plumbing is most of the animation system:** `Apply` is 0.03 ms and the system is 0.79; the four phase timers account for about a third of it.
+*   **Switching: `Apply` is about 1.1 of 2.0 ms.**
+*   **The after-animation system is a fifth of the animation system's cost** (0.18 idle, 0.41 switching), for work that is nearly all skipping unstepped instances: §E2 folds it in and the gate counts it.
+*   **Frame share at 2000 (GPU route):** animation plus after is 0.97 of 3.12 ms idle (a third) and 2.44 of 4.90 ms switching (half).
 
-**Targets (the gate, §5, with the after-animation figure added):** animation 0.73 to 0.40 ms or less idle and 1.84 to 1.0 or less switching; after-animation 0.17 to 0.09 or less idle and 0.39 to 0.20 or less switching; together at least 0.5 ms off the idle frame and 1.0 ms off the switching frame at 2000, in an ABBA run against build 57.
+**Targets (the gate, §5, with the after-animation figure added):** animation 0.79 to 0.40 ms or less idle and 2.03 to 1.0 or less switching; after-animation 0.18 to 0.09 or less idle and 0.41 to 0.20 or less switching; together at least 0.5 ms off the idle frame and 1.0 ms off the switching frame at 2000 skeletons, in an ABBA run against build 59 at 720p, load noted.
