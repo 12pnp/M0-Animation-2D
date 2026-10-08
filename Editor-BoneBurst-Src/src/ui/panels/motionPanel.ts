@@ -705,11 +705,7 @@ export class MotionPathPanel {
     if (!can) return;
     const line = (text: string): void => { const p = document.createElement("p"); p.textContent = text; this.card.append(p); };
     const btn = (text: string, title: string, run: () => void, primary = false): void => { const b = this.button(text, title); if (primary) b.classList.add("primary"); b.addEventListener("click", run); this.card.append(b); };
-    if (this.tab === "keys" && raw) {
-      line(`${bone} uses its key frames. Its TwinSpline is kept, not used.`);
-      btn("Use TwinSpline", "Switch the bone to its TwinSpline (the key frames are kept)", () => this.setMode("twin"), true);
-      this.card.hidden = false;
-    } else if (this.tab === "twin" && !raw) {
+    if (this.tab === "twin" && !raw) {
       const keys = translateKeyCount(a!, bone!);
       line(`No TwinSpline for ${bone} in ${a!.name}.`);
       btn("Create new", "Make a TwinSpline for this bone: node 1 is where it is, node 2 that plus an offset", () => void this.enterDraw(), true);

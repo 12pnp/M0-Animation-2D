@@ -35,7 +35,7 @@ test("the tab opens by what the bone has: keys open Key frame (no path editor), 
   await expect(selected(panel)).toHaveText("Key frame");
 });
 
-test("Create new on the card makes the path; the Key frame tab then uses the keys and says the TwinSpline is kept, with Use TwinSpline", async ({ page }) => {
+test("Create new on the card makes the path; the Key frame tab then uses the keys, with no card", async ({ page }) => {
   await open(page, "head");
   const panel = panelOf(page);
   await chooseParent(panel);
@@ -43,9 +43,9 @@ test("Create new on the card makes the path; the Key frame tab then uses the key
   await expect.poll(async () => (await path(page))?.bone).toBe("head");
   await expect(panel.locator(".lp-card")).toBeHidden();
   await panel.getByRole("tab", { name: "Key frame" }).click();
-  await expect(panel.locator(".lp-card")).toContainText("head uses its key frames. Its TwinSpline is kept, not used.");
+  await expect(panel.locator(".lp-card")).toBeHidden();
   await expect(panel.getByRole("button", { name: "Edit Path", exact: true })).toBeHidden();
-  await panel.locator(".lp-card").getByRole("button", { name: "Use TwinSpline" }).click();
+  await panel.getByRole("tab", { name: "TwinSpline" }).click();
   await expect(selected(panel)).toHaveText("TwinSpline");
   expect((await path(page))?.active).toBeUndefined();
 });
