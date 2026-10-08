@@ -150,7 +150,7 @@ test("Motion Path zooms with the wheel, pans only with the middle button (a left
   // The Fit button sits at the right end of the view bar, just above the canvas.
   const fit = await panel.locator(".lp-fit").boundingBox();
   expect(fit!.x + fit!.width).toBeGreaterThan(box.x + box.width - 14);
-  expect(fit!.y + fit!.height).toBeLessThanOrEqual(box.y + 2);
+  expect(fit!.y).toBeGreaterThanOrEqual(box.y + box.height - 2);
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.mouse.wheel(0, -400);
   await expect.poll(picture).not.toBe(whole);

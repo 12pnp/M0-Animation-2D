@@ -12,6 +12,8 @@ import { toStyle } from "./pageScale";
 export interface OpenHost {
   /** The browser's own picker (or the file input). */
   browse(): void;
+  /** Samples listed first, whatever the browser kept. */
+  readonly samples?: readonly { name: string; open(): Promise<void> }[];
   /** Open a project file, remembering its handle when it has one. */
   openFile(file: File, handle: ProjectFile | null): Promise<void>;
 }
@@ -121,8 +123,8 @@ export class OpenDialog {
 
   private showRecent(): void {
     this.shown = null;
-    this.rows = recent.list.map((r: Recent) => ({ name: r.name.replace(/\.bbdata$/i, ""), open: () => this.openRecent(r) }));
-    this.note.textContent = this.rows.length ? "" : "No recent projects yet. Projects you open or save in Chrome or Edge appear here; Browse finds one anywhere.";
+    this.rows = [...(this.host.samples ?? []), ...recent.list.map((r: Recent) => ({ name: r.name.replace(/\.bbdata$/i, ""), open: () => this.openRecent(r) }))];
+    this.note.textContent = recent.list.length ? "" : "No recent projects yet. Projects you open or save in Chrome or Edge appear here; Browse finds one anywhere.";
     this.drawFiles();
     this.drawFolders();
   }

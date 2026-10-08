@@ -401,7 +401,8 @@ test("right-click a number: Set to Origin starts the ring there and goes round i
   expect(after.map((n) => [n.x, n.y])).toEqual([before[2], before[3], before[0], before[1]].map((n) => [n!.x, n!.y]));
   await expect(page.locator(".message")).toContainText("starts at 2");
   // An open path has two ends: no other origin.
-  await panel.getByRole("checkbox", { name: "Closed", exact: true }).uncheck();
+  await panel.getByRole("button", { name: "TwinSpline menu" }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Closed" }).click();
   await reds(page).nth(1).click({ button: "right" });
   await expect(page.getByRole("menuitem", { name: "Set 4 to Origin" })).toBeDisabled();
 });
@@ -496,7 +497,8 @@ test("Duration is set in Motion Path in seconds, with the frames it makes at the
   await duration.press("Enter");
   await duration.blur();
   await expect(duration).toHaveValue("1.25");
-  await panel.getByRole("checkbox", { name: "Closed", exact: true }).uncheck();
+  await panel.getByRole("button", { name: "TwinSpline menu" }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Closed" }).click();
   await expect.poll(async () => (await path(page))!.closed).toBe(false);
   expect((await path(page))!.duration).toBe(1.25);
 });
@@ -627,7 +629,8 @@ test("the path plays on its own clock with no keys and no bake: Play moves the b
   await duration.fill("0.2");
   await duration.press("Enter");
   await duration.blur();
-  await panel.getByRole("checkbox", { name: /Loop/ }).uncheck();
+  await panel.getByRole("button", { name: "TwinSpline menu" }).click();
+  await page.getByRole("menuitemcheckbox", { name: "Loop" }).click();
   await expect.poll(async () => (await path(page))!.loop).toBe(false);
   await panel.getByRole("button", { name: /Play$/ }).click();
   await expect.poll(async () => (await clock()).playing).toBe(false);

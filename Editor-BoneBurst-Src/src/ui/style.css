@@ -935,10 +935,14 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 .lp-viewbar .lp-gap:has(+ [hidden]) { display: none; }
 .lp-viewbar button { padding: 1px 8px; font-size: 12px; }
 .lp-viewbar .lp-fit { padding: 0; }
-.lp-viewbar button[hidden], .lp-viewbar .lp-clock[hidden] { display: none; }
+.lp-viewbar button[hidden], .lp-viewbar .lp-clock[hidden], .lp-viewbar .lp-field[hidden] { display: none; }
+.lp-viewbar .lp-field { margin-left: 8px; white-space: nowrap; }
 
 /* The path bar keeps its two rows whatever the tab: controls and the node count, or a hint and an empty line. */
 .lp-sect[hidden] { display: none; }
 .lp-motion .lp-hint { flex: 1 0 100%; color: var(--muted); font-size: 12px; }
 .lp-hint[hidden] { display: none; }
 .lp-tabs button:disabled, .lp-tabs .lp-layer:disabled { opacity: 0.45; }
+
+/* The Stage line under the speed graph. */
+.lp-stagerow { flex: none; display: flex; align-items: center; padding: 2px 0; }

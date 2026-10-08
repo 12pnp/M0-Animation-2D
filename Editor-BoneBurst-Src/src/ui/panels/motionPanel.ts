@@ -209,14 +209,10 @@ export class MotionPathPanel {
   private readonly motionBtns: Record<"del", HTMLButtonElement>;
   /** The duration in seconds, and whether the spline is a ring. */
   private readonly durationField = document.createElement("input");
-  private readonly closedBox = document.createElement("input");
-  private readonly closedLabel = document.createElement("label");
   /** The path's own Play (docs/TWO-SYSTEMS-PLAN.md): Play or Pause, Stop, whether the path loops, and its clock. */
   private readonly playBtn = document.createElement("button");
   private readonly stopBtn = document.createElement("button");
   private readonly bothBtn = document.createElement("button");
-  private readonly loopBox = document.createElement("input");
-  private readonly loopLabel = document.createElement("label");
   private readonly clockLabel = document.createElement("span");
   private readonly durationBox = document.createElement("label");
   private readonly durationHint = document.createElement("span");
@@ -258,6 +254,7 @@ export class MotionPathPanel {
   private stageColour = "#ff9f1c";
   private readonly stageBtn = document.createElement("button");
   private readonly stageSwatch = document.createElement("button");
+  private readonly stageRow = document.createElement("div");
   /** The Stage's redraw: called when the line is toggled or recoloured. */
   onStageLine: () => void = () => {};
   /** The numbers of the spline nodes picked together with Command + click (for Merge); empty = just the picked node. */
@@ -356,7 +353,10 @@ export class MotionPathPanel {
       this.tabBtns[id] = { box, main, more };
     }
     this.card.className = "lp-card";
-    this.head.append(this.title, this.tabs, this.group("Stage line", [this.stageBtn], this.stageSwatch), tools);
+    this.head.append(this.title, this.tabs, tools);
+    // The Stage line sits under the speed graph, where its colour is also the graph's line.
+    this.stageRow.className = "lp-stagerow";
+    this.stageRow.append(this.group("Stage line", [this.stageBtn], this.stageSwatch));
     this.body.className = "lp-body";
     this.note.className = "empty lp-note";
     const fit = iconButton(this.button("Fit", "Fit the whole path in the panel (double-click does the same)"), "fit", false);
@@ -375,7 +375,7 @@ export class MotionPathPanel {
     // Beside the zoom: the path's transport, since it is the picture's playhead it moves (shown with a path, in the TwinSpline tab).
     const gap = document.createElement("span");
     gap.className = "lp-gap";
-    this.viewBar.append(zoomBtn("−", "Zoom out", 1 / 1.25), this.zoomLabel, zoomBtn("+", "Zoom in", 1.25), gap, this.playBtn, this.bothBtn, this.stopBtn, this.clockLabel, fit);
+    this.viewBar.append(zoomBtn("−", "Zoom out", 1 / 1.25), this.zoomLabel, zoomBtn("+", "Zoom in", 1.25), gap, this.playBtn, this.bothBtn, this.stopBtn, this.clockLabel, this.durationBox, fit);
     this.body.append(this.canvas, this.note, this.card);
     this.motionBar.className = "lp-motion";
     this.motionInfo.className = "lp-motion-info";
@@ -397,11 +397,6 @@ export class MotionPathPanel {
       if (extra) label.append(extra);
     };
     field(this.durationField, this.durationBox, "Duration (s)", "How long the path takes, in seconds: the bone is at the start at 0 and, for a ring, back there at the end. The frames shown beside it are at the animation's rate", "Duration", "0.05", "0.1", () => this.setDuration(), this.durationHint);
-    this.closedBox.type = "checkbox";
-    this.closedBox.addEventListener("change", () => this.setClosed(this.closedBox.checked));
-    this.closedLabel.className = "lp-field";
-    this.closedLabel.title = "A ring: the last spline node joins the first, so the path comes back to where it began (on by default)";
-    this.closedLabel.append(this.closedBox, " Closed");
     // The path's own Play: the path plays on its own clock, with no keys; Stop puts it back at its start.
     this.playBtn.type = "button";
     this.playBtn.className = "lp-play";
@@ -416,18 +411,13 @@ export class MotionPathPanel {
     this.stopBtn.addEventListener("click", () => this.session.stopPath());
     this.clockLabel.className = "lp-clock";
     this.clockLabel.title = "The path's own time in seconds";
-    this.loopBox.type = "checkbox";
-    this.loopBox.addEventListener("change", () => { const m = this.path(); if (m) this.timeEdit(withLoop(m, this.loopBox.checked), this.loopBox.checked ? "The path starts over at its end." : "The path stops at its end.", "Set the path's loop"); });
-    this.loopLabel.className = "lp-field";
-    this.loopLabel.title = "Whether the path's clock starts over when the run ends (on) or stops there (off)";
-    this.loopLabel.append(this.loopBox, " Loop");
     this.parentPick.className = "lp-parent";
     this.parentPick.setAttribute("aria-label", "Parent bone");
     this.parentPick.title = "The parent bone the path is relative to: its nodes are in that bone\'s space and follow it. Required before a path can be made";
     this.parentPick.addEventListener("change", () => this.chooseParent(this.parentPick.value));
     // Three sections: the path (parent, start, nodes), its time (total frames, ring), what to do with it (make keys, remove); then what it says.
     const section = (...kids: HTMLElement[]): HTMLElement => { const d = document.createElement("div"); d.className = "lp-sect"; d.append(...kids); return d; };
-    this.barSections = [section(this.parentPick, this.motionBtns.del), section(this.durationBox, this.closedLabel, this.loopLabel)];
+    this.barSections = [section(this.parentPick, this.motionBtns.del)];
     this.hint.className = "lp-hint";
     this.motionBar.append(...this.barSections, this.hint, this.motionInfo);
     this.motionBtns.del.addEventListener("click", () => this.removeNode());
@@ -449,7 +439,7 @@ export class MotionPathPanel {
     this.applyLower();
     this.splitDrag();
     this.speedEvents();
-    this.element.append(this.head, this.motionBar, this.viewBar, this.body, this.split, this.lower);
+    this.element.append(this.head, this.motionBar, this.body, this.viewBar, this.split, this.lower);
     new ResizeObserver(() => this.schedule()).observe(this.lower);
     // The canvas is as big as its box, whatever else the panel holds (the path window under it).
     new ResizeObserver(() => this.schedule()).observe(this.body);
@@ -608,10 +598,13 @@ export class MotionPathPanel {
 
   /** The TwinSpline tab's ⋮ menu: make a path or a node, make key frames from the path, or delete the path. */
   private twinMenu(): MenuItem[] {
-    const has = !!motionFor(this.session);
+    const has = !!motionFor(this.session), m = this.path();
     return [
       { label: "Create new TwinSpline", disabled: has, run: () => void this.enterDraw() },
       { label: "Add a spline node", disabled: !has, run: () => this.addNode() },
+      {},
+      { label: "Closed", checked: !!m?.closed, disabled: !m, run: () => { const c = this.path(); if (c) this.setClosed(!c.closed); } },
+      { label: "Loop", checked: !!m?.loop, disabled: !m, run: () => { const c = this.path(); if (c) this.timeEdit(withLoop(c, !c.loop), !c.loop ? "The path starts over at its end." : "The path stops at its end.", "Set the path's loop"); } },
       {},
       { label: "Create new Key frame from TwinSpline", disabled: !has, run: () => this.createKeysFromPath() },
       { label: "Delete TwinSpline data", disabled: !has, run: () => this.deletePathData() },
@@ -1252,8 +1245,6 @@ export class MotionPathPanel {
     this.motionBtns.del.hidden = !has;
     this.motionBtns.del.disabled = !m || m.nodes.length <= 2 || this.selNode < 0;
     this.durationBox.hidden = !has;
-    this.closedLabel.hidden = !has;
-    this.loopLabel.hidden = !has;
     this.playBtn.hidden = !has;
     this.stopBtn.hidden = !has;
     this.clockLabel.hidden = !has;
@@ -1272,8 +1263,6 @@ export class MotionPathPanel {
     if (m) {
       if (idle(this.durationField)) this.durationField.value = String(m.duration);
       this.durationHint.textContent = `(${Math.round(m.duration * this.session.fps)} frames at ${this.session.fps} fps)`;
-      this.closedBox.checked = m.closed;
-      this.loopBox.checked = m.loop;
     }
     this.renderStrip(m);
     if (!m) { this.motionInfo.textContent = "\u00a0"; return; }
@@ -1385,7 +1374,7 @@ export class MotionPathPanel {
     // Not under a field being typed in: it is drawn again once that is done.
     if (doc.activeElement instanceof HTMLInputElement && box.contains(doc.activeElement)) return;
     const i = this.selNode, n = m.nodes[i];
-    if (!n) { const hint = doc.createElement("span"); hint.className = "hint"; hint.textContent = "Press a number to see that node's data."; box.replaceChildren(hint); return; }
+    if (!n) { const hint = doc.createElement("span"); hint.className = "hint"; hint.textContent = "Press a number to see that node's data."; box.replaceChildren(hint, this.stageRow); return; }
     const s = this.session, label = nodeLabels(m)[i]!, h = handleOffsets(m.nodes, m.closed)[i]!, broken = n.bx !== undefined;
     const r4 = (v: number): number => Math.round(v * 1e4) / 1e4;
     const patch = (change: Partial<MotionNode>, why: string, pose = false): void => {
@@ -1450,7 +1439,7 @@ export class MotionPathPanel {
     fields.append(title,
       pair("Place", num(n.x, false, "Node x", (v) => patch({ x: v, y: n.y }, "Move a spline node", true)), num(n.y, false, "Node y", (v) => patch({ x: n.x, y: v }, "Move a spline node", true))),
       sRow, pair("Way out", ox, oy), pair(broken ? "Way in" : "Way in (mirror)", ix, iy), buttons);
-    box.replaceChildren(fields, this.speedColumn(doc));
+    box.replaceChildren(this.speedColumn(doc), this.stageRow, fields);
     this.drawSpeed();
   }
 
@@ -1636,7 +1625,7 @@ export class MotionPathPanel {
       g.globalAlpha = 1;
     });
     // The curve through the points.
-    g.strokeStyle = accent;
+    g.strokeStyle = this.stageColour;
     g.lineWidth = 2;
     g.lineJoin = "round";
     g.beginPath();
@@ -1651,7 +1640,7 @@ export class MotionPathPanel {
         if ((side === "in" && i === 0 && !m.closed) || (side === "out" && i === xs.length - 1 && !m.closed)) continue;
         const slope = side === "out" ? sl.out : sl.into, dx = kx, dy = -slope * ky, len = Math.hypot(dx, dy) || 1, sign = side === "out" ? 1 : -1;
         const hx = x + (sign * dx * LEG) / len, hy = y + (sign * dy * LEG) / len;
-        g.strokeStyle = accent;
+        g.strokeStyle = this.stageColour;
         g.lineWidth = 1;
         g.globalAlpha = on ? 1 : 0.55;
         g.beginPath(); g.moveTo(x, y); g.lineTo(hx, hy); g.stroke();

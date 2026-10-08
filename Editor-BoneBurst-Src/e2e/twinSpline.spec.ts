@@ -21,7 +21,7 @@ async function open(page: Page): Promise<void> {
 const nodes = (page: Page) => page.evaluate(() => (window as unknown as Live).boneburst.session.sidecar.motion[0]?.nodes ?? []);
 const dots = (page: Page) => page.evaluate(() => (window as unknown as Live).boneburst.motionPath.speedPoints);
 
-test("Adjust time is gone: Edit Path is the one mode, with Duration, Closed and Loop beside it, and the path's actions in the TwinSpline menu", async ({ page }) => {
+test("Adjust time is gone: Edit Path is the one mode, with Duration beside it, Closed and Loop in the TwinSpline menu, and the path's actions in the TwinSpline menu", async ({ page }) => {
   await open(page);
   const panel = page.locator(".panel.motion-path");
   await startEditPath(panel);
@@ -31,6 +31,8 @@ test("Adjust time is gone: Edit Path is the one mode, with Duration, Closed and 
   await panel.getByRole("button", { name: "TwinSpline menu" }).click();
   await expect(page.getByRole("menuitem", { name: "Create new Key frame from TwinSpline" })).toBeEnabled();
   await expect(page.getByRole("menuitem", { name: "Delete TwinSpline data" })).toBeEnabled();
+  await expect(page.getByRole("menuitemcheckbox", { name: "Closed" })).toBeEnabled();
+  await expect(page.getByRole("menuitemcheckbox", { name: "Loop" })).toBeEnabled();
   await page.keyboard.press("Escape");
 });
 

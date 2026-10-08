@@ -52,7 +52,12 @@ import { ViewMemory } from "./viewMemory";
 import { type PanelContent, Workspace } from "./workspace/workspace";
 
 /** The stickman the plan names for E2, served by the dev server from the test fixtures. */
-const STICKMAN = ["Stickman_IK.json", "Stickman_IK.atlas.txt", "Stickman_IK_tex.png"];
+import stickmanJson from "../../tests/fixtures/stickman/Stickman_IK.json?url";
+import stickmanAtlas from "../../tests/fixtures/stickman/Stickman_IK.atlas.txt?url";
+import stickmanTexture from "../../tests/fixtures/stickman/Stickman_IK_tex.png?url";
+
+/** The basic stickman, the Open dialog's sample: the files are the test fixture, bundled as they are. */
+const STICKMAN: readonly [string, string][] = [["Stickman_IK.json", stickmanJson], ["Stickman_IK.atlas.txt", stickmanAtlas], ["Stickman_IK_tex.png", stickmanTexture]];
 
 const TOOLS: ReadonlyArray<{ tool: Tool; label: string; shortcut: ShortcutId }> = [
   { tool: "move", label: "Move", shortcut: "toolMove" },
@@ -708,6 +713,7 @@ export function mountApp(root: HTMLElement): void {
   /** Open… shows this helper first: recent projects and folders; Browse goes on to the browser's picker. */
   const openDialog = new OpenDialog({
     browse: () => void openNative(),
+    samples: [{ name: "Stickman (basic sample)", open: () => openStickman() }],
     openFile: async (file, handle) => {
       await open([fileSource(file)], false, handle);
       if (handle && session.projectFile === handle) void recent.add(handle as RecentHandle);
@@ -842,15 +848,19 @@ export function mountApp(root: HTMLElement): void {
   hint.append(
     Object.assign(document.createElement("p"), { textContent: EDITOR_NAME }),
   );
+  // Driven by a test (Playwright sets webdriver) the start shows its fixture buttons; a person gets the Open dialog instead.
+  const driven = navigator.webdriver === true;
   if (import.meta.env.DEV) {
     // For inspecting the live editor from the browser console; not in a build.
     (window as unknown as { boneburst: unknown }).boneburst = { session, stage, motionPath: motionPanel, timeline, get workspace() { return workspace; } };
-    const dev = button("Open the stickman fixture", "Dev only: tests/fixtures/stickman", () => void openStickman());
-    const devNew = button("New skeleton on the stickman's atlas", "Dev only: tests/fixtures/stickman, atlas and image", () => void openStickman(false));
-    // Kept apart and quiet: they are for developing the editor, not for opening a rig.
-    const devRow = el("div", "dev");
-    devRow.append(dev, devNew);
-    hint.append(devRow);
+    if (driven) {
+      const dev = button("Open the stickman fixture", "Dev only: tests/fixtures/stickman", () => void openStickman());
+      const devNew = button("New skeleton on the stickman's atlas", "Dev only: tests/fixtures/stickman, atlas and image", () => void openStickman(false));
+      // Kept apart and quiet: they are for developing the editor, not for opening a rig.
+      const devRow = el("div", "dev");
+      devRow.append(dev, devNew);
+      hint.append(devRow);
+    }
   }
   refresh();
 
@@ -859,7 +869,12 @@ export function mountApp(root: HTMLElement): void {
   const autosaver = new Autosaver(session, prefs);
   autosaver.start();
   void readRecoveries().then((records) => {
-    if (!records.length) { autosaver.paused = false; return; }
+    if (!records.length) {
+      autosaver.paused = false;
+      // Nothing open and nothing kept: ask what to open.
+      if (!driven && !session.doc && !new URLSearchParams(location.search).has("open")) openDialog.open();
+      return;
+    }
     const offer = el("div", "recovery-bar");
     offer.setAttribute("role", "alert");
     const when = (r: RecoveryRecord) => new Date(r.savedAt).toLocaleString();
@@ -898,8 +913,7 @@ export function mountApp(root: HTMLElement): void {
 
   /** The stickman fixture; without its skeleton, a new skeleton on its atlas. */
   async function openStickman(withSkeleton = true): Promise<void> {
-    const sources = STICKMAN.filter((n) => withSkeleton || !n.endsWith(".json")).map((name): Source => {
-      const url = `/tests/fixtures/stickman/${name}`;
+    const sources = STICKMAN.filter(([n]) => withSkeleton || !n.endsWith(".json")).map(([name, url]): Source => {
       const get = async () => { const r = await fetch(url); if (!r.ok) throw new Error(`${url}: ${r.status}`); return r; };
       return { name, text: async () => (await get()).text(), blob: async () => (await get()).blob() };
     });
