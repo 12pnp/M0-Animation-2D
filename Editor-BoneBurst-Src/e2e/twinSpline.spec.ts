@@ -139,7 +139,7 @@ test("the line above the node numbers is dragged: the area under it grows and th
   await expect.poll(async () => Math.round((await lower.boundingBox())!.height)).toBe(Math.round(h0));
 });
 
-test("the speed graph: the cap on its ruler scrubs the playhead and says the length along the ring; the graph zooms and pans along the path; Node fits one section; each node has two legs that bend the curve", async ({ page }) => {
+test("the speed graph: the cap on its ruler scrubs the path's own clock and says the length along the ring; the graph zooms and pans along the path; Node fits one section; each node has two legs that bend the curve", async ({ page }) => {
   await page.setViewportSize({ width: 1500, height: 950 });
   await open(page);
   const panel = page.locator(".panel.motion-path"), canvas = panel.locator(".lp-speed-canvas");
@@ -149,13 +149,15 @@ test("the speed graph: the cap on its ruler scrubs the playhead and says the len
   await panel.locator(".lp-slots button.node").nth(0).click();
   await canvas.scrollIntoViewIfNeeded();
   const frame = () => page.evaluate(() => (window as unknown as { boneburst: { session: { frame: number } } }).boneburst.session.frame);
+  const pathTime = () => page.evaluate(() => (window as unknown as { boneburst: { session: { pathClock: { time: number } } } }).boneburst.session.pathClock.time);
   const handles = () => page.evaluate(() => (window as unknown as { boneburst: { motionPath: { speedHandles: { i: number; side: string; x: number; y: number }[] } } }).boneburst.motionPath.speedHandles);
   const box = async () => (await canvas.boundingBox())!;
-  // The cap: pressing the ruler (the band above the plot) puts the playhead there, a frame by the bone's own pace.
+  // The cap: pressing the ruler (the band above the plot) puts the path's clock there, at the bone's own pace; the animation's playhead stays.
   const b0 = await box();
-  expect(await frame()).toBe(0);
+  expect(await pathTime()).toBe(0);
   await page.mouse.click(b0.x + b0.width / 2, b0.y + 8);
-  await expect.poll(frame).toBeGreaterThan(0);
+  await expect.poll(pathTime).toBeGreaterThan(0.05);
+  expect(await frame()).toBe(0);
   // Every node has two legs (a ring): six handles for three nodes.
   await expect.poll(async () => (await handles()).length).toBe(6);
   // Bend: drag node 2's way-out leg up; its slope is stored, and the curve past the node changes.

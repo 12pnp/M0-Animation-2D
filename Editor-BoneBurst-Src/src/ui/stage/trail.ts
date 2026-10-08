@@ -1,4 +1,5 @@
 import { frameTime } from "@/model/timelines";
+import type { LocalPose } from "@/edit/boneKeys";
 import { boneMatrix, boneTip, parentMatrix, type Posed, type Poser } from "./posed";
 
 /** The space a trail is measured in: from a parent bone's joint (Parent: the bone chosen for the path, else the bone's own parent), or the skeleton's origin (World); both with the world's orientation. */
@@ -31,14 +32,29 @@ export function fromParent(p: Posed, bone: number, x: number, y: number, origin:
 }
 
 /**
+ * A trail of a bone a path drives (docs/TWO-SYSTEMS-PLAN.md): the key animation is held at `time` (the playhead), and frame `f` of the trail is
+ * the path's time `f / fps`: `drive` gives the local poses the paths make from the key pose at that path time.
+ */
+export interface DrivenTrail {
+  readonly time: number;
+  readonly drive: (p: Posed, t: number) => ReadonlyMap<string, LocalPose>;
+}
+
+/** The pose with the key animation at `driven.time` and the paths at path time `t`. */
+export function drivenPose(poser: Poser, skin: string | null, animation: string, driven: DrivenTrail, t: number): Posed {
+  const keys = poser.pose(skin, animation, driven.time, "none");
+  return poser.pose(skin, animation, driven.time, "none", driven.drive(keys, t));
+}
+
+/**
  * The trail of `bone` over `animation` (`duration` seconds at `fps`), or null when the rig has no
  * such bone. Poses without physics, as every still frame is.
  */
-export function boneTrail(poser: Poser, skin: string | null, animation: string, bone: string, fps: number, duration: number, space: TrailSpace, origin: string | null = null): BoneTrail | null {
+export function boneTrail(poser: Poser, skin: string | null, animation: string, bone: string, fps: number, duration: number, space: TrailSpace, origin: string | null = null, driven?: DrivenTrail): BoneTrail | null {
   const frames = Math.min(MAX_TRAIL_FRAMES, Math.max(0, Math.round(duration * fps)));
   const joint = new Float64Array((frames + 1) * 2), tip = new Float64Array((frames + 1) * 2);
   for (let f = 0; f <= frames; f++) {
-    const p = poser.pose(skin, animation, Math.fround(frameTime(f, fps)), "none"), i = p.bones.get(bone);
+    const p = driven ? drivenPose(poser, skin, animation, driven, frameTime(f, fps)) : poser.pose(skin, animation, Math.fround(frameTime(f, fps)), "none"), i = p.bones.get(bone);
     if (i === undefined) return null;
     const m = boneMatrix(p, i), [tx, ty] = boneTip(p, i);
     let j: [number, number] = [m[4], m[5]], t: [number, number] = [tx, ty];

@@ -718,3 +718,17 @@ test("making a path on a bone with keys: Cancel makes nothing; Delete removes it
   await expect.poll(async () => await count()).toBe(18);
   expect(await path(page)).toBeNull();
 });
+
+test("the picture follows the path's clock, not the animation's playhead: a dot on the path puts the path's clock there", async ({ page }) => {
+  await open(page);
+  const panel = panelOf(page);
+  await startEditPath(panel);
+  const live = () => page.evaluate(() => { const b = (window as unknown as { boneburst: { session: { frame: number; fps: number; pathClock: { time: number } }; motionPath: { grabPoints: { marks: number[] } } } }).boneburst; return { frame: b.session.frame, fps: b.session.fps, time: b.session.pathClock.time, marks: [...b.motionPath.grabPoints.marks] }; });
+  await expect.poll(async () => (await live()).marks.length).toBe(26);
+  const at = await live(), canvas = (await panel.locator(".lp-body canvas").boundingBox())!;
+  // The dots are the path's own frames (the path runs 0.5 s: 12 frames at 24 fps, 13 dots), not the animation's.
+  expect(at.marks.length / 2).toBe(13);
+  await page.mouse.click(canvas.x + at.marks[2 * 3]!, canvas.y + at.marks[2 * 3 + 1]!);
+  await expect.poll(async () => (await live()).time).toBeCloseTo(3 / at.fps, 5);
+  expect((await live()).frame).toBe(at.frame);
+});

@@ -154,6 +154,15 @@ Outside this project nothing changes in steps 1 to 7: the sidecar is not exporte
 - **Guards.** `e2e/motionPath.spec.ts`: Silence leaves the keys byte for byte; with a path the playhead moving over the keys no longer moves the bone; the badge shows; Remove path, Undo, Remove path again leaves the keys exactly as they were and the bone follows them again; Cancel makes nothing; Delete removes split timelines too, and one Undo brings the keys back and takes the path away. `tests/motionPath.test.ts`: `translateKeyCount`, `deleteTranslateKeys`.
 - **Known limits.** The picture's *Path* layer (the bone's trail over the animation) and Make keys' stray figure still read the key animation alone, so for a silenced bone *Path* shows what the keys would do, not the path (the *Spline* layer is the path). A key made on a silenced bone (Auto Key on the Stage, or an AI `set_keys`) is written and silenced like the rest: nothing warns yet.
 
+## Step 6 built (2026-10-08): the graph and the picture on the path's clock
+
+**Done.** `tsc`, 803 unit tests and all 138 browser tests pass; looked at only through the tests.
+
+- **The graph.** The cap is the path clock's place along the ring (`progressAtTime(m, pathTime(m, clock.time))`), its label still the length in the path's units. Pressing or dragging the ruler calls `Session.seekPath(t)` (`t` = the time the bone reaches that place, from the time map): the path's clock goes there, paused; the animation's playhead stays where it was.
+- **The picture.** For a bone with a path: the trail and its frame dots span the path's own time (`duration × fps` dots at `1/fps` apart, not the animation's length); the bone and its image are drawn from the driven pose (key animation at the playhead, the path at its clock: `drivenPose`, `DrivenTrail` in `ui/stage/trail.ts`); the lit dot is the path clock's frame; the tag reads "path frame N of M"; a press on a dot or on the tag's scrub sends the path clock (`seekPath(frame / fps)`); the onion ghosts are at the path's own times and "keyed only" has no keys to use; no dot is drawn larger for a key. A bone with no path is as it was.
+- Guards: `e2e/twinSpline.spec.ts` (the cap moves the path clock and leaves the animation's frame), `e2e/motionPath.spec.ts` (13 dots for a 0.5 s path at 24 fps, and a press on one puts the path clock on that frame while the animation's frame is unchanged).
+- Not done: the Stage's own overlay of the path trail is the Stage line (a spline in the world), which has no time marks; nothing to change there.
+
 ## Decided (2026-10-08, the owner)
 
 - **Q1 Where a path lives: the sidecar, as today.** The document stays byte-exact Spine JSON. Each path is shaped as plain numbers keyed by animation and bone, so moving it into the export later (the Unity plan, step 8) is only a writer change.

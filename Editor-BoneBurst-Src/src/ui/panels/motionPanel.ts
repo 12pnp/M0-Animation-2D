@@ -1,4 +1,4 @@
-import { breakLegs, clampSpeed, curveOf, handleOffsets, mergeNodes, midAfter, mirrorLegs, moveNode, multiplierOf, nodeLabels, nodeProgress, progressAtTime, renumberNodes, reversePath, setSpeedLegs, slopesOf, SPEED_MAX, SPEED_MIN, speedAt, speedOf, timeMap, withDuration, withLoop, withNode, withOrigin, withSpeedSlope } from "@/motion";
+import { breakLegs, clampSpeed, curveOf, handleOffsets, mergeNodes, midAfter, mirrorLegs, moveNode, multiplierOf, nodeLabels, nodeProgress, progressAtTime, renumberNodes, reversePath, setSpeedLegs, slopesOf, SPEED_MAX, SPEED_MIN, speedAt, speedOf, pathTime, timeMap, withDuration, withLoop, withNode, withOrigin, withSpeedSlope } from "@/motion";
 import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { EditRefused } from "@/edit/history";
 import { drawnVertices } from "@/engine/draw";
@@ -11,7 +11,7 @@ import { showContextMenu } from "../contextMenu";
 import type { MenuItem } from "../menubar";
 import { pickColour } from "../colourPopup";
 import type { MotionMemory } from "../viewMemory";
-import { makeKeysFromPath, currentNode, startMotionDeletingKeys, dropMotion, keepMotion, motionFor, nodeAfter, parentChoices, pathFromView, pathToView, poseAtNode, refBoneName, refMatrix, startMotion, toView } from "../motion";
+import { makeKeysFromPath, pathDrive, currentNode, startMotionDeletingKeys, dropMotion, keepMotion, motionFor, nodeAfter, parentChoices, pathFromView, pathToView, poseAtNode, refBoneName, refMatrix, startMotion, toView } from "../motion";
 import { keysAt } from "@/model/timelines";
 import { askChoice } from "../choiceDialog";
 import { translateKeyCount } from "@/edit/pathKeys";
@@ -23,7 +23,7 @@ import { axisLocked, constraintDriving, shiftedLocal } from "../stage/trailEdit"
 import { drawBackdrop } from "../stage/canvasBackdrop";
 import { NO_LOOK, type StageLook } from "../stage/look";
 import { type OnionOptions, onionFrames } from "../stage/onion";
-import { type BoneTrail, boneTrail, fromParent, type TrailSpace } from "../stage/trail";
+import { type BoneTrail, boneTrail, drivenPose, type DrivenTrail, fromParent, type TrailSpace } from "../stage/trail";
 
 /** The layers the panel can show: the bone's image, the bone itself, its path, and onion skin (the bone at frames either side of the playhead). */
 export type Layer = "image" | "bone" | "parentBone" | "parentImage" | "path" | "spline" | "length" | "onion" | "children" | "rotate" | "move" | "scale" | "shear";
@@ -167,7 +167,7 @@ export class MotionPathPanel {
   private zoom = 1;
   private pan = { x: 0, y: 0 };
   private dragging: { x: number; y: number } | null = null;
-  private cached: { doc: Skeleton; images: unknown; skin: string | null; animation: string | null; bone: string; space: TrailSpace; origin: string | null; trail: BoneTrail | null; extent: Box | null; children: boolean } | null = null;
+  private cached: { doc: Skeleton; images: unknown; skin: string | null; animation: string | null; bone: string; space: TrailSpace; origin: string | null; trail: BoneTrail | null; extent: Box | null; children: boolean; motion: MotionPath | undefined; kFrame: number } | null = null;
   private poser: { doc: Skeleton; images: unknown; value: Poser } | null = null;
   private queued = false;
   /** Each frame's mark on the canvas as last drawn, for a click. */
@@ -522,17 +522,30 @@ export class MotionPathPanel {
     return this.poser.value;
   }
 
+  /** What a path-driven trail or pose needs (docs/TWO-SYSTEMS-PLAN.md): the key animation held at the playhead, the path at its own time. */
+  private drivenOf(m: MotionPath): DrivenTrail {
+    const s = this.session;
+    return { time: Math.fround(frameTime(s.frame, s.fps)), drive: (p, t) => pathDrive(s.doc, [m], m.animation, p, t) };
+  }
+
+  /** The path's frame (at the animation's rate) the path clock is at, held to the trail. */
+  private pathFrame(m: MotionPath, trail: BoneTrail): number {
+    return Math.min(trail.frames, Math.round(pathTime(m, this.session.pathClock.time) * trail.fps));
+  }
+
   /** The trail of the selected bone in the animation shown, worked out again only when the document, skin, animation, bone or space changed. */
   private trail(): { trail: BoneTrail | null; bone: string; extent: Box | null } | string {
     const s = this.session, doc = s.closedDoc(), anim = s.animation, bone = s.selectedBone;
     if (!doc) return "Nothing open.";
     if (bone === null) return anim ? "Select a bone to see its path." : "Select a bone to see it on the setup pose.";
-    const name = anim?.name ?? null, c = this.cached;
-    if (!c || c.doc !== doc || c.images !== s.images || c.skin !== s.skin || c.animation !== name || c.bone !== bone || c.space !== this.space || c.origin !== this.originName() || c.children !== this.show.children) {
+    const name = anim?.name ?? null, c = this.cached, m = anim ? motionFor(s) : undefined;
+    // A bone a path drives has the path's trail (over the path's time), and the key playhead matters to it only through the parent's place.
+    const kFrame = m ? s.frame : 0;
+    if (!c || c.doc !== doc || c.images !== s.images || c.skin !== s.skin || c.animation !== name || c.bone !== bone || c.space !== this.space || c.origin !== this.originName() || c.children !== this.show.children || c.motion !== m || c.kFrame !== kFrame) {
       const poser = this.posers();
-      const origin = this.originName(), trail = anim ? boneTrail(poser, s.skin, anim.name, bone, s.fps, s.length(anim), this.space, origin) : null;
+      const origin = this.originName(), trail = anim ? boneTrail(poser, s.skin, anim.name, bone, s.fps, m ? m.duration : s.length(anim), this.space, origin, m ? this.drivenOf(m) : undefined) : null;
       const extent = extentOf(poser, s.skin, name, bone, this.space, origin, s.fps, trail?.frames ?? 0, this.show.children);
-      this.cached = { doc, images: s.images, skin: s.skin, animation: name, bone, space: this.space, origin, trail, extent, children: this.show.children };
+      this.cached = { doc, images: s.images, skin: s.skin, animation: name, bone, space: this.space, origin, trail, extent, children: this.show.children, motion: m, kFrame };
       // New content: shown whole.
       if (!c || c.bone !== bone || c.animation !== name || c.space !== this.space || c.origin !== origin) { this.zoom = 1; this.pan = { x: 0, y: 0 }; this.hold = false; }
     }
@@ -578,7 +591,7 @@ export class MotionPathPanel {
     // The parent bone, when shown, is in view too (its joint and tip at the playhead).
     const parentName = this.originName();
     if ((this.show.parentBone || this.show.parentImage) && parentName && trail) {
-      const pp = this.posers().pose(s.skin, s.animation!.name, Math.fround(frameTime(Math.min(s.frame, trail.frames), trail.fps)), "none"), pi = pp.bones.get(parentName), bi = pp.bones.get(bone);
+      const pp = this.posers().pose(s.skin, s.animation!.name, Math.fround(frameTime(motionFor(s) ? s.frame : Math.min(s.frame, trail.frames), trail.fps)), "none"), pi = pp.bones.get(parentName), bi = pp.bones.get(bone);
       if (pi !== undefined && pp.rig.active[pi]) {
         // The parent and the bones under it on the way down to the bone (not the branches beside them).
         for (const b of bi === undefined ? [pi] : chainTo(pp, pi, bi)) {
@@ -613,9 +626,10 @@ export class MotionPathPanel {
     this.nodePts = [];
     this.handlePts = [];
     drawBackdrop(g, { width, height, left: cx + (-width / 2 - this.pan.x) / k, right: cx + (width / 2 - this.pan.x) / k, top: cy + (height / 2 + this.pan.y) / k, bottom: cy + (-height / 2 + this.pan.y) / k, scale: k, ...this.background(), background: stageBg, light: lightColour(stageBg) });
-    const here = trail ? Math.min(s.frame, trail.frames) : 0;
+    // A bone with a path is at the path's own time (the path clock), the rest of the rig at the key playhead (docs/TWO-SYSTEMS-PLAN.md).
+    const own = trail && s.animation ? motionFor(s) : undefined, here = trail ? (own ? this.pathFrame(own, trail) : Math.min(s.frame, trail.frames)) : 0;
     // At the playhead: the pose the image and the bone are drawn from (the setup pose in Pose mode).
-    const poser = this.posers(), p = trail ? poser.pose(s.skin, s.animation!.name, Math.fround(frameTime(here, trail.fps)), "none") : poser.pose(s.skin, null, 0, "none"), index = p.bones.get(bone);
+    const poser = this.posers(), p = trail ? (own ? drivenPose(poser, s.skin, s.animation!.name, this.drivenOf(own), here / trail.fps) : poser.pose(s.skin, s.animation!.name, Math.fround(frameTime(here, trail.fps)), "none")) : poser.pose(s.skin, null, 0, "none"), index = p.bones.get(bone);
     const to = (x: number, y: number): [number, number] => (this.space === "parent" && index !== undefined ? fromParent(p, index, x, y, this.originName()) : [x, y]);
     if (this.show.onion && trail && index !== undefined) this.drawOnion(g, poser, bone, trail, here, at, dpr, boneColour);
     const set = index === undefined ? [] : withChildren(p, index, this.show.children);
@@ -652,16 +666,17 @@ export class MotionPathPanel {
     g.fillStyle = text;
     g.font = `11px "JetBrains Mono", monospace`;
     g.textBaseline = "top";
-    g.fillText(trail ? `frame ${here} of ${trail.frames} · ${trail.fps} fps · ${Math.round(w * 10) / 10} × ${Math.round(h * 10) / 10}` : `setup pose · ${Math.round(w * 10) / 10} × ${Math.round(h * 10) / 10}`, 8, 6);
+    g.fillText(trail ? `${own ? "path " : ""}frame ${here} of ${trail.frames} · ${trail.fps} fps · ${Math.round(w * 10) / 10} × ${Math.round(h * 10) / 10}` : `setup pose · ${Math.round(w * 10) / 10} × ${Math.round(h * 10) / 10}`, 8, 6);
   }
 
   /** Onion skin: the bone (its image, and the bone) at the frames either side of the playhead, farthest first, past red and future green when colour-coded. */
   private drawOnion(g: CanvasRenderingContext2D, poser: Poser, bone: string, trail: BoneTrail, here: number, at: (x: number, y: number) => [number, number], dpr: number, boneColour: string): void {
-    const s = this.session, a = s.animation!, o = this.onion(), end = timeFrame(s.length(a), trail.fps);
-    const keyed = o.keyedOnly ? keyLists(a).flatMap((l) => l.keys.map((k) => timeFrame(keyTime(k), trail.fps))) : [];
-    const frames = onionFrames(here, end, o, keyed, s.loop).sort((x, y) => x.opacity - y.opacity);
+    const s = this.session, a = s.animation!, o = this.onion(), own = motionFor(s), end = own ? trail.frames : timeFrame(s.length(a), trail.fps);
+    // A bone with a path has no keys that count: its ghosts are at the path's own times.
+    const keyed = o.keyedOnly && !own ? keyLists(a).flatMap((l) => l.keys.map((k) => timeFrame(keyTime(k), trail.fps))) : [];
+    const frames = onionFrames(here, end, o, keyed, own ? own.loop : s.loop).sort((x, y) => x.opacity - y.opacity);
     for (const f of frames) {
-      const p = poser.pose(s.skin, a.name, Math.fround(frameTime(f.frame, trail.fps)), "none"), i = p.bones.get(bone);
+      const p = own ? drivenPose(poser, s.skin, a.name, this.drivenOf(own), f.frame / trail.fps) : poser.pose(s.skin, a.name, Math.fround(frameTime(f.frame, trail.fps)), "none"), i = p.bones.get(bone);
       if (i === undefined) continue;
       const to = (x: number, y: number): [number, number] => (this.space === "parent" ? fromParent(p, i, x, y, this.originName()) : [x, y]);
       const colour = o.colour ? (f.side === "before" ? PAST : FUTURE) : null;
@@ -767,7 +782,8 @@ export class MotionPathPanel {
     g.lineWidth = 2;
     trace(trail.joint);
     const keyed = new Set<number>(), marks: number[] = [];
-    for (const group of this.session.animation?.bones ?? []) if (group.name === bone) for (const t of group.timelines) for (const key of t.keys) keyed.add(Math.round((key.time ?? 0) * trail.fps));
+    // A bone with a path has no keys that count: no mark is larger.
+    for (const group of motionFor(this.session) ? [] : this.session.animation?.bones ?? []) if (group.name === bone) for (const t of group.timelines) for (const key of t.keys) keyed.add(Math.round((key.time ?? 0) * trail.fps));
     for (let f = 0; f <= trail.frames; f++) {
       const x = trail.joint[f * 2]!, y = trail.joint[f * 2 + 1]!;
       if (!Number.isFinite(x) || !Number.isFinite(y)) { marks.push(Number.NaN, Number.NaN); continue; }
@@ -1056,7 +1072,10 @@ export class MotionPathPanel {
       const d = Math.hypot(this.marks[f * 2]! - x, this.marks[f * 2 + 1]! - y);
       if (d < bestD) { best = f; bestD = d; }
     }
-    if (best >= 0 && best !== this.session.frame) this.session.seek(best);
+    if (best < 0) return;
+    const m = motionFor(this.session);
+    // A bone with a path: the dot is a time of the path, and the path's clock goes there (not the animation's playhead).
+    if (m) this.session.seekPath(best / this.session.fps); else if (best !== this.session.frame) this.session.seek(best);
   }
 
   /** The picker's bones (every bone but the selected one and those under it), and what is chosen. */
@@ -1536,7 +1555,7 @@ export class MotionPathPanel {
       g.fillText(String(labels[i]), Math.round(x) + 0.5, b + 4);
     });
     // The cap: the playhead, as on the Timeline, dragged along the ruler; it says how far along the ring the bone is, in the path's units, not the frame.
-    const hp = progressAtTime(m, s.frame / s.fps), hx = Math.round(X(hp)) + 0.5;
+    const hp = progressAtTime(m, pathTime(m, s.pathClock.time)), hx = Math.round(X(hp)) + 0.5;
     if (hx >= l - 1 && hx <= r + 1) {
       g.strokeStyle = DOT;
       g.setLineDash([3, 3]);
@@ -1617,7 +1636,7 @@ export class MotionPathPanel {
     const s = this.session, m = motionFor(s);
     if (!m) return;
     const p = Math.min(1, Math.max(0, this.gp(x)));
-    s.seek(Math.round(timeMap(m).time(p) * m.duration * s.fps));
+    s.seekPath(timeMap(m).time(p) * m.duration);
   }
 
   /**
@@ -2300,8 +2319,8 @@ export class MotionPathPanel {
       if (arrow !== null && this.beginEdit(x, y, "move", this.session.frame, arrow)) { this.grab(e); return; }
       const best = this.markAt(x, y);
       if (best >= 0) {
-        // With a path a dot only puts the playhead there; with none, drag it to move the bone at that frame.
-        if (motionFor(this.session)) { this.session.seek(best); return; }
+        // With a path a dot only puts the path's clock there; with none, drag it to move the bone at that frame.
+        if (motionFor(this.session)) { this.session.seekPath(best / this.session.fps); return; }
         if (this.beginEdit(x, y, "move", best)) { this.grab(e); return; }
         this.session.seek(best);
         return;

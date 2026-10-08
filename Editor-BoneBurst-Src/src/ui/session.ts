@@ -525,6 +525,14 @@ export class Session {
     this.playPath(true);
   }
 
+  /** Put the path clock on `t` seconds and hold it there (the animation's playhead is not moved). */
+  seekPath(t: number): void {
+    this.clearUnkeyed();
+    this.pathClock.playing = false;
+    this.pathClock.time = Math.max(0, t);
+    this.changed();
+  }
+
   /** Hold the path clock where it is. */
   pausePath(): void {
     if (!this.pathClock.playing) return;
