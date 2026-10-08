@@ -11,6 +11,10 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-08 — **ECS P16 step 6: the TwinSpline format document** (docs only)
+
+New [Doc/Format/TwinSpline.md](Format/TwinSpline.md): the file `name.twinspline.json` version 1 (fields, what is refused, what is set aside), the maths the editor and BoneBurst both compute (handles, curve, speed spline, time table, the point at a time), the baked float table, playback and mixing, how a path joins the skeleton (the appended `BoneTranslateSpline` kind, the float pool, property ids, not in `.sbdata`), how it is checked and what is open. The editor's `SPEC.md` §3 points to it. Nothing built or run; each statement was read back against the code. P16 is complete for the TwinSpline mode ([plan](Review/BoneBurst-ECS-P16-TwinSpline-Plan.md) §10).
+
 ### 2026-10-08 — **ECS P16 step 5: the owner's real TwinSpline export played end to end, and mixing checked** (the editor script is in `Editor-BoneBurst-Src/scripts`; the tests and the bake tool are in `ECS-0-25D-Platformer`)
 
 [BoneBurst-ECS-P16-TwinSpline-Plan.md](Review/BoneBurst-ECS-P16-TwinSpline-Plan.md) §9. `scripts/twin-e2e-fixture.ts` poses the supplied mix-and-match-pro export with the editor's own engine (the paths driving their bones as the Stage does) and writes every path bone's world place; `TwinSplineEndToEndTests` plays the same files through the ECS systems (export baked to an `.sbdata`, paths merged in) and compares: 108 poses of 9 animations, all within 0.05. `TwinSplineMixingTests` crossfades keyed animations into spline ones on the same bones, both ways, against the same crossfade with the paths baked to dense keys: within 0.05. A new .NET tool (`Tests/Tools~/BakeExport`) bakes a Spine export to `.sbdata` without Unity for the ECS project's test data. The ECS assembly passes 442 of 442; four deliberate bugs fail 1, 5, 2 and 1 tests. **Not verified:** the editor's Spine keys export played by BoneBurst; players (only the Editor ran); no isolated test of a path longer than its animation. The ECS code and test data are uncommitted in `ECS-0-25D-Platformer`.
