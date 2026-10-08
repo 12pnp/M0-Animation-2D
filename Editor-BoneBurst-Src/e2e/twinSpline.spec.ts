@@ -178,12 +178,17 @@ test("the speed graph: the cap on its ruler scrubs the path's own clock and says
   await page.mouse.move(b2.x + b2.width / 2, b2.y + b2.height / 2);
   await page.mouse.wheel(0, -400);
   await expect.poll(gap).toBeGreaterThan(before * 1.3);
-  // Pan by dragging empty graph: the points move sideways.
+  // A left drag on empty graph does not pan; a middle drag does: the points move sideways.
   const x0 = (await dots(page))[0]!.x, b3 = await box();
   await page.mouse.move(b3.x + b3.width / 2, b3.y + b3.height - 8);
   await page.mouse.down();
   await page.mouse.move(b3.x + b3.width / 2 + 60, b3.y + b3.height - 8, { steps: 4 });
   await page.mouse.up();
+  expect((await dots(page))[0]!.x).toBeCloseTo(x0, 0);
+  await page.mouse.move(b3.x + b3.width / 2, b3.y + b3.height - 8);
+  await page.mouse.down({ button: "middle" });
+  await page.mouse.move(b3.x + b3.width / 2 + 60, b3.y + b3.height - 8, { steps: 4 });
+  await page.mouse.up({ button: "middle" });
   await expect.poll(async () => (await dots(page))[0]!.x).toBeGreaterThan(x0 + 30);
   await panel.locator(".lp-speed-bar").getByRole("button", { name: "Fit" }).click();
   await expect.poll(gap).toBeCloseTo(before, 0);

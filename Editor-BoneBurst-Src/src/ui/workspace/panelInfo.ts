@@ -25,8 +25,8 @@ const INFO: Readonly<Record<PanelId, { readonly what: string; readonly use: read
     keys: [],
   },
   preview: {
-    what: "A place for the animation playing on its own. Reserved: not built yet.",
-    use: [],
+    what: "The animation playing on its own, with no tools over it: just the picture.",
+    use: ["Pick an animation (it follows the Timeline's until you choose one), then Play; Loop starts it over at its end.", "It has a clock of its own: the Timeline's playhead and the Stage do not move.", "Wheel zooms, a middle-button drag pans, Fit shows the whole rig."],
     keys: [],
   },
   reference: {

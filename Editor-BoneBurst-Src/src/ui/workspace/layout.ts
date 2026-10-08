@@ -24,7 +24,7 @@ const DEFAULTS: Readonly<Record<PanelId, readonly Placement[]>> = {
   stage: [{ referencePanel: "rigTree", direction: "right" }, { direction: "right" }],
   properties: [{ referencePanel: "stage", direction: "right" }, { direction: "right" }],
   timeline: [{ direction: "below" }],
-  preview: [{ referencePanel: "stage", direction: "right" }, { direction: "right" }],
+  preview: [{ referencePanel: "properties", direction: "within" }, { direction: "right" }],
   reference: [{ referencePanel: "properties", direction: "within" }, { direction: "right" }],
   ai: [{ referencePanel: "properties", direction: "within" }, { direction: "right" }],
   // Behind the rig panel: the default layout looks as before (E7 step 1).

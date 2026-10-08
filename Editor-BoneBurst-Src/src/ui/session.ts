@@ -119,6 +119,7 @@ export class Session {
   private tick = 0;
   private step: PhysicsMode = "none";
   private poser: { doc: Skeleton; value: Poser } | null = null;
+  private previewer: { doc: Skeleton; images: AtlasImages; value: Poser } | null = null;
   private posed: { key: string; motion?: unknown; value: Posed } | null = null;
   /** The animations whose Loop tick is off (docs/LOOP-PLAN.md); every other animation is a loop. Kept in the sidecar's view. */
   private loopOffSet: ReadonlySet<string> = new Set();
@@ -446,6 +447,20 @@ export class Session {
     if (!doc) return null;
     if (this.poser?.doc !== doc) this.poser = { doc, value: new Poser(doc, this.images) };
     return this.poser.value;
+  }
+
+  /**
+   * `animation` (null: the setup pose) at `time` seconds, posed by a rig of its own: the Preview panel plays on its own clock without
+   * touching the playhead or the pose the stage shows. Paths drive their bones from the same time; physics does not step.
+   */
+  previewPose(animation: string | null, time: number): Posed | null {
+    const doc = this.closedDoc();
+    if (!doc) return null;
+    if (this.previewer?.doc !== doc || this.previewer.images !== this.images) this.previewer = { doc, images: this.images, value: new Poser(doc, this.images) };
+    const poser = this.previewer.value, paths = animation !== null ? this.usedPaths(animation) : [];
+    if (animation === null || !paths.length) return poser.pose(this.skin, animation, time);
+    const keys = poser.pose(this.skin, animation, time);
+    return poser.pose(this.skin, animation, time, "none", pathDrive(doc, paths, animation, keys, time));
   }
 
   /** The unit bones are drawn in (`boneUnitOf`), worked out once for each open document and skin from its setup pose. */

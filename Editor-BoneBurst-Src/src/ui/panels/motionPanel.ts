@@ -1761,7 +1761,7 @@ export class MotionPathPanel {
     c.addEventListener("contextmenu", (e) => { e.preventDefault(); const [x, y] = at(e); this.graphMenu(x, y, e.clientX, e.clientY); });
     c.addEventListener("pointerdown", (e) => {
       const [x, y] = at(e), { t } = this.plot();
-      if (e.button === 1 || (e.button === 0 && !e.metaKey && y >= t && this.speedLegAt(x, y) === null && this.speedDotAt(x, y) < 0)) {
+      if (e.button === 1) {
         e.preventDefault();
         this.graphPan = { x: e.clientX, x0: this.gView.x0, x1: this.gView.x1 };
         c.setPointerCapture(e.pointerId);
@@ -1810,7 +1810,7 @@ export class MotionPathPanel {
       }
       if (this.capDrag) { this.scrubGraph(x); return; }
       if (this.legDrag) { this.dragLeg(x, y); this.schedule(); return; }
-      if (this.speedDrag === null) { c.style.cursor = y < this.plot().t ? "ew-resize" : this.speedLegAt(x, y) ? "pointer" : this.speedDotAt(x, y) >= 0 ? "ns-resize" : "grab"; return; }
+      if (this.speedDrag === null) { c.style.cursor = y < this.plot().t ? "ew-resize" : this.speedLegAt(x, y) ? "pointer" : this.speedDotAt(x, y) >= 0 ? "ns-resize" : ""; return; }
       const raw = this.speedAtY(y), v = e.shiftKey ? clampSpeed(Math.round(raw * 10) / 10) : Math.round(raw * 100) / 100;
       this.setSpeed(this.speedDrag, clampSpeed(v));
       this.schedule();

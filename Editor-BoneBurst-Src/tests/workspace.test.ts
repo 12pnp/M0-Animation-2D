@@ -62,7 +62,7 @@ describe("restoring a saved workspace", () => {
   it("puts a deferred panel back with the panel it was tabbed with when it arrives", () => {
     const r = restoreWorkspace(saved(), BUILT)!;
     expect(arrivalPlacement("ai", r.deferred, BUILT)).toEqual({ referencePanel: "properties", direction: "within" });
-    expect(arrivalPlacement("preview", r.deferred, BUILT)).toEqual({ referencePanel: "stage", direction: "right" });
+    expect(arrivalPlacement("preview", r.deferred, BUILT)).toEqual({ referencePanel: "properties", direction: "within" });
   });
   it("keeps deferring a panel across saves until it is built, then forgets the deferral", () => {
     const again = JSON.stringify({ ...JSON.parse(saved()), deferred: { ai: { tabWith: "properties" } } });

@@ -946,3 +946,11 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 
 /* The Stage line under the speed graph. */
 .lp-stagerow { flex: none; display: flex; align-items: center; padding: 2px 0; }
+
+/* The Preview panel: the picture only, with a slim bar. */
+.panel.preview { display: flex; flex-direction: column; min-height: 0; }
+.pv-bar { flex: none; display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.pv-bar button { padding: 1px 8px; font-size: 12px; }
+.pv-clock { margin-left: auto; font-family: var(--font-mono); color: var(--muted); }
+.pv-view { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.pv-canvas { position: absolute; inset: 0; display: block; }
