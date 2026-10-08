@@ -50,3 +50,33 @@ test("Export TwinSpline JSON writes a bone's path in its own file and takes its 
   const live = await page.evaluate(() => (window as unknown as Live).boneburst.session.doc.animations.find((a) => a.name === "run")!.bones!.find((b) => b.name === "hips")!.timelines.map((t) => t.name));
   expect(live.some((n) => /^translate/.test(n))).toBe(true);
 });
+
+test("Export Spine JSON bakes a bone that uses its path into translate keys, says so, and leaves the document and the sidecar alone", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  await page.locator(".stage-panel button.mode").click();
+  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head" }));
+  const panel = page.locator(".panel.motion-path");
+  await chooseParent(panel);
+  await panel.locator(".lp-card").getByRole("button", { name: "Create new" }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as Live).boneburst.session.sidecar.motion.length)).toBe(1);
+  const made = await page.evaluate(() => (window as unknown as Live).boneburst.session.sidecar.motion[0]!);
+  const saved = new Map<string, string>();
+  const dir = mkdtempSync(join(tmpdir(), "bake-"));
+  page.on("download", (d) => void d.saveAs(join(dir, d.suggestedFilename())).then(() => saved.set(d.suggestedFilename(), join(dir, d.suggestedFilename()))));
+  await page.getByRole("button", { name: "File", exact: true }).click();
+  await page.getByRole("menuitem", { name: /^Export Spine JSON/ }).click();
+  await expect(page.getByRole("contentinfo")).toContainText(/1 bone from their TwinSpline \(\d+ keys\)/, { timeout: 20_000 });
+  await expect.poll(() => [...saved.keys()].some((n) => /^[^.]+\.json$/.test(n))).toBe(true);
+  const skel = JSON.parse(readFileSync(saved.get([...saved.keys()].find((n) => /^[^.]+\.json$/.test(n))!)!, "utf8")) as Skel;
+  const head = skel.animations[made.animation]?.bones?.["head"]?.["translate"] as { time?: number }[] | undefined;
+  expect(head?.length).toBeGreaterThanOrEqual(2);
+  // The document still has no translate keys for the head; the sidecar still has its path.
+  const live = await page.evaluate((an) => (window as unknown as Live).boneburst.session.doc.animations.find((a) => a.name === an)!.bones?.find((b) => b.name === "head")?.timelines.map((t) => t.name) ?? [], made.animation);
+  expect(live.some((n) => /^translate/.test(n))).toBe(false);
+  expect(await page.evaluate(() => (window as unknown as Live).boneburst.session.sidecar.motion.length)).toBe(1);
+});

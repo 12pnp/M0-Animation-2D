@@ -3,7 +3,8 @@ import { encodePng } from "@/io/png";
 import { writeSkeleton } from "@/io/skeletonWrite";
 import { DEFAULT_MAX_STRAY, exportTwin, twinSummary, writeTwinSpline } from "@/edit/exportTwin";
 import { idbGet, idbSet } from "./idb";
-import { pathFromKeysOf } from "./motion";
+import { bakeSummary, exportDoc } from "./exportPaths";
+import { pathFromKeysOf, pathKeysOver } from "./motion";
 import type { Session } from "./session";
 
 const KEY = "unity-folder";
@@ -29,12 +30,12 @@ export interface Folder {
 export interface ExportFile { readonly name: string; readonly data: string | Uint8Array }
 
 /**
- * What an export makes of the motion (docs/UNITY-EXPORT-PLAN.md): `keys` writes the skeleton as it is; `twinspline` writes every bone with
+ * What an export makes of the motion (docs/UNITY-EXPORT-PLAN.md): `keys` writes the skeleton, a bone that uses its path with translate keys made from it; `twinspline` writes every bone with
  * translate motion as a path in `name.twinspline.json`, the skeleton without those bones' translate timelines.
  */
 export type ExportMode = "keys" | "twinspline";
 
-export interface ExportBundle { readonly files: ExportFile[]; /** What the mode did, for the status line and the AI; absent in `keys`. */ readonly note?: string }
+export interface ExportBundle { readonly files: ExportFile[]; /** What the mode did, for the status line and the AI; absent when nothing was baked or moved. */ readonly note?: string }
 
 /** The files an export writes, in order: the atlas and its pages, the TwinSpline file (`twinspline` mode), then the skeleton. */
 export async function exportBundle(session: Session, closed = true, mode: ExportMode = "keys"): Promise<ExportBundle> {
@@ -55,8 +56,19 @@ export async function exportBundle(session: Session, closed = true, mode: Export
     files.push({ name: `${session.name}.json`, data: writeSkeleton(out.skeleton) });
     return { files, note: twinSummary(out.report) };
   }
-  files.push({ name: `${session.name}.json`, data: writeSkeleton(doc) });
-  return { files };
+  // The project's own copy (`closed` off) keeps the document as it is; an export bakes the paths in use into keys.
+  if (!closed) {
+    files.push({ name: `${session.name}.json`, data: writeSkeleton(doc) });
+    return { files };
+  }
+  const poser = session.poserFor();
+  const baked = exportDoc(doc, session.sidecar.motion, (m, length) => {
+    if (!poser) throw new ExportRefused("Nothing is open to export.");
+    return pathKeysOver(poser, doc, session.skin, m, length, session.fps);
+  });
+  files.push({ name: `${session.name}.json`, data: writeSkeleton(baked.doc) });
+  const note = bakeSummary(baked.report);
+  return { files, ...(note ? { note } : {}) };
 }
 
 /** The files an export writes (`exportBundle` without the note). */
