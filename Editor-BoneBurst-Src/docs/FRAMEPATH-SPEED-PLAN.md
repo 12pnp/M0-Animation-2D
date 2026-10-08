@@ -117,3 +117,32 @@ Result: built as above. `motionPanel.ts` has `keyMode` / `setKeyLegs` with Mirro
 - **The strip** is drawn as the Timeline's top: its ruler (24 px, frame numbers on `--bg`, the same label steps from `timeline/layout.ts`'s `labelStep`), the green playhead tag with the time since the key before (`secondsSinceLastKey`), and under it the Timeline's row of span tabs, one between each two keys with its length ("4f · 0.17s"), the playhead's span lit; each key's ◆ sits between its tabs.
 - **The speed graph** is drawn as the Timeline's graph: no ruler or pink cap of its own (the strip above is its ruler), the panel's colour, the frame lines running down through it, past the end dimmed, a 1.5 px curve, square keys (white when picked), thin handles with small rings, and the green playhead line.
 - Checked in the browser on `hips`; the Motion Path e2e (36) passes.
+
+## Step 5: the three modes on the picture, a curved path (2026-10-09, the owner's sixth note)
+
+> now convert "FramePath" to can 3 mode
+
+The picture's path between keys gets the same three modes as the speed graph: **Plain** (straight lines to the keys either side), **Mirror** (two handles in line: a smooth curve through the key), **Break** (two free handles: a corner). One mode per key serves both views.
+
+```mermaid
+flowchart LR
+    H["key i: handle out (vector)<br/>handle in (vector)"] -->|"direction"| SHAPE["picture: the path's shape"]
+    H -->|"length ÷ (chord ÷ 3) − 1"| SPEED["speed graph: in / out speed"]
+    SHAPE -->|"drag a handle tip"| H
+    SPEED -->|"drag a point / leg"| H
+    H -->|"x and y value handles,<br/>time handles at thirds"| CURVE["Spine curve of each span"]
+```
+
+- **The model.** Each key has a handle out (to the span after it) and a handle in (from the span before), each a vector in the bone's translate units. A span from key *i* to *i + 1* is written with its time handles at a third and two thirds and its value handles at `key i + out` and `key i+1 + in`, on x and y each: with the same time handles on both channels, x(t) and y(t) share one parameter, so the span is exactly the 2D Bezier those four points make. A span whose handles lie on its chord at a third each way is the straight, even line, written as no curve.
+- **Speed is the handle's length.** The speed at a side is `|handle| ÷ (|chord| ÷ 3) − 1`, the chord being that side's span. On a straight span that is exactly step 1's speed, so files made since step 1 read the same. The speed graph changes only the length (the direction stays); the picture's handle tip changes direction and length, so the speed follows.
+- **Modes.** Plain: both handles on their chords at a third (straight, speed 0); the picture draws no handles. Mirror: the in handle points opposite the out handle, at the same speed. Break: each free. Read from the data: on the chords at speed 0 is Plain, opposite at equal speed is Mirror, else Break; a choice the data cannot show is kept by the panel as before.
+- **The picture** draws, for each key that is not Plain, a line from its dot to each handle's tip and a ring there (TwinSpline's look). A tip is dragged in the panel's space; the handle is that offset taken back through the parent bone's matrix at the key's frame. In Mirror the other handle turns to stay opposite and keeps the same speed.
+- **Reading other files.** A Spine curve whose time handles are not at the thirds reads its handle as the velocity it gives (value offset × (Δt ÷ 3) ÷ time offset); writing a handle puts the time handles at the thirds.
+- **Not in this step.** Moving a key's place remaps its spans' curves channel by channel as before (`settle` in `edit/keys.ts`), which can bend the handles; keeping them as vectors when a key moves comes later if needed.
+
+### Result (step 5)
+
+- `src/edit/keySpeed.ts` rewritten around handle vectors: `spanHandles`, `keyHandles`, `keyChords`, `setKeyHandles`; the speeds (`spanEnds`, `keySpeedPairs`, `setTranslateKeySpeeds`) are now the handles' lengths, and `spanSpeedSamples` the 2D speed along the curve. Step 1's tests pass unchanged, so files made since then read the same. Four new tests: handles read back, the bone passes the 2D Bezier's middle point at the middle time, a speed keeps a curved handle's direction, and a handle that is not two numbers is refused. Handles read back to four places (a third is a short float).
+- `motionPanel.ts`: `keyMode` reads Plain · Mirror · Break from the handles; `setKeyLegs` does Plain (handles back on the chords) and Mirror (the in handle turned opposite at the same speed); the picture draws each non-Plain key's handles (`drawKeyHandles`, through the parent's matrix at the key, cached per document) and a tip drags (`dragKeyHandle`; Mirror turns the other handle, Alt + drag breaks first).
+- e2e: `motionModes.spec.ts` checks that Mirror gives a key two handles on the picture, that dragging a tip curves both spans and turns the other handle, and that Plain makes both spans straight again (no curve) with no handles. vitest 848 and e2e 158 pass.
+- In the browser: on Stickman_IK's `hips` Mirror · Break · Plain switch, but no handles could be seen: key 5 sits on the same place as its neighbours (a chord of 0, so its handles have no length); a bone that travels shows the curve better.

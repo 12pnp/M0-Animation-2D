@@ -166,3 +166,29 @@ test("FramePath: Shift + click deletes a key, on the speed graph's point and on 
   await click("strip", 2);
   await expect.poll(async () => (await hipsKeys(page)).length).toBe(before - 2);
 });
+
+test("FramePath's modes on the picture: Mirror gives a key two handles in line and curves its spans; dragging a tip bends the path; Plain makes it straight again", async ({ page }) => {
+  await page.setViewportSize({ width: 1500, height: 950 });
+  await open(page, "hips");
+  const panel = panelOf(page);
+  await goToKey(page, 3);
+  type Tips = { boneburst: { motionPath: { keyHandlePoints: readonly { i: number; side: string; x: number; y: number }[] } } };
+  const tips = () => page.evaluate(() => (window as unknown as Tips).boneburst.motionPath.keyHandlePoints.filter((p) => p.i === 3));
+  const curves = () => page.evaluate(() => ((window as unknown as Live).boneburst.session.doc.animations[0]!.bones!.find((b) => b.name === "hips")!.timelines.find((t) => t.name === "translate")!.keys as { curve?: unknown }[]).slice(2, 4).map((k) => Array.isArray(k.curve)));
+  await expect.poll(async () => (await tips()).length).toBe(0);
+  await panel.getByRole("button", { name: "Mirror", exact: true }).click();
+  await expect.poll(async () => (await tips()).length).toBe(2);
+  // Drag the out handle's tip up on the picture: the path bends, and in Mirror the in handle turns with it.
+  const before = await tips(), out = before.find((p) => p.side === "out")!, box = (await panel.locator(".lp-body canvas").boundingBox())!;
+  await page.mouse.move(box.x + out.x, box.y + out.y);
+  await page.mouse.down();
+  await page.mouse.move(box.x + out.x + 5, box.y + out.y - 40, { steps: 4 });
+  await page.mouse.up();
+  await expect.poll(curves).toEqual([true, true]);
+  const after = await tips(), ain = after.find((p) => p.side === "in")!, bin = before.find((p) => p.side === "in")!;
+  expect(Math.hypot(ain.x - bin.x, ain.y - bin.y)).toBeGreaterThan(5);
+  await expect(panel.getByRole("button", { name: "Mirror", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await panel.getByRole("button", { name: "Plain", exact: true }).click();
+  await expect.poll(curves).toEqual([false, false]);
+  await expect.poll(async () => (await tips()).length).toBe(0);
+});

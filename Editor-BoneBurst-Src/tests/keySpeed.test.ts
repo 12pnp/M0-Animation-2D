@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keySpeedPairs, keySpeeds, setTranslateKeySpeed, setTranslateKeySpeeds, spanSpeedSamples, translateNodes } from "@/edit/keySpeed";
+import { keyHandles, keySpeedPairs, keySpeeds, setKeyHandles, setTranslateKeySpeed, setTranslateKeySpeeds, spanSpeedSamples, translateNodes } from "@/edit/keySpeed";
 import { plainJson } from "@/io/json";
 import { readSkeleton } from "@/io/skeletonRead";
 import { skeletonToJson } from "@/io/skeletonWrite";
@@ -93,5 +93,37 @@ describe("two speeds per key", () => {
 
   it("the ends have one side: the first key no in, the last no out", () => {
     expect(keySpeedPairs("hip", nodes(doc(THREE)))).toEqual([{ in: null, out: 0 }, { in: 0, out: 0 }, { in: 0, out: null }]);
+  });
+});
+
+describe("handles: the path's shape (step 5)", () => {
+  const LINE = [{ x: 0, y: 0 }, { time: 1, x: 30, y: 0 }, { time: 2, x: 60, y: 0 }];
+
+  it("a straight span's handles lie on its chord at a third; set ones read back", () => {
+    expect(keyHandles("hip", nodes(doc(LINE)))[1]).toEqual({ in: [-10, 0], out: [10, 0] });
+    const s = setKeyHandles("walk", "hip", 0, { out: [0, 12] })(doc(LINE));
+    expect(keyHandles("hip", nodes(s))[0]!.out).toEqual([0, 12]);
+    expect(nodes(s)[1]!.curve).toBeUndefined();
+  });
+
+  it("the span is the 2D Bezier of the key, its handles and the next key: the bone passes its middle point at the middle time", () => {
+    const s = setKeyHandles("walk", "hip", 1, { in: [-10, 15], out: [10, 15] })(doc(LINE));
+    // Span 0 → 1: P0 (0,0), P1 (10,0), P2 (30-10, 0+15), P3 (30,0); its middle is (P0 + 3 P1 + 3 P2 + P3) / 8.
+    const [x, y] = at(s, 0.5);
+    expect(x).toBeCloseTo((0 + 30 + 60 + 30) / 8, 0);
+    expect(y).toBeCloseTo((0 + 0 + 45 + 0) / 8, 0);
+  });
+
+  it("a speed set on a curved key keeps the handle's direction and sets its length", () => {
+    const s0 = setKeyHandles("walk", "hip", 1, { in: [-6, 8], out: [6, 8] })(doc(LINE));
+    const s = setTranslateKeySpeeds("walk", "hip", 1, { out: 2 })(s0);
+    const out = keyHandles("hip", nodes(s))[1]!.out!;
+    expect(out[1] / out[0]).toBeCloseTo(8 / 6, 4);
+    expect(Math.hypot(out[0], out[1])).toBeCloseTo(30, 3);
+    expect(keySpeedPairs("hip", nodes(s))[1]!.out).toBeCloseTo(2, 4);
+  });
+
+  it("refuses a handle that is not two numbers", () => {
+    expect(() => setKeyHandles("walk", "hip", 0, { out: [Number.NaN, 0] })(doc(LINE))).toThrow(/two numbers/);
   });
 });

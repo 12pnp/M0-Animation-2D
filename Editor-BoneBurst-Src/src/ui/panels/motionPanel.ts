@@ -13,12 +13,12 @@ import { pickColour } from "../colourPopup";
 import type { MotionMemory } from "../viewMemory";
 import { makeKeysFromPath, pathDrive, pathFromKeys, currentNode, dropMotion, keepMotion, motionFor, nodeAfter, parentChoices, pathFromView, pathToView, poseAtNode, refBoneName, refMatrix, startMotion, toView } from "../motion";
 import { deleteTranslateKeys, translateKeyCount } from "@/edit/pathKeys";
-import { keySpeedPairs, setTranslateKeySpeeds, spanSpeedSamples, translateNodes } from "@/edit/keySpeed";
+import { keyChords, keyHandles, keySpeedPairs, setKeyHandles, setTranslateKeySpeeds, spanSpeedSamples, translateNodes, type Vec } from "@/edit/keySpeed";
 import { deleteKeys, setKey } from "@/edit/keys";
 import { localPoint, pageScale } from "../pageScale";
 import { labelStep, RULER, secondsSinceLastKey } from "../timeline/layout";
 import type { Session } from "../session";
-import { type Matrix, type Point, localRotation, scaleAlong, scaleFactors, shearAlong, shearDelta, spaceAxes, tidy, turn, turnSign } from "../stage/gizmo";
+import { type Matrix, moveDelta, type Point, localRotation, scaleAlong, scaleFactors, shearAlong, shearDelta, spaceAxes, tidy, turn, turnSign } from "../stage/gizmo";
 import { animatedLocal, boneMatrix, boneTip, parentMatrix, type Posed, Poser } from "../stage/posed";
 import { axisLocked, constraintDriving, shiftedLocal } from "../stage/trailEdit";
 import { drawBackdrop } from "../stage/canvasBackdrop";
@@ -257,6 +257,10 @@ export class MotionPathPanel {
   /** FramePath keys whose mode was chosen where the file cannot show it (Mirror or Break at 0 and 0, Break on equal speeds), and for which bone. */
   private keyModes = new Map<string, "mirror" | "break">();
   private keyBrokenFor = "";
+  /** FramePath's handles on the picture as last drawn (with the key's joint in the panel's space and its parent matrix), the one dragged, and the parent matrices at the keys. */
+  private keyHandlePts: { i: number; side: "in" | "out"; x: number; y: number; jx: number; jy: number; m: Matrix }[] = [];
+  private keyHandleDrag: { i: number; side: "in" | "out"; jx: number; jy: number; m: Matrix } | null = null;
+  private keyMats: { doc: unknown; sig: string; mats: (Matrix | null)[] } | null = null;
   /** FramePath's frame strip: each key's diamond as last drawn. */
   private stripDots: { i: number; x: number }[] = [];
   /** A key under the pointer with Shift held: drawn red, and a click deletes it (docs/FRAMEPATH-SPEED-PLAN.md, step 3). */
@@ -894,6 +898,7 @@ export class MotionPathPanel {
     // The spline is its own layer: it shows with the bone's path off, and the path with the spline off.
     // The spline's curve, nodes and handles are in the colour set for the Stage's line (the swatch in the header).
     if (trail) this.drawMotion(g, at, this.stageColour);
+    if (trail && this.tab === "keys") this.drawKeyHandles(g, trail, at, this.stageColour);
     if (trail && index !== undefined && p.rig.active[index] && !constraintDriving(s.doc!, bone)) {
       if (!this.path() && this.show.move) this.drawArrows(g, p, index, to, at);
       if (this.show.rotate) this.drawHandle(g, p, index, to, at, accent);
@@ -1521,31 +1526,116 @@ export class MotionPathPanel {
     return `${s.animation?.name}/${s.selectedBone}/${keyTime(k)}`;
   }
 
-  /** Key `i`'s mode (docs/FRAMEPATH-SPEED-PLAN.md, step 3, revised): in ≠ out is Break, both 0 Plain, else Mirror, unless chosen by hand where the file cannot show it. */
+  /**
+   * Key `i`'s mode (docs/FRAMEPATH-SPEED-PLAN.md, step 5), read from its handles: both on their chords at a third is Plain; in line,
+   * opposite and at the same speed is Mirror; else Break. A choice the data cannot show (Mirror or Break on a plain key, Break on a
+   * mirrored one) is the one kept by the panel.
+   */
   private keyMode(i: number): "mirror" | "break" | "plain" {
     const keys = this.keyNodes(), bone = this.session.selectedBone, k = keys?.[i];
     if (!keys || !k || bone === null) return "plain";
-    const pr = keySpeedPairs(bone, keys)[i]!, chosen = this.keyModes.get(this.keyId(k));
-    if (pr.in !== null && pr.out !== null && pr.in !== pr.out) return "break";
-    if ((pr.in ?? 0) === 0 && (pr.out ?? 0) === 0) return chosen ?? "plain";
-    return chosen ?? "mirror";
+    const h = keyHandles(bone, keys)[i]!, c = keyChords(bone, keys)[i]!, pr = keySpeedPairs(bone, keys)[i]!, chosen = this.keyModes.get(this.keyId(k));
+    const onChord = (v: Vec | null, chord: Vec | null, sign: number): boolean => !v || !chord || (Math.abs(v[0] - (sign * chord[0]) / 3) <= 1e-3 && Math.abs(v[1] - (sign * chord[1]) / 3) <= 1e-3);
+    if (onChord(h.out, c.out, 1) && onChord(h.in, c.in, -1)) return chosen ?? "plain";
+    if (chosen === "break" || !h.in || !h.out) return chosen ?? "mirror";
+    const li = Math.hypot(h.in[0], h.in[1]), lo = Math.hypot(h.out[0], h.out[1]);
+    const inLine = Math.abs(h.in[0] * h.out[1] - h.in[1] * h.out[0]) <= 1e-3 * Math.max(1, li * lo) && h.in[0] * h.out[0] + h.in[1] * h.out[1] <= 0;
+    return inLine && Math.abs((pr.in ?? 0) - (pr.out ?? 0)) <= 1e-3 ? "mirror" : "break";
   }
 
-  /** Mirror, Break or Plain on key `i`. Mirror: in takes out's value; Break: each handle free; Plain: no handles, 0 both sides. */
+  /**
+   * Mirror, Break or Plain on key `i`. Plain: both handles back on their chords at a third (straight lines, an even pace). Mirror: the in
+   * handle turns opposite the out handle at the same speed. Break: each handle free.
+   */
   private setKeyLegs(i: number, how: "mirror" | "break" | "plain"): void {
-    const keys = this.keyNodes(), bone = this.session.selectedBone, k = keys?.[i];
-    if (!keys || !k || bone === null) return;
-    const id = this.keyId(k), pr = keySpeedPairs(bone, keys)[i]!;
+    const keys = this.keyNodes(), bone = this.session.selectedBone, k = keys?.[i], a = this.session.animation;
+    if (!keys || !k || bone === null || !a) return;
+    const id = this.keyId(k), h = keyHandles(bone, keys)[i]!, c = keyChords(bone, keys)[i]!;
     if (how === "plain") {
       this.keyModes.delete(id);
-      this.setKeySpeeds(i, { in: pr.in === null ? undefined : 0, out: pr.out === null ? undefined : 0 }, `Make key ${i + 1} plain`);
+      this.applyAtKey(i, `Make key ${i + 1} plain`, (index) => setKeyHandles(a.name, bone, index, {
+        in: c.in && h.in ? [-c.in[0] / 3, -c.in[1] / 3] : undefined, out: c.out && h.out ? [c.out[0] / 3, c.out[1] / 3] : undefined,
+      }));
     } else {
       this.keyModes.set(id, how);
-      const v = pr.out ?? pr.in;
-      if (how === "mirror" && v !== null) this.setKeySpeeds(i, { in: pr.in === null ? undefined : v, out: pr.out === null ? undefined : v }, `Mirror the legs of key ${i + 1}`);
+      if (how === "mirror" && h.in && h.out && c.in && c.out) this.setKeyHandleAt(i, "out", h.out, `Mirror the handles of key ${i + 1}`, true);
     }
     this.slotSig = "";
     this.schedule();
+  }
+
+  /** Handle `side` of key `i` set to `v` (translate units); in Mirror (or with `mirror`) the other handle turns opposite at the same speed. */
+  private setKeyHandleAt(i: number, side: "in" | "out", v: Vec, label: string, mirror = false): void {
+    const keys = this.keyNodes(), bone = this.session.selectedBone, a = this.session.animation;
+    if (!keys || bone === null || !a) return;
+    const c = keyChords(bone, keys)[i]!, other = side === "out" ? "in" : "out", co = c[other], cs = c[side];
+    const set: { in?: Vec; out?: Vec } = { [side]: v };
+    if ((mirror || this.keyMode(i) !== "break") && co && cs) {
+      const l = Math.hypot(v[0], v[1]), ls = Math.hypot(cs[0], cs[1]), lo = Math.hypot(co[0], co[1]);
+      // The same speed: the length in proportion to the other side's chord.
+      const k = l > 1e-9 && ls > 1e-9 ? lo / ls : 0;
+      set[other] = [-v[0] * k, -v[1] * k];
+    }
+    this.applyAtKey(i, label, (index) => setKeyHandles(a.name, bone, index, set));
+  }
+
+  /** The parent bone's matrix at each key's frame: what takes a handle from translate units to the panel's space and back. */
+  private keyMatrices(keys: readonly Key[]): (Matrix | null)[] {
+    const s = this.session, a = s.animation, bone = s.selectedBone, sig = `${a?.name}/${bone}/${keys.map((k) => keyTime(k)).join(",")}/${s.skin}`;
+    if (this.keyMats && this.keyMats.doc === s.doc && this.keyMats.sig === sig) return this.keyMats.mats;
+    const poser = this.posers(), mats = keys.map((k) => {
+      if (!a || bone === null) return null;
+      const p = poser.pose(s.skin, a.name, keyTime(k), "none"), index = p.bones.get(bone);
+      return index === undefined ? null : parentMatrix(p, index);
+    });
+    this.keyMats = { doc: s.doc, sig, mats };
+    return mats;
+  }
+
+  /** FramePath's handles on the picture (step 5): from each key that is not Plain, a line to each handle's tip and a ring there. */
+  private drawKeyHandles(g: CanvasRenderingContext2D, trail: BoneTrail, at: (x: number, y: number) => [number, number], colour: string): void {
+    this.keyHandlePts = [];
+    const s = this.session, bone = s.selectedBone, keys = this.keyNodes();
+    if (!keys || keys.length < 2 || bone === null) return;
+    const hs = keyHandles(bone, keys), mats = this.keyMatrices(keys);
+    g.save();
+    g.strokeStyle = colour;
+    g.lineWidth = 1.5;
+    keys.forEach((k, i) => {
+      const f = timeFrame(keyTime(k), s.fps), m = mats[i];
+      if (f > trail.frames || !m || this.keyMode(i) === "plain") return;
+      const jx = trail.joint[f * 2]!, jy = trail.joint[f * 2 + 1]!;
+      if (!Number.isFinite(jx) || !Number.isFinite(jy)) return;
+      const [cx, cy] = at(jx, jy);
+      for (const side of ["in", "out"] as const) {
+        const h = hs[i]![side];
+        if (!h) continue;
+        const [tx, ty] = at(jx + m[0] * h[0] + m[1] * h[1], jy + m[2] * h[0] + m[3] * h[1]);
+        const lit = this.keyHandleDrag?.i === i && this.keyHandleDrag.side === side;
+        g.globalAlpha = lit || f === s.frame ? 1 : 0.75;
+        g.beginPath(); g.moveTo(cx, cy); g.lineTo(tx, ty); g.stroke();
+        g.fillStyle = lit ? "#ffffff" : colour;
+        g.beginPath(); g.arc(tx, ty, lit ? 6 : 4.5, 0, Math.PI * 2); g.fill();
+        this.keyHandlePts.push({ i, side, x: tx, y: ty, jx, jy, m });
+      }
+    });
+    g.restore();
+  }
+
+  /** A handle tip on the picture under a canvas point, or null. */
+  private keyHandleAt(x: number, y: number): { i: number; side: "in" | "out"; x: number; y: number; jx: number; jy: number; m: Matrix } | null {
+    let best: { i: number; side: "in" | "out"; x: number; y: number; jx: number; jy: number; m: Matrix } | null = null, bestD = 9;
+    for (const q of this.keyHandlePts) { const d = Math.hypot(q.x - x, q.y - y); if (d <= bestD) { best = q; bestD = d; } }
+    return best;
+  }
+
+  /** A handle tip dragged to a canvas point: the handle is the offset from the key's joint, taken back through the parent's matrix at that key. */
+  private dragKeyHandle(x: number, y: number): void {
+    const d = this.keyHandleDrag, here = this.spaceAt(x, y);
+    if (!d || !here) return;
+    const [lx, ly] = moveDelta(d.m, here[0] - d.jx, here[1] - d.jy), v: Vec = [tidy(lx, 3), tidy(ly, 3)];
+    this.setKeyHandleAt(d.i, d.side, v, `Shape the path at key ${d.i + 1}`);
+    this.onStatus(`Key ${d.i + 1} · handle ${d.side}: x ${v[0]}, y ${v[1]}${this.keyMode(d.i) === "break" ? "" : " (the other handle follows: Break frees it)"}`);
   }
 
   /** A leg of key `i` dragged to speed `v`: that side, and in Mirror the other side too. */
@@ -2311,6 +2401,11 @@ export class MotionPathPanel {
   /** The speed graph's points on its canvas as last drawn (CSS pixels), for tests. */
   get speedPoints(): readonly { i: number; x: number; y: number }[] {
     return this.speedDots;
+  }
+
+  /** FramePath's handle tips on the picture as last drawn (canvas CSS pixels), for tests. */
+  get keyHandlePoints(): readonly { i: number; side: "in" | "out"; x: number; y: number }[] {
+    return this.keyHandlePts;
   }
 
   /** FramePath's strip diamonds as last drawn (CSS pixels across the strip; their middle is `KEY_Y` down), for tests. */
@@ -3149,6 +3244,18 @@ export class MotionPathPanel {
         return;
       }
       if (node >= 0) { this.pickSlot(node); this.nodeDrag = node; this.session.history?.begin("Move a spline node"); this.grab(e); return; }
+      // FramePath: a handle's tip shapes the path at its key (docs/FRAMEPATH-SPEED-PLAN.md, step 5); Alt breaks the key's handles first.
+      const kh = this.tab === "keys" ? this.keyHandleAt(x, y) : null;
+      if (kh) {
+        const k = this.keyNodes()?.[kh.i];
+        if (e.altKey && k) this.keyModes.set(this.keyId(k), "break");
+        this.session.pause();
+        this.hold = true;
+        this.keyHandleDrag = { i: kh.i, side: kh.side, jx: kh.jx, jy: kh.jy, m: kh.m };
+        this.session.history?.begin(`Shape the path at key ${kh.i + 1}`);
+        this.grab(e);
+        return;
+      }
       const h = this.handle;
       if (h && Math.hypot(h.x - x, h.y - y) <= 11 && this.beginEdit(x, y, "rotate", this.session.frame)) { this.grab(e); return; }
       const sc = this.scaleHandle, sh = this.shearHandle;
@@ -3212,6 +3319,11 @@ export class MotionPathPanel {
       }
       return;
     }
+    if (this.keyHandleDrag) {
+      const [x, y] = localPoint(this.canvas, e);
+      this.dragKeyHandle(x, y);
+      return;
+    }
     if (this.edit) {
       const [x, y] = localPoint(this.canvas, e);
       this.editTo(x, y, e.shiftKey);
@@ -3220,7 +3332,7 @@ export class MotionPathPanel {
     if (!this.dragging) {
       const [x, y] = localPoint(this.canvas, e), h = this.handle;
       this.hoverLeg(this.handleAt(x, y));
-      this.canvas.style.cursor = this.onTag(x, y) || this.nodeAt(x, y) >= 0 ? "grab" : (h && Math.hypot(h.x - x, h.y - y) <= 11) || this.arrowAt(x, y) !== null || this.markAt(x, y) >= 0 ? "grab" : "";
+      this.canvas.style.cursor = this.onTag(x, y) || this.nodeAt(x, y) >= 0 || (this.tab === "keys" && this.keyHandleAt(x, y)) ? "grab" : (h && Math.hypot(h.x - x, h.y - y) <= 11) || this.arrowAt(x, y) !== null || this.markAt(x, y) >= 0 ? "grab" : "";
       return;
     }
     this.pan = { x: this.pan.x + e.clientX - this.dragging.x, y: this.pan.y + e.clientY - this.dragging.y };
@@ -3241,7 +3353,8 @@ export class MotionPathPanel {
   private up(e: PointerEvent): void {
     this.scrubbing = false;
     // A node or a handle dragged is one step, taken when it is let go.
-    if (this.nodeDrag !== null || this.handleDrag) this.session.history?.end();
+    if (this.nodeDrag !== null || this.handleDrag || this.keyHandleDrag) this.session.history?.end();
+    this.keyHandleDrag = null;
     this.nodeDrag = null;
     this.handleDrag = null;
     const edit = this.edit;
