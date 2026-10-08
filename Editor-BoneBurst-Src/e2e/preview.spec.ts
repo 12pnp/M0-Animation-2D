@@ -27,3 +27,18 @@ test("Preview plays the animation on its own clock: it advances, Pause holds it,
   await panel.getByLabel("Preview animation").selectOption("");
   await expect(clock).toHaveText("setup pose");
 });
+
+test("Preview's background is a white and grey checker; the two colour fields change it, and reset brings it back", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await page.locator(".dv-tab", { hasText: "Preview" }).click();
+  const panel = page.locator(".panel.preview"), view = panel.locator(".pv-view");
+  await expect(panel.getByLabel(/Background colour 1/)).toHaveValue("#ffffff");
+  await expect(panel.getByLabel(/Background colour 2/)).toHaveValue("#c8c8c8");
+  await panel.getByLabel(/Background colour 1/).fill("#102030");
+  await expect(view).toHaveCSS("background-image", /rgb\(16, 32, 48\)/);
+  await panel.getByRole("button", { name: "Reset background" }).click();
+  await expect(panel.getByLabel(/Background colour 1/)).toHaveValue("#ffffff");
+});

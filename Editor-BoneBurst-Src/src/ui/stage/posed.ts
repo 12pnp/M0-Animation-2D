@@ -93,8 +93,8 @@ export function animatedLocal(p: Posed, bone: number) {
   return { x: L[l]!, y: L[l + 1]!, rotation: L[l + 2]!, scaleX: L[l + 3]!, scaleY: L[l + 4]!, shearX: L[l + 5]!, shearY: L[l + 6]! };
 }
 
-/** The box around every drawn vertex and every active bone, or null for an empty skeleton. */
-export function bounds(p: Posed): { minX: number; minY: number; maxX: number; maxY: number } | null {
+/** The box around every drawn vertex and (unless `withBones` is off) every active bone, or null for an empty skeleton. */
+export function bounds(p: Posed, withBones = true): { minX: number; minY: number; maxX: number; maxY: number } | null {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const add = (x: number, y: number) => {
     if (x < minX) minX = x; if (x > maxX) maxX = x;
@@ -105,7 +105,7 @@ export function bounds(p: Posed): { minX: number; minY: number; maxX: number; ma
     drawnVertices(p.rig, d, v);
     for (let i = 0; i < v.length; i += 2) add(v[i]!, v[i + 1]!);
   }
-  for (const b of p.rig.data.bones) {
+  for (const b of withBones ? p.rig.data.bones : []) {
     if (!p.rig.active[b.index]) continue;
     const m = boneMatrix(p, b.index);
     add(m[4], m[5]);

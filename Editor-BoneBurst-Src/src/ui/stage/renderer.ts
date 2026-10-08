@@ -62,8 +62,9 @@ export class Renderer {
   private readonly white: WebGLTexture;
   private checkerTex: WebGLTexture | null = null;
 
-  constructor(canvas: HTMLCanvasElement) {
-    const gl = canvas.getContext("webgl2", { premultipliedAlpha: true, alpha: false, stencil: true, antialias: true });
+  /** `clear`: the canvas is left clear, not filled with the background, so what is behind the canvas shows. */
+  constructor(canvas: HTMLCanvasElement, private readonly clear = false) {
+    const gl = canvas.getContext("webgl2", { premultipliedAlpha: true, alpha: clear, stencil: true, antialias: true });
     if (!gl) throw new Error("This browser has no WebGL2; the stage cannot draw.");
     this.gl = gl;
     this.program = link(gl, VERTEX, FRAGMENT);
@@ -101,7 +102,7 @@ export class Renderer {
     references: readonly Backdrop[] = [], ghosts: readonly Ghost[] = [], grid: number | null = null, look: StageLook = NO_LOOK): void {
     const gl = this.gl;
     gl.viewport(0, 0, Math.round(size.width * dpr), Math.round(size.height * dpr));
-    gl.clearColor(background[0], background[1], background[2], 1);
+    if (this.clear) gl.clearColor(0, 0, 0, 0); else gl.clearColor(background[0], background[1], background[2], 1);
     gl.clearStencil(0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.STENCIL_BUFFER_BIT);
     if (!p && !references.length && !grid && !look.checker && !look.axes) return;

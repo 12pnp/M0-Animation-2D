@@ -954,3 +954,5 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 .pv-clock { margin-left: auto; font-family: var(--font-mono); color: var(--muted); }
 .pv-view { position: relative; flex: 1; min-height: 0; overflow: hidden; }
 .pv-canvas { position: absolute; inset: 0; display: block; }
+.pv-colour { width: 22px; height: 20px; padding: 0; border: 1px solid var(--line); background: none; cursor: pointer; }
+.pv-canvas { width: 100%; height: 100%; }
