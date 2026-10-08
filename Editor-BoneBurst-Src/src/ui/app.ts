@@ -998,7 +998,6 @@ export function mountApp(root: HTMLElement): void {
     motionReverse: () => (hovered === "motion" && motionPanel.hotkey("reverse") ? undefined : false),
     motionMerge: () => (hovered === "motion" && motionPanel.hotkey("merge") ? undefined : false),
     motionOrigin: () => (hovered === "motion" && motionPanel.hotkey("origin") ? undefined : false),
-    motionBake: () => (hovered === "motion" && motionPanel.hotkey("bake") ? undefined : false),
     tags: () => {
       const sel = session.selected;
       if (!sel) { say("Select an element first (a bone, a slot, an image…), then press the tags key."); return; }

@@ -21,14 +21,14 @@ async function open(page: Page): Promise<void> {
 const nodes = (page: Page) => page.evaluate(() => (window as unknown as Live).boneburst.session.sidecar.motion[0]?.nodes ?? []);
 const dots = (page: Page) => page.evaluate(() => (window as unknown as Live).boneburst.motionPath.speedPoints);
 
-test("Adjust time is gone: Edit Path is the one mode, with Duration, Closed and Bake beside it", async ({ page }) => {
+test("Adjust time is gone: Edit Path is the one mode, with Duration, Closed and Make keys from path beside it", async ({ page }) => {
   await open(page);
   const panel = page.locator(".panel.motion-path");
   await startEditPath(panel);
   await expect(panel.getByRole("button", { name: "Adjust time" })).toHaveCount(0);
   await expect(panel.getByRole("button", { name: /Time$/ })).toHaveCount(0);
   await expect(panel.getByRole("spinbutton", { name: "Duration" })).toBeVisible();
-  await expect(panel.getByRole("button", { name: "Bake to timeline" })).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Make keys from path" })).toBeVisible();
 });
 
 test("a speed for each node: a point in the graph, the Speed field, a drag, a double click back to 0, all held to -0.99 and 5, each one undo step", async ({ page }) => {

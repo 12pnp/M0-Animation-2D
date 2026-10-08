@@ -134,6 +134,16 @@ Outside this project nothing changes in steps 1 to 7: the sidecar is not exporte
 - **Until step 5:** a path drives its bone only while engaged (after Play, until Stop); step 5 makes the one-driver rule permanent.
 - Tests: `e2e/motionPath.spec.ts` (Play moves the bone with no keys written and no history step; Pause holds; Stop restores; Loop off stops at the end; Both starts and pauses both clocks), `tests/twinSpline.test.ts` (`pathTime`).
 
+## Step 4 built (2026-10-08): the bridge is cut
+
+**Done.** `tsc`, 802 unit tests and all 135 browser tests pass; the panel was not looked at on screen after this step.
+
+- **Deleted:** `MotionPath.baked` (model, sidecar reader and writer: an old file's `baked` is ignored on reading and never written back), `pathSignature`, `keysSignature`, `motionStale`, `motionChanged`, the Bake button's "attention" state, the `B` shortcut (`motionBake` in `shortcuts.ts` and `app.ts`), and the stale note in the Timeline's bar. The Timeline had no node tabs left, only a comment.
+- **Added: Make keys from path** (`makeKeysFromPath` in `ui/motion.ts`, button in the path bar): the old bake's key fitting, once, as one undo step ("Make keys from the path of X"), and **nothing else**: the sidecar is not touched, the path keeps no mark of the keys, and editing either leaves the other alone. The status line says how many keys were written, how many translate keys they replaced (Undo brings them back), and that the two no longer follow each other.
+- **Renamed:** `edit/motionPath.ts` → `edit/pathKeys.ts` (what is left is key logic: `fitChannel`, `translateKeys`, `writeTranslateKeys`, `setupXY`, `PathKey`); `bakeKeys` → `keysFromPath`; `BakedKey` → `PathKey`; `bakeTranslate` → `writeTranslateKeys`.
+- **Guards:** `e2e/motionPath.spec.ts` (after Make keys the path is `toEqual` what it was; one history step; the bone follows the path within a few units at every frame), `tests/sidecar.test.ts` (an old `baked` is ignored and not written). The AI tool contract has no path tool, so its version note is unchanged.
+- **Still to do:** the one-driver rule and the Silence or Delete question (step 5): until then a bone with a path *and* made keys is driven by the path while Play is engaged and by the keys otherwise.
+
 ## Decided (2026-10-08, the owner)
 
 - **Q1 Where a path lives: the sidecar, as today.** The document stays byte-exact Spine JSON. Each path is shaped as plain numbers keyed by animation and bone, so moving it into the export later (the Unity plan, step 8) is only a writer change.

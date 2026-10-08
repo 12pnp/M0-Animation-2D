@@ -94,7 +94,7 @@ test("the Spline button hides and shows the spline in Motion Path, and leaves th
   await expect.poll(() => page.evaluate(() => (window as unknown as { boneburst: { motionPath: { grabPoints: { nodes: unknown[] } } } }).boneburst.motionPath.grabPoints.nodes.length)).toBeGreaterThan(0);
 });
 
-test("Motion Path's keys, with the pointer over it: A starts the path and adds, V reverses, X removes, B bakes", async ({ page }) => {
+test("Motion Path's keys, with the pointer over it: A starts the path and adds, V reverses, X removes", async ({ page }) => {
   await open(page);
   const panel = page.locator(".panel.motion-path");
   const motion = () => page.evaluate(() => { const m = (window as unknown as { boneburst: { session: { sidecar: { motion: { nodes: { id?: number }[] }[] } } } }).boneburst.session.sidecar.motion[0]; return m ? m.nodes.map((n, i) => n.id ?? i + 1) : null; });

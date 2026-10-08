@@ -11,7 +11,7 @@ import { showContextMenu } from "../contextMenu";
 import type { MenuItem } from "../menubar";
 import { pickColour } from "../colourPopup";
 import type { MotionMemory } from "../viewMemory";
-import { bakeMotion, currentNode, dropMotion, keepMotion, motionChanged, motionFor, motionStale, nodeAfter, parentChoices, pathFromView, pathToView, poseAtNode, refBoneName, refMatrix, startMotion, toView } from "../motion";
+import { makeKeysFromPath, currentNode, dropMotion, keepMotion, motionFor, nodeAfter, parentChoices, pathFromView, pathToView, poseAtNode, refBoneName, refMatrix, startMotion, toView } from "../motion";
 import { keysAt } from "@/model/timelines";
 import { localPoint, pageScale } from "../pageScale";
 import type { Session } from "../session";
@@ -189,7 +189,7 @@ export class MotionPathPanel {
   /** The motion path's own row of buttons (docs/PATH-SPEED-PLAN.md), and the node picked on the canvas (-1: none). */
   private readonly motionBar = document.createElement("div");
   private readonly motionInfo = document.createElement("span");
-  private readonly motionBtns: Record<"draw" | "add" | "del" | "bakeTl" | "drop", HTMLButtonElement>;
+  private readonly motionBtns: Record<"draw" | "add" | "del" | "makeKeys" | "drop", HTMLButtonElement>;
   /** The duration in seconds, and whether the spline is a ring. */
   private readonly durationField = document.createElement("input");
   private readonly closedBox = document.createElement("input");
@@ -335,7 +335,7 @@ export class MotionPathPanel {
       draw: this.button("Edit Path", "Edit the bone's path, a spline: two nodes to start (where it is, and an offset). A number puts the bone on that node, moving the bone moves the node, + adds a node"),
       add: this.button("+", "Add a spline node"),
       del: this.button("− Node", "Remove the picked spline node (a path keeps two)"),
-      bakeTl: this.button("Bake to timeline", "Write the bone's translate keys from the path: a key where the bone reaches each node, one at the end, and more where the curve needs them (replaces its translate keys; Undo brings them back)"),
+      makeKeys: this.button("Make keys from path", "Write the bone's translate keys from the path, once: a key where the bone reaches each node, one at the end, and more where the curve needs them (replaces its translate keys; Undo brings them back). The keys are a copy: the path does not follow them, and they do not follow the path"),
       drop: this.button("Remove path", "Forget this bone's path; its keys stay as they are"),
     };
     this.slotBar.className = "lp-slots";
@@ -381,11 +381,11 @@ export class MotionPathPanel {
     this.parentPick.setAttribute("aria-label", "Parent bone");
     this.parentPick.title = "The parent bone the path is relative to: its nodes are in that bone\'s space and follow it. Required before a path can be made";
     this.parentPick.addEventListener("change", () => this.chooseParent(this.parentPick.value));
-    // Three sections: the path (parent, start, nodes), its time (total frames, ring), what to do with it (bake, remove); then what it says.
+    // Three sections: the path (parent, start, nodes), its time (total frames, ring), what to do with it (make keys, remove); then what it says.
     const section = (...kids: HTMLElement[]): HTMLElement => { const d = document.createElement("div"); d.className = "lp-sect"; d.append(...kids); return d; };
-    this.motionBar.append(section(this.parentPick, this.motionBtns.draw, this.motionBtns.add, this.motionBtns.del), section(this.durationBox, this.closedLabel, this.loopLabel), section(this.playBtn, this.bothBtn, this.stopBtn, this.clockLabel), section(this.motionBtns.bakeTl, this.motionBtns.drop), this.motionInfo);
+    this.motionBar.append(section(this.parentPick, this.motionBtns.draw, this.motionBtns.add, this.motionBtns.del), section(this.durationBox, this.closedLabel, this.loopLabel), section(this.playBtn, this.bothBtn, this.stopBtn, this.clockLabel), section(this.motionBtns.makeKeys, this.motionBtns.drop), this.motionInfo);
     this.motionBtns.draw.addEventListener("click", () => this.enterDraw());
-    this.motionBtns.bakeTl.addEventListener("click", () => this.bakeToTimeline());
+    this.motionBtns.makeKeys.addEventListener("click", () => this.makeKeys());
     this.motionBtns.add.className = "add";
     this.motionBtns.add.addEventListener("click", () => { if (motionFor(this.session)) this.addNode(); else this.enterDraw(); });
     this.motionBtns.del.addEventListener("click", () => this.removeNode());
@@ -1105,7 +1105,7 @@ export class MotionPathPanel {
     this.motionBtns.add.setAttribute("aria-label", m ? "Add a spline node" : "Create a path");
     this.motionBtns.add.title = m ? "Add another spline node (after the picked one, halfway to the next): then move the bone or drag the node to place it" : "Make a path for this bone: node 1 is where it is, node 2 that plus an offset";
     this.motionBtns.del.hidden = !has;
-    this.motionBtns.bakeTl.hidden = !has;
+    this.motionBtns.makeKeys.hidden = !has;
     this.motionBtns.draw.setAttribute("aria-pressed", String(has));
     this.motionBtns.del.disabled = !m || m.nodes.length <= 2 || this.selNode < 0;
     this.durationBox.hidden = !has;
@@ -1134,9 +1134,7 @@ export class MotionPathPanel {
     }
     this.renderStrip(m);
     if (!m) { this.motionInfo.textContent = ""; return; }
-    const stale = motionStale(s, m), unbaked = m.baked === undefined, changed = motionChanged(m);
-    this.motionInfo.textContent = `${m.nodes.length} spline nodes${unbaked ? " · not baked to the timeline" : stale ? " · timeline keys changed since the last bake" : changed ? " · changed since the last bake to the timeline" : ""}${this.stray !== null && !unbaked && !stale && !changed ? ` · strays ${Math.round(this.stray * 10) / 10}` : ""}`;
-    this.motionBtns.bakeTl.classList.toggle("attention", unbaked || stale || changed);
+    this.motionInfo.textContent = `${m.nodes.length} spline nodes${this.stray !== null ? ` · the keys made from it stray ${Math.round(this.stray * 10) / 10}` : ""}`;
   }
 
   /**
@@ -1218,7 +1216,7 @@ export class MotionPathPanel {
    * The panel's keys (the pointer over it): what each does. False when the key has nothing to do here, so it
    * goes on to its other meaning.
    */
-  hotkey(id: "add" | "remove" | "reverse" | "merge" | "origin" | "bake"): boolean {
+  hotkey(id: "add" | "remove" | "reverse" | "merge" | "origin"): boolean {
     const m = motionFor(this.session);
     if (!m) {
       if (id === "add") { this.enterDraw(); return true; }
@@ -1227,7 +1225,6 @@ export class MotionPathPanel {
     switch (id) {
       case "add": this.addNode(); return true;
       case "remove": this.removeNode(); return true;
-      case "bake": this.bakeToTimeline(); return true;
       case "reverse": this.reverse(); return true;
       case "merge": this.mergePicked(); return true;
       case "origin": if (this.selNode < 0) this.onStatus("Pick a node first (press its number)."); else this.setOrigin(this.selNode); return true;
@@ -2178,19 +2175,19 @@ export class MotionPathPanel {
     return best;
   }
 
-  /** Bake to timeline: write the keys (where the bone reaches each node, at the end of the run, and where the curve needs them) into the bone's translate timeline, one undo step. */
-  private bakeToTimeline(): void {
+  /** Make keys from path: write the keys (where the bone reaches each node, at the end of the run, and where the curve needs them) into the bone's translate timeline, once, one undo step. */
+  private makeKeys(): void {
     const s = this.session, m = motionFor(s);
     if (!m) return;
-    const a = s.animation, had = a ? (keysAt(a, { section: "bones", owner: m.bone, timeline: "translate" })?.length ?? 0) : 0, first = m.baked === undefined;
+    const a = s.animation, had = a ? (keysAt(a, { section: "bones", owner: m.bone, timeline: "translate" })?.length ?? 0) : 0;
     try {
-      const { stray, keys } = bakeMotion(s, m);
+      const { stray, keys } = makeKeysFromPath(s, m);
       this.stray = stray;
-      this.onStatus(`${m.bone}: baked ${keys} keys to the timeline${first && had ? `; its ${had} translate key${had === 1 ? "" : "s"} were replaced (Undo brings them back)` : ""}.`);
+      this.onStatus(`${m.bone}: ${keys} keys written from the path${had ? `; its ${had} translate key${had === 1 ? "" : "s"} were replaced (Undo brings them back)` : ""}. They are a copy: the path and the keys no longer follow each other.`);
     } catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); }
   }
 
-  /** Keep a changed path; the keys are only written by Bake to timeline. */
+  /** Keep a changed path (the keys are only written by Make keys from path). */
   private timeEdit(next: MotionPath, say?: string, label = `Edit the timing of ${next.bone}`, join = false): void {
     keepMotion(this.session, next, label, join);
     if (say) this.onStatus(say);

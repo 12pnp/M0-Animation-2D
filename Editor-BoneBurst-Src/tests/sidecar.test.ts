@@ -16,7 +16,7 @@ const FULL: Sidecar = {
   guides: [{ axis: "x", at: 12.5 }],
   references: [{ path: "ref/run.png", x: 10, y: -4, scale: 0.5, opacity: 0.4 }],
   notes: [{ text: "hips lead", author: "AI", about: "hip" }, { text: "plain" }],
-  motion: [{ animation: "run", bone: "hip", parent: "root", nodes: [{ x: 0, y: 0 }, { x: 5, y: 8, tx: 2, ty: -3, bx: -4, by: 1 }, { x: 10, y: 0, id: 4, speed: 2.5, ss: 1.5, sb: -2 }], closed: false, duration: 0.625, loop: false, baked: "abc|def" }],
+  motion: [{ animation: "run", bone: "hip", parent: "root", nodes: [{ x: 0, y: 0 }, { x: 5, y: 8, tx: 2, ty: -3, bx: -4, by: 1 }, { x: 10, y: 0, id: 4, speed: 2.5, ss: 1.5, sb: -2 }], closed: false, duration: 0.625, loop: false }],
   tags: [{ key: "bone:hip", tags: ["IK", "left leg"] }, { key: "attachment:default/eye/open", tags: ["face"] }],
   extra: new Map([["later", true]]),
 };
@@ -77,6 +77,12 @@ describe("sidecar edits", () => {
     expect(text).toContain('"duration"');
     expect(text).not.toContain('"frames"');
     expect(readSidecar(text, 12).sidecar.motion[0]).toEqual(ring);
+  });
+  it("ignores the mark an earlier build left of a bake, and does not write it back", () => {
+    const text = JSON.stringify({ format: "boneburst-sidecar", version: 1, motion: [{ animation: "a", bone: "b", nodes: [{ x: 0, y: 0 }, { x: 1, y: 1 }], duration: 1, baked: "abc|def" }] });
+    const path = readSidecar(text).sidecar.motion[0]!;
+    expect(path).not.toHaveProperty("baked");
+    expect(writeSidecar({ ...EMPTY_SIDECAR, motion: [path] })).not.toContain("baked");
   });
   it("keeps the loop switch, and drops a path with no duration, one too short, or too few frames", () => {
     const one = (m: object) => readSidecar(JSON.stringify({ format: "boneburst-sidecar", version: 1, motion: [{ animation: "a", bone: "b", nodes: [{ x: 0, y: 0 }, { x: 1, y: 1 }], ...m }] })).sidecar.motion;

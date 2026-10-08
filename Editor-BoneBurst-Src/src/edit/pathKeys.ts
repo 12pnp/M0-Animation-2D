@@ -1,13 +1,12 @@
 import { boneNumber } from "@/model/defaults";
 import type { Key, Skeleton } from "@/model/skeleton";
-import type { MotionPath } from "@/model/sidecar";
 import { frameTime, keyLists, keyTime, shortFloat } from "@/model/timelines";
 import { EditRefused, type Edit } from "./history";
 import { deleteKeys, type KeyRef, onAnimation, withKeys } from "./keys";
 
 /**
  * Keys from a motion path (docs/TWO-SYSTEMS-PLAN.md): fitting Spine curves to the path's motion and writing them as a bone's translate
- * keys. This is the key system's side of the old bake; it goes in step 4 of the plan (the path itself is `src/motion/`).
+ * keys, for the one-time "Make keys from path". The path itself is `src/motion/`; nothing here remembers where keys came from.
  */
 
 /**
@@ -35,8 +34,8 @@ export function fitChannel(values: readonly number[]): { c1: number; c2: number;
 
 const keyed = (n: number) => shortFloat(Math.round(n * 1e4) / 1e4);
 
-/** One baked key: the bone's local x and y (as offsets from its setup pose when written) at a frame, and the control values of the curve to the next key. */
-export interface BakedKey {
+/** One key made from a path: the bone's local x and y (as offsets from its setup pose when written) at a frame, and the control values of the curve to the next key. */
+export interface PathKey {
   readonly frame: number;
   readonly x: number;
   readonly y: number;
@@ -45,7 +44,7 @@ export interface BakedKey {
 }
 
 /** The translate keys for `keys` at `fps`, as offsets from the setup pose, each with its curve to the next key (control times at thirds). */
-export function translateKeys(boneSetup: { x: number; y: number }, keys: readonly BakedKey[], fps: number): Key[] {
+export function translateKeys(boneSetup: { x: number; y: number }, keys: readonly PathKey[], fps: number): Key[] {
   return keys.map((k, i) => {
     const time = k.frame === 0 ? undefined : frameTime(k.frame, fps), next = keys[i + 1];
     let curve: number[] | undefined;
@@ -58,23 +57,8 @@ export function translateKeys(boneSetup: { x: number; y: number }, keys: readonl
   });
 }
 
-/** A short signature of the path's own settings (nodes, handles, speeds, duration, closed): what a bake to the timeline was made from. */
-export function pathSignature(m: Pick<MotionPath, "nodes" | "closed" | "duration">): string {
-  const text = JSON.stringify([m.nodes.map((n) => [n.x, n.y, n.tx ?? null, n.ty ?? null, n.bx ?? null, n.by ?? null, n.speed ?? 0]), m.closed, m.duration]);
-  let h = 5381;
-  for (let i = 0; i < text.length; i++) h = ((h * 33) ^ text.charCodeAt(i)) | 0;
-  return (h >>> 0).toString(36);
-}
-
-/** A short signature of a bone's translate keys in an animation, to tell when they were edited since a bake. */
-export function keysSignature(keys: readonly Key[]): string {
-  let h = 5381;
-  for (const k of keys) for (const v of [k.time ?? 0, k.x ?? 0, k.y ?? 0]) h = ((h * 33) ^ Math.round(v * 1e4)) | 0;
-  return (h >>> 0).toString(36) + "." + keys.length;
-}
-
 /** Replace the bone's translate timelines in an animation with `keys` (the combined `translate` list; the split ones go). */
-export function bakeTranslate(animation: string, bone: string, keys: readonly Key[]): Edit<Skeleton> {
+export function writeTranslateKeys(animation: string, bone: string, keys: readonly Key[]): Edit<Skeleton> {
   return (s) => {
     const b = s.bones?.find((x) => x.name === bone);
     if (!b) throw new EditRefused(`There is no bone "${bone}".`);

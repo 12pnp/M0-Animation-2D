@@ -1,11 +1,10 @@
 import { arrivalTimes, curveOf, DEFAULT_DURATION, pathPose, pathTime, progressAtTime } from "@/motion";
 import type { LocalPose } from "@/edit/boneKeys";
-import { type BakedKey, bakeTranslate, fitChannel, keysSignature, pathSignature, setupXY, translateKeys } from "@/edit/motionPath";
+import { fitChannel, type PathKey, setupXY, translateKeys, writeTranslateKeys } from "@/edit/pathKeys";
 import { motionOf, withMotion } from "@/edit/sidecar";
 import { EditRefused } from "@/edit/history";
 import type { Skeleton } from "@/model/skeleton";
 import type { MotionNode, MotionPath } from "@/model/sidecar";
-import { keysAt } from "@/model/timelines";
 import type { Session } from "./session";
 import { type Matrix, moveDelta } from "./stage/gizmo";
 import { boneMatrix, parentMatrix, type Posed } from "./stage/posed";
@@ -21,19 +20,6 @@ import { boneMatrix, parentMatrix, type Posed } from "./stage/posed";
 export function motionFor(s: Session): MotionPath | undefined {
   const a = s.animation, bone = s.selectedBone;
   return a && bone ? motionOf(s.sidecar, a.name, bone) : undefined;
-}
-
-/** Whether the path's own settings (nodes, node times, frames, multipliers) differ from what the last bake to the timeline was made from. */
-export function motionChanged(m: MotionPath): boolean {
-  return m.baked !== undefined && m.baked.split("|")[1] !== pathSignature(m);
-}
-
-/** Whether the bone's translate keys differ from what the last bake wrote: they were edited since. */
-export function motionStale(s: Session, m: MotionPath): boolean {
-  if (m.baked === undefined) return false;
-  const a = s.doc?.animations?.find((x) => x.name === m.animation);
-  const keys = a ? keysAt(a, { section: "bones", owner: m.bone, timeline: "translate" }) ?? [] : [];
-  return keysSignature(keys) !== m.baked.split("|")[0];
 }
 
 /**
@@ -179,12 +165,12 @@ export function pathDrive(doc: Skeleton | null | undefined, motion: readonly Mot
 const FIT_SAMPLES = 12;
 
 /**
- * The keys a path bakes to (docs/TWINSPLINE-PLAN.md): one where the bone reaches each node (the frame the speed spline makes it,
+ * The keys a path makes (docs/TWO-SYSTEMS-PLAN.md): one where the bone reaches each node (the frame the speed spline makes it,
  * rounded, kept apart) and one at the end of the run, then one more in the middle of any stretch where the fitted curve strays from
  * the bone's real motion by more than a little, down to stretches of two frames. Each stretch keeps the control values of its fit.
- * Returns the keys and how far the baked motion strays from the path at worst.
+ * Returns the keys and how far their motion strays from the path at worst.
  */
-export function bakeKeys(s: Session, m: MotionPath): { keys: BakedKey[]; stray: number } {
+export function keysFromPath(s: Session, m: MotionPath): { keys: PathKey[]; stray: number } {
   const poser = s.poserFor();
   if (!poser) throw new EditRefused("Nothing is open.");
   const fps = s.fps, curve = curveOf(m), ref = refBoneName(s.doc, m), end = Math.max(1, Math.round(m.duration * fps));
@@ -217,7 +203,7 @@ export function bakeKeys(s: Session, m: MotionPath): { keys: BakedKey[]; stray: 
   };
   for (let i = 0; i + 1 < frames.length; i++) split(frames[i]!, frames[i + 1]!, 0);
   refined.push(end);
-  const keys: BakedKey[] = [];
+  const keys: PathKey[] = [];
   let stray = 0;
   for (let i = 0; i < refined.length; i++) {
     const f0 = refined[i]!, [x, y] = local(f0);
@@ -230,25 +216,21 @@ export function bakeKeys(s: Session, m: MotionPath): { keys: BakedKey[]; stray: 
 }
 
 /**
- * Bake to the timeline: write the path's keys into the bone's translate timeline (one undo step), and keep the
- * path with a signature of those keys. Returns the path kept and how far the baked motion strays from it.
+ * Make keys from the path, once (docs/TWO-SYSTEMS-PLAN.md, Q3): write the bone's translate keys from the path as it is now, in one undo step.
+ * A copy and nothing more: the path keeps no mark of it and does not know the keys again, so editing either leaves the other alone. Returns
+ * how many keys were written and how far their motion strays from the path at worst.
  */
-export function bakeMotion(s: Session, m: MotionPath): { path: MotionPath; stray: number; keys: number } {
+export function makeKeysFromPath(s: Session, m: MotionPath): { stray: number; keys: number } {
   const h = s.history, doc = s.doc;
   if (!h || !doc) throw new EditRefused("Nothing is open.");
-  const { keys: baked, stray } = bakeKeys(s, m), keys = translateKeys(setupXY(doc, m.bone), baked, s.fps);
-  const path = { ...m, baked: `${keysSignature(keys)}|${pathSignature(m)}` };
-  // The keys and the path's baked mark are one undo step.
-  h.begin(`Bake the path of ${m.bone} to the timeline`);
-  try {
-    h.apply("", bakeTranslate(m.animation, m.bone, keys));
-    s.setSidecar(withMotion(s.sidecar, m.animation, m.bone, path));
-  } finally { h.end(); }
+  const { keys: made, stray } = keysFromPath(s, m), keys = translateKeys(setupXY(doc, m.bone), made, s.fps);
+  h.begin(`Make keys from the path of ${m.bone}`);
+  try { h.apply("", writeTranslateKeys(m.animation, m.bone, keys)); } finally { h.end(); }
   s.changed();
-  return { path, stray, keys: keys.length };
+  return { stray, keys: keys.length };
 }
 
-/** Keep a path (nodes, node times, frames or a multiplier changed) without baking: one undo step labelled `label`, and the steps of one label a moment apart (a typed field) are one. */
+/** Keep a path (a node, a leg, a speed, the duration changed): one undo step labelled `label`, and the steps of one label a moment apart (a typed field) are one. */
 export function keepMotion(s: Session, m: MotionPath, label = `Edit the path of ${m.bone}`, join = false): void {
   const change = (): void => s.setSidecar(withMotion(s.sidecar, m.animation, m.bone, m));
   if (s.history) s.history.applyBeside(label, change, join); else change();

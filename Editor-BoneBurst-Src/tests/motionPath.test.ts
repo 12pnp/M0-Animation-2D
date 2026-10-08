@@ -1,6 +1,6 @@
 import { breakLegs, buildCurve, curveOf, handleOffsets, mergeNodes, midAfter, mirrorLegs, moveNode, nodeLabels, renumberNodes, reversePath, withDuration, withLoop, withNode, withOrigin } from "@/motion";
 import { describe, expect, it } from "vitest";
-import { bakeTranslate, fitChannel, keysSignature, pathSignature, translateKeys } from "@/edit/motionPath";
+import { fitChannel, translateKeys, writeTranslateKeys } from "@/edit/pathKeys";
 import type { MotionPath } from "@/model/sidecar";
 import type { Animation, Key, Skeleton } from "@/model/skeleton";
 import { keyLists, keyTime, timeFrame } from "@/model/timelines";
@@ -98,20 +98,15 @@ describe("the keys", () => {
   });
   it("replace the bone's translate timelines, including the split ones, and nothing else", () => {
     const a = { name: "a", bones: [{ name: "b", timelines: [{ name: "rotate", keys: [key(0, { value: 1 })] }, { name: "translatex", keys: [key(0, { value: 4 })] }, { name: "translate", keys: [key(0, { x: 1, y: 1 }), key(9, { x: 2, y: 2 })] }] }], extra: new Map() } as unknown as Animation;
-    const out = bakeTranslate("a", "b", translateKeys({ x: 5, y: -3 }, [{ frame: 0, x: 1, y: 1 }, { frame: 5, x: 2, y: 2 }, { frame: 9, x: 3, y: 3 }], FPS))(doc(a)).animations![0]!;
+    const out = writeTranslateKeys("a", "b", translateKeys({ x: 5, y: -3 }, [{ frame: 0, x: 1, y: 1 }, { frame: 5, x: 2, y: 2 }, { frame: 9, x: 3, y: 3 }], FPS))(doc(a)).animations![0]!;
     const lists = keyLists(out).map((l) => ("timeline" in l.path ? l.path.timeline : l.path.section));
     expect(lists.sort()).toEqual(["rotate", "translate"]);
     expect(keyLists(out).find((l) => "timeline" in l.path && l.path.timeline === "translate")!.keys).toHaveLength(3);
   });
   it("cut the keys past the path's last key, on every timeline: the path sets the animation's length", () => {
     const a = { name: "a", bones: [{ name: "b", timelines: [{ name: "rotate", keys: [key(0, { value: 1 }), key(9, { value: 2 }), key(34, { value: 3 })] }, { name: "translate", keys: [key(0, { x: 1, y: 1 }), key(34, { x: 2, y: 2 })] }] }], extra: new Map() } as unknown as Animation;
-    const out = bakeTranslate("a", "b", translateKeys({ x: 0, y: 0 }, [{ frame: 0, x: 1, y: 1 }, { frame: 14, x: 1, y: 1 }], FPS))(doc(a)).animations![0]!;
+    const out = writeTranslateKeys("a", "b", translateKeys({ x: 0, y: 0 }, [{ frame: 0, x: 1, y: 1 }, { frame: 14, x: 1, y: 1 }], FPS))(doc(a)).animations![0]!;
     for (const l of keyLists(out)) expect(l.keys.map((k) => timeFrame(keyTime(k), FPS))).toEqual("timeline" in l.path && l.path.timeline === "rotate" ? [0, 9] : [0, 14]);
-  });
-  it("have a signature that changes when a key does", () => {
-    const a = [key(0, { x: 1, y: 2 }), key(4, { x: 3, y: 4 })];
-    expect(keysSignature(a)).toBe(keysSignature([...a]));
-    expect(keysSignature(a)).not.toBe(keysSignature([key(0, { x: 1, y: 2 }), key(4, { x: 3, y: 4.01 })]));
   });
 });
 
@@ -152,7 +147,7 @@ describe("moving spline nodes", () => {
     expect(s.nodes[2]!.tx).toBe(1);
     expect(nodeLabels(s)).toEqual([1, 3, 2, 4]);
     // The same places, another order: the curve differs.
-    expect(pathSignature(s)).not.toBe(pathSignature(m));
+    expect(curveOf(s).length).not.toBeCloseTo(curveOf(m).length, 6);
     expect(moveNode(s, 1, 2).nodes.map((n) => [n.x, n.y])).toEqual(m.nodes.map((n) => [n.x, n.y]));
   });
   it("shifts the others: 1 moved after 2 in 3, 1, 2, 4 gives 3, 2, 1, 4", () => {
@@ -251,16 +246,7 @@ describe("breaking the legs of a node", () => {
   });
 });
 
-describe("the path's signature", () => {
-  it("changes when a node, a handle, a speed, the duration or the ring changes, and not for anything else", () => {
-    const base = pathSignature(motion());
-    expect(pathSignature(motion())).toBe(base);
-    expect(pathSignature(motion({ nodes: nodes.map((n, i) => (i === 1 ? { ...n, x: 41 } : n)) }))).not.toBe(base);
-    expect(pathSignature(motion({ nodes: nodes.map((n, i) => (i === 1 ? { ...n, speed: 2 } : n)) }))).not.toBe(base);
-    expect(pathSignature(motion({ duration: 0.8 }))).not.toBe(base);
-    expect(pathSignature(motion({ closed: false }))).not.toBe(base);
-    expect(pathSignature(motion({ bone: "other", baked: "x" }))).toBe(base);
-  });
+describe("the path's run", () => {
   it("the duration is at least 0.1 s and changes nothing else; the loop switch only the loop", () => {
     const m = motion({ nodes: nodes.map((n, i) => (i === 2 ? { ...n, speed: 1.5 } : n)) }), w = withDuration(m, 1.25);
     expect(w.duration).toBe(1.25);

@@ -126,7 +126,6 @@ export class Timeline {
     closedLabel.append(this.closedBox, " Closed loop");
     this.trimBtn = button("Trim end", "This animation already ends on a copy of its first pose (frame 0 = the last frame): delete the copy, and let Closed loop supply it", () => this.trimEnd());
     this.trimBtn.hidden = true;
-    // The selected bone's motion path (docs/PATH-SPEED-PLAN.md): the frames it is baked over and how many keys: change one and the keys follow.
     bar.append(this.select, newBtn, ...this.animButtons, closedLabel, this.trimBtn, sep(), startBtn, this.playBtn, this.loopBtn, this.frameOut, sep(), this.keyBtn, sep(), ...this.curveButtons);
 
     this.body = document.createElement("div");

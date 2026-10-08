@@ -71,9 +71,9 @@ export interface MotionNode {
 }
 
 /**
- * One bone's motion in one animation (docs/PATH-FRAMES-PLAN.md), kept so its keys can be baked again. The
+ * One bone's motion in one animation (docs/TWO-SYSTEMS-PLAN.md): the path system's data, kept in the sidecar. The
  * path is a spline through `nodes` (at least two), a ring unless `closed` is off, and the speed spline runs over it (each node's `speed`).
- * It runs `duration` seconds. `baked` signs the keys the last bake to the timeline wrote.
+ * It runs `duration` seconds.
  */
 export interface MotionPath {
   readonly animation: string;
@@ -86,7 +86,6 @@ export interface MotionPath {
   readonly duration: number;
   /** Whether the path's clock starts over at the end (the default) or stops there. */
   readonly loop: boolean;
-  readonly baked?: string;
 }
 
 export const EMPTY_SIDECAR: Sidecar = { view: new Map<string, Json>(), guides: [], references: [], notes: [], motion: [], tags: [], extra: new Map<string, Json>() };

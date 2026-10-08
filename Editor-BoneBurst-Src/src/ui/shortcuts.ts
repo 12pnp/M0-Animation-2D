@@ -81,7 +81,6 @@ export const SHORTCUTS = [
   { id: "motionReverse", keys: "V", group: "Motion Path", what: "Run the path the other way round (1 2 3 4 becomes 1 4 3 2)", chord: plain("v") },
   { id: "motionMerge", keys: "M", group: "Motion Path", what: "Merge the picked spline nodes into one", chord: plain("m") },
   { id: "motionOrigin", keys: "O", group: "Motion Path", what: "Make the picked spline node the origin (the ring starts there)", chord: plain("o") },
-  { id: "motionBake", keys: "B", group: "Motion Path", what: "Bake the path to the timeline", chord: plain("b") },
   { id: "createBone", keys: "D", group: "Tools", what: "Create bones on the stage (Pose mode): press and drag; press again to leave", chord: plain("d") },
   { id: "createRegion", keys: "Y", group: "Tools", what: "Create a region: an image of the atlas (Pose mode)", chord: plain("y") },
   { id: "createPoint", keys: "P", group: "Tools", what: "Create a point attachment (Pose mode)", chord: plain("p") },
