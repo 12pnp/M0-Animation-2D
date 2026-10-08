@@ -612,7 +612,7 @@ dialog.open-project .op-buttons { flex: none; display: flex; justify-content: ce
 .history-step.folder { font-weight: 600; }
 .list-bar label { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--muted); cursor: pointer; }
 
-.lp-body canvas { cursor: grab; touch-action: none; }
+.lp-body canvas { outline: none; cursor: grab; touch-action: none; }
 /* Same as the stage's Fit: a 22 px square flush in the top-right corner, solid, above what is drawn. */
 .lp-fit { margin-left: auto; display: flex; align-items: center; justify-content: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 0; background: var(--panel); color: var(--text); }
 .lp-fit .icon { width: 15px; height: 15px; margin: 0; }
