@@ -902,3 +902,7 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 .lp-speed-bar { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .lp-speed-bar .title { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lp-speed-bar button { flex: none; padding: 0 8px; font-size: 11px; }
+
+/* The path's own Play, in the path bar. */
+.lp-play { min-width: 5.6em; }
+.lp-clock { min-width: 3.8em; text-align: right; font-family: var(--font-mono); color: var(--muted); }

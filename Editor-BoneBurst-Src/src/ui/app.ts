@@ -584,7 +584,9 @@ export function mountApp(root: HTMLElement): void {
   // Playback: the playhead moves by real time while playing.
   let last = 0;
   const tick = (now: number) => {
-    if (session.playing) session.advance(Math.min(0.1, last ? (now - last) / 1000 : 0));
+    const dt = Math.min(0.1, last ? (now - last) / 1000 : 0);
+    if (session.playing) session.advance(dt);
+    session.advancePath(dt);
     last = now;
     requestAnimationFrame(tick);
   };

@@ -27,3 +27,9 @@ export class PathClock {
     return true;
   }
 }
+
+/** A path's own time at the clock's time `t`: starting over each run when it loops, held at its end when it does not. */
+export function pathTime(m: { readonly duration: number; readonly loop: boolean }, t: number): number {
+  if (!(m.duration > 0)) return 0;
+  return m.loop ? t % m.duration : Math.min(t, m.duration);
+}

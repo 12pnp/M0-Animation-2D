@@ -123,6 +123,17 @@ Outside this project nothing changes in steps 1 to 7: the sidecar is not exporte
 - **Bake (until step 4).** The run's end frame is `round(duration × fps)`, the node frames `round(arrivalTime × fps)`. **A visible change:** a new path used to run 15 frames; it now runs 0.5 s, which is 12 frames at 24 fps (15 at 30 fps).
 - Tests: `tests/twinSpline.test.ts` (time, clock), `tests/motionPath.test.ts` (duration, loop), `tests/sidecar.test.ts` (the one-time frames reading, loop, bad durations), `e2e/motionPath.spec.ts` (Duration field, bake length, the bake's follow-the-path check on `pathPose`).
 
+## Step 3 and 3b built (2026-10-08): play without keys, and both clocks
+
+**Done.** `tsc`, 803 unit tests and all 135 browser tests pass; the path bar was looked at in a screenshot, the Stage not.
+
+- **The clock.** `Session.pathClock` (a `PathClock`, seconds that never wrap) beside the animation's `time`; `pathTime(m, t)` (in `src/motion/clock.ts`) gives each path its own time from it: starting over each run when the path loops, held at its end when not. `Session.advancePath(dt)` runs in `app.ts`'s existing animation-frame tick, next to `advance`.
+- **The pose.** While `pathEngaged`, `Session.pose()` poses the key animation alone, asks `pathDrive` (`ui/motion.ts`) for each path's bone, and poses again with those local x and y over the keys (the drag map `unkeyed` still wins over them). The bone's other values stay what the keys give. A path point goes through the reference bone *as the keys pose it*, so a path whose reference bone is itself path-driven sees that bone's key pose, not its driven one (limit, noted for step 5).
+- **The panel.** After Duration, Closed and a new **Loop** box (the path's own `loop`): **Play / Pause** (the path's clock, no bake), **Both**, **Stop** and the clock in seconds. Stop is the way back: it zeros the clock and gives the bones back to the keys; Pause leaves the paths driving.
+- **Both (3b, Q4).** `Session.playBoth()` calls `play()` and `playPath(true)`: two clocks, one button, neither reading the other; pressing it again pauses both.
+- **Until step 5:** a path drives its bone only while engaged (after Play, until Stop); step 5 makes the one-driver rule permanent.
+- Tests: `e2e/motionPath.spec.ts` (Play moves the bone with no keys written and no history step; Pause holds; Stop restores; Loop off stops at the end; Both starts and pauses both clocks), `tests/twinSpline.test.ts` (`pathTime`).
+
 ## Decided (2026-10-08, the owner)
 
 - **Q1 Where a path lives: the sidecar, as today.** The document stays byte-exact Spine JSON. Each path is shaped as plain numbers keyed by animation and bone, so moving it into the export later (the Unity plan, step 8) is only a writer change.

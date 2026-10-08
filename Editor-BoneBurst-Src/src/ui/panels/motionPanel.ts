@@ -1,4 +1,4 @@
-import { breakLegs, clampSpeed, curveOf, handleOffsets, mergeNodes, midAfter, mirrorLegs, moveNode, multiplierOf, nodeLabels, nodeProgress, progressAtTime, renumberNodes, reversePath, setSpeedLegs, slopesOf, SPEED_MAX, SPEED_MIN, speedAt, speedOf, timeMap, withDuration, withNode, withOrigin, withSpeedSlope } from "@/motion";
+import { breakLegs, clampSpeed, curveOf, handleOffsets, mergeNodes, midAfter, mirrorLegs, moveNode, multiplierOf, nodeLabels, nodeProgress, progressAtTime, renumberNodes, reversePath, setSpeedLegs, slopesOf, SPEED_MAX, SPEED_MIN, speedAt, speedOf, timeMap, withDuration, withLoop, withNode, withOrigin, withSpeedSlope } from "@/motion";
 import { type BoneProperty, keyBone, type LocalPose } from "@/edit/boneKeys";
 import { EditRefused } from "@/edit/history";
 import { drawnVertices } from "@/engine/draw";
@@ -194,6 +194,13 @@ export class MotionPathPanel {
   private readonly durationField = document.createElement("input");
   private readonly closedBox = document.createElement("input");
   private readonly closedLabel = document.createElement("label");
+  /** The path's own Play (docs/TWO-SYSTEMS-PLAN.md): Play or Pause, Stop, whether the path loops, and its clock. */
+  private readonly playBtn = document.createElement("button");
+  private readonly stopBtn = document.createElement("button");
+  private readonly bothBtn = document.createElement("button");
+  private readonly loopBox = document.createElement("input");
+  private readonly loopLabel = document.createElement("label");
+  private readonly clockLabel = document.createElement("span");
   private readonly durationBox = document.createElement("label");
   private readonly durationHint = document.createElement("span");
   /** The capture bar (docs/PATH-CAPTURE-PLAN.md): a numbered button for each node (press: put the bone there), a green + to add a slot. */
@@ -351,13 +358,32 @@ export class MotionPathPanel {
     this.closedLabel.className = "lp-field";
     this.closedLabel.title = "A ring: the last spline node joins the first, so the path comes back to where it began (on by default)";
     this.closedLabel.append(this.closedBox, " Closed");
+    // The path's own Play: the path plays on its own clock over the keys, with no bake; Stop gives the bone back to the keys.
+    this.playBtn.type = "button";
+    this.playBtn.className = "lp-play";
+    this.playBtn.addEventListener("click", () => { if (this.session.pathClock.playing) this.session.pausePath(); else this.session.playPath(); });
+    this.bothBtn.type = "button";
+    this.bothBtn.addEventListener("click", () => {
+      if (this.session.playing && this.session.pathClock.playing) { this.session.pause(); this.session.pausePath(); } else this.session.playBoth();
+    });
+    this.stopBtn.type = "button";
+    this.stopBtn.textContent = "■ Stop";
+    this.stopBtn.title = "Stop the path's clock and give the bone back to the keys";
+    this.stopBtn.addEventListener("click", () => this.session.stopPath());
+    this.clockLabel.className = "lp-clock";
+    this.clockLabel.title = "The path's own time in seconds";
+    this.loopBox.type = "checkbox";
+    this.loopBox.addEventListener("change", () => { const m = motionFor(this.session); if (m) this.timeEdit(withLoop(m, this.loopBox.checked), this.loopBox.checked ? "The path starts over at its end." : "The path stops at its end.", "Set the path's loop"); });
+    this.loopLabel.className = "lp-field";
+    this.loopLabel.title = "Whether the path's clock starts over when the run ends (on) or stops there (off)";
+    this.loopLabel.append(this.loopBox, " Loop");
     this.parentPick.className = "lp-parent";
     this.parentPick.setAttribute("aria-label", "Parent bone");
     this.parentPick.title = "The parent bone the path is relative to: its nodes are in that bone\'s space and follow it. Required before a path can be made";
     this.parentPick.addEventListener("change", () => this.chooseParent(this.parentPick.value));
     // Three sections: the path (parent, start, nodes), its time (total frames, ring), what to do with it (bake, remove); then what it says.
     const section = (...kids: HTMLElement[]): HTMLElement => { const d = document.createElement("div"); d.className = "lp-sect"; d.append(...kids); return d; };
-    this.motionBar.append(section(this.parentPick, this.motionBtns.draw, this.motionBtns.add, this.motionBtns.del), section(this.durationBox, this.closedLabel), section(this.motionBtns.bakeTl, this.motionBtns.drop), this.motionInfo);
+    this.motionBar.append(section(this.parentPick, this.motionBtns.draw, this.motionBtns.add, this.motionBtns.del), section(this.durationBox, this.closedLabel, this.loopLabel), section(this.playBtn, this.bothBtn, this.stopBtn, this.clockLabel), section(this.motionBtns.bakeTl, this.motionBtns.drop), this.motionInfo);
     this.motionBtns.draw.addEventListener("click", () => this.enterDraw());
     this.motionBtns.bakeTl.addEventListener("click", () => this.bakeToTimeline());
     this.motionBtns.add.className = "add";
@@ -1084,11 +1110,27 @@ export class MotionPathPanel {
     this.motionBtns.del.disabled = !m || m.nodes.length <= 2 || this.selNode < 0;
     this.durationBox.hidden = !has;
     this.closedLabel.hidden = !has;
+    this.loopLabel.hidden = !has;
+    this.playBtn.hidden = !has;
+    this.stopBtn.hidden = !has;
+    this.clockLabel.hidden = !has;
+    const clock = this.session.pathClock;
+    this.playBtn.textContent = clock.playing ? "❚❚ Pause" : "▶ Play";
+    this.playBtn.title = clock.playing ? "Pause the path's clock (the path keeps the bone)" : "Play the path on its own clock, over the keys: no bake needed";
+    this.playBtn.setAttribute("aria-pressed", String(clock.playing));
+    this.stopBtn.disabled = !this.session.pathEngaged;
+    const both = this.session.playing && clock.playing;
+    this.bothBtn.hidden = !has;
+    this.bothBtn.textContent = both ? "❚❚ Both" : "▶ Both";
+    this.bothBtn.title = both ? "Pause the animation and the path together" : "Play the animation (keys) and the path together: two clocks, one button";
+    this.bothBtn.setAttribute("aria-pressed", String(both));
+    this.clockLabel.textContent = `${(m ? (m.loop ? clock.time % m.duration : Math.min(clock.time, m.duration)) : 0).toFixed(2)} s`;
     const idle = (el: HTMLInputElement) => el.ownerDocument.activeElement !== el;
     if (m) {
       if (idle(this.durationField)) this.durationField.value = String(m.duration);
       this.durationHint.textContent = `(${Math.round(m.duration * this.session.fps)} frames at ${this.session.fps} fps)`;
       this.closedBox.checked = m.closed;
+      this.loopBox.checked = m.loop;
     }
     this.renderStrip(m);
     if (!m) { this.motionInfo.textContent = ""; return; }

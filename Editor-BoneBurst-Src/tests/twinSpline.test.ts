@@ -1,4 +1,4 @@
-import { PathClock, arrivalTimes, buildCurve, clampSpeed, multiplierOf, nodeProgress, pathPose, progressAtTime, reversePath, setSpeedLegs, slopesOf, SPEED_MAX, SPEED_MIN, speedAt, timeMap, withSpeedSlope } from "@/motion";
+import { PathClock, pathTime, arrivalTimes, buildCurve, clampSpeed, multiplierOf, nodeProgress, pathPose, progressAtTime, reversePath, setSpeedLegs, slopesOf, SPEED_MAX, SPEED_MIN, speedAt, timeMap, withSpeedSlope } from "@/motion";
 import { describe, expect, it } from "vitest";
 import type { MotionPath } from "@/model/sidecar";
 
@@ -147,5 +147,14 @@ describe("the path's own clock", () => {
     expect(c.time).toBe(0.5);
     c.seek(-1, 0.5);
     expect(c.time).toBe(0);
+  });
+});
+
+describe("each path's own time on the clock", () => {
+  it("starts over each run when the path loops, and is held at its end when it does not", () => {
+    expect(pathTime({ duration: 0.5, loop: true }, 1.3)).toBeCloseTo(0.3, 9);
+    expect(pathTime({ duration: 0.5, loop: false }, 1.3)).toBe(0.5);
+    expect(pathTime({ duration: 0.5, loop: false }, 0.2)).toBe(0.2);
+    expect(pathTime({ duration: 0, loop: true }, 3)).toBe(0);
   });
 });

@@ -24,6 +24,8 @@ import { matchReferences, referenceFile } from "./stage/references";
 import { boneUnitOf } from "./stage/boneScale";
 import { documentNotes, type Note, poseNotes } from "./notes";
 import { bounds, boneMatrix, Poser, type Posed } from "./stage/posed";
+import { PathClock } from "@/motion";
+import { pathDrive } from "./motion";
 
 /** A selection in the rig: what the rig tree, the stage and the properties panel show. */
 export type Selection =
@@ -117,7 +119,7 @@ export class Session {
   private tick = 0;
   private step: PhysicsMode = "none";
   private poser: { doc: Skeleton; value: Poser } | null = null;
-  private posed: { key: string; value: Posed } | null = null;
+  private posed: { key: string; motion?: unknown; value: Posed } | null = null;
   /** The animations whose Loop tick is off (docs/LOOP-PLAN.md); every other animation is a loop. Kept in the sidecar's view. */
   private loopOffSet: ReadonlySet<string> = new Set();
   /** Counts changes to the ticks, so a cached pose is not served across one. */
@@ -126,6 +128,12 @@ export class Session {
   /** Poses dragged with Auto Key off (by bone): shown over the animation, in no document, until keyed or the playhead moves. */
   private readonly unkeyed = new Map<string, LocalPose>();
   private unkeyedRev = 0;
+  /**
+   * The path system's clock (docs/TWO-SYSTEMS-PLAN.md, P): seconds that never wrap (each path takes its own time from it), apart from the
+   * animation's `time`. While `pathEngaged` the animation's paths drive their bones' x and y over the keys; Stop gives the bones back.
+   */
+  readonly pathClock = new PathClock();
+  pathEngaged = false;
   private setup: { key: string; value: BoneWorlds } | null = null;
   private readonly listeners = new Set<() => void>();
 
@@ -472,9 +480,70 @@ export class Session {
     if (!poser) return null;
     const anim = this.animation?.name ?? null;
     const step = this.playing ? this.step : "none";
-    const key = `${this.history!.revision}|${this.loopRev}|${this.skin}|${anim}|${this.time}|${this.tick}|${step}|${this.unkeyedRev}`;
-    if (this.posed?.key !== key) this.posed = { key, value: poser.pose(this.skin, anim, this.time, step, this.unkeyed) };
+    const driven = this.pathEngaged && anim !== null && this.sidecar.motion.some((m) => m.animation === anim);
+    const key = `${this.history!.revision}|${this.loopRev}|${this.skin}|${anim}|${this.time}|${this.tick}|${step}|${this.unkeyedRev}|${driven ? this.pathClock.time : "-"}`;
+    if (this.posed?.key !== key || (driven && this.posed.motion !== this.sidecar.motion)) {
+      let value: Posed;
+      if (driven) {
+        // The key animation first (no physics step), then the paths' x and y over it, then the pose that is shown.
+        const keys = poser.pose(this.skin, anim, this.time, "none", this.unkeyed);
+        const drive = pathDrive(this.doc, this.sidecar.motion, anim!, keys, this.pathClock.time);
+        value = poser.pose(this.skin, anim, this.time, step, new Map([...drive, ...this.unkeyed]));
+      } else value = poser.pose(this.skin, anim, this.time, step, this.unkeyed);
+      this.posed = { key, motion: this.sidecar.motion, value };
+    }
     return this.posed.value;
+  }
+
+  /** Whether the animation shown has a path to play. */
+  get hasPaths(): boolean {
+    const a = this.animation?.name;
+    return a !== undefined && this.sidecar.motion.some((m) => m.animation === a);
+  }
+
+  /** Play the paths of the animation shown on the path clock, over the keys: no bake needed. The animation's own playback stops. */
+  playPath(keepKeys = false): void {
+    if (!this.hasPaths) return;
+    if (this.playing && !keepKeys) this.pause();
+    this.clearUnkeyed();
+    const longest = Math.max(...this.sidecar.motion.filter((m) => m.animation === this.animation!.name).map((m) => m.duration));
+    if (this.pathClock.time >= longest && !this.sidecar.motion.some((m) => m.animation === this.animation!.name && m.loop)) this.pathClock.time = 0;
+    this.pathEngaged = true;
+    this.pathClock.playing = true;
+    this.changed();
+  }
+
+  /** One button, two clocks (docs/TWO-SYSTEMS-PLAN.md, Q4): the animation's playback and the path clock start together. Neither reads the other. */
+  playBoth(): void {
+    if (!this.hasPaths) return;
+    this.play();
+    this.playPath(true);
+  }
+
+  /** Hold the path clock where it is (the paths keep driving their bones). */
+  pausePath(): void {
+    if (!this.pathClock.playing) return;
+    this.pathClock.playing = false;
+    this.changed();
+  }
+
+  /** Stop the path clock, back to 0, and give the bones back to the keys. */
+  stopPath(): void {
+    if (!this.pathEngaged && !this.pathClock.playing && this.pathClock.time === 0) return;
+    this.pathClock.playing = false;
+    this.pathClock.time = 0;
+    this.pathEngaged = false;
+    this.changed();
+  }
+
+  /** One step of the path clock, `dt` seconds on: it stops when no path of the animation loops and every run has ended. */
+  advancePath(dt: number): void {
+    if (!this.pathClock.playing) return;
+    const a = this.animation?.name, mine = this.sidecar.motion.filter((m) => m.animation === a);
+    if (!mine.length) { this.pathClock.playing = false; this.changed(); return; }
+    this.pathClock.advance(dt, Infinity);
+    if (!mine.some((m) => m.loop) && this.pathClock.time >= Math.max(...mine.map((m) => m.duration))) { this.pathClock.time = Math.max(...mine.map((m) => m.duration)); this.pathClock.playing = false; }
+    this.changed();
   }
 
   /**

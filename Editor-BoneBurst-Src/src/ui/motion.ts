@@ -1,4 +1,5 @@
-import { arrivalTimes, curveOf, DEFAULT_DURATION, progressAtTime } from "@/motion";
+import { arrivalTimes, curveOf, DEFAULT_DURATION, pathPose, pathTime, progressAtTime } from "@/motion";
+import type { LocalPose } from "@/edit/boneKeys";
 import { type BakedKey, bakeTranslate, fitChannel, keysSignature, pathSignature, setupXY, translateKeys } from "@/edit/motionPath";
 import { motionOf, withMotion } from "@/edit/sidecar";
 import { EditRefused } from "@/edit/history";
@@ -155,6 +156,23 @@ export function poseAtNode(s: Session, x: number, y: number, parent: string | nu
   s.setUnkeyed(bone, { x: lx, y: ly, rotation: l[k + 2]!, scaleX: l[k + 3]!, scaleY: l[k + 4]!, shearX: l[k + 5]!, shearY: l[k + 6]! });
   // The Stage draws on a change: without it the bone moved in the pose but not on screen.
   s.changed();
+}
+
+/**
+ * The local poses the paths of one animation give their bones at the path clock's time `t` (docs/TWO-SYSTEMS-PLAN.md, P): each path's own
+ * time, its point through the reference bone as `p` has it (the pose of the key animation alone), then into the bone's own parent's space.
+ * Only x and y are the path's; the bone's other values stay what `p` has. A bone with no pose in `p` is left out.
+ */
+export function pathDrive(doc: Skeleton | null | undefined, motion: readonly MotionPath[], animation: string, p: Posed, t: number): Map<string, LocalPose> {
+  const out = new Map<string, LocalPose>();
+  for (const m of motion) {
+    const i = m.animation === animation ? p.bones.get(m.bone) : undefined;
+    if (i === undefined) continue;
+    const q = pathPose(m, pathTime(m, t)), R = refMatrix(p, refBoneName(doc, m)), P = parentMatrix(p, i), [vx, vy] = toView(R, q.x, q.y);
+    const [lx, ly] = moveDelta(P, R[4] + vx - P[4], R[5] + vy - P[5]), l = p.local, k = i * 7;
+    if ([lx, ly].every(Number.isFinite)) out.set(m.bone, { x: lx, y: ly, rotation: l[k + 2]!, scaleX: l[k + 3]!, scaleY: l[k + 4]!, shearX: l[k + 5]!, shearY: l[k + 6]! });
+  }
+  return out;
 }
 
 /** How many samples a segment's curve is fitted to. */
