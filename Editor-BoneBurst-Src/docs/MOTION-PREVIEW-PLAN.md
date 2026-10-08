@@ -1,5 +1,7 @@
 # The selected bone's motion preview — plan
 
+> **Note 2026-10-08:** the path is now one of two separate systems (key animation and path motion): it has its own clock in seconds, no bake, and a one-time Make keys from path; see `TWO-SYSTEMS-PLAN.md` and SPEC §6a. What follows is the history of this plan.
+
 **Status:** planned, 2026-10-06; not started. Written from the owner's note (see "What was asked",
 and "My reading" where the note was not clear). Nothing is built, and the uncommitted path-creation
 work is untouched.

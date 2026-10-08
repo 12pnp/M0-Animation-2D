@@ -1,5 +1,7 @@
 # Drawing a path by capturing the bone's poses (red and green buttons) — plan
 
+> **Note 2026-10-08:** the path is now one of two separate systems (key animation and path motion): it has its own clock in seconds, no bake, and a one-time Make keys from path; see `TWO-SYSTEMS-PLAN.md` and SPEC §6a. What follows is the history of this plan.
+
 **Status:** built 2026-10-07 with all five recommendations; not committed; **not verified by hand**. `tsc`, vitest
 (738) and the whole Playwright suite (66) pass, and a deliberate swap of the stored x and y fails the bake test.
 Not built: nothing from the plan is left out; **"Make path" is gone** (Edit Path starts the path). Written from the owner's note and screenshot (below). It

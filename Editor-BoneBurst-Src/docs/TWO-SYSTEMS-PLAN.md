@@ -1,6 +1,6 @@
 # Two pure systems: Key animation and Path motion — plan
 
-**Status: planned 2026-10-08; the five questions were answered the same day (all five recommendations, with the owner's additions under "Decided"). Step 1 built the same day (below).** Written from the owner's note (below). It splits what is today one tangled thing, a bone's path that is only a recipe for keys, into two systems that never read each other.
+**Status: planned 2026-10-08; the five questions were answered the same day (all five recommendations, with the owner's additions under "Decided"). Steps 1 to 7 are built (each has a section below); step 8, the Unity side, is its own plan and not started.** Written from the owner's note (below). It splits what is today one tangled thing, a bone's path that is only a recipe for keys, into two systems that never read each other.
 
 ```mermaid
 flowchart LR
@@ -162,6 +162,14 @@ Outside this project nothing changes in steps 1 to 7: the sidecar is not exporte
 - **The picture.** For a bone with a path: the trail and its frame dots span the path's own time (`duration × fps` dots at `1/fps` apart, not the animation's length); the bone and its image are drawn from the driven pose (key animation at the playhead, the path at its clock: `drivenPose`, `DrivenTrail` in `ui/stage/trail.ts`); the lit dot is the path clock's frame; the tag reads "path frame N of M"; a press on a dot or on the tag's scrub sends the path clock (`seekPath(frame / fps)`); the onion ghosts are at the path's own times and "keyed only" has no keys to use; no dot is drawn larger for a key. A bone with no path is as it was.
 - Guards: `e2e/twinSpline.spec.ts` (the cap moves the path clock and leaves the animation's frame), `e2e/motionPath.spec.ts` (13 dots for a 0.5 s path at 24 fps, and a press on one puts the path clock on that frame while the animation's frame is unchanged).
 - Not done: the Stage's own overlay of the path trail is the Stage line (a spline in the world), which has no time marks; nothing to change there.
+
+## Step 7 built (2026-10-08): docs and guards
+
+**Done.** Documentation only; `tsc`, 803 unit tests and the browser suite unchanged and passing.
+
+- `docs/SPEC.md`: §3 says what a path is in the sidecar, and a new **§6a, Two systems** with the diagram, the table, the one-driver rule, the no-bridge rule, the guards and the limits.
+- The older path plans point here: `TWINSPLINE-PLAN.md` and `MOTION-PARENT-PLAN.md`, `PATH-CAPTURE-PLAN.md`, `LOCALPATH-EDIT-PLAN.md`, `MOTION-PREVIEW-PLAN.md` (each gets a note under its title; the three already replaced by TwinSpline keep their own banner).
+- Guards: the import guard and `tests/motionLayer.test.ts` came with step 1; nothing new was needed. The deliberate break of step 1 was not repeated.
 
 ## Decided (2026-10-08, the owner)
 

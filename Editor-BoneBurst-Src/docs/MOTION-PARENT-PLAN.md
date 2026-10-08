@@ -1,5 +1,7 @@
 # Motion Path relative to a parent bone — plan
 
+> **Note 2026-10-08:** the path is now one of two separate systems (key animation and path motion): it has its own clock in seconds, no bake, and a one-time Make keys from path; see `TWO-SYSTEMS-PLAN.md` and SPEC §6a. What follows is the history of this plan.
+
 **Status:** done 2026-10-08 (see "Result" at the end). The owner's ask: replace the Motion Path panel's
 **Local** mode with **relative to parent**, with a required parent-bone picker (no path can be made until one is chosen), and store
 and edit the path's nodes in that bone's space, drawn through that bone's current world transform, so the path follows the parent.

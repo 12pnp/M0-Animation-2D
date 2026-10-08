@@ -84,6 +84,8 @@ row in the Reference panel, or a double-click on its picture) is dragged on the 
 and by a corner to size it (step 13); only the chosen one takes presses, so the stage still pans
 over the others. Sidecar changes are not undo steps.
 
+A bone's **path** (`motion` in the sidecar, `MotionPath`) is the path system's data (§6a): nodes with their handles and speeds, `closed`, `duration` in seconds, `loop`, and the `animation` and `bone` it belongs to. It is plain numbers, so a later writer can put it in the export; today the sidecar is not exported to Unity.
+
 ## 4. Editing and history
 
 - An **edit** is a pure function from document to document with a label ("Move bone hip").
@@ -179,6 +181,39 @@ or line, and comments pointing at the old editor.
 | `track.ts`, `rig.ts`, `draw.ts` | same names | comments only |
 | `rigData.ts`, `rigAnimation.ts`, `rigAttachments.ts`, `rigJson.ts`, `rigTypes.ts` | same names | comments; atlas types from `regions.ts` |
 | `regions.ts` | — (replaces `atlasRead.ts`) | new: the regions from the model's atlas |
+
+## 6a. Two systems: key animation and path motion
+
+A bone's motion has two sources that never read each other (docs/TWO-SYSTEMS-PLAN.md, decisions Q1 to Q5 of 2026-10-08, D9 in `EDITOR-V2-PLAN.md`).
+
+```mermaid
+flowchart TB
+    subgraph K["K · key animation"]
+        KJ["Spine JSON animations<br/>(the document)"] --> KE["engine/ · Poser.pose<br/>clock: Session.time (Timeline)"]
+    end
+    subgraph P["P · path motion"]
+        PD["MotionPath (sidecar)<br/>nodes · legs · speeds · closed · duration · loop"] --> PC["src/motion/<br/>curve · nodes · speed spline · timeMap · pathPose"]
+        CLK["Session.pathClock<br/>(PathClock, seconds, own Play)"] --> PT["pathTime(m, t)"]
+        PC --> PT
+    end
+    KE --> SES["Session.pose():<br/>K for every bone, then pathDrive<br/>(ui/motion.ts) sets x y of each path's bone"]
+    PT --> SES
+    SES --> VIEW["Stage · Motion panel · Timeline"]
+    MK["Make keys from path<br/>(one-time copy: edit/pathKeys.ts)"] -.->|"writes translate keys, remembers nothing"| KJ
+    PD -.-> MK
+```
+
+| | K · key animation | P · path motion |
+|---|---|---|
+| Data | `animations` in the document | `Sidecar.motion`, one `MotionPath` per bone and animation |
+| Pure code | `engine/`, `edit/keys*` | `src/motion/` (imports the sidecar types and `EditRefused` only) |
+| Clock | `Session.time`, the Timeline's Play | `Session.pathClock`, Play, Pause, Stop and Loop in the Motion panel; in seconds |
+| Together | — | **Both** in the Motion panel starts the two clocks with one button (UI, not a data bridge) |
+
+- **One driver per bone.** A bone with a path in the animation shown is driven by the path (its x and y; the rest of its pose is the keys'). Its translate keys are silenced, not touched: the Timeline draws them dim; removing the path makes them play again. Making a path on a bone that has translate keys asks once, Silence or Delete.
+- **No bridge.** There is no bake, no signature, no stale state. **Make keys from path** copies the path into translate keys once, as one undo step; neither follows the other afterwards.
+- **Guards.** `scripts/check.sh` (`layer motion`, no DOM) and `tests/motionLayer.test.ts`: `src/motion/` imports no rig, document, edit layer or interface, and `edit`, `engine`, `model` never import it.
+- **Limits.** A path's reference bone is read from the key pose; the picture's Path layer for a silenced bone is the keys' trail; a key made on a silenced bone is not warned about.
 
 ## 7. Interface (E2–E4)
 

@@ -1,5 +1,7 @@
 # Editing a bone's motion from the Motion Path panel — plan
 
+> **Note 2026-10-08:** the path is now one of two separate systems (key animation and path motion): it has its own clock in seconds, no bake, and a one-time Make keys from path; see `TWO-SYSTEMS-PLAN.md` and SPEC §6a. What follows is the history of this plan.
+
 **Status:** built 2026-10-07, not committed; **not verified in a person's hands**: `tsc`, the unit
 tests (`tests/trailEdit.test.ts`) and four Playwright tests (`e2e/motionPanelEdit.spec.ts`) pass, the
 existing Motion Path suite still passes, and a deliberate sign flip in the drag fails the e2e. Done:

@@ -1,5 +1,7 @@
 # TwinSpline: one Edit Path, a ring spline and its speed spline
 
+> **Note 2026-10-08:** the path is now one of two separate systems (key animation and path motion): it has its own clock in seconds, no bake, and a one-time Make keys from path; see `TWO-SYSTEMS-PLAN.md` and SPEC §6a. What follows is the history of this plan.
+
 **Status: done 2026-10-08, not verified by hand** (the owner went ahead with the three assumptions at the end as written). `tsc`, 787 unit tests and 129 Playwright tests pass; the panel was looked at in a screenshot only. Steps 1 to 6 below were all done. What changed from the plan is under "Built".
 
 Adjust time goes away. Edit Path keeps the **ring spline** (the motion path) and gains a **twin**, the **speed spline**: one speed value on each node of the ring, drawn as a graph in the data box under the node numbers. The bone goes along the ring spline; how fast it goes at each place is `1 + speed` (the speed value runs from **-0.99 to 5**, so the multiplier runs from 0.01 to 6 and is never 0). The red line between the picture and the node numbers becomes a splitter you can drag.
