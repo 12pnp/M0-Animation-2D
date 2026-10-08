@@ -266,7 +266,7 @@ reference, ai when built); default places live in `ui/workspace/layout.ts`. Dock
 splitting, tabbing, floating and popout windows; panels size from its `layout(width, height)`
 and use their own window (a popout's), not the main one. The layout is kept in the browser's
 storage (view-only state of the app); a saved layout naming a panel the build lacks defers it.
-Themes are Dockview's dark and light, coloured through `--dv-*` variables; text is Inter and
+The dock's themes are Dockview's dark and light, coloured through `--dv-*` variables (the person's own themes, below, pick one of the two as their base); text is Inter and
 numbers JetBrains Mono, vendored woff2 files, so every machine renders the same text.
 
 **Icons (E4 step 13a)** are vendored SVG files, never an npm package: Lucide (ISC) for the
@@ -290,6 +290,35 @@ from its ES module, its styles taken from its package at build time (`vite.confi
 **Preferences (E4 step 10)** are the person's, not the document's: theme, rulers, bones, undo
 steps, new references' opacity, kept in the browser's storage (`boneburst.preferences`,
 versioned, unreadable values taken as the defaults) like the dock layout (`ui/preferences`).
+
+**Themes (2026-10-08).** The title bar of the Preferences dialog picks the theme in use: Follow the
+system, the built-in Light and Dark, or the person's own (a ⋮ menu makes a copy, renames, deletes
+and sets the scheme it is based on). A theme owns the appearance preferences (`APPEARANCE_KEYS` in
+`ui/preferences.ts`: colours, sizes, interface scale, the tree's look); the behaviour preferences
+(undo steps, snapping, autosave…) are the same in every theme. Storage is version 2 (`themes`,
+`theme`, the behaviour values beside them); a version 1 file is read once into the built-in theme it
+named. `Preferences.values` stays the flat set in force (`resolveSettings`), so nothing outside the
+dialog knows about themes; `Preferences.scheme` is what the page's `data-theme` takes.
+
+**The Properties panel** has a tab strip under its header: Properties (the selection's fields, or
+the skeleton's when nothing is selected) and Snapping (the snapping settings, `ui/snapFields`).
+**The outline** draws a thin guide line per level of the tree under each parent's fold arrow, in
+the colour set under Tree (`treeGuideColour`).
+
+**The Motion Path panel** (`ui/panels/motionPanel.ts`) is the path system's editor (§6a), for the
+selected bone and the animation shown. From the top: the header (what the picture shows, the
+parent bone and handles toggles, the Stage line); the path bar (the parent bone the path is
+relative to, Edit Path, + and − Node, Duration and Closed and Loop, Play / Pause, Both, Stop and the
+path's clock, Make keys from path, Remove path); the view bar (zoom − and +, the zoom, Fit); the
+picture (the ring spline with its nodes and legs, the bone and its image at the path's own time,
+the path's frame dots; wheel zooms, the middle button pans); the node strip (a number per node,
+dragged to reorder); and under a splitter you drag, the picked node's data (place, speed, both
+legs) with the **speed graph**: the speed spline over the path's length, a ruler in the path's own
+units with the cap (the path clock), a point and two legs per node, wheel to zoom, a drag on empty
+graph to pan, Fit and Node to fit the whole path or the picked node's section, a right-click or
+⌘ + click menu (add a node there, delete one, break or mirror its legs) and a green line under it
+that sets the graph's height. Edits are history steps (`keepMotion`), like every other sidecar
+edit that goes through `History.applyBeside`.
 
 ## 8. AI tools (E5)
 
