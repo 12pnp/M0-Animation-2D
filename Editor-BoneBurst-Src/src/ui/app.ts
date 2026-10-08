@@ -324,7 +324,7 @@ export function mountApp(root: HTMLElement): void {
   fitCorner.append(fitBtn);
   // Two small buttons in the stage's bottom-left corner, stacked upward: show or hide the panels, then the rulers.
   const rulerTools = el("div", "stage-ruler-tools");
-  const glowBtn = iconButton(button("Glow", "A bone or image you pick in Pose mode glows for a moment", () => prefs.set({ pickGlow: !prefs.values.pickGlow })), "glow", false);
+  const glowBtn = iconButton(button("Glow", "A bone or image you pick glows for a moment", () => prefs.set({ pickGlow: !prefs.values.pickGlow })), "glow", false);
   rulerTools.append(glowBtn, panelsBtn, rulersBtn);
   // One small button per panel on the stage's left edge, to show or hide it (the first appended sits lowest).
   const PANEL_BTNS: ReadonlyArray<{ id: string; label: string; icon: IconName }> = [

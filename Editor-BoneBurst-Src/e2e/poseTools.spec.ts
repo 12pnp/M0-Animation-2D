@@ -210,7 +210,7 @@ test("the small panel buttons follow the mode: Create, Bone options and Pose too
   await expect(page.locator('[data-panel-id="create"]')).toBeVisible();
 });
 
-test("Pose mode: a picked bone glows for 0.4 s, then not; in Animate mode it does not", async ({ page }) => {
+test("a picked bone glows for 0.4 s, then not, in Pose mode and in Animate mode", async ({ page }) => {
   await page.setViewportSize({ width: 1500, height: 800 });
   await open(page);
   const glow = () => page.evaluate(() => (window as unknown as { boneburst: { stage: { glow: { kind: string; name: string } | null } } }).boneburst.stage.glow);
@@ -228,7 +228,8 @@ test("Pose mode: a picked bone glows for 0.4 s, then not; in Animate mode it doe
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select(null));
   const at2 = await mid();
   await page.mouse.click(box.x + at2.x, box.y + at2.y);
-  expect(await glow()).toBeNull();
+  expect(await glow()).toMatchObject({ kind: "bone" });
+  await expect.poll(glow, { timeout: 2000 }).toBeNull();
 });
 
 test("the small Glow button at the stage's bottom left turns the pick glow off and on", async ({ page }) => {

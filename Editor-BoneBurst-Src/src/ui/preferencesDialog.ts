@@ -82,7 +82,7 @@ export class PreferencesDialog {
         note("A bone can have a colour and an icon of its own: select it and see Properties."),
         check("Show constraints on the stage", p.constraints, (on) => this.prefs.set({ constraints: on })),
         check("Compensate: children keep their place when a bone is moved (Pose mode)", p.compensate, (on) => this.prefs.set({ compensate: on })),
-        check("A picked bone or image glows for a moment (Pose mode)", p.pickGlow, (on) => this.prefs.set({ pickGlow: on })),
+        check("A picked bone or image glows for a moment", p.pickGlow, (on) => this.prefs.set({ pickGlow: on })),
         check("Show bone names on the stage", p.boneNames, (on) => this.prefs.set({ boneNames: on })),
         check("A press on the stage picks bones", p.boneSelect, (on) => this.prefs.set({ boneSelect: on })),
         check("A press on the stage picks images", p.imageSelect, (on) => this.prefs.set({ imageSelect: on })),

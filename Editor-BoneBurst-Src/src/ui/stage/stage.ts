@@ -100,7 +100,7 @@ export class Stage {
   names = { bones: false };
   /** A press picked something (a bone, an image, a constraint): the app shows its name for a moment. */
   onPick: () => void = () => {};
-  /** The bone or image just picked in Pose mode, glowing for 0.4 s. */
+  /** The bone or image just picked (Pose or Animate mode), glowing for 0.4 s. */
   glow: { kind: "bone" | "slot"; name: string; from: number | null } | null = null;
   /** A press that picked something ended (the button is up): the app starts the name's countdown. */
   onRelease: () => void = () => {};
@@ -110,7 +110,7 @@ export class Stage {
   glowOn = true;
 
   private glowFor(what: { kind: "bone" | "slot"; name: string }): void {
-    if (this.session.animation || !this.glowOn) return;
+    if (!this.glowOn) return;
     // It stays lit while the button is down (`from` null); the 0.4 s run out from the button coming up.
     this.glow = { ...what, from: null };
     this.redraw();
@@ -137,18 +137,19 @@ export class Stage {
     if (alpha <= 0) return;
     const at = (x: number, y: number) => toScreen(this.camera, this.size, x, y);
     g.save();
-    g.globalAlpha = Math.min(1, alpha);
+    // Thin and half strength: a hint of where the pick went, in either mode.
+    g.globalAlpha = Math.min(1, alpha) * 0.5;
     g.strokeStyle = colour;
     g.shadowColor = colour;
-    g.shadowBlur = 16;
-    g.lineWidth = 3;
+    g.shadowBlur = 8;
+    g.lineWidth = 1.5;
     g.lineJoin = "round";
     g.lineCap = "round";
     if (glow.kind === "bone") {
       const b = this.screenBones().find((x) => x.name === glow.name);
       if (b) {
         const unit = this.session.boneUnit(), half = boneHalfWidth(unit, this.session.boneSize, this.camera.zoom);
-        g.lineWidth = half * 2 + 6;
+        g.lineWidth = half * 2 + 2;
         g.beginPath(); g.moveTo(b.x0, b.y0); g.lineTo(b.x1, b.y1); g.stroke();
       }
     } else {

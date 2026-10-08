@@ -95,9 +95,9 @@ export class TransformStrip {
     this.set(row, key, String(Math.round((at.pose[key as keyof LocalPose] + sign * step) * 1e4) / 1e4));
   }
 
-  /** The pose the cells show for the selected bone: the animation at the playhead, or the setup pose. */
+  /** The pose the cells show for the selected bone (or the bone of the selected image): the animation at the playhead, or the setup pose. */
   private local(): { name: string; pose: LocalPose } | null {
-    const s = this.session, doc = s.doc, name = s.selectedBone;
+    const s = this.session, doc = s.doc, name = s.transformBone;
     const bone = doc?.bones?.find((b) => b.name === name);
     if (!doc || !name || !bone) return null;
     const p = s.animation ? s.pose() : null, i = p?.bones.get(name);

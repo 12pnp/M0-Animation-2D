@@ -49,7 +49,7 @@ export interface PreferenceValues {
   readonly imageSelect: boolean;
   readonly otherSelect: boolean;
   readonly boneNames: boolean;
-  /** A bone or image picked on the stage in Pose mode glows for 0.4 s. */
+  /** A bone or image picked on the stage glows for 0.4 s. */
   readonly pickGlow: boolean;
   /** Bone options ▸ Compensate: a moved bone's children keep their place (Pose mode). */
   readonly compensate: boolean;

@@ -143,6 +143,14 @@ export class Session {
   /** The selected bone's name, when a bone is what is selected. */
   get selectedBone(): string | null { return this.selected?.kind === "bone" ? this.selected.name : null; }
 
+  /** The bone the transform panel works on: the selected bone, or the bone an image (a slot, or its attachment) hangs from. */
+  get transformBone(): string | null {
+    const sel = this.selected;
+    if (sel?.kind === "bone") return sel.name;
+    const slot = sel?.kind === "slot" ? sel.name : sel?.kind === "attachment" ? sel.slot : null;
+    return slot === null ? null : this.doc?.slots?.find((x) => x.name === slot)?.bone ?? null;
+  }
+
   /** Select (null: nothing) and tell the listeners. */
   select(sel: Selection | null): void {
     if (sameSelection(sel, this.selected)) return;
