@@ -130,10 +130,10 @@ export class Session {
   private unkeyedRev = 0;
   /**
    * The path system's clock (docs/TWO-SYSTEMS-PLAN.md, P): seconds that never wrap (each path takes its own time from it), apart from the
-   * animation's `time`. While `pathEngaged` the animation's paths drive their bones' x and y over the keys; Stop gives the bones back.
+   * animation's `time`. A bone with a path in the animation shown is driven by the path alone (its x and y; its translate keys are silenced, not
+   * touched), so Stop puts it at the path's start and removing the path gives it back to its keys (docs/TWO-SYSTEMS-PLAN.md, one driver per bone).
    */
   readonly pathClock = new PathClock();
-  pathEngaged = false;
   private setup: { key: string; value: BoneWorlds } | null = null;
   private readonly listeners = new Set<() => void>();
 
@@ -480,7 +480,7 @@ export class Session {
     if (!poser) return null;
     const anim = this.animation?.name ?? null;
     const step = this.playing ? this.step : "none";
-    const driven = this.pathEngaged && anim !== null && this.sidecar.motion.some((m) => m.animation === anim);
+    const driven = anim !== null && this.sidecar.motion.some((m) => m.animation === anim);
     const key = `${this.history!.revision}|${this.loopRev}|${this.skin}|${anim}|${this.time}|${this.tick}|${step}|${this.unkeyedRev}|${driven ? this.pathClock.time : "-"}`;
     if (this.posed?.key !== key || (driven && this.posed.motion !== this.sidecar.motion)) {
       let value: Posed;
@@ -495,20 +495,25 @@ export class Session {
     return this.posed.value;
   }
 
+  /** Whether a path drives `bone` in the animation shown: its translate keys are silenced then (they stay in the document). */
+  pathDrives(bone: string): boolean {
+    const a = this.animation?.name;
+    return a !== undefined && this.sidecar.motion.some((m) => m.animation === a && m.bone === bone);
+  }
+
   /** Whether the animation shown has a path to play. */
   get hasPaths(): boolean {
     const a = this.animation?.name;
     return a !== undefined && this.sidecar.motion.some((m) => m.animation === a);
   }
 
-  /** Play the paths of the animation shown on the path clock, over the keys: no bake needed. The animation's own playback stops. */
+  /** Play the paths of the animation shown on the path clock: no keys needed. The animation's own playback stops. */
   playPath(keepKeys = false): void {
     if (!this.hasPaths) return;
     if (this.playing && !keepKeys) this.pause();
     this.clearUnkeyed();
     const longest = Math.max(...this.sidecar.motion.filter((m) => m.animation === this.animation!.name).map((m) => m.duration));
     if (this.pathClock.time >= longest && !this.sidecar.motion.some((m) => m.animation === this.animation!.name && m.loop)) this.pathClock.time = 0;
-    this.pathEngaged = true;
     this.pathClock.playing = true;
     this.changed();
   }
@@ -520,19 +525,18 @@ export class Session {
     this.playPath(true);
   }
 
-  /** Hold the path clock where it is (the paths keep driving their bones). */
+  /** Hold the path clock where it is. */
   pausePath(): void {
     if (!this.pathClock.playing) return;
     this.pathClock.playing = false;
     this.changed();
   }
 
-  /** Stop the path clock, back to 0, and give the bones back to the keys. */
+  /** Stop the path clock, back to 0: the paths' bones are at their starts. */
   stopPath(): void {
-    if (!this.pathEngaged && !this.pathClock.playing && this.pathClock.time === 0) return;
+    if (!this.pathClock.playing && this.pathClock.time === 0) return;
     this.pathClock.playing = false;
     this.pathClock.time = 0;
-    this.pathEngaged = false;
     this.changed();
   }
 

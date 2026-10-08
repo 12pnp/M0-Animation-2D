@@ -144,6 +144,16 @@ Outside this project nothing changes in steps 1 to 7: the sidecar is not exporte
 - **Guards:** `e2e/motionPath.spec.ts` (after Make keys the path is `toEqual` what it was; one history step; the bone follows the path within a few units at every frame), `tests/sidecar.test.ts` (an old `baked` is ignored and not written). The AI tool contract has no path tool, so its version note is unchanged.
 - **Still to do:** the one-driver rule and the Silence or Delete question (step 5): until then a bone with a path *and* made keys is driven by the path while Play is engaged and by the keys otherwise.
 
+## Step 5 built (2026-10-08): one driver per bone
+
+**Done.** `tsc`, 803 unit tests and all 137 browser tests pass; the dialog and the Timeline badge were seen only through the tests.
+
+- **The rule is permanent.** A path in the animation shown drives its bone's x and y whenever the animation is shown (not only while Play is on): `Session.pose()` no longer has an "engaged" state, `pathEngaged` is deleted. Stop zeros the clock (the bone at the path's start); it no longer hands the bone back to the keys. **Removing the path is how the keys play again**, and nothing was ever written to them.
+- **Silence or Delete (Q2).** Edit Path on a bone with translate keys in the animation (any of `translate`, `translatex`, `translatey`) asks once, in a three-button dialog (`ui/choiceDialog.ts`, now also what the document tabs' save question uses): *Silence the keys* (the default: nothing changes in the document), *Delete the keys* (`deleteTranslateKeys` plus the path, one undo step: `startMotionDeletingKeys`) or Cancel (nothing is made). A bone with no keys is not asked.
+- **Dimmed in the Timeline.** A silenced bone's translate channels are drawn at 30%, and their label carries "silenced by path" (`Timeline.silenced`, `Session.pathDrives(bone)`).
+- **Guards.** `e2e/motionPath.spec.ts`: Silence leaves the keys byte for byte; with a path the playhead moving over the keys no longer moves the bone; the badge shows; Remove path, Undo, Remove path again leaves the keys exactly as they were and the bone follows them again; Cancel makes nothing; Delete removes split timelines too, and one Undo brings the keys back and takes the path away. `tests/motionPath.test.ts`: `translateKeyCount`, `deleteTranslateKeys`.
+- **Known limits.** The picture's *Path* layer (the bone's trail over the animation) and Make keys' stray figure still read the key animation alone, so for a silenced bone *Path* shows what the keys would do, not the path (the *Spline* layer is the path). A key made on a silenced bone (Auto Key on the Stage, or an AI `set_keys`) is written and silenced like the rest: nothing warns yet.
+
 ## Decided (2026-10-08, the owner)
 
 - **Q1 Where a path lives: the sidecar, as today.** The document stays byte-exact Spine JSON. Each path is shaped as plain numbers keyed by animation and bone, so moving it into the export later (the Unity plan, step 8) is only a writer change.

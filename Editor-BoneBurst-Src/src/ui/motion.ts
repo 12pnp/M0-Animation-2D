@@ -1,6 +1,6 @@
 import { arrivalTimes, curveOf, DEFAULT_DURATION, pathPose, pathTime, progressAtTime } from "@/motion";
 import type { LocalPose } from "@/edit/boneKeys";
-import { fitChannel, type PathKey, setupXY, translateKeys, writeTranslateKeys } from "@/edit/pathKeys";
+import { deleteTranslateKeys, fitChannel, type PathKey, setupXY, translateKeys, writeTranslateKeys } from "@/edit/pathKeys";
 import { motionOf, withMotion } from "@/edit/sidecar";
 import { EditRefused } from "@/edit/history";
 import type { Skeleton } from "@/model/skeleton";
@@ -234,6 +234,18 @@ export function makeKeysFromPath(s: Session, m: MotionPath): { stray: number; ke
 export function keepMotion(s: Session, m: MotionPath, label = `Edit the path of ${m.bone}`, join = false): void {
   const change = (): void => s.setSidecar(withMotion(s.sidecar, m.animation, m.bone, m));
   if (s.history) s.history.applyBeside(label, change, join); else change();
+}
+
+/** Start a path and delete its bone's translate keys in the animation, as one undo step (the "Delete" answer when a path is made on a bone that has keys). */
+export function startMotionDeletingKeys(s: Session, m: MotionPath): void {
+  const h = s.history;
+  if (!h) { keepMotion(s, m); return; }
+  h.begin(`Start a path for ${m.bone}, deleting its translate keys`);
+  try {
+    h.apply("", deleteTranslateKeys(m.animation, m.bone));
+    s.setSidecar(withMotion(s.sidecar, m.animation, m.bone, m));
+  } finally { h.end(); }
+  s.changed();
 }
 
 /** Drop the path kept for a bone; its keys stay as they are. One undo step. */

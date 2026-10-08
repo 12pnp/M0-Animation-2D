@@ -1,6 +1,6 @@
 import { breakLegs, buildCurve, curveOf, handleOffsets, mergeNodes, midAfter, mirrorLegs, moveNode, nodeLabels, renumberNodes, reversePath, withDuration, withLoop, withNode, withOrigin } from "@/motion";
 import { describe, expect, it } from "vitest";
-import { fitChannel, translateKeys, writeTranslateKeys } from "@/edit/pathKeys";
+import { deleteTranslateKeys, fitChannel, translateKeyCount, translateKeys, writeTranslateKeys } from "@/edit/pathKeys";
 import type { MotionPath } from "@/model/sidecar";
 import type { Animation, Key, Skeleton } from "@/model/skeleton";
 import { keyLists, keyTime, timeFrame } from "@/model/timelines";
@@ -95,6 +95,17 @@ describe("the keys", () => {
     expect(curve[5]).toBeCloseTo(3, 6);
     expect(curve[7]).toBeCloseTo(6, 6);
     expect(ks[1]!.curve).toBeUndefined();
+  });
+  it("count a bone's translate keys on every translate timeline, and delete those and no other key", () => {
+    const a = { name: "a", bones: [{ name: "b", timelines: [{ name: "rotate", keys: [key(0, { value: 1 })] }, { name: "translatex", keys: [key(0, { value: 4 }), key(3, { value: 5 })] }, { name: "translatey", keys: [key(0, { value: 4 })] }, { name: "translate", keys: [key(0, { x: 1, y: 1 })] }] }, { name: "c", timelines: [{ name: "translate", keys: [key(0, { x: 1, y: 1 })] }] }], extra: new Map() } as unknown as Animation;
+    expect(translateKeyCount(a, "b")).toBe(4);
+    expect(translateKeyCount(a, "c")).toBe(1);
+    expect(translateKeyCount(a, "nobody")).toBe(0);
+    const out = deleteTranslateKeys("a", "b")(doc(a)).animations![0]!;
+    expect(translateKeyCount(out, "b")).toBe(0);
+    expect(translateKeyCount(out, "c")).toBe(1);
+    expect(keyLists(out).find((l) => "timeline" in l.path && l.path.timeline === "rotate")!.keys).toHaveLength(1);
+    expect(() => deleteTranslateKeys("a", "nobody")(doc(a))).toThrow();
   });
   it("replace the bone's translate timelines, including the split ones, and nothing else", () => {
     const a = { name: "a", bones: [{ name: "b", timelines: [{ name: "rotate", keys: [key(0, { value: 1 })] }, { name: "translatex", keys: [key(0, { value: 4 })] }, { name: "translate", keys: [key(0, { x: 1, y: 1 }), key(9, { x: 2, y: 2 })] }] }], extra: new Map() } as unknown as Animation;

@@ -553,6 +553,9 @@ test("the bone, with keys made from the path, follows the ring with a speed on i
   await panel.getByRole("button", { name: "Make keys from path" }).click();
   await expect.poll(async () => (await translate(page, "head")).length).toBeGreaterThan(1);
   const p = (await path(page))!;
+  // The path silences the bone's keys while it exists: remove it, so the bone is posed by the keys that were made.
+  await panel.getByRole("button", { name: "Remove path" }).click();
+  await expect.poll(async () => await path(page)).toBeNull();
   let worst = 0;
   const fps = await page.evaluate(() => (window as unknown as Live).boneburst.session.fps);
   for (let f = 0; f < Math.round(p.duration * fps); f++) {
@@ -599,13 +602,13 @@ test("the speed graph's menu (right-click or ⌘ + click) adds a node where the 
   await expect.poll(async () => (await canvas.boundingBox())!.height).toBeGreaterThan(before + 30);
 });
 
-test("the path plays on its own clock with no keys and no bake: Play moves the bone along the path, Pause holds it, Stop gives it back to the keys; with Loop off it stops at the end", async ({ page }) => {
+test("the path plays on its own clock with no keys and no bake: Play moves the bone along the path, Pause holds it, Stop puts it back at its start; with Loop off it stops at the end", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
   await startEditPath(panel);
   const joint = () => page.evaluate(() => { const s = (window as unknown as Live).boneburst.session, p = s.pose()!, m = (p as unknown as { rig: { matrix(i: number): ArrayLike<number> } }).rig.matrix(p.bones.get("head")!); return [m[4]!, m[5]!]; });
-  const clock = () => page.evaluate(() => { const c = (window as unknown as { boneburst: { session: { pathClock: { time: number; playing: boolean }; pathEngaged: boolean } } }).boneburst.session; return { time: c.pathClock.time, playing: c.pathClock.playing, engaged: c.pathEngaged }; });
-  // Starting the path left the bone posed unkeyed on a node: drop that, so `before` is where the keys have the bone.
+  const clock = () => page.evaluate(() => { const c = (window as unknown as { boneburst: { session: { pathClock: { time: number; playing: boolean } } } }).boneburst.session; return { time: c.pathClock.time, playing: c.pathClock.playing }; });
+  // Starting the path left the bone posed unkeyed on a node: drop that, so `before` is the path's start.
   await page.evaluate(() => { const s = (window as unknown as { boneburst: { session: { clearUnkeyed(): void; changed(): void } } }).boneburst.session; s.clearUnkeyed(); s.changed(); });
   const done = await steps(page), before = await joint();
   expect(await translate(page, "head")).toHaveLength(0);
@@ -614,13 +617,12 @@ test("the path plays on its own clock with no keys and no bake: Play moves the b
   await panel.getByRole("button", { name: /Pause$/ }).click();
   const held = await clock(), moved = await joint();
   expect(held.playing).toBe(false);
-  expect(held.engaged).toBe(true);
-  expect(Math.hypot(moved[0]! - before[0]!, moved[1]! - before[1]!)).toBeGreaterThan(1);
+    expect(Math.hypot(moved[0]! - before[0]!, moved[1]! - before[1]!)).toBeGreaterThan(1);
   await page.waitForTimeout(150);
   expect((await clock()).time).toBe(held.time);
-  // Stop: the clock at 0, the bone where the keys have it, and nothing was written.
+  // Stop: the clock at 0, the bone back at the path's start, and nothing was written.
   await panel.getByRole("button", { name: /Stop$/ }).click();
-  expect(await clock()).toEqual({ time: 0, playing: false, engaged: false });
+  expect(await clock()).toEqual({ time: 0, playing: false });
   const back = await joint();
   expect(Math.hypot(back[0]! - before[0]!, back[1]! - before[1]!)).toBeLessThan(0.01);
   expect(await translate(page, "head")).toHaveLength(0);
@@ -635,7 +637,6 @@ test("the path plays on its own clock with no keys and no bake: Play moves the b
   await panel.getByRole("button", { name: /Play$/ }).click();
   await expect.poll(async () => (await clock()).playing).toBe(false);
   expect((await clock()).time).toBeCloseTo(0.2, 6);
-  expect((await clock()).engaged).toBe(true);
 });
 
 test("Both plays the animation's keys and the path's clock with one button, and pauses both; each keeps its own time", async ({ page }) => {
@@ -652,4 +653,68 @@ test("Both plays the animation's keys and the path's clock with one button, and 
   expect(held.path).toBe(false);
   // The path's time is its own: it is not the animation's playhead.
   expect(held.pathTime).not.toBeCloseTo(held.keyTime, 6);
+});
+
+test("one driver per bone: a path silences the bone's translate keys (kept, dimmed in the Timeline), Remove path makes them play again, and Delete removes them in one undo step", async ({ page }) => {
+  await open(page, "hips");
+  const panel = panelOf(page);
+  const keys = (bone: string) => page.evaluate((b) => { const a = (window as unknown as Live).boneburst.session.doc.animations[0]!, t = a.bones?.find((x) => x.name === b)?.timelines.filter((l) => l.name.startsWith("translate")) ?? []; return JSON.stringify(t); }, bone);
+  const joint = (bone: string) => page.evaluate((b) => { const s = (window as unknown as Live).boneburst.session, p = s.pose()!, m = (p as unknown as { rig: { matrix(i: number): ArrayLike<number> } }).rig.matrix(p.bones.get(b)!); return [m[4]!, m[5]!]; }, bone);
+  const seek = (f: number) => page.evaluate((fr) => { const s = (window as unknown as Live).boneburst.session; s.seek(fr); }, f);
+  const apart = (a: number[], b: number[]) => Math.hypot(a[0]! - b[0]!, a[1]! - b[1]!);
+  const original = await keys("hips");
+  expect(original).toContain("translate");
+  await seek(0);
+  const k0 = await joint("hips");
+  await seek(5);
+  const k5 = await joint("hips");
+  expect(apart(k0, k5)).toBeGreaterThan(1);
+  // Make a path: asked once; Silence keeps the keys exactly.
+  await chooseParent(panel);
+  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await expect(page.locator("dialog.confirm-dialog")).toContainText("hips has 9 translate keys");
+  await page.getByRole("button", { name: "Silence the keys" }).click();
+  await expect.poll(async () => (await path(page))?.bone).toBe("hips");
+  expect(await keys("hips")).toBe(original);
+  // The path drives the bone: the playhead moving over the keys no longer moves it.
+  await page.evaluate(() => { const s = (window as unknown as { boneburst: { session: { clearUnkeyed(): void; changed(): void } } }).boneburst.session; s.clearUnkeyed(); s.changed(); });
+  await seek(0);
+  const p0 = await joint("hips");
+  await seek(5);
+  expect(apart(p0, await joint("hips"))).toBeLessThan(0.01);
+  // The Timeline says so.
+  await expect(page.locator(".timeline-labels .path-badge").first()).toBeVisible();
+  // Remove path, undo it, remove it again: the keys are byte for byte what they were, and play again.
+  await panel.getByRole("button", { name: "Remove path" }).click();
+  await expect.poll(async () => await path(page)).toBeNull();
+  await page.evaluate(() => { const s = (window as unknown as Live).boneburst.session; (s.history as unknown as { undo(): boolean }).undo(); s.changed(); });
+  await expect.poll(async () => (await path(page))?.bone).toBe("hips");
+  await panel.getByRole("button", { name: "Remove path" }).click();
+  await expect.poll(async () => await path(page)).toBeNull();
+  expect(await keys("hips")).toBe(original);
+  await seek(5);
+  expect(apart(k5, await joint("hips"))).toBeLessThan(0.01);
+  await expect(page.locator(".timeline-labels .path-badge")).toHaveCount(0);
+});
+
+test("making a path on a bone with keys: Cancel makes nothing; Delete removes its translate keys, split ones too, with the path as one undo step", async ({ page }) => {
+  await open(page, "hand_near_target");
+  const panel = panelOf(page);
+  const count = () => page.evaluate(() => { const a = (window as unknown as Live).boneburst.session.doc.animations[0]!; return (a.bones?.find((x) => x.name === "hand_near_target")?.timelines ?? []).filter((l) => l.name.startsWith("translate")).reduce((n, l) => n + l.keys.length, 0); });
+  const steps2 = () => page.evaluate(() => ((window as unknown as Live).boneburst.session.history.entries as unknown as { done: number }).done);
+  expect(await count()).toBe(18);
+  await chooseParent(panel);
+  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await page.getByRole("button", { name: "Cancel" }).click();
+  expect(await path(page)).toBeNull();
+  expect(await count()).toBe(18);
+  const done = await steps2();
+  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await page.getByRole("button", { name: "Delete the keys" }).click();
+  await expect.poll(async () => (await path(page))?.bone).toBe("hand_near_target");
+  expect(await count()).toBe(0);
+  expect(await steps2()).toBe(done + 1);
+  await page.evaluate(() => { const s = (window as unknown as Live).boneburst.session; (s.history as unknown as { undo(): boolean }).undo(); s.changed(); });
+  await expect.poll(async () => await count()).toBe(18);
+  expect(await path(page)).toBeNull();
 });

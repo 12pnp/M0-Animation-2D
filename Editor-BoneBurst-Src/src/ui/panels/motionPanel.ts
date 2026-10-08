@@ -11,8 +11,10 @@ import { showContextMenu } from "../contextMenu";
 import type { MenuItem } from "../menubar";
 import { pickColour } from "../colourPopup";
 import type { MotionMemory } from "../viewMemory";
-import { makeKeysFromPath, currentNode, dropMotion, keepMotion, motionFor, nodeAfter, parentChoices, pathFromView, pathToView, poseAtNode, refBoneName, refMatrix, startMotion, toView } from "../motion";
+import { makeKeysFromPath, currentNode, startMotionDeletingKeys, dropMotion, keepMotion, motionFor, nodeAfter, parentChoices, pathFromView, pathToView, poseAtNode, refBoneName, refMatrix, startMotion, toView } from "../motion";
 import { keysAt } from "@/model/timelines";
+import { askChoice } from "../choiceDialog";
+import { translateKeyCount } from "@/edit/pathKeys";
 import { localPoint, pageScale } from "../pageScale";
 import type { Session } from "../session";
 import { type Matrix, type Point, localRotation, scaleAlong, scaleFactors, shearAlong, shearDelta, spaceAxes, tidy, turn, turnSign } from "../stage/gizmo";
@@ -358,7 +360,7 @@ export class MotionPathPanel {
     this.closedLabel.className = "lp-field";
     this.closedLabel.title = "A ring: the last spline node joins the first, so the path comes back to where it began (on by default)";
     this.closedLabel.append(this.closedBox, " Closed");
-    // The path's own Play: the path plays on its own clock over the keys, with no bake; Stop gives the bone back to the keys.
+    // The path's own Play: the path plays on its own clock, with no keys; Stop puts it back at its start.
     this.playBtn.type = "button";
     this.playBtn.className = "lp-play";
     this.playBtn.addEventListener("click", () => { if (this.session.pathClock.playing) this.session.pausePath(); else this.session.playPath(); });
@@ -368,7 +370,7 @@ export class MotionPathPanel {
     });
     this.stopBtn.type = "button";
     this.stopBtn.textContent = "■ Stop";
-    this.stopBtn.title = "Stop the path's clock and give the bone back to the keys";
+    this.stopBtn.title = "Stop the path's clock: back to 0, the bone at the path's start";
     this.stopBtn.addEventListener("click", () => this.session.stopPath());
     this.clockLabel.className = "lp-clock";
     this.clockLabel.title = "The path's own time in seconds";
@@ -384,10 +386,10 @@ export class MotionPathPanel {
     // Three sections: the path (parent, start, nodes), its time (total frames, ring), what to do with it (make keys, remove); then what it says.
     const section = (...kids: HTMLElement[]): HTMLElement => { const d = document.createElement("div"); d.className = "lp-sect"; d.append(...kids); return d; };
     this.motionBar.append(section(this.parentPick, this.motionBtns.draw, this.motionBtns.add, this.motionBtns.del), section(this.durationBox, this.closedLabel, this.loopLabel), section(this.playBtn, this.bothBtn, this.stopBtn, this.clockLabel), section(this.motionBtns.makeKeys, this.motionBtns.drop), this.motionInfo);
-    this.motionBtns.draw.addEventListener("click", () => this.enterDraw());
+    this.motionBtns.draw.addEventListener("click", () => void this.enterDraw());
     this.motionBtns.makeKeys.addEventListener("click", () => this.makeKeys());
     this.motionBtns.add.className = "add";
-    this.motionBtns.add.addEventListener("click", () => { if (motionFor(this.session)) this.addNode(); else this.enterDraw(); });
+    this.motionBtns.add.addEventListener("click", () => { if (motionFor(this.session)) this.addNode(); else void this.enterDraw(); });
     this.motionBtns.del.addEventListener("click", () => this.removeNode());
     this.motionBtns.drop.addEventListener("click", () => { const m = motionFor(this.session); if (m) { dropMotion(this.session, m.animation, m.bone); this.selNode = -1; } });
     // The picture on top; under it the node numbers, and under them the picked node's data.
@@ -1116,9 +1118,9 @@ export class MotionPathPanel {
     this.clockLabel.hidden = !has;
     const clock = this.session.pathClock;
     this.playBtn.textContent = clock.playing ? "❚❚ Pause" : "▶ Play";
-    this.playBtn.title = clock.playing ? "Pause the path's clock (the path keeps the bone)" : "Play the path on its own clock, over the keys: no bake needed";
+    this.playBtn.title = clock.playing ? "Pause the path's clock (the path keeps the bone)" : "Play the path on its own clock: no keys needed";
     this.playBtn.setAttribute("aria-pressed", String(clock.playing));
-    this.stopBtn.disabled = !this.session.pathEngaged;
+    this.stopBtn.disabled = !clock.playing && clock.time === 0;
     const both = this.session.playing && clock.playing;
     this.bothBtn.hidden = !has;
     this.bothBtn.textContent = both ? "❚❚ Both" : "▶ Both";
@@ -1219,7 +1221,7 @@ export class MotionPathPanel {
   hotkey(id: "add" | "remove" | "reverse" | "merge" | "origin"): boolean {
     const m = motionFor(this.session);
     if (!m) {
-      if (id === "add") { this.enterDraw(); return true; }
+      if (id === "add") { void this.enterDraw(); return true; }
       return false;
     }
     switch (id) {
@@ -1827,8 +1829,12 @@ export class MotionPathPanel {
     keepMotion(s, { ...m, nodes: m.nodes.map((x, i) => (i === this.selNode ? { ...n, x: cur.x, y: cur.y } : x)) }, "Move a spline node", true);
   }
 
-  /** Edit Path: start a path for the bone (two spline nodes: where it is, and that plus an offset), or go back to drawing the one it has. */
-  private enterDraw(): void {
+  /**
+   * Edit Path: start a path for the bone (two spline nodes: where it is, and that plus an offset), or go back to drawing the one it has.
+   * A bone with translate keys in the animation is asked once (docs/TWO-SYSTEMS-PLAN.md, Q2): the path drives its translation from now on, so the
+   * keys are silenced (kept, dimmed in the Timeline, playing again if the path is removed) or deleted (one undo step).
+   */
+  private async enterDraw(): Promise<void> {
     const s = this.session, m = motionFor(s);
     if (!m) {
       // No path can be made until the parent bone it is relative to is chosen.
@@ -1836,10 +1842,20 @@ export class MotionPathPanel {
       if (parent === null) { this.onStatus("Choose the parent bone first (Parent bone ▾ in the panel's head): the path is drawn relative to it."); this.parentPick.focus(); return; }
       const started = startMotion(s, parent);
       if (!started) { this.onStatus("Select a bone in Animate mode, then Edit Path."); return; }
-      keepMotion(s, started, `Start a path for ${started.bone}`);
+      const anim = s.animation, keys = anim ? translateKeyCount(anim, started.bone) : 0;
+      let remove = false;
+      if (keys > 0) {
+        const answer = await askChoice(`${started.bone} has ${keys} translate key${keys === 1 ? "" : "s"} in ${started.animation}. A path drives its translation instead.`,
+          "Silence keeps the keys, dimmed in the Timeline: they play again if you remove the path. Delete removes them (Undo brings them back).",
+          [{ label: "Cancel", value: "cancel" }, { label: "Delete the keys", value: "delete" }, { label: "Silence the keys", value: "silence", primary: true }], "cancel");
+        if (answer === "cancel") return;
+        remove = answer === "delete";
+      }
+      // One undo step: the keys deleted (when asked) and the path started.
+      if (remove) startMotionDeletingKeys(s, started); else keepMotion(s, started, `Start a path for ${started.bone}`);
       // Node 2 is picked and the bone goes to it; node 1 is one press away.
       this.pickSlot(1);
-      this.onStatus(`${started.bone}: two spline nodes (where it is, and an offset). Press a number to put the bone on that node, then move the bone or drag the node; + adds a node; then Bake.`);
+      this.onStatus(`${started.bone}: two spline nodes (where it is, and an offset). Press a number to put the bone on that node, then move the bone or drag the node; + adds a node; Play runs it.${keys > 0 ? (remove ? " Its translate keys were deleted (Undo brings them back)." : " Its translate keys are silenced while the path exists.") : ""}`);
     }
     this.slotSig = "";
     this.schedule();

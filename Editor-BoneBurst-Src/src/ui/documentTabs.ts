@@ -1,3 +1,4 @@
+import { askChoice } from "./choiceDialog";
 import type { Camera } from "./stage/camera";
 import { type DocumentState, Session } from "./session";
 
@@ -97,32 +98,8 @@ export class DocumentTabs {
 
   /** Ask what to do with unsaved changes: a dialog with Save, Don't Save and Cancel. */
   private ask(name: string): Promise<"save" | "discard" | "cancel"> {
-    return new Promise((resolve) => {
-      const dialog = document.createElement("dialog");
-      dialog.className = "confirm-dialog";
-      const text = document.createElement("p");
-      text.textContent = `Do you want to save the changes to ${name} before closing?`;
-      const note = document.createElement("p");
-      note.className = "note";
-      note.textContent = "Your changes will be lost if you don't save them.";
-      const row = document.createElement("div");
-      row.className = "row";
-      const choice = (label: string, value: "save" | "discard" | "cancel", primary = false) => {
-        const b = document.createElement("button");
-        b.textContent = label;
-        if (primary) b.setAttribute("aria-pressed", "true");
-        b.addEventListener("click", () => { dialog.close(value); });
-        return b;
-      };
-      const save = choice("Save", "save", true);
-      row.append(choice("Don't Save", "discard"), choice("Cancel", "cancel"), save);
-      dialog.append(text, note, row);
-      // Escape, or a click away, is Cancel.
-      dialog.addEventListener("close", () => { dialog.remove(); resolve((dialog.returnValue || "cancel") as "save" | "discard" | "cancel"); });
-      document.body.append(dialog);
-      dialog.showModal();
-      save.focus();
-    });
+    return askChoice(`Do you want to save the changes to ${name} before closing?`, "Your changes will be lost if you don't save them.",
+      [{ label: "Don't Save", value: "discard" }, { label: "Cancel", value: "cancel" }, { label: "Save", value: "save", primary: true }], "cancel");
   }
 
   /** Close a tab; false when the person kept it (unsaved changes, cancelled or not saved). */
