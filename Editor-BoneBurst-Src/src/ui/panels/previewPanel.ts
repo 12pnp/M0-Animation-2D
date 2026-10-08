@@ -6,7 +6,9 @@ import { Renderer } from "../stage/renderer";
 import type { Session } from "../session";
 
 const BG_KEY = "boneburst.preview.colour";
-const DEFAULT_BG = "#d9d9d9";
+const MINE_KEY = "boneburst.preview.mine";
+const WHITE = "#ffffff";
+const GREY = "#808080";
 
 /**
  * The Preview panel: the animation playing on its own, only the picture (no bones, handles or paths).
@@ -22,7 +24,8 @@ export class PreviewPanel {
   private readonly clock = document.createElement("span");
   private readonly fitBtn = document.createElement("button");
   private readonly colourA = document.createElement("input");
-  private readonly resetBg = document.createElement("button");
+  private readonly whiteBtn = document.createElement("button");
+  private readonly greyBtn = document.createElement("button");
   private readonly view = document.createElement("div");
   private readonly canvas = document.createElement("canvas");
   private renderer: Renderer | null = null;
@@ -38,7 +41,9 @@ export class PreviewPanel {
   private last = 0;
   private lastDoc: unknown = null;
   private optionsKey = "";
-  private colour = DEFAULT_BG;
+  private colour = WHITE;
+  /** The adjustable slot's colour. */
+  private mine = "#4f8cff";
 
   constructor(private readonly session: Session) {
     const e = this.element;
@@ -59,22 +64,29 @@ export class PreviewPanel {
     this.fitBtn.setAttribute("aria-label", "Fit");
     iconButton(this.fitBtn, "fit", false);
     this.fitBtn.addEventListener("click", () => this.fitView());
-    // The background is one solid colour.
+    // The background is one solid colour, three slots for a quick test: white and grey (fixed), and one to adjust.
+    const slot = (b: HTMLButtonElement, colour: string, name: string): void => {
+      b.type = "button";
+      b.className = "pv-slot";
+      b.style.background = colour;
+      b.title = `${name} background`;
+      b.setAttribute("aria-label", `${name} background`);
+      b.addEventListener("click", () => { this.colour = colour; this.applyBg(); });
+    };
+    slot(this.whiteBtn, WHITE, "White");
+    slot(this.greyBtn, GREY, "Grey");
     this.colourA.type = "color";
     this.colourA.className = "pv-colour";
-    this.colourA.title = "Background colour";
+    this.colourA.title = "Your own background colour";
     this.colourA.setAttribute("aria-label", "Background colour");
-    this.colourA.addEventListener("input", () => { this.colour = this.colourA.value; this.applyBg(); });
-    this.resetBg.type = "button";
-    this.resetBg.textContent = "↺";
-    this.resetBg.title = "Back to the first background colour";
-    this.resetBg.setAttribute("aria-label", "Reset background");
-    this.resetBg.addEventListener("click", () => { this.colour = DEFAULT_BG; this.applyBg(); });
+    this.colourA.addEventListener("input", () => { this.mine = this.colour = this.colourA.value; this.applyBg(); });
     try {
       const k = localStorage.getItem(BG_KEY);
       if (k && /^#[0-9a-f]{6}$/i.test(k)) this.colour = k;
+      const m = localStorage.getItem(MINE_KEY);
+      if (m && /^#[0-9a-f]{6}$/i.test(m)) this.mine = m;
     } catch { /* the default */ }
-    this.bar.append(this.pick, this.playBtn, label, this.colourA, this.resetBg, this.clock, this.fitBtn);
+    this.bar.append(this.pick, this.playBtn, label, this.whiteBtn, this.greyBtn, this.colourA, this.clock, this.fitBtn);
     this.view.className = "pv-view";
     this.canvas.className = "pv-canvas";
     this.view.append(this.canvas);
@@ -91,11 +103,15 @@ export class PreviewPanel {
 
   fitView(): void { this.fitted = false; this.touched = false; }
 
-  /** The picture's back: one solid colour under the clear canvas. */
+  /** The picture's back: one solid colour under the clear canvas; the slot it came from is marked. */
   private applyBg(): void {
-    this.colourA.value = this.colour;
+    this.colourA.value = this.mine;
     this.view.style.background = this.colour;
-    try { localStorage.setItem(BG_KEY, this.colour); } catch { /* not kept */ }
+    const same = (a: string, b: string): boolean => a.toLowerCase() === b.toLowerCase();
+    this.whiteBtn.setAttribute("aria-pressed", String(same(this.colour, WHITE)));
+    this.greyBtn.setAttribute("aria-pressed", String(same(this.colour, GREY)));
+    this.colourA.setAttribute("aria-pressed", String(!same(this.colour, WHITE) && !same(this.colour, GREY)));
+    try { localStorage.setItem(BG_KEY, this.colour); localStorage.setItem(MINE_KEY, this.mine); } catch { /* not kept */ }
   }
 
   private get animationName(): string | null {

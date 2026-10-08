@@ -28,17 +28,21 @@ test("Preview plays the animation on its own clock: it advances, Pause holds it,
   await expect(clock).toHaveText("setup pose");
 });
 
-test("Preview's background is one solid colour; the colour field changes it, and reset brings it back", async ({ page }) => {
+test("Preview's background is one solid colour from three slots: white, grey and one to adjust", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await page.locator(".dv-tab", { hasText: "Preview" }).click();
   const panel = page.locator(".panel.preview"), view = panel.locator(".pv-view");
-  await expect(panel.getByLabel("Background colour")).toHaveValue("#d9d9d9");
-  await expect(view).toHaveCSS("background-color", "rgb(217, 217, 217)");
+  await expect(view).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  await panel.getByRole("button", { name: "Grey background" }).click();
+  await expect(view).toHaveCSS("background-color", "rgb(128, 128, 128)");
+  await expect(panel.getByRole("button", { name: "Grey background" })).toHaveAttribute("aria-pressed", "true");
   await panel.getByLabel("Background colour").fill("#102030");
   await expect(view).toHaveCSS("background-color", "rgb(16, 32, 48)");
-  await panel.getByRole("button", { name: "Reset background" }).click();
-  await expect(view).toHaveCSS("background-color", "rgb(217, 217, 217)");
+  await panel.getByRole("button", { name: "White background" }).click();
+  await expect(view).toHaveCSS("background-color", "rgb(255, 255, 255)");
+  // The adjustable slot keeps its colour.
+  await expect(panel.getByLabel("Background colour")).toHaveValue("#102030");
 });
