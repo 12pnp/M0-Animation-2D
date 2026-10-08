@@ -1,3 +1,4 @@
+import { twinMenu } from "./motionHelpers";
 import { expect, type Page, test } from "@playwright/test";
 
 /** Motion Path relative to a parent bone (docs/MOTION-PARENT-PLAN.md): the picker is required, the nodes live in that bone's space. */
@@ -26,12 +27,14 @@ async function open(page: Page): Promise<void> {
 
 const motion = (page: Page) => page.evaluate(() => (window as unknown as Live).boneburst.session.sidecar.motion[0] ?? null);
 
-test("no path can be made until a parent bone is chosen: Edit Path is off, and the key says why", async ({ page }) => {
+test("no path can be made until a parent bone is chosen: Create new says why, and so does the key", async ({ page }) => {
   await open(page);
   const panel = page.locator(".motion-path"), pick = panel.getByRole("combobox", { name: "Parent bone" });
   await expect(pick).toBeVisible();
   await expect(pick).toHaveValue("");
-  await expect(panel.getByRole("button", { name: "Edit Path", exact: true })).toBeDisabled();
+  await twinMenu(panel, "Create new TwinSpline");
+  await expect(page.locator(".message")).toContainText("Choose the parent bone first");
+  expect(await motion(page)).toBeNull();
   const box = (await panel.locator(".lp-body canvas").boundingBox())!;
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
   await page.keyboard.press("a");
@@ -47,7 +50,7 @@ test("a chosen parent is kept with the path; changing it keeps the path where it
   await open(page);
   const panel = page.locator(".motion-path"), pick = panel.getByRole("combobox", { name: "Parent bone" });
   await pick.selectOption("hips");
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await twinMenu(panel, "Create new TwinSpline");
   await expect.poll(() => motion(page)).not.toBeNull();
   const first = (await motion(page))!;
   expect(first.parent).toBe("hips");
@@ -68,7 +71,7 @@ test("the path follows the parent bone: its first node sits where that bone's ma
   await open(page);
   const panel = page.locator(".motion-path");
   await panel.getByRole("combobox", { name: "Parent bone" }).selectOption("hips");
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await twinMenu(panel, "Create new TwinSpline");
   await expect.poll(() => motion(page)).not.toBeNull();
   await panel.getByRole("button", { name: "Stage", exact: true }).click();
   const check = (frame: number) => page.evaluate(async (f) => {

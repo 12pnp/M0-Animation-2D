@@ -11,10 +11,8 @@ import { showContextMenu } from "../contextMenu";
 import type { MenuItem } from "../menubar";
 import { pickColour } from "../colourPopup";
 import type { MotionMemory } from "../viewMemory";
-import { makeKeysFromPath, pathDrive, currentNode, startMotionDeletingKeys, dropMotion, keepMotion, motionFor, nodeAfter, parentChoices, pathFromView, pathToView, poseAtNode, refBoneName, refMatrix, startMotion, toView } from "../motion";
-import { keysAt } from "@/model/timelines";
-import { askChoice } from "../choiceDialog";
-import { translateKeyCount } from "@/edit/pathKeys";
+import { makeKeysFromPath, pathDrive, pathFromKeys, currentNode, dropMotion, keepMotion, motionFor, nodeAfter, parentChoices, pathFromView, pathToView, poseAtNode, refBoneName, refMatrix, startMotion, toView } from "../motion";
+import { deleteTranslateKeys, translateKeyCount } from "@/edit/pathKeys";
 import { localPoint, pageScale } from "../pageScale";
 import type { Session } from "../session";
 import { type Matrix, type Point, localRotation, scaleAlong, scaleFactors, shearAlong, shearDelta, spaceAxes, tidy, turn, turnSign } from "../stage/gizmo";
@@ -24,6 +22,12 @@ import { drawBackdrop } from "../stage/canvasBackdrop";
 import { NO_LOOK, type StageLook } from "../stage/look";
 import { type OnionOptions, onionFrames } from "../stage/onion";
 import { type BoneTrail, boneTrail, drivenPose, type DrivenTrail, fromParent, type TrailSpace } from "../stage/trail";
+
+/** The path with its `active` mark taken off: the bone uses it (the default). */
+function withoutInactive(m: MotionPath): MotionPath {
+  const { active: _a, ...rest } = m;
+  return rest;
+}
 
 /** The layers the panel can show: the bone's image, the bone itself, its path, and onion skin (the bone at frames either side of the playhead). */
 export type Layer = "image" | "bone" | "parentBone" | "parentImage" | "path" | "spline" | "length" | "onion" | "children" | "rotate" | "move" | "scale" | "shear";
@@ -167,6 +171,14 @@ export class MotionPathPanel {
   private zoom = 1;
   private pan = { x: 0, y: 0 };
   private dragging: { x: number; y: number } | null = null;
+  /** The tab shown when the bone has no path (a bone with a path shows the one it uses: the path's `active`, docs/MOTION-MODES-PLAN.md). */
+  private noPathTab: "keys" | "twin" = "twin";
+  /** The bone and animation the mode was chosen for, and whether the person chose it (else it follows the bone's data). */
+  private modeFor = "";
+  /** The two tabs in the header, each a button with a ⋮ menu button at its end, and the card the body shows when the open tab has nothing to edit. */
+  private readonly tabs = document.createElement("div");
+  private readonly tabBtns = {} as Record<"keys" | "twin", { box: HTMLElement; main: HTMLButtonElement; more: HTMLButtonElement }>;
+  private readonly card = document.createElement("div");
   private cached: { doc: Skeleton; images: unknown; skin: string | null; animation: string | null; bone: string; space: TrailSpace; origin: string | null; trail: BoneTrail | null; extent: Box | null; children: boolean; motion: MotionPath | undefined; kFrame: number } | null = null;
   private poser: { doc: Skeleton; images: unknown; value: Poser } | null = null;
   private queued = false;
@@ -191,7 +203,10 @@ export class MotionPathPanel {
   /** The motion path's own row of buttons (docs/PATH-SPEED-PLAN.md), and the node picked on the canvas (-1: none). */
   private readonly motionBar = document.createElement("div");
   private readonly motionInfo = document.createElement("span");
-  private readonly motionBtns: Record<"draw" | "add" | "del" | "makeKeys" | "drop", HTMLButtonElement>;
+  /** The path bar's sections, and the line that takes their place when the bar has nothing to edit (so the bar keeps its height). */
+  private barSections: HTMLElement[] = [];
+  private readonly hint = document.createElement("span");
+  private readonly motionBtns: Record<"del", HTMLButtonElement>;
   /** The duration in seconds, and whether the spline is a ring. */
   private readonly durationField = document.createElement("input");
   private readonly closedBox = document.createElement("input");
@@ -309,11 +324,39 @@ export class MotionPathPanel {
     const tools = document.createElement("div");
     tools.className = "lp-tools";
     tools.append(
-      this.group("Show", [this.layerBtns.image, this.layerBtns.bone, this.layerBtns.path, this.layerBtns.spline, this.layerBtns.length, this.layerBtns.onion, this.layerBtns.children]),
+      this.group("Show", [this.layerBtns.image, this.layerBtns.bone, this.layerBtns.length, this.layerBtns.onion, this.layerBtns.children]),
       this.group("Parent", [this.layerBtns.parentBone, this.layerBtns.parentImage]),
       this.group("Handles", [this.layerBtns.rotate, this.layerBtns.move, this.layerBtns.scale, this.layerBtns.shear], this.axesBtn),
     );
-    this.head.append(this.title, this.group("Stage line", [this.stageBtn], this.stageSwatch), tools);
+    // Path and Spline are icons by the tab they belong to: the bone's keyed trail by Key frame, the drawn curve by TwinSpline.
+    this.layerBtns.path.setAttribute("aria-label", "Path");
+    this.layerBtns.spline.setAttribute("aria-label", "Spline");
+    iconButton(this.layerBtns.path, "keyTranslate", false);
+    iconButton(this.layerBtns.spline, "path", false);
+    this.layerBtns.path.classList.add("lp-layer");
+    this.layerBtns.spline.classList.add("lp-layer");
+    // The two tabs (docs/MOTION-MODES-PLAN.md): the bone's key frames (a Spine import's included) and its TwinSpline path; each ⋮ opens that tab's menu.
+    this.tabs.className = "lp-tabs";
+    this.tabs.setAttribute("role", "tablist");
+    for (const [id, label, tip, menu] of [
+      ["keys", "Key frame", "The bone's motion as keyed in the animation (a Spine file's keys included)", () => this.keysMenu()],
+      ["twin", "TwinSpline", "The bone's motion as a path with a speed spline, played on its own clock", () => this.twinMenu()],
+    ] as const) {
+      const box = document.createElement("div"), main = this.button(label, tip), more = this.button("⋮", `${label}: more`);
+      box.className = "lp-tab";
+      main.className = "main";
+      main.setAttribute("role", "tab");
+      main.addEventListener("click", () => this.setMode(id));
+      more.className = "more";
+      more.setAttribute("aria-label", `${label} menu`);
+      more.setAttribute("aria-haspopup", "menu");
+      more.addEventListener("click", () => { const r = more.getBoundingClientRect(); showContextMenu(r.left, r.bottom, menu()); });
+      box.append(main, more);
+      this.tabs.append(id === "keys" ? this.layerBtns.path : this.layerBtns.spline, box);
+      this.tabBtns[id] = { box, main, more };
+    }
+    this.card.className = "lp-card";
+    this.head.append(this.title, this.tabs, this.group("Stage line", [this.stageBtn], this.stageSwatch), tools);
     this.body.className = "lp-body";
     this.note.className = "empty lp-note";
     const fit = iconButton(this.button("Fit", "Fit the whole path in the panel (double-click does the same)"), "fit", false);
@@ -329,16 +372,15 @@ export class MotionPathPanel {
     };
     this.zoomLabel.className = "lp-zoom-label";
     this.zoomLabel.title = "The picture's zoom (1 = the whole path fitted)";
-    this.viewBar.append(zoomBtn("−", "Zoom out", 1 / 1.25), this.zoomLabel, zoomBtn("+", "Zoom in", 1.25), fit);
-    this.body.append(this.canvas, this.note);
+    // Beside the zoom: the path's transport, since it is the picture's playhead it moves (shown with a path, in the TwinSpline tab).
+    const gap = document.createElement("span");
+    gap.className = "lp-gap";
+    this.viewBar.append(zoomBtn("−", "Zoom out", 1 / 1.25), this.zoomLabel, zoomBtn("+", "Zoom in", 1.25), gap, this.playBtn, this.bothBtn, this.stopBtn, this.clockLabel, fit);
+    this.body.append(this.canvas, this.note, this.card);
     this.motionBar.className = "lp-motion";
     this.motionInfo.className = "lp-motion-info";
     this.motionBtns = {
-      draw: this.button("Edit Path", "Edit the bone's path, a spline: two nodes to start (where it is, and an offset). A number puts the bone on that node, moving the bone moves the node, + adds a node"),
-      add: this.button("+", "Add a spline node"),
       del: this.button("− Node", "Remove the picked spline node (a path keeps two)"),
-      makeKeys: this.button("Make keys from path", "Write the bone's translate keys from the path, once: a key where the bone reaches each node, one at the end, and more where the curve needs them (replaces its translate keys; Undo brings them back). The keys are a copy: the path does not follow them, and they do not follow the path"),
-      drop: this.button("Remove path", "Forget this bone's path; its keys stay as they are"),
     };
     this.slotBar.className = "lp-slots";
     this.dataBox.className = "lp-data";
@@ -375,7 +417,7 @@ export class MotionPathPanel {
     this.clockLabel.className = "lp-clock";
     this.clockLabel.title = "The path's own time in seconds";
     this.loopBox.type = "checkbox";
-    this.loopBox.addEventListener("change", () => { const m = motionFor(this.session); if (m) this.timeEdit(withLoop(m, this.loopBox.checked), this.loopBox.checked ? "The path starts over at its end." : "The path stops at its end.", "Set the path's loop"); });
+    this.loopBox.addEventListener("change", () => { const m = this.path(); if (m) this.timeEdit(withLoop(m, this.loopBox.checked), this.loopBox.checked ? "The path starts over at its end." : "The path stops at its end.", "Set the path's loop"); });
     this.loopLabel.className = "lp-field";
     this.loopLabel.title = "Whether the path's clock starts over when the run ends (on) or stops there (off)";
     this.loopLabel.append(this.loopBox, " Loop");
@@ -385,13 +427,10 @@ export class MotionPathPanel {
     this.parentPick.addEventListener("change", () => this.chooseParent(this.parentPick.value));
     // Three sections: the path (parent, start, nodes), its time (total frames, ring), what to do with it (make keys, remove); then what it says.
     const section = (...kids: HTMLElement[]): HTMLElement => { const d = document.createElement("div"); d.className = "lp-sect"; d.append(...kids); return d; };
-    this.motionBar.append(section(this.parentPick, this.motionBtns.draw, this.motionBtns.add, this.motionBtns.del), section(this.durationBox, this.closedLabel, this.loopLabel), section(this.playBtn, this.bothBtn, this.stopBtn, this.clockLabel), section(this.motionBtns.makeKeys, this.motionBtns.drop), this.motionInfo);
-    this.motionBtns.draw.addEventListener("click", () => void this.enterDraw());
-    this.motionBtns.makeKeys.addEventListener("click", () => this.makeKeys());
-    this.motionBtns.add.className = "add";
-    this.motionBtns.add.addEventListener("click", () => { if (motionFor(this.session)) this.addNode(); else void this.enterDraw(); });
+    this.barSections = [section(this.parentPick, this.motionBtns.del), section(this.durationBox, this.closedLabel, this.loopLabel)];
+    this.hint.className = "lp-hint";
+    this.motionBar.append(...this.barSections, this.hint, this.motionInfo);
     this.motionBtns.del.addEventListener("click", () => this.removeNode());
-    this.motionBtns.drop.addEventListener("click", () => { const m = motionFor(this.session); if (m) { dropMotion(this.session, m.animation, m.bone); this.selNode = -1; } });
     // The picture on top; under it the node numbers, and under them the picked node's data.
     this.split.className = "lp-split";
     this.split.title = "Drag to give the node numbers and the speed graph more or less room (double-click: back to the usual)";
@@ -432,7 +471,7 @@ export class MotionPathPanel {
     });
     this.canvas.tabIndex = 0;
     this.canvas.addEventListener("keydown", (e) => {
-      if ((e.key !== "Delete" && e.key !== "Backspace") || !motionFor(this.session)) return;
+      if ((e.key !== "Delete" && e.key !== "Backspace") || !this.path()) return;
       if (this.selNode >= 0) { e.preventDefault(); e.stopPropagation(); this.removeNode(); }
     });
     this.canvas.addEventListener("wheel", (e) => this.wheel(e), { passive: false });
@@ -487,7 +526,7 @@ export class MotionPathPanel {
   private chosenParent(): string | null {
     const s = this.session, a = s.animation, bone = s.selectedBone;
     if (!bone || !a) return null;
-    const m = motionFor(s);
+    const m = this.path();
     return m ? refBoneName(s.doc, m) : this.parentChoice.get(`${a.name}|${bone}`) ?? null;
   }
 
@@ -506,20 +545,104 @@ export class MotionPathPanel {
 
   /** The selected bone's path with its nodes and handles as the panel shows them: through the parent bone's matrix at the playhead. */
   private viewMotion(): MotionPath | undefined {
-    const s = this.session, m = motionFor(s);
+    const s = this.session, m = this.path();
     return m ? pathToView(m, this.refM(refBoneName(s.doc, m))) : undefined;
   }
 
   /** A path changed in the view, kept in the parent bone's space (a node that did not move keeps its stored numbers). */
   private keepView(next: MotionPath, label?: string, join = false): void {
     const s = this.session;
-    keepMotion(s, pathFromView(next, this.refM(refBoneName(s.doc, next)), motionFor(s)), label, join);
+    keepMotion(s, pathFromView(next, this.refM(refBoneName(s.doc, next)), this.path()), label, join);
   }
 
   private posers(): Poser {
     const s = this.session, doc = s.closedDoc()!;
     if (this.poser?.doc !== doc || this.poser.images !== s.images) this.poser = { doc, images: s.images, value: new Poser(doc, s.images) };
     return this.poser.value;
+  }
+
+  /** Whether the bone has translate keys in the animation shown: the key frames this panel's other tab can convert (a bone keyed only in rotation or scale is empty here). */
+  private hasKeys(): boolean {
+    const a = this.session.animation, bone = this.session.selectedBone;
+    return !!a && bone !== null && translateKeyCount(a, bone) > 0;
+  }
+
+  /**
+   * The tab open: for a bone with a path, the system the bone uses (`active`: the TwinSpline, or false for its key frames, the path kept); for a
+   * bone with none, the one the person last chose, or by what it has (docs/MOTION-MODES-PLAN.md).
+   */
+  private get tab(): "keys" | "twin" {
+    const m = motionFor(this.session);
+    return m ? (m.active === false ? "keys" : "twin") : this.noPathTab;
+  }
+
+  /** On a bone or animation not seen yet with no path: Key frame when it has translate keys, else TwinSpline (to create one). */
+  private syncMode(): void {
+    const s = this.session, a = s.animation, bone = s.selectedBone, key = a && bone ? `${a.name}|${bone}` : "";
+    if (key === this.modeFor) return;
+    this.modeFor = key;
+    this.noPathTab = !key || this.hasKeys() ? (key ? "keys" : "twin") : "twin";
+  }
+
+  /**
+   * A tab pressed. It is the choice of which system the bone uses: with a path the path's `active` is set (one undo step, both kept); with none it
+   * is only the view.
+   */
+  private setMode(mode: "keys" | "twin"): void {
+    const s = this.session, m = motionFor(s);
+    if (m) {
+      if ((m.active !== false) !== (mode === "twin")) keepMotion(s, mode === "twin" ? withoutInactive(m) : { ...m, active: false }, mode === "twin" ? `Use the TwinSpline of ${m.bone}` : `Use the key frames of ${m.bone}`);
+    } else this.noPathTab = mode;
+    this.slotSig = "";
+    this.schedule();
+  }
+
+  /** The Key frame tab's ⋮ menu: make a TwinSpline from the keys, or delete the keys. */
+  private keysMenu(): MenuItem[] {
+    const s = this.session, a = s.animation, bone = s.selectedBone, keys = a && bone ? translateKeyCount(a, bone) : 0;
+    return [
+      { label: "Create new TwinSpline from Key frame", disabled: keys === 0, run: () => void this.createPathFromKeys() },
+      { label: "Delete Key frame data", disabled: keys === 0, run: () => this.deleteKeyData() },
+    ];
+  }
+
+  /** The TwinSpline tab's ⋮ menu: make a path or a node, make key frames from the path, or delete the path. */
+  private twinMenu(): MenuItem[] {
+    const has = !!motionFor(this.session);
+    return [
+      { label: "Create new TwinSpline", disabled: has, run: () => void this.enterDraw() },
+      { label: "Add a spline node", disabled: !has, run: () => this.addNode() },
+      {},
+      { label: "Create new Key frame from TwinSpline", disabled: !has, run: () => this.createKeysFromPath() },
+      { label: "Delete TwinSpline data", disabled: !has, run: () => this.deletePathData() },
+    ];
+  }
+
+  /** The card over the picture when the open tab has nothing to edit: what there is, and the way on. */
+  private updateCard(): void {
+    const s = this.session, bone = s.selectedBone, a = s.animation, raw = motionFor(s);
+    const can = !!a && bone !== null && !(s.doc && constraintDriving(s.doc, bone));
+    this.card.replaceChildren();
+    this.card.hidden = true;
+    if (!can) return;
+    const line = (text: string): void => { const p = document.createElement("p"); p.textContent = text; this.card.append(p); };
+    const btn = (text: string, title: string, run: () => void, primary = false): void => { const b = this.button(text, title); if (primary) b.classList.add("primary"); b.addEventListener("click", run); this.card.append(b); };
+    if (this.tab === "keys" && raw) {
+      line(`${bone} uses its key frames. Its TwinSpline is kept, not used.`);
+      btn("Use TwinSpline", "Switch the bone to its TwinSpline (the key frames are kept)", () => this.setMode("twin"), true);
+      this.card.hidden = false;
+    } else if (this.tab === "twin" && !raw) {
+      const keys = translateKeyCount(a!, bone!);
+      line(`No TwinSpline for ${bone} in ${a!.name}.`);
+      btn("Create new", "Make a TwinSpline for this bone: node 1 is where it is, node 2 that plus an offset", () => void this.enterDraw(), true);
+      if (keys > 0) btn("Create from Key frame", `Make a TwinSpline through the ${keys} translate keys of ${bone} (the keys are kept)`, () => void this.createPathFromKeys());
+      this.card.hidden = false;
+    }
+  }
+
+  /** The selected bone's path, when the TwinSpline tab is the one open: what the editor and the picture work on. The Key frame tab sees no path. */
+  private path(): MotionPath | undefined {
+    return this.tab === "twin" ? motionFor(this.session) : undefined;
   }
 
   /** What a path-driven trail or pose needs (docs/TWO-SYSTEMS-PLAN.md): the key animation held at the playhead, the path at its own time. */
@@ -538,7 +661,7 @@ export class MotionPathPanel {
     const s = this.session, doc = s.closedDoc(), anim = s.animation, bone = s.selectedBone;
     if (!doc) return "Nothing open.";
     if (bone === null) return anim ? "Select a bone to see its path." : "Select a bone to see it on the setup pose.";
-    const name = anim?.name ?? null, c = this.cached, m = anim ? motionFor(s) : undefined;
+    const name = anim?.name ?? null, c = this.cached, m = anim ? this.path() : undefined;
     // A bone a path drives has the path's trail (over the path's time), and the key playhead matters to it only through the parent's place.
     const kFrame = m ? s.frame : 0;
     if (!c || c.doc !== doc || c.images !== s.images || c.skin !== s.skin || c.animation !== name || c.bone !== bone || c.space !== this.space || c.origin !== this.originName() || c.children !== this.show.children || c.motion !== m || c.kFrame !== kFrame) {
@@ -554,6 +677,7 @@ export class MotionPathPanel {
   }
 
   private draw(): void {
+    this.syncMode();
     this.zoomLabel.textContent = `${Math.round(this.zoom * 100)}%`;
     const s = this.session, r = this.trail();
     for (const l of LAYERS) this.layerBtns[l].setAttribute("aria-pressed", String(this.show[l]));
@@ -591,7 +715,7 @@ export class MotionPathPanel {
     // The parent bone, when shown, is in view too (its joint and tip at the playhead).
     const parentName = this.originName();
     if ((this.show.parentBone || this.show.parentImage) && parentName && trail) {
-      const pp = this.posers().pose(s.skin, s.animation!.name, Math.fround(frameTime(motionFor(s) ? s.frame : Math.min(s.frame, trail.frames), trail.fps)), "none"), pi = pp.bones.get(parentName), bi = pp.bones.get(bone);
+      const pp = this.posers().pose(s.skin, s.animation!.name, Math.fround(frameTime(this.path() ? s.frame : Math.min(s.frame, trail.frames), trail.fps)), "none"), pi = pp.bones.get(parentName), bi = pp.bones.get(bone);
       if (pi !== undefined && pp.rig.active[pi]) {
         // The parent and the bones under it on the way down to the bone (not the branches beside them).
         for (const b of bi === undefined ? [pi] : chainTo(pp, pi, bi)) {
@@ -627,7 +751,7 @@ export class MotionPathPanel {
     this.handlePts = [];
     drawBackdrop(g, { width, height, left: cx + (-width / 2 - this.pan.x) / k, right: cx + (width / 2 - this.pan.x) / k, top: cy + (height / 2 + this.pan.y) / k, bottom: cy + (-height / 2 + this.pan.y) / k, scale: k, ...this.background(), background: stageBg, light: lightColour(stageBg) });
     // A bone with a path is at the path's own time (the path clock), the rest of the rig at the key playhead (docs/TWO-SYSTEMS-PLAN.md).
-    const own = trail && s.animation ? motionFor(s) : undefined, here = trail ? (own ? this.pathFrame(own, trail) : Math.min(s.frame, trail.frames)) : 0;
+    const own = trail && s.animation ? this.path() : undefined, here = trail ? (own ? this.pathFrame(own, trail) : Math.min(s.frame, trail.frames)) : 0;
     // At the playhead: the pose the image and the bone are drawn from (the setup pose in Pose mode).
     const poser = this.posers(), p = trail ? (own ? drivenPose(poser, s.skin, s.animation!.name, this.drivenOf(own), here / trail.fps) : poser.pose(s.skin, s.animation!.name, Math.fround(frameTime(here, trail.fps)), "none")) : poser.pose(s.skin, null, 0, "none"), index = p.bones.get(bone);
     const to = (x: number, y: number): [number, number] => (this.space === "parent" && index !== undefined ? fromParent(p, index, x, y, this.originName()) : [x, y]);
@@ -659,7 +783,7 @@ export class MotionPathPanel {
     // The spline's curve, nodes and handles are in the colour set for the Stage's line (the swatch in the header).
     if (trail) this.drawMotion(g, at, this.stageColour);
     if (trail && index !== undefined && p.rig.active[index] && !constraintDriving(s.doc!, bone)) {
-      if (!motionFor(s) && this.show.move) this.drawArrows(g, p, index, to, at);
+      if (!this.path() && this.show.move) this.drawArrows(g, p, index, to, at);
       if (this.show.rotate) this.drawHandle(g, p, index, to, at, accent);
       if (this.show.scale || this.show.shear) this.drawScaleShear(g, p, index, to, at, accent);
     }
@@ -671,7 +795,7 @@ export class MotionPathPanel {
 
   /** Onion skin: the bone (its image, and the bone) at the frames either side of the playhead, farthest first, past red and future green when colour-coded. */
   private drawOnion(g: CanvasRenderingContext2D, poser: Poser, bone: string, trail: BoneTrail, here: number, at: (x: number, y: number) => [number, number], dpr: number, boneColour: string): void {
-    const s = this.session, a = s.animation!, o = this.onion(), own = motionFor(s), end = own ? trail.frames : timeFrame(s.length(a), trail.fps);
+    const s = this.session, a = s.animation!, o = this.onion(), own = this.path(), end = own ? trail.frames : timeFrame(s.length(a), trail.fps);
     // A bone with a path has no keys that count: its ghosts are at the path's own times.
     const keyed = o.keyedOnly && !own ? keyLists(a).flatMap((l) => l.keys.map((k) => timeFrame(keyTime(k), trail.fps))) : [];
     const frames = onionFrames(here, end, o, keyed, own ? own.loop : s.loop).sort((x, y) => x.opacity - y.opacity);
@@ -783,7 +907,7 @@ export class MotionPathPanel {
     trace(trail.joint);
     const keyed = new Set<number>(), marks: number[] = [];
     // A bone with a path has no keys that count: no mark is larger.
-    for (const group of motionFor(this.session) ? [] : this.session.animation?.bones ?? []) if (group.name === bone) for (const t of group.timelines) for (const key of t.keys) keyed.add(Math.round((key.time ?? 0) * trail.fps));
+    for (const group of this.path() ? [] : this.session.animation?.bones ?? []) if (group.name === bone) for (const t of group.timelines) for (const key of t.keys) keyed.add(Math.round((key.time ?? 0) * trail.fps));
     for (let f = 0; f <= trail.frames; f++) {
       const x = trail.joint[f * 2]!, y = trail.joint[f * 2 + 1]!;
       if (!Number.isFinite(x) || !Number.isFinite(y)) { marks.push(Number.NaN, Number.NaN); continue; }
@@ -1073,7 +1197,7 @@ export class MotionPathPanel {
       if (d < bestD) { best = f; bestD = d; }
     }
     if (best < 0) return;
-    const m = motionFor(this.session);
+    const m = this.path();
     // A bone with a path: the dot is a time of the path, and the path's clock goes there (not the animation's playhead).
     if (m) this.session.seekPath(best / this.session.fps); else if (best !== this.session.frame) this.session.seek(best);
   }
@@ -1087,14 +1211,14 @@ export class MotionPathPanel {
       this.parentPick.replaceChildren(new Option("Parent bone…", ""), ...names.map((n) => new Option(n, n)));
     }
     this.parentPick.value = names.includes(chosen) ? chosen : "";
-    this.parentPick.classList.toggle("attention", !this.parentPick.value && !motionFor(s));
+    this.parentPick.classList.toggle("attention", !this.parentPick.value && !this.path());
   }
 
   /** A parent bone was picked: the choice for a bone with no path yet; for one with a path, the path moves to the new bone's space and stays where it is on screen (one undo step). */
   private chooseParent(name: string): void {
     const s = this.session, a = s.animation, bone = s.selectedBone;
     if (!a || !bone || !name) return;
-    const m = motionFor(s);
+    const m = this.path();
     if (!m) { this.parentChoice.set(`${a.name}|${bone}`, name); this.schedule(); return; }
     if (name === refBoneName(s.doc, m)) return;
     const v = this.viewMotion();
@@ -1109,25 +1233,23 @@ export class MotionPathPanel {
 
   /** The row of path buttons: what can be done for the selected bone in the animation shown, and what the path is. */
   private updateMotionBar(): void {
-    const s = this.session, m = motionFor(s), bone = s.selectedBone, anim = s.animation;
+    const s = this.session, m = this.path(), bone = s.selectedBone, anim = s.animation;
     const can = !!anim && bone !== null && !(s.doc && constraintDriving(s.doc, bone));
-    this.motionBar.hidden = !can;
+    // The tabs, and under the Key frame tab no path bar: the path is the other tab's.
+    // Nothing here comes and goes (the header and the bar keep their size, docs/MOTION-MODES-PLAN.md): what does not apply is dimmed, and the bar says why.
+    for (const id of ["keys", "twin"] as const) { this.tabBtns[id].main.disabled = !can; this.tabBtns[id].more.disabled = !can; }
+    this.layerBtns.path.disabled = !can;
+    this.layerBtns.spline.disabled = !can;
+    for (const id of ["keys", "twin"] as const) { this.tabBtns[id].main.setAttribute("aria-selected", String(this.tab === id)); this.tabBtns[id].main.classList.toggle("on", this.tab === id); }
+    const controls = can && this.tab === "twin";
+    this.motionBar.hidden = false;
+    for (const el of this.barSections) el.hidden = !controls;
+    this.hint.hidden = controls;
+    this.hint.textContent = !can ? (anim ? "Select a bone to see its motion." : "Select a bone in Animate mode to see its motion.") : "Key frames: the bone's keyed motion. A tab's ⋮ makes the other kind from it.";
+    this.updateCard();
     this.syncParentPick();
     const has = !!m;
-    // Without a path the one button is Edit Path (it starts one); with a path it is the mode there is.
-    this.motionBtns.draw.hidden = !can;
-    // No path can be made until a parent bone is chosen.
-    const needParent = !m && this.chosenParent() === null;
-    this.motionBtns.draw.disabled = needParent;
-    this.motionBtns.add.disabled = needParent;
-    this.motionBtns.drop.hidden = !m;
-    // The green +: no path yet, it makes one (node 1 is where the bone is, node 2 that plus an offset); with one it adds a node.
-    this.motionBtns.add.hidden = !can;
-    this.motionBtns.add.setAttribute("aria-label", m ? "Add a spline node" : "Create a path");
-    this.motionBtns.add.title = m ? "Add another spline node (after the picked one, halfway to the next): then move the bone or drag the node to place it" : "Make a path for this bone: node 1 is where it is, node 2 that plus an offset";
     this.motionBtns.del.hidden = !has;
-    this.motionBtns.makeKeys.hidden = !has;
-    this.motionBtns.draw.setAttribute("aria-pressed", String(has));
     this.motionBtns.del.disabled = !m || m.nodes.length <= 2 || this.selNode < 0;
     this.durationBox.hidden = !has;
     this.closedLabel.hidden = !has;
@@ -1154,7 +1276,7 @@ export class MotionPathPanel {
       this.loopBox.checked = m.loop;
     }
     this.renderStrip(m);
-    if (!m) { this.motionInfo.textContent = ""; return; }
+    if (!m) { this.motionInfo.textContent = "\u00a0"; return; }
     this.motionInfo.textContent = `${m.nodes.length} spline nodes${this.stray !== null ? ` · the keys made from it stray ${Math.round(this.stray * 10) / 10}` : ""}`;
   }
 
@@ -1197,7 +1319,7 @@ export class MotionPathPanel {
         // Right-click: merge the nodes picked with Command + click, run the ring the other way, or make this node the origin.
         b.addEventListener("contextmenu", (e) => {
           e.preventDefault();
-          const cur = motionFor(this.session), ring = cur?.closed ?? false, picked = this.pickedPlaces();
+          const cur = this.path(), ring = cur?.closed ?? false, picked = this.pickedPlaces();
           const items: MenuItem[] = [];
           if (picked.length >= 2 && this.multi.has(label)) items.push({ label: `Merge ${picked.map((k) => nodeLabels(cur!)[k]).join(" + ")}`, run: () => this.mergePicked() });
           if (cur) items.push({ label: `Reverse Direction (${nodeLabels(reversePath(cur)).join(" ")})`, run: () => this.reverse() });
@@ -1223,7 +1345,7 @@ export class MotionPathPanel {
 
   /** The bone's spline as a line in the world, for the Stage (a flat list of x, y), or null when it is off or the bone has no path or pose. The nodes are in the parent bone's space, so the parent's joint is added back. */
   stageLine(): { points: number[]; colour: string } | null {
-    const s = this.session, m = motionFor(s), p = s.pose();
+    const s = this.session, m = this.path(), p = s.pose();
     if (!this.stageOn || !m || !p) return null;
     const i = p.bones.get(m.bone);
     if (i === undefined || !p.rig.active[i]) return null;
@@ -1238,7 +1360,8 @@ export class MotionPathPanel {
    * goes on to its other meaning.
    */
   hotkey(id: "add" | "remove" | "reverse" | "merge" | "origin"): boolean {
-    const m = motionFor(this.session);
+    if (this.tab !== "twin") return false;
+    const m = this.path();
     if (!m) {
       if (id === "add") { void this.enterDraw(); return true; }
       return false;
@@ -1266,10 +1389,10 @@ export class MotionPathPanel {
     const s = this.session, label = nodeLabels(m)[i]!, h = handleOffsets(m.nodes, m.closed)[i]!, broken = n.bx !== undefined;
     const r4 = (v: number): number => Math.round(v * 1e4) / 1e4;
     const patch = (change: Partial<MotionNode>, why: string, pose = false): void => {
-      const cur = motionFor(s);
+      const cur = this.path();
       if (!cur?.nodes[i]) return;
       keepMotion(s, { ...cur, nodes: cur.nodes.map((q, k) => (k === i ? { ...q, ...change } : q)) }, why, true);
-      if (pose) { const q = motionFor(s)!.nodes[i]!; poseAtNode(s, q.x, q.y, this.chosenParent()); }
+      if (pose) { const q = this.path()!.nodes[i]!; poseAtNode(s, q.x, q.y, this.chosenParent()); }
       setTimeout(() => { this.slotSig = ""; this.schedule(); });
     };
     const num = (value: number, off: boolean, aria: string, run: (v: number) => void): HTMLInputElement => {
@@ -1301,7 +1424,7 @@ export class MotionPathPanel {
     title.textContent = `Node ${label} · place ${i + 1} of ${m.nodes.length}${a0 !== undefined && a1 !== undefined && next && (m.closed || !last) ? ` · span to node ${nodeLabels(m)[(i + 1) % m.nodes.length]}: ${r4(a1 - a0)} long` : ""}`;
     const auto = this.button("Auto", "Put both handles back to automatic (the curve decides)");
     auto.disabled = n.tx === undefined && !broken;
-    auto.addEventListener("click", () => { const cur = motionFor(s); if (cur) { keepMotion(s, { ...cur, nodes: cur.nodes.map((q, k) => { if (k !== i) return q; const { tx: _a, ty: _b, bx: _c, by: _d, ...rest } = q; return rest; }) }, "Reset a handle"); } });
+    auto.addEventListener("click", () => { const cur = this.path(); if (cur) { keepMotion(s, { ...cur, nodes: cur.nodes.map((q, k) => { if (k !== i) return q; const { tx: _a, ty: _b, bx: _c, by: _d, ...rest } = q; return rest; }) }, "Reset a handle"); } });
     const legs = this.button(broken ? "Mirror legs" : "Break legs", broken ? "The way in follows the way out again" : "Each handle moves on its own");
     legs.addEventListener("click", () => this.setLegs(i, !broken));
     const ox = num(h.out.x, noOut, "Way out, x", (v) => patch({ tx: v, ty: h.out.y }, "Bend the path")), oy = num(h.out.y, noOut, "Way out, y", (v) => patch({ tx: h.out.x, ty: v }, "Bend the path"));
@@ -1450,7 +1573,7 @@ export class MotionPathPanel {
 
   /** The whole path across the graph, or (with `section`) the picked node's section: from it to the next node. */
   private fitGraph(section: boolean): void {
-    const m = motionFor(this.session);
+    const m = this.path();
     if (!section || !m || this.selNode < 0) { this.setView(0, 1); return; }
     const xs = nodeProgress(m), a = xs[this.selNode] ?? 0, b = xs[this.selNode + 1] ?? (m.closed ? 1 : a), pad = Math.max(0.01, (b - a) * 0.08);
     if (b - a < 1e-6) { this.setView(0, 1); return; }
@@ -1459,7 +1582,7 @@ export class MotionPathPanel {
 
   /** Draw the speed spline: the value (-0.99 to 5) up, the path's length across (the ruler above shows it, and the cap is the playhead); a point and two legs for each node, the picked one lit, a line at 0 (an even pace). */
   private drawSpeed(): void {
-    const s = this.session, m = motionFor(s), c = this.speedCanvas;
+    const s = this.session, m = this.path(), c = this.speedCanvas;
     this.speedDots = [];
     this.speedLegs = [];
     if (!m || !c.isConnected || this.dataBox.hidden) return;
@@ -1618,14 +1741,14 @@ export class MotionPathPanel {
 
   /** A node's speed set (one undo step); the picked node follows. */
   private setSpeed(i: number, v: number, join = false): void {
-    const s = this.session, m = motionFor(s);
+    const s = this.session, m = this.path();
     if (!m?.nodes[i]) return;
     keepMotion(s, { ...m, nodes: m.nodes.map((n, k) => (k === i ? { ...n, speed: v } : n)) }, `Set the speed of node ${nodeLabels(m)[i]}`, join);
   }
 
   /** A leg dragged to the pointer: the slope from its node to the pointer (Alt breaks the node's legs first, so only the one held moves). */
   private dragLeg(x: number, y: number): void {
-    const d = this.legDrag, s = this.session, m = motionFor(s);
+    const d = this.legDrag, s = this.session, m = this.path();
     if (!d || !m?.nodes[d.i]) return;
     const np = nodeProgress(m)[d.i]!, v0 = speedOf(m.nodes[d.i]!), dp = d.side === "out" ? this.gp(x) - np : np - this.gp(x), dv = d.side === "out" ? this.valueAtY(y) - v0 : v0 - this.valueAtY(y);
     keepMotion(s, withSpeedSlope(m, d.i, d.side, dv / Math.max(0.004, dp)), "Bend the speed spline", true);
@@ -1633,7 +1756,7 @@ export class MotionPathPanel {
 
   /** The playhead goes to where the ruler was pressed: the frame the bone passes that place on. */
   private scrubGraph(x: number): void {
-    const s = this.session, m = motionFor(s);
+    const s = this.session, m = this.path();
     if (!m) return;
     const p = Math.min(1, Math.max(0, this.gp(x)));
     s.seekPath(timeMap(m).time(p) * m.duration);
@@ -1672,7 +1795,7 @@ export class MotionPathPanel {
         this.pickSlot(leg.i);
         this.legDrag = leg;
         this.session.history?.begin("Bend the speed spline");
-        const cur = motionFor(this.session);
+        const cur = this.path();
         if (e.altKey && cur) keepMotion(this.session, setSpeedLegs(cur, leg.i, "break"));
         c.setPointerCapture(e.pointerId);
         this.slotSig = "";
@@ -1684,7 +1807,7 @@ export class MotionPathPanel {
       e.preventDefault();
       this.pickSlot(i);
       this.speedDrag = i;
-      this.session.history?.begin(`Set the speed of node ${nodeLabels(motionFor(this.session)!)[i]}`);
+      this.session.history?.begin(`Set the speed of node ${nodeLabels(this.path()!)[i]}`);
       c.setPointerCapture(e.pointerId);
       this.slotSig = "";
       this.schedule();
@@ -1728,7 +1851,7 @@ export class MotionPathPanel {
       this.setView(anchor - f * w, anchor + (1 - f) * w);
     }, { passive: false });
     c.addEventListener("dblclick", (e) => {
-      const [x, y] = at(e), leg = this.speedLegAt(x, y), i = this.speedDotAt(x, y), m = motionFor(this.session);
+      const [x, y] = at(e), leg = this.speedLegAt(x, y), i = this.speedDotAt(x, y), m = this.path();
       if (leg && m) { keepMotion(this.session, setSpeedLegs(m, leg.i, "auto"), "Automatic speed legs"); this.slotSig = ""; this.schedule(); return; }
       if (i >= 0) { this.setSpeed(i, 0); this.slotSig = ""; this.schedule(); return; }
       if (y >= this.plot().t) this.fitGraph(false);
@@ -1737,7 +1860,7 @@ export class MotionPathPanel {
 
   /** The menu of the speed graph at a canvas point: a node added at that place along the path, and over a point its delete and its legs (the curve's, drawn on the graph). */
   private graphMenu(x: number, y: number, cx: number, cy: number): void {
-    const m = motionFor(this.session);
+    const m = this.path();
     if (!m) return;
     const i = this.speedDotAt(x, y), p = Math.min(1, Math.max(0, this.gp(x))), items: MenuItem[] = [];
     items.push({ label: "Add a node here", run: () => this.addNodeAtProgress(p) });
@@ -1753,7 +1876,7 @@ export class MotionPathPanel {
 
   /** Break, mirror or automatic: the speed spline's legs at node `i`, one undo step. */
   private setSpeedLegsOf(i: number, how: "break" | "mirror" | "auto"): void {
-    const m = motionFor(this.session);
+    const m = this.path();
     if (!m?.nodes[i]) return;
     keepMotion(this.session, setSpeedLegs(m, i, how), how === "break" ? "Break the speed legs" : how === "mirror" ? "Mirror the speed legs" : "Automatic speed legs");
     this.slotSig = "";
@@ -1762,7 +1885,7 @@ export class MotionPathPanel {
 
   /** A spline node on the ring where `p` (0 to 1 along its length) is, keeping the speed the graph shows there. */
   private addNodeAtProgress(p: number): void {
-    const s = this.session, m = motionFor(s);
+    const s = this.session, m = this.path();
     if (!m) return;
     const curve = curveOf(m), at = curve.length * p, q = curve.at(at);
     const i = curve.nodeAt.slice(0, m.nodes.length).filter((v) => v <= at).length, speed = Math.round(speedAt(m, p) * 100) / 100;
@@ -1797,7 +1920,7 @@ export class MotionPathPanel {
    */
   nudge(dir: "left" | "right" | "up" | "down", big: boolean, step: number, bigFactor: number): boolean {
     // The arrows move the node in the parent bone\'s own space (the numbers it is stored in), whichever way that bone is turned on screen.
-    const s = this.session, m = motionFor(s);
+    const s = this.session, m = this.path();
     if (!m) return false;
     const n = m.nodes[this.selNode];
     if (!n) { this.onStatus("Pick a node first (press its number, or Q and W)."); return true; }
@@ -1812,7 +1935,7 @@ export class MotionPathPanel {
    * Q and W while this panel has the keys: the previous or next node (the bone goes to it). A ring goes round; an open path stops at its ends. False when there is nothing to step through here.
    */
   stepNode(dir: -1 | 1): boolean {
-    const m = motionFor(this.session);
+    const m = this.path();
     if (!m) return false;
     const count = m.nodes.length, at = this.selNode;
     if (count < 1) return false;
@@ -1827,7 +1950,7 @@ export class MotionPathPanel {
    * the playhead's frame: then dragging the bone moves the node and dragging the node moves the bone.
    */
   private pickSlot(i: number): void {
-    const s = this.session, n = motionFor(s)?.nodes[i];
+    const s = this.session, n = this.path()?.nodes[i];
     this.selNode = i;
     if (!n) return;
     s.pause();
@@ -1841,7 +1964,7 @@ export class MotionPathPanel {
     // Only when the bone was posed since last time: another session change (a node picked, a handle dragged) must not copy its pose into a node.
     if (s.unkeyedRevision === this.syncRev) return;
     this.syncRev = s.unkeyedRevision;
-    const m = motionFor(s), n = m?.nodes[this.selNode];
+    const m = this.path(), n = m?.nodes[this.selNode];
     if (!m || !n) return;
     const cur = currentNode(s, this.chosenParent());
     if (!cur || Math.hypot(cur.x - n.x, cur.y - n.y) < 1e-3) return;
@@ -1854,30 +1977,75 @@ export class MotionPathPanel {
    * keys are silenced (kept, dimmed in the Timeline, playing again if the path is removed) or deleted (one undo step).
    */
   private async enterDraw(): Promise<void> {
-    const s = this.session, m = motionFor(s);
-    if (!m) {
+    const s = this.session, existing = motionFor(s);
+    if (existing && existing.active === false) this.setMode("twin");
+    if (!motionFor(s)) {
       // No path can be made until the parent bone it is relative to is chosen.
+      this.noPathTab = "twin";
       const parent = this.chosenParent();
-      if (parent === null) { this.onStatus("Choose the parent bone first (Parent bone ▾ in the panel's head): the path is drawn relative to it."); this.parentPick.focus(); return; }
+      if (parent === null) { this.onStatus("Choose the parent bone first (Parent bone ▾ in the panel's head): the path is drawn relative to it."); this.parentPick.focus(); this.schedule(); return; }
       const started = startMotion(s, parent);
       if (!started) { this.onStatus("Select a bone in Animate mode, then Edit Path."); return; }
-      const anim = s.animation, keys = anim ? translateKeyCount(anim, started.bone) : 0;
-      let remove = false;
-      if (keys > 0) {
-        const answer = await askChoice(`${started.bone} has ${keys} translate key${keys === 1 ? "" : "s"} in ${started.animation}. A path drives its translation instead.`,
-          "Silence keeps the keys, dimmed in the Timeline: they play again if you remove the path. Delete removes them (Undo brings them back).",
-          [{ label: "Cancel", value: "cancel" }, { label: "Delete the keys", value: "delete" }, { label: "Silence the keys", value: "silence", primary: true }], "cancel");
-        if (answer === "cancel") return;
-        remove = answer === "delete";
-      }
-      // One undo step: the keys deleted (when asked) and the path started.
-      if (remove) startMotionDeletingKeys(s, started); else keepMotion(s, started, `Start a path for ${started.bone}`);
+      keepMotion(s, started, `Start a path for ${started.bone}`);
       // Node 2 is picked and the bone goes to it; node 1 is one press away.
       this.pickSlot(1);
-      this.onStatus(`${started.bone}: two spline nodes (where it is, and an offset). Press a number to put the bone on that node, then move the bone or drag the node; + adds a node; Play runs it.${keys > 0 ? (remove ? " Its translate keys were deleted (Undo brings them back)." : " Its translate keys are silenced while the path exists.") : ""}`);
+      const keys = s.animation ? translateKeyCount(s.animation, started.bone) : 0;
+      this.onStatus(`${started.bone}: two spline nodes (where it is, and an offset). Press a number to put the bone on that node, then move the bone or drag the node; + adds a node; Play runs it.${keys > 0 ? " Its key frames are kept: the Key frame tab uses them instead." : ""}`);
     }
     this.slotSig = "";
     this.schedule();
+  }
+
+  /** Key frame ⋮ ▸ Create new TwinSpline from Key frame: a path through the bone's keyed poses; the keys are kept and the bone uses the new path (docs/MOTION-MODES-PLAN.md). */
+  private async createPathFromKeys(): Promise<void> {
+    const s = this.session, bone = s.selectedBone;
+    if (!bone || !s.animation) return;
+    const old = motionFor(s);
+    if (old && !confirm(`Replace the TwinSpline of ${bone} with one made from its key frames? Undo brings it back.`)) return;
+    // The parent bone: the one chosen, else the bone's own (the TwinSpline tab's picker changes it).
+    const parent = old ? refBoneName(s.doc, old) : this.parentChoice.get(`${s.animation.name}|${bone}`) ?? refBoneName(s.doc, { bone });
+    let made: { path: MotionPath; stray: number } | null = null;
+    try { made = pathFromKeys(s, parent); } catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); return; }
+    if (!made) return;
+    keepMotion(s, made.path, `Make a TwinSpline of ${bone} from its key frames`);
+    this.noPathTab = "twin";
+    this.selNode = -1;
+    this.slotSig = "";
+    this.onStatus(`${bone}: a TwinSpline of ${made.path.nodes.length} nodes${made.path.closed ? " (a ring)" : ""} over ${made.path.duration} s made from the key frames, within ${Math.round(made.stray * 10) / 10} units of them at worst, relative to ${parent ?? "the skeleton"}. The key frames are kept; the tabs choose which one the bone uses.`);
+    this.schedule();
+  }
+
+  /** TwinSpline ⋮ ▸ Create new Key frame from TwinSpline: the path's keys written as translate keys; the path is kept, and the tabs choose which one the bone uses. */
+  private createKeysFromPath(): void {
+    const s = this.session, m = motionFor(s);
+    if (!m || !s.animation) return;
+    const had = translateKeyCount(s.animation, m.bone);
+    if (had > 0 && !confirm(`Replace the ${had} translate key${had === 1 ? "" : "s"} of ${m.bone} with keys made from its TwinSpline? Undo brings them back.`)) return;
+    try {
+      const { stray, keys } = makeKeysFromPath(s, m);
+      this.stray = stray;
+      this.onStatus(`${m.bone}: ${keys} key frames made from the TwinSpline${had ? ` (its ${had} translate key${had === 1 ? "" : "s"} were replaced)` : ""}. The TwinSpline is kept; press the Key frame tab to use the keys.`);
+    } catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); }
+  }
+
+  /** Key frame ⋮ ▸ Delete Key frame data: the bone's translate keys in the animation, one undo step. */
+  private deleteKeyData(): void {
+    const s = this.session, a = s.animation, bone = s.selectedBone, h = s.history;
+    if (!a || !bone || !h) return;
+    const n = translateKeyCount(a, bone);
+    if (n === 0 || !confirm(`Delete the ${n} translate key${n === 1 ? "" : "s"} of ${bone} in ${a.name}? Undo brings them back.`)) return;
+    h.apply(`Delete the translate keys of ${bone}`, deleteTranslateKeys(a.name, bone));
+    s.changed();
+    this.onStatus(`${bone}: ${n} translate key${n === 1 ? "" : "s"} deleted.`);
+  }
+
+  /** TwinSpline ⋮ ▸ Delete TwinSpline data: the bone's path; its key frames (if any) are what plays then. */
+  private deletePathData(): void {
+    const s = this.session, m = motionFor(s);
+    if (!m || !confirm(`Delete the TwinSpline of ${m.bone} in ${m.animation}? Undo brings it back.`)) return;
+    dropMotion(s, m.animation, m.bone);
+    this.selNode = -1;
+    this.onStatus(`${m.bone}: the TwinSpline is deleted.`);
   }
 
   /**
@@ -1888,7 +2056,7 @@ export class MotionPathPanel {
   private nodeDragStart(b: HTMLButtonElement, from: number): void {
     b.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
-      const m0 = motionFor(this.session);
+      const m0 = this.path();
       if (!m0) return;
       const x0 = e.clientX, y0 = e.clientY, bar = this.slotBar, cells = [...bar.querySelectorAll<HTMLButtonElement>("button.node")];
       let arrow: HTMLElement | null = null, to = -1, moved = false;
@@ -1954,7 +2122,7 @@ export class MotionPathPanel {
 
   /** The ring started at the node at place `i`; the picked node stays the one picked. */
   private setOrigin(i: number): void {
-    const s = this.session, m = motionFor(s);
+    const s = this.session, m = this.path();
     if (!m) return;
     try {
       const next = withOrigin(m, i);
@@ -1968,7 +2136,7 @@ export class MotionPathPanel {
 
   /** The node at place `from` moved to place `to` in the path's order (a number dragged to a gap); it stays the picked one if it was. */
   private moveNodeTo(from: number, to: number): void {
-    const s = this.session, m = motionFor(s);
+    const s = this.session, m = this.path();
     if (!m || from === to || from < 0 || to < 0 || from >= m.nodes.length || to >= m.nodes.length) return;
     const next = moveNode(m, from, to);
     keepMotion(s, next, "Reorder the spline nodes");
@@ -1982,7 +2150,7 @@ export class MotionPathPanel {
 
   /** Command (or Ctrl) + click on a node's number: it joins, or leaves, the nodes picked together; the node picked before it is the first of them. */
   private toggleMulti(i: number): void {
-    const m = motionFor(this.session);
+    const m = this.path();
     if (!m) return;
     const labels = nodeLabels(m), label = labels[i]!;
     if (this.multi.size === 0 && this.selNode >= 0 && this.selNode !== i) this.multi.add(labels[this.selNode]!);
@@ -1994,13 +2162,13 @@ export class MotionPathPanel {
 
   /** The places (in the path's order) of the nodes picked together. */
   private pickedPlaces(): number[] {
-    const m = motionFor(this.session);
+    const m = this.path();
     return m ? nodeLabels(m).flatMap((l, i) => (this.multi.has(l) ? [i] : [])) : [];
   }
 
   /** The nodes picked together become one at their centre. */
   private mergePicked(): void {
-    const s = this.session, m = motionFor(s);
+    const s = this.session, m = this.path();
     if (!m) return;
     try {
       const next = mergeNodes(m, this.pickedPlaces()), keep = nodeLabels(m)[this.pickedPlaces()[0]!]!;
@@ -2015,7 +2183,7 @@ export class MotionPathPanel {
 
   /** Only the numbers are put back in order; the nodes, their places and the path stay as they are. */
   private sortNumbers(): void {
-    const s = this.session, m = motionFor(s);
+    const s = this.session, m = this.path();
     if (!m) return;
     keepMotion(s, renumberNodes(m), "Sort the node numbers");
     this.multi.clear();
@@ -2026,7 +2194,7 @@ export class MotionPathPanel {
 
   /** Break the legs of the node at place `i` (each handle on its own), or mirror them again. */
   private setLegs(i: number, broken: boolean): void {
-    const s = this.session, m = motionFor(s);
+    const s = this.session, m = this.path();
     if (!m) return;
     const label = nodeLabels(m)[i];
     try {
@@ -2038,7 +2206,7 @@ export class MotionPathPanel {
 
   /** The path runs the other way round; the picked node stays the picked one. */
   private reverse(): void {
-    const s = this.session, m = motionFor(s);
+    const s = this.session, m = this.path();
     if (!m) return;
     const next = reversePath(m);
     keepMotion(s, next, "Reverse the path");
@@ -2050,7 +2218,7 @@ export class MotionPathPanel {
 
   /** The green +: a node after the picked one, halfway to the next (before the first on a ring's closing span); with none picked, or at an open path's end, after the last by the same offset. */
   private addNode(): void {
-    const s = this.session, m = motionFor(s);
+    const s = this.session, m = this.path();
     if (!m) return;
     const mid = this.selNode >= 0 ? midAfter(m, this.selNode) : null;
     if (mid) {
@@ -2072,7 +2240,7 @@ export class MotionPathPanel {
 
   /** Whether a path is being drawn for the selected bone: its nodes are stored by posing it, so dragging it writes no keys. */
   get drawing(): boolean {
-    return !!motionFor(this.session);
+    return !!this.path();
   }
 
   /** The spline: its curve, the picked node's span lit, the nodes and their handles. */
@@ -2197,7 +2365,7 @@ export class MotionPathPanel {
 
   /** Back to the automatic handle at the one under the point (a double click on it). */
   private resetHandleAt(x: number, y: number): boolean {
-    const h = this.handleAt(x, y), m = motionFor(this.session);
+    const h = this.handleAt(x, y), m = this.path();
     if (!h || !m) return false;
     keepMotion(this.session, { ...m, nodes: m.nodes.map((o, i) => { if (i !== h.slot) return o; const { tx: _a, ty: _b, bx: _c, by: _d, ...rest } = o; return rest; }) }, "Reset a handle");
     return true;
@@ -2210,18 +2378,6 @@ export class MotionPathPanel {
     return best;
   }
 
-  /** Make keys from path: write the keys (where the bone reaches each node, at the end of the run, and where the curve needs them) into the bone's translate timeline, once, one undo step. */
-  private makeKeys(): void {
-    const s = this.session, m = motionFor(s);
-    if (!m) return;
-    const a = s.animation, had = a ? (keysAt(a, { section: "bones", owner: m.bone, timeline: "translate" })?.length ?? 0) : 0;
-    try {
-      const { stray, keys } = makeKeysFromPath(s, m);
-      this.stray = stray;
-      this.onStatus(`${m.bone}: ${keys} keys written from the path${had ? `; its ${had} translate key${had === 1 ? "" : "s"} were replaced (Undo brings them back)` : ""}. They are a copy: the path and the keys no longer follow each other.`);
-    } catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); }
-  }
-
   /** Keep a changed path (the keys are only written by Make keys from path). */
   private timeEdit(next: MotionPath, say?: string, label = `Edit the timing of ${next.bone}`, join = false): void {
     keepMotion(this.session, next, label, join);
@@ -2230,7 +2386,7 @@ export class MotionPathPanel {
 
   /** Duration was typed, in seconds: the speed spline stays as it is. */
   private setDuration(): void {
-    const m = motionFor(this.session);
+    const m = this.path();
     if (!m) return;
     const v = Number(this.durationField.value);
     try { this.timeEdit(withDuration(m, v), `${v} seconds.`, "Set the duration", true); }
@@ -2239,13 +2395,13 @@ export class MotionPathPanel {
 
   /** Closed: the spline is a ring (the last node joins the first); off, it is a path with two ends. */
   private setClosed(on: boolean): void {
-    const m = motionFor(this.session);
+    const m = this.path();
     if (!m) return;
     this.timeEdit({ ...m, closed: on }, on ? "The spline is a ring." : "The spline is open: it ends on its last node.", on ? "Close the path into a ring" : "Open the ring");
   }
 
   private removeNode(): void {
-    const m = motionFor(this.session);
+    const m = this.path();
     if (!m || this.selNode < 0 || this.selNode >= m.nodes.length) return;
     if (m.nodes.length <= 2) { this.onStatus("A path keeps two spline nodes."); return; }
     keepMotion(this.session, { ...m, nodes: m.nodes.filter((_, i) => i !== this.selNode) }, "Remove a spline node");
@@ -2296,7 +2452,7 @@ export class MotionPathPanel {
         this.handleDrag = hnd;
         this.session.history?.begin("Bend the path");
         // Alt + drag breaks the node's legs first: only the one held moves.
-        const cur = motionFor(this.session);
+        const cur = this.path();
         if (e.altKey && cur) keepMotion(this.session, breakLegs(cur, hnd.slot));
         this.grab(e);
         return;
@@ -2320,7 +2476,7 @@ export class MotionPathPanel {
       const best = this.markAt(x, y);
       if (best >= 0) {
         // With a path a dot only puts the path's clock there; with none, drag it to move the bone at that frame.
-        if (motionFor(this.session)) { this.session.seekPath(best / this.session.fps); return; }
+        if (this.path()) { this.session.seekPath(best / this.session.fps); return; }
         if (this.beginEdit(x, y, "move", best)) { this.grab(e); return; }
         this.session.seek(best);
         return;
@@ -2336,7 +2492,7 @@ export class MotionPathPanel {
 
   /** The menu of a node's legs, opened by ⌘ + click on the node: the node is picked, and its legs broken or mirrored from the menu. */
   private legMenu(i: number, cx: number, cy: number): void {
-    const m = motionFor(this.session);
+    const m = this.path();
     if (!m) return;
     this.multi.clear();
     this.pickSlot(i);
@@ -2367,7 +2523,7 @@ export class MotionPathPanel {
       if (at && m) {
         this.keepView({ ...m, nodes: m.nodes.map((n, i) => (i === this.nodeDrag && n ? { ...n, x: at[0], y: at[1] } : n)) });
         // The bone goes with the node (at the playhead's frame): the node as stored, in the parent bone's space.
-        const kept = motionFor(this.session)?.nodes[this.nodeDrag];
+        const kept = this.path()?.nodes[this.nodeDrag];
         if (kept) poseAtNode(this.session, kept.x, kept.y, this.chosenParent());
       }
       return;

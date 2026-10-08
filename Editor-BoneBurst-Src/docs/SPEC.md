@@ -210,8 +210,8 @@ flowchart TB
 | Clock | `Session.time`, the Timeline's Play | `Session.pathClock`, Play, Pause, Stop and Loop in the Motion panel; in seconds |
 | Together | — | **Both** in the Motion panel starts the two clocks with one button (UI, not a data bridge) |
 
-- **One driver per bone.** A bone with a path in the animation shown is driven by the path (its x and y; the rest of its pose is the keys'). Its translate keys are silenced, not touched: the Timeline draws them dim; removing the path makes them play again. Making a path on a bone that has translate keys asks once, Silence or Delete.
-- **No bridge.** There is no bake, no signature, no stale state. **Make keys from path** copies the path into translate keys once, as one undo step; neither follows the other afterwards.
+- **One driver per bone, chosen by the person.** A bone's translation comes from its keys or from its path, never both: the path's `active` flag (absent = the path) says which, and the Motion Path panel's tabs set it. The path drives only x and y; the rest of the pose is the keys'. Both datasets are kept; the one not in use is left untouched (the Timeline draws the keys dim while the path is in use).
+- **No bridge.** There is no bake, no signature, no stale state. Each ⋮ menu has a one-time copy (*Create new Key frame from TwinSpline*, *Create new TwinSpline from Key frame*), one undo step; neither follows the other afterwards, and each can be deleted on its own.
 - **Guards.** `scripts/check.sh` (`layer motion`, no DOM) and `tests/motionLayer.test.ts`: `src/motion/` imports no rig, document, edit layer or interface, and `edit`, `engine`, `model` never import it.
 - **Limits.** A path's reference bone is read from the key pose; the picture's Path layer for a silenced bone is the keys' trail; a key made on a silenced bone is not warned about.
 
@@ -298,7 +298,7 @@ and sets the scheme it is based on). A theme owns the appearance preferences (`A
 (undo steps, snapping, autosave…) are the same in every theme. Storage is version 2 (`themes`,
 `theme`, the behaviour values beside them); a version 1 file is read once into the built-in theme it
 named. `Preferences.values` stays the flat set in force (`resolveSettings`), so nothing outside the
-dialog knows about themes; `Preferences.scheme` is what the page's `data-theme` takes.
+dialog knows about themes; `Preferences.scheme` is what the page's `data-theme` takes. When the system's scheme changes (while following it, or the app's, for a browser pane) the page's colours follow by CSS at once, and `app.ts` then applies every preference again, so canvases and the colours worked out from the theme (the rulers') are made from the new ones: before, they kept the old colours until something else redrew them.
 
 **The Properties panel** has a tab strip under its header: Properties (the selection's fields, or
 the skeleton's when nothing is selected) and Snapping (the snapping settings, `ui/snapFields`).
@@ -306,10 +306,14 @@ the skeleton's when nothing is selected) and Snapping (the snapping settings, `u
 the colour set under Tree (`treeGuideColour`).
 
 **The Motion Path panel** (`ui/panels/motionPanel.ts`) is the path system's editor (§6a), for the
-selected bone and the animation shown. From the top: the header (what the picture shows, the
-parent bone and handles toggles, the Stage line); the path bar (the parent bone the path is
-relative to, Edit Path, + and − Node, Duration and Closed and Loop, Play / Pause, Both, Stop and the
-path's clock, Make keys from path, Remove path); the view bar (zoom − and +, the zoom, Fit); the
+selected bone and the animation shown, in two tabs (docs/MOTION-MODES-PLAN.md): **Key frame** (the
+bone's keyed motion, a Spine import's included; its ⋮ makes a TwinSpline from the keys, or deletes them)
+and **TwinSpline** (the path editor below; its ⋮ makes keys from the path, or deletes it). Both are
+kept; pressing a tab chooses which one the bone uses (`MotionPath.active`). Under the TwinSpline tab, from the top: the header (the two tabs, with the Path and Spline layer
+toggles as icons beside them, then what else the picture shows, the parent bone and handles
+toggles, the Stage line); the path bar (the parent bone the path is relative to, − Node, Duration
+and Closed and Loop; making a path or a node, making key frames from the path and deleting it are in
+the tab's ⋮ menu); the view bar (zoom − and +, the zoom, the path's Play / Pause, Both, Stop and clock, Fit); the
 picture (the ring spline with its nodes and legs, the bone and its image at the path's own time,
 the path's frame dots; wheel zooms, the middle button pans); the node strip (a number per node,
 dragged to reorder); and under a splitter you drag, the picked node's data (place, speed, both

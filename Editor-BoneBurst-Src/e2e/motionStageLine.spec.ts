@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { chooseParent, startEditPath } from "./motionHelpers";
+import { chooseParent, startEditPath, twinMenu } from "./motionHelpers";
 
 /** The Motion Path header's Stage toggle: the bone's spline drawn as a line on the Stage, in a colour of its own. */
 
@@ -58,8 +58,8 @@ test("every Motion Path step is in the History and can be undone: a node dragged
   const labels = () => page.evaluate(() => (window as unknown as { boneburst: { session: { history: { entries: { labels: string[]; done: number } } } } }).boneburst.session.history.entries);
   await startEditPath(panel);
   expect(await nodes()).toBe(2);
-  await panel.getByRole("button", { name: "Add a spline node" }).click();
-  await panel.getByRole("button", { name: "Add a spline node" }).click();
+  await twinMenu(panel, "Add a spline node");
+  await twinMenu(panel, "Add a spline node");
   expect(await nodes()).toBe(4);
   const l = await labels();
   expect(l.labels.slice(0, l.done)).toEqual([expect.stringMatching(/^Start a path for head/), "Add a spline node", "Add a spline node"]);

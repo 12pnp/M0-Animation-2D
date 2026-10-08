@@ -86,6 +86,8 @@ export interface MotionPath {
   readonly duration: number;
   /** Whether the path's clock starts over at the end (the default) or stops there. */
   readonly loop: boolean;
+  /** Which system the bone uses (docs/MOTION-MODES-PLAN.md): the path (the default), or, when false, the bone's key frames; the path is kept either way. */
+  readonly active?: boolean;
 }
 
 export const EMPTY_SIDECAR: Sidecar = { view: new Map<string, Json>(), guides: [], references: [], notes: [], motion: [], tags: [], extra: new Map<string, Json>() };

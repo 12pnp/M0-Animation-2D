@@ -1,6 +1,7 @@
-import { arrivalTimes, curveOf, DEFAULT_DURATION, pathPose, pathTime, progressAtTime } from "@/motion";
+import { arrivalTimes, clampSpeed, curveOf, DEFAULT_DURATION, MIN_DURATION, nodeProgress, pathPose, pathTime, progressAtTime } from "@/motion";
 import type { LocalPose } from "@/edit/boneKeys";
-import { deleteTranslateKeys, fitChannel, type PathKey, setupXY, translateKeys, writeTranslateKeys } from "@/edit/pathKeys";
+import { fitChannel, type PathKey, setupXY, TRANSLATE_TIMELINES, translateKeys, writeTranslateKeys } from "@/edit/pathKeys";
+import { frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
 import { motionOf, withMotion } from "@/edit/sidecar";
 import { EditRefused } from "@/edit/history";
 import type { Skeleton } from "@/model/skeleton";
@@ -118,13 +119,61 @@ export function nodeAfter(s: Session, last: MotionNode): MotionNode {
  */
 export function currentNode(s: Session, parent: string | null): MotionNode | null {
   const bone = s.selectedBone, p = s.pose();
-  if (!bone || !p) return null;
+  return bone && p ? nodeOfPose(p, bone, parent) : null;
+}
+
+/** `bone`'s joint in pose `p`, in the reference bone's own space: a node. Null when the bone has no pose there. */
+export function nodeOfPose(p: Posed, bone: string, parent: string | null): MotionNode | null {
   const i = p.bones.get(bone);
   if (i === undefined || !p.rig.active[i]) return null;
-  // The joint in the reference bone's own space.
   const m = boneMatrix(p, i), R = refMatrix(p, parent), [x, y] = fromView(R, m[4] - R[4], m[5] - R[5]);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   return { x: Math.round(x * 1e4) / 1e4, y: Math.round(y * 1e4) / 1e4 };
+}
+
+/**
+ * A path from the bone's own translate keys (docs/MOTION-MODES-PLAN.md): a node where the bone is at each key frame (the key animation's pose,
+ * the joint in the parent bone's space), a ring when the last pose is the first's, else open; it runs from the first key to the last; each
+ * node's speed makes the path reach it at its key's time (`Δlength / Δtime − 1` over its span). An approximation: `stray` is how far the
+ * path is from the keyed positions at worst, over every frame. Refused, with the reason, when the bone has no translate keys, they do not
+ * move it, or they are too close in time.
+ */
+export function pathFromKeys(s: Session, parent: string | null): { path: MotionPath; stray: number } | null {
+  const a = s.animation, bone = s.selectedBone, poser = s.poserFor();
+  if (!a || !bone || !poser) return null;
+  const fps = s.fps, frames = [...new Set(keyLists(a).filter((l) => l.path.section === "bones" && l.path.owner === bone && (TRANSLATE_TIMELINES as readonly string[]).includes(l.path.timeline)).flatMap((l) => l.keys.map((k) => timeFrame(keyTime(k), fps))))].sort((x, y) => x - y);
+  if (frames.length < 2) throw new EditRefused(`${bone} has fewer than two translate key frames in ${a.name}: there is no motion to convert.`);
+  const at = (f: number): MotionNode | null => nodeOfPose(poser.pose(s.skin, a.name, Math.fround(frameTime(f, fps)), "none"), bone, parent);
+  // A node for each key frame where the bone has moved (a key that holds the place adds no node, only time to the span before it).
+  const kept: { frame: number; node: MotionNode }[] = [];
+  for (const f of frames) {
+    const node = at(f);
+    if (!node) throw new EditRefused(`"${bone}" has no pose in this skin.`);
+    const last = kept.at(-1);
+    if (last && Math.hypot(node.x - last.node.x, node.y - last.node.y) < 1e-3) { last.frame = f; continue; }
+    kept.push({ frame: f, node });
+  }
+  const f0 = frames[0]!, f1 = frames.at(-1)!;
+  if (kept.length < 2) throw new EditRefused(`The translate keys of ${bone} do not move it.`);
+  if ((f1 - f0) / fps < MIN_DURATION) throw new EditRefused(`The translate keys of ${bone} are less than ${MIN_DURATION} s apart.`);
+  // A ring when the bone ends where it began: the last node is the first again.
+  const ring = Math.hypot(kept.at(-1)!.node.x - kept[0]!.node.x, kept.at(-1)!.node.y - kept[0]!.node.y) < 1e-3 && kept.length > 2;
+  const nodes = (ring ? kept.slice(0, -1) : kept).map((k) => k.node), times = kept.map((k) => (k.frame - f0) / (f1 - f0));
+  const shape: MotionPath = { animation: a.name, bone, ...(parent !== null ? { parent } : {}), nodes, closed: ring, duration: Math.round(((f1 - f0) / fps) * 1e4) / 1e4, loop: true };
+  const xs = nodeProgress(shape), spans = nodes.length - (ring ? 0 : 1);
+  const withSpeed = nodes.map((n, i) => {
+    const j = Math.min(i, spans - 1), p0 = xs[j]!, p1 = j + 1 < nodes.length ? xs[j + 1]! : 1, dt = times[j + 1]! - times[j]!, dp = p1 - p0;
+    const speed = dt > 1e-9 && dp > 1e-9 ? clampSpeed(dp / dt - 1) : 0;
+    return speed === 0 ? n : { ...n, speed };
+  });
+  const path: MotionPath = { ...shape, nodes: withSpeed };
+  // How far the path is from the keyed motion, at every frame of the run.
+  let stray = 0;
+  for (let f = f0; f <= f1; f++) {
+    const want = at(f), got = pathPose(path, (f - f0) / fps);
+    if (want) stray = Math.max(stray, Math.hypot(got.x - want.x, got.y - want.y));
+  }
+  return { path, stray };
 }
 
 /**
@@ -234,18 +283,6 @@ export function makeKeysFromPath(s: Session, m: MotionPath): { stray: number; ke
 export function keepMotion(s: Session, m: MotionPath, label = `Edit the path of ${m.bone}`, join = false): void {
   const change = (): void => s.setSidecar(withMotion(s.sidecar, m.animation, m.bone, m));
   if (s.history) s.history.applyBeside(label, change, join); else change();
-}
-
-/** Start a path and delete its bone's translate keys in the animation, as one undo step (the "Delete" answer when a path is made on a bone that has keys). */
-export function startMotionDeletingKeys(s: Session, m: MotionPath): void {
-  const h = s.history;
-  if (!h) { keepMotion(s, m); return; }
-  h.begin(`Start a path for ${m.bone}, deleting its translate keys`);
-  try {
-    h.apply("", deleteTranslateKeys(m.animation, m.bone));
-    s.setSidecar(withMotion(s.sidecar, m.animation, m.bone, m));
-  } finally { h.end(); }
-  s.changed();
 }
 
 /** Drop the path kept for a bone; its keys stay as they are. One undo step. */

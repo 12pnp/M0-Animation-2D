@@ -4,7 +4,7 @@ import { readSidecar, writeSidecar } from "@/io/sidecar";
 import { closeLoops } from "@/edit/loop";
 import { deleteTag, renameTag, type Tagged, parseTags, renameTagged, tagKeyOf, tagsFor, withoutTag, withTags } from "@/edit/tags";
 import { addReference, type View, viewOf, withView } from "@/edit/sidecar";
-import { EMPTY_SIDECAR, type Sidecar } from "@/model/sidecar";
+import { EMPTY_SIDECAR, type MotionPath, type Sidecar } from "@/model/sidecar";
 import type { Page } from "@/io/pack";
 import { readSkeleton } from "@/io/skeletonRead";
 import type { LocalPose } from "@/edit/boneKeys";
@@ -480,14 +480,14 @@ export class Session {
     if (!poser) return null;
     const anim = this.animation?.name ?? null;
     const step = this.playing ? this.step : "none";
-    const driven = anim !== null && this.sidecar.motion.some((m) => m.animation === anim);
+    const driven = anim !== null && this.usedPaths(anim).length > 0;
     const key = `${this.history!.revision}|${this.loopRev}|${this.skin}|${anim}|${this.time}|${this.tick}|${step}|${this.unkeyedRev}|${driven ? this.pathClock.time : "-"}`;
     if (this.posed?.key !== key || (driven && this.posed.motion !== this.sidecar.motion)) {
       let value: Posed;
       if (driven) {
         // The key animation first (no physics step), then the paths' x and y over it, then the pose that is shown.
         const keys = poser.pose(this.skin, anim, this.time, "none", this.unkeyed);
-        const drive = pathDrive(this.doc, this.sidecar.motion, anim!, keys, this.pathClock.time);
+        const drive = pathDrive(this.doc, this.usedPaths(anim!), anim!, keys, this.pathClock.time);
         value = poser.pose(this.skin, anim, this.time, step, new Map([...drive, ...this.unkeyed]));
       } else value = poser.pose(this.skin, anim, this.time, step, this.unkeyed);
       this.posed = { key, motion: this.sidecar.motion, value };
@@ -495,16 +495,21 @@ export class Session {
     return this.posed.value;
   }
 
+  /** The paths of `animation` the bones use (not the ones set aside for the key frames, docs/MOTION-MODES-PLAN.md). */
+  private usedPaths(animation: string): readonly MotionPath[] {
+    return this.sidecar.motion.filter((m) => m.animation === animation && m.active !== false);
+  }
+
   /** Whether a path drives `bone` in the animation shown: its translate keys are silenced then (they stay in the document). */
   pathDrives(bone: string): boolean {
     const a = this.animation?.name;
-    return a !== undefined && this.sidecar.motion.some((m) => m.animation === a && m.bone === bone);
+    return a !== undefined && this.sidecar.motion.some((m) => m.animation === a && m.bone === bone && m.active !== false);
   }
 
   /** Whether the animation shown has a path to play. */
   get hasPaths(): boolean {
     const a = this.animation?.name;
-    return a !== undefined && this.sidecar.motion.some((m) => m.animation === a);
+    return a !== undefined && this.usedPaths(a).length > 0;
   }
 
   /** Play the paths of the animation shown on the path clock: no keys needed. The animation's own playback stops. */
@@ -512,8 +517,8 @@ export class Session {
     if (!this.hasPaths) return;
     if (this.playing && !keepKeys) this.pause();
     this.clearUnkeyed();
-    const longest = Math.max(...this.sidecar.motion.filter((m) => m.animation === this.animation!.name).map((m) => m.duration));
-    if (this.pathClock.time >= longest && !this.sidecar.motion.some((m) => m.animation === this.animation!.name && m.loop)) this.pathClock.time = 0;
+    const used = this.usedPaths(this.animation!.name), longest = Math.max(...used.map((m) => m.duration));
+    if (this.pathClock.time >= longest && !used.some((m) => m.loop)) this.pathClock.time = 0;
     this.pathClock.playing = true;
     this.changed();
   }
@@ -551,7 +556,7 @@ export class Session {
   /** One step of the path clock, `dt` seconds on: it stops when no path of the animation loops and every run has ended. */
   advancePath(dt: number): void {
     if (!this.pathClock.playing) return;
-    const a = this.animation?.name, mine = this.sidecar.motion.filter((m) => m.animation === a);
+    const a = this.animation?.name, mine = a === undefined ? [] : this.usedPaths(a);
     if (!mine.length) { this.pathClock.playing = false; this.changed(); return; }
     this.pathClock.advance(dt, Infinity);
     if (!mine.some((m) => m.loop) && this.pathClock.time >= Math.max(...mine.map((m) => m.duration))) { this.pathClock.time = Math.max(...mine.map((m) => m.duration)); this.pathClock.playing = false; }

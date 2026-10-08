@@ -910,3 +910,35 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 /* A Timeline channel whose keys a path silences: the label dimmed, with a badge. */
 .timeline-labels .row.silenced { opacity: 0.6; }
 .timeline-labels .path-badge { margin-left: auto; padding-left: 8px; font-size: 10px; color: var(--muted); white-space: nowrap; }
+
+/* The Key frame and TwinSpline tabs in the Motion Path header, each with a ⋮ at its end. */
+.lp-tabs { display: flex; gap: 6px; flex: 0 0 auto; }
+.lp-tab { display: flex; align-items: stretch; border: 1px solid var(--bb-field-border, var(--line)); border-radius: 6px; overflow: hidden; }
+.lp-tab button { border: 0; border-radius: 0; background: transparent; }
+.lp-tab button.on { background: var(--accent); color: var(--accent-text); }
+.lp-tab .more { padding: 1px 6px; border-left: 1px solid var(--bb-field-border, var(--line)); font-weight: 700; }
+.lp-tabs[hidden] { display: none; }
+/* The card over the picture when the open tab has nothing to edit. */
+.lp-card { position: absolute; right: 8px; top: 8px; z-index: 4; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px 8px; max-width: 280px; padding: 8px 10px; pointer-events: none; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 2px 10px rgb(0 0 0 / 0.3); font-size: 12px; text-align: center; }
+.lp-card p { margin: 0; flex: 1 0 100%; text-align: right; }
+.lp-card button { pointer-events: auto; }
+.lp-card[hidden] { display: none; }
+.lp-card button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+
+/* Path and Spline layer toggles, as icons beside the tab they belong to. */
+.lp-tabs { align-items: center; }
+.lp-tabs .lp-layer { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 24px; padding: 0; }
+.lp-tabs .lp-layer .icon { width: 15px; height: 15px; margin: 0; }
+
+/* The path's transport in the view bar, between the zoom and Fit. */
+.lp-viewbar .lp-gap { width: 1px; align-self: stretch; margin: 2px 6px; background: var(--line); }
+.lp-viewbar .lp-gap:has(+ [hidden]) { display: none; }
+.lp-viewbar button { padding: 1px 8px; font-size: 12px; }
+.lp-viewbar .lp-fit { padding: 0; }
+.lp-viewbar button[hidden], .lp-viewbar .lp-clock[hidden] { display: none; }
+
+/* The path bar keeps its two rows whatever the tab: controls and the node count, or a hint and an empty line. */
+.lp-sect[hidden] { display: none; }
+.lp-motion .lp-hint { flex: 1 0 100%; color: var(--muted); font-size: 12px; }
+.lp-hint[hidden] { display: none; }
+.lp-tabs button:disabled, .lp-tabs .lp-layer:disabled { opacity: 0.45; }

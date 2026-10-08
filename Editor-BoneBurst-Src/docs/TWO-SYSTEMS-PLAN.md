@@ -171,6 +171,8 @@ Outside this project nothing changes in steps 1 to 7: the sidecar is not exporte
 - The older path plans point here: `TWINSPLINE-PLAN.md` and `MOTION-PARENT-PLAN.md`, `PATH-CAPTURE-PLAN.md`, `LOCALPATH-EDIT-PLAN.md`, `MOTION-PREVIEW-PLAN.md` (each gets a note under its title; the three already replaced by TwinSpline keep their own banner).
 - Guards: the import guard and `tests/motionLayer.test.ts` came with step 1; nothing new was needed. The deliberate break of step 1 was not repeated.
 
+> **Revised 2026-10-08 (later):** Q2's Silence or Delete question and the rule that a path always drives its bone were replaced: both datasets are kept, and the tab chosen in the Motion Path panel says which one the bone uses; see `MOTION-MODES-PLAN.md`, last section.
+
 ## Decided (2026-10-08, the owner)
 
 - **Q1 Where a path lives: the sidecar, as today.** The document stays byte-exact Spine JSON. Each path is shaped as plain numbers keyed by animation and bone, so moving it into the export later (the Unity plan, step 8) is only a writer change.

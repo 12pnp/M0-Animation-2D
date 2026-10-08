@@ -493,7 +493,10 @@ export function mountApp(root: HTMLElement): void {
   refreshPanels();
 
   // Following the system: the operating system's light or dark swaps the built-in theme in force.
-  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => prefs.resync());
+  // The system's scheme changed (or the app's, for a browser pane): the page's own colours follow by CSS at once, but what is drawn on canvases
+  // (the Stage, the Motion Path picture, the Timeline) and the colours worked out from the theme (the rulers') were made from the old ones, so every
+  // preference is applied again once the new styles are in (it is not a change of any preference, so `resync` alone says nothing).
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { prefs.resync(); requestAnimationFrame(() => applyPrefs(prefs.values)); });
 
   /** Each preference where it applies; on start, and whenever one changes. */
   const applyPrefs = (p: PreferenceValues) => {

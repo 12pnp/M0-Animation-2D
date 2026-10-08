@@ -38,3 +38,18 @@ test("a new theme keeps its own tree indentation, and switching themes switches 
   await page.getByRole("menuitem", { name: /^Delete/ }).click();
   await expect(theme.locator("option")).toHaveText(["Follow the system", "Light", "Dark"]);
 });
+
+test("following the system: when the system's scheme changes, what is drawn and what is worked out from the theme is made again (no old colours left on the canvases)", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  // The rulers' background is worked out from the panel colour when preferences are applied: it is the thing that goes stale.
+  const ruler = () => page.evaluate(() => document.documentElement.style.getPropertyValue("--ruler-bg"));
+  await expect.poll(ruler).toContain("45 45 45");
+  await page.emulateMedia({ colorScheme: "light" });
+  await expect.poll(ruler).toContain("255 255 255");
+  await page.emulateMedia({ colorScheme: "dark" });
+  await expect.poll(ruler).toContain("45 45 45");
+});

@@ -227,7 +227,7 @@ function readFlat(v: Record<string, unknown>): PreferenceValues {
 const isObject = (o: unknown): o is Record<string, unknown> => !!o && typeof o === "object" && !Array.isArray(o);
 
 /** Settings from stored text: the version 2 layout, or a version 1 file (its appearance values go to the built-in theme it named); anything else is the defaults. */
-export function readSettings(text: string | null): Settings {
+export function readSettings(text: string | null, systemDark = false): Settings {
   const none: Settings = { values: DEFAULTS, themes: builtIns(), theme: "system" };
   if (!text) return none;
   let o: unknown;
@@ -235,8 +235,10 @@ export function readSettings(text: string | null): Settings {
   if (!isObject(o)) return none;
   const flat = readFlat(o);
   if (o.version === 1) {
-    // A file that followed the system gave its appearance to both built-in themes.
-    const mine = (id: string) => o.theme !== "light" && o.theme !== "dark" || o.theme === id;
+    // A file that followed the system had its appearance set under the system's scheme: it goes to that built-in theme only, so the other starts
+    // from its defaults (a tab bar made dark for a dark system must not stay dark when Light is chosen).
+    const named = o.theme === "light" || o.theme === "dark" ? o.theme : systemDark ? "dark" : "light";
+    const mine = (id: string) => id === named;
     return { values: flat, themes: builtIns().map((t) => (mine(t.id) ? { ...t, values: pickAppearance(flat) } : t)), theme: o.theme === "light" || o.theme === "dark" ? o.theme : "system" };
   }
   if (o.version !== PREFERENCES_VERSION) return none;
@@ -290,7 +292,7 @@ export class Preferences {
   constructor(private readonly store: Store | null, private readonly systemDark: () => boolean = systemIsDark) {
     let text: string | null = null;
     try { text = store?.getItem(PREFERENCES_KEY) ?? null; } catch { /* storage blocked: the defaults */ }
-    this.settings = readSettings(text);
+    this.settings = readSettings(text, this.systemDark());
     this.current = resolveSettings(this.settings, this.systemDark());
   }
 

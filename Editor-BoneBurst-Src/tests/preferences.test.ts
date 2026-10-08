@@ -157,6 +157,15 @@ describe("themes", () => {
     expect(prefs.themes.find((t) => t.id === "light")!.values.boneColour).toBe("auto");
   });
 
+  it("read a version 1 file that followed the system: its appearance goes to the built-in theme of the system's scheme only, so the other starts from its defaults", () => {
+    const text = JSON.stringify({ version: 1, tabBarColour: "#112233", boneColour: "#334455" });
+    for (const [dark, mine, other] of [[true, "dark", "light"], [false, "light", "dark"]] as const) {
+      const prefs = new Preferences({ getItem: () => text, setItem: () => {} }, () => dark), by = (id: string) => prefs.themes.find((t) => t.id === id)!.values;
+      expect(by(mine)).toMatchObject({ tabBarColour: "#112233", boneColour: "#334455" });
+      expect(by(other)).toMatchObject({ tabBarColour: DEFAULTS.tabBarColour, boneColour: DEFAULTS.boneColour });
+    }
+  });
+
   it("drop a stored theme that does not read, and fall back to the system when the one in use is gone", () => {
     const text = JSON.stringify({ version: 2, theme: "ghost", themes: [{ id: "x", name: "", base: "dark", values: {} }, { id: "y", name: "Why", base: "purple", values: {} }, { id: "z", name: "Zed", base: "light", values: { boneColour: "#0a0b0c", boneSize: 99 } }] });
     const prefs = new Preferences({ getItem: () => text, setItem: () => {} }, () => false);

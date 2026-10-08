@@ -1,5 +1,5 @@
 import { expect, type Page, test } from "@playwright/test";
-import { startEditPath } from "./motionHelpers";
+import { startEditPath, twinMenu } from "./motionHelpers";
 
 /** TwinSpline (docs/TWINSPLINE-PLAN.md): a speed for each node of the ring spline, in a graph under the node numbers; the line above them is dragged. */
 
@@ -21,14 +21,17 @@ async function open(page: Page): Promise<void> {
 const nodes = (page: Page) => page.evaluate(() => (window as unknown as Live).boneburst.session.sidecar.motion[0]?.nodes ?? []);
 const dots = (page: Page) => page.evaluate(() => (window as unknown as Live).boneburst.motionPath.speedPoints);
 
-test("Adjust time is gone: Edit Path is the one mode, with Duration, Closed and Make keys from path beside it", async ({ page }) => {
+test("Adjust time is gone: Edit Path is the one mode, with Duration, Closed and Loop beside it, and the path's actions in the TwinSpline menu", async ({ page }) => {
   await open(page);
   const panel = page.locator(".panel.motion-path");
   await startEditPath(panel);
   await expect(panel.getByRole("button", { name: "Adjust time" })).toHaveCount(0);
   await expect(panel.getByRole("button", { name: /Time$/ })).toHaveCount(0);
   await expect(panel.getByRole("spinbutton", { name: "Duration" })).toBeVisible();
-  await expect(panel.getByRole("button", { name: "Make keys from path" })).toBeVisible();
+  await panel.getByRole("button", { name: "TwinSpline menu" }).click();
+  await expect(page.getByRole("menuitem", { name: "Create new Key frame from TwinSpline" })).toBeEnabled();
+  await expect(page.getByRole("menuitem", { name: "Delete TwinSpline data" })).toBeEnabled();
+  await page.keyboard.press("Escape");
 });
 
 test("a speed for each node: a point in the graph, the Speed field, a drag, a double click back to 0, all held to -0.99 and 5, each one undo step", async ({ page }) => {
@@ -36,7 +39,7 @@ test("a speed for each node: a point in the graph, the Speed field, a drag, a do
   await open(page);
   const panel = page.locator(".panel.motion-path");
   await startEditPath(panel);
-  await panel.getByRole("button", { name: "Add a spline node" }).click();
+  await twinMenu(panel, "Add a spline node");
   await expect(panel.locator(".lp-speed-canvas")).toBeVisible();
   await expect.poll(async () => (await dots(page)).length).toBe(3);
   expect((await nodes(page)).every((n) => !n.speed)).toBe(true);
@@ -93,7 +96,7 @@ test("a node added after the picked one takes the speed spline's value there: th
   await panel.getByLabel("Node speed").press("Enter");
   await expect.poll(async () => (await nodes(page)).map((n) => n.speed ?? 0)).toEqual([2, 2]);
   await panel.locator(".lp-slots button.node").nth(0).click();
-  await panel.getByRole("button", { name: "Add a spline node" }).click();
+  await twinMenu(panel, "Add a spline node");
   // Between two nodes at 2, the curve is at 2: the new one has 2.
   await expect.poll(async () => (await nodes(page)).map((n) => n.speed ?? 0)).toEqual([2, 2, 2]);
 });
@@ -144,7 +147,7 @@ test("the speed graph: the cap on its ruler scrubs the path's own clock and says
   await open(page);
   const panel = page.locator(".panel.motion-path"), canvas = panel.locator(".lp-speed-canvas");
   await startEditPath(panel);
-  await panel.getByRole("button", { name: "Add a spline node" }).click();
+  await twinMenu(panel, "Add a spline node");
   await expect.poll(async () => (await dots(page)).length).toBe(3);
   await panel.locator(".lp-slots button.node").nth(0).click();
   await canvas.scrollIntoViewIfNeeded();

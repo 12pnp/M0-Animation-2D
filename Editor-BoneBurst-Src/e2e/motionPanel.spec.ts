@@ -128,7 +128,8 @@ test("Onion: a button on the Timeline bar turns onion skin on and off, and Motio
   const off = await tints();
   await page.locator(".motion-path").getByRole("button", { name: "Onion", exact: true }).click();
   await expect.poll(async () => (await tints()).red).toBeGreaterThan(off.red + 50);
-  expect((await tints()).green).toBeGreaterThan(off.green + 50);
+  // The path bar keeps its height on every tab now (a hint in it for a bone with no path), so the picture is a little smaller and the ghosts with it.
+  expect((await tints()).green).toBeGreaterThan(off.green + 20);
 });
 
 test("Motion Path zooms with the wheel, pans only with the middle button (a left drag on empty canvas does nothing), and Fit (top right) shows it whole again", async ({ page }) => {

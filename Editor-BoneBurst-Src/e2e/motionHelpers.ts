@@ -1,4 +1,4 @@
-import type { Locator } from "@playwright/test";
+import type { Dialog, Locator } from "@playwright/test";
 
 /**
  * Edit Path in the Motion Path panel (docs/MOTION-PARENT-PLAN.md): a path cannot be started until a parent bone is chosen, so
@@ -6,7 +6,17 @@ import type { Locator } from "@playwright/test";
  */
 export async function startEditPath(panel: Locator): Promise<void> {
   await chooseParent(panel);
-  await panel.getByRole("button", { name: "Edit Path", exact: true }).click();
+  await twinMenu(panel, "Create new TwinSpline");
+}
+
+/** An item of the TwinSpline tab's ⋮ menu; `accept` answers the confirm a replace or a delete asks. */
+export async function twinMenu(panel: Locator, item: string, accept = false): Promise<void> {
+  const page = panel.page(), answer = (d: Dialog): void => { void d.accept().catch(() => undefined); };
+  if (accept) page.on("dialog", answer);
+  try {
+    await panel.getByRole("button", { name: "TwinSpline menu" }).click();
+    await page.getByRole("menuitem", { name: item }).click();
+  } finally { if (accept) page.off("dialog", answer); }
 }
 
 /** Choose the selected bone's own parent in the picker when none is chosen. */
