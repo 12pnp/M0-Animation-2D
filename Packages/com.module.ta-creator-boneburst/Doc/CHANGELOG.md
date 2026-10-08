@@ -11,6 +11,10 @@ flowchart LR
 
 ## 0.1.0 (2026-09-30)
 
+### 2026-10-08 — **ECS P15 plan (animation system in Burst jobs) written, reviewed and baselined** (docs only in this package; the code is in `M0-25DPlatformer-ECS`)
+
+[BoneBurst-ECS-P15-AnimationSystem-Plan.md](Review/BoneBurst-ECS-P15-AnimationSystem-Plan.md): the plan, a TwinSpline-readiness section (§7: a path is a translate timeline on the entry's time; P15 must not special-case translate; the spline nodes fit `TimelineBlob`'s `ExtraStart` and `ExtraLength`), the review's four fixes applied (the known `Temp` hash map in `AnimationsChanged`, physics instances out of the first cut, the after-animation system folded in, a native physics bit with a deliberate-bug test), and the step 1 baseline (§8): build 57 of the unmodified package, ABBA at 100, 500 and 2000 skeletons, timers off and on. At 2000 idle on the GPU route the animation system is 0.73 ms and the after-animation system 0.17 ms of a 2.76 ms frame; switching, 1.84 and 0.39 of 4.40 ms. **Not verified beyond that:** nothing is built yet; the runs carried other sessions' load (5 to 14), so frame figures are good to about 10%.
+
 ### 2026-10-08 — **The MonoBehaviour front is kept as a sample; new work goes to `com.module.ta-creator-boneburst-ecs`** (docs only, no code changed)
 
 Owner decision [D2-FrontPackageSample-Decision.md](Review/D2-FrontPackageSample-Decision.md): this package, the timeline package and the import Editor bake (which references the front) are frozen and get no new features; `-core` and the ECS package (in `M0-25DPlatformer-ECS`) are live; M2-Creator-All and M2-Sample-25DL-Shader stay on the frozen copy. The root `CLAUDE.md` says so in one line. Four points are left open for the owner in the decision (where the ECS plans live, whether the ECS package moves into M0, the editor's Unity proof, the two consumers). Nothing built or run.
