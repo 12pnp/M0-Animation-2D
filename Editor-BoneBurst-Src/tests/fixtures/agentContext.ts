@@ -11,7 +11,7 @@ import { constraintNow } from "@/ui/stage/posed";
  * `Poser`, the view kept in memory, references as given, and render requests recorded (the
  * picture itself needs a browser: the on-screen check draws it).
  */
-export type TestContext = AgentContext & { told: number; shown: AgentView[]; renders: RenderRequest[]; exports: number; exportMode?: string };
+export type TestContext = AgentContext & { told: number; shown: AgentView[]; renders: RenderRequest[]; exports: number; exportMode?: string; exportNote?: string };
 
 /** `pages`: the atlas's pages with their pixels (a PSD import's), for `pixels`; without them every image has none. */
 export function testContext(history: History<Skeleton> | null, images: AtlasImages = NO_IMAGES, references: AgentReference[] = [], pages: readonly Page[] = []): TestContext {
@@ -40,7 +40,7 @@ export function testContext(history: History<Skeleton> | null, images: AtlasImag
       return r && page ? regionAlpha(r, page) : null;
     },
     // The folder and its writing are the browser's (tests/unityExport.test.ts, e2e): here only the call is counted.
-    exportToUnity: async (mode) => { c.exports++; c.exportMode = mode; return { folder: "Unity", files: ["rig.json"] }; },
+    exportToUnity: async (mode) => { c.exports++; c.exportMode = mode; return { folder: "Unity", files: ["rig.json"], ...(c.exportNote ? { note: c.exportNote } : {}) }; },
   };
   return c;
 }

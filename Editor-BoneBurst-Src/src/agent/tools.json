@@ -132,7 +132,7 @@
       {
         "tool": "export_to_unity",
         "change": "reshaped",
-        "what": "The folder is the one chosen with the toolbar's Export to Unity… (the button after Save; Shift-click chooses another); the AI cannot choose it. The atlas and pages are written first, the skeleton last. An optional `mode`: \"keys\" (the default, as before) or \"twinspline\" (every bone with translate motion written as a path in NAME.twinspline.json, docs/UNITY-EXPORT-PLAN.md). Calls without `mode` are unchanged."
+        "what": "The folder is the one chosen with the toolbar's Export to Unity… (the button after Save; Shift-click chooses another); the AI cannot choose it. The atlas and pages are written first, the skeleton last. An optional `mode`: \"keys\" (the default; a bone that uses its TwinSpline now has translate keys made from the path in the written skeleton, where it had its silenced key frames before) or \"twinspline\" (every bone with translate motion written as a path in NAME.twinspline.json, docs/UNITY-EXPORT-PLAN.md). The result adds `report` when the export baked or converted paths: how many bones, any bone left as keys with the reason, and any looping path whose runs do not fill the animation (the loop jumps)."
       }
     ]
   },
