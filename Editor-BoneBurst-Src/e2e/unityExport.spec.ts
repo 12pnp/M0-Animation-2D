@@ -76,17 +76,22 @@ test("Export to Unity…: the skeleton, atlas and page written into the chosen f
   expect(await page.evaluate(() => (window as unknown as { picks: number }).picks)).toBe(1);
 });
 
-test("Export to Unity… where the browser has no folder picker saves the files as downloads and says where they go", async ({ page }) => {
+test("Export to Unity… where the browser has no folder picker saves one zip and says where it goes; File ▸ Export as Zip… gives the same", async ({ page }) => {
   await page.addInitScript(() => { delete (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker; });
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
-  const names: string[] = [];
-  page.on("download", (d) => names.push(d.suggestedFilename()));
-  await menuItem(page, "File", "Export to Unity…");
-  await expect(page.locator(".message")).toContainText("saved as downloads");
-  await expect.poll(() => names.length).toBe(3);
-  expect(names).toEqual(expect.arrayContaining(["Stickman_IK.json", "Stickman_IK.atlas.txt", "Stickman_IK_tex.png"]));
+  const zipNames = async (fire: () => Promise<void>): Promise<string[]> => {
+    const [dl] = await Promise.all([page.waitForEvent("download"), fire()]);
+    expect(dl.suggestedFilename()).toBe("Stickman_IK.zip");
+    const { readZip } = await import("../src/io/zip");
+    const chunks: Buffer[] = [];
+    for await (const c of (await dl.createReadStream())!) chunks.push(c as Buffer);
+    return readZip(new Uint8Array(Buffer.concat(chunks))).map((f) => f.name);
+  };
+  expect(await zipNames(() => menuItem(page, "File", "Export to Unity…"))).toEqual(["Stickman_IK.atlas.txt", "Stickman_IK_tex.png", "Stickman_IK.json"]);
+  await expect(page.locator(".message")).toContainText("saved as one zip");
+  expect(await zipNames(() => menuItem(page, "File", "Export as Zip…"))).toEqual(["Stickman_IK.atlas.txt", "Stickman_IK_tex.png", "Stickman_IK.json"]);
 });

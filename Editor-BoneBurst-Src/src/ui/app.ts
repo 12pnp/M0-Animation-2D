@@ -32,6 +32,7 @@ import { DIVIDER, MenuBar, type MenuItem } from "./menubar";
 import { icon, type IconName, iconButton } from "./icons";
 import type { View } from "@/edit/sidecar";
 import { download, saveProject } from "./project";
+import { zipStore } from "@/io/zip";
 import { OpenDialog } from "./openDialog";
 import { folders, type Recent, recent, type RecentHandle, readRecent } from "./recent";
 import { type ExportMode, ExportRefused, NoFolderPicker, exportBundle, exportToUnity } from "./unityExport";
@@ -403,7 +404,9 @@ export function mountApp(root: HTMLElement): void {
       { label: "Export Spine JSON…", disabled: !session.doc, run: () => void exportSpine() },
       { label: "Export to Unity…", disabled: !session.doc, run: () => void toUnity(false) },
       { label: "Export to Unity, another folder…", disabled: !session.doc, run: () => void toUnity(true) },
+      { label: "Export as Zip…", disabled: !session.doc, run: () => void exportZip() },
       { label: "Export TwinSpline JSON…", disabled: !session.doc, run: () => void exportSpine("twinspline") },
+      { label: "Export TwinSpline as Zip…", disabled: !session.doc, run: () => void exportZip("twinspline") },
       { label: "Export to Unity as TwinSpline…", disabled: !session.doc, run: () => void toUnity(false, "twinspline") },
     ] },
     { label: "Edit", items: () => [
@@ -700,6 +703,17 @@ export function mountApp(root: HTMLElement): void {
     }
   }
 
+  /** File ▸ Export as Zip…: the same files as Export Spine JSON, in one .zip that downloads (for a browser that cannot write to a folder, or to send them on). */
+  async function exportZip(mode: ExportMode = "keys", after?: string): Promise<void> {
+    try {
+      const { files, note } = await exportBundle(session, true, mode), name = `${session.name}${mode === "twinspline" ? ".twinspline" : ""}.zip`;
+      download(name, new Blob([zipStore(files) as BlobPart], { type: "application/zip" }));
+      say(`Exported ${name}: ${files.map((f) => f.name).join(", ")}.${note ? ` ${note}.` : ""}${after ? ` ${after}` : ""}`);
+    } catch (err) {
+      say(err instanceof ExportRefused ? err.message : `Export failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
   /** File ▸ Export Spine JSON…: the skeleton, atlas and pages as Spine reads them, not marked saved. */
   async function exportSpine(mode: ExportMode = "keys", after?: string): Promise<void> {
     try {
@@ -762,7 +776,7 @@ export function mountApp(root: HTMLElement): void {
       say(`Exported to ${out.folder}: ${out.files.join(", ")}. ${out.note ? `${out.note}. ` : ""}Unity rebakes the folder on its next refresh.`);
     } catch (err) {
       // No folder picker here: the files are saved to the downloads, to copy into the Unity folder.
-      if (err instanceof NoFolderPicker) { await exportSpine(mode, "This browser cannot write to a folder, so the files were saved as downloads: copy them into your Unity folder (Chrome or Edge write to it directly)."); return; }
+      if (err instanceof NoFolderPicker) { await exportZip(mode, "This browser cannot write to a folder, so they were saved as one zip: unzip it into your Unity folder (Chrome or Edge write to it directly)."); return; }
       say(err instanceof ExportRefused ? err.message : `Export failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
