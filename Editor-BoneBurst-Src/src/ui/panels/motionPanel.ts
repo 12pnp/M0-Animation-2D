@@ -2301,6 +2301,7 @@ export class MotionPathPanel {
         g.beginPath(); g.arc(x, y, 11, 0, Math.PI * 2); g.stroke();
       }
     }
+    const ink = getComputedStyle(g.canvas).getPropertyValue("--text").trim() || "#ffffff";
     m.nodes.forEach((n, i) => {
       const [x, y] = at(n.x, n.y);
       this.nodePts.push({ x, y });
@@ -2312,7 +2313,8 @@ export class MotionPathPanel {
         g.fillStyle = accent;
         g.beginPath(); g.rect(x - half, y - half, half * 2, half * 2); g.fill();
         if (on) { g.strokeStyle = "#ffffff"; g.lineWidth = 1.5; g.stroke(); }
-        g.fillStyle = "#ffffff";
+        // The number is in the theme's text colour (white on a light picture is not there).
+        g.fillStyle = ink;
         g.font = `10px "JetBrains Mono", monospace`;
         g.textAlign = "left";
         g.textBaseline = "bottom";

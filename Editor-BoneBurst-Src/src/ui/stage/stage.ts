@@ -1025,14 +1025,15 @@ export class Stage {
     g.lineWidth = 1.5;
     if (this.tool === "rotate") {
       g.beginPath(); g.arc(ox, oy, GRAB - 8, 0, Math.PI * 2); g.stroke();
-      // A radius to the ring along the bone's own direction, so the angle can be seen, with its value (the Rotation field's) above its middle, in white.
+      // A radius to the ring along the bone's own direction, so the angle can be seen, with its value (the Rotation field's) above its middle, in the theme's text colour.
       const r = GRAB - 8, angle = Math.atan2(-m[1], m[0]), ex = ox + Math.cos(angle) * r, ey = oy + Math.sin(angle) * r;
       g.beginPath(); g.moveTo(ox, oy); g.lineTo(ex, ey); g.stroke();
       g.beginPath(); g.arc(ex, ey, 4, 0, Math.PI * 2); g.fill();
       g.font = `10px "JetBrains Mono", monospace`;
       g.textAlign = "center";
       g.textBaseline = "middle";
-      g.fillStyle = "#ffffff";
+      // In the theme's text colour: white on a light stage is not there.
+      g.fillStyle = getComputedStyle(g.canvas).getPropertyValue("--text").trim() || "#ffffff";
       g.fillText(String(Math.round(animatedLocal(p, bone).rotation * 10) / 10), (ox + ex) / 2, (oy + ey) / 2 - 10);
     } else {
       // The two arrows, in Godot's colours (x red, y green), no letters; a press on one drags along it only.
