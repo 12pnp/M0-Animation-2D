@@ -131,7 +131,7 @@ test("Remove path forgets the path and keeps the keys", async ({ page }) => {
   await open(page);
   const panel = panelOf(page);
   await drawn(page);
-  await twinMenu(panel, "Create new Key frame from TwinSpline", true);
+  await twinMenu(panel, "Create new FramePath from TwinSpline", true);
   await expect.poll(async () => (await translate(page, "head")).length).toBeGreaterThan(1);
   const keys = await translate(page, "head");
   expect(keys.length).toBeGreaterThanOrEqual(3);
@@ -510,7 +510,7 @@ test("Make keys from path writes a key where the bone reaches each node and a cl
   await twinMenu(panel, "Add a spline node");
   // Even pace: keys at the arrival of each node (three nodes on a ring) and the end.
   const done = await steps(page), pathBefore = await path(page);
-  await twinMenu(panel, "Create new Key frame from TwinSpline", true);
+  await twinMenu(panel, "Create new FramePath from TwinSpline", true);
   await expect.poll(async () => (await translate(page, "head")).length).toBeGreaterThan(1);
   // A copy and nothing more: the path is exactly as it was, with no mark of the keys.
   expect(await path(page)).toEqual(pathBefore);
@@ -531,7 +531,7 @@ test("Make keys from path writes a key where the bone reaches each node and a cl
   await panel.getByLabel("Node speed").fill("3");
   await panel.getByLabel("Node speed").press("Enter");
   await expect.poll(async () => (await path(page))!.nodes.map((n) => n.speed ?? 0)).toEqual([3, 3, 0]);
-  await twinMenu(panel, "Create new Key frame from TwinSpline", true);
+  await twinMenu(panel, "Create new FramePath from TwinSpline", true);
   await expect.poll(async () => (await translate(page, "head")).map((k) => k.frame)).not.toEqual(even.map((k) => k.frame));
   const fast = await translate(page, "head");
   expect(fast[1]!.frame).toBeLessThan(even[1]!.frame);
@@ -547,7 +547,7 @@ test("the bone, with keys made from the path, follows the ring with a speed on i
   await expect(panel.locator(".lp-fields .title")).toContainText("Node 2");
   await panel.getByLabel("Node speed").fill("2.5");
   await panel.getByLabel("Node speed").press("Enter");
-  await twinMenu(panel, "Create new Key frame from TwinSpline", true);
+  await twinMenu(panel, "Create new FramePath from TwinSpline", true);
   await expect.poll(async () => (await translate(page, "head")).length).toBeGreaterThan(1);
   const p = (await path(page))!;
   // The path silences the bone's keys while it exists: remove it, so the bone is posed by the keys that were made.
@@ -653,7 +653,7 @@ test("Both plays the animation's keys and the path's clock with one button, and 
   expect(held.pathTime).not.toBeCloseTo(held.keyTime, 6);
 });
 
-test("both kept, one used: a path made on a bone with keys keeps the keys; the tab chooses which drives (TwinSpline: the path, Key frame: the keys, the path kept); the Timeline dims the unused keys", async ({ page }) => {
+test("both kept, one used: a path made on a bone with keys keeps the keys; the tab chooses which drives (TwinSpline: the path, FramePath: the keys, the path kept); the Timeline dims the unused keys", async ({ page }) => {
   await open(page, "hips");
   const panel = panelOf(page);
   const keys = (bone: string) => page.evaluate((b) => { const a = (window as unknown as Live).boneburst.session.doc.animations[0]!, t = a.bones?.find((x) => x.name === b)?.timelines.filter((l) => l.name.startsWith("translate")) ?? []; return JSON.stringify(t); }, bone);
@@ -667,8 +667,8 @@ test("both kept, one used: a path made on a bone with keys keeps the keys; the t
   await seek(5);
   const k5 = await joint("hips");
   expect(apart(k0, k5)).toBeGreaterThan(1);
-  // A bone with keys opens on Key frame. Make a path on the TwinSpline tab: no question, the keys are kept exactly.
-  await expect(panel.getByRole("tab", { selected: true })).toHaveText("Key frame");
+  // A bone with keys opens on FramePath. Make a path on the TwinSpline tab: no question, the keys are kept exactly.
+  await expect(panel.getByRole("tab", { selected: true })).toHaveText("FramePath");
   await panel.getByRole("tab", { name: "TwinSpline" }).click();
   await chooseParent(panel);
   await twinMenu(panel, "Create new TwinSpline");
@@ -680,8 +680,8 @@ test("both kept, one used: a path made on a bone with keys keeps the keys; the t
   await seek(5);
   expect(apart(p0, await joint("hips"))).toBeLessThan(0.01);
   await expect(page.locator(".timeline-labels .path-badge").first()).toBeVisible();
-  // The Key frame tab uses the keys: they play again, the path is kept (and marked as set aside).
-  await panel.getByRole("tab", { name: "Key frame" }).click();
+  // The FramePath tab uses the keys: they play again, the path is kept (and marked as set aside).
+  await panel.getByRole("tab", { name: "FramePath" }).click();
   await expect.poll(async () => (await path(page)) as { active?: boolean } | null).toMatchObject({ active: false });
   await seek(5);
   expect(apart(k5, await joint("hips"))).toBeLessThan(0.01);
@@ -694,34 +694,34 @@ test("both kept, one used: a path made on a bone with keys keeps the keys; the t
   expect(apart(p0, await joint("hips"))).toBeLessThan(0.01);
 });
 
-test("the two ⋮ menus: Create new TwinSpline from Key frame and Delete Key frame data; Create new Key frame from TwinSpline and Delete TwinSpline data; both are kept until one is deleted", async ({ page }) => {
+test("the two ⋮ menus: Create new TwinSpline from FramePath and Delete FramePath data; Create new FramePath from TwinSpline and Delete TwinSpline data; both are kept until one is deleted", async ({ page }) => {
   page.on("dialog", (d) => void d.accept());
   await open(page, "hips");
   const panel = panelOf(page);
   const count = () => page.evaluate(() => { const a = (window as unknown as Live).boneburst.session.doc.animations[0]!; return (a.bones?.find((x) => x.name === "hips")?.timelines ?? []).filter((l) => l.name.startsWith("translate")).reduce((n, l) => n + l.keys.length, 0); });
   const had = await count();
   expect(had).toBeGreaterThan(2);
-  // Create new TwinSpline from Key frame: a path appears, the keys stay, and the bone uses the path.
-  await panel.getByRole("button", { name: "Key frame menu" }).click();
-  await page.getByRole("menuitem", { name: "Create new TwinSpline from Key frame" }).click();
+  // Create new TwinSpline from FramePath: a path appears, the keys stay, and the bone uses the path.
+  await panel.getByRole("button", { name: "FramePath menu" }).click();
+  await page.getByRole("menuitem", { name: "Create new TwinSpline from FramePath" }).click();
   await expect.poll(async () => (await path(page))?.bone).toBe("hips");
   expect(await count()).toBe(had);
   await expect(panel.getByRole("tab", { selected: true })).toHaveText("TwinSpline");
-  // Create new Key frame from TwinSpline: the keys are rewritten from the path; the path is kept.
+  // Create new FramePath from TwinSpline: the keys are rewritten from the path; the path is kept.
   const before = (await path(page))!;
   await panel.getByRole("button", { name: "TwinSpline menu" }).click();
-  await page.getByRole("menuitem", { name: "Create new Key frame from TwinSpline" }).click();
+  await page.getByRole("menuitem", { name: "Create new FramePath from TwinSpline" }).click();
   await expect.poll(async () => await count()).not.toBe(had);
   expect(await path(page)).toEqual(before);
-  // Delete Key frame data: the translate keys go (one undo step), the path stays.
+  // Delete FramePath data: the translate keys go (one undo step), the path stays.
   const steps0 = await page.evaluate(() => ((window as unknown as Live).boneburst.session.history.entries as unknown as { done: number }).done);
-  await panel.getByRole("button", { name: "Key frame menu" }).click();
-  await page.getByRole("menuitem", { name: "Delete Key frame data" }).click();
+  await panel.getByRole("button", { name: "FramePath menu" }).click();
+  await page.getByRole("menuitem", { name: "Delete FramePath data" }).click();
   await expect.poll(async () => await count()).toBe(0);
   expect((await path(page))?.bone).toBe("hips");
   expect(await page.evaluate(() => ((window as unknown as Live).boneburst.session.history.entries as unknown as { done: number }).done)).toBe(steps0 + 1);
-  await panel.getByRole("button", { name: "Key frame menu" }).click();
-  await expect(page.getByRole("menuitem", { name: "Delete Key frame data" })).toBeDisabled();
+  await panel.getByRole("button", { name: "FramePath menu" }).click();
+  await expect(page.getByRole("menuitem", { name: "Delete FramePath data" })).toBeDisabled();
   await page.keyboard.press("Escape");
   // Delete TwinSpline data: the path goes.
   await panel.getByRole("button", { name: "TwinSpline menu" }).click();

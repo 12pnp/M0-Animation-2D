@@ -76,6 +76,8 @@ interface BoneEdit {
   readonly start: [number, number];
   /** The animation and time to key, or null to pose without keying (Auto Key off). */
   readonly key: { animation: string; time: number } | null;
+  /** Closed FramePath: the time of the first or last frame's twin, keyed with the same pose as the drag moves this one; null otherwise. */
+  readonly twin: number | null;
   // Rotate only: the joint and the pointer in the panel's space, the bone's matrix, and the turn so far.
   readonly joint: [number, number];
   readonly matrix: Matrix;
@@ -263,6 +265,8 @@ export class MotionPathPanel {
   private box: Box | null = null;
   /** Hold that box after an edit too, until Fit or another bone, animation or space: the picture does not jump when a drag lets go. */
   private hold = false;
+  /** FramePath's Closed: the first and the last frame are one place, so a drag of either moves both. */
+  private framesClosed = false;
   /** What the move arrows follow: the parent's axes (as the Stage's default) or the world's. */
   private axes: "parent" | "world" = "parent";
   private readonly axesBtn = document.createElement("button");
@@ -329,7 +333,7 @@ export class MotionPathPanel {
       this.rowGroup("Show", [this.stepper("image", "Image", "above", "below"), this.stepper("bone", "Bone", "above", "below"), this.segOf("Length", [this.layerBtns.length]), this.stepper("onion", "Onion", "before", "after")]),
       this.group("Handles", [this.layerBtns.rotate, this.layerBtns.move, this.layerBtns.scale, this.layerBtns.shear], this.axesBtn),
     );
-    // Path and Spline are icons by the tab they belong to: the bone's keyed trail by Key frame, the drawn curve by TwinSpline.
+    // Path and Spline are icons by the tab they belong to: the bone's keyed trail by FramePath, the drawn curve by TwinSpline.
     this.layerBtns.path.setAttribute("aria-label", "Path");
     this.layerBtns.spline.setAttribute("aria-label", "Spline");
     iconButton(this.layerBtns.path, "keyTranslate", false);
@@ -340,7 +344,7 @@ export class MotionPathPanel {
     this.tabs.className = "lp-tabs";
     this.tabs.setAttribute("role", "tablist");
     for (const [id, label, tip, menu] of [
-      ["keys", "Key frame", "The bone's motion as keyed in the animation (a Spine file's keys included)", () => this.keysMenu()],
+      ["keys", "FramePath", "The bone's motion as keyed in the animation (a Spine file's keys included)", () => this.keysMenu()],
       ["twin", "TwinSpline", "The bone's motion as a path with a speed spline, played on its own clock", () => this.twinMenu()],
     ] as const) {
       const box = document.createElement("div"), main = this.button(label, tip), more = this.button("⋮", `${label}: more`);
@@ -651,7 +655,7 @@ export class MotionPathPanel {
     return m ? (m.active === false ? "keys" : "twin") : this.noPathTab;
   }
 
-  /** On a bone or animation not seen yet with no path: Key frame when it has translate keys, else TwinSpline (to create one). */
+  /** On a bone or animation not seen yet with no path: FramePath when it has translate keys, else TwinSpline (to create one). */
   private syncMode(): void {
     const s = this.session, a = s.animation, bone = s.selectedBone, key = a && bone ? `${a.name}|${bone}` : "";
     if (key === this.modeFor) return;
@@ -672,12 +676,15 @@ export class MotionPathPanel {
     this.schedule();
   }
 
-  /** The Key frame tab's ⋮ menu: make a TwinSpline from the keys, or delete the keys. */
+  /** The FramePath tab's ⋮ menu: make a TwinSpline from the keys, or delete the keys. */
   private keysMenu(): MenuItem[] {
     const s = this.session, a = s.animation, bone = s.selectedBone, keys = a && bone ? translateKeyCount(a, bone) : 0;
     return [
-      { label: "Create new TwinSpline from Key frame", disabled: keys === 0, run: () => void this.createPathFromKeys() },
-      { label: "Delete Key frame data", disabled: keys === 0, run: () => this.deleteKeyData() },
+      { label: "Create new TwinSpline from FramePath", disabled: keys === 0, run: () => void this.createPathFromKeys() },
+      {},
+      { label: "Closed", checked: this.framesClosed, disabled: keys === 0, run: () => this.setFramesClosed(!this.framesClosed) },
+      {},
+      { label: "Delete FramePath data", disabled: keys === 0, run: () => this.deleteKeyData() },
     ];
   }
 
@@ -691,7 +698,7 @@ export class MotionPathPanel {
       { label: "Closed", checked: !!m?.closed, disabled: !m, run: () => { const c = this.path(); if (c) this.setClosed(!c.closed); } },
       { label: "Loop", checked: !!m?.loop, disabled: !m, run: () => { const c = this.path(); if (c) this.timeEdit(withLoop(c, !c.loop), !c.loop ? "The path starts over at its end." : "The path stops at its end.", "Set the path's loop"); } },
       {},
-      { label: "Create new Key frame from TwinSpline", disabled: !has, run: () => this.createKeysFromPath() },
+      { label: "Create new FramePath from TwinSpline", disabled: !has, run: () => this.createKeysFromPath() },
       { label: "Delete TwinSpline data", disabled: !has, run: () => this.deletePathData() },
     ];
   }
@@ -709,12 +716,12 @@ export class MotionPathPanel {
       const keys = translateKeyCount(a!, bone!);
       line(`No TwinSpline for ${bone} in ${a!.name}.`);
       btn("Create new", "Make a TwinSpline for this bone: node 1 is where it is, node 2 that plus an offset", () => void this.enterDraw(), true);
-      if (keys > 0) btn("Create from Key frame", `Make a TwinSpline through the ${keys} translate keys of ${bone} (the keys are kept)`, () => void this.createPathFromKeys());
+      if (keys > 0) btn("Create from FramePath", `Make a TwinSpline through the ${keys} translate keys of ${bone} (the keys are kept)`, () => void this.createPathFromKeys());
       this.card.hidden = false;
     }
   }
 
-  /** The selected bone's path, when the TwinSpline tab is the one open: what the editor and the picture work on. The Key frame tab sees no path. */
+  /** The selected bone's path, when the TwinSpline tab is the one open: what the editor and the picture work on. The FramePath tab sees no path. */
   private path(): MotionPath | undefined {
     return this.tab === "twin" ? motionFor(this.session) : undefined;
   }
@@ -1127,6 +1134,7 @@ export class MotionPathPanel {
     this.edit = {
       bone, kind, frame: s.frame, from: animatedLocal(p, index), parent, origin: [-ox, -oy], axis, axes: spaceAxes(this.axes, matrix, parent), start: [x, y],
       key: unkeyed ? null : { animation: anim.name, time: s.keyTime },
+      twin: unkeyed || kind !== "move" ? null : this.twinTime(frame),
       joint, matrix, sign: turnSign(parent, boneInherit(b), p.rig.scaleX * p.rig.scaleY < 0), inherit: boneInherit(b), last: at, turned: 0, lock: null,
     };
     if (unkeyed) this.onStatus(`Unkeyed pose of ${bone}: press Key to key it; moving the playhead drops it.`);
@@ -1187,7 +1195,10 @@ export class MotionPathPanel {
     }
     try {
       if (e.key === null) s.setUnkeyed(e.bone, local);
-      else s.history!.apply("step", keyBone(e.key.animation, e.bone, [property], local, e.key.time));
+      else {
+        s.history!.apply("step", keyBone(e.key.animation, e.bone, [property], local, e.key.time));
+        if (e.twin !== null) s.history!.apply("step", keyBone(e.key.animation, e.bone, [property], local, e.twin));
+      }
     } catch (err) {
       if (!(err instanceof EditRefused)) throw err;
       this.onStatus(err.message);
@@ -1307,7 +1318,7 @@ export class MotionPathPanel {
   private updateMotionBar(): void {
     const s = this.session, m = this.path(), bone = s.selectedBone, anim = s.animation;
     const can = !!anim && bone !== null && !(s.doc && constraintDriving(s.doc, bone));
-    // The tabs, and under the Key frame tab no path bar: the path is the other tab's.
+    // The tabs, and under the FramePath tab no path bar: the path is the other tab's.
     // Nothing here comes and goes (the header and the bar keep their size, docs/MOTION-MODES-PLAN.md): what does not apply is dimmed, and the bar says why.
     for (const id of ["keys", "twin"] as const) { this.tabBtns[id].main.disabled = !can; this.tabBtns[id].more.disabled = !can; }
     this.layerBtns.path.disabled = !can;
@@ -1317,7 +1328,7 @@ export class MotionPathPanel {
     this.motionBar.hidden = false;
     for (const el of this.barSections) el.hidden = !controls;
     this.hint.hidden = controls;
-    this.hint.textContent = !can ? (anim ? "Select a bone to see its motion." : "Select a bone in Animate mode to see its motion.") : "Key frames: the bone's keyed motion. A tab's ⋮ makes the other kind from it.";
+    this.hint.textContent = !can ? (anim ? "Select a bone to see its motion." : "Select a bone in Animate mode to see its motion.") : "FramePath: the bone's keyed motion. A tab's ⋮ makes the other kind from it.";
     this.updateCard();
     this.syncParentPick();
     const has = !!m;
@@ -2067,13 +2078,13 @@ export class MotionPathPanel {
       // Node 2 is picked and the bone goes to it; node 1 is one press away.
       this.pickSlot(1);
       const keys = s.animation ? translateKeyCount(s.animation, started.bone) : 0;
-      this.onStatus(`${started.bone}: two spline nodes (where it is, and an offset). Press a number to put the bone on that node, then move the bone or drag the node; + adds a node; Play runs it.${keys > 0 ? " Its key frames are kept: the Key frame tab uses them instead." : ""}`);
+      this.onStatus(`${started.bone}: two spline nodes (where it is, and an offset). Press a number to put the bone on that node, then move the bone or drag the node; + adds a node; Play runs it.${keys > 0 ? " Its key frames are kept: the FramePath tab uses them instead." : ""}`);
     }
     this.slotSig = "";
     this.schedule();
   }
 
-  /** Key frame ⋮ ▸ Create new TwinSpline from Key frame: a path through the bone's keyed poses; the keys are kept and the bone uses the new path (docs/MOTION-MODES-PLAN.md). */
+  /** FramePath ⋮ ▸ Create new TwinSpline from FramePath: a path through the bone's keyed poses; the keys are kept and the bone uses the new path (docs/MOTION-MODES-PLAN.md). */
   private async createPathFromKeys(): Promise<void> {
     const s = this.session, bone = s.selectedBone;
     if (!bone || !s.animation) return;
@@ -2092,7 +2103,7 @@ export class MotionPathPanel {
     this.schedule();
   }
 
-  /** TwinSpline ⋮ ▸ Create new Key frame from TwinSpline: the path's keys written as translate keys; the path is kept, and the tabs choose which one the bone uses. */
+  /** TwinSpline ⋮ ▸ Create new FramePath from TwinSpline: the path's keys written as translate keys; the path is kept, and the tabs choose which one the bone uses. */
   private createKeysFromPath(): void {
     const s = this.session, m = motionFor(s);
     if (!m || !s.animation) return;
@@ -2101,11 +2112,38 @@ export class MotionPathPanel {
     try {
       const { stray, keys } = makeKeysFromPath(s, m);
       this.stray = stray;
-      this.onStatus(`${m.bone}: ${keys} key frames made from the TwinSpline${had ? ` (its ${had} translate key${had === 1 ? "" : "s"} were replaced)` : ""}. The TwinSpline is kept; press the Key frame tab to use the keys.`);
+      this.onStatus(`${m.bone}: ${keys} key frames made from the TwinSpline${had ? ` (its ${had} translate key${had === 1 ? "" : "s"} were replaced)` : ""}. The TwinSpline is kept; press the FramePath tab to use the keys.`);
     } catch (err) { if (!(err instanceof EditRefused)) throw err; this.onStatus(err.message); }
   }
 
-  /** Key frame ⋮ ▸ Delete Key frame data: the bone's translate keys in the animation, one undo step. */
+  /** In a closed FramePath, the time of the other end of a first or last frame; null for any other frame or when open. */
+  private twinTime(frame: number): number | null {
+    const s = this.session, a = s.animation;
+    if (!this.framesClosed || !a) return null;
+    const last = timeFrame(s.length(a), s.fps);
+    if (last <= 0) return null;
+    if (frame === 0) return frameTime(last, s.fps);
+    return frame === last ? 0 : null;
+  }
+
+  /** FramePath ⋮ ▸ Closed: on, the last frame takes the first frame's place (one undo step) and the two move together from then on. */
+  private setFramesClosed(on: boolean): void {
+    const s = this.session, a = s.animation, bone = s.selectedBone, h = s.history;
+    this.framesClosed = on;
+    if (!on) { this.onStatus("FramePath is open: the first and the last frame move on their own."); return; }
+    if (!a || bone === null || !h) return;
+    const last = timeFrame(s.length(a), s.fps), back = s.frame;
+    if (last > 0) {
+      s.seek(0);
+      const p = s.pose(), index = p?.bones.get(bone);
+      if (p && index !== undefined) h.apply(`Close the FramePath of ${bone}`, keyBone(a.name, bone, ["translate"], animatedLocal(p, index), frameTime(last, s.fps)));
+      s.seek(back);
+      s.changed();
+    }
+    this.onStatus(`FramePath is closed: frame ${last} is frame 0, and a drag of either moves both.`);
+  }
+
+  /** FramePath ⋮ ▸ Delete FramePath data: the bone's translate keys in the animation, one undo step. */
   private deleteKeyData(): void {
     const s = this.session, a = s.animation, bone = s.selectedBone, h = s.history;
     if (!a || !bone || !h) return;
