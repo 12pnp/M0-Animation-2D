@@ -75,3 +75,18 @@ test("Export to Unity…: the skeleton, atlas and page written into the chosen f
   await expect.poll(has).toBe(true);
   expect(await page.evaluate(() => (window as unknown as { picks: number }).picks)).toBe(1);
 });
+
+test("Export to Unity… where the browser has no folder picker saves the files as downloads and says where they go", async ({ page }) => {
+  await page.addInitScript(() => { delete (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker; });
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  const names: string[] = [];
+  page.on("download", (d) => names.push(d.suggestedFilename()));
+  await menuItem(page, "File", "Export to Unity…");
+  await expect(page.locator(".message")).toContainText("saved as downloads");
+  await expect.poll(() => names.length).toBe(3);
+  expect(names).toEqual(expect.arrayContaining(["Stickman_IK.json", "Stickman_IK.atlas.txt", "Stickman_IK_tex.png"]));
+});

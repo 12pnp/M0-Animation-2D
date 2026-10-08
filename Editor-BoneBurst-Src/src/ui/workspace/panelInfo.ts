@@ -61,7 +61,7 @@ const INFO: Readonly<Record<PanelId, { readonly what: string; readonly use: read
   },
   motionPath: {
     what: "A bone's motion drawn as a ring spline with a speed spline beside it (TwinSpline): nodes, legs and each node's speed in Edit Path; it plays on its own clock (Play), and Make keys from path copies it into the timeline once.",
-    use: ["Edit Path: + adds a node; drag a number to reorder; right-click a number to merge, reverse, sort, break the legs or set the origin.", "The speed graph under the node numbers has a point for each node: drag it up or down (-0.99 to 5) and the bone goes 1 + that times as fast there. Drag the line between the picture and the numbers to give the graph more room.", "Path is where the bone goes over the animation, Spline is the curve you draw, Stage draws the spline on the Stage."],
+    use: ["Edit Path: + adds a node; drag a number to reorder; right-click a number to merge, reverse, sort, break the legs or set the origin.", "The speed graph under the node numbers has a point for each node: drag it up or down (-0.99 to 5) and the bone goes 1 + that times as fast there. Drag the line between the picture and the numbers to give the graph more room.", "Image, Bone and Onion have a count each side: ‹ shows one more tier of parents (or frame before), › one more of children (or frame after), the number takes one away.", "Path is where the bone goes over the animation, Spline is the curve you draw, Stage draws the spline on the Stage."],
     keys: ["Motion Path"],
   },
 };

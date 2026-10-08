@@ -34,7 +34,7 @@ import type { View } from "@/edit/sidecar";
 import { download, saveProject } from "./project";
 import { OpenDialog } from "./openDialog";
 import { folders, type Recent, recent, type RecentHandle, readRecent } from "./recent";
-import { type ExportMode, ExportRefused, exportBundle, exportToUnity } from "./unityExport";
+import { type ExportMode, ExportRefused, NoFolderPicker, exportBundle, exportToUnity } from "./unityExport";
 import { localPoint, pageScale } from "./pageScale";
 import { snapFields } from "./snapFields";
 import type { CreateKind } from "./stage/create";
@@ -701,11 +701,11 @@ export function mountApp(root: HTMLElement): void {
   }
 
   /** File ▸ Export Spine JSON…: the skeleton, atlas and pages as Spine reads them, not marked saved. */
-  async function exportSpine(mode: ExportMode = "keys"): Promise<void> {
+  async function exportSpine(mode: ExportMode = "keys", after?: string): Promise<void> {
     try {
       const { files, note } = await exportBundle(session, true, mode);
       for (const f of files) download(f.name, new Blob([f.data as BlobPart], { type: typeof f.data === "string" ? "text/plain" : "image/png" }));
-      say(`Exported ${files.map((f) => f.name).join(", ")}.${note ? ` ${note}.` : ""}`);
+      say(`Exported ${files.map((f) => f.name).join(", ")}.${note ? ` ${note}.` : ""}${after ? ` ${after}` : ""}`);
     } catch (err) {
       say(err instanceof ExportRefused ? err.message : `Export failed: ${err instanceof Error ? err.message : String(err)}`);
     }
@@ -761,6 +761,8 @@ export function mountApp(root: HTMLElement): void {
       const out = await exportToUnity(session, true, choose, mode);
       say(`Exported to ${out.folder}: ${out.files.join(", ")}. ${out.note ? `${out.note}. ` : ""}Unity rebakes the folder on its next refresh.`);
     } catch (err) {
+      // No folder picker here: the files are saved to the downloads, to copy into the Unity folder.
+      if (err instanceof NoFolderPicker) { await exportSpine(mode, "This browser cannot write to a folder, so the files were saved as downloads: copy them into your Unity folder (Chrome or Edge write to it directly)."); return; }
       say(err instanceof ExportRefused ? err.message : `Export failed: ${err instanceof Error ? err.message : String(err)}`);
     }
   }

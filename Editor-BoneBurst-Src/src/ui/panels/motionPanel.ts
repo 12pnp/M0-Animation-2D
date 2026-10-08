@@ -21,6 +21,7 @@ import { axisLocked, constraintDriving, shiftedLocal } from "../stage/trailEdit"
 import { drawBackdrop } from "../stage/canvasBackdrop";
 import { NO_LOOK, type StageLook } from "../stage/look";
 import { type OnionOptions, onionFrames } from "../stage/onion";
+import { setOf, tiersAround } from "../stage/tiers";
 import { type BoneTrail, boneTrail, drivenPose, type DrivenTrail, fromParent, type TrailSpace } from "../stage/trail";
 
 /** The path with its `active` mark taken off: the bone uses it (the default). */
@@ -30,8 +31,8 @@ function withoutInactive(m: MotionPath): MotionPath {
 }
 
 /** The layers the panel can show: the bone's image, the bone itself, its path, and onion skin (the bone at frames either side of the playhead). */
-export type Layer = "image" | "bone" | "parentBone" | "parentImage" | "path" | "spline" | "length" | "onion" | "children" | "rotate" | "move" | "scale" | "shear";
-const LAYERS: readonly Layer[] = ["image", "bone", "parentBone", "parentImage", "path", "spline", "length", "onion", "children", "rotate", "move", "scale", "shear"];
+export type Layer = "image" | "bone" | "path" | "spline" | "length" | "onion" | "rotate" | "move" | "scale" | "shear";
+const LAYERS: readonly Layer[] = ["image", "bone", "path", "spline", "length", "onion", "rotate", "move", "scale", "shear"];
 /** The four handles the panel can show on the bone (each a toggle in the header, the Stage's tool icons): rotate ring, move arrows, scale square, shear diamond. */
 const GIZMOS = ["rotate", "move", "scale", "shear"] as const;
 /** The path's dots and the lengths between them. */
@@ -46,6 +47,13 @@ const speedPatch = (v: number): { speed?: number } => (v ? { speed: v } : {});
 const SPAN = "#2f80ed";
 const PAST = "rgb(230, 64, 51)", FUTURE = "rgb(51, 179, 77)";
 const LAYERS_KEY = "boneburst.motionPath.layers";
+const TIERS_KEY = "boneburst.motionPath.tiers";
+/** The layers with a count on each side: tiers above and below the bone (Bone, Image), frames before and after (Onion). docs/SHOW-STEPPERS-PLAN.md. */
+type StepKey = "image" | "bone" | "onion";
+interface Counts { a: number; b: number }
+const ONION_MAX = 10;
+/** A count that means "all of them": what a saved Parent or Children toggle becomes. */
+const ALL = 99;
 const STAGE_LINE_KEY = "boneburst.motionPath.stageLine";
 const AXES_KEY = "boneburst.motionPath.axes";
 const AXIS_COLOURS = ["#e5484d", "#30a46c"] as const;
@@ -82,34 +90,11 @@ interface BoneEdit {
 /** The slots of `bones` that draw an image in `p`. */
 const slotsOf = (p: Posed, bones: readonly number[]) => p.draw.slots.filter((d) => bones.includes(p.rig.data.slots[d.slot]!.bone));
 
-/** `bone`, and with `children` every bone under it. */
-function withChildren(p: Posed, bone: number, children: boolean): number[] {
-  if (!children) return [bone];
-  const parents = p.rig.data.bones.map((b) => b.parent), out = [bone];
-  for (let i = 0; i < parents.length; i++) {
-    for (let b = parents[i]!; b >= 0; b = parents[b]!) if (b === bone) { out.push(i); break; }
-  }
-  return out;
-}
-
-/**
- * The bones from `parent` down to `bone` along the tree, `parent` first and `bone` left out: the parent, then each bone under it on the
- * way (hips, thigh, shin for a foot). A parent that is not above the bone is alone.
- */
-function chainTo(p: Posed, parent: number, bone: number): number[] {
-  const up: number[] = [];
-  for (let b = p.rig.data.bones[bone]!.parent, guard = 0; b >= 0 && guard < 1000; b = p.rig.data.bones[b]!.parent, guard++) {
-    up.push(b);
-    if (b === parent) return up.reverse();
-  }
-  return [parent];
-}
-
 /**
  * The box round the bone's images and the bone itself at some frames of the trail, in `space`: the
  * panel is scaled to hold them all, so what is drawn does not change size from frame to frame.
  */
-function extentOf(poser: Poser, skin: string | null, animation: string | null, bone: string, space: TrailSpace, origin: string | null, fps: number, frames: number, children: boolean): Box | null {
+function extentOf(poser: Poser, skin: string | null, animation: string | null, bone: string, space: TrailSpace, origin: string | null, fps: number, frames: number, up: number, down: number): Box | null {
   let box: Box | null = null;
   const grow = (x: number, y: number) => {
     if (!Number.isFinite(x) || !Number.isFinite(y)) return;
@@ -121,7 +106,7 @@ function extentOf(poser: Poser, skin: string | null, animation: string | null, b
     const p = poser.pose(skin, animation, animation === null ? 0 : Math.fround(frameTime(f, fps)), "none"), i = p.bones.get(bone);
     if (i === undefined) return null;
     const to = (x: number, y: number): [number, number] => (space === "parent" ? fromParent(p, i, x, y, origin) : [x, y]);
-    const set = withChildren(p, i, children);
+    const set = setOf(p.rig.data.bones.map((b) => b.parent), i, up, down);
     for (const d of slotsOf(p, set)) {
       const v = new Float64Array(d.vertexCount * 2);
       drawnVertices(p.rig, d, v);
@@ -161,7 +146,7 @@ export class MotionPathPanel {
   private readonly parentPick = document.createElement("select");
   /** The parent chosen for a bone before its path exists, by "animation|bone". */
   private readonly parentChoice = new Map<string, string>();
-  private show: Record<Layer, boolean> = { image: true, bone: true, parentBone: false, parentImage: false, path: true, spline: true, length: true, onion: false, children: false, rotate: true, move: true, scale: true, shear: true };
+  private show: Record<Layer, boolean> = { image: true, bone: true, path: true, spline: true, length: true, onion: false, rotate: true, move: true, scale: true, shear: true };
   /** What onion skin shows (frames before and after, keyed only, colour-coded); set by the app from the preferences. */
   onion: () => OnionOptions = () => ({ before: 2, after: 2, keyedOnly: false, colour: true });
   /** What the Stage draws behind the skeleton (checkerboard, grid, centre axes), from the preferences; set by the app. */
@@ -179,7 +164,10 @@ export class MotionPathPanel {
   private readonly tabs = document.createElement("div");
   private readonly tabBtns = {} as Record<"keys" | "twin", { box: HTMLElement; main: HTMLButtonElement; more: HTMLButtonElement }>;
   private readonly card = document.createElement("div");
-  private cached: { doc: Skeleton; images: unknown; skin: string | null; animation: string | null; bone: string; space: TrailSpace; origin: string | null; trail: BoneTrail | null; extent: Box | null; children: boolean; motion: MotionPath | undefined; kFrame: number } | null = null;
+  /** The count on each side of Bone, Image and Onion: a is the tiers above (frames before), b the tiers below (frames after). */
+  private counts: Record<StepKey, Counts> = { image: { a: 0, b: 0 }, bone: { a: 0, b: 0 }, onion: { a: 2, b: 2 } };
+  private readonly stepBtns = {} as Record<StepKey, { c1: HTMLElement; c2: HTMLElement; plus1: HTMLButtonElement; minus1: HTMLButtonElement; plus2: HTMLButtonElement; minus2: HTMLButtonElement }>;
+  private cached: { doc: Skeleton; images: unknown; skin: string | null; animation: string | null; bone: string; space: TrailSpace; origin: string | null; trail: BoneTrail | null; extent: Box | null; tiers: string; motion: MotionPath | undefined; kFrame: number } | null = null;
   private poser: { doc: Skeleton; images: unknown; value: Poser } | null = null;
   private queued = false;
   /** Each frame's mark on the canvas as last drawn, for a click. */
@@ -287,6 +275,22 @@ export class MotionPathPanel {
     try {
       const saved = JSON.parse(localStorage.getItem(LAYERS_KEY) ?? "{}") as Partial<Record<Layer, unknown>>;
       for (const l of LAYERS) if (typeof saved[l] === "boolean") this.show[l] = saved[l] as boolean;
+      const n = (v: unknown, hi: number): number | null => (typeof v === "number" && Number.isFinite(v) ? Math.max(0, Math.min(hi, Math.round(v))) : null);
+      const kept = localStorage.getItem(TIERS_KEY);
+      if (kept) {
+        const t = JSON.parse(kept) as Partial<Record<StepKey, { a?: unknown; b?: unknown }>>;
+        for (const k of ["image", "bone", "onion"] as const) {
+          const a = n(t[k]?.a, ALL), b = n(t[k]?.b, ALL);
+          if (a !== null) this.counts[k].a = a;
+          if (b !== null) this.counts[k].b = b;
+        }
+      } else {
+        // A panel saved before the counts: Parent bone and Parent image become all the tiers above, Children all below.
+        const old = saved as Record<string, unknown>;
+        if (old.parentBone === true) this.counts.bone.a = ALL;
+        if (old.parentImage === true) this.counts.image.a = ALL;
+        if (old.children === true) this.counts.bone.b = this.counts.image.b = ALL;
+      }
     } catch { /* storage blocked: all shown */ }
     try {
       const k = JSON.parse(localStorage.getItem(STAGE_LINE_KEY) ?? "{}") as { on?: unknown; colour?: unknown };
@@ -305,7 +309,7 @@ export class MotionPathPanel {
     this.stageSwatch.setAttribute("aria-label", "Path line colour on the Stage");
     this.stageSwatch.style.background = this.stageColour;
     this.stageSwatch.addEventListener("click", () => pickColour(this.stageSwatch, this.stageColour, (hex) => { this.stageColour = hex; this.keepStageLine(); }));
-    this.layerBtns = { image: this.button("Image", "Show the bone's image"), bone: this.button("Bone", "Show the bone"), parentBone: this.button("Bone", "Show the parent bone the path is relative to and the bones from it down to this bone (fainter), where they are at the playhead"), parentImage: this.button("Image", "Show the images of the parent bone and the bones from it down to this bone (behind the bone's own)"), path: this.button("Path", "Show the bone's path over the animation (where it goes, frame by frame)"), spline: this.button("Spline", "Show the spline you draw with Edit Path: its curve, nodes and handles"), length: this.button("Length", "Show the distance between each pair of dots along the path (in the panel's space)"), onion: this.button("Onion", "Show the bone at the frames before (red) and after (green) the playhead; the count is set in Preferences ▸ Behavior"), children: this.button("Children", "Show every bone under the selected one, with their images"), rotate: this.button("Rotate", "Show the rotation handle (the ring beyond the bone's tip)"), move: this.button("Move", "Show the move arrows (when the bone has no path)"), scale: this.button("Scale", "Show the scale handle (the square beside the bone's tip)"), shear: this.button("Shear", "Show the shear handle (the diamond on the other side of the tip)") };
+    this.layerBtns = { image: this.button("Image", "Show the bone's image; the counts either side are how many tiers of bones above (parents) and below (children) are drawn too"), bone: this.button("Bone", "Show the bone; the counts either side are how many tiers of bones above (parents) and below (children) are drawn too"), path: this.button("Path", "Show the bone's path over the animation (where it goes, frame by frame)"), spline: this.button("Spline", "Show the spline you draw with Edit Path: its curve, nodes and handles"), length: this.button("Length", "Show the distance between each pair of dots along the path (in the panel's space)"), onion: this.button("Onion", "Show the bone at the frames before (red) and after (green) the playhead; the counts either side are how many frames before and after"), rotate: this.button("Rotate", "Show the rotation handle (the ring beyond the bone's tip)"), move: this.button("Move", "Show the move arrows (when the bone has no path)"), scale: this.button("Scale", "Show the scale handle (the square beside the bone's tip)"), shear: this.button("Shear", "Show the shear handle (the diamond on the other side of the tip)") };
     for (const g of GIZMOS) {
       this.layerBtns[g].setAttribute("aria-label", `Show ${g} handle`);
       iconButton(this.layerBtns[g], g, false);
@@ -318,14 +322,11 @@ export class MotionPathPanel {
       this.schedule();
     });
     // The parent's two buttons share their names with the bone's: the groups tell them apart, and so do their accessible names.
-    this.layerBtns.parentBone.setAttribute("aria-label", "Parent bone");
-    this.layerBtns.parentImage.setAttribute("aria-label", "Parent image");
     // Title and the Stage line on top; under them the toggles in groups: what is shown, the parent's, the handles.
     const tools = document.createElement("div");
     tools.className = "lp-tools";
     tools.append(
-      this.group("Show", [this.layerBtns.image, this.layerBtns.bone, this.layerBtns.length, this.layerBtns.onion, this.layerBtns.children]),
-      this.group("Parent", [this.layerBtns.parentBone, this.layerBtns.parentImage]),
+      this.rowGroup("Show", [this.stepper("image", "Image", "above", "below"), this.stepper("bone", "Bone", "above", "below"), this.segOf("Length", [this.layerBtns.length]), this.stepper("onion", "Onion", "before", "after")]),
       this.group("Handles", [this.layerBtns.rotate, this.layerBtns.move, this.layerBtns.scale, this.layerBtns.shear], this.axesBtn),
     );
     // Path and Spline are icons by the tab they belong to: the bone's keyed trail by Key frame, the drawn curve by TwinSpline.
@@ -502,6 +503,86 @@ export class MotionPathPanel {
     return g;
   }
 
+  /** A labelled group of several segmented controls side by side. */
+  private rowGroup(label: string, segs: readonly HTMLElement[]): HTMLElement {
+    const g = document.createElement("div"), l = document.createElement("span"), row = document.createElement("div");
+    g.className = "lp-group";
+    l.className = "lp-glabel";
+    l.textContent = label;
+    row.className = "lp-row";
+    row.append(...segs);
+    g.append(l, row);
+    return g;
+  }
+
+  private segOf(label: string, buttons: readonly HTMLElement[]): HTMLElement {
+    const seg = document.createElement("div");
+    seg.className = "lp-seg";
+    seg.setAttribute("role", "group");
+    seg.setAttribute("aria-label", label);
+    seg.append(...buttons);
+    return seg;
+  }
+
+  /**
+   * A layer with a count each side: [n] [+ over −] [Layer] [+ over −] [n]. + shows one more tier (or frame) on that side, − takes one away;
+   * the two are half a button high each, one over the other. `before` and `after` name the sides in the tips ("above" and "below" for tiers
+   * of bones, "before" and "after" for frames).
+   */
+  private stepper(key: StepKey, label: string, before: string, after: string): HTMLElement {
+    const mk = (text: string, tip: string, side: "a" | "b", by: 1 | -1): HTMLButtonElement => {
+      const b = this.button(text, tip);
+      b.setAttribute("aria-label", `${label}: ${tip}`);
+      b.classList.add("lp-half");
+      b.addEventListener("click", () => this.bump(key, side, by));
+      return b;
+    };
+    const unit = key === "onion" ? "frame" : "tier", count = (): HTMLElement => { const c = document.createElement("span"); c.className = "lp-count"; c.setAttribute("role", "status"); return c; };
+    const stack = (up: HTMLButtonElement, down: HTMLButtonElement): HTMLElement => { const d = document.createElement("div"); d.className = "lp-stack"; d.append(up, down); return d; };
+    const c1 = count(), c2 = count(), plus1 = mk("+", `one more ${unit} ${before}`, "a", 1), minus1 = mk("−", `one fewer ${unit} ${before}`, "a", -1), plus2 = mk("+", `one more ${unit} ${after}`, "b", 1), minus2 = mk("−", `one fewer ${unit} ${after}`, "b", -1);
+    this.stepBtns[key] = { c1, c2, plus1, minus1, plus2, minus2 };
+    const seg = this.segOf(label, [c1, stack(plus1, minus1), this.layerBtns[key], stack(plus2, minus2), c2]);
+    seg.classList.add("lp-step");
+    return seg;
+  }
+
+  /** The most tiers there are above and below the selected bone, or frames either side for Onion. */
+  private maxOf(key: StepKey): Counts {
+    if (key === "onion") return { a: ONION_MAX, b: ONION_MAX };
+    const p = this.session.pose(), bone = this.session.selectedBone, i = bone === null ? undefined : p?.bones.get(bone);
+    if (!p || i === undefined) return { a: 0, b: 0 };
+    const t = tiersAround(p.rig.data.bones.map((b) => b.parent), i, 0, 0);
+    return { a: t.maxUp, b: t.maxDown };
+  }
+
+  /** One more (or fewer) tier or frame on a side, held between none and what there is. */
+  private bump(key: StepKey, side: "a" | "b", by: 1 | -1): void {
+    const max = this.maxOf(key)[side], now = Math.min(this.counts[key][side], max);
+    this.counts[key][side] = Math.max(0, Math.min(max, now + by));
+    try { localStorage.setItem(TIERS_KEY, JSON.stringify(this.counts)); } catch { /* not kept */ }
+    this.schedule();
+  }
+
+  /** The counts as shown, never past what exists for the selected bone. */
+  private shownCounts(key: StepKey): Counts {
+    const max = this.maxOf(key);
+    return { a: Math.min(this.counts[key].a, max.a), b: Math.min(this.counts[key].b, max.b) };
+  }
+
+  private syncSteps(): void {
+    for (const key of ["image", "bone", "onion"] as const) {
+      const c = this.shownCounts(key), max = this.maxOf(key), t = this.stepBtns[key];
+      t.c1.textContent = String(c.a);
+      t.c2.textContent = String(c.b);
+      t.c1.dataset.count = `${key}-a`;
+      t.c2.dataset.count = `${key}-b`;
+      t.minus1.disabled = c.a <= 0;
+      t.minus2.disabled = c.b <= 0;
+      t.plus1.disabled = c.a >= max.a;
+      t.plus2.disabled = c.b >= max.b;
+    }
+  }
+
   private button(text: string, title: string): HTMLButtonElement {
     const b = document.createElement("button");
     b.type = "button";
@@ -661,11 +742,11 @@ export class MotionPathPanel {
     const name = anim?.name ?? null, c = this.cached, m = anim ? this.path() : undefined;
     // A bone a path drives has the path's trail (over the path's time), and the key playhead matters to it only through the parent's place.
     const kFrame = m ? s.frame : 0;
-    if (!c || c.doc !== doc || c.images !== s.images || c.skin !== s.skin || c.animation !== name || c.bone !== bone || c.space !== this.space || c.origin !== this.originName() || c.children !== this.show.children || c.motion !== m || c.kFrame !== kFrame) {
+    if (!c || c.doc !== doc || c.images !== s.images || c.skin !== s.skin || c.animation !== name || c.bone !== bone || c.space !== this.space || c.origin !== this.originName() || c.tiers !== this.tiersKey() || c.motion !== m || c.kFrame !== kFrame) {
       const poser = this.posers();
       const origin = this.originName(), trail = anim ? boneTrail(poser, s.skin, anim.name, bone, s.fps, m ? m.duration : s.length(anim), this.space, origin, m ? this.drivenOf(m) : undefined) : null;
-      const extent = extentOf(poser, s.skin, name, bone, this.space, origin, s.fps, trail?.frames ?? 0, this.show.children);
-      this.cached = { doc, images: s.images, skin: s.skin, animation: name, bone, space: this.space, origin, trail, extent, children: this.show.children, motion: m, kFrame };
+      const extent = extentOf(poser, s.skin, name, bone, this.space, origin, s.fps, trail?.frames ?? 0, ...this.tiersFor());
+      this.cached = { doc, images: s.images, skin: s.skin, animation: name, bone, space: this.space, origin, trail, extent, tiers: this.tiersKey(), motion: m, kFrame };
       // New content: shown whole.
       if (!c || c.bone !== bone || c.animation !== name || c.space !== this.space || c.origin !== origin) { this.zoom = 1; this.pan = { x: 0, y: 0 }; this.hold = false; }
     }
@@ -673,11 +754,19 @@ export class MotionPathPanel {
     return c2.trail || (!anim && c2.extent) ? { trail: c2.trail, bone, extent: c2.extent } : `${bone} has no pose in this skin.`;
   }
 
+  /** The tiers the picture must have room for: the most asked for by Bone or Image, above and below. */
+  private tiersFor(): [number, number] {
+    return [Math.min(ALL, Math.max(this.counts.bone.a, this.counts.image.a)), Math.min(ALL, Math.max(this.counts.bone.b, this.counts.image.b))];
+  }
+
+  private tiersKey(): string { return this.tiersFor().join("|"); }
+
   private draw(): void {
     this.syncMode();
     this.zoomLabel.textContent = `${Math.round(this.zoom * 100)}%`;
     const s = this.session, r = this.trail();
     for (const l of LAYERS) this.layerBtns[l].setAttribute("aria-pressed", String(this.show[l]));
+    this.syncSteps();
     this.updateMotionBar();
     this.axesBtn.textContent = this.axes === "parent" ? "Axes: Parent" : "Axes: World";
     this.axesBtn.title = this.axes === "parent" ? "The move arrows follow the parent's axes; press for the world's" : "The move arrows follow the world's axes; press for the parent's";
@@ -709,19 +798,6 @@ export class MotionPathPanel {
     const grow = (x: number, y: number) => { if (Number.isFinite(x) && Number.isFinite(y)) { minX = Math.min(minX, x); maxX = Math.max(maxX, x); minY = Math.min(minY, y); maxY = Math.max(maxY, y); } };
     for (const a of trail ? [trail.joint, trail.tip] : []) for (let i = 0; i < a.length; i += 2) grow(a[i]!, a[i + 1]!);
     if (extent) { grow(extent.minX, extent.minY); grow(extent.maxX, extent.maxY); }
-    // The parent bone, when shown, is in view too (its joint and tip at the playhead).
-    const parentName = this.originName();
-    if ((this.show.parentBone || this.show.parentImage) && parentName && trail) {
-      const pp = this.posers().pose(s.skin, s.animation!.name, Math.fround(frameTime(this.path() ? s.frame : Math.min(s.frame, trail.frames), trail.fps)), "none"), pi = pp.bones.get(parentName), bi = pp.bones.get(bone);
-      if (pi !== undefined && pp.rig.active[pi]) {
-        // The parent and the bones under it on the way down to the bone (not the branches beside them).
-        for (const b of bi === undefined ? [pi] : chainTo(pp, pi, bi)) {
-          if (!pp.rig.active[b]) continue;
-          const mm = boneMatrix(pp, b), tip = boneTip(pp, b);
-          for (const [x, y] of [[mm[4], mm[5]], tip] as const) { const [qx, qy] = this.space === "parent" && bi !== undefined ? fromParent(pp, bi, x, y, parentName) : [x, y]; grow(qx, qy); }
-        }
-      }
-    }
     // The stored poses are in view too, so a node can always be reached.
     const path = this.viewMotion();
     if (path && this.space === "parent") {
@@ -753,23 +829,26 @@ export class MotionPathPanel {
     const poser = this.posers(), p = trail ? (own ? drivenPose(poser, s.skin, s.animation!.name, this.drivenOf(own), here / trail.fps) : poser.pose(s.skin, s.animation!.name, Math.fround(frameTime(here, trail.fps)), "none")) : poser.pose(s.skin, null, 0, "none"), index = p.bones.get(bone);
     const to = (x: number, y: number): [number, number] => (this.space === "parent" && index !== undefined ? fromParent(p, index, x, y, this.originName()) : [x, y]);
     if (this.show.onion && trail && index !== undefined) this.drawOnion(g, poser, bone, trail, here, at, dpr, boneColour);
-    const set = index === undefined ? [] : withChildren(p, index, this.show.children);
-    // The parent bone the path is relative to and the bones under it down to the bone (hips, thigh, shin for a foot), behind the bone's own: the images, then the bones, fainter.
-    const parentIdx = parentName ? p.bones.get(parentName) : undefined;
-    if (parentIdx !== undefined && p.rig.active[parentIdx] && parentIdx !== index) {
-      const tree = (index === undefined ? [parentIdx] : chainTo(p, parentIdx, index)).filter((b) => p.rig.active[b]);
-      if (this.show.parentImage) { g.save(); g.globalAlpha = 0.6; this.drawImage(g, p, tree, to, at, dpr); g.restore(); }
-      if (this.show.parentBone) {
-        for (const b of tree) {
-          const m = boneMatrix(p, b), [jx, jy] = at(...to(m[4], m[5])), [tx, ty] = at(...to(...boneTip(p, b)));
-          if ([jx, jy, tx, ty].every(Number.isFinite)) { g.save(); g.globalAlpha = b === parentIdx ? 0.6 : 0.4; this.drawBone(g, jx, jy, tx, ty, boneColour); g.restore(); }
-        }
+    // The tiers of bones round the bone, as many as Bone and Image each ask for (docs/SHOW-STEPPERS-PLAN.md): above (the parent first) behind it, fainter; below (the children) over it.
+    const parents = p.rig.data.bones.map((b) => b.parent), live = (list: readonly number[]) => list.filter((b) => p.rig.active[b]);
+    const imageT = index === undefined ? null : tiersAround(parents, index, this.counts.image.a, this.counts.image.b), boneT = index === undefined ? null : tiersAround(parents, index, this.counts.bone.a, this.counts.bone.b);
+    const faint = (b: number, i: number): number => (parents[i] === b ? 0.6 : 0.4);
+    if (this.show.bone && index !== undefined && boneT) {
+      for (const b of live(boneT.above)) {
+        const m = boneMatrix(p, b), [jx, jy] = at(...to(m[4], m[5])), [tx, ty] = at(...to(...boneTip(p, b)));
+        if ([jx, jy, tx, ty].every(Number.isFinite)) { g.save(); g.globalAlpha = faint(b, index); this.drawBone(g, jx, jy, tx, ty, boneColour); g.restore(); }
       }
     }
-    if (this.show.image && index !== undefined) this.drawImage(g, p, set, to, at, dpr);
-    if (this.show.bone && index !== undefined) {
-      // The children first and lighter, the selected bone over them.
-      for (const b of [...set.slice(1), set[0]!]) {
+    if (this.show.image && index !== undefined && imageT) {
+      g.save();
+      g.globalAlpha = 0.6;
+      this.drawImage(g, p, live(imageT.above), to, at, dpr);
+      g.restore();
+      this.drawImage(g, p, [index, ...imageT.below], to, at, dpr);
+    }
+    if (this.show.bone && index !== undefined && boneT) {
+      // The bones below first and lighter, the selected bone over them.
+      for (const b of [...live(boneT.below), index]) {
         if (!p.rig.active[b]) continue;
         const m = boneMatrix(p, b), [jx, jy] = at(...to(m[4], m[5])), [tx, ty] = at(...to(...boneTip(p, b)));
         if ([jx, jy, tx, ty].every(Number.isFinite)) { g.save(); g.globalAlpha = b === index ? 1 : 0.65; this.drawBone(g, jx, jy, tx, ty, boneColour); g.restore(); }
@@ -792,7 +871,7 @@ export class MotionPathPanel {
 
   /** Onion skin: the bone (its image, and the bone) at the frames either side of the playhead, farthest first, past red and future green when colour-coded. */
   private drawOnion(g: CanvasRenderingContext2D, poser: Poser, bone: string, trail: BoneTrail, here: number, at: (x: number, y: number) => [number, number], dpr: number, boneColour: string): void {
-    const s = this.session, a = s.animation!, o = this.onion(), own = this.path(), end = own ? trail.frames : timeFrame(s.length(a), trail.fps);
+    const s = this.session, a = s.animation!, o = { ...this.onion(), before: this.shownCounts("onion").a, after: this.shownCounts("onion").b }, own = this.path(), end = own ? trail.frames : timeFrame(s.length(a), trail.fps);
     // A bone with a path has no keys that count: its ghosts are at the path's own times.
     const keyed = o.keyedOnly && !own ? keyLists(a).flatMap((l) => l.keys.map((k) => timeFrame(keyTime(k), trail.fps))) : [];
     const frames = onionFrames(here, end, o, keyed, own ? own.loop : s.loop).sort((x, y) => x.opacity - y.opacity);
@@ -809,7 +888,7 @@ export class MotionPathPanel {
         c2.setTransform(1, 0, 0, 1, 0, 0);
         c2.globalCompositeOperation = "source-over";
         c2.clearRect(0, 0, sc.width, sc.height);
-        this.drawImage(c2, p, withChildren(p, i, this.show.children), to, at, dpr);
+        this.drawImage(c2, p, setOf(p.rig.data.bones.map((b) => b.parent), i, this.counts.image.a, this.counts.image.b), to, at, dpr);
         if (colour) { c2.setTransform(1, 0, 0, 1, 0, 0); c2.globalCompositeOperation = "source-in"; c2.fillStyle = colour; c2.fillRect(0, 0, sc.width, sc.height); c2.globalCompositeOperation = "source-over"; }
         g.save();
         g.setTransform(1, 0, 0, 1, 0, 0);
@@ -818,7 +897,7 @@ export class MotionPathPanel {
         g.restore();
       }
       if (this.show.bone) {
-        for (const b of withChildren(p, i, this.show.children)) {
+        for (const b of setOf(p.rig.data.bones.map((q) => q.parent), i, this.counts.bone.a, this.counts.bone.b)) {
           if (!p.rig.active[b]) continue;
           const m = boneMatrix(p, b), [jx, jy] = at(...to(m[4], m[5])), [tx, ty] = at(...to(...boneTip(p, b)));
           if ([jx, jy, tx, ty].every(Number.isFinite)) { g.save(); g.globalAlpha = Math.min(1, f.opacity * 1.6); this.drawBone(g, jx, jy, tx, ty, colour ?? boneColour); g.restore(); }
@@ -1691,13 +1770,14 @@ export class MotionPathPanel {
     }
   }
 
-  /** The names of the bones the Parent buttons draw: the parent, then the bones under it down to the selected bone (for tests). */
-  get parentTree(): string[] {
-    const s = this.session, bone = s.selectedBone, name = this.originName(), anim = s.animation;
-    if (!bone || !name || !anim) return [];
-    const p = this.posers().pose(s.skin, anim.name, 0, "none"), pi = p.bones.get(name), bi = p.bones.get(bone);
-    if (pi === undefined || bi === undefined) return [];
-    return chainTo(p, pi, bi).map((b) => p.rig.data.bones[b]!.name);
+  /** The names of the bones whose bones and images are drawn round the selected bone, above (root-most first) and below (for tests). */
+  get shownTiers(): { bones: string[]; images: string[] } {
+    const s = this.session, bone = s.selectedBone, anim = s.animation;
+    if (!bone) return { bones: [], images: [] };
+    const p = this.posers().pose(s.skin, anim?.name ?? null, 0, "none"), i = p.bones.get(bone);
+    if (i === undefined) return { bones: [], images: [] };
+    const parents = p.rig.data.bones.map((b) => b.parent), names = (l: number[]) => l.map((b) => p.rig.data.bones[b]!.name);
+    return { bones: names(setOf(parents, i, this.counts.bone.a, this.counts.bone.b)), images: names(setOf(parents, i, this.counts.image.a, this.counts.image.b)) };
   }
 
   /** The speed graph's points on its canvas as last drawn (CSS pixels), for tests. */

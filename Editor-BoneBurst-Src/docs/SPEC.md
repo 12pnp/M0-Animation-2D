@@ -322,7 +322,8 @@ selected bone and the animation shown, in two tabs (docs/MOTION-MODES-PLAN.md): 
 bone's keyed motion, a Spine import's included; its ⋮ makes a TwinSpline from the keys, or deletes them)
 and **TwinSpline** (the path editor below; its ⋮ makes keys from the path, or deletes it). Both are
 kept; pressing a tab chooses which one the bone uses (`MotionPath.active`). Under the TwinSpline tab, from the top: the header (the two tabs, with the Path and Spline layer
-toggles as icons beside them, then what else the picture shows, the parent bone and handles
+toggles as icons beside them, then what else the picture shows (Image, Bone and Onion with a count either side: tiers of
+bones above and below, or frames before and after, `ui/stage/tiers.ts`; docs/SHOW-STEPPERS-PLAN.md), the handles
 toggles, the Stage line); the path bar (the parent bone the path is relative to, − Node, Duration
 and Closed and Loop; making a path or a node, making key frames from the path and deleting it are in
 the tab's ⋮ menu); the view bar (zoom − and +, the zoom, the path's Play / Pause, Both, Stop and clock, Fit); the

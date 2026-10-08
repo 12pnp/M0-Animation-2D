@@ -171,27 +171,88 @@ test("Motion Path zooms with the wheel, pans only with the middle button (a left
   await expect.poll(picture).toBe(whole);
 });
 
-test("Motion Path's Children button shows every bone under the selected one, with their images", async ({ page }) => {
+async function openPanel(page: import("@playwright/test").Page, bone: string): Promise<void> {
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
+  await page.evaluate(() => localStorage.clear());
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".stage-panel button.mode").click();
   await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.evaluate((n) => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: n }), bone);
+}
+
+const tiers = (page: import("@playwright/test").Page) => page.evaluate(() => (window as unknown as { boneburst: { motionPath: { shownTiers: { bones: string[]; images: string[] } } } }).boneburst.motionPath.shownTiers);
+
+test("Image and Bone each have a count either side: ‹ one more tier above, › one more below, the number takes one away; the children's images show with the tiers below", async ({ page }) => {
   // The chest has no image of its own; its children (arms, head) do.
-  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "chest" }));
-  const panel = page.locator(".motion-path"), children = panel.getByRole("button", { name: "Children", exact: true });
-  await expect(children).toHaveAttribute("aria-pressed", "false");
+  await openPanel(page, "chest");
+  const panel = page.locator(".motion-path");
+  const down = panel.getByRole("button", { name: "Image: one more tier below" }), downNo = panel.getByRole("button", { name: "Image: one fewer tier below" }), downN = panel.locator('[data-count="image-b"]');
+  await expect(down).toBeEnabled();
+  await expect(downNo).toBeDisabled();
   const drawn = () => drawnPixels(page);
   await page.waitForTimeout(300);
   const alone = await drawn();
-  await children.click();
-  await expect(children).toHaveAttribute("aria-pressed", "true");
+  await down.click();
+  await expect(downN).toHaveText("1");
   await expect.poll(drawn).toBeGreaterThan(alone * 2);
-  await children.click();
-  await expect(children).toHaveAttribute("aria-pressed", "false");
+  await downNo.click();
+  await expect(downN).toHaveText("0");
   await expect.poll(drawn).toBeLessThan(alone * 1.5);
+});
+
+test("Bone and Image count tiers along the tree, apart from each other: the foot's parent, grandparent, and no branch beside them", async ({ page }) => {
+  await openPanel(page, "shin_near");
+  const panel = page.locator(".motion-path");
+  expect(await tiers(page)).toEqual({ bones: ["shin_near"], images: ["shin_near"] });
+  await panel.getByRole("button", { name: "Bone: one more tier above" }).click();
+  await expect.poll(() => tiers(page)).toEqual({ bones: ["leg_near_shin", "shin_near"], images: ["shin_near"] });
+  await panel.getByRole("button", { name: "Bone: one more tier above" }).click();
+  await panel.getByRole("button", { name: "Image: one more tier above" }).click();
+  await expect.poll(() => tiers(page)).toEqual({ bones: ["leg_near_thigh", "leg_near_shin", "shin_near"], images: ["leg_near_shin", "shin_near"] });
+  // The number takes one away.
+  await panel.getByRole("button", { name: "Bone: one fewer tier above" }).click();
+  await expect.poll(() => tiers(page)).toEqual({ bones: ["leg_near_shin", "shin_near"], images: ["leg_near_shin", "shin_near"] });
+  // Held at the root: the more button goes dead when every tier shows, and the counts are remembered.
+  const fewer = panel.locator('[data-count="bone-a"]');
+  for (const n of ["2", "3", "4"]) { await panel.getByRole("button", { name: "Bone: one more tier above" }).click(); await expect(fewer).toHaveText(n); }
+  await expect(panel.getByRole("button", { name: "Bone: one more tier above" })).toBeDisabled();
+  expect((await tiers(page)).bones[0]).toBe("root");
+  expect(await page.evaluate(() => localStorage.getItem("boneburst.motionPath.tiers"))).toContain('"image":{"a":1');
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await page.locator(".stage-panel button.mode").click();
+  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "shin_near" }));
+  expect((await tiers(page)).images).toEqual(["leg_near_shin", "shin_near"]);
+});
+
+test("a panel saved with Parent bone and Children on opens with all the tiers above and below", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => { localStorage.clear(); localStorage.setItem("boneburst.motionPath.layers", JSON.stringify({ parentBone: true, children: true })); });
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await page.locator(".stage-panel button.mode").click();
+  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "chest" }));
+  const t = await tiers(page);
+  expect(t.bones[0]).toBe("root");
+  expect(t.bones).toContain("head");
+  expect(t.images).toEqual(expect.arrayContaining(["head"]));
+});
+
+test("Onion has a count of frames before and after, in the panel", async ({ page }) => {
+  await openPanel(page, "head");
+  const panel = page.locator(".motion-path"), before = panel.locator('[data-count="onion-a"]'), after = panel.locator('[data-count="onion-b"]');
+  await expect(before).toHaveText("2");
+  await expect(after).toHaveText("2");
+  await panel.getByRole("button", { name: "Onion: one more frame before" }).click();
+  await expect(before).toHaveText("3");
+  await panel.getByRole("button", { name: "Onion: one fewer frame after" }).click();
+  await expect(after).toHaveText("1");
+  expect(await page.evaluate(() => localStorage.getItem("boneburst.motionPath.tiers"))).toContain('"onion":{"a":3,"b":1}');
 });
 
 test("Motion Path has the Stage's backdrop: the stage background, checkerboard, grid and centre axes, from the same settings", async ({ page }) => {
@@ -223,50 +284,3 @@ test("Motion Path has the Stage's backdrop: the stage background, checkerboard, 
   expect((await colours()).seen).toBeGreaterThan(1);
 });
 
-test("Motion Path's Parent bone and Parent image buttons show the parent bone the path is relative to and the bones down to the bone, fainter and behind the bone's own; off until pressed, and remembered", async ({ page }) => {
-  await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
-  await page.evaluate(() => localStorage.clear());
-  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
-  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
-  await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
-  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head" }));
-  const panel = page.locator(".motion-path"), bone = panel.getByRole("button", { name: "Parent bone", exact: true }), image = panel.getByRole("button", { name: "Parent image", exact: true });
-  await expect(bone).toHaveAttribute("aria-pressed", "false");
-  await expect(image).toHaveAttribute("aria-pressed", "false");
-  const drawn = () => drawnPixels(page);
-  await expect.poll(drawn).toBeGreaterThan(1000);
-  const before = await drawn();
-  // The parent bone drawn changes the picture (and the view takes it in).
-  await bone.click();
-  await expect(bone).toHaveAttribute("aria-pressed", "true");
-  await expect.poll(drawn).not.toBe(before);
-  // (Parent image draws the pictures of the parent and the bones down to the bone; the head's parent, the chest, has none.)
-  await image.click();
-  await expect(image).toHaveAttribute("aria-pressed", "true");
-  await image.click();
-  await expect(image).toHaveAttribute("aria-pressed", "false");
-  expect(await page.evaluate(() => localStorage.getItem("boneburst.motionPath.layers"))).toContain('"parentBone":true');
-});
-
-test("Motion Path's Parent buttons draw the bones from the parent down to the bone along the tree, not the whole body: hips to the foot is the one leg", async ({ page }) => {
-  await page.goto("/");
-  await page.evaluate(() => localStorage.clear());
-  await page.reload();
-  await page.evaluate(() => localStorage.clear());
-  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
-  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
-  await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
-  await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "shin_near" }));
-  const panel = page.locator(".motion-path");
-  await panel.getByRole("combobox", { name: "Parent bone" }).selectOption("hips");
-  await panel.getByRole("button", { name: "Parent bone", exact: true }).click();
-  const tree = () => page.evaluate(() => (window as unknown as { boneburst: { motionPath: { parentTree: string[] } } }).boneburst.motionPath.parentTree);
-  await expect.poll(tree).toEqual(["hips", "leg_near_thigh", "leg_near_shin"]);
-  // A nearer parent: just the bone's own parent.
-  await panel.getByRole("combobox", { name: "Parent bone" }).selectOption("leg_near_shin");
-  await expect.poll(tree).toEqual(["leg_near_shin"]);
-});

@@ -19,6 +19,9 @@ const KEY = "unity-folder";
 /** Said back to the person, or to the AI as a refusal. */
 export class ExportRefused extends Error {}
 
+/** This browser has no folder picker: a person pressing the button is given the files to save instead (the way Open falls back to a plain folder input); the AI is told. */
+export class NoFolderPicker extends ExportRefused {}
+
 /** The parts of a folder handle the export uses (File System Access; a stub in tests). */
 export interface Folder {
   readonly name: string;
@@ -116,7 +119,7 @@ export async function exportToUnity(session: Session, gesture: boolean, choose =
   if (!folder) {
     if (!gesture) throw new ExportRefused("No Unity folder has been chosen in this browser: press Export to Unity… (the button after Save in the editor's toolbar) once to choose it.");
     const pick = (window as unknown as { showDirectoryPicker?: Picker }).showDirectoryPicker;
-    if (!pick) throw new ExportRefused("This browser cannot write to a folder (it has no folder picker): use Chrome or Edge, or Save and copy the files into Unity.");
+    if (!pick) throw new NoFolderPicker("This browser cannot write to a folder (it has no folder picker): use Chrome or Edge, or Save and copy the files into Unity.");
     try {
       folder = await pick({ id: "boneburst-unity", mode: "readwrite" });
     } catch {
