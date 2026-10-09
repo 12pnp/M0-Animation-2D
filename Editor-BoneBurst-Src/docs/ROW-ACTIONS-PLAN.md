@@ -38,3 +38,7 @@ flowchart LR
    on that row, not the chosen one; the setup pose and the default skin have none; the bar holds
    only New…; the chosen row keeps its accent while hovered.
 5. SPEC's panels paragraph says so.
+6. Follow-up (owner, 2026-10-09): the History panel's current step had the same fault, grey with
+   dark text while hovered. The accent-on-hover rule moves from `.list-panel` to every
+   `.history-step[aria-current]` (Skins, Animations, History); `e2e/historyPanel.spec.ts` checks it.
+   Done 2026-10-09.

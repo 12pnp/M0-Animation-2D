@@ -31,6 +31,11 @@ test("History: the steps listed; a click goes back and forward; a new edit drops
   const steps = page.locator(".history-step");
   await expect(steps).toHaveText(["Opened Stickman_IK.json", "Move hips to 10", "Move hips to 20", "Move hips to 30"]);
   await expect(steps.nth(3)).toHaveAttribute("aria-current", "step");
+  // The current step keeps its accent while hovered.
+  const bg = () => steps.nth(3).evaluate((b) => getComputedStyle(b).backgroundColor);
+  const unhovered = await bg();
+  await steps.nth(3).hover();
+  expect(await bg()).toBe(unhovered);
 
   // Back to the first edit: two undone, greyed, still listed.
   await steps.nth(1).click();
