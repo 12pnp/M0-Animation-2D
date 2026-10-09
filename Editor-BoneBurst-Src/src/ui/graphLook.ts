@@ -24,3 +24,19 @@ export function graphColours(css: CSSStyleDeclaration): (name: string) => string
   const ink = isLight(bg) ? ON_LIGHT : ON_DARK;
   return (n) => (n === "--panel" ? bg : ink[n] ?? theme(n));
 }
+
+/** The slowest speed a key has (keySpeed.ts's SPEED_MIN): where the curve is fully red. */
+const SLOWEST = -0.99;
+
+/** The speed curve's colours away from the even pace (CURVES-PANEL-PLAN step 7): faster, a bright green; slower, red. */
+const FAST_GREEN = "#3dff7a", SLOW_RED = "#ff3b30";
+/** How far toward green a speed goes: all the way at 2 (three times the even pace). */
+const FULL_FAST = 2;
+
+/** The speed curve's colour at speed `v`: `base` at 0, toward bright green above (full at FULL_FAST), toward red below (full at SLOWEST). */
+export function speedColour(base: string, v: number): string {
+  const to = v >= 0 ? FAST_GREEN : SLOW_RED, t = v >= 0 ? Math.min(1, v / FULL_FAST) : Math.min(1, v / SLOWEST);
+  const rgb = (hex: string): number[] => { const m = /^#([0-9a-f]{6})$/i.exec(hex.trim()); const n = m ? parseInt(m[1]!, 16) : 0xff9f1c; return [n >> 16, (n >> 8) & 255, n & 255]; };
+  const a = rgb(base), b = rgb(to);
+  return `#${a.map((c, k) => Math.round(c + (b[k]! - c) * t).toString(16).padStart(2, "0")).join("")}`;
+}

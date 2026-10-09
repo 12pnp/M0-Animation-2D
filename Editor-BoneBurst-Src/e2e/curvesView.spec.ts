@@ -201,3 +201,34 @@ test("the line between Curves and the graph resizes the Curves view, is kept, an
   await split.dblclick();
   await expect.poll(width).toBe(w0);
 });
+
+test("step 7: square Curves buttons; no square at a key on the graph; a fast stretch drawn green, a slow one red", async ({ page }) => {
+  const frames = await open(page);
+  const panel = page.locator(".panel.motion-path");
+  for (const b of await panel.locator(".lp-curves-bar button").all()) {
+    const box = (await b.boundingBox())!;
+    expect(Math.round(box.width)).toBe(Math.round(box.height));
+  }
+  // No square at key 2's place: just off the line, where the square's corner was, is the graph's background now.
+  await page.evaluate((f) => (window as unknown as Live).boneburst.session.seek(f), frames[1]!);
+  type P = { boneburst: { motionPath: { speedPoints: readonly { i: number; x: number; y: number }[] } } };
+  await expect.poll(() => page.evaluate(() => (window as unknown as P).boneburst.motionPath.speedPoints.length)).toBe(frames.length);
+  const p = (await page.evaluate(() => (window as unknown as P).boneburst.motionPath.speedPoints)).find((q) => q.i === 1)!;
+  const sel = ".panel.motion-path .lp-speed-canvas";
+  expect(await colourAt(page, sel, p.x + 3, p.y - 3)).toBe(await colourAt(page, sel, p.x + 3, p.y - 30));
+  // Key 2 three times as fast (Linked: both sides): green near it; then slow: red.
+  const count = (hue: "green" | "red") => page.locator(sel).evaluate((c: HTMLCanvasElement, h) => {
+    const d = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (h === "green" ? d[i + 1]! > 200 && d[i]! < 140 && d[i + 2]! < 160 : d[i]! > 200 && d[i + 1]! < 140 && d[i + 2]! < 70) n++;
+    return n;
+  }, hue);
+  const speedOut = panel.getByRole("spinbutton", { name: "Speed out" });
+  await speedOut.fill("3");
+  await speedOut.press("Enter");
+  await expect.poll(() => count("green")).toBeGreaterThan(15);
+  await speedOut.fill("-0.9");
+  await speedOut.press("Enter");
+  // Redder than the orange (its green channel 159): a slow stretch is short, partly red.
+  await expect.poll(() => count("red")).toBeGreaterThan(8);
+});

@@ -5,7 +5,7 @@ import { boneInherit } from "@/model/defaults";
 import type { Key, Skeleton } from "@/model/skeleton";
 import { frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
 import { iconButton, setIcon } from "../icons";
-import { graphColours } from "../graphLook";
+import { graphColours, speedColour } from "../graphLook";
 import { CurvesView } from "./curvesView";
 import { pickColour } from "../colourPopup";
 import { showContextMenu } from "../contextMenu";
@@ -208,7 +208,6 @@ export class MotionPathPanel {
   private readonly zoomLabel = document.createElement("span");
   private speedDots: { i: number; x: number; y: number }[] = [];
   /** The speed graph's legs as last drawn, the one being dragged, the visible window over the animation (0..1), a pan in progress and the cap being dragged. */
-  private speedLegs: { i: number; side: "out" | "in"; x: number; y: number }[] = [];
   /** The leg being dragged and where the drag began across the graph: sideways past a few pixels it sets the leg's reach (step 10). */
   private gView = { x0: 0, x1: 1 };
   private graphPan: { x: number; x0: number; x1: number } | null = null;
@@ -1847,7 +1846,6 @@ export class MotionPathPanel {
   private drawKeySpeed(): void {
     const s = this.session, a = s.animation, bone = s.selectedBone, keys = this.keyNodes(), c = this.speedCanvas;
     this.speedDots = [];
-    this.speedLegs = [];
     if (!c.isConnected || this.dataBox.hidden) return;
     // Painted empty first: with nothing to draw it shows the theme's panel, never the last picture in old colours.
     this.blank(c, true);
@@ -1867,13 +1865,14 @@ export class MotionPathPanel {
     g.fillStyle = panel;
     g.fillRect(0, 0, w, h);
     const { l, r, t, b } = this.plot(), X = (time: number): number => this.gx(time / d), Y = (v: number): number => t + ((SPEED_MAX - Math.min(SPEED_MAX, Math.max(SPEED_MIN, v))) / (SPEED_MAX - SPEED_MIN)) * (b - t);
-    const end = timeFrame(d, s.fps), fw = Math.abs(X(1 / s.fps) - X(0)), step = labelStep(fw);
+    const end = timeFrame(d, s.fps);
     const ex = X(end / s.fps);
     if (ex < r) { g.fillStyle = bg; g.globalAlpha = 0.5; g.fillRect(Math.max(l, ex), 0, r - Math.max(l, ex), h); g.globalAlpha = 1; }
     g.strokeStyle = line;
     g.globalAlpha = 0.35;
     g.beginPath();
-    for (let f = 0; f <= end; f += step) { const x = Math.round(X(f / s.fps)) + 0.5; if (x >= l && x <= r) { g.moveTo(x, 0); g.lineTo(x, h); } }
+    // A guide line at each key, the edges of its spans (CURVES-PANEL-PLAN step 7), in place of a line every few frames.
+    for (const k of keys) { const x = Math.round(X(keyTime(k))) + 0.5; if (x >= l && x <= r) { g.moveTo(x, 0); g.lineTo(x, h); } }
     g.stroke();
     g.globalAlpha = 1;
     // The speed values: 0 (the even pace) a full line, the limits dashed, the rest faint.
@@ -1893,7 +1892,7 @@ export class MotionPathPanel {
     }
     g.save();
     g.beginPath(); g.rect(l, 0, r - l, h); g.clip();
-    const pairs = keySpeedPairs(bone, keys), reaches = keyReaches(bone, keys), colour = this.stagePath.colour, legs = this.legColours(colour), { x0, x1 } = this.gView;
+    const pairs = keySpeedPairs(bone, keys), colour = this.stagePath.colour, { x0, x1 } = this.gView;
     // Each span's speed across its time; a stepped span has none.
     g.strokeStyle = colour;
     g.lineWidth = 1.5;
@@ -1903,37 +1902,19 @@ export class MotionPathPanel {
       if (!next) return;
       const pts = spanSpeedSamples(bone, k, next, Math.max(8, Math.round(((keyTime(next) - keyTime(k)) / d) * (r - l) / ((x1 - x0) * 4))));
       if (!pts.length) return;
-      g.beginPath();
-      pts.forEach((q, j) => { if (j === 0) g.moveTo(X(q.t), Y(q.v)); else g.lineTo(X(q.t), Y(q.v)); });
-      g.stroke();
-    });
-    // Each key: a square at its speed (the middle of in and out when they differ); in Mirror or Break a handle each side, the in speed left, the out right.
-    const LEG = 22;
-    g.lineWidth = 1;
-    keys.forEach((k, i) => {
-      const pr = pairs[i]!, v = this.keyPoint(pr), x = X(keyTime(k)), y = Y(v ?? 0), on = i === this.selKey;
-      const red = this.delHover?.where === "graph" && this.delHover.i === i;
-      for (const side of ["in", "out"] as const) {
-        const sv = pr[side];
-        // Only the picked key's speed legs (step 12); its point shows on every key.
-        if (sv === null || red || !on) continue;
-        // A straight side's leg reaches as far into its span as the key's speed lasts (step 10); a curved side's is a short stem.
-        const r = reaches[i]![side], to = keys[side === "in" ? i - 1 : i + 1];
-        const hx = r !== null && to ? X(keyTime(k) + (keyTime(to) - keyTime(k)) * r) : x + (side === "in" ? -LEG : LEG), hy = Y(sv), lit = false;
-        g.strokeStyle = lit ? "#ffffff" : legs[side];
-        g.globalAlpha = lit || on ? 0.9 : 0.6;
-        g.beginPath(); g.moveTo(x, y); g.lineTo(hx, hy); g.stroke();
-        g.beginPath(); g.arc(hx, hy, lit ? 4.5 : 3, 0, Math.PI * 2); g.stroke();
-        g.globalAlpha = 1;
-        this.speedLegs.push({ i, side, x: hx, y: hy });
+      // Coloured by its value (step 7): the path colour at the even pace, toward green above it, toward red below.
+      for (let j = 1; j < pts.length; j++) {
+        const p0 = pts[j - 1]!, p1 = pts[j]!;
+        g.strokeStyle = speedColour(colour, (p0.v + p1.v) / 2);
+        g.beginPath(); g.moveTo(X(p0.t), Y(p0.v)); g.lineTo(X(p1.t), Y(p1.v)); g.stroke();
       }
-      const c0 = red ? DELETE_RED : v === null ? muted : colour, half = on ? 4.5 : 3.5;
-      g.fillStyle = on && !red ? "#ffffff" : c0;
-      g.strokeStyle = c0;
-      g.lineWidth = 2;
-      g.beginPath(); g.rect(x - half, y - half, half * 2, half * 2); g.fill();
-      if (on) g.stroke();
-      g.lineWidth = 1;
+    });
+    // Each key's place on the curve, for a click (no legs and no square on the preview: CURVES-PANEL-PLAN step 8).
+    keys.forEach((k, i) => {
+      const v = this.keyPoint(pairs[i]!), x = X(keyTime(k)), y = Y(v ?? 0);
+      const red = this.delHover?.where === "graph" && this.delHover.i === i;
+      // No square at a key (step 7): its place still picks it; the one Shift would delete is shown red.
+      if (red) { g.fillStyle = DELETE_RED; g.beginPath(); g.rect(x - 4, y - 4, 8, 8); g.fill(); }
       this.speedDots.push({ i, x, y });
     });
     g.restore();
@@ -2196,10 +2177,7 @@ export class MotionPathPanel {
     return this.stripDots;
   }
 
-  /** The speed graph's legs on its canvas as last drawn (CSS pixels), for tests. */
-  get speedHandles(): readonly { i: number; side: "out" | "in"; x: number; y: number }[] {
-    return this.speedLegs;
-  }
+
 
 
 

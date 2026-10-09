@@ -1,11 +1,11 @@
 import { expect, type Page, test } from "@playwright/test";
 
 /**
- * A leg's reach on a straight span (docs/FRAMEPATH-SPEED-PLAN.md, step 10): the speed graph draws a leg as long as its reach; since the
- * speed graph became a preview (docs/CURVES-PANEL-PLAN.md, step 3) the reach is set in the Curves view, by a handle's place across.
+ * A leg's reach on a straight span (docs/FRAMEPATH-SPEED-PLAN.md, step 10): typed in the data row or set in the Curves view by a handle's
+ * place across (docs/CURVES-PANEL-PLAN.md, steps 3 and 8; the speed graph is a preview with no legs).
  */
 
-type Live = { boneburst: { session: { select(s: unknown): void; seek(f: number): void; fps: number; doc: { animations: { bones?: { name: string; timelines: { name: string; keys: { time?: number; x?: number; y?: number; curve?: unknown }[] }[] }[] }[] } }; motionPath: { speedPoints: readonly { i: number; x: number; y: number }[]; speedHandles: readonly { i: number; side: "in" | "out"; x: number; y: number }[]; curveHandles: readonly { side: "in" | "out"; x: number; y: number }[] } } };
+type Live = { boneburst: { session: { select(s: unknown): void; seek(f: number): void; fps: number; doc: { animations: { bones?: { name: string; timelines: { name: string; keys: { time?: number; x?: number; y?: number; curve?: unknown }[] }[] }[] }[] } }; motionPath: { speedPoints: readonly { i: number; x: number; y: number }[]; curveHandles: readonly { side: "in" | "out"; x: number; y: number }[] } } };
 
 const keyJson = (page: Page) => page.evaluate(() => JSON.stringify((window as unknown as Live).boneburst.session.doc.animations[0]!.bones!.find((b) => b.name === "hips")!.timelines.find((t) => t.name === "translate")!.keys));
 
@@ -25,26 +25,17 @@ async function open(page: Page): Promise<void> {
   await page.locator(".panel.motion-path").getByRole("button", { name: "Plain", exact: true }).click();
 }
 
-test("the speed graph draws a leg as long as its reach; dragging that leg there changes nothing", async ({ page }) => {
+test("a reach typed in the data row moves the Curves view's out handle across; the speed graph shows no legs (CURVES-PANEL-PLAN step 8)", async ({ page }) => {
   await open(page);
   const panel = page.locator(".panel.motion-path"), reachOut = panel.getByRole("spinbutton", { name: "Reach out" });
   await expect(reachOut).toHaveValue("33.3");
-  await panel.getByRole("button", { name: "Node", exact: true }).click();
-  const leg = () => page.evaluate(() => (window as unknown as Live).boneburst.motionPath.speedHandles.find((h) => h.i === 1 && h.side === "out")!);
-  const dot = () => page.evaluate(() => (window as unknown as Live).boneburst.motionPath.speedPoints.find((p) => p.i === 1)!);
-  await expect.poll(async () => (await leg()).x - (await dot()).x).toBeGreaterThan(22);
-  const before = await leg(), d = await dot(), keys = await keyJson(page), box = (await panel.locator(".lp-speed-canvas").boundingBox())!;
-  await page.mouse.move(box.x + before.x, box.y + before.y);
-  await page.mouse.down();
-  await page.mouse.move(box.x + before.x - 30, box.y + before.y - 20, { steps: 5 });
-  await page.mouse.up();
-  expect(await keyJson(page)).toBe(keys);
-  // The press was a click in the span: the playhead moved into it. Back on key 2, a reach typed in the data row: the leg follows.
-  const t1 = await page.evaluate(() => (window as unknown as Live).boneburst.session.doc.animations[0]!.bones!.find((b) => b.name === "hips")!.timelines.find((t) => t.name === "translate")!.keys[1]!.time ?? 0);
-  await page.evaluate((t) => { const s = (window as unknown as Live).boneburst.session; s.seek(Math.round(t * s.fps)); }, t1);
-  await reachOut.fill("50");
+  const out = () => page.evaluate(() => (window as unknown as Live).boneburst.motionPath.curveHandles.find((h) => h.side === "out")?.x ?? Number.NaN);
+  await expect.poll(async () => Number.isFinite(await out())).toBe(true);
+  const before = await out();
+  await reachOut.fill("60");
   await reachOut.press("Enter");
-  await expect.poll(async () => (await leg()).x - d.x).toBeGreaterThan((before.x - d.x) * 1.3);
+  await expect.poll(out).toBeGreaterThan(before + 20);
+  expect(await page.evaluate(() => "speedHandles" in (window as unknown as { boneburst: { motionPath: object } }).boneburst.motionPath)).toBe(false);
 });
 
 test("in the Curves view, Shift + dragging the out handle across sets the reach; the keys' places stay", async ({ page }) => {

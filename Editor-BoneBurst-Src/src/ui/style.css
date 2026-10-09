@@ -855,8 +855,9 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 .lp-speed-row { flex: 1; min-height: 0; display: flex; align-items: stretch; }
 .lp-speed-row .lp-speed-canvas { flex: 1; min-width: 0; height: auto; }
 .lp-curves { flex: none; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.lp-curves-bar { display: flex; gap: 2px; }
-.lp-curves-bar button { flex: 1; min-width: 0; padding: 1px 0; }
+.lp-curves-bar { display: flex; gap: 3px; }
+/* Square buttons (CURVES-PANEL-PLAN step 7). */
+.lp-curves-bar button { flex: none; width: 24px; height: 24px; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
 .lp-curves-canvas { flex: 1; min-height: 0; width: 100%; display: block; touch-action: none; }
 .lp-curves-note { margin: 0; font-size: 11px; color: var(--muted); }
 .lp-curves-split { flex: none; width: 7px; cursor: ew-resize; touch-action: none; background: linear-gradient(var(--line), var(--line)) center / 1px 100% no-repeat; }

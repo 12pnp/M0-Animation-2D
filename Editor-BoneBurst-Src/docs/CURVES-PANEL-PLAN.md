@@ -179,3 +179,38 @@ FRAMEPATH-SPEED-PLAN, the Stage path, the Curves view and the preview graph).
 `npm run check` fails at its bundle-size gate: the main chunk is 575 kB against `scripts/check.sh`'s 500 kB. Not this plan's doing
 alone: built at each commit, it was already 552 kB at `3a4bd390` (before today's FramePath, Stage path, Hybrid and Curves work) and
 569 kB at `0e849fe9`; this plan adds 6 kB. A split of the main chunk is its own task.
+
+## Step 7: the look of the Curves toolbar and the preview graph (2026-10-09, the owner's follow-up)
+
+> 1 at black box, icon must w == h. 2 at black line, convert ver guide line per node block. 3 at blue box, remove mini box icon at
+> line, then update line by add color hue: if more than 1 more green more bright, if value low than 1 more red by value.
+
+```mermaid
+flowchart LR
+    BAR["Curves toolbar"] -->|"square buttons"| SQ["24 × 24"]
+    GRID["speed graph grid"] -->|"a vertical line per frame step → per key"| KEYS["a guide line at each key"]
+    CURVE["speed curve, path colour + squares"] -->|"no squares"| HUE["colour by value: 0 the path colour,<br/>faster → green, brighter; slower → red"]
+```
+
+1. `.lp-curves-bar` buttons square (24 × 24), side by side from the left.
+2. The speed graph's vertical lines: one at each key (a span's edges), in place of the lines every few frames.
+3. No square on the curve at the keys (a click near a key's place still picks it, Shift still shows the red one it would delete).
+   The curve is coloured by its value: at 0 (the even pace, multiplier 1) the path colour; above, toward a bright green, fully at 2
+   (three times as fast); below, toward red, fully at −0.99. The picked key's legs stay.
+4. Tests: the toolbar's buttons square; a key's guide line and no square at a key; a fast stretch green and a slow one red.
+
+### Step 7 (done, 2026-10-09)
+
+As planned. `speedColour(base, v)` lives in `src/ui/graphLook.ts` (DOM-free), with `#3dff7a` at 2 and above and `#ff3b30` at −0.99;
+the curve is stroked a sample at a time in it. The graph's guide lines are at the keys; the frame-step lines are gone. The only square
+left on the curve is the red one Shift would delete. Tests: `tests/graphLook.test.ts` (2: the ends of the scale, more green the
+faster, more red the slower); `curvesView.spec.ts` (10): the Curves buttons are square, no square at key 2's place (just off the line
+is the background), speed out 3 draws green, −0.9 red. Seen on a Playwright screenshot. vitest 795 pass; e2e: all pass except the 3
+AI-bridge tests (no bridge from the dev server on 5199).
+
+### Step 8: no legs on the preview (done, 2026-10-09; the owner: "no need show leg, remove it")
+
+The speed graph no longer draws the picked key's legs (the leg colours and reach show in the Curves view and on the picture). Deleted
+with them: the graph's leg list and its test hook (`speedLegs`, `speedHandles`). Preferences' leg-colour note says "on the picture and
+in the Curves view". `speedReach.spec.ts`'s first test now types a reach and finds the Curves view's out handle moved across, and the
+graph's leg hook gone. vitest 795 pass; e2e: all pass except the 3 AI-bridge tests (no bridge from the dev server on 5199).
