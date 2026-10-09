@@ -12,7 +12,7 @@ test("the path between the keys either side of the playhead is drawn in the acce
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "hips" }));
   // Its keys' frames; a frame halfway through the second span.
   const frames = await page.evaluate(() => { const s = (window as unknown as Live).boneburst.session; return s.doc.animations[0]!.bones!.find((b) => b.name === "hips")!.timelines.find((t) => t.name === "translate")!.keys.map((k) => Math.round((k.time ?? 0) * s.fps)); });

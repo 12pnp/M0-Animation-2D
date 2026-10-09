@@ -24,7 +24,7 @@ test("Motion Path shows the selected bone's path over the animation, in its pare
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   // In Animate; the panel is a tab behind Properties.
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   const panel = page.locator(".motion-path");
   await expect(panel.locator(".lp-note")).toContainText("Select a bone");
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head" }));
@@ -53,7 +53,7 @@ test("Motion Path's Image, Bone and Path buttons show and hide each layer, and a
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head_art" }));
   const panel = page.locator(".motion-path");
   for (const name of ["Image", "Bone", "Path"]) await expect(panel.getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true");
@@ -67,7 +67,7 @@ test("Motion Path's Image, Bone and Path buttons show and hide each layer, and a
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   await expect(page.locator(".motion-path").getByRole("button", { name: "Image", exact: true })).toHaveAttribute("aria-pressed", "false");
 });
 
@@ -77,7 +77,7 @@ test("Motion Path in Pose mode shows the bone and its image on the setup pose, t
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   const panel = page.locator(".motion-path");
   await expect(panel.locator(".lp-note")).toContainText("Select a bone");
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head_art" }));
@@ -114,7 +114,7 @@ test("Onion: a button on the Timeline bar turns onion skin on and off, and Motio
   await expect(stageOnion).toHaveAttribute("aria-pressed", "false");
 
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   await page.evaluate(() => { const s = (window as unknown as Live).boneburst.session; s.select({ kind: "bone", name: "arm_near_fore" }); });
   const tints = () => page.evaluate(() => {
     const cv = document.querySelector(".motion-path canvas") as HTMLCanvasElement, d = cv.getContext("2d")!.getImageData(0, 0, cv.width, cv.height).data;
@@ -142,7 +142,7 @@ test("Motion Path zooms with the wheel, pans only with the middle button (a left
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "arm_near_fore" }));
   const panel = page.locator(".motion-path"), canvas = panel.locator(".lp-body canvas");
   const picture = () => canvas.evaluate((c) => (c as HTMLCanvasElement).toDataURL());
@@ -188,7 +188,7 @@ async function openPanel(page: import("@playwright/test").Page, bone: string): P
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   await page.evaluate((n) => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: n }), bone);
 }
 
@@ -233,7 +233,7 @@ test("Bone and Image count tiers along the tree, apart from each other: the foot
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "shin_near" }));
   expect((await tiers(page)).images).toEqual(["leg_near_shin", "shin_near"]);
 });
@@ -244,7 +244,7 @@ test("a panel saved with Parent bone and Children on opens with all the tiers ab
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "chest" }));
   const t = await tiers(page);
   expect(t.bones[0]).toBe("root");
@@ -276,7 +276,7 @@ test("Motion Path has the Stage's backdrop: the stage background, checkerboard, 
     await page.reload();
     await page.getByRole("button", { name: "Open the stickman fixture" }).click();
     await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
-    await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+    await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
     await page.waitForTimeout(400);
   };
   // Everything off: the stage background alone, one colour.

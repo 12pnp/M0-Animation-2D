@@ -594,3 +594,42 @@ the menu, and that choosing it deletes that key as one undo step.
 
 **Superseded in part (2026-10-09):** the speed graph's drags (the point's, step 3 and 7; the legs', step 3; the reach's, step 10) are
 gone: the speed graph is a preview and a span's timing is edited in the Curves view (docs/CURVES-PANEL-PLAN.md, steps 2 and 3).
+
+## Step 22: the frame strip's left end: FPS and the lock; no diamonds in the tab row (2026-10-09, the owner's note with a screenshot)
+
+> 1 add FPS to G box. 2 move LockIcon to R box. 3 remove diamond icon from red line bar.
+
+The G box is the ruler row's left end, above the Curves view; the R box is just left of frame 0; the red line is the row of span tabs.
+
+```mermaid
+flowchart LR
+    FPS["fps field (ruler row, left)"] -->|"setFps (edit/header.ts), one undo step"| DOC["skeleton.header.fps"]
+    LOCK["frame lock (ruler row, left of frame 0)"] -->|"left from the graph's place"| STRIP["frame strip"]
+    TABS["tab row"] -.->|"no diamonds; a key is where two tabs meet"| STRIP
+```
+
+1. An **fps** field at the ruler row's left end: the document's frame rate, written with `setFps` as the Inspector does (one undo step,
+   keys keep their times, the status line says how many keys now fall between frames).
+2. The **frame lock** moves from the strip's right end to the ruler row, just left of frame 0 (placed from where the graph starts, so
+   it follows the Curves view's width). Fit stays at the right end.
+3. The tab row draws **no diamonds**: a key is where two tabs meet. Their places still work: a click goes to a key, ⌘ + drag moves it
+   in time (the strip shows the move cursor), Shift + click deletes it, and the diamond Shift would delete is still drawn, red.
+4. e2e: the fps field writes the frame rate as one undo step; the lock sits left of frame 0 and still locks; no diamond is drawn at a
+   key, and ⌘ + drag and Shift + click there still work (their own tests).
+
+### Result (step 22)
+
+As planned: `fpsBox` / `fpsInput` and `setFrameRate` (the Inspector's rule: an empty field or the default on a file without a rate
+leaves the header without one); `placeLock()` sets the lock's left each draw, 30 px left of frame 0 and never over the fps field; the
+tab row's diamond drawing is gone except the red one under Shift. `e2e/stripLeftEnd.spec.ts` (2): the fps field shows 24, writes 30,
+one undo puts 24 back; the lock ends left of frame 0 inside the ruler row and still locks; no accent blue where key 2's diamond was. The
+retime (⌘ + drag) and Shift + click tests pass unchanged. Seen on a Playwright screenshot.
+
+## Step 23: the panel's tab is "FramePath" (2026-10-09, the owner: "convert MotionPath tab name => FramePath")
+
+Done. What a person reads says FramePath: the tab and the Panels list (`ui/workspace/panelIds.ts`), the panel's title with no bone,
+the Timeline's note on a bone's translate ("edit it in FramePath"), the History panel's info, Preferences' graph colour note. The
+panel's Info text is rewritten for the panel as it is (the picture's ⌘ and Shift clicks, the strip, Curves, the preview graph): it
+still told a person to drag the speed graph's points. The panel's id stays `motionPath`, so a layout or view saved before still opens;
+the code keeps its names (`motionPanel.ts`, `MotionPathPanel`). e2e that find the tab, the Panels list entry, the activity button, the
+Info dialog or the popout by name now use "FramePath"; vitest and e2e pass (the 3 AI-bridge tests aside).

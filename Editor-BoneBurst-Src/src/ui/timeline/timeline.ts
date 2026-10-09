@@ -669,7 +669,7 @@ export class Timeline {
       g.font = `11px ${col("--font-mono")}`;
       g.fillStyle = col("--muted");
       g.textBaseline = "top";
-      g.fillText(`${away} · translate: edit it in Motion Path (FramePath)`, 8, top - 10);
+      g.fillText(`${away} · translate: edit it in FramePath`, 8, top - 10);
       g.restore();
     }
     // Zero, when it is in view.

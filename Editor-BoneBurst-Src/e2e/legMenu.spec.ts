@@ -12,7 +12,7 @@ async function open(page: Page, prefs?: string): Promise<number[]> {
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "hips" }));
   return page.evaluate(() => { const s = (window as unknown as Live).boneburst.session; return s.doc.animations[0]!.bones!.find((b) => b.name === "hips")!.timelines.find((t) => t.name === "translate")!.keys.map((k) => Math.round((k.time ?? 0) * s.fps)); });
 }

@@ -11,7 +11,7 @@ test("Hybrid keeps the editor dark and paints both graphs light gray; Dark paint
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   const choose = async (label: string) => {
     await page.getByRole("button", { name: /^Preferences/ }).click();
     await page.getByRole("combobox", { name: "Theme" }).selectOption({ label });

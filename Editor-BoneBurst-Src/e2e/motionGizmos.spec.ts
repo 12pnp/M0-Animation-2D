@@ -11,7 +11,7 @@ async function open(page: Page, bone = "head"): Promise<void> {
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   await page.evaluate((b) => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: b }), bone);
   await expect(page.locator(".motion-path .lp-head > span").first()).toContainText(bone);
   await page.waitForTimeout(400);
@@ -44,7 +44,7 @@ test("four icons in the header show or hide the rotate ring, move arrows, scale 
   await page.reload();
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   await expect(toggle(page, "Show rotate handle")).toHaveAttribute("aria-pressed", "false");
   await expect(toggle(page, "Show shear handle")).toHaveAttribute("aria-pressed", "false");
 });

@@ -13,11 +13,11 @@ test("every panel group has a ⋮ menu; Info opens that panel's info window; Max
   expect(groups).toBeGreaterThan(1);
   await expect(buttons).toHaveCount(groups);
   // The Motion Path tab's group: its menu's Info is about Motion Path.
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   const motion = page.locator(".dv-groupview", { has: page.locator(".panel.motion-path") }).getByRole("button", { name: "Panel menu" });
   await motion.click();
   await page.getByRole("menuitem", { name: "Info…" }).click();
-  const info = page.getByRole("dialog", { name: "Motion Path info" });
+  const info = page.getByRole("dialog", { name: "FramePath info" });
   await expect(info).toBeVisible();
   await expect(info).toContainText("How it works");
   await expect(info).toContainText("Delete FramePath data");

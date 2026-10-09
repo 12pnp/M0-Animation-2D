@@ -308,7 +308,7 @@ the skeleton's when nothing is selected) and Snapping (the snapping settings, `u
 **The outline** draws a thin guide line per level of the tree under each parent's fold arrow, in
 the colour set under Tree (`treeGuideColour`).
 
-**The Motion Path panel** (`ui/panels/motionPanel.ts`) is FramePath's editor (§6a, docs/FRAMEPATH-SPEED-PLAN.md), for the
+**The FramePath panel** (`ui/panels/motionPanel.ts`, panel id `motionPath`; its tab was "Motion Path" until 2026-10-09) is FramePath's editor (§6a, docs/FRAMEPATH-SPEED-PLAN.md), for the
 selected bone and the animation shown. From the top:
 
 - **The header**: the Path layer toggle, FramePath's name with its ⋮ menu (Closed, Delete FramePath data), then what else the picture

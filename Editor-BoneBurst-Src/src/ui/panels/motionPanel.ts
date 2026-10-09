@@ -3,7 +3,7 @@ import { EditRefused } from "@/edit/history";
 import { drawnVertices } from "@/engine/draw";
 import { boneInherit } from "@/model/defaults";
 import type { Key, Skeleton } from "@/model/skeleton";
-import { frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
+import { DEFAULT_FPS, frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
 import { iconButton, setIcon } from "../icons";
 import { graphColours, speedColour } from "../graphLook";
 import { CurvesView } from "./curvesView";
@@ -14,6 +14,7 @@ import type { MotionMemory } from "../viewMemory";
 import { deleteTranslateKeys, translateKeyCount } from "@/edit/pathKeys";
 import { alongChord, clampSpeed, keyChords, keyHandles, keyReaches, keySpeedPairs, multiplierOf, retimeTranslateKey, setKeyHandles, setSpanEase, setTranslateKeyReaches, spanEase, type SpanEase, setTranslateKeySpeeds, spanSpeedSamples, SPEED_MAX, SPEED_MIN, translateNodes, type Vec } from "@/edit/keySpeed";
 import { deleteKeys, setKey } from "@/edit/keys";
+import { FPS_RANGE, keysOffFrame, setFps } from "@/edit/header";
 import { localPoint, pageScale } from "../pageScale";
 import { labelStep, RULER, secondsSinceLastKey } from "../timeline/layout";
 import type { Session } from "../session";
@@ -220,6 +221,9 @@ export class MotionPathPanel {
   private readonly keyToggle = document.createElement("button");
   /** At the strip's right end (step 15): Fit for the speed graph and the strip, and the frame lock under it. */
   private readonly stripFit = document.createElement("button");
+  /** The document's frame rate, at the ruler row's left end (step 22). */
+  private readonly fpsBox = document.createElement("label");
+  private readonly fpsInput = document.createElement("input");
   private readonly lockBtn = document.createElement("button");
   /** FramePath keys whose mode was chosen where the file cannot show it (Mirror or Break at 0 and 0, Break on equal speeds), and for which bone. */
   private keyModes = new Map<string, "mirror" | "break">();
@@ -396,6 +400,16 @@ export class MotionPathPanel {
     this.stripFit.title = "Fit: the whole animation across the strip and the speed graph (double-click on the graph does the same)";
     iconButton(this.stripFit, "fit", false);
     this.stripFit.addEventListener("click", () => this.fitGraph(false));
+    this.fpsBox.className = "lp-stripfps";
+    this.fpsBox.title = "The animation's frame rate (the document's): keys keep their times";
+    this.fpsInput.type = "number";
+    this.fpsInput.min = String(FPS_RANGE[0]);
+    this.fpsInput.max = String(FPS_RANGE[1]);
+    this.fpsInput.step = "1";
+    this.fpsInput.setAttribute("aria-label", "Frame rate");
+    this.fpsInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); this.fpsInput.blur(); } if (e.key === "Escape") { this.fpsInput.value = String(this.session.fps); this.fpsInput.blur(); } });
+    this.fpsInput.addEventListener("change", () => this.setFrameRate(this.fpsInput.value));
+    this.fpsBox.append(this.fpsInput, Object.assign(document.createElement("span"), { textContent: "fps" }));
     this.lockBtn.type = "button";
     this.lockBtn.className = "lp-framelock";
     this.lockBtn.setAttribute("aria-label", "Frame lock");
@@ -652,7 +666,7 @@ export class MotionPathPanel {
     const style = getComputedStyle(this.element), stageBg = style.getPropertyValue("--stage-bg").trim() || "#4f4f4f";
     if (typeof r === "string") {
       drawBackdrop(g, { width, height, left: -width / 2, right: width / 2, top: height / 2, bottom: -height / 2, scale: 1, ...this.background(), background: stageBg, light: lightColour(stageBg) });
-      this.title.textContent = "Motion Path";
+      this.title.textContent = "FramePath";
       this.note.textContent = r;
       this.note.hidden = false;
       return;
@@ -1489,6 +1503,30 @@ export class MotionPathPanel {
     return null;
   }
 
+  /** The frame lock in the ruler row just left of frame 0, placed from where the graph starts (it follows the Curves view's width). */
+  private placeLock(): void {
+    const k = pageScale(), bar = this.slotBar.getBoundingClientRect(), g = this.speedCanvas.getBoundingClientRect();
+    if (!this.speedCanvas.isConnected || bar.width <= 0) return;
+    this.lockBtn.style.left = `${Math.max(44, (g.left - bar.left) / k + this.plot().l - 30)}px`;
+  }
+
+  /** The fps field committed: the document's frame rate, as the Inspector sets it (one undo step; keys keep their times). */
+  private setFrameRate(v: string): void {
+    const s = this.session, h = s.history, n = Number(v);
+    if (!h || !s.doc) return;
+    try {
+      h.apply(`Set the frame rate to ${n} fps`, setFps(v.trim() === "" || (n === DEFAULT_FPS && s.doc.header?.fps === undefined) ? undefined : n));
+    } catch (err) {
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+      this.fpsInput.value = String(s.fps);
+      return;
+    }
+    s.changed();
+    const off = keysOffFrame(s.doc, s.fps);
+    this.onStatus(`${s.fps} frames a second; keys keep their times${off ? `, and ${off} key${off === 1 ? " now falls" : "s now fall"} between frames` : ""}.`);
+  }
+
   /** The strip's diamond under a point of the strip, or -1. */
   private stripDotAt(x: number, y: number): number {
     return this.stripDots.find((q) => Math.abs(q.x - x) <= 7 && Math.abs(y - KEY_Y) <= 9)?.i ?? -1;
@@ -1531,7 +1569,9 @@ export class MotionPathPanel {
     // The picked key is the one on the playhead's frame; a hand-broken leg is remembered only while the bone and animation stay.
     this.selKey = keys ? this.keyAtFrame(s.frame) : -1;
     if (`${a?.name}/${bone}` !== this.keyBrokenFor) { this.keyBrokenFor = `${a?.name}/${bone}`; this.keyModes.clear(); this.speedModes.clear(); }
-    if (this.keyStrip.parentElement !== this.slotBar) this.slotBar.replaceChildren(this.keyToggle, this.keyStrip, this.stripFit, this.lockBtn);
+    if (this.keyStrip.parentElement !== this.slotBar) this.slotBar.replaceChildren(this.keyToggle, this.keyStrip, this.fpsBox, this.stripFit, this.lockBtn);
+    if (this.fpsInput.ownerDocument.activeElement !== this.fpsInput) this.fpsInput.value = String(s.fps);
+    this.fpsInput.disabled = !s.doc;
     const locked = s.frameLock;
     setIcon(this.lockBtn, locked ? "lock" : "lockOpen");
     this.lockBtn.setAttribute("aria-pressed", String(locked));
@@ -1600,6 +1640,7 @@ export class MotionPathPanel {
    * two keys (its length in frames and seconds, the playhead's span lit) with a diamond on each key.
    */
   private drawKeyStrip(): void {
+    this.placeLock();
     const s = this.session, a = s.animation, keys = this.keyNodes(), c = this.keyStrip;
     this.stripDots = [];
     if (!c.isConnected) return;
@@ -1657,8 +1698,11 @@ export class MotionPathPanel {
       const x = this.stripX(f);
       if (x < -6 || x > w + 6) continue;
       this.stripDots.push({ i, x });
-      g.fillStyle = this.delHover?.where === "strip" && this.delHover.i === i ? DELETE_RED : f === s.frame ? "#ffffff" : accent;
-      g.beginPath(); g.moveTo(x, KEY_Y - 5); g.lineTo(x + 5, KEY_Y); g.lineTo(x, KEY_Y + 5); g.lineTo(x - 5, KEY_Y); g.closePath(); g.fill();
+      // No diamond at a key (step 22): it is where two tabs meet; its place still works, and the one Shift would delete is drawn red.
+      if (this.delHover?.where === "strip" && this.delHover.i === i) {
+        g.fillStyle = DELETE_RED;
+        g.beginPath(); g.moveTo(x, KEY_Y - 5); g.lineTo(x + 5, KEY_Y); g.lineTo(x, KEY_Y + 5); g.lineTo(x - 5, KEY_Y); g.closePath(); g.fill();
+      }
     }
     // The playhead: the green tag on the ruler with the time since the key before beside it, and its line down.
     const px = Math.round(this.stripX(s.frame)) + 0.5;

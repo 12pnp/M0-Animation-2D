@@ -15,7 +15,7 @@ test("⌘ + drag on a strip diamond slides the key in time; its place and its do
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "hips" }));
   await expect.poll(() => page.evaluate(() => (window as unknown as Live).boneburst.motionPath.stripPoints.length)).toBeGreaterThan(3);
   const before = await keys(page), fps = await page.evaluate(() => (window as unknown as Live).boneburst.session.fps);

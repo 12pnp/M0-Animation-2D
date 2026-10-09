@@ -16,7 +16,7 @@ test("⌘ + click on the path between two keys adds one there, the path unchange
   await page.getByRole("button", { name: "Open the stickman fixture" }).click();
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".stage-panel button.mode").click();
-  await page.locator(".dv-tab", { hasText: /^Motion Path$/ }).click();
+  await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "hips" }));
   const before = await keys(page), f = Math.floor((before[1]!.f + before[2]!.f) / 2);
   // The playhead on the key before: where the path passes the spot again later, the frame nearest the playhead is the one taken.

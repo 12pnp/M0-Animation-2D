@@ -20,7 +20,7 @@ export const PANEL_TITLES: Readonly<Record<PanelId, string>> = {
   history: "History",
   skins: "Skins",
   animations: "Animations",
-  motionPath: "Motion Path",
+  motionPath: "FramePath",
   tags: "Tags",
 };
 

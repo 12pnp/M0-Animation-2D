@@ -27,7 +27,7 @@ test("a popout takes the theme chosen in Preferences, not the system's, and foll
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
   await page.locator(".stage-panel button.mode").click();
   await page.evaluate(() => (window as unknown as { boneburst: { session: { select(s: unknown): void } } }).boneburst.session.select({ kind: "bone", name: "hips" }));
-  const popup = await popOut(page, "Motion Path");
+  const popup = await popOut(page, "FramePath");
   await popup.emulateMedia({ colorScheme: "dark" });
   await expect(popup.locator("html")).toHaveAttribute("data-theme", "light");
   // The speed graph is painted in Light's panel colour (white), not the dark one.
