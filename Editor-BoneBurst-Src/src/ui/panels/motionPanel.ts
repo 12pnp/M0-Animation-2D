@@ -11,7 +11,7 @@ import { showContextMenu } from "../contextMenu";
 import type { MenuItem } from "../menubar";
 import type { MotionMemory } from "../viewMemory";
 import { deleteTranslateKeys, translateKeyCount } from "@/edit/pathKeys";
-import { alongChord, clampSpeed, keyChords, keyHandles, keyReaches, keySpeedPairs, multiplierOf, setKeyHandles, setTranslateKeyReaches, setTranslateKeySpeeds, spanSpeedSamples, SPEED_MAX, SPEED_MIN, translateNodes, type Vec } from "@/edit/keySpeed";
+import { alongChord, clampSpeed, keyChords, keyHandles, keyReaches, keySpeedPairs, multiplierOf, retimeTranslateKey, setKeyHandles, setTranslateKeyReaches, setTranslateKeySpeeds, spanSpeedSamples, SPEED_MAX, SPEED_MIN, translateNodes, type Vec } from "@/edit/keySpeed";
 import { deleteKeys, setKey } from "@/edit/keys";
 import { localPoint, pageScale } from "../pageScale";
 import { labelStep, RULER, secondsSinceLastKey } from "../timeline/layout";
@@ -30,8 +30,6 @@ export type Layer = "image" | "bone" | "path" | "length" | "onion" | "rotate" | 
 const LAYERS: readonly Layer[] = ["image", "bone", "path", "length", "onion", "rotate", "move", "scale", "shear"];
 /** The four handles the panel can show on the bone (each a toggle in the header, the Stage's tool icons): rotate ring, move arrows, scale square, shear diamond. */
 const GIZMOS = ["rotate", "move", "scale", "shear"] as const;
-/** The path's dots and the lengths between them. */
-const DOT = "#ff2bd6";
 /** The Timeline's playhead green, for FramePath's frame strip. */
 const PLAYHEAD_GREEN = "#30a46c";
 /** A FramePath key with Shift held over it: a click deletes it. */
@@ -229,6 +227,8 @@ export class MotionPathPanel {
   private keyMats: { doc: unknown; sig: string; mats: (Matrix | null)[] } | null = null;
   /** FramePath's frame strip: each key's diamond as last drawn. */
   private stripDots: { i: number; x: number }[] = [];
+  /** The key being slid in time with ⌘ + drag on its diamond (step 16), or null. */
+  private retimeDrag: number | null = null;
   /** A key under the pointer with Shift held: drawn red, and a click deletes it (docs/FRAMEPATH-SPEED-PLAN.md, step 3). */
   private delHover: { where: "graph" | "strip"; i: number } | null = null;
   /** Where the pointer last was over the graph or the strip, so pressing or letting go of Shift lights or clears the red key. */
@@ -388,7 +388,7 @@ export class MotionPathPanel {
       this.schedule();
     });
     // Shift pressed or let go with the pointer still over a key: it turns red or back.
-    for (const type of ["keydown", "keyup"] as const) window.addEventListener(type, (e) => { if (e.key === "Shift") this.updateDelHover(e.shiftKey); });
+    for (const type of ["keydown", "keyup"] as const) window.addEventListener(type, (e) => { if (e.key === "Shift") this.updateDelHover(e.shiftKey); if (e.key === "Meta" || e.key === "Control") this.updateRetimeHover(e.metaKey || e.ctrlKey); });
     // The line that gives the picture or the strip and graph more room sits right under the picture, above the zoom bar (the owner, 2026-10-09).
     this.element.append(this.head, this.motionBar, this.body, this.split, this.viewBar, this.lower);
     new ResizeObserver(() => this.schedule()).observe(this.lower);
@@ -810,7 +810,9 @@ export class MotionPathPanel {
     g.lineWidth = 1;
     trace(trail.tip);
     g.globalAlpha = 1;
-    g.strokeStyle = c.accent;
+    // The path in the speed graph's colour (the swatch by Stage), so the line, its dots and the graph read as one (FRAMEPATH-SPEED-PLAN step 17).
+    const pathColour = this.stagePath.colour;
+    g.strokeStyle = pathColour;
     g.lineWidth = 2;
     trace(trail.joint);
     const keyed = new Set<number>(), marks: number[] = [];
@@ -821,15 +823,15 @@ export class MotionPathPanel {
       const [px, py] = at(x, y);
       marks.push(px, py);
       g.beginPath();
-      if (f === here) { g.fillStyle = "#ffffff"; g.strokeStyle = DOT; g.lineWidth = 3; g.arc(px, py, 6, 0, Math.PI * 2); g.fill(); g.stroke(); continue; }
+      if (f === here) { g.fillStyle = "#ffffff"; g.strokeStyle = pathColour; g.lineWidth = 3; g.arc(px, py, 6, 0, Math.PI * 2); g.fill(); g.stroke(); continue; }
       // Only keyed frames get a dot (step 12); an unkeyed frame is still on the line, and a click there still goes to it.
       if (!keyed.has(f)) continue;
-      g.fillStyle = DOT;
+      g.fillStyle = pathColour;
       g.arc(px, py, 4, 0, Math.PI * 2);
       g.fill();
     }
     this.marks = Float64Array.from(marks);
-    if (this.show.length) this.drawLengths(g, trail, at);
+    if (this.show.length) this.drawLengths(g, trail, at, pathColour);
     this.drawTag(g, trail, bone, here);
   }
 
@@ -1033,12 +1035,12 @@ export class MotionPathPanel {
   }
 
   /** The distance between each pair of neighbouring dots, at the middle of the segment between them, as a number in the panel's space; left out where the segment is too short on the canvas to hold it. */
-  private drawLengths(g: CanvasRenderingContext2D, trail: BoneTrail, at: (x: number, y: number) => [number, number]): void {
+  private drawLengths(g: CanvasRenderingContext2D, trail: BoneTrail, at: (x: number, y: number) => [number, number], colour: string): void {
     g.save();
     g.font = `10px "JetBrains Mono", monospace`;
     g.textAlign = "center";
     g.textBaseline = "middle";
-    g.fillStyle = DOT;
+    g.fillStyle = colour;
     let lastRight = -Infinity;
     for (let f = 0; f < trail.frames; f++) {
       const x0 = trail.joint[f * 2]!, y0 = trail.joint[f * 2 + 1]!, x1 = trail.joint[f * 2 + 2]!, y1 = trail.joint[f * 2 + 3]!;
@@ -1393,6 +1395,41 @@ export class MotionPathPanel {
     this.schedule();
   }
 
+  /** The strip's diamond under a point of the strip, or -1. */
+  private stripDotAt(x: number, y: number): number {
+    return this.stripDots.find((q) => Math.abs(q.x - x) <= 7 && Math.abs(y - KEY_Y) <= 9)?.i ?? -1;
+  }
+
+  /** ⌘ held over a diamond: the strip shows that a drag slides the key in time (step 16). */
+  private updateRetimeHover(cmd: boolean): void {
+    if (this.retimeDrag !== null) return;
+    const o = this.lastOver, on = cmd && o?.where === "strip" && this.stripDotAt(o.x, o.y) >= 0;
+    if (on) this.keyStrip.style.cursor = "ew-resize";
+    else if (this.keyStrip.style.cursor === "ew-resize") this.keyStrip.style.cursor = "";
+  }
+
+  /**
+   * Key `i` slid to the frame under the strip's x, held a frame from each neighbour (the first key down to 0, the last up to the
+   * animation's end): its time only, so FramePath's picture does not move (`retimeTranslateKey`). The playhead goes with it.
+   */
+  private retimeKeyTo(i: number, x: number): void {
+    const s = this.session, a = s.animation, bone = s.selectedBone, keys = this.keyNodes(), k = keys?.[i];
+    if (!a || bone === null || !keys || !k || !s.history) return;
+    const f = (key: Key): number => timeFrame(keyTime(key), s.fps), prev = keys[i - 1], next = keys[i + 1];
+    const lo = prev ? f(prev) + 1 : 0, hi = next ? f(next) - 1 : timeFrame(s.length(a), s.fps);
+    const to = Math.min(hi, Math.max(lo, this.stripFrame(x))), from = f(k);
+    if (to === from) return;
+    try {
+      s.history.apply("step", retimeTranslateKey(a.name, bone, i, frameTime(to, s.fps)));
+    } catch (err) {
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+      return;
+    }
+    s.seek(to);
+    this.onStatus(`${bone}: key ${i + 1} on frame ${to}; its place and the path stay.`);
+  }
+
   /** FramePath's lower area (docs/FRAMEPATH-SPEED-PLAN.md, step 2): the ◆ toggle and the frame strip, the key on the playhead's frame and the speed graph. */
   private renderKeyStrip(): void {
     // Always shown (the owner, 2026-10-09): with no bone, no animation or split keys the strip and the graph are empty and the data says why.
@@ -1554,19 +1591,37 @@ export class MotionPathPanel {
       this.lastOver = { where: "strip", x, y };
       this.updateDelHover(e.shiftKey);
       if (this.delHover?.where === "strip") { this.deleteKeyAt(this.delHover.i); return; }
+      // ⌘ (Ctrl elsewhere) on a diamond: the key slides in time, the path stays (step 16).
+      const dot = (e.metaKey || e.ctrlKey) ? this.stripDotAt(x, y) : -1;
+      if (dot >= 0) {
+        this.retimeDrag = dot;
+        this.session.pause();
+        this.session.history?.begin(`Move key ${dot + 1} of ${this.session.selectedBone} in time`);
+        c.setPointerCapture(e.pointerId);
+        return;
+      }
       held = true;
       this.session.pause();
       c.setPointerCapture(e.pointerId);
       go(e);
     });
     c.addEventListener("pointermove", (e) => {
+      if (this.retimeDrag !== null) { this.retimeKeyTo(this.retimeDrag, localPoint(c, e)[0]); return; }
       if (held) { go(e); return; }
       const [x, y] = localPoint(c, e);
       this.lastOver = { where: "strip", x, y };
       this.updateDelHover(e.shiftKey);
+      this.updateRetimeHover(e.metaKey || e.ctrlKey);
     });
-    c.addEventListener("pointerleave", () => { if (!held) { this.lastOver = null; this.updateDelHover(false); } });
-    const up = (): void => { held = false; };
+    c.addEventListener("pointerleave", () => { if (!held && this.retimeDrag === null) { this.lastOver = null; this.updateDelHover(false); this.updateRetimeHover(false); } });
+    const up = (): void => {
+      held = false;
+      if (this.retimeDrag === null) return;
+      this.retimeDrag = null;
+      this.session.history?.end();
+      this.slotSig = "";
+      this.schedule();
+    };
     c.addEventListener("pointerup", up);
     c.addEventListener("pointercancel", up);
   }

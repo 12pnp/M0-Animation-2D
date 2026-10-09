@@ -320,3 +320,32 @@ export function setTranslateKeySpeeds(animation: string, bone: string, index: nu
     })(doc);
   };
 }
+
+/**
+ * The bone's translate key `index` moved to `time` (docs/FRAMEPATH-SPEED-PLAN.md, step 16): its place and both spans' path handles stay,
+ * so the path is the same; the span before and the span after keep their time handles at the same share of their new length, so
+ * each keeps its speed shape. Refused before 0, or at or past a neighbouring key.
+ */
+export function retimeTranslateKey(animation: string, bone: string, index: number, time: number): Edit<Skeleton> {
+  return onAnimation(animation, (a) => {
+    const keys = translateNodes(a, bone);
+    if (keys === null) throw new EditRefused(`${bone} keys translate as separate x and y: FramePath needs the combined translate keys.`);
+    const k = keys[index];
+    if (!k) throw new EditRefused(`${bone} has no translate key ${index + 1} in ${animation}.`);
+    if (!Number.isFinite(time) || time < 0) throw new EditRefused("A key cannot move before 0.");
+    const prev = keys[index - 1], next = keys[index + 1], from = keyTime(k);
+    if ((prev && time <= keyTime(prev) + 1e-6) || (next && time >= keyTime(next) - 1e-6)) throw new EditRefused(`Key ${index + 1} stays between its neighbours.`);
+    if (Math.abs(time - from) <= 1e-9) return a;
+    // A curve's time handles (entries 0, 2, 4, 6) from [t0, t1] onto [n0, n1], each the same share of its span.
+    const rescale = (c: readonly number[], t0: number, t1: number, n0: number, n1: number): number[] =>
+      c.map((v, j) => (j % 2 === 0 && t1 - t0 > 1e-9 ? shortFloat(n0 + ((v - t0) / (t1 - t0)) * (n1 - n0)) : v));
+    const out = keys.map((key, j) => {
+      if (j === index - 1) { const c = curveOf(key); return c ? ({ ...key, curve: rescale(c, keyTime(key), from, keyTime(key), time) } as Key) : key; }
+      if (j !== index) return key;
+      const { time: _t, ...rest } = key, c = curveOf(key), t2 = next ? keyTime(next) : from;
+      const moved = (time !== 0 ? { ...rest, time } : rest) as Key;
+      return c && next ? ({ ...moved, curve: rescale(c, from, t2, time, t2) } as Key) : moved;
+    });
+    return withKeys(a, translatePath(bone), out);
+  });
+}

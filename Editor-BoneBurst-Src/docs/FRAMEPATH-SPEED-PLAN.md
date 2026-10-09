@@ -402,3 +402,59 @@ already sought the playhead back (`seek` holds it); what could still leave it pa
 playhead: an edit or an undo that shortens the animation. `Session.changed()` now brings a locked, paused playhead back to the last
 frame whenever anything changes. e2e: after an edit that drops the keys past half a second, the locked playhead is on the new last
 frame (it fails with that line of `changed()` switched off). vitest 776; e2e 123 pass, the 3 AI-bridge tests fail as before.
+
+## Step 16: ⌘ + drag a strip diamond moves the key in time; the path stays (2026-10-09, the owner's twentieth note)
+
+> เมื่อ Hover บน redBox + cmd press, จะสามารถเลื่อนคีย์เฟรมได้ โดยที่ตำแหน่งต่างๆ บน "FramePath" ยังคงอยู่ที่เดิม
+> (hover on a key's diamond on the strip, hold ⌘ and press: the key slides in time, and everything on FramePath stays where it is.)
+
+The key keeps its place (x, y) and both spans keep their path handles, so the picture does not change; only when the bone gets there
+does. The two spans' time handles are scaled with their new length (each stays the same share of its span), so each span's speed
+shape is kept. `moveKeys` (the Timeline's) moves a key's time but leaves the curves' absolute time handles where they were, which
+can put a handle past the key; FramePath gets its own edit.
+
+```mermaid
+flowchart LR
+    HOVER["⌘ over a strip diamond<br/>cursor ew-resize"] --> DRAG["⌘ + drag: frame under the pointer<br/>held between the neighbours"]
+    DRAG -->|"retimeTranslateKey()"| EDIT["key.time = new frame<br/>span before / after: time handles scaled"]
+    EDIT --> SAME["places · path handles unchanged:<br/>FramePath's picture unchanged"]
+    DRAG -->|"seek"| PH["playhead stays on the key"]
+```
+
+1. `src/edit/keySpeed.ts`: `retimeTranslateKey(animation, bone, index, time)`: the key to `time`, refused at or past a neighbour
+   or before 0; the curve of the span before and of the span after keep their value handles and get their time handles scaled.
+2. `motionPanel.ts`: on the strip, ⌘ over a diamond shows the `ew-resize` cursor; ⌘ + press drags that key, one undo step,
+   between its neighbours (a frame from each; the last key up to the animation's end, the first down to 0); the playhead follows.
+   Without ⌘ the strip scrubs as before.
+3. Tests: a table test (the key's time moved, the places and value handles the same, the bone on the same path, time handles
+   inside their spans and the same share, the refusals); e2e: ⌘ + drag moves a diamond, the key's place and the picture's dots of the
+   keys are where they were, one undo step puts it back.
+
+### Result (step 16)
+
+As planned. `retimeTranslateKey` in `keySpeed.ts`; in the panel `stripDotAt`, `updateRetimeHover` (⌘ or Ctrl, held or pressed while
+over a diamond: `ew-resize`), `retimeKeyTo` and `retimeDrag`. Tests: `keySpeed.test.ts` (4 new: the key's time moved with places,
+path handles and the bone's route the same and each span's time handles at the same share; speeds kept; keys without curves; the
+refusals); `e2e/retimeKey.spec.ts` (⌘ over a diamond shows `ew-resize`, ⌘ + drag moves key 3 two frames, every place and the other
+keys' times stay, its dot in the picture is within 2 px of where it was (the view refits to the frames' points), the playhead follows,
+one undo puts it back). vitest 781 pass; e2e 126 pass, the 3 AI-bridge tests fail as before (no bridge from the dev server on 5199).
+
+## Step 17: FramePath's path in the speed graph's colour (2026-10-09, the owner's twenty-first note)
+
+> สีของเส้น FramePath ต้องสอดคล้องกับสี SpeedGraph (FramePath's line colour must match the speed graph's.)
+
+The picture drew the path's line in the theme's accent (blue) and its dots and lengths in a fixed pink (`DOT`), while the speed
+graph, the key handles and the Stage's path use the swatch colour by **Stage** (`stagePath.colour`, orange by default). Now the
+line, the keyed dots, the playhead's ring and the lengths take that colour too; `DOT` is gone.
+
+```mermaid
+flowchart LR
+    SW["swatch by Stage<br/>stagePath.colour"] --> LINE["drawPath(): line · keyed dots · playhead ring"]
+    SW --> LEN["drawLengths()"]
+    SW --> SG["drawKeySpeed()"]
+    SW --> HAND["drawKeyHandles()"]
+    SW --> ST["Stage.motionTrail"]
+```
+
+Result: done. `e2e/stagePath.spec.ts` now also finds the picked colour in the picture (it fails with the old pink and blue); the
+Motion Path, Stage path and retime e2e (31) pass. Seen on a Playwright screenshot: the path and its dots orange, as the graph.

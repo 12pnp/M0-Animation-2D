@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keyHandles, keyReaches, keySpeedPairs, keySpeeds, REACH_MIN, setKeyHandles, setTranslateKeyReaches, setTranslateKeySpeed, setTranslateKeySpeeds, spanSpeedSamples, translateNodes } from "@/edit/keySpeed";
+import { keyHandles, keyReaches, keySpeedPairs, keySpeeds, REACH_MIN, retimeTranslateKey, setKeyHandles, setTranslateKeyReaches, setTranslateKeySpeed, setTranslateKeySpeeds, spanSpeedSamples, translateNodes } from "@/edit/keySpeed";
 import { plainJson } from "@/io/json";
 import { readSkeleton } from "@/io/skeletonRead";
 import { skeletonToJson } from "@/io/skeletonWrite";
@@ -227,5 +227,46 @@ describe("reach: a leg's length on a straight span (step 10)", () => {
     expect(() => setTranslateKeyReaches("walk", "hip", 1, { out: 0.3 })(curved)).toThrow(/curved/);
     expect(() => setTranslateKeyReaches("walk", "hip", 0, { out: 0.3 })(doc([{ x: 0, curve: "stepped" }, { time: 1, x: 10 }]))).toThrow(/stepped/);
     expect(() => setTranslateKeyReaches("walk", "hip", 1, { out: Number.NaN })(doc(THREE))).toThrow(/number/);
+  });
+});
+
+describe("retimeTranslateKey: a key moved in time, the path kept (step 16)", () => {
+  // A curved key with a speed: both spans have curves, value handles off the line.
+  const curved = () => setTranslateKeySpeeds("walk", "hip", 1, { in: 1, out: 0.5 })(setKeyHandles("walk", "hip", 1, { in: [-15, -5], out: [10, 20] })(doc(THREE)));
+  const shares = (k: Key, next: Key) => { const c = k.curve as number[], t0 = k.time ?? 0, dt = (next.time ?? 0) - t0; return [0, 2, 4, 6].map((j) => (c[j]! - t0) / dt); };
+
+  it("moves only the key's time: places, path handles and the bone's path are the same; each span's time handles keep their share", () => {
+    const before = curved(), after = retimeTranslateKey("walk", "hip", 1, 0.6)(before);
+    const nb = nodes(before), na = nodes(after);
+    expect(na.map((k) => [k.x, k.y])).toEqual(nb.map((k) => [k.x, k.y]));
+    expect(na[1]!.time).toBeCloseTo(0.6, 6);
+    expect(keyHandles("hip", na)).toEqual(keyHandles("hip", nb));
+    for (const [i, j] of [[0, 1], [1, 2]] as const) shares(na[i]!, na[j]!).forEach((v, n) => expect(v).toBeCloseTo(shares(nb[i]!, nb[j]!)[n]!, 4));
+    // The bone passes the same places, only at other times: the key's place is reached at 0.6 now.
+    const [x, y] = at(after, 0.6);
+    expect(x).toBeCloseTo(30, 3);
+    expect(y).toBeCloseTo(60, 3);
+  });
+
+  it("keeps each key's speeds", () => {
+    const before = curved(), after = retimeTranslateKey("walk", "hip", 1, 1.4)(before);
+    keySpeedPairs("hip", nodes(after)).forEach((p, i) => {
+      const b = keySpeedPairs("hip", nodes(before))[i]!;
+      if (p.in !== null) expect(p.in).toBeCloseTo(b.in!, 3);
+      if (p.out !== null) expect(p.out).toBeCloseTo(b.out!, 3);
+    });
+  });
+
+  it("works on keys without curves, and the first key moves off 0", () => {
+    const s = retimeTranslateKey("walk", "hip", 0, 0.25)(doc(THREE));
+    expect(nodes(s)[0]!.time).toBe(0.25);
+    expect(nodes(s).map((k) => [k.x, k.y])).toEqual([[0, 0], [30, 60], [30, 0]]);
+  });
+
+  it("refuses a time at or past a neighbour, before 0, and a key that is not there", () => {
+    expect(() => retimeTranslateKey("walk", "hip", 1, 2)(doc(THREE))).toThrow(/neighbours/);
+    expect(() => retimeTranslateKey("walk", "hip", 1, 0)(doc(THREE))).toThrow(/neighbours/);
+    expect(() => retimeTranslateKey("walk", "hip", 0, -1)(doc(THREE))).toThrow(/before 0/);
+    expect(() => retimeTranslateKey("walk", "hip", 7, 1)(doc(THREE))).toThrow(/no translate key 8/);
   });
 });

@@ -43,6 +43,14 @@ test("Stage shows the bone's path on the Stage in the swatch's colour; the speed
     return n;
   });
   await expect.poll(blue).toBeGreaterThan(20);
+  // FramePath's path line and dots in the picture take it too (FRAMEPATH-SPEED-PLAN step 17).
+  const blueInPicture = () => page.locator(".lp-body canvas").evaluate((c: HTMLCanvasElement) => {
+    const d = c.getContext("2d")!.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i]! < 6 && d[i + 1]! < 6 && d[i + 2]! > 249) n++;
+    return n;
+  });
+  await expect.poll(blueInPicture).toBeGreaterThan(20);
   expect(await page.evaluate(() => JSON.parse(localStorage.getItem("boneburst.motionPath.stagePath") ?? "null"))).toEqual({ on: true, colour: "#0000ff" });
   await panel.getByRole("button", { name: "Path on Stage" }).click();
   expect(await shown(page)).toBeNull();
