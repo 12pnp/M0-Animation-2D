@@ -27,8 +27,8 @@ const KINDS = [
   { kind: "linear", icon: "curveLinear", title: "Linear: an even pace to the next key" },
   { kind: "bezier", icon: "curveEaseInOut", title: "Bezier: drag the handles to ease in and out" },
 ] as const;
-/** Room round the box; more on top, for the frame numbers. */
-const PAD = 10, TOP = 18;
+/** Room round the box: at the sides and the bottom enough for a handle on its edge; on top the frame numbers (compact: the owner, step 10). */
+const PAD = 7, BOTTOM = 6, TOP = 14;
 /** A span this many frames long or less gets a grid line at each frame; a longer one, at its quarters. */
 const FRAME_LINES = 12;
 const PLAYHEAD_GREEN = "#30a46c";
@@ -84,12 +84,12 @@ export class CurvesView {
   /** The canvas point of an ease point, and back. */
   private toCanvas(p: Vec): [number, number] {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight, { y0, y1 } = this.range;
-    return [PAD + p[0] * (w - 2 * PAD), h - PAD - ((p[1] - y0) / (y1 - y0)) * (h - PAD - TOP)];
+    return [PAD + p[0] * (w - 2 * PAD), h - BOTTOM - ((p[1] - y0) / (y1 - y0)) * (h - BOTTOM - TOP)];
   }
 
   private fromCanvas(x: number, y: number): Vec {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight, { y0, y1 } = this.range;
-    return [(x - PAD) / Math.max(1, w - 2 * PAD), y0 + ((h - PAD - y) / Math.max(1, h - PAD - TOP)) * (y1 - y0)];
+    return [(x - PAD) / Math.max(1, w - 2 * PAD), y0 + ((h - BOTTOM - y) / Math.max(1, h - BOTTOM - TOP)) * (y1 - y0)];
   }
 
   draw(): void {
@@ -116,7 +116,9 @@ export class CurvesView {
     // Room for handles above 1 or below 0, while a drag is not under way (the scale holds still under the pointer).
     if (!this.drag) {
       const ys = e.kind === "bezier" ? [e.out[1], e.in[1]] : [];
-      this.range = { y0: Math.min(0, ...ys) - 0.05, y1: Math.max(1, ...ys) + 0.05 };
+      // No empty margin when every handle is inside 0..1; a little beyond one that is outside.
+      const lo = Math.min(0, ...ys), hi = Math.max(1, ...ys);
+      this.range = { y0: lo < 0 ? lo - 0.05 : 0, y1: hi > 1 ? hi + 0.05 : 1 };
     }
     const at = (p: Vec) => this.toCanvas(p);
     // The grid: across, a line at each frame of a short span (its quarters for a long one), its frame on top; up, quarters. Then the
@@ -159,7 +161,7 @@ export class CurvesView {
     g.strokeStyle = PLAYHEAD_GREEN;
     g.lineWidth = 1.5;
     // From under the frame numbers, so the playhead's own stays readable.
-    g.beginPath(); g.moveTo(Math.round(px) + 0.5, TOP - 4); g.lineTo(Math.round(px) + 0.5, h); g.stroke();
+    g.beginPath(); g.moveTo(Math.round(px) + 0.5, TOP - 2); g.lineTo(Math.round(px) + 0.5, h); g.stroke();
     // The curve: Spine's per-channel bezier, its control points the ends and the two handles.
     const cl = this.host.colours();
     g.strokeStyle = cl.path;

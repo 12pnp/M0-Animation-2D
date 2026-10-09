@@ -222,3 +222,9 @@ when longer; each line has its frame on top (rounded to a tenth on a quarter tha
 one before is left out, never the last). The box starts 18 px down for them; the playhead's green line starts under them. The host gives
 the span's frames (`curveSpan()`: `from`, `to`); a test hook lists the labels drawn (`curveFrameLabels`). `curvesView.spec.ts` (11): on
 key 2's span (frames 4–8) the labels are 4, 5, 6, 7, 8. Seen on a Playwright screenshot.
+
+### Step 10: a compact Curves view (done, 2026-10-09; the owner: "reduce space, make it look compact")
+
+The space between the frame numbers and the box, and under the box, is cut: margins 7 px at the sides, 6 at the bottom (a handle on
+the box's edge still fits), 14 on top for the numbers; the 5 % of empty range above and below the box is only added when a handle
+reaches past 0 or 1.
