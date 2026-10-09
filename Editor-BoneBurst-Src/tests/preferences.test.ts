@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { DEFAULTS, Preferences, PREFERENCES_KEY, readPreferences, type Store, writePreferences } from "@/ui/preferences";
+import { DEFAULTS, Preferences, PREFERENCES_KEY, readPreferences, type Store, themeDefaults, writePreferences } from "@/ui/preferences";
 
 /** A storage stand-in; `blocked` makes every call throw, as a private window's storage can. */
 function store(initial: string | null = null, blocked = false): Store & { saved: string | null } {
@@ -14,7 +14,7 @@ function store(initial: string | null = null, blocked = false): Store & { saved:
 describe("preferences", () => {
   it("start from the defaults, and read back what was written", () => {
     expect(readPreferences(null)).toEqual(DEFAULTS);
-    const p = { theme: "dark" as const, rulers: false, boneSelect: false, imageSelect: false, otherSelect: false, boneNames: true, pickGlow: false, compensate: true, nudgeStep: 0.5, nudgeScaleStep: 0.05, nudgeBigFactor: 4, uiScale: 80, fontSize: "large" as const, toolbarLabels: "hide" as const, toolbarPosition: "right" as const, fewerTicks: true, defaultFps: 24, treeColours: false, treeIndent: 20, treeGuideColour: "#336699", stagePanels: false, fullScreenOnStart: false, boneColour: "#334455", boneSize: 2.5, selectedBoneColour: "#ff00aa", bones: false, constraints: false, hideIkBones: true, rulerColour: "#112233", rulerOpacity: 0.4, rulerTextColour: "#ffee00", undoSteps: 1200, referenceOpacity: 0.3, ai: true, autosave: false, autosaveSeconds: 90, saveTo: "file" as const, onion: true, onionBefore: 3, onionAfter: 0, onionKeyedOnly: true, onionColour: false, grid: true, checker: false, axes: false, checkerColour: "#112233", gridColour: "#445566", gridThickness: 2.5, axisXColour: "#aa0000", axisYColour: "#00aa00", axisThickness: 3, tabBarColour: "#101820", tabActiveColour: "auto", tabTextColour: "#ddeeff", tabDimTextColour: "#778899", gridSize: 12.5, snap: false, snapGrid: false, snapGuides: false, snapBones: false, snapPixels: true };
+    const p = { theme: "dark" as const, rulers: false, boneSelect: false, imageSelect: false, otherSelect: false, boneNames: true, pickGlow: false, compensate: true, nudgeStep: 0.5, nudgeScaleStep: 0.05, nudgeBigFactor: 4, uiScale: 80, fontSize: "large" as const, toolbarLabels: "hide" as const, toolbarPosition: "right" as const, fewerTicks: true, defaultFps: 24, treeColours: false, treeIndent: 20, treeGuideColour: "#336699", stagePanels: false, fullScreenOnStart: false, boneColour: "#334455", boneSize: 2.5, selectedBoneColour: "#ff00aa", bones: false, constraints: false, hideIkBones: true, rulerColour: "#112233", rulerOpacity: 0.4, rulerTextColour: "#ffee00", undoSteps: 1200, referenceOpacity: 0.3, ai: true, autosave: false, autosaveSeconds: 90, saveTo: "file" as const, onion: true, onionBefore: 3, onionAfter: 0, onionKeyedOnly: true, onionColour: false, grid: true, checker: false, axes: false, checkerColour: "#112233", gridColour: "#445566", gridThickness: 2.5, axisXColour: "#aa0000", axisYColour: "#00aa00", axisThickness: 3, tabBarColour: "#101820", tabActiveColour: "auto", tabTextColour: "#ddeeff", tabDimTextColour: "#778899", graphColour: "#c0c0c0", gridSize: 12.5, snap: false, snapGrid: false, snapGuides: false, snapBones: false, snapPixels: true };
     expect(readPreferences(writePreferences(p))).toEqual(p);
   });
   it.each([
@@ -90,11 +90,31 @@ describe("the user interface preferences", () => {
 });
 
 describe("themes", () => {
+  it("Hybrid is built in: the editor dark, the graphs light gray; a file from before it gets it, and keeps its own graph colour once set (HYBRID-THEME-PLAN)", () => {
+    const st = { saved: null as string | null, getItem: () => st.saved, setItem: (_k: string, v: string) => { st.saved = v; } };
+    const prefs = new Preferences(st, () => false);
+    prefs.set({ theme: "hybrid" });
+    expect(prefs.scheme).toBe("dark");
+    expect(prefs.values.graphColour).toBe("#d3d3d3");
+    expect(themeDefaults("hybrid").graphColour).toBe("#d3d3d3");
+    expect(themeDefaults("dark").graphColour).toBe("auto");
+    // Dark and Light keep the theme's own panel behind their graphs.
+    prefs.set({ theme: "dark" });
+    expect(prefs.values.graphColour).toBe("auto");
+    // A file written before Hybrid (only Light and Dark stored) still has it, with its light graphs.
+    const old = JSON.stringify({ version: 2, theme: "dark", themes: [{ id: "light", name: "Light", base: "light", values: {} }, { id: "dark", name: "Dark", base: "dark", values: {} }] });
+    const read = new Preferences({ getItem: () => old, setItem: () => {} }, () => false);
+    expect(read.themes.find((t) => t.id === "hybrid")).toMatchObject({ name: "Hybrid", base: "dark", values: { graphColour: "#d3d3d3" } });
+    // A colour set on Hybrid is kept across a reload.
+    prefs.set({ theme: "hybrid", graphColour: "#b0b0b0" });
+    expect(new Preferences(st, () => false).values.graphColour).toBe("#b0b0b0");
+  });
+
   const mem = (): Store & { saved: string | null } => { const st = { saved: null as string | null, getItem: () => st.saved, setItem: (_k: string, v: string) => { st.saved = v; } }; return st; };
 
-  it("start with Light and Dark, following the system", () => {
+  it("start with Light, Dark and Hybrid, following the system", () => {
     const prefs = new Preferences(null, () => true);
-    expect(prefs.themes.map((t) => t.id)).toEqual(["light", "dark"]);
+    expect(prefs.themes.map((t) => t.id)).toEqual(["light", "dark", "hybrid"]);
     expect(prefs.values.theme).toBe("system");
     expect(prefs.active.id).toBe("dark");
     expect(prefs.scheme).toBeNull();
@@ -124,16 +144,18 @@ describe("themes", () => {
     prefs.set({ theme: made.id });
     expect(prefs.scheme).toBe("light");
     prefs.deleteTheme(made.id);
-    expect(prefs.themes.map((t) => t.id)).toEqual(["light", "dark"]);
+    expect(prefs.themes.map((t) => t.id)).toEqual(["light", "dark", "hybrid"]);
     expect(prefs.values.theme).toBe("light");
   });
 
-  it("leave Light and Dark in place: no rename, no delete, no new base", () => {
+  it("leave Light, Dark and Hybrid in place: no rename, no delete, no new base", () => {
     const prefs = new Preferences(null, () => false);
-    prefs.renameTheme("dark", "Black");
-    prefs.setThemeBase("dark", "light");
-    prefs.deleteTheme("dark");
-    expect(prefs.themes).toMatchObject([{ id: "light", name: "Light", base: "light" }, { id: "dark", name: "Dark", base: "dark" }]);
+    for (const id of ["dark", "hybrid"]) {
+      prefs.renameTheme(id, "Black");
+      prefs.setThemeBase(id, "light");
+      prefs.deleteTheme(id);
+    }
+    expect(prefs.themes).toMatchObject([{ id: "light", name: "Light", base: "light" }, { id: "dark", name: "Dark", base: "dark" }, { id: "hybrid", name: "Hybrid", base: "dark" }]);
   });
 
   it("swap the built-in theme in force when the system's scheme changes", () => {
@@ -169,8 +191,8 @@ describe("themes", () => {
   it("drop a stored theme that does not read, and fall back to the system when the one in use is gone", () => {
     const text = JSON.stringify({ version: 2, theme: "ghost", themes: [{ id: "x", name: "", base: "dark", values: {} }, { id: "y", name: "Why", base: "purple", values: {} }, { id: "z", name: "Zed", base: "light", values: { boneColour: "#0a0b0c", boneSize: 99 } }] });
     const prefs = new Preferences({ getItem: () => text, setItem: () => {} }, () => false);
-    expect(prefs.themes.map((t) => t.id)).toEqual(["light", "dark", "z"]);
-    expect(prefs.themes[2]!.values).toMatchObject({ boneColour: "#0a0b0c", boneSize: DEFAULTS.boneSize });
+    expect(prefs.themes.map((t) => t.id)).toEqual(["light", "dark", "hybrid", "z"]);
+    expect(prefs.themes[3]!.values).toMatchObject({ boneColour: "#0a0b0c", boneSize: DEFAULTS.boneSize });
     expect(prefs.values.theme).toBe("system");
   });
 });

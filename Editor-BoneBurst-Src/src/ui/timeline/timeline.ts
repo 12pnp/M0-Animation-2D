@@ -19,6 +19,7 @@ import {
 } from "./layout";
 import { keysOf } from "../shortcuts";
 import { localPoint, pageScale } from "../pageScale";
+import { graphColours } from "../graphLook";
 
 const CURVES: ReadonlyArray<{ label: string; title: string; icon: IconName; curve: "linear" | "stepped" | Shape }> = [
   { label: "Linear", icon: "curveLinear", title: "Straight from each selected key to the next", curve: "linear" },
@@ -433,20 +434,22 @@ export class Timeline {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     const css = view.getComputedStyle(this.element);
     const col = (n: string) => css.getPropertyValue(n).trim();
-    g.fillStyle = col("--panel");
+    // The graph's body in the graph colours (a theme like Hybrid gives it its own); the ruler and the playhead tag keep the theme's.
+    const gc = graphColours(css);
+    g.fillStyle = gc("--panel");
     g.fillRect(0, 0, width, height);
     const s = this.session, a = s.animation;
     if (!a) return;
     const v = this.view, fps = s.fps, end = timeFrame(s.length(a), fps);
     // Past the end, dimmed.
     const ex = frameX(v, end);
-    if (ex < width) { g.fillStyle = col("--bg"); g.globalAlpha = 0.5; g.fillRect(Math.max(0, ex), RULER, width, height); g.globalAlpha = 1; }
+    if (ex < width) { g.fillStyle = gc("--bg"); g.globalAlpha = 0.5; g.fillRect(Math.max(0, ex), RULER, width, height); g.globalAlpha = 1; }
     // A closed loop's closing frame is not a key you edit: a dashed line where it falls, "= 0" under the ruler.
     if (s.loopOf(a.name) && end > timeFrame(animationDuration(a), fps)) {
       const sx = Math.round(ex) + 0.5;
       g.save();
-      g.strokeStyle = col("--muted");
-      g.fillStyle = col("--muted");
+      g.strokeStyle = gc("--muted");
+      g.fillStyle = gc("--muted");
       g.setLineDash([3, 3]);
       g.beginPath(); g.moveTo(sx, RULER); g.lineTo(sx, height); g.stroke();
       g.setLineDash([]);
@@ -458,7 +461,7 @@ export class Timeline {
     // The ruler's frame lines run down through the graph.
     const step = labelStep(v.frameWidth);
     const firstFrame = Math.max(0, Math.floor(v.first)), lastFrame = Math.ceil(xFrame(v, width));
-    g.strokeStyle = col("--line");
+    g.strokeStyle = gc("--line");
     g.globalAlpha = 0.35;
     g.beginPath();
     for (let f = firstFrame; f <= lastFrame; f++) {
@@ -469,7 +472,7 @@ export class Timeline {
     g.stroke();
     g.globalAlpha = 1;
     this.paintRuler(g, width, 0, col, step, firstFrame, lastFrame);
-    this.paintGraph(g, width, height, col);
+    this.paintGraph(g, width, height, gc);
     this.paintPlayheadBadge(g, width, 0, col);
   }
 

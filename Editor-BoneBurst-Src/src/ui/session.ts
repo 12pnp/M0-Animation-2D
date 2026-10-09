@@ -111,6 +111,8 @@ export class Session {
   time = 0;
   playing = false;
   loop = true;
+  /** FramePath's frame lock (docs/FRAMEPATH-SPEED-PLAN.md, step 15): a seek is held to the animation's frames and Q / W wrap round. */
+  frameLock = false;
   /** What the next playback step does to physics: start it over, then step it. */
   private physics: "reset" | "update" = "reset";
   /** The last playback step: its number (so each step poses anew) and its physics. */
@@ -241,6 +243,9 @@ export class Session {
 
   changed(): void {
     this.followReimports();
+    // The frame lock holds the playhead whatever moved the end: a shorter animation shown, its last keys deleted, an undo (step 15).
+    const last = this.lastFrame();
+    if (last !== null && !this.playing && this.frame > last) this.time = Math.fround(frameTime(last, this.fps));
     for (const f of this.listeners) f();
   }
 
@@ -373,8 +378,21 @@ export class Session {
     this.clearUnkeyed();
     this.playing = false;
     this.step = "none";
-    this.time = Math.fround(frameTime(Math.max(0, Math.round(frame)), this.fps));
+    const last = this.lastFrame(), f = Math.max(0, Math.round(frame));
+    this.time = Math.fround(frameTime(last === null ? f : Math.min(last, f), this.fps));
     this.changed();
+  }
+
+  /** One frame on (`by` 1) or back (-1): Q and W. With the frame lock on, past the last frame is 0 and before 0 the last frame. */
+  stepFrame(by: 1 | -1): void {
+    const last = this.lastFrame(), f = this.frame + by;
+    this.seek(last === null ? f : f > last ? 0 : f < 0 ? last : f);
+  }
+
+  /** The animation's last frame while the frame lock holds the playhead; null when it is off or there is no animation. */
+  private lastFrame(): number | null {
+    const a = this.animation;
+    return this.frameLock && a ? timeFrame(this.length(a), this.fps) : null;
   }
 
   /** Play. In Pose mode this first switches to Animate (the last animation shown, or the first), then plays. */

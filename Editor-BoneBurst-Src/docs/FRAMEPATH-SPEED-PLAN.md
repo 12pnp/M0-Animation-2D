@@ -365,3 +365,40 @@ Result: done. `MotionPathPanel.autoKey` and its wiring in `app.ts` are deleted; 
 (`setUnkeyed`) is gone from the panel. Auto Key's tooltip says FramePath's drags always key. e2e (`motionPanelEdit.spec.ts`): with
 Auto Key off, a drag on the picture still writes the key as one undo step, and Auto Key stays off (on the old code the drag posed the
 bone unkeyed, which this test reads as no key written).
+
+## Step 15: Fit as an icon on the strip; a lock that holds the playhead to the animation (2026-10-09, the owner's seventeenth note)
+
+> 1 move Fit to be icon at red box. 2 add new bt, for lock Cap[5] not go over max we have, lock min max, and when press Q,W Cap[5] must loop
+
+The red box is the right end of FramePath's frame strip, in the ruler row. Cap[5] is the strip's green playhead tag.
+
+```mermaid
+flowchart LR
+    FIT["fit icon (strip, ruler row, right)"] -->|"fitGraph(false)"| VIEW["speed graph window"]
+    LOCK["lock icon (strip, tab row, right)"] -->|"session.frameLock"| SEEK["Session.seek(): held to 0 … end"]
+    LOCK --> STEP["Session.stepFrame(±1): Q / W wrap end ↔ 0"]
+```
+
+1. The speed graph's header loses its **Fit** text button; a fit icon sits at the right end of the strip's ruler row and does the same
+   (the whole animation across the graph and the strip). The graph's plot leaves room on its right so no frame is under the icons.
+2. Under it, at the right end of the strip's tab row, a **lock** icon (Lucide `lock` / `lock-open`, vendored from the same 1.52.0
+   release). On: `Session.frameLock`, and `seek` holds the playhead to frame 0 … the animation's last frame (the Timeline's playhead
+   too, since it seeks the same session); Q and W (`stepFrame`) wrap: W on the last frame goes to 0, Q on 0 to the last. Off: as before
+   (no upper bound, no wrap). Kept per browser (`boneburst.frameLock`). Pose mode has no animation: nothing to hold.
+3. Tests: a session table test (held seek, wrap both ways, off unchanged); e2e: the lock and Q/W wrap, and the fit icon fits.
+
+### Result (step 15)
+
+As planned. `Session.frameLock`, `seek` held to `0 … last` and `stepFrame` wrapping (Q / W in `app.ts` call it); the panel's
+`stripFit` and `lockBtn` at the strip's right end, the lock kept in `boneburst.frameLock`; the speed header keeps Stage, the colour
+and Node; the graph's plot ends 34 px from the right so the icons cover no frame. `lock.svg` and `lock-open.svg` are Lucide 1.52.0's,
+listed in the Lucide MANIFEST. e2e `frameLock.spec.ts`: off, W goes past the end; on, the playhead comes back to the last frame, W
+wraps to 0, Q to the last, a seek past the end stops there, the setting is kept, and off again W goes past the end (it fails with the
+wrap taken out); the fit icon undoes Node's zoom. Checked on a Playwright screenshot of the strip. vitest 776 pass; e2e 123 pass, the
+3 AI-bridge tests fail as before (no bridge from the dev server on 5199).
+
+**Revised (step 15, the owner's eighteenth note: "when press lock, playhead (Cap[5]) must auto back in range"):** pressing the lock
+already sought the playhead back (`seek` holds it); what could still leave it past the end was the end moving under a locked
+playhead: an edit or an undo that shortens the animation. `Session.changed()` now brings a locked, paused playhead back to the last
+frame whenever anything changes. e2e: after an edit that drops the keys past half a second, the locked playhead is on the new last
+frame (it fails with that line of `changed()` switched off). vitest 776; e2e 123 pass, the 3 AI-bridge tests fail as before.

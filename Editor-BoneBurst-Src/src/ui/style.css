@@ -725,6 +725,12 @@ dialog.preferences .slider input[type="number"] { width: 64px; }
 .lp-slots .lp-keytoggle { flex: none; width: 40px; height: 46px; padding: 0; border: 0; border-right: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--muted); font-size: 14px; }
 .lp-slots .lp-keytoggle.on { color: var(--accent); }
 .lp-slots .lp-keystrip { flex: 1; min-width: 0; height: 46px; display: block; cursor: ew-resize; touch-action: none; }
+/* At the strip's right end (FRAMEPATH-SPEED-PLAN step 15): Fit over the ruler, the frame lock over the tabs. */
+.lp-slots .lp-stripfit, .lp-slots .lp-framelock { position: absolute; right: 2px; width: 26px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: var(--panel); color: var(--muted); }
+.lp-slots .lp-stripfit { top: 1px; }
+.lp-slots .lp-framelock { bottom: 1px; }
+.lp-slots .lp-stripfit:hover, .lp-slots .lp-framelock:hover { color: var(--text); }
+.lp-slots .lp-framelock[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
 
 .lp-graph { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--line); flex: none; }
 .lp-graph[hidden] { display: none; }

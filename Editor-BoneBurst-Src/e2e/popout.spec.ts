@@ -17,6 +17,30 @@ async function openStickman(page: Page): Promise<void> {
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
 }
 
+test("a popout takes the theme chosen in Preferences, not the system's, and follows a later change (docs/POPOUT-THEME-PLAN.md)", async ({ page }) => {
+  await page.emulateMedia({ colorScheme: "dark" });
+  await openStickman(page);
+  // Light chosen while the system is dark.
+  await page.getByRole("button", { name: /^Preferences/ }).click();
+  await page.getByRole("combobox", { name: "Theme" }).selectOption({ label: "Light" });
+  await page.keyboard.press("Escape");
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.locator(".stage-panel button.mode").click();
+  await page.evaluate(() => (window as unknown as { boneburst: { session: { select(s: unknown): void } } }).boneburst.session.select({ kind: "bone", name: "hips" }));
+  const popup = await popOut(page, "Motion Path");
+  await popup.emulateMedia({ colorScheme: "dark" });
+  await expect(popup.locator("html")).toHaveAttribute("data-theme", "light");
+  // The speed graph is painted in Light's panel colour (white), not the dark one.
+  const corner = () => popup.locator(".lp-speed-canvas").evaluate((c: HTMLCanvasElement) => Array.from(c.getContext("2d")!.getImageData(3, 3, 1, 1).data.slice(0, 3)));
+  await expect.poll(corner).toEqual([255, 255, 255]);
+  // Dark chosen afterwards reaches the window, and the graph is painted again.
+  await page.getByRole("button", { name: /^Preferences/ }).click();
+  await page.getByRole("combobox", { name: "Theme" }).selectOption({ label: "Dark" });
+  await page.keyboard.press("Escape");
+  await expect(popup.locator("html")).toHaveAttribute("data-theme", "dark");
+  await expect.poll(corner).toEqual([45, 45, 45]);
+});
+
 /** Pop the panel whose tab reads `title` out into its own window. */
 async function popOut(page: Page, title: string): Promise<Page> {
   await page.locator(".dv-tab", { hasText: title }).first().click({ button: "right" });

@@ -1,5 +1,5 @@
 import { pickColour } from "./colourPopup";
-import { AUTOSAVE_RANGE, BUILT_IN_THEMES, BONE_SIZE_RANGE, DEFAULTS, GRID_RANGE, NUDGE_FACTOR_RANGE, NUDGE_RANGE, ONION_RANGE, DEFAULT_FPS_RANGE, type FontSize, type Preferences, type PreferenceValues, type SaveTo, TREE_INDENT_RANGE, type ToolbarLabels, type ToolbarPosition, THICKNESS_RANGE, UI_SCALE_RANGE, UNDO_RANGE } from "./preferences";
+import { AUTOSAVE_RANGE, BUILT_IN_THEMES, BONE_SIZE_RANGE, themeDefaults, GRID_RANGE, NUDGE_FACTOR_RANGE, NUDGE_RANGE, ONION_RANGE, DEFAULT_FPS_RANGE, type FontSize, type Preferences, type PreferenceValues, type SaveTo, TREE_INDENT_RANGE, type ToolbarLabels, type ToolbarPosition, THICKNESS_RANGE, UI_SCALE_RANGE, UNDO_RANGE } from "./preferences";
 import { showContextMenu } from "./contextMenu";
 import { toStyle } from "./pageScale";
 
@@ -54,6 +54,8 @@ export class PreferencesDialog {
         note("The frame rate a new project starts with."),
         check("Fewer timeline ticks (1-2-5 series)", p.fewerTicks, (on) => this.prefs.set({ fewerTicks: on })),
         note("The height of each row in the timeline and graph."),
+        colourPicker("Graph background colour", p.graphColour, (c) => this.prefs.set({ graphColour: c }), true, themeColour("--panel")),
+        note("Behind the Timeline's curve graph and Motion Path's speed graph; their lines and numbers follow it. Automatic is the theme's panel; Hybrid makes it light gray."),
       ],
       tree: [
         check("Tree colours", p.treeColours, (on) => this.prefs.set({ treeColours: on })),
@@ -165,8 +167,10 @@ export class PreferencesDialog {
       reset.className = "reset";
       reset.textContent = "Reset";
       reset.title = `Put the ${sec.label} settings back to their defaults`;
-      reset.disabled = keys.every((k) => p[k] === DEFAULTS[k]);
-      reset.addEventListener("click", () => this.prefs.set(Object.fromEntries(keys.map((k) => [k, DEFAULTS[k]]))));
+      // The theme in use's own defaults (Hybrid's light graphs), DEFAULTS for the rest.
+      const base = themeDefaults(this.prefs.active.id);
+      reset.disabled = keys.every((k) => p[k] === base[k]);
+      reset.addEventListener("click", () => this.prefs.set(Object.fromEntries(keys.map((k) => [k, base[k]]))));
       h.append(name, reset);
       content.append(h, ...(sections[sec.id] ?? []));
     }
@@ -261,7 +265,7 @@ export class PreferencesDialog {
 const KEYS: Readonly<Record<string, readonly (keyof PreferenceValues)[]>> = {
   general: ["undoSteps", "referenceOpacity", "fullScreenOnStart"],
   interface: ["fontSize", "uiScale", "toolbarPosition", "toolbarLabels"],
-  timeline: ["defaultFps", "fewerTicks"],
+  timeline: ["defaultFps", "fewerTicks", "graphColour"],
   tree: ["treeColours", "treeIndent", "treeGuideColour"],
   files: ["saveTo", "autosave", "autosaveSeconds"],
   display: ["rulers", "rulerColour", "rulerOpacity", "rulerTextColour", "stagePanels", "bones", "boneColour", "boneSize", "selectedBoneColour", "constraints", "compensate", "pickGlow", "boneNames", "boneSelect", "imageSelect", "otherSelect"],

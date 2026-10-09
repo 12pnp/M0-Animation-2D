@@ -10,12 +10,12 @@ test("a new theme keeps its own tree indentation, and switching themes switches 
   await page.locator(".app-icon").click();
   const dialog = page.locator("dialog.preferences");
   const theme = dialog.getByLabel("Theme", { exact: true });
-  await expect(theme.locator("option")).toHaveText(["Follow the system", "Light", "Dark"]);
+  await expect(theme.locator("option")).toHaveText(["Follow the system", "Light", "Dark", "Hybrid"]);
   await theme.selectOption("dark");
   await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
   await dialog.getByRole("button", { name: "Theme menu" }).click();
   await page.getByRole("menuitem", { name: /^New Theme/ }).click();
-  await expect(theme.locator("option")).toHaveText(["Follow the system", "Light", "Dark", "Dark 2"]);
+  await expect(theme.locator("option")).toHaveText(["Follow the system", "Light", "Dark", "Hybrid", "Dark 2"]);
   await dialog.getByRole("button", { name: "Theme menu" }).click();
   await expect(page.getByRole("menuitem", { name: /^Delete/ })).toBeEnabled();
   await page.keyboard.press("Escape");
@@ -36,7 +36,7 @@ test("a new theme keeps its own tree indentation, and switching themes switches 
   await expect(indent).toHaveValue("30");
   await dialog.getByRole("button", { name: "Theme menu" }).click();
   await page.getByRole("menuitem", { name: /^Delete/ }).click();
-  await expect(theme.locator("option")).toHaveText(["Follow the system", "Light", "Dark"]);
+  await expect(theme.locator("option")).toHaveText(["Follow the system", "Light", "Dark", "Hybrid"]);
 });
 
 test("following the system: when the system's scheme changes, what is drawn and what is worked out from the theme is made again (no old colours left on the canvases)", async ({ page }) => {

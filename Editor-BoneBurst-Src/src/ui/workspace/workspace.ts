@@ -48,6 +48,8 @@ export class Workspace {
   private project: string | null = null;
   /** Panels the saved layout had closed: they are not brought back with the panels a build adds. */
   private closed = new Set<PanelId>();
+  /** The popout windows Dockview opened, for the theme to follow them. */
+  private readonly popouts = new Set<Window>();
 
   constructor(
     host: HTMLElement,
@@ -78,7 +80,12 @@ export class Workspace {
     });
     const scheme = window.matchMedia("(prefers-color-scheme: dark)");
     scheme.addEventListener("change", () => this.api.updateOptions({ theme: themeFor(prefersDark()) }));
-    this.api.onDidAddPopoutGroup((p) => onWindow(p.window));
+    // A popout window is a document of its own: its <html> takes the main page's theme and appearance values, now and on every change
+    // (docs/POPOUT-THEME-PLAN.md).
+    this.api.onDidAddPopoutGroup((p) => { this.popouts.add(p.window); mirrorRoot(p.window); onWindow(p.window); });
+    new MutationObserver(() => {
+      for (const w of this.popouts) { if (w.closed) this.popouts.delete(w); else mirrorRoot(w); }
+    }).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme", "style"] });
     this.restore();
     this.api.onDidLayoutChange(() => this.scheduleSave());
   }
@@ -229,6 +236,17 @@ export class Workspace {
       this.add(id, arrivalPlacement(id, this.deferred, this.present()));
       this.sizeAlone(id);
     }
+  }
+}
+
+/** A popout window's <html> made like the main page's: the theme forced (or not) and the inline appearance values. */
+function mirrorRoot(w: Window): void {
+  const from = document.documentElement, to = w.document?.documentElement;
+  if (!to) return;
+  for (const name of ["data-theme", "style"]) {
+    const v = from.getAttribute(name);
+    if (v === null) to.removeAttribute(name);
+    else if (to.getAttribute(name) !== v) to.setAttribute(name, v);
   }
 }
 

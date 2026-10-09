@@ -473,7 +473,11 @@ export function mountApp(root: HTMLElement): void {
     ["tags", { element: tagsPanel.element }],
     ["preview", { element: previewPanel.element, layout: (w, h) => previewPanel.layout(w, h), reset: () => previewPanel.fitView() }],
     ["animations", { element: animationsPanel.element }],
-  ]), (w) => w.addEventListener("keydown", onKey), (id) => panelInfo.open(id));
+  ]), (w) => {
+    w.addEventListener("keydown", onKey);
+    // The panels moved there were painted in the main page's colours: paint them again in the window's (docs/POPOUT-THEME-PLAN.md).
+    requestAnimationFrame(() => applyPrefs(prefs.values));
+  }, (id) => panelInfo.open(id));
   const activityBtns = workspace.built.map((id) => {
     const b = iconButton(button(PANEL_TITLES[id], `${PANEL_TITLES[id]}: show or hide the panel`, () => workspace.toggle(id)), PANEL_ICONS[id], false);
     b.dataset.panel = id;
@@ -546,6 +550,8 @@ export function mountApp(root: HTMLElement): void {
     for (const [name, value] of [["--tab-bar-bg", p.tabBarColour], ["--tab-active-bg", p.tabActiveColour], ["--tab-text", p.tabTextColour], ["--tab-dim-text", p.tabDimTextColour]] as const) {
       if (value === "auto") rootStyle.removeProperty(name); else rootStyle.setProperty(name, value);
     }
+    // The graphs' background (docs/HYBRID-THEME-PLAN.md): "auto" leaves the theme's panel.
+    if (p.graphColour === "auto") rootStyle.removeProperty("--graph-bg"); else rootStyle.setProperty("--graph-bg", p.graphColour);
     // The rig tree's indent guides: "auto" leaves the theme's line colour.
     if (p.treeGuideColour === "auto") rootStyle.removeProperty("--tree-guide"); else rootStyle.setProperty("--tree-guide", p.treeGuideColour);
     // The rulers' background: the colour at its opacity ("auto" is the panel colour); the stage and the Fit button read it.
@@ -1005,8 +1011,8 @@ export function mountApp(root: HTMLElement): void {
     brushSmaller: () => { if (!brush.on) return false; say(`Brush ${resizeBrush(-1)} px.`); stage.redraw(); },
     brushLarger: () => { if (!brush.on) return false; say(`Brush ${resizeBrush(1)} px.`); stage.redraw(); },
     play: () => timeline.togglePlay(),
-    prevFrame: () => session.seek(session.frame - 1),
-    nextFrame: () => session.seek(session.frame + 1),
+    prevFrame: () => session.stepFrame(-1),
+    nextFrame: () => session.stepFrame(1),
     firstFrame: () => session.seek(0),
     lastFrame: () => { const a = session.animation; if (a) session.seek(timeFrame(session.length(a), session.fps)); },
     key: () => timeline.keySelected(),

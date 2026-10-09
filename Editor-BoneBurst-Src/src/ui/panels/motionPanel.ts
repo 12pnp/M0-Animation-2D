@@ -4,7 +4,8 @@ import { drawnVertices } from "@/engine/draw";
 import { boneInherit } from "@/model/defaults";
 import type { Key, Skeleton } from "@/model/skeleton";
 import { frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
-import { iconButton } from "../icons";
+import { iconButton, setIcon } from "../icons";
+import { graphColours } from "../graphLook";
 import { pickColour } from "../colourPopup";
 import { showContextMenu } from "../contextMenu";
 import type { MenuItem } from "../menubar";
@@ -45,6 +46,7 @@ const GRAPH_KEY = "boneburst.motionPath.graphHeight";
 /** FramePath's handles on the picture and its speed curve, and the path on the Stage, until a colour is picked (docs/STAGE-PATH-PLAN.md). */
 const PATH_COLOUR = "#ff9f1c";
 const STAGE_PATH_KEY = "boneburst.motionPath.stagePath";
+const FRAME_LOCK_KEY = "boneburst.frameLock";
 const PAST = "rgb(230, 64, 51)", FUTURE = "rgb(51, 179, 77)";
 const LAYERS_KEY = "boneburst.motionPath.layers";
 const TIERS_KEY = "boneburst.motionPath.tiers";
@@ -213,6 +215,9 @@ export class MotionPathPanel {
   /** FramePath's frame strip (drawn like the Timeline's ruler) and its ◆ toggle. */
   private readonly keyStrip = document.createElement("canvas");
   private readonly keyToggle = document.createElement("button");
+  /** At the strip's right end (step 15): Fit for the speed graph and the strip, and the frame lock under it. */
+  private readonly stripFit = document.createElement("button");
+  private readonly lockBtn = document.createElement("button");
   /** FramePath keys whose mode was chosen where the file cannot show it (Mirror or Break at 0 and 0, Break on equal speeds), and for which bone. */
   private keyModes = new Map<string, "mirror" | "break">();
   /** The speed graph's own leg mode per key, where the data cannot show it: Broken on equal speeds and reaches (step 11). */
@@ -364,6 +369,24 @@ export class MotionPathPanel {
     this.keyToggle.textContent = "◆";
     this.keyToggle.setAttribute("aria-label", "Toggle key");
     this.keyToggle.addEventListener("click", () => this.toggleKey());
+    this.stripFit.type = "button";
+    this.stripFit.className = "lp-stripfit";
+    this.stripFit.title = "Fit: the whole animation across the strip and the speed graph (double-click on the graph does the same)";
+    iconButton(this.stripFit, "fit", false);
+    this.stripFit.addEventListener("click", () => this.fitGraph(false));
+    this.lockBtn.type = "button";
+    this.lockBtn.className = "lp-framelock";
+    this.lockBtn.setAttribute("aria-label", "Frame lock");
+    iconButton(this.lockBtn, "lockOpen", false);
+    try { session.frameLock = localStorage.getItem(FRAME_LOCK_KEY) === "1"; } catch { /* off */ }
+    this.lockBtn.addEventListener("click", () => {
+      session.frameLock = !session.frameLock;
+      try { localStorage.setItem(FRAME_LOCK_KEY, session.frameLock ? "1" : "0"); } catch { /* not kept */ }
+      // On: a playhead already past the end comes back into the animation.
+      if (session.frameLock) session.seek(session.frame);
+      this.slotSig = "";
+      this.schedule();
+    });
     // Shift pressed or let go with the pointer still over a key: it turns red or back.
     for (const type of ["keydown", "keyup"] as const) window.addEventListener(type, (e) => { if (e.key === "Shift") this.updateDelHover(e.shiftKey); });
     // The line that gives the picture or the strip and graph more room sits right under the picture, above the zoom bar (the owner, 2026-10-09).
@@ -509,7 +532,8 @@ export class MotionPathPanel {
   private schedule(): void {
     if (this.queued) return;
     this.queued = true;
-    requestAnimationFrame(() => { this.queued = false; this.draw(); this.drawSpeed(); });
+    // The window the panel is in: a popout's own frames, so it repaints there while the main window is in the background.
+    (this.element.ownerDocument.defaultView ?? window).requestAnimationFrame(() => { this.queued = false; this.draw(); this.drawSpeed(); });
   }
 
   /** The bone the panel measures from: the selected bone's parent (null: the skeleton's origin). */
@@ -1376,7 +1400,11 @@ export class MotionPathPanel {
     // The picked key is the one on the playhead's frame; a hand-broken leg is remembered only while the bone and animation stay.
     this.selKey = keys ? this.keyAtFrame(s.frame) : -1;
     if (`${a?.name}/${bone}` !== this.keyBrokenFor) { this.keyBrokenFor = `${a?.name}/${bone}`; this.keyModes.clear(); this.speedModes.clear(); }
-    if (this.keyStrip.parentElement !== this.slotBar) this.slotBar.replaceChildren(this.keyToggle, this.keyStrip);
+    if (this.keyStrip.parentElement !== this.slotBar) this.slotBar.replaceChildren(this.keyToggle, this.keyStrip, this.stripFit, this.lockBtn);
+    const locked = s.frameLock;
+    setIcon(this.lockBtn, locked ? "lock" : "lockOpen");
+    this.lockBtn.setAttribute("aria-pressed", String(locked));
+    this.lockBtn.title = locked ? "Frame lock on: the playhead stays on the animation's frames, and Q / W wrap from the last frame to 0 and back. Click to free it" : "Frame lock: hold the playhead to the animation's frames (0 to the last), and make Q / W wrap round";
     this.keyToggle.disabled = !show;
     this.keyToggle.classList.toggle("on", this.selKey >= 0);
     this.keyToggle.title = this.selKey >= 0 ? `Delete the translate key on frame ${s.frame}` : `Key ${bone ?? "the bone"}'s place on frame ${s.frame} (where it is there now, so the motion does not change)`;
@@ -1429,7 +1457,9 @@ export class MotionPathPanel {
   private drawKeyStrip(): void {
     const s = this.session, a = s.animation, keys = this.keyNodes(), c = this.keyStrip;
     this.stripDots = [];
-    if (!keys || !a || !c.isConnected) return;
+    if (!c.isConnected) return;
+    this.blank(c);
+    if (!keys || !a) return;
     const w = Math.max(1, Math.floor(c.clientWidth)), h = Math.max(1, Math.floor(c.clientHeight)), dpr = (window.devicePixelRatio || 1) * pageScale();
     if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
     const g = c.getContext("2d")!;
@@ -1638,12 +1668,26 @@ export class MotionPathPanel {
     this.drawSpeed();
   }
 
+  /** A canvas sized to its box and filled with the theme's panel colour (`graph`: the graphs' own), read now from the window the panel is in. */
+  private blank(c: HTMLCanvasElement, graph = false): void {
+    const w = Math.max(1, Math.floor(c.clientWidth)), h = Math.max(1, Math.floor(c.clientHeight)), dpr = (window.devicePixelRatio || 1) * pageScale();
+    if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
+    const g = c.getContext("2d")!;
+    g.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const css = getComputedStyle(this.element);
+    g.fillStyle = (graph ? graphColours(css)("--panel") : css.getPropertyValue("--panel").trim()) || "#2a2a2a";
+    g.fillRect(0, 0, w, h);
+  }
+
   /** FramePath's speed graph: the speed the keys' curves give across the animation's frames, a point on each key (the picked one lit). */
   private drawKeySpeed(): void {
     const s = this.session, a = s.animation, bone = s.selectedBone, keys = this.keyNodes(), c = this.speedCanvas;
     this.speedDots = [];
     this.speedLegs = [];
-    if (!keys || !a || bone === null || !c.isConnected || this.dataBox.hidden) return;
+    if (!c.isConnected || this.dataBox.hidden) return;
+    // Painted empty first: with nothing to draw it shows the theme's panel, never the last picture in old colours.
+    this.blank(c, true);
+    if (!keys || !a || bone === null) return;
     const d = s.length(a);
     if (d <= 0) return;
     if (this.gViewFor !== `${a.name}/${bone}`) { this.gViewFor = `${a.name}/${bone}`; this.gView = { x0: 0, x1: 1 }; }
@@ -1653,7 +1697,8 @@ export class MotionPathPanel {
     g.setTransform(dpr, 0, 0, dpr, 0, 0);
     // Drawn as the Timeline's graph (src/ui/timeline/timeline.ts, paint and paintGraph): the panel's colour, the frame lines down
     // through it, past the end dimmed, a 1.5 px curve, square keys (white when picked), thin handles with small rings, the green playhead.
-    const css = getComputedStyle(this.element), col = (n: string, f: string): string => css.getPropertyValue(n).trim() || f;
+    // The graph colours: the theme's, or a background of its own with lines and text that read on it (Hybrid, docs/HYBRID-THEME-PLAN.md).
+    const gc = graphColours(getComputedStyle(this.element)), col = (n: string, f: string): string => gc(n) || f;
     const panel = col("--panel", "#2a2a2a"), bg = col("--bg", "#1e1e1e"), line = col("--line", "#555"), muted = col("--muted", "#999"), text = col("--text", "#ddd"), mono = col("--font-mono", "monospace");
     g.fillStyle = panel;
     g.fillRect(0, 0, w, h);
@@ -1746,8 +1791,8 @@ export class MotionPathPanel {
     const title = doc.createElement("span");
     title.className = "title";
     title.textContent = `Speed · ${SPEED_MIN} to ${SPEED_MAX}: the bone goes 1 + it times as fast`;
-    const fitAll = this.button("Fit", "Show the whole animation across the graph (double-click on the graph does the same)"), fitNode = this.button("Node", "Fit the picked key's span: from it to the next key");
-    fitAll.addEventListener("click", () => this.fitGraph(false));
+    // Fit is an icon at the strip's right end (step 15); Node stays here.
+    const fitNode = this.button("Node", "Fit the picked key's span: from it to the next key");
     fitNode.addEventListener("click", () => this.fitGraph(true));
     fitNode.disabled = this.selKey < 0;
     // Stage draws the bone's path on the Stage; the swatch is its colour, the speed curve's and the handles' (docs/STAGE-PATH-PLAN.md).
@@ -1762,7 +1807,7 @@ export class MotionPathPanel {
     swatch.setAttribute("aria-label", "Path colour");
     swatch.style.background = this.stagePath.colour;
     swatch.addEventListener("click", () => pickColour(swatch, this.stagePath.colour, (hex) => this.setStagePath({ colour: hex })));
-    head.append(title, stage, swatch, fitAll, fitNode);
+    head.append(title, stage, swatch, fitNode);
     col.append(head, this.speedCanvas, this.speedGrip);
     return col;
   }
@@ -1846,7 +1891,8 @@ export class MotionPathPanel {
   /** The graph's plot box on its canvas (CSS pixels): where the visible time and the speed range are drawn. It has no ruler of its own: the frame strip above it is its ruler, as on the Timeline. */
   private plot(): { l: number; r: number; t: number; b: number } {
     const c = this.speedCanvas;
-    return { l: 40, r: Math.max(41, c.clientWidth - 10), t: 10, b: Math.max(11, c.clientHeight - 8) };
+    // Room on the right for the strip's Fit and lock icons, so no frame is drawn under them (step 15).
+    return { l: 40, r: Math.max(41, c.clientWidth - 34), t: 10, b: Math.max(11, c.clientHeight - 8) };
   }
 
   /** The canvas x of a share of the animation (0..1) in the visible window, and back. */

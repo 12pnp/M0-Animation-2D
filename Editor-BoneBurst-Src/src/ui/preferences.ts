@@ -95,6 +95,8 @@ export interface PreferenceValues {
   /** The tab text ("#rrggbb", or "auto" for the theme's): the shown tab's, and the other tabs'. */
   readonly tabTextColour: string;
   readonly tabDimTextColour: string;
+  /** The graphs' background (the Timeline's curve graph, Motion Path's speed graph): "#rrggbb" or "auto" (the theme's panel). docs/HYBRID-THEME-PLAN.md. */
+  readonly graphColour: string;
   readonly gridSize: number;
   /** What an arrow key adds to the chosen tool's value: degrees or units, Scale's own step, and the factor Shift multiplies by. */
   readonly nudgeStep: number;
@@ -112,7 +114,7 @@ export const UI_SCALE_RANGE = [60, 140] as const;
 /** 95: a twentieth smaller than the browser's own size; a browser under automation (the browser tests) keeps 100, so what they measure is in the pixels they see. */
 const DEFAULT_UI_SCALE = typeof navigator !== "undefined" && navigator.webdriver ? 100 : 95;
 export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, uiScale: DEFAULT_UI_SCALE, fontSize: "medium", toolbarLabels: "auto", toolbarPosition: "left", fewerTicks: false, defaultFps: 30, treeColours: true, treeIndent: 14, treeGuideColour: "auto", stagePanels: true, fullScreenOnStart: true, boneColour: "auto", boneSize: 1, selectedBoneColour: "auto", bones: true, constraints: true, hideIkBones: false, boneSelect: true, imageSelect: true, otherSelect: true, boneNames: false, pickGlow: true, compensate: false, rulerColour: "auto", rulerOpacity: 0, rulerTextColour: "auto", undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, saveTo: "browser", onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
-  grid: false, nudgeStep: 0.35, nudgeScaleStep: 0.01, nudgeBigFactor: 10, checker: true, axes: true, checkerColour: "auto", gridColour: "auto", gridThickness: 1, axisXColour: "#303030", axisYColour: "#303030", axisThickness: 1, tabBarColour: "#201f24", tabActiveColour: "auto", tabTextColour: "auto", tabDimTextColour: "auto", gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
+  grid: false, nudgeStep: 0.35, nudgeScaleStep: 0.01, nudgeBigFactor: 10, checker: true, axes: true, checkerColour: "auto", gridColour: "auto", gridThickness: 1, axisXColour: "#303030", axisYColour: "#303030", axisThickness: 1, tabBarColour: "#201f24", tabActiveColour: "auto", tabTextColour: "auto", tabDimTextColour: "auto", graphColour: "auto", gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
 export { BONE_SIZE_RANGE } from "./stage/boneScale";
 import { BONE_SIZE_RANGE } from "./stage/boneScale";
 export type FontSize = "small" | "medium" | "large";
@@ -133,12 +135,22 @@ export const PREFERENCES_KEY = "boneburst.preferences";
 export const PREFERENCES_VERSION = 2;
 
 /** The preferences a theme owns (how things look: colours, sizes, the tree's look); the rest are the same in every theme. */
-export const APPEARANCE_KEYS = ["fontSize", "uiScale", "treeColours", "treeIndent", "treeGuideColour", "boneColour", "boneSize", "selectedBoneColour", "rulerColour", "rulerOpacity", "rulerTextColour", "checkerColour", "gridColour", "gridThickness", "axisXColour", "axisYColour", "axisThickness", "tabBarColour", "tabActiveColour", "tabTextColour", "tabDimTextColour", "onionColour"] as const;
+export const APPEARANCE_KEYS = ["fontSize", "uiScale", "treeColours", "treeIndent", "treeGuideColour", "boneColour", "boneSize", "selectedBoneColour", "rulerColour", "rulerOpacity", "rulerTextColour", "checkerColour", "gridColour", "gridThickness", "axisXColour", "axisYColour", "axisThickness", "tabBarColour", "tabActiveColour", "tabTextColour", "tabDimTextColour", "graphColour", "onionColour"] as const;
 export type AppearanceValues = Pick<PreferenceValues, (typeof APPEARANCE_KEYS)[number]>;
 
-/** A theme: a name, the colour scheme it starts from, and its own appearance values. Light and Dark are always there; the others are the person's. */
+/** A theme: a name, the colour scheme it starts from, and its own appearance values. Light, Dark and Hybrid are always there; the others are the person's. */
 export interface ThemeProfile { readonly id: string; readonly name: string; readonly base: ThemeBase; readonly values: AppearanceValues }
-export const BUILT_IN_THEMES: readonly { readonly id: ThemeBase; readonly name: string }[] = [{ id: "light", name: "Light" }, { id: "dark", name: "Dark" }];
+/** The built-in themes, each with the appearance values it starts from beyond DEFAULTS. Hybrid: the editor dark, the graphs light gray (docs/HYBRID-THEME-PLAN.md). */
+export const BUILT_IN_THEMES: readonly { readonly id: string; readonly name: string; readonly base: ThemeBase; readonly values?: Partial<AppearanceValues> }[] = [
+  { id: "light", name: "Light", base: "light" },
+  { id: "dark", name: "Dark", base: "dark" },
+  { id: "hybrid", name: "Hybrid", base: "dark", values: { graphColour: "#d3d3d3" } },
+];
+
+/** What a built-in theme's appearance starts from (DEFAULTS for any other theme): what Reset puts back. */
+export function themeDefaults(id: string): PreferenceValues {
+  return { ...DEFAULTS, ...BUILT_IN_THEMES.find((t) => t.id === id)?.values };
+}
 
 /** What is stored: the behaviour preferences (`values`, whose appearance fields are not read), the themes and the one in use. */
 export interface Settings { readonly values: PreferenceValues; readonly themes: readonly ThemeProfile[]; readonly theme: Theme }
@@ -147,7 +159,7 @@ export function pickAppearance(p: PreferenceValues): AppearanceValues {
   return Object.fromEntries(APPEARANCE_KEYS.map((k) => [k, p[k]])) as unknown as AppearanceValues;
 }
 
-const builtIns = (): ThemeProfile[] => BUILT_IN_THEMES.map((t) => ({ id: t.id, name: t.name, base: t.id, values: pickAppearance(DEFAULTS) }));
+const builtIns = (): ThemeProfile[] => BUILT_IN_THEMES.map((t) => ({ id: t.id, name: t.name, base: t.base, values: pickAppearance(themeDefaults(t.id)) }));
 
 
 /** The storage the preferences live in: `localStorage`, or a stand-in. Either call may throw (blocked). */
@@ -212,6 +224,7 @@ function readFlat(v: Record<string, unknown>): PreferenceValues {
     tabActiveColour: colour("tabActiveColour", DEFAULTS.tabActiveColour),
     tabTextColour: colour("tabTextColour", DEFAULTS.tabTextColour),
     tabDimTextColour: colour("tabDimTextColour", DEFAULTS.tabDimTextColour),
+    graphColour: colour("graphColour", DEFAULTS.graphColour),
     gridSize: num("gridSize", GRID_RANGE[0], GRID_RANGE[1], DEFAULTS.gridSize),
     nudgeStep: num("nudgeStep", NUDGE_RANGE[0], NUDGE_RANGE[1], DEFAULTS.nudgeStep),
     nudgeScaleStep: num("nudgeScaleStep", NUDGE_RANGE[0], NUDGE_RANGE[1], DEFAULTS.nudgeScaleStep),
@@ -245,8 +258,9 @@ export function readSettings(text: string | null, systemDark = false): Settings 
   const themes = builtIns(), ids = new Set(themes.map((t) => t.id));
   for (const t of Array.isArray(o.themes) ? o.themes : []) {
     if (!isObject(t) || typeof t.id !== "string" || !t.id || typeof t.name !== "string" || !t.name.trim() || (t.base !== "light" && t.base !== "dark")) continue;
-    const values = pickAppearance(readFlat(isObject(t.values) ? t.values : {}));
     const at = themes.findIndex((x) => x.id === t.id);
+    // A value a file does not have is the theme's own default (Hybrid's light graphs), not the general one.
+    const values = pickAppearance(readFlat({ ...pickAppearance(at >= 0 && at < BUILT_IN_THEMES.length ? themeDefaults(t.id) : DEFAULTS), ...(isObject(t.values) ? t.values : {}) }));
     if (at >= 0 && at < BUILT_IN_THEMES.length) themes[at] = { ...themes[at]!, values };
     else if (!ids.has(t.id)) { ids.add(t.id); themes.push({ id: t.id, name: t.name.trim(), base: t.base, values }); }
   }

@@ -9,7 +9,7 @@ import type { ConstraintType } from "@/model/skeleton";
 
 const FILES = {
   open: "lucide/folder-open", save: "lucide/save", exportUnity: "lucide/folder-output", event: "lucide/flag", undo: "lucide/undo-2", redo: "lucide/redo-2", history: "lucide/rotate-ccw-clock",
-  move: "lucide/move", rotate: "lucide/rotate-cw", scale: "lucide/scaling", shear: "lucide/shear", autoKey: "lucide/key-round", onion: "lucide/ghost", select: "lucide/mouse-pointer-2", visible: "lucide/eye", names: "lucide/tag", tags: "lucide/tag", pin: "lucide/pin", reset: "lucide/rotate-ccw", glow: "lucide/sun", fit: "lucide/scan", ruler: "lucide/ruler",
+  move: "lucide/move", rotate: "lucide/rotate-cw", scale: "lucide/scaling", shear: "lucide/shear", autoKey: "lucide/key-round", onion: "lucide/ghost", select: "lucide/mouse-pointer-2", visible: "lucide/eye", names: "lucide/tag", tags: "lucide/tag", pin: "lucide/pin", reset: "lucide/rotate-ccw", glow: "lucide/sun", fit: "lucide/scan", lock: "lucide/lock", lockOpen: "lucide/lock-open", ruler: "lucide/ruler",
   settings: "lucide/settings", search: "lucide/search", pipette: "lucide/pipette", back: "lucide/arrow-left", forward: "lucide/arrow-right", up: "lucide/arrow-up", down: "lucide/arrow-down", delete: "lucide/trash",
   play: "lucide/play", pause: "lucide/pause", start: "lucide/skip-back", loop: "lucide/repeat",
   addImage: "lucide/image-plus", key: "lucide/diamond", drawOrder: "lucide/layers", ai: "lucide/bot",
