@@ -1,5 +1,6 @@
 import { EditRefused, type Edit } from "@/edit/history";
 import type { Skeleton } from "@/model/skeleton";
+import { iconButton, type IconName } from "../icons";
 import type { Session } from "../session";
 import { empty, heading } from "./outline";
 
@@ -21,19 +22,18 @@ export interface ListActions {
 }
 
 /**
- * The shared body of the Skins and Animations panels (a dedicated window each): a heading, the
- * buttons New, Duplicate, Rename and Delete, and a list whose rows choose what is shown. A
- * subclass says what the rows are and what the buttons do.
+ * The shared body of the Skins and Animations panels (a dedicated window each): a heading, New,
+ * and a list whose rows choose what is shown; an editable row shows Duplicate, Rename and Delete
+ * as icons while hovered or focused (ROW-ACTIONS-PLAN). A subclass says what the rows are and what
+ * the actions do.
  */
 export abstract class ListPanel {
   readonly element: HTMLDivElement;
   onStatus: (message: string) => void = () => {};
   private readonly list = document.createElement("ul");
   private readonly body = document.createElement("div");
-  private readonly buttons: { dup: HTMLButtonElement; rename: HTMLButtonElement; del: HTMLButtonElement };
   /** The rows as last drawn, as text (null: not drawn yet), so a change tick that changed nothing redraws nothing. */
   private shown: string | null = null;
-  private chosen: string | null = null;
   /** The rows last drawn, kept so toggling Nest or a folder redraws without asking the subclass. */
   private drawn: ListRow[] | null = null;
   private nest: boolean;
@@ -57,11 +57,6 @@ export abstract class ListPanel {
       return b;
     };
     make("New…", `Add ${title === "Skins" ? "a skin" : "an animation"}`, () => this.actions.add());
-    this.buttons = {
-      dup: make("Duplicate…", "Add a copy of the chosen row", () => { if (this.chosen !== null) this.actions.duplicate(this.chosen); }),
-      rename: make("Rename…", "Rename the chosen row", () => { if (this.chosen !== null) this.actions.rename(this.chosen); }),
-      del: make("Delete", "Delete the chosen row; undo brings it back", () => { if (this.chosen !== null) this.actions.remove(this.chosen); }),
-    };
     if (nestKey) {
       const label = document.createElement("label");
       label.title = 'Group rows into folders by the "/" in their names';
@@ -89,9 +84,6 @@ export abstract class ListPanel {
     const key = rows ? rows.map((r) => `${r.label}|${r.note ?? ""}|${r.current}|${r.editable}`).join("\n") : "";
     if (key === this.shown) return;
     this.shown = key;
-    const cur = rows?.find((r) => r.current && r.editable);
-    this.chosen = cur?.label ?? null;
-    for (const b of Object.values(this.buttons)) b.disabled = !cur;
     if (!rows) { this.body.replaceChildren(empty(this.none)); return; }
     this.drawn = rows;
     this.draw();
@@ -111,6 +103,7 @@ export abstract class ListPanel {
       if (r.current) b.setAttribute("aria-current", "step");
       b.addEventListener("click", () => r.choose());
       li.append(b);
+      if (r.editable) li.append(this.rowActions(r.label));
       return li;
     };
     const items: HTMLLIElement[] = [];
@@ -135,6 +128,23 @@ export abstract class ListPanel {
     }
     this.list.replaceChildren(...items);
     this.body.replaceChildren(this.list);
+  }
+
+  /** Duplicate, Rename and Delete for one row, whether or not it is the chosen one. */
+  private rowActions(name: string): HTMLSpanElement {
+    const span = document.createElement("span");
+    span.className = "row-actions";
+    const act = (icon: IconName, hint: string, run: (n: string) => void) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.title = hint;
+      b.addEventListener("click", (e) => { e.stopPropagation(); run(name); });
+      span.append(iconButton(b, icon, false));
+    };
+    act("duplicate", `Duplicate ${name}…`, (n) => this.actions.duplicate(n));
+    act("rename", `Rename ${name}…`, (n) => this.actions.rename(n));
+    act("delete", `Delete ${name} (Undo brings it back)`, (n) => this.actions.remove(n));
+    return span;
   }
 
   private folder(path: string, name: string, depth: number): HTMLLIElement {

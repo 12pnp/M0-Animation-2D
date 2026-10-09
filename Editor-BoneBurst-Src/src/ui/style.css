@@ -597,6 +597,19 @@ dialog.open-project .op-buttons { flex: none; display: flex; justify-content: ce
 /* The Skins and Animations panels: a button row over a list that borrows History's rows. */
 .list-bar { display: flex; flex-wrap: wrap; gap: 4px; padding: 0 8px 6px; }
 .list-bar button:disabled { opacity: 0.5; }
+/* An editable row's Duplicate, Rename, Delete (ROW-ACTIONS-PLAN): icons over the row's right end while it is hovered or focused. */
+.list-panel .history-list li { position: relative; }
+.list-panel .row-actions { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); display: none; gap: 2px; }
+.list-panel li:hover .row-actions, .list-panel li:focus-within .row-actions { display: flex; }
+.list-panel li:hover .history-step, .list-panel li:focus-within .history-step { padding-right: 96px; }
+/* The row keeps its hover while the pointer is on an icon; an icon shows its edge when it is the one hovered. */
+.list-panel li:hover .history-step:not([aria-current]) { background: var(--hover); }
+/* The chosen row keeps its accent when hovered (the generic button:hover rule outranks [aria-current]). */
+.list-panel .history-step[aria-current]:hover:not(:disabled) { background: var(--accent); }
+.list-panel .row-actions button, .list-panel .row-actions button:hover:not(:disabled) { padding: 2px 5px; border-color: transparent; background: none; color: inherit; }
+.list-panel .row-actions button:hover:not(:disabled) { border-color: var(--line); }
+.list-panel .history-step[aria-current] + .row-actions { color: var(--accent-text); }
+.list-panel .history-step[aria-current] + .row-actions button:hover:not(:disabled) { border-color: var(--accent-text); }
 /* .outline clips; these panels are one long list, so the whole panel scrolls (Skins, Animations, History). */
 .panel.list-panel, .panel.history { overflow-y: auto; overflow-x: hidden; }
 

@@ -281,7 +281,9 @@ origin; `tests/icons.test.ts` guards files, manifests, styling and licences.
 **Keys and the History (E7)**: every keyboard shortcut is a row of `ui/shortcuts.ts` (its keys,
 group, what it does and how a key event matches); `app.ts` dispatches from it into handlers typed
 by its ids, and the menus, titles and messages show its keys. Help ▸ Keyboard Shortcuts (or `?`)
-lists it. The History panel lists the undo steps; a click goes there. The status line's notes (E8)
+lists it. The History panel lists the undo steps; a click goes there. The Skins and Animations panels
+(`ui/panels/listPanel`) have New… over their list; an editable row shows Duplicate, Rename and Delete
+as icons while hovered or focused, acting on that row (docs/ROW-ACTIONS-PLAN.md). The status line's notes (E8)
 are buttons: a note about a thing selects it; Properties says so for a selected bone without a pose.
 
 **Running it (E7)**: `npm start` (`scripts/start.mjs`) builds `dist/` when stale and serves it on

@@ -30,6 +30,8 @@ files.
 | `arrow-up.svg` | `icons/arrow-up.svg` | up in a list |
 | `arrow-down.svg` | `icons/arrow-down.svg` | down in a list |
 | `trash.svg` | `icons/trash.svg` | Delete, Remove |
+| `copy.svg` | `icons/copy.svg` | Duplicate, on a Skins or Animations row |
+| `pencil.svg` | `icons/pencil.svg` | Rename, on a Skins or Animations row |
 | `play.svg` | `icons/play.svg` | Play |
 | `pause.svg` | `icons/pause.svg` | Pause |
 | `skip-back.svg` | `icons/skip-back.svg` | to the first frame |
