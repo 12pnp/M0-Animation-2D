@@ -7,7 +7,8 @@ cd "$(dirname "$0")/.."
 out=$(npm run build 2>&1) || { echo "$out"; exit 1; }
 echo "$out" | grep -E 'dist/assets/.*\.js ' || true
 # Every chunk under Vite's 500 kB warning (E7-PLAN step 3): the PSD reader and the AI layer load
-# when first used, Dockview in a chunk of its own.
+# when first used, Dockview in a chunk of its own, the pure layers loaded at start in `core`
+# (CHUNK-SPLIT-PLAN).
 if echo "$out" | grep -q 'Some chunks are larger'; then echo "error: a chunk is over 500 kB" >&2; exit 1; fi
 out=$(npx vitest run 2>&1) || { echo "$out"; exit 1; }
 echo "$out" | tail -4

@@ -25,6 +25,32 @@ function dockviewStyles(): Plugin {
   };
 }
 
+type ModuleInfoOf = (id: string) => { isEntry: boolean; importers: readonly string[] } | null;
+
+/**
+ * `core`: a module of src/model, io, edit or engine that an entry reaches through static imports
+ * (CHUNK-SPLIT-PLAN). One reached only through import() (io/psd, edits only the AI tools use) is
+ * left to its lazy chunk: a manual chunk would pull it, and what it imports, into the start-up load.
+ */
+function chunkOf() {
+  const pure = /\/src\/(model|io|edit|engine)\//;
+  const eager = new Map<string, boolean>();
+  const reached = (id: string, info: ModuleInfoOf): boolean => {
+    const known = eager.get(id);
+    if (known !== undefined) return known;
+    eager.set(id, false); // a cycle back here adds nothing
+    const m = info(id);
+    const result = !!m && (m.isEntry || m.importers.some((i) => reached(i, info)));
+    eager.set(id, result);
+    return result;
+  };
+  return (id: string, { getModuleInfo }: { getModuleInfo: ModuleInfoOf }): string | undefined => {
+    if (id.includes("/node_modules/dockview-core/")) return "dockview";
+    if (pure.test(id) && reached(id, getModuleInfo)) return "core";
+    return undefined;
+  };
+}
+
 export default defineConfig({
   plugins: [dockviewStyles()],
   // 5185: the Animo-fork editor runs on 5181, and browser storage is per origin.
@@ -35,8 +61,9 @@ export default defineConfig({
     target: "es2022",
     sourcemap: true,
     // Dockview, the docking shell, in a chunk of its own; the PSD reader and the AI layer are
-    // loaded with import() when first used (E7-PLAN step 3).
-    rollupOptions: { output: { manualChunks: (id) => (id.includes("/node_modules/dockview-core/") ? "dockview" : undefined) } },
+    // loaded with import() when first used (E7-PLAN step 3); the pure layers the editor loads at
+    // start in `core` (CHUNK-SPLIT-PLAN).
+    rollupOptions: { output: { manualChunks: chunkOf() } },
   },
   test: { include: ["tests/**/*.test.ts"] },
 });

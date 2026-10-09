@@ -287,7 +287,8 @@ are buttons: a note about a thing selects it; Properties says so for a selected 
 **Running it (E7)**: `npm start` (`scripts/start.mjs`) builds `dist/` when stale and serves it on
 the dev server's origin (localhost:5185), starting the AI bridge when none answers. Dockview loads
 from its ES module, its styles taken from its package at build time (`vite.config.ts` ▸
-`dockviewStyles`); the PSD reader and the AI layer load on first use; no chunk is over 500 kB.
+`dockviewStyles`); the pure layers loaded at start are a chunk of their own, `core`
+(docs/CHUNK-SPLIT-PLAN.md); the PSD reader and the AI layer load on first use; no chunk is over 500 kB.
 
 **Preferences (E4 step 10)** are the person's, not the document's: theme, rulers, bones, undo
 steps, new references' opacity, kept in the browser's storage (`boneburst.preferences`,
