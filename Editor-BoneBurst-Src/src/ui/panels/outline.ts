@@ -3,13 +3,15 @@ import { addBone, deleteBone } from "@/edit/bones";
 import { deleteConstraint, moveConstraint } from "@/edit/constraints";
 import { defineEvent, deleteEvent } from "@/edit/events";
 import { type Edit, EditRefused } from "@/edit/history";
-import { addSkin, deleteSkin, duplicateSkin } from "@/edit/skins";
+import { deleteSkin } from "@/edit/skins";
 import { addSlot, deleteSlot, moveSlot, updateSlot } from "@/edit/slots";
 import { attachmentType, CONSTRAINT_TYPES, type ConstraintType, type Skeleton } from "@/model/skeleton";
 import { CONSTRAINT_ICONS, icon, iconButton, type IconName } from "../icons";
 import { type Selection, sameSelection, type Session } from "../session";
 import { boneColourOf, boneIconOf } from "../boneLook";
 import { newConstraint } from "./newConstraint";
+import { rowActions } from "./listPanel";
+import { skinActions, type SkinActions } from "./skinActions";
 import { keysOf } from "../shortcuts";
 import { tagMatches } from "@/edit/tags";
 import { showContextMenu } from "../contextMenu";
@@ -53,9 +55,12 @@ export class Outline {
   private readonly forward: HTMLButtonElement;
   private readonly regionPick: HTMLSelectElement;
   private readonly kindPick: HTMLSelectElement;
-  private readonly buttons: Record<"bone" | "slot" | "region" | "del" | "up" | "down" | "tree" | "order" | "skins" | "skin" | "dup" | "constraints" | "constraint" | "events" | "event", HTMLButtonElement>;
+  private readonly buttons: Record<"bone" | "slot" | "region" | "del" | "up" | "down" | "tree" | "order" | "skins" | "skin" | "constraints" | "constraint" | "events" | "event", HTMLButtonElement>;
+
+  private readonly skins: SkinActions;
 
   constructor(private readonly session: Session) {
+    this.skins = skinActions(session, (label, edit) => this.apply(label, edit));
     this.element = document.createElement("div");
     this.element.className = "panel outline";
     const bar = document.createElement("div");
@@ -74,8 +79,7 @@ export class Outline {
       events: button("Events", `The skeleton's events: select one to key it (${keysOf("key")}) or edit its values`, () => this.setView("events")),
       event: button("+ Event", "Add an event to the skeleton", () => this.addEvent()),
       constraint: button("+ Constraint", "Add a constraint of the chosen kind to the selected bone (a path: the selected slot)", () => this.addConstraint(this.kindPick.value as ConstraintType)),
-      skin: button("+ Skin", "Add an empty skin", () => this.addSkin()),
-      dup: button("Duplicate", "Copy the selected skin", () => this.duplicateSkin()),
+      skin: button("+ Skin", "Add an empty skin", () => this.skins.add()),
       bone: button("+ Bone", "Add a bone under the selected one", () => this.addBone()),
       slot: button("+ Slot", "Add a slot on the selected bone", () => this.addSlot()),
       region: button("+ Region", "Add the chosen atlas region to the selected slot (or a new slot on the selected bone)", () => { if (this.regionPick.value) this.addRegion(this.regionPick.value); }),
@@ -84,7 +88,7 @@ export class Outline {
       down: iconButton(button("↓", "Send the selected slot back; apply the selected constraint later", () => this.moveSelected(-1)), "down", false),
     };
     bar.append(this.buttons.tree, this.buttons.order, this.buttons.skins, this.buttons.constraints, this.buttons.events, sep(), this.buttons.bone, this.buttons.slot, this.buttons.region, this.regionPick,
-      this.buttons.skin, this.buttons.dup, this.kindPick, this.buttons.constraint, this.buttons.event, this.buttons.del, this.buttons.up, this.buttons.down);
+      this.buttons.skin, this.kindPick, this.buttons.constraint, this.buttons.event, this.buttons.del, this.buttons.up, this.buttons.down);
     this.list = document.createElement("div");
     this.list.className = "rows";
     this.list.setAttribute("role", "tree");
@@ -203,28 +207,6 @@ export class Outline {
     if (!name) return;
     if ((doc.events ?? []).some((e) => e.name === name)) { this.onStatus(`There is already an event "${name}".`); return; }
     if (this.apply(`Add event ${name}`, defineEvent(name, {}))) this.session.select({ kind: "event", name });
-  }
-
-  private addSkin(): void {
-    const doc = this.session.doc;
-    if (!doc) return;
-    const name = prompt("Name of the new skin:", unique("skin", (doc.skins ?? []).map((k) => k.name)))?.trim();
-    if (!name) return;
-    if (this.apply(`Add skin ${name}`, addSkin(name))) this.showSkin(name);
-  }
-
-  private duplicateSkin(): void {
-    const doc = this.session.doc, sel = this.session.selected;
-    if (!doc || sel?.kind !== "skin") { this.onStatus("Select the skin to copy."); return; }
-    const name = prompt(`Name of the copy of "${sel.name}":`, unique(`${sel.name} copy`, (doc.skins ?? []).map((k) => k.name)))?.trim();
-    if (!name) return;
-    if (this.apply(`Duplicate skin ${sel.name} as ${name}`, duplicateSkin(sel.name, name))) this.showSkin(name);
-  }
-
-  /** Select a skin and show it on the stage (the default skin: no other skin shown). */
-  private showSkin(name: string): void {
-    this.session.skin = name === "default" ? null : name;
-    this.session.select({ kind: "skin", name });
   }
 
   private addSlot(): void {
@@ -405,9 +387,8 @@ export class Outline {
     this.kindPick.hidden = this.buttons.constraint.hidden = v !== "constraints";
     this.kindPick.disabled = this.buttons.constraint.disabled = !doc;
     this.buttons.constraints.setAttribute("aria-pressed", String(v === "constraints"));
-    this.buttons.skin.hidden = this.buttons.dup.hidden = v !== "skins";
+    this.buttons.skin.hidden = v !== "skins";
     this.buttons.skin.disabled = !doc;
-    this.buttons.dup.disabled = sel?.kind !== "skin";
     this.buttons.skins.setAttribute("aria-pressed", String(v === "skins"));
     this.buttons.events.setAttribute("aria-pressed", String(v === "events"));
     this.buttons.event.hidden = v !== "events";
@@ -459,6 +440,8 @@ export class Outline {
       row.append(note);
     }
     for (const tag of this.session.tagsOn(it.sel)) row.append(tagChip(document, tag));
+    // A skin but the default one: Duplicate, Rename and Delete as icons while hovered (ROW-ACTIONS-PLAN step 7).
+    if (it.sel.kind === "skin" && it.sel.name !== "default") row.append(rowActions(it.sel.name, this.skins));
     // Right-click: tags of this element.
     row.addEventListener("contextmenu", (e) => {
       e.preventDefault();
@@ -467,7 +450,7 @@ export class Outline {
     });
     row.addEventListener("click", (e) => {
       if ((e.target as HTMLElement).classList.contains("twisty")) return;
-      if (it.sel.kind === "skin") { this.showSkin(it.sel.name); return; }
+      if (it.sel.kind === "skin") { this.skins.show(it.sel.name); return; }
       if (!sameSelection(this.session.selected, it.sel)) this.session.select(it.sel);
     });
     this.rows.set(JSON.stringify(it.sel), row);

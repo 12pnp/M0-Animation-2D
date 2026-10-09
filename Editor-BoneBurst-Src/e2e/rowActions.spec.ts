@@ -67,3 +67,42 @@ test("hovering an animation or skin row shows Duplicate, Rename and Delete; each
   await expect(skin("alt").locator(".row-actions button")).toHaveCount(3);
   await expect(skin("alt").getByRole("button", { name: "Rename alt…" })).toBeVisible();
 });
+
+test("Rig ▸ Skins: a skin row but the default one shows Duplicate, Rename and Delete while hovered; each acts on that row", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await page.getByRole("button", { name: "Open the stickman fixture" }).click();
+  await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
+  const rig = page.locator(".panel.outline:not(.list-panel)");
+  await rig.locator(".outline-bar").getByRole("button", { name: "Skins", exact: true }).click();
+  // The bar: + Skin, no Duplicate.
+  await expect(rig.locator(".outline-bar").getByRole("button", { name: "+ Skin" })).toBeVisible();
+  await expect(rig.locator(".outline-bar").getByRole("button", { name: "Duplicate", exact: true })).toHaveCount(0);
+  const skin = (name: string) => rig.locator(".rows .row.skin").filter({ has: page.locator(".name", { hasText: new RegExp(`^${name}$`) }) });
+  const skinNames = () => page.evaluate(() => ((window as unknown as Live).boneburst.session.doc.skins ?? []).map((k) => k.name));
+
+  await expect(skin("default").locator(".row-actions")).toHaveCount(0);
+  const alt = skin("alt").locator(".row-actions button");
+  await expect(alt).toHaveCount(3);
+  await expect(alt.first()).toBeHidden();
+  await skin("alt").hover();
+  for (const b of await alt.all()) await expect(b).toBeVisible();
+
+  // Acts on the hovered row while the default skin is the one selected.
+  await skin("default").click();
+  page.once("dialog", (d) => void d.accept("spare"));
+  await skin("alt").hover();
+  await skin("alt").getByRole("button", { name: "Rename alt…" }).click();
+  expect(await skinNames()).toEqual(["default", "spare"]);
+
+  page.once("dialog", (d) => void d.accept("spare copy"));
+  await skin("spare").hover();
+  await skin("spare").getByRole("button", { name: "Duplicate spare…" }).click();
+  expect(await skinNames()).toEqual(["default", "spare", "spare copy"]);
+
+  page.once("dialog", (d) => void d.accept());
+  await skin("spare copy").hover();
+  await skin("spare copy").getByRole("button", { name: /^Delete spare copy/ }).click();
+  expect(await skinNames()).toEqual(["default", "spare"]);
+});

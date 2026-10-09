@@ -42,3 +42,10 @@ flowchart LR
    dark text while hovered. The accent-on-hover rule moves from `.list-panel` to every
    `.history-step[aria-current]` (Skins, Animations, History); `e2e/historyPanel.spec.ts` checks it.
    Done 2026-10-09.
+7. Follow-up (owner, 2026-10-09): the Rig panel's Skins view (Rig ▸ Skins) gets the same icons on
+   each skin row but the default skin. One source for both: `rowActions(name, actions)` is exported
+   from `listPanel.ts`, and `skinActions(session, apply)` in `skinsPanel.ts` holds the skin prompts
+   (add, duplicate, rename, delete, show) that the Skins panel and the Rig panel's Skins view both
+   use; the Rig panel's own copies go. The Rig bar's Duplicate goes, as the Skins panel's did (+ Skin
+   stays). `e2e/rowActions.spec.ts` covers it. Done 2026-10-09; `skinActions` takes `uniqueName` from
+   `ui/names.ts` (the same rule as `outline.ts`'s `unique`), so the Rig panel importing it makes no cycle.

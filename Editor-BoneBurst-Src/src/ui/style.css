@@ -625,6 +625,14 @@ dialog.open-project .op-buttons { flex: none; display: flex; justify-content: ce
 .list-panel .row-actions button:hover:not(:disabled) { border-color: var(--line); }
 .list-panel .history-step[aria-current] + .row-actions { color: var(--accent-text); }
 .list-panel .history-step[aria-current] + .row-actions button:hover:not(:disabled) { border-color: var(--accent-text); }
+/* The Rig panel's skin rows (ROW-ACTIONS-PLAN step 7): the same icons at the row's end, over its note, while hovered or focused. */
+.outline .row .row-actions { position: absolute; top: 50%; right: 6px; transform: translateY(-50%); display: none; gap: 2px; }
+.outline .row:hover .row-actions, .outline .row:focus-within .row-actions { display: flex; }
+.outline .row:has(.row-actions):hover .note, .outline .row:has(.row-actions):focus-within .note { visibility: hidden; }
+.outline .row .row-actions button, .outline .row .row-actions button:hover:not(:disabled) { padding: 1px 4px; border-color: transparent; background: none; color: inherit; }
+.outline .row .row-actions button:hover:not(:disabled) { border-color: var(--line); }
+.outline .row.selected .row-actions button:hover:not(:disabled) { border-color: var(--accent-text); }
+.outline .row .row-actions .icon { width: 14px; height: 14px; }
 /* .outline clips; these panels are one long list, so the whole panel scrolls (Skins, Animations, History). */
 .panel.list-panel, .panel.history { overflow-y: auto; overflow-x: hidden; }
 

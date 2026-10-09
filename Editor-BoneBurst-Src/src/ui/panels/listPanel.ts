@@ -103,7 +103,7 @@ export abstract class ListPanel {
       if (r.current) b.setAttribute("aria-current", "step");
       b.addEventListener("click", () => r.choose());
       li.append(b);
-      if (r.editable) li.append(this.rowActions(r.label));
+      if (r.editable) li.append(rowActions(r.label, this.actions));
       return li;
     };
     const items: HTMLLIElement[] = [];
@@ -128,23 +128,6 @@ export abstract class ListPanel {
     }
     this.list.replaceChildren(...items);
     this.body.replaceChildren(this.list);
-  }
-
-  /** Duplicate, Rename and Delete for one row, whether or not it is the chosen one. */
-  private rowActions(name: string): HTMLSpanElement {
-    const span = document.createElement("span");
-    span.className = "row-actions";
-    const act = (icon: IconName, hint: string, run: (n: string) => void) => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.title = hint;
-      b.addEventListener("click", (e) => { e.stopPropagation(); run(name); });
-      span.append(iconButton(b, icon, false));
-    };
-    act("duplicate", `Duplicate ${name}…`, (n) => this.actions.duplicate(n));
-    act("rename", `Rename ${name}…`, (n) => this.actions.rename(n));
-    act("delete", `Delete ${name} (Undo brings it back)`, (n) => this.actions.remove(n));
-    return span;
   }
 
   private folder(path: string, name: string, depth: number): HTMLLIElement {
@@ -178,6 +161,26 @@ export abstract class ListPanel {
       return false;
     }
   }
+}
+
+/**
+ * Duplicate, Rename and Delete for one row, as icons, whether or not it is the chosen one: the
+ * Skins and Animations panels' rows and the Rig panel's skin rows (ROW-ACTIONS-PLAN).
+ */
+export function rowActions(name: string, actions: Pick<ListActions, "duplicate" | "rename" | "remove">): HTMLSpanElement {
+  const span = document.createElement("span");
+  span.className = "row-actions";
+  const act = (icon: IconName, hint: string, run: (n: string) => void) => {
+    const b = document.createElement("button");
+    b.type = "button";
+    b.title = hint;
+    b.addEventListener("click", (e) => { e.stopPropagation(); run(name); });
+    span.append(iconButton(b, icon, false));
+  };
+  act("duplicate", `Duplicate ${name}…`, (n) => actions.duplicate(n));
+  act("rename", `Rename ${name}…`, (n) => actions.rename(n));
+  act("delete", `Delete ${name} (Undo brings it back)`, (n) => actions.remove(n));
+  return span;
 }
 
 function readNest(key: string): boolean {
