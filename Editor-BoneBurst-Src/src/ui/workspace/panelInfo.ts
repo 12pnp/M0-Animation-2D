@@ -65,7 +65,7 @@ const INFO: Readonly<Record<PanelId, { readonly what: string; readonly use: read
       "The picture: drag a dot to move the bone on that frame; Cmd (Ctrl) + click the path adds a key there, Cmd (Ctrl) + click a key's dot gives Mirror, Break, Plain and Delete; Shift + click a key's dot deletes it.",
       "The frame strip: click or drag to move the playhead; Cmd (Ctrl) + drag where two tabs meet moves that key in time; ◆ keys the bone's place on the frame, or deletes the key there. At its left the frame rate and the frame lock.",
       "Curves (left, under the strip) eases the span the playhead is in: stepped, linear or bezier, and drag its two handles. The speed graph beside it shows every span: green faster, red slower; click it to pick a span or a key.",
-      "Image, Bone and Onion have a count each side: one more tier of parents (or frame before) on the left, of children (or frame after) on the right. ⋮ by FramePath has Closed and Delete FramePath data.",
+      "Image, Bone and Onion have a count each side: one more tier of parents (or frame before) on the left, of children (or frame after) on the right. ⋮ by FramePath has Closed, Delete FramePath data, and Convert to FramePath… for a Spine export opened as it is (a bone keyed as separate x and y shows Convert… by its hint).",
     ],
     keys: [],
   },

@@ -16,6 +16,8 @@ import { alongChord, clampSpeed, keyChords, keyHandles, keyReaches, keySpeedPair
 import { deleteKeys, setKey } from "@/edit/keys";
 import { FPS_RANGE, keysOffFrame, setFps } from "@/edit/header";
 import { packAnimation, trimAnimation } from "@/edit/fitLength";
+import { convertToFramePath, framePathReport } from "@/edit/toFramePath";
+import { analyseOpen } from "../importAnalysis";
 import { localPoint, pageScale } from "../pageScale";
 import { labelStep, RULER, secondsSinceLastKey } from "../timeline/layout";
 import type { Session } from "../session";
@@ -185,6 +187,8 @@ export class MotionPathPanel {
   /** The line under the header: what FramePath shows for the bone, or why there is nothing. */
   private readonly motionBar = document.createElement("div");
   private readonly hint = document.createElement("span");
+  /** Convert… beside the hint of a bone keyed as separate x and y. */
+  private readonly convertBtn = document.createElement("button");
   /** Under the picture: the ◆ toggle and the frame strip, then the key's data beside the speed graph (docs/FRAMEPATH-SPEED-PLAN.md). */
   private readonly slotBar = document.createElement("div");
   private readonly dataBox = document.createElement("div");
@@ -355,6 +359,11 @@ export class MotionPathPanel {
     this.dataBox.className = "lp-data";
     this.hint.className = "lp-hint";
     this.motionBar.append(this.hint);
+    this.convertBtn.type = "button";
+    this.convertBtn.className = "lp-convert";
+    this.convertBtn.textContent = "Convert…";
+    this.convertBtn.title = "Make this file's translate keys what FramePath edits: one list per bone, x and y timed together (one undo step)";
+    this.convertBtn.addEventListener("click", () => void this.convertDoc());
     // The picture on top; under it the frame strip, and under that the key's data and the speed graph.
     this.split.className = "lp-split";
     this.split.title = "Drag to give the frame strip and the speed graph more or less room (double-click: back to the usual)";
@@ -585,7 +594,24 @@ export class MotionPathPanel {
       { label: "Closed", checked: this.framesClosed, disabled: keys === 0, run: () => this.setFramesClosed(!this.framesClosed) },
       {},
       { label: "Delete FramePath data", disabled: keys === 0, run: () => this.deleteKeyData() },
+      {},
+      { label: "Convert to FramePath…", disabled: !s.doc || framePathReport(s.doc).length === 0, run: () => void this.convertDoc() },
     ];
+  }
+
+  /**
+   * The document's translate keys made into what FramePath edits (docs/SPINE-IMPORT-FRAMEPATH-PLAN.md, step 3): the analysis window's
+   * options, then one undo step. For a file opened as it is.
+   */
+  private async convertDoc(): Promise<void> {
+    const s = this.session, doc = s.doc, h = s.history;
+    if (!doc || !h) return;
+    const choice = await analyseOpen({ kind: "json", name: `${s.name}.json`, skeleton: doc, issues: 0 }, true);
+    if (choice.action !== "open" || !choice.convert) return;
+    const r = convertToFramePath(doc, choice.convert);
+    h.apply("Convert to FramePath", () => r.doc);
+    s.changed();
+    this.onStatus(`Converted to FramePath: ${r.added} key${r.added === 1 ? "" : "s"} added; the bones move at most ${Math.round(r.worst * 100) / 100} units.`);
   }
 
   /** The trail of the selected bone in the animation shown, worked out again only when the document, skin, animation, bone or space changed. */
@@ -1185,6 +1211,8 @@ export class MotionPathPanel {
     this.menuBtn.disabled = !can;
     this.layerBtns.path.disabled = !can;
     this.hint.textContent = !can ? (anim ? "Select a bone to see its motion." : "Select a bone in Animate mode to see its motion.") : this.keyHint();
+    // A bone keyed as separate x and y: Convert… beside the hint (step 3 of docs/SPINE-IMPORT-FRAMEPATH-PLAN.md).
+    if (can && anim && bone !== null && translateNodes(anim, bone) === null) this.hint.append(" ", this.convertBtn);
     this.renderKeyStrip();
   }
 

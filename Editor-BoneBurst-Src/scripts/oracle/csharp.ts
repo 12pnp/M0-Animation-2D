@@ -32,13 +32,19 @@ export interface Rig { readonly name: string; readonly json: string; readonly at
 type Frame = { w: (number[] | null)[] };
 
 /** Pose `rigs` in both runtimes and compare; prints a line a rig. Returns the rigs compared and those that differ. */
-export function compareWithCsharp(rigs: readonly Rig[]): { compared: number; failed: number } {
+/** Pose `rigs` in BoneBurst's C# runtime (the harness's dump); the folder holding each `name.poses.json`. */
+export function dumpWithCsharp(rigs: readonly Rig[]): string {
   const dir = mkdtempSync(join(tmpdir(), "unity-parity-")), inDir = join(dir, "in"), outDir = join(dir, "out");
   mkdirSync(inDir);
   // The dump reads name.json beside name.atlas; a sample's atlas file may be named after another skeleton.
   for (const r of rigs) { copyFileSync(r.json, join(inDir, `${r.name}.json`)); copyFileSync(r.atlas, join(inDir, `${r.name}.atlas`)); }
   const run = spawnSync("bash", [RUN, "--dump", inDir, outDir], { cwd: join(ROOT, ".."), encoding: "utf8" });
   if (run.status !== 0) throw new Error(`The C# dump failed (${run.status}):\n${run.stderr || run.stdout}`);
+  return outDir;
+}
+
+export function compareWithCsharp(rigs: readonly Rig[]): { compared: number; failed: number } {
+  const outDir = dumpWithCsharp(rigs);
   let worstAll = 0, compared = 0, failed = 0;
   for (const r of rigs) {
     const file = join(outDir, `${r.name}.poses.json`);

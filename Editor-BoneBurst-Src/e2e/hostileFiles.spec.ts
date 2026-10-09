@@ -3,6 +3,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 
+/** Through the analysis window a Spine export now opens with (docs/SPINE-IMPORT-FRAMEPATH-PLAN.md): opened as it is. */
+async function openAsIs(page: import("@playwright/test").Page): Promise<void> {
+  await page.getByRole("dialog", { name: "Open: analysis" }).getByRole("button", { name: /^Open( as is)?$/ }).click();
+}
+
+
 /**
  * Hostile files through Open… (E7-PLAN step 5): a page image that is not one opens the rig
  * without it, said; a cut-off skeleton, a PSD that is not one, a skeleton whose slot names a
@@ -26,6 +32,7 @@ test("hostile files through Open…: each said or refused with a reason, no page
 
   // A page image that is not one: the rig opens without it, and says so.
   await open.setInputFiles([file("Stickman_IK.json", json), file("Stickman_IK.atlas.txt", atlas), file("Stickman_IK_tex.png", "not a png")]);
+  await openAsIs(page);
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await page.locator(".issues").click();
   await expect(page.locator(".issue-list")).toContainText("is not an image this browser can read");
@@ -46,6 +53,7 @@ test("hostile files through Open…: each said or refused with a reason, no page
 
   // A good file still opens.
   await open.setInputFiles(["Stickman_IK.json", "Stickman_IK.atlas.txt", "Stickman_IK_tex.png"].map((f) => join(STICK, f)));
+  await openAsIs(page);
   await expect(message).toHaveText(/Opened/);
   expect(errors).toEqual([]);
 });

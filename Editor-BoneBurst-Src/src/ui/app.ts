@@ -8,6 +8,7 @@ import { PreferencesDialog } from "./preferencesDialog";
 import { AnimationsPanel } from "./panels/animationsPanel";
 import { HistoryPanel } from "./panels/history";
 import { MotionPathPanel } from "./panels/motionPanel";
+import { analyseOpen } from "./importAnalysis";
 import { SkinsPanel } from "./panels/skinsPanel";
 import { References } from "./panels/references";
 import { droppedFiles } from "./dropFiles";
@@ -371,6 +372,8 @@ export function mountApp(root: HTMLElement): void {
   const tagsPanel = new TagsPanel(session);
   tagsPanel.onStatus = (m) => say(m);
   const motionPanel = new MotionPathPanel(session);
+  // Opening a Spine export shows the analysis window first.
+  session.beforeOpen = analyseOpen;
   stage.motionTrail = () => motionPanel.stageTrail();
   motionPanel.onStagePath = () => stage.redraw();
   const skinsPanel = new SkinsPanel(session);
@@ -632,7 +635,8 @@ export function mountApp(root: HTMLElement): void {
   });
   viewMemory.start();
 
-  async function open(files: readonly Source[], dropped = false, project: ProjectFile | null = null): Promise<void> {
+  /** Open files; `analyse` false skips the analysis window (the dev fixtures, docs/SPINE-IMPORT-FRAMEPATH-PLAN.md). */
+  async function open(files: readonly Source[], dropped = false, project: ProjectFile | null = null, analyse = true): Promise<void> {
     // Images alone, onto an open document: references (E4 step 9), not a new document.
     const picked = pickFiles(files);
     // A PSD dropped on an open rig brings its changes in (E4 step 14); Open… with one starts a new rig.
@@ -652,7 +656,7 @@ export function mountApp(root: HTMLElement): void {
     // A new file gets its own tab: the shown one is set aside, and comes back if this one fails.
     const parked = tabs.park();
     try {
-      await session.open(files);
+      if (!(await session.open(files, analyse))) { tabs.unpark(parked); say("Nothing was opened."); return; }
       session.projectFile = project;
       restoreView();
       stage.opened();
@@ -940,7 +944,8 @@ export function mountApp(root: HTMLElement): void {
       const get = async () => { const r = await fetch(url); if (!r.ok) throw new Error(`${url}: ${r.status}`); return r; };
       return { name, text: async () => (await get()).text(), blob: async () => (await get()).blob() };
     });
-    await open(sources);
+    // The dev fixtures open as they are: they are every e2e test's way in, and the window is for a person's own exports.
+    await open(sources, false, null, false);
   }
   const devOpen = import.meta.env.DEV ? new URLSearchParams(location.search).get("open") : null;
   if (devOpen === "stickman") void openStickman();

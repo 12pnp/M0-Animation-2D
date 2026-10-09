@@ -2,6 +2,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "@playwright/test";
 
+/** Through the analysis window a Spine export now opens with (docs/SPINE-IMPORT-FRAMEPATH-PLAN.md): opened as it is. */
+async function openAsIs(page: import("@playwright/test").Page): Promise<void> {
+  await page.getByRole("dialog", { name: "Open: analysis" }).getByRole("button", { name: /^Open( as is)?$/ }).click();
+}
+
+
 /**
  * A bone the pose leaves without one (E8-PLAN step 2), on a rig where BoneBurst's C# runtime
  * leaves it without one too (tests/fixtures/unposed: a two-bone IK on an arm scaled to 0 in y):
@@ -19,6 +25,7 @@ test("a bone without a pose: named in the notes, said in Properties, not drawn o
   await page.evaluate(() => localStorage.clear());
   await page.reload();
   await page.locator('input[type=file][accept*=".psd"]').setInputFiles(FILE);
+  await openAsIs(page);
   await expect(page.locator(".message")).toHaveText(/Opened/);
 
   await page.locator(".issues").click();

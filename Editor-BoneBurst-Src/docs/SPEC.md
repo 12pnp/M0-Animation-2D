@@ -119,6 +119,13 @@ A sidecar written before 2026-10-09 may hold TwinSpline's paths under a top-leve
   slots, no slot twice, no two to one place) and hex colours; `engine/atlasCheck.missingRegions`
   names attachments whose regions the atlas lacks. A page image the browser cannot decode opens
   without that page, said.
+- **A Spine export opens through the analysis window** (docs/SPINE-IMPORT-FRAMEPATH-PLAN.md; `ui/importAnalysis.ts`): Open…, Import
+  Spine Folder and a drop read the JSON, build its rig (a file the engine cannot pose is refused here, before the window), then ask
+  `Session.beforeOpen`: the window shows the file (Spine version, frame rate, bones, slots, skins, animations), what FramePath cannot
+  take as it is (`framePathReport`: bones keyed as separate x / y lists, curves timing x and y apart, each by animation), the conversion's
+  options (x / y timing: match and cut to a tolerance, match only, leave; the tolerance) and what converting does, measured. Convert to
+  FramePath and open, Open as is, or Cancel (nothing opens). Spine's JSON only: a `.skel` without a `.json` is said and not opened. A
+  `.bbdata` project, Restore of work kept in this browser and the dev fixtures open without the window.
 - **The notes are live (E8)**: what reading the files said stays as `Session.issues`; everything
   about the document as it is now is `Session.notes()` (`ui/notes.ts`): the profile, the regions the
   atlas lacks, what the engine skips, and the bones the pose shown leaves without one, worked out
@@ -199,6 +206,7 @@ flowchart LR
     CV -->|"setSpanEase"| K
     ROW["key's data row"] -->|"setTranslateKeySpeeds · setTranslateKeyReaches"| K
     STRIP["frame strip"] -->|"retimeTranslateKey"| K
+    OPEN["analysis window · ⋮ Convert to FramePath…"] -->|"convertToFramePath"| K
     K -->|"exported as is"| U["Spine JSON → Unity bake"]
 ```
 
@@ -215,6 +223,11 @@ flowchart LR
   across the chord stays.
 - Mirror, Break and Plain (the path's handles) and Linked, Broken (the speed legs) are read from the keys; a choice the file cannot show
   is kept by the panel while the bone and animation stay.
+- **A Spine export made into what FramePath edits** (`edit/toFramePath.ts`, docs/SPINE-IMPORT-FRAMEPATH-PLAN.md): split `translatex` /
+  `translatey` lists merged into one `translate` list (each channel's curve cut exactly at the new keys; an unkeyed axis, or one before
+  its first key, at the setup pose; a jump on one axis while the other moves a one-frame ramp, the same at every whole frame), then one
+  timing fitted to x and y where they were timed apart (`split` cutting spans at whole frames to stay within a tolerance, `match`, or
+  `leave`). On opening, in the analysis window; later, from FramePath's ⋮ menu or a split bone's hint. One undo step either way.
 - No sidecar data, no bake, no clock of its own: what plays in the editor is what Spine and Unity play.
 
 ## 7. Interface (E2–E4)

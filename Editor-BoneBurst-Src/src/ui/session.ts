@@ -2,6 +2,8 @@ import { readAtlas } from "@/io/atlas";
 import { unpackBbdata } from "@/io/bbdata";
 import { readSidecar, writeSidecar } from "@/io/sidecar";
 import { closeLoops } from "@/edit/loop";
+import { convertToFramePath } from "@/edit/toFramePath";
+import type { OpenAnalysis, OpenChoice } from "./importAnalysis";
 import { deleteTag, renameTag, type Tagged, parseTags, renameTagged, tagKeyOf, tagsFor, withoutTag, withTags } from "@/edit/tags";
 import { addReference, type View, viewOf, withView } from "@/edit/sidecar";
 import { EMPTY_SIDECAR, type Sidecar } from "@/model/sidecar";
@@ -559,20 +561,40 @@ export class Session {
     this.changed();
   }
 
-  /** Open a skeleton, its atlas and its pages from the given files. Throws when there is no skeleton. */
-  async open(files: readonly Source[]): Promise<void> {
+  /**
+   * What opening a Spine export asks first (docs/SPINE-IMPORT-FRAMEPATH-PLAN.md, step 2): the analysis window, set by the app. Unset
+   * (tests, the engine's scripts) the file opens as it is.
+   */
+  beforeOpen: ((a: OpenAnalysis) => Promise<OpenChoice>) | null = null;
+
+  /**
+   * Open a skeleton, its atlas and its pages from the given files: true when it opened, false when the analysis window was cancelled
+   * (nothing changed). `analyse` false skips the window (the dev fixtures). Throws when there is no skeleton.
+   */
+  async open(files: readonly Source[], analyse = true): Promise<boolean> {
     // A project file holds the same files an export folder does: open those.
     const project = files.find((f) => /\.bbdata$/i.test(f.name));
     if (project) {
-      await this.open(unpackBbdata(new Uint8Array(await (await project.blob()).arrayBuffer())).map(sourceOf));
-      return;
+      // A project is the editor's own: no analysis, it was made here.
+      return this.open(unpackBbdata(new Uint8Array(await (await project.blob()).arrayBuffer())).map(sourceOf), false);
     }
     const picked = pickFiles(files);
-    if (picked.psd && !picked.skeleton) { await this.openPsd(picked.psd); return; }
+    if (picked.psd && !picked.skeleton) { await this.openPsd(picked.psd); return true; }
+    // Spine's binary export alone: the window says the JSON is wanted (Decision 4); nothing opens.
+    const skel = files.find((f) => /\.skel(\.bytes)?$/i.test(f.name));
+    if (!picked.skeleton && skel) {
+      if (analyse && this.beforeOpen) await this.beforeOpen({ kind: "skel", name: skel.name });
+      else throw new Error(`${skel.name} is Spine's binary export: open the JSON export (Spine: Export › JSON).`);
+      return false;
+    }
     if (!picked.skeleton && !picked.atlas) throw new Error("Choose a Spine skeleton (.json) with its .atlas and page images, or an atlas with its images to start a new skeleton.");
     // An atlas alone starts a new skeleton (a root bone) to build a rig from its regions.
     const { skeleton, issues } = picked.skeleton ? readSkeleton(await picked.skeleton.text()) : { skeleton: newSkeleton(randomHash(), this.defaultFps), issues: [] };
     const fileName = picked.skeleton?.name ?? `${picked.atlas!.name.replace(/\.atlas(\.txt)?$/i, "")}.json`;
+    // A Spine export: the analysis window first, for a file the engine can pose (one it cannot is refused here, with its reason, before it).
+    if (picked.skeleton && analyse && this.beforeOpen) new Poser(skeleton, NO_IMAGES);
+    const choice: OpenChoice = picked.skeleton && analyse && this.beforeOpen ? await this.beforeOpen({ kind: "json", name: fileName, skeleton, issues: issues.length }) : { action: "open" };
+    if (choice.action === "cancel") return false;
     // The profile and the atlas's regions are the live notes' (`notes`): they follow every edit.
     const all: Issue[] = [...issues];
     let atlas: Atlas | null = null;
@@ -616,6 +638,13 @@ export class Session {
       for (const path of missing) this.issues.push({ where: picked.sidecar.name, message: `reference "${path}" was not given; kept, not shown` });
       this.changed();
     }
+    // Converted for FramePath: one undo step on top of the file as it was exported.
+    if (choice.convert && this.history) {
+      const converted = convertToFramePath(this.history.doc, choice.convert).doc;
+      this.history.apply("Convert to FramePath", () => converted);
+      this.changed();
+    }
+    return true;
   }
 
   /**
@@ -734,7 +763,8 @@ export class Session {
    * atlas the editor had made (a PSD import never saved) is to be written by the next Save again.
    */
   async restore(files: readonly Source[], generated: { atlasText: string } | null): Promise<void> {
-    await this.open(files);
+    // Work kept in this browser is the editor's own: no analysis window.
+    await this.open(files, false);
     this.saved = null;
     if (generated && this.atlas) {
       const pages: Page[] = [];
@@ -831,7 +861,8 @@ function sourceOf(f: { name: string; data: Uint8Array }): Source {
 export interface DocumentState { readonly __documentState: never }
 
 /** The session's fields that belong to the person or the page, not to a document. */
-const SHARED_FIELDS: ReadonlySet<string> = new Set(["listeners", "undoSteps", "referenceOpacity", "boneSize", "defaultFps", "compensate", "unkeyed", "unkeyedRev"]);
+// The editor's, not a document's: kept when tabs swap documents (`beforeOpen`, the analysis window, is the app's).
+const SHARED_FIELDS: ReadonlySet<string> = new Set(["listeners", "undoSteps", "referenceOpacity", "boneSize", "defaultFps", "compensate", "unkeyed", "unkeyedRev", "beforeOpen"]);
 
 /** An atlas with what goes with it: its regions in numbers, page images, exact pixels, the files Save writes. */
 interface AtlasState {

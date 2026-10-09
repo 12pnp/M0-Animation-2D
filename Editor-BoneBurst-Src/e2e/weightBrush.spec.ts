@@ -2,6 +2,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, type Page, test } from "@playwright/test";
 
+/** Through the analysis window a Spine export now opens with (docs/SPINE-IMPORT-FRAMEPATH-PLAN.md): opened as it is. */
+async function openAsIs(page: import("@playwright/test").Page): Promise<void> {
+  await page.getByRole("dialog", { name: "Open: analysis" }).getByRole("button", { name: /^Open( as is)?$/ }).click();
+}
+
+
 /**
  * The weight brush (E6-PLAN step 4f): on spineboy-pro, a weighted mesh selected, a bone chosen in
  * Show weights and Paint weights on, a stroke over one of its vertices raises that bone's weight
@@ -50,6 +56,7 @@ test("Paint weights: a stroke over a vertex raises the shown bone's weight there
   await page.evaluate(() => localStorage.setItem("boneburst.preferences", JSON.stringify({ version: 1, stagePanels: false })));
   await page.reload();
   await page.locator("input[type=file]:not([webkitdirectory])").setInputFiles(["spineboy-pro.json", "spineboy-pro.atlas.txt", "spineboy-pro.png"].map((f) => join(SPINEBOY, f)));
+  await openAsIs(page);
   await page.waitForFunction(() => document.title.includes("spineboy-pro"));
   const t = (await target(page))!;
   expect(t).not.toBeNull();

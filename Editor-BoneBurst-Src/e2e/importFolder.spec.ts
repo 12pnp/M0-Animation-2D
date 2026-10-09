@@ -3,6 +3,12 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 
+/** Through the analysis window a Spine export now opens with (docs/SPINE-IMPORT-FRAMEPATH-PLAN.md): opened as it is. */
+async function openAsIs(page: import("@playwright/test").Page): Promise<void> {
+  await page.getByRole("dialog", { name: "Open: analysis" }).getByRole("button", { name: /^Open( as is)?$/ }).click();
+}
+
+
 /** File ▸ Import Spine Folder…: a folder with the skeleton, atlas and page image opens; one that lacks something says so. */
 
 const ROOT = join(import.meta.dirname, "..");
@@ -25,6 +31,7 @@ test("Import Spine Folder opens a complete folder, and says what an incomplete o
 
   // The stickman folder has all three: it opens in a tab.
   await folder.setInputFiles(join(ROOT, "tests", "fixtures", "stickman"));
+  await openAsIs(page);
   await expect(page.locator(".outline .row", { hasText: "hips" })).toBeVisible();
   await expect(page.locator(".doc-tab")).toHaveCount(1);
 });

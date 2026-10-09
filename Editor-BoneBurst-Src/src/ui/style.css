@@ -502,6 +502,21 @@ dialog.preferences .swatch.auto.with-colour { background-image: repeating-linear
 .doc-tab:hover .doc-close { visibility: visible; }
 .doc-close:hover { background: var(--hover); }
 .confirm-dialog { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 16px 20px; max-width: 380px; }
+/* The analysis window a Spine export opens with (docs/SPINE-IMPORT-FRAMEPATH-PLAN.md). */
+.import-analysis { background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 14px 18px; width: min(560px, 92vw); max-height: 86vh; overflow: auto; font-size: 13px; }
+.import-analysis h3 { margin: 4px 0 8px; font-size: 14px; }
+.import-analysis p { margin: 6px 0; }
+.import-analysis .note { color: var(--muted); }
+.import-analysis .result { font-weight: 600; }
+.import-analysis .facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 14px; margin: 0 0 8px; }
+.import-analysis .facts dt { color: var(--muted); }
+.import-analysis .facts dd { margin: 0; }
+.import-analysis details { margin: 6px 0; }
+.import-analysis table { border-collapse: collapse; width: 100%; font-size: 12px; margin-top: 4px; }
+.import-analysis th, .import-analysis td { text-align: left; padding: 2px 8px 2px 0; border-bottom: 1px solid var(--line); }
+.import-analysis fieldset { border: 1px solid var(--line); border-radius: 6px; margin: 8px 0; padding: 6px 10px; display: flex; flex-direction: column; gap: 4px; }
+.import-analysis fieldset input[type=number] { width: 64px; }
+.import-analysis .row { display: flex; justify-content: flex-end; gap: 6px; margin-top: 10px; }
 .confirm-dialog::backdrop { background: rgb(0 0 0 / 0.45); }
 .confirm-dialog p { margin: 0 0 6px; }
 .confirm-dialog .note { color: var(--muted); margin-bottom: 14px; }
