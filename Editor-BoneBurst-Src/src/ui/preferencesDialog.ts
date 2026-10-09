@@ -56,6 +56,9 @@ export class PreferencesDialog {
         note("The height of each row in the timeline and graph."),
         colourPicker("Graph background colour", p.graphColour, (c) => this.prefs.set({ graphColour: c }), true, themeColour("--panel")),
         note("Behind the Timeline's curve graph and Motion Path's speed graph; their lines and numbers follow it. Automatic is the theme's panel; Hybrid makes it light gray."),
+        colourPicker("Leg colour, in (arriving at a key)", p.legInColour, (c) => this.prefs.set({ legInColour: c }), true),
+        colourPicker("Leg colour, out (leaving a key)", p.legOutColour, (c) => this.prefs.set({ legOutColour: c }), true),
+        note("FramePath's legs on the picture and on the speed graph. Automatic draws them in the path colour (the swatch by Stage)."),
       ],
       tree: [
         check("Tree colours", p.treeColours, (on) => this.prefs.set({ treeColours: on })),
@@ -265,7 +268,7 @@ export class PreferencesDialog {
 const KEYS: Readonly<Record<string, readonly (keyof PreferenceValues)[]>> = {
   general: ["undoSteps", "referenceOpacity", "fullScreenOnStart"],
   interface: ["fontSize", "uiScale", "toolbarPosition", "toolbarLabels"],
-  timeline: ["defaultFps", "fewerTicks", "graphColour"],
+  timeline: ["defaultFps", "fewerTicks", "graphColour", "legInColour", "legOutColour"],
   tree: ["treeColours", "treeIndent", "treeGuideColour"],
   files: ["saveTo", "autosave", "autosaveSeconds"],
   display: ["rulers", "rulerColour", "rulerOpacity", "rulerTextColour", "stagePanels", "bones", "boneColour", "boneSize", "selectedBoneColour", "constraints", "compensate", "pickGlow", "boneNames", "boneSelect", "imageSelect", "otherSelect"],

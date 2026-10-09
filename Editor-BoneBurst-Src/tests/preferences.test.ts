@@ -14,7 +14,7 @@ function store(initial: string | null = null, blocked = false): Store & { saved:
 describe("preferences", () => {
   it("start from the defaults, and read back what was written", () => {
     expect(readPreferences(null)).toEqual(DEFAULTS);
-    const p = { theme: "dark" as const, rulers: false, boneSelect: false, imageSelect: false, otherSelect: false, boneNames: true, pickGlow: false, compensate: true, nudgeStep: 0.5, nudgeScaleStep: 0.05, nudgeBigFactor: 4, uiScale: 80, fontSize: "large" as const, toolbarLabels: "hide" as const, toolbarPosition: "right" as const, fewerTicks: true, defaultFps: 24, treeColours: false, treeIndent: 20, treeGuideColour: "#336699", stagePanels: false, fullScreenOnStart: false, boneColour: "#334455", boneSize: 2.5, selectedBoneColour: "#ff00aa", bones: false, constraints: false, hideIkBones: true, rulerColour: "#112233", rulerOpacity: 0.4, rulerTextColour: "#ffee00", undoSteps: 1200, referenceOpacity: 0.3, ai: true, autosave: false, autosaveSeconds: 90, saveTo: "file" as const, onion: true, onionBefore: 3, onionAfter: 0, onionKeyedOnly: true, onionColour: false, grid: true, checker: false, axes: false, checkerColour: "#112233", gridColour: "#445566", gridThickness: 2.5, axisXColour: "#aa0000", axisYColour: "#00aa00", axisThickness: 3, tabBarColour: "#101820", tabActiveColour: "auto", tabTextColour: "#ddeeff", tabDimTextColour: "#778899", graphColour: "#c0c0c0", gridSize: 12.5, snap: false, snapGrid: false, snapGuides: false, snapBones: false, snapPixels: true };
+    const p = { theme: "dark" as const, rulers: false, boneSelect: false, imageSelect: false, otherSelect: false, boneNames: true, pickGlow: false, compensate: true, nudgeStep: 0.5, nudgeScaleStep: 0.05, nudgeBigFactor: 4, uiScale: 80, fontSize: "large" as const, toolbarLabels: "hide" as const, toolbarPosition: "right" as const, fewerTicks: true, defaultFps: 24, treeColours: false, treeIndent: 20, treeGuideColour: "#336699", stagePanels: false, fullScreenOnStart: false, boneColour: "#334455", boneSize: 2.5, selectedBoneColour: "#ff00aa", bones: false, constraints: false, hideIkBones: true, rulerColour: "#112233", rulerOpacity: 0.4, rulerTextColour: "#ffee00", undoSteps: 1200, referenceOpacity: 0.3, ai: true, autosave: false, autosaveSeconds: 90, saveTo: "file" as const, onion: true, onionBefore: 3, onionAfter: 0, onionKeyedOnly: true, onionColour: false, grid: true, checker: false, axes: false, checkerColour: "#112233", gridColour: "#445566", gridThickness: 2.5, axisXColour: "#aa0000", axisYColour: "#00aa00", axisThickness: 3, tabBarColour: "#101820", tabActiveColour: "auto", tabTextColour: "#ddeeff", tabDimTextColour: "#778899", graphColour: "#c0c0c0", legInColour: "auto", legOutColour: "#00ff88", gridSize: 12.5, snap: false, snapGrid: false, snapGuides: false, snapBones: false, snapPixels: true };
     expect(readPreferences(writePreferences(p))).toEqual(p);
   });
   it.each([
@@ -86,6 +86,16 @@ describe("the user interface preferences", () => {
     expect(prefs.values).toMatchObject({ defaultFps: 1, treeIndent: 6 });
     prefs.set({ defaultFps: 1000, treeIndent: 99 });
     expect(prefs.values).toMatchObject({ defaultFps: 240, treeIndent: 40 });
+  });
+});
+
+describe("leg colours (FRAMEPATH-SPEED-PLAN step 19)", () => {
+  it("start as two colours apart from the path's, take auto, and fall back on a value that is not a colour", () => {
+    expect(DEFAULTS.legInColour).not.toBe(DEFAULTS.legOutColour);
+    expect([DEFAULTS.legInColour, DEFAULTS.legOutColour]).not.toContain("#ff9f1c");
+    const read = (v: unknown) => readPreferences(JSON.stringify({ version: 2, theme: "light", themes: [{ id: "light", name: "Light", base: "light", values: { legInColour: v, legOutColour: "auto" } }] }));
+    expect(read("#123456")).toMatchObject({ legInColour: "#123456", legOutColour: "auto" });
+    expect(read("red").legInColour).toBe(DEFAULTS.legInColour);
   });
 });
 

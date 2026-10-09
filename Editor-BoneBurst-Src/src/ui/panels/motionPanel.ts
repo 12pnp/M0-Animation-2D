@@ -815,6 +815,25 @@ export class MotionPathPanel {
     g.strokeStyle = pathColour;
     g.lineWidth = 2;
     trace(trail.joint);
+    // The span at the playhead (its tab lit on the strip) in the same accent, a little wider, so both are seen as one (step 18).
+    const span = this.litSpan();
+    if (span) {
+      g.save();
+      g.strokeStyle = c.accent;
+      g.lineWidth = 3;
+      g.lineJoin = "round";
+      g.beginPath();
+      let pen = false;
+      for (let f = span[0]; f <= Math.min(span[1], trail.frames); f++) {
+        const x = trail.joint[f * 2]!, y = trail.joint[f * 2 + 1]!;
+        if (!Number.isFinite(x) || !Number.isFinite(y)) { pen = false; continue; }
+        const [px, py] = at(x, y);
+        if (pen) g.lineTo(px, py); else g.moveTo(px, py);
+        pen = true;
+      }
+      g.stroke();
+      g.restore();
+    }
     const keyed = new Set<number>(), marks: number[] = [];
     for (const group of this.session.animation?.bones ?? []) if (group.name === bone) for (const t of group.timelines) for (const key of t.keys) keyed.add(Math.round((key.time ?? 0) * trail.fps));
     for (let f = 0; f <= trail.frames; f++) {
@@ -1322,9 +1341,8 @@ export class MotionPathPanel {
     this.keyHandlePts = [];
     const s = this.session, bone = s.selectedBone, keys = this.keyNodes();
     if (!keys || keys.length < 2 || bone === null) return;
-    const hs = keyHandles(bone, keys), mats = this.keyMatrices(keys);
+    const hs = keyHandles(bone, keys), mats = this.keyMatrices(keys), legs = this.legColours(colour);
     g.save();
-    g.strokeStyle = colour;
     g.lineWidth = 1.5;
     keys.forEach((k, i) => {
       const f = timeFrame(keyTime(k), s.fps), m = mats[i];
@@ -1339,8 +1357,9 @@ export class MotionPathPanel {
         const [tx, ty] = at(jx + m[0] * h[0] + m[1] * h[1], jy + m[2] * h[0] + m[3] * h[1]);
         const lit = this.keyHandleDrag?.i === i && this.keyHandleDrag.side === side;
         g.globalAlpha = lit || f === s.frame ? 1 : 0.75;
+        g.strokeStyle = legs[side];
         g.beginPath(); g.moveTo(cx, cy); g.lineTo(tx, ty); g.stroke();
-        g.fillStyle = lit ? "#ffffff" : colour;
+        g.fillStyle = lit ? "#ffffff" : legs[side];
         g.beginPath(); g.arc(tx, ty, lit ? 6 : 4.5, 0, Math.PI * 2); g.fill();
         this.keyHandlePts.push({ i, side, x: tx, y: ty, jx, jy, m });
       }
@@ -1393,6 +1412,32 @@ export class MotionPathPanel {
     this.speedCanvas.style.cursor = next?.where === "graph" ? "pointer" : this.speedCanvas.style.cursor;
     this.keyStrip.style.cursor = next?.where === "strip" ? "pointer" : "";
     this.schedule();
+  }
+
+  /** The in and out legs' colours (Preferences, FRAMEPATH-SPEED-PLAN step 19); a leg set to Automatic takes `path`. */
+  private legColours(path: string): { in: string; out: string } {
+    const css = getComputedStyle(this.element), v = (n: string): string => css.getPropertyValue(n).trim() || path;
+    return { in: v("--leg-in"), out: v("--leg-out") };
+  }
+
+  /** ⌘ + click on a key's dot: the playhead goes to it and its path mode is chosen from a menu (step 19). */
+  private legMenu(i: number, frame: number, cx: number, cy: number): void {
+    this.session.seek(frame);
+    const current = this.keyMode(i);
+    showContextMenu(cx, cy, [
+      { label: `Mirror: key ${i + 1}'s legs linked`, checked: current === "mirror", run: () => this.setKeyLegs(i, "mirror") },
+      { label: `Break: key ${i + 1}'s legs free`, checked: current === "break", run: () => this.setKeyLegs(i, "break") },
+      { label: `Plain: key ${i + 1} with no legs`, checked: current === "plain", run: () => this.setKeyLegs(i, "plain") },
+    ]);
+  }
+
+  /** The span the playhead is in, as frames [from key, to the next key), or null (no keys, or past the last key): lit on the strip and on the path. */
+  private litSpan(): [number, number] | null {
+    const s = this.session, keys = this.keyNodes();
+    if (!keys) return null;
+    const frames = keys.map((k) => timeFrame(keyTime(k), s.fps));
+    for (let i = 0; i + 1 < frames.length; i++) if (s.frame >= frames[i]! && s.frame < frames[i + 1]!) return [frames[i]!, frames[i + 1]!];
+    return null;
   }
 
   /** The strip's diamond under a point of the strip, or -1. */
@@ -1528,12 +1573,12 @@ export class MotionPathPanel {
       }
     }
     // The tabs: one for each span between two keys.
-    const frames = keys.map((k) => timeFrame(keyTime(k), s.fps)), y0 = RULER + 4, th = KEY_TABS - 8;
+    const frames = keys.map((k) => timeFrame(keyTime(k), s.fps)), y0 = RULER + 4, th = KEY_TABS - 8, lit = this.litSpan();
     g.font = `10px ${mono}`;
     for (let i = 0; i + 1 < frames.length; i++) {
       const f0 = frames[i]!, f1 = frames[i + 1]!, x0 = this.stripX(f0) + 1.5, x1 = this.stripX(f1) - 1.5;
       if (x1 < 0 || x0 > w || x1 - x0 < 3) continue;
-      const here = s.frame >= f0 && s.frame < f1;
+      const here = lit?.[0] === f0;
       g.fillStyle = here ? accent : hover;
       g.globalAlpha = here ? 0.35 : 1;
       g.beginPath(); g.roundRect(x0, y0, x1 - x0, th, 3); g.fill();
@@ -1784,7 +1829,7 @@ export class MotionPathPanel {
     }
     g.save();
     g.beginPath(); g.rect(l, 0, r - l, h); g.clip();
-    const pairs = keySpeedPairs(bone, keys), reaches = keyReaches(bone, keys), colour = this.stagePath.colour, { x0, x1 } = this.gView;
+    const pairs = keySpeedPairs(bone, keys), reaches = keyReaches(bone, keys), colour = this.stagePath.colour, legs = this.legColours(colour), { x0, x1 } = this.gView;
     // Each span's speed across its time; a stepped span has none.
     g.strokeStyle = colour;
     g.lineWidth = 1.5;
@@ -1811,7 +1856,7 @@ export class MotionPathPanel {
         // A straight side's leg reaches as far into its span as the key's speed lasts (step 10); a curved side's is a short stem.
         const r = reaches[i]![side], to = keys[side === "in" ? i - 1 : i + 1];
         const hx = r !== null && to ? X(keyTime(k) + (keyTime(to) - keyTime(k)) * r) : x + (side === "in" ? -LEG : LEG), hy = Y(sv), lit = (this.speedHover?.i === i && this.speedHover.side === side) || (this.legDrag?.i === i && this.legDrag.side === side);
-        g.strokeStyle = lit ? "#ffffff" : colour;
+        g.strokeStyle = lit ? "#ffffff" : legs[side];
         g.globalAlpha = lit || on ? 0.9 : 0.6;
         g.beginPath(); g.moveTo(x, y); g.lineTo(hx, hy); g.stroke();
         g.beginPath(); g.arc(hx, hy, lit ? 4.5 : 3, 0, Math.PI * 2); g.stroke();
@@ -2240,6 +2285,11 @@ export class MotionPathPanel {
         this.scrubbing = true;
         this.grab(e);
         return;
+      }
+      // ⌘ (Ctrl elsewhere) + click on a key's dot: its leg mode from a menu, no drag (step 19).
+      if (e.metaKey || e.ctrlKey) {
+        const f = this.markAt(x, y), k = f >= 0 ? this.keyAtFrame(f) : -1;
+        if (k >= 0) { e.preventDefault(); this.legMenu(k, f, e.clientX, e.clientY); return; }
       }
       // A handle's tip shapes the path at its key (docs/FRAMEPATH-SPEED-PLAN.md, step 5); Alt breaks the key's handles first.
       const kh = this.keyHandleAt(x, y);

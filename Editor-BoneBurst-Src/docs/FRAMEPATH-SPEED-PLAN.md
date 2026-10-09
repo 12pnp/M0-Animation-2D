@@ -458,3 +458,64 @@ flowchart LR
 
 Result: done. `e2e/stagePath.spec.ts` now also finds the picked colour in the picture (it fails with the old pink and blue); the
 Motion Path, Stage path and retime e2e (31) pass. Seen on a Playwright screenshot: the path and its dots orange, as the graph.
+
+## Step 18: the span at the playhead is lit on the path (2026-10-09, the owner's twenty-second note)
+
+> when we click 0, then path must show diff color 0-2, for can easy look
+
+The strip lights the tab of the span the playhead is in (from a key to the next, `s.frame >= f0 && s.frame < f1`, in the theme's
+accent). The picture now draws that span's stretch of the path in the same accent, 3 px over the 2 px line, so the span on the strip
+and on the path are seen together. Past the last key no span is lit, as on the strip.
+
+```mermaid
+flowchart LR
+    PH["playhead frame"] --> SPAN["litSpan(): keys' frames f0 ≤ frame < f1"]
+    SPAN --> TAB["drawKeyStrip(): the tab in accent"]
+    SPAN --> PATH["drawPath(): trail.joint f0 … f1 in accent, 3 px"]
+```
+
+1. `motionPanel.ts`: `litSpan()` (the one rule, used by the strip's tabs and the picture); `drawPath` strokes the joint's trail from
+   f0 to f1 in the accent after the whole line, before the dots.
+2. e2e: on frame 0 the path at frame 1 (inside the first span) is in the accent; with the playhead in another span it is in the path
+   colour.
+
+### Result (step 18)
+
+As planned: `litSpan()` is the one rule for the strip's lit tab and the picture's lit stretch. `e2e/litSpan.spec.ts`: with the
+playhead on key 2 the path halfway to key 3 is in the accent; with it on key 4 the same place is the path colour (it fails with the
+lit stretch switched off). The Motion Path e2e pass.
+
+## Step 19: ⌘ + click a key's dot for its leg mode; in and out legs in their own colours (2026-10-09, the owner's twenty-third note)
+
+> when cmd + click node, show menu, for switch 3 mode leg, each leg must diff color and can set color in "Preferences" too
+
+The owner chose: the node is a key's dot on FramePath's picture; the colours are **in** (the leg arriving at the key) and **out**
+(the leg leaving it), on the picture and on the speed graph.
+
+```mermaid
+flowchart LR
+    CLICK["⌘ / Ctrl + click a key's dot"] --> MENU["showContextMenu: Mirror · Break · Plain (checked)"]
+    MENU -->|"setKeyLegs()"| MODE["the key's path mode"]
+    PREF["Preferences ▸ Timeline: Leg colour in / out"] -->|"applyPrefs()"| VARS["--leg-in · --leg-out on &lt;html&gt;"]
+    VARS --> HAND["drawKeyHandles(): in leg · out leg"]
+    VARS --> SG["drawKeySpeed(): in leg · out leg"]
+```
+
+1. `preferences.ts`: `legInColour` and `legOutColour` join the appearance values (`#rrggbb`, or `auto` for the path colour); by
+   default in is `#38b6ff` (blue) and out `#ff5c8a` (pink), so they differ from each other and from the orange path.
+2. `app.ts`: `--leg-in` and `--leg-out` on `<html>` (removed for `auto`); popouts copy them.
+3. `motionPanel.ts`: `drawKeyHandles` and the speed graph's legs draw each side in its colour (a lit or dragged leg stays white);
+   ⌘ (Ctrl elsewhere) + click on a key's dot seeks to it and opens Mirror · Break · Plain with the key's mode checked, without starting
+   a drag.
+4. Preferences ▸ Timeline: **Leg colour, in** and **Leg colour, out** (Automatic: the path colour).
+5. Tests: preferences (defaults, `auto`, a bad value falls back); e2e: ⌘ + click a dot opens the menu, Mirror there gives the key its
+   handles; the in and out tips are drawn in their two colours; a colour set in Preferences reaches the picture.
+
+### Result (step 19)
+
+As planned: `legColours()` and `legMenu()` in the panel; `--leg-in` / `--leg-out` from `applyPrefs`. Tests: `preferences.test.ts`
+(defaults differ from each other and from the path's orange, `auto` reads, a bad value falls back; the round trip carries both);
+`e2e/legMenu.spec.ts` (⌘ + click key 3's dot: the playhead goes there, the menu shows Plain checked, Mirror gives two legs, in tip
+`#38b6ff` and out tip `#ff5c8a`; an out colour stored in the preferences, `#00c000`, is the out tip's colour). Seen on a Playwright
+screenshot: the in legs blue and the out legs pink, on the picture and on the speed graph. vitest 782 pass; e2e 129 pass, the 3
+AI-bridge tests fail as before (no bridge from the dev server on 5199).

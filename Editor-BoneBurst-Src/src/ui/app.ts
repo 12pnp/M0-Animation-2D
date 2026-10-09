@@ -552,6 +552,10 @@ export function mountApp(root: HTMLElement): void {
     }
     // The graphs' background (docs/HYBRID-THEME-PLAN.md): "auto" leaves the theme's panel.
     if (p.graphColour === "auto") rootStyle.removeProperty("--graph-bg"); else rootStyle.setProperty("--graph-bg", p.graphColour);
+    // FramePath's in and out legs (FRAMEPATH-SPEED-PLAN step 19): "auto" draws them in the path colour.
+    for (const [name, value] of [["--leg-in", p.legInColour], ["--leg-out", p.legOutColour]] as const) {
+      if (value === "auto") rootStyle.removeProperty(name); else rootStyle.setProperty(name, value);
+    }
     // The rig tree's indent guides: "auto" leaves the theme's line colour.
     if (p.treeGuideColour === "auto") rootStyle.removeProperty("--tree-guide"); else rootStyle.setProperty("--tree-guide", p.treeGuideColour);
     // The rulers' background: the colour at its opacity ("auto" is the panel colour); the stage and the Fit button read it.

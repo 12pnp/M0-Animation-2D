@@ -97,6 +97,9 @@ export interface PreferenceValues {
   readonly tabDimTextColour: string;
   /** The graphs' background (the Timeline's curve graph, Motion Path's speed graph): "#rrggbb" or "auto" (the theme's panel). docs/HYBRID-THEME-PLAN.md. */
   readonly graphColour: string;
+  /** FramePath's legs (FRAMEPATH-SPEED-PLAN step 19): the one arriving at a key (in) and the one leaving (out), on the picture and the speed graph; "#rrggbb" or "auto" (the path colour). */
+  readonly legInColour: string;
+  readonly legOutColour: string;
   readonly gridSize: number;
   /** What an arrow key adds to the chosen tool's value: degrees or units, Scale's own step, and the factor Shift multiplies by. */
   readonly nudgeStep: number;
@@ -114,7 +117,7 @@ export const UI_SCALE_RANGE = [60, 140] as const;
 /** 95: a twentieth smaller than the browser's own size; a browser under automation (the browser tests) keeps 100, so what they measure is in the pixels they see. */
 const DEFAULT_UI_SCALE = typeof navigator !== "undefined" && navigator.webdriver ? 100 : 95;
 export const DEFAULTS: PreferenceValues = { theme: "system", rulers: true, uiScale: DEFAULT_UI_SCALE, fontSize: "medium", toolbarLabels: "auto", toolbarPosition: "left", fewerTicks: false, defaultFps: 30, treeColours: true, treeIndent: 14, treeGuideColour: "auto", stagePanels: true, fullScreenOnStart: true, boneColour: "auto", boneSize: 1, selectedBoneColour: "auto", bones: true, constraints: true, hideIkBones: false, boneSelect: true, imageSelect: true, otherSelect: true, boneNames: false, pickGlow: true, compensate: false, rulerColour: "auto", rulerOpacity: 0, rulerTextColour: "auto", undoSteps: 500, referenceOpacity: 0.5, ai: false, autosave: true, autosaveSeconds: 30, saveTo: "browser", onion: false, onionBefore: 2, onionAfter: 2, onionKeyedOnly: false, onionColour: true,
-  grid: false, nudgeStep: 0.35, nudgeScaleStep: 0.01, nudgeBigFactor: 10, checker: true, axes: true, checkerColour: "auto", gridColour: "auto", gridThickness: 1, axisXColour: "#303030", axisYColour: "#303030", axisThickness: 1, tabBarColour: "#201f24", tabActiveColour: "auto", tabTextColour: "auto", tabDimTextColour: "auto", graphColour: "auto", gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
+  grid: false, nudgeStep: 0.35, nudgeScaleStep: 0.01, nudgeBigFactor: 10, checker: true, axes: true, checkerColour: "auto", gridColour: "auto", gridThickness: 1, axisXColour: "#303030", axisYColour: "#303030", axisThickness: 1, tabBarColour: "#201f24", tabActiveColour: "auto", tabTextColour: "auto", tabDimTextColour: "auto", graphColour: "auto", legInColour: "#38b6ff", legOutColour: "#ff5c8a", gridSize: 50, snap: true, snapGrid: true, snapGuides: true, snapBones: true, snapPixels: false };
 export { BONE_SIZE_RANGE } from "./stage/boneScale";
 import { BONE_SIZE_RANGE } from "./stage/boneScale";
 export type FontSize = "small" | "medium" | "large";
@@ -135,7 +138,7 @@ export const PREFERENCES_KEY = "boneburst.preferences";
 export const PREFERENCES_VERSION = 2;
 
 /** The preferences a theme owns (how things look: colours, sizes, the tree's look); the rest are the same in every theme. */
-export const APPEARANCE_KEYS = ["fontSize", "uiScale", "treeColours", "treeIndent", "treeGuideColour", "boneColour", "boneSize", "selectedBoneColour", "rulerColour", "rulerOpacity", "rulerTextColour", "checkerColour", "gridColour", "gridThickness", "axisXColour", "axisYColour", "axisThickness", "tabBarColour", "tabActiveColour", "tabTextColour", "tabDimTextColour", "graphColour", "onionColour"] as const;
+export const APPEARANCE_KEYS = ["fontSize", "uiScale", "treeColours", "treeIndent", "treeGuideColour", "boneColour", "boneSize", "selectedBoneColour", "rulerColour", "rulerOpacity", "rulerTextColour", "checkerColour", "gridColour", "gridThickness", "axisXColour", "axisYColour", "axisThickness", "tabBarColour", "tabActiveColour", "tabTextColour", "tabDimTextColour", "graphColour", "legInColour", "legOutColour", "onionColour"] as const;
 export type AppearanceValues = Pick<PreferenceValues, (typeof APPEARANCE_KEYS)[number]>;
 
 /** A theme: a name, the colour scheme it starts from, and its own appearance values. Light, Dark and Hybrid are always there; the others are the person's. */
@@ -225,6 +228,8 @@ function readFlat(v: Record<string, unknown>): PreferenceValues {
     tabTextColour: colour("tabTextColour", DEFAULTS.tabTextColour),
     tabDimTextColour: colour("tabDimTextColour", DEFAULTS.tabDimTextColour),
     graphColour: colour("graphColour", DEFAULTS.graphColour),
+    legInColour: colour("legInColour", DEFAULTS.legInColour),
+    legOutColour: colour("legOutColour", DEFAULTS.legOutColour),
     gridSize: num("gridSize", GRID_RANGE[0], GRID_RANGE[1], DEFAULTS.gridSize),
     nudgeStep: num("nudgeStep", NUDGE_RANGE[0], NUDGE_RANGE[1], DEFAULTS.nudgeStep),
     nudgeScaleStep: num("nudgeScaleStep", NUDGE_RANGE[0], NUDGE_RANGE[1], DEFAULTS.nudgeScaleStep),
