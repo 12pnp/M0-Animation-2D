@@ -227,6 +227,9 @@ export class MotionPathPanel {
   private keyMats: { doc: unknown; sig: string; mats: (Matrix | null)[] } | null = null;
   /** FramePath's frame strip: each key's diamond as last drawn. */
   private stripDots: { i: number; x: number }[] = [];
+  /** What a click on the picture would do with ⌘ or Shift held, previewed (step 21); and where the pointer last was over the picture. */
+  private pathHover: { kind: "add" | "menu" | "delete"; frame: number } | null = null;
+  private picPointer: { x: number; y: number } | null = null;
   /** The key being slid in time with ⌘ + drag on its diamond (step 16), or null. */
   private retimeDrag: number | null = null;
   /** A key under the pointer with Shift held: drawn red, and a click deletes it (docs/FRAMEPATH-SPEED-PLAN.md, step 3). */
@@ -388,7 +391,7 @@ export class MotionPathPanel {
       this.schedule();
     });
     // Shift pressed or let go with the pointer still over a key: it turns red or back.
-    for (const type of ["keydown", "keyup"] as const) window.addEventListener(type, (e) => { if (e.key === "Shift") this.updateDelHover(e.shiftKey); if (e.key === "Meta" || e.key === "Control") this.updateRetimeHover(e.metaKey || e.ctrlKey); });
+    for (const type of ["keydown", "keyup"] as const) window.addEventListener(type, (e) => { if (e.key === "Shift") this.updateDelHover(e.shiftKey); if (e.key === "Meta" || e.key === "Control") this.updateRetimeHover(e.metaKey || e.ctrlKey); if (["Shift", "Meta", "Control"].includes(e.key)) this.updatePathHover(e.metaKey || e.ctrlKey, e.shiftKey); });
     // The line that gives the picture or the strip and graph more room sits right under the picture, above the zoom bar (the owner, 2026-10-09).
     this.element.append(this.head, this.motionBar, this.body, this.split, this.viewBar, this.lower);
     new ResizeObserver(() => this.schedule()).observe(this.lower);
@@ -405,6 +408,7 @@ export class MotionPathPanel {
     this.canvas.addEventListener("pointermove", (e) => this.move(e));
     this.canvas.addEventListener("pointerup", (e) => this.up(e));
     this.canvas.addEventListener("pointercancel", (e) => this.up(e));
+    this.canvas.addEventListener("pointerleave", () => { this.picPointer = null; this.updatePathHover(false, false); });
     this.canvas.addEventListener("dblclick", () => this.fitView());
     this.canvas.tabIndex = 0;
     this.canvas.addEventListener("wheel", (e) => this.wheel(e), { passive: false });
@@ -850,6 +854,24 @@ export class MotionPathPanel {
       g.fill();
     }
     this.marks = Float64Array.from(marks);
+    // The ⌘ / Shift preview (step 21): where a click adds a key, the key whose menu opens, or the key a click deletes.
+    const hv = this.pathHover, hx = hv ? marks[hv.frame * 2] : undefined, hy = hv ? marks[hv.frame * 2 + 1] : undefined;
+    if (hv && hx !== undefined && hy !== undefined && Number.isFinite(hx) && Number.isFinite(hy)) {
+      g.save();
+      g.lineWidth = 2;
+      if (hv.kind === "add") {
+        g.fillStyle = "#ffffff"; g.strokeStyle = pathColour;
+        g.beginPath(); g.arc(hx, hy, 6, 0, Math.PI * 2); g.fill(); g.stroke();
+        g.beginPath(); g.moveTo(hx - 3, hy); g.lineTo(hx + 3, hy); g.moveTo(hx, hy - 3); g.lineTo(hx, hy + 3); g.stroke();
+      } else if (hv.kind === "menu") {
+        g.strokeStyle = c.accent;
+        g.beginPath(); g.arc(hx, hy, 8, 0, Math.PI * 2); g.stroke();
+      } else {
+        g.fillStyle = DELETE_RED; g.strokeStyle = "#ffffff";
+        g.beginPath(); g.arc(hx, hy, 6, 0, Math.PI * 2); g.fill(); g.stroke();
+      }
+      g.restore();
+    }
     if (this.show.length) this.drawLengths(g, trail, at, pathColour);
     this.drawTag(g, trail, bone, here);
   }
@@ -951,10 +973,12 @@ export class MotionPathPanel {
 
   /** The frame of the mark nearest a canvas point within the grab radius, or -1. */
   private markAt(x: number, y: number): number {
+    // Where the path passes a spot more than once (or stands still), the frame nearest the playhead wins (step 20).
+    const here = this.session.frame;
     let best = -1, bestD = 12;
     for (let f = 0; f * 2 < this.marks.length; f++) {
       const d = Math.hypot(this.marks[f * 2]! - x, this.marks[f * 2 + 1]! - y);
-      if (d <= bestD) { best = f; bestD = d; }
+      if (d < bestD - 0.5 || (d <= bestD + 0.5 && best >= 0 && Math.abs(f - here) < Math.abs(best - here)) || (best < 0 && d <= bestD)) { best = f; bestD = Math.min(bestD, d); }
     }
     return best;
   }
@@ -1420,6 +1444,25 @@ export class MotionPathPanel {
     return { in: v("--leg-in"), out: v("--leg-out") };
   }
 
+  /**
+   * The preview of a ⌘ or Shift click at the pointer (step 21), by the rule `down` follows: ⌘ on a key's dot opens its menu, ⌘
+   * elsewhere on the path adds a key, Shift on a key's dot deletes it. True when there is one (the cursor is set for it).
+   */
+  private updatePathHover(cmd: boolean, shift: boolean): boolean {
+    const p = this.picPointer, f = p && (cmd || shift) ? this.markAt(p.x, p.y) : -1, k = f >= 0 ? this.keyAtFrame(f) : -1;
+    const next = f < 0 ? null : cmd ? { kind: k >= 0 ? "menu" as const : "add" as const, frame: f } : shift && k >= 0 ? { kind: "delete" as const, frame: f } : null;
+    if (next?.kind !== this.pathHover?.kind || next?.frame !== this.pathHover?.frame) { this.pathHover = next; this.schedule(); }
+    // The hand for every preview, the arrow otherwise: the drawing says which (the owner: more cursors are clutter).
+    if (next) this.canvas.style.cursor = "pointer";
+    else if (this.canvas.style.cursor === "pointer") this.canvas.style.cursor = "";
+    return next !== null;
+  }
+
+  /** The ⌘ / Shift preview (for tests). */
+  get pathHoverNow(): { kind: "add" | "menu" | "delete"; frame: number } | null {
+    return this.pathHover;
+  }
+
   /** ⌘ + click on a key's dot: the playhead goes to it and its path mode is chosen from a menu (step 19). */
   private legMenu(i: number, frame: number, cx: number, cy: number): void {
     this.session.seek(frame);
@@ -1428,6 +1471,8 @@ export class MotionPathPanel {
       { label: `Mirror: key ${i + 1}'s legs linked`, checked: current === "mirror", run: () => this.setKeyLegs(i, "mirror") },
       { label: `Break: key ${i + 1}'s legs free`, checked: current === "break", run: () => this.setKeyLegs(i, "break") },
       { label: `Plain: key ${i + 1} with no legs`, checked: current === "plain", run: () => this.setKeyLegs(i, "plain") },
+      {},
+      { label: `Delete key ${i + 1} (Shift + click)`, run: () => this.deleteKeyAt(i) },
     ]);
   }
 
@@ -1503,18 +1548,32 @@ export class MotionPathPanel {
     const i = this.keyAtFrame(s.frame), path = { section: "bones" as const, owner: bone, timeline: "translate" };
     try {
       if (i >= 0) h.apply(`Delete the translate key of ${bone} on frame ${s.frame}`, deleteKeys(a.name, [{ path, time: keyTime(keys[i]!) }]));
-      else {
-        const p = s.pose(), index = p?.bones.get(bone);
-        if (!p || index === undefined) return;
-        h.apply(`Key ${bone}'s place on frame ${s.frame}`, keyBone(a.name, bone, ["translate"], animatedLocal(p, index), s.keyTime));
-      }
+      else { this.keyPlaceAt(s.frame); return; }
     } catch (err) {
       if (!(err instanceof EditRefused)) throw err;
       this.onStatus(err.message);
       return;
     }
     s.changed();
-    this.onStatus(i >= 0 ? `${bone}: the translate key on frame ${s.frame} is deleted.` : `${bone}: keyed on frame ${s.frame}.`);
+    this.onStatus(`${bone}: the translate key on frame ${s.frame} is deleted.`);
+  }
+
+  /** A translate key on `frame` where the bone is there now, so the path does not change; the playhead goes there. One undo step. */
+  private keyPlaceAt(frame: number): void {
+    const s = this.session, a = s.animation, bone = s.selectedBone, h = s.history;
+    if (!a || bone === null || !h) return;
+    s.seek(frame);
+    const p = s.pose(), index = p?.bones.get(bone);
+    if (!p || index === undefined) return;
+    try {
+      h.apply(`Key ${bone}'s place on frame ${frame}`, keyBone(a.name, bone, ["translate"], animatedLocal(p, index), s.keyTime));
+    } catch (err) {
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+      return;
+    }
+    s.changed();
+    this.onStatus(`${bone}: keyed on frame ${frame}.`);
   }
 
   /** The strip's x of a frame: the speed graph's x of it, moved by how far the graph's canvas is from the strip's (so both line up). */
@@ -2280,16 +2339,22 @@ export class MotionPathPanel {
   private down(e: PointerEvent): void {
     const [x, y] = localPoint(this.canvas, e);
     if (e.button === 0) {
+      // First, so a key under the frame tag can still be picked: ⌘ (Ctrl elsewhere) + click: on a key's dot its leg mode from a menu (step 19); elsewhere on the path a new key (step 20).
+      if (e.metaKey || e.ctrlKey) {
+        const f = this.markAt(x, y), k = f >= 0 ? this.keyAtFrame(f) : -1;
+        if (k >= 0) { e.preventDefault(); this.legMenu(k, f, e.clientX, e.clientY); return; }
+        if (f >= 0) { e.preventDefault(); this.keyPlaceAt(f); this.updatePathHover(true, e.shiftKey); return; }
+      }
+      // Shift + click on a key's dot deletes the key (step 20); Shift elsewhere still holds a drag to one axis.
+      if (e.shiftKey) {
+        const f = this.markAt(x, y), k = f >= 0 ? this.keyAtFrame(f) : -1;
+        if (k >= 0) { e.preventDefault(); this.deleteKeyAt(k); this.updatePathHover(e.metaKey || e.ctrlKey, true); return; }
+      }
       if (this.onTag(x, y)) {
         this.session.pause();
         this.scrubbing = true;
         this.grab(e);
         return;
-      }
-      // ⌘ (Ctrl elsewhere) + click on a key's dot: its leg mode from a menu, no drag (step 19).
-      if (e.metaKey || e.ctrlKey) {
-        const f = this.markAt(x, y), k = f >= 0 ? this.keyAtFrame(f) : -1;
-        if (k >= 0) { e.preventDefault(); this.legMenu(k, f, e.clientX, e.clientY); return; }
       }
       // A handle's tip shapes the path at its key (docs/FRAMEPATH-SPEED-PLAN.md, step 5); Alt breaks the key's handles first.
       const kh = this.keyHandleAt(x, y);
@@ -2353,6 +2418,8 @@ export class MotionPathPanel {
     }
     if (!this.dragging) {
       const [x, y] = localPoint(this.canvas, e), h = this.handle;
+      this.picPointer = { x, y };
+      if (this.updatePathHover(e.metaKey || e.ctrlKey, e.shiftKey)) return;
       this.canvas.style.cursor = this.onTag(x, y) || this.keyHandleAt(x, y) ? "grab" : (h && Math.hypot(h.x - x, h.y - y) <= 11) || this.arrowAt(x, y) !== null || this.markAt(x, y) >= 0 ? "grab" : "";
       return;
     }

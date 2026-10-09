@@ -519,3 +519,75 @@ As planned: `legColours()` and `legMenu()` in the panel; `--leg-in` / `--leg-out
 `#38b6ff` and out tip `#ff5c8a`; an out colour stored in the preferences, `#00c000`, is the out tip's colour). Seen on a Playwright
 screenshot: the in legs blue and the out legs pink, on the picture and on the speed graph. vitest 782 pass; e2e 129 pass, the 3
 AI-bridge tests fail as before (no bridge from the dev server on 5199).
+
+## Step 20: on the picture, ⌘ + click the path adds a key, Shift + click a key's dot deletes it (2026-10-09, the owner's twenty-fourth note)
+
+> PathFrame: การเพิ่ม Node สามารถทำได้โดย cmd+click at path only; การลด Node สามารถทำได้โดย Shift+click at Node only
+> (FramePath: a node is added by ⌘ + click on the path; a node is removed by Shift + click on a node.)
+
+Read as where each works: adding on the path (a frame with no key), deleting on a node (a key's dot). The strip's ◆ and Shift + click
+on the strip and the graph stay.
+
+```mermaid
+flowchart LR
+    CMD["⌘ / Ctrl + click on the picture"] --> HIT{"markAt(): the frame under it"}
+    HIT -->|"a key's frame"| MENU["legMenu() (step 19)"]
+    HIT -->|"no key there"| ADD["keyPlaceAt(frame): keyBone() where the bone is, one undo step"]
+    SHIFT["Shift + click"] --> HIT2{"markAt()"}
+    HIT2 -->|"a key's frame"| DEL["deleteKeyAt(i), one undo step"]
+    HIT2 -->|"no key"| AXIS["as before (a Shift drag keeps to one axis)"]
+```
+
+1. `motionPanel.ts`: `keyPlaceAt(frame)` (the ◆'s add, now shared): the playhead to the frame, the bone's place there keyed, so
+   the path does not change. In `down`: ⌘ on a key's dot opens the menu, ⌘ elsewhere on the path adds a key; Shift on a key's dot
+   deletes it.
+2. e2e: ⌘ + click on the path between two keys adds one key at that frame, the bone's place there unchanged; Shift + click on that
+   dot deletes it; one undo each.
+
+### Result (step 20)
+
+As planned, with two things the test found:
+
+- **⌘ and Shift are read before the frame tag.** The playhead's tag ("0") can sit over the path, and a press on it started a scrub
+  before the ⌘ check: a key under the tag could not be added or deleted.
+- **Where the path passes a spot more than once (or stands still), the frame nearest the playhead wins** (`markAt`, also for a drag
+  on a dot). Before, the last frame won, so a click between keys 2 and 3 of the stickman's walk added a key at frame 10, where the
+  path comes back, instead of frame 6.
+
+`e2e/pathAddDelete.spec.ts`: with the playhead on key 2, ⌘ + click on the path halfway to key 3 adds one key between them, one undo
+step, its dot on the spot clicked; Shift + click on that dot deletes it, one more step, and the keys are as they were. vitest 782 pass;
+e2e 130 pass, the 3 AI-bridge tests fail as before (no bridge from the dev server on 5199).
+
+## Step 21: ⌘ and Shift preview what a click on the picture will do (2026-10-09, the owner's twenty-fifth note)
+
+> when shift or cmd near node or path, ควรจะมี Preview or change icon color (there should be a preview, or the icon's colour changes)
+
+```mermaid
+flowchart LR
+    MOVE["pointer over the picture,<br/>or ⌘ / Shift pressed or let go there"] --> HOVER["pathHoverAt(x, y, cmd, shift)"]
+    HOVER -->|"⌘ on the path, no key"| ADD["a hollow dot with + at that frame · cursor copy"]
+    HOVER -->|"⌘ on a key's dot"| MENU["a ring round the dot · cursor context-menu"]
+    HOVER -->|"Shift on a key's dot"| DEL["the dot red, larger · cursor pointer"]
+    HOVER -->|"nothing"| NONE["as before"]
+```
+
+1. `motionPanel.ts`: `pathHover` ({ kind: add | menu | delete, frame } or null) from the frame `markAt` gives under the pointer and the
+   modifiers held, the same rule `down` uses; kept on pointer moves over the picture and on ⌘ / Shift pressed or let go while the pointer
+   is there; cleared when it leaves. `drawPath` draws the preview over the dots; the cursor says it too.
+2. e2e: ⌘ over the path between keys gives an add preview at that frame (the `pathHover` hook and the cursor); ⌘ over a key's dot a
+   menu preview; Shift over it a delete preview drawn red; letting go of the key clears it.
+
+### Result (step 21)
+
+As planned: `updatePathHover`, `pathHover`, `picPointer` and the drawing in `drawPath`; a click that adds or deletes updates the
+preview at once (an added key previews its menu). `e2e/pathHover.spec.ts`: ⌘ over key 3's dot previews its menu (cursor
+`context-menu`), Shift over it a delete with the dot drawn red, ⌘ over the path halfway to it an add (cursor `copy`), and letting go
+of the key clears each. Seen on Playwright screenshots: the "+" dot on the path and the red key.
+
+**Revised (step 21, the owner's twenty-sixth note: "the cursor should only be the arrow and the hand; more is clutter"):** every
+preview shows the hand (`pointer`), no preview the arrow; the drawing tells the add, the menu and the delete apart. `pathHover.spec.ts`
+checks the hand for each.
+
+**Revised (step 19, the owner's twenty-seventh note: "when cmd + click node menu, add Delete option too"):** the ⌘ + click menu on
+a key's dot ends with **Delete key n (Shift + click)**, the same delete as a Shift + click there. `legMenu.spec.ts` checks it is in
+the menu, and that choosing it deletes that key as one undo step.

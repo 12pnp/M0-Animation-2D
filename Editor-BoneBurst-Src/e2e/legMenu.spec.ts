@@ -39,6 +39,7 @@ test("⌘ + click a key's dot opens Mirror · Break · Plain; Mirror gives it le
   // The playhead went to the key, and its mode is checked (a fixture key starts Plain).
   expect(await page.evaluate(() => (window as unknown as Live).boneburst.session.frame)).toBe(f);
   await expect(page.getByRole("menuitemcheckbox", { name: /Plain: key 3 with/ })).toHaveAttribute("aria-checked", "true");
+  await expect(page.getByRole("menuitem", { name: /Delete key 3/ })).toBeVisible();
   await page.getByRole("menuitemcheckbox", { name: /Mirror: key 3's/ }).click();
   await expect.poll(async () => (await tips(page, 2)).length).toBe(2);
   const t = await tips(page, 2), tin = t.find((h) => h.side === "in")!, tout = t.find((h) => h.side === "out")!;
@@ -54,4 +55,19 @@ test("a leg colour set in Preferences reaches the picture", async ({ page }) => 
   await expect.poll(async () => (await tips(page, 2)).length).toBe(2);
   const tout = (await tips(page, 2)).find((h) => h.side === "out")!;
   await expect.poll(() => colourAt(page, tout.x, tout.y)).toBe("#00c000");
+});
+
+test("the ⌘ + click menu's Delete deletes that key, one undo step", async ({ page }) => {
+  const frames = await open(page);
+  const f = frames[2]!, count = () => page.evaluate(() => (window as unknown as Live).boneburst.session.doc.animations[0]!.bones!.find((b) => b.name === "hips")!.timelines.find((t) => t.name === "translate")!.keys.length);
+  const before = await count();
+  const mark = () => page.evaluate((n) => (window as unknown as Live).boneburst.motionPath.grabPoints.marks.slice(n * 2, n * 2 + 2), f);
+  await expect.poll(async () => { const a = await mark(); await page.waitForTimeout(50); const b = await mark(); return a.length === 2 && a.every(Number.isFinite) && a[0] === b[0] && a[1] === b[1]; }).toBe(true);
+  const [mx, my] = await mark(), box = (await picture(page).boundingBox())!;
+  await page.keyboard.down("Meta");
+  await page.mouse.click(box.x + mx!, box.y + my!);
+  await page.keyboard.up("Meta");
+  await page.getByRole("menuitem", { name: /Delete key 3/ }).click();
+  await expect.poll(count).toBe(before - 1);
+  expect(await page.evaluate(() => (window as unknown as { boneburst: { session: { history: { entries: { labels: string[] } } } } }).boneburst.session.history.entries.labels.at(-1))).toContain("Delete key 3");
 });
