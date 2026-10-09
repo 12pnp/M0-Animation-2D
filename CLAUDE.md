@@ -3,6 +3,15 @@
 This is the single canonical guidance file for AI agents working in this Unity project.
 `AGENTS.md` is the Codex entry point and directs Codex agents here before they work; keep project guidance in this file rather than duplicating it there.
 
+## Language (owner rule, 2026-10-09)
+
+- **Questions to the owner: Thai, in the question popup.** When you need the owner's decision, ask with the question
+  tool (`AskUserQuestion`), not in plain chat text, and write the question, its header and every option in Thai.
+- **Summaries: Thai.** Every summary for the owner is in Thai: the report at the end of a task or step, a status
+  report, a results recap.
+- **Everything else: English.** Code, comments, identifiers, commit messages, PR text, docs, plans and their result
+  sections, CLAUDE.md files, logs and test names. `Doc/th/` translations, where a repo has them, keep their own rule.
+
 ## Project Overview
 *   **Type**: Unity 2D URP project, **Unity 6000.6 or newer only** (on `6000.6.3f1`; see §7): the **Spine 2D animation test bed**.
 *   **What it holds**: the Spine 4.3 runtime forks and **BoneBurst**, our from-scratch Burst runtime for Spine data, with BoneBurst's tests, a demo scene and the stock-vs-BoneBurst benchmark.
