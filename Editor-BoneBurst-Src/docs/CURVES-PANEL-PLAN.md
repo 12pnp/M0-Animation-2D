@@ -214,3 +214,11 @@ The speed graph no longer draws the picked key's legs (the leg colours and reach
 with them: the graph's leg list and its test hook (`speedLegs`, `speedHandles`). Preferences' leg-colour note says "on the picture and
 in the Curves view". `speedReach.spec.ts`'s first test now types a reach and finds the Curves view's out handle moved across, and the
 graph's leg hook gone. vitest 795 pass; e2e: all pass except the 3 AI-bridge tests (no bridge from the dev server on 5199).
+
+### Step 9: frame numbers on the Curves view (done, 2026-10-09; the owner: "add frame number at red dot")
+
+The Curves view's vertical grid lines are the span's frames: a line at each frame when the span is 12 frames or less, at its quarters
+when longer; each line has its frame on top (rounded to a tenth on a quarter that falls between frames; a label that would touch the
+one before is left out, never the last). The box starts 18 px down for them; the playhead's green line starts under them. The host gives
+the span's frames (`curveSpan()`: `from`, `to`); a test hook lists the labels drawn (`curveFrameLabels`). `curvesView.spec.ts` (11): on
+key 2's span (frames 4–8) the labels are 4, 5, 6, 7, 8. Seen on a Playwright screenshot.

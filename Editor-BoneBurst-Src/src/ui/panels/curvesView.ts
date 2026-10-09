@@ -11,8 +11,8 @@ import { localPoint, pageScale } from "../pageScale";
  * what the span is and makes the edits.
  */
 export interface CurvesHost {
-  /** The span shown (by its first key's index), its ease, and the playhead's place across it (0..1); or why there is none. */
-  span(): { index: number; ease: SpanEase; at: number } | string;
+  /** The span shown (by its first key's index), its ease, the playhead's place across it (0..1) and its frames; or why there is none. */
+  span(): { index: number; ease: SpanEase; at: number; from: number; to: number } | string;
   /** The curve's colour (the path's) and the two legs' (in, out). */
   colours(): { path: string; in: string; out: string };
   /** A drag of a handle begins and ends: one undo step. */
@@ -27,7 +27,10 @@ const KINDS = [
   { kind: "linear", icon: "curveLinear", title: "Linear: an even pace to the next key" },
   { kind: "bezier", icon: "curveEaseInOut", title: "Bezier: drag the handles to ease in and out" },
 ] as const;
-const PAD = 10;
+/** Room round the box; more on top, for the frame numbers. */
+const PAD = 10, TOP = 18;
+/** A span this many frames long or less gets a grid line at each frame; a longer one, at its quarters. */
+const FRAME_LINES = 12;
 const PLAYHEAD_GREEN = "#30a46c";
 
 export class CurvesView {
@@ -38,6 +41,8 @@ export class CurvesView {
   /** The handles on the canvas as last drawn; the one being dragged, where it began, and Shift's axis once chosen. */
   private handles: { side: "out" | "in"; x: number; y: number }[] = [];
   private drag: { side: "out" | "in"; index: number; startX: number; startY: number; from: Vec; axis: "x" | "y" | null } | null = null;
+  /** The frame numbers on top, as last drawn (for tests). */
+  private labels: string[] = [];
   /** The value range the canvas shows, as last drawn (the handles can reach outside 0..1). */
   private range = { y0: 0, y1: 1 };
 
@@ -71,20 +76,26 @@ export class CurvesView {
     return this.handles;
   }
 
+  /** The frame numbers on top, for tests. */
+  get frameLabels(): readonly string[] {
+    return this.labels;
+  }
+
   /** The canvas point of an ease point, and back. */
   private toCanvas(p: Vec): [number, number] {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight, { y0, y1 } = this.range;
-    return [PAD + p[0] * (w - 2 * PAD), h - PAD - ((p[1] - y0) / (y1 - y0)) * (h - 2 * PAD)];
+    return [PAD + p[0] * (w - 2 * PAD), h - PAD - ((p[1] - y0) / (y1 - y0)) * (h - PAD - TOP)];
   }
 
   private fromCanvas(x: number, y: number): Vec {
     const w = this.canvas.clientWidth, h = this.canvas.clientHeight, { y0, y1 } = this.range;
-    return [(x - PAD) / Math.max(1, w - 2 * PAD), y0 + ((h - PAD - y) / Math.max(1, h - 2 * PAD)) * (y1 - y0)];
+    return [(x - PAD) / Math.max(1, w - 2 * PAD), y0 + ((h - PAD - y) / Math.max(1, h - PAD - TOP)) * (y1 - y0)];
   }
 
   draw(): void {
     const c = this.canvas, s = this.host.span();
     this.handles = [];
+    this.labels = [];
     for (const k of KINDS) {
       const on = typeof s !== "string" && s.ease.kind === k.kind;
       this.kindBtns[k.kind].setAttribute("aria-pressed", String(on));
@@ -108,17 +119,37 @@ export class CurvesView {
       this.range = { y0: Math.min(0, ...ys) - 0.05, y1: Math.max(1, ...ys) + 0.05 };
     }
     const at = (p: Vec) => this.toCanvas(p);
-    // A 4 × 4 grid, the box 0..1 and the even pace's diagonal, dashed.
+    // The grid: across, a line at each frame of a short span (its quarters for a long one), its frame on top; up, quarters. Then the
+    // even pace's diagonal, dashed.
+    const frames = s.to - s.from, across = frames >= 1 && frames <= FRAME_LINES ? frames : 4;
     g.strokeStyle = col("--line") || "#555";
     g.lineWidth = 1;
     g.globalAlpha = 0.6;
     g.beginPath();
-    for (let n = 0; n <= 4; n++) {
-      const [x] = at([n / 4, 0]), [, y] = at([0, n / 4]);
+    for (let n = 0; n <= across; n++) {
+      const [x] = at([n / across, 0]);
       g.moveTo(Math.round(x) + 0.5, at([0, 0])[1]); g.lineTo(Math.round(x) + 0.5, at([0, 1])[1]);
+    }
+    for (let n = 0; n <= 4; n++) {
+      const [, y] = at([0, n / 4]);
       g.moveTo(at([0, 0])[0], Math.round(y) + 0.5); g.lineTo(at([1, 0])[0], Math.round(y) + 0.5);
     }
     g.stroke();
+    g.globalAlpha = 1;
+    g.fillStyle = col("--muted") || "#999";
+    g.font = `9px ${col("--font-mono") || "monospace"}`;
+    g.textAlign = "center";
+    g.textBaseline = "top";
+    // Every label that fits: one at least its own width from the last drawn.
+    let lastRight = -Infinity;
+    for (let n = 0; n <= across; n++) {
+      const [x] = at([n / across, 0]), f = s.from + (frames * n) / across, text = String(Math.round(f * 10) / 10), half = g.measureText(text).width / 2;
+      if (x - half < lastRight + 3 && n !== across) continue;
+      g.fillText(text, Math.min(w - half - 1, Math.max(half + 1, x)), 3);
+      this.labels.push(text);
+      lastRight = x + half;
+    }
+    g.globalAlpha = 0.6;
     g.setLineDash([4, 3]);
     g.beginPath(); g.moveTo(...at([0, 0])); g.lineTo(...at([1, 1])); g.stroke();
     g.setLineDash([]);
@@ -127,7 +158,8 @@ export class CurvesView {
     const [px] = at([s.at, 0]);
     g.strokeStyle = PLAYHEAD_GREEN;
     g.lineWidth = 1.5;
-    g.beginPath(); g.moveTo(Math.round(px) + 0.5, 0); g.lineTo(Math.round(px) + 0.5, h); g.stroke();
+    // From under the frame numbers, so the playhead's own stays readable.
+    g.beginPath(); g.moveTo(Math.round(px) + 0.5, TOP - 4); g.lineTo(Math.round(px) + 0.5, h); g.stroke();
     // The curve: Spine's per-channel bezier, its control points the ends and the two handles.
     const cl = this.host.colours();
     g.strokeStyle = cl.path;

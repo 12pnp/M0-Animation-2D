@@ -185,7 +185,7 @@ export function setChannelCurve(animation: string, ref: KeyRef, c: number, handl
 
 /* ── structure ─────────────────────────────────────────────────────────── */
 
-interface Rebuilt {
+export interface Rebuilt {
   keys: readonly Key[];
   /** Per new key: its index in the old list, or null for a new key. */
   origin: readonly (number | null)[];
@@ -237,7 +237,7 @@ function settle(path: TimelinePath, before: readonly Key[], r: Rebuilt): Key[] {
  * The animation with the list at `path` rebuilt by `f` (given [] when there is none yet). `f`
  * returns null for no change; an empty result removes the list, and an emptied group or section.
  */
-function withList(a: Animation, path: TimelinePath, f: (keys: readonly Key[]) => Rebuilt | null): Animation {
+export function withList(a: Animation, path: TimelinePath, f: (keys: readonly Key[]) => Rebuilt | null): Animation {
   const current = listOf(a, path) ?? [];
   const r = f(current);
   if (!r) return a;

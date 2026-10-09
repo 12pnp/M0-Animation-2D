@@ -323,13 +323,13 @@ selected bone and the animation shown. From the top:
   opens Mirror · Break · Plain · Delete; Shift + click on a key's dot deletes it; while ⌘ or Shift is held the click is previewed. Wheel
   zooms, the middle button pans, F or Fit fits; the view bar under it has zoom − and +, and Fit.
 - **Under a splitter you drag**: the ◆ toggle and the frame strip (drawn as the Timeline's top: a tab per span, the playhead's lit;
-  ⌘ + drag on a key's diamond moves the key in time and keeps its place and the path; at its right end Fit and the frame lock, which
-  holds the playhead to the animation and makes Q / W wrap). Then the **Curves view** (`ui/panels/curvesView.ts`: the playhead's span,
+  ⌘ + drag on a key's diamond moves the key in time and keeps its place and the path; at its left the frame rate, at its right the animation's last frame (a button: the playhead
+  stops there and Q / W wrap; its popup sets it, with Pack or Trim when the keys run past it: docs/FRAME-LIMIT-PLAN.md) and Fit). Then the **Curves view** (`ui/panels/curvesView.ts`: the playhead's span,
   stepped · linear · bezier, its two handles dragged; docs/CURVES-PANEL-PLAN.md), a resize line, and the **speed graph**, a preview of
   every span: a click picks a key or a span, Shift + click deletes a key, ⌘ + click or right-click opens Linked · Broken · Delete;
   nothing on it drags. Its header: Stage draws the bone's world path on the Stage, a swatch sets the path colour
   (docs/STAGE-PATH-PLAN.md), Node fits the picked key's span. Last, **the key's data row**: its place, speed and reach in and out, the
-  speed legs (Linked · Broken) and the path (Mirror · Break · Plain).
+  speed legs (Linked · Broken) and the path (Mirror · Break · Plain); only these fields scroll, the graphs above them keep their room.
 
 Edits are history steps; a drag is one.
 

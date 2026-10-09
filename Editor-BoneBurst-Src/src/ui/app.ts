@@ -664,7 +664,7 @@ export function mountApp(root: HTMLElement): void {
   }
 
   /** The view a project keeps: the camera, the skin and the animation shown. */
-  const viewNow = (): View => ({ camera: stage.camera, ...(session.skin ? { skin: session.skin } : {}), ...(session.animation ? { animation: session.animation.name } : {}), ...(session.selectedBone ? { bone: session.selectedBone } : {}), ...(session.loopOff.size ? { loopOff: [...session.loopOff] } : {}) });
+  const viewNow = (): View => ({ camera: stage.camera, ...(session.skin ? { skin: session.skin } : {}), ...(session.animation ? { animation: session.animation.name } : {}), ...(session.selectedBone ? { bone: session.selectedBone } : {}), ...(session.loopOff.size ? { loopOff: [...session.loopOff] } : {}), ...(Object.keys(session.frameLimits).length ? { frameLimits: session.frameLimits } : {}) });
 
   /** ⌘S: the project, to its file (File ▸ Save Project As… picks another). */
   async function save(again = false): Promise<void> {

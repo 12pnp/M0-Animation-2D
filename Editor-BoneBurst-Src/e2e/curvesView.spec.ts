@@ -69,6 +69,8 @@ test("dragging a handle eases the span, one undo step, the keys' places kept; on
 
 test("past the last key the Curves view says there is no span", async ({ page }) => {
   const frames = await open(page);
+  // The last key is past the default last frame (30): the animation's limit raised first (docs/FRAME-LIMIT-PLAN.md).
+  await page.evaluate(() => { const s = (window as unknown as { boneburst: { session: { animation: { name: string }; setFrameLimit(n: string, f: number): void } } }).boneburst.session; s.setFrameLimit(s.animation.name, 99); });
   await page.evaluate((f) => (window as unknown as Live).boneburst.session.seek(f), frames.at(-1)!);
   await expect(page.locator(".panel.motion-path .lp-curves-note")).toContainText("past the last key");
   await expect(page.locator(".panel.motion-path .lp-curves").getByRole("button", { name: /^Bezier:/ })).toBeDisabled();
@@ -231,4 +233,12 @@ test("step 7: square Curves buttons; no square at a key on the graph; a fast str
   await speedOut.press("Enter");
   // Redder than the orange (its green channel 159): a slow stretch is short, partly red.
   await expect.poll(() => count("red")).toBeGreaterThan(8);
+});
+
+test("the Curves view labels its grid with the span's frames: each frame of a short span (the owner's red dots)", async ({ page }) => {
+  const frames = await open(page);
+  await page.evaluate((f) => (window as unknown as Live).boneburst.session.seek(f), frames[1]!);
+  const labels = () => page.evaluate(() => (window as unknown as { boneburst: { motionPath: { curveFrameLabels: readonly string[] } } }).boneburst.motionPath.curveFrameLabels);
+  const want = Array.from({ length: frames[2]! - frames[1]! + 1 }, (_, i) => String(frames[1]! + i));
+  await expect.poll(labels).toEqual(want);
 });

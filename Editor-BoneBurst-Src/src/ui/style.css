@@ -739,15 +739,22 @@ dialog.preferences .slider input[type="number"] { width: 64px; }
 .lp-slots .lp-keytoggle.on { color: var(--accent); }
 .lp-slots .lp-keystrip { flex: 1; min-width: 0; height: 46px; display: block; cursor: ew-resize; touch-action: none; }
 /* At the strip's right end (FRAMEPATH-SPEED-PLAN step 15): Fit over the ruler, the frame lock over the tabs. */
-.lp-slots .lp-stripfit, .lp-slots .lp-framelock { position: absolute; width: 26px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: var(--panel); color: var(--muted); }
-.lp-slots .lp-stripfit { top: 1px; right: 2px; }
-/* The lock in the ruler row just left of frame 0; its left is set from where the graph starts (FRAMEPATH-SPEED-PLAN step 22). */
-.lp-slots .lp-framelock { top: 1px; }
+.lp-slots .lp-stripfit { position: absolute; top: 1px; right: 2px; width: 26px; height: 22px; padding: 0; border: 0; border-radius: 4px; background: var(--panel); color: var(--muted); }
+/* The last frame, left of Fit (FRAMEPATH-SPEED-PLAN step 24). */
+.lp-slots .lp-striplimit { position: absolute; top: 1px; right: 32px; min-width: 34px; height: 21px; padding: 0 6px; font-family: var(--font-mono); font-size: 11px; }
+/* The last-frame popup (docs/FRAME-LIMIT-PLAN.md): the frame, and Pack · Trim · Set only when the keys run past it. */
+.lp-limit-popup { position: fixed; z-index: 50; width: 260px; display: flex; flex-direction: column; gap: 6px; padding: 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); color: var(--text); box-shadow: 0 6px 24px rgb(0 0 0 / 0.25); font-size: 12px; }
+.lp-limit-popup .title { font-weight: 600; }
+.lp-limit-popup input { width: 80px; font-family: var(--font-mono); }
+.lp-limit-popup .info { margin: 0; color: var(--muted); }
+.lp-limit-popup .msg { margin: 0; color: #e5484d; }
+.lp-limit-popup .msg:empty { display: none; }
+.lp-limit-popup .row { display: flex; flex-wrap: wrap; gap: 4px; }
+.lp-limit-popup .close { align-self: flex-end; }
 /* The frame rate at the ruler row's left end. */
 .lp-slots .lp-stripfps { position: absolute; top: 1px; left: 44px; display: flex; align-items: center; gap: 3px; height: 22px; font-size: 11px; color: var(--muted); }
 .lp-slots .lp-stripfps input { width: 42px; height: 20px; padding: 0 3px; font-family: var(--font-mono); font-size: 11px; }
-.lp-slots .lp-stripfit:hover, .lp-slots .lp-framelock:hover { color: var(--text); }
-.lp-slots .lp-framelock[aria-pressed="true"] { background: var(--accent); color: var(--accent-text); }
+.lp-slots .lp-stripfit:hover { color: var(--text); }
 
 .lp-graph { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 4px 8px; border-bottom: 1px solid var(--line); flex: none; }
 .lp-graph[hidden] { display: none; }
@@ -841,7 +848,9 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 
 /* Motion Path: the node numbers sit under the picture, and the picked node's data under them. */
 .motion-path .lp-slots { border-top: 1px solid var(--line); border-bottom: 0; }
-.lp-data { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--line); font-size: 12px; overflow-x: hidden; overflow-y: auto; }
+/* The graphs keep their room; only the key's data fields scroll (FRAMEPATH-SPEED-PLAN step 24). Clip, not hidden: a hidden box
+   can still be scrolled by a field brought into view, which would slide the graphs out of sight. */
+.lp-data { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 6px; padding: 6px 10px; border-top: 1px solid var(--line); font-size: 12px; overflow: clip; }
 .lp-data[hidden] { display: none; }
 .lp-data .title { font-weight: 600; }
 .lp-data .lp-keyhint { color: var(--muted, var(--text)); }
@@ -853,11 +862,13 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 /* The line above the frame strip is dragged; under it the strip, the key's data and the speed graph. */
 .lp-split { flex: none; height: 7px; margin: -3px 0; position: relative; z-index: 2; cursor: row-resize; touch-action: none; }
 .lp-split:hover, .lp-split:active { background: linear-gradient(var(--accent), var(--accent)) center / 100% 3px no-repeat; }
-.lp-lower { flex: none; display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
-.lp-fields { flex: none; display: flex; flex-direction: row; flex-wrap: wrap; align-items: center; gap: 4px 18px; min-width: 0; }
+.lp-lower { flex: none; display: flex; flex-direction: column; min-height: 0; overflow: clip; }
+.lp-fields { flex: 1 1 0; min-height: 48px; overflow-y: auto; display: flex; flex-direction: row; flex-wrap: wrap; align-content: flex-start; align-items: center; gap: 4px 18px; min-width: 0; }
 .lp-fields .title { flex-basis: 100%; }
 .lp-data .row .read { color: var(--muted, var(--text)); font-family: var(--font-mono); }
-.lp-speed { flex: 1; min-width: 0; min-height: 120px; display: flex; flex-direction: column; gap: 2px; }
+/* The graphs' room comes first (170 px, or the height set with the green line), never scrolled; the fields take what is left and
+   scroll there. In a short panel the graphs give way down to 64 px and the fields to 48 (FRAMEPATH-SPEED-PLAN step 24). */
+.lp-speed { flex: 0 1 170px; min-width: 0; min-height: 64px; display: flex; flex-direction: column; gap: 2px; }
 .lp-data.tall .lp-speed { flex: none; }
 /* The green line under the speed graph: drag it for the graph's height. */
 .lp-grip { flex: none; height: 7px; margin-top: 2px; cursor: ns-resize; touch-action: none; background: linear-gradient(#2fa84f, #2fa84f) center / 100% 3px no-repeat; border-radius: 2px; opacity: 0.55; }

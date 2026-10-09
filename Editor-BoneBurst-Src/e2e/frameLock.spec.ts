@@ -1,11 +1,15 @@
 import { expect, type Page, test } from "@playwright/test";
 
-/** FramePath's strip (docs/FRAMEPATH-SPEED-PLAN.md, step 15): the fit icon at its right end, and the frame lock: the playhead held to the animation, Q / W wrapping round. */
+/**
+ * An animation's last frame on FramePath's strip (docs/FRAME-LIMIT-PLAN.md): a button showing it (default 30), a popup to set it, and when
+ * the keys run past the new value, Pack (every key scaled into it), Trim (the keys after it cut, the value at it keyed) or Set only.
+ */
 
-type Live = { boneburst: { session: { select(s: unknown): void; seek(f: number): void; frame: number; fps: number; animation: unknown; length(a: unknown): number }; motionPath: { speedPoints: readonly { i: number; x: number; y: number }[] } } };
+type Key = { time?: number };
+type Live = { boneburst: { session: { select(s: unknown): void; seek(f: number): void; frame: number; fps: number; animation: { name: string } | null; frameLimitOf(n: string): number; history: { undo(): void; entries: { done: number } }; changed(): void; doc: { animations: { name: string; bones?: { name: string; timelines: { name: string; keys: Key[] }[] }[]; events?: Key[] }[] } } } };
 
-async function open(page: Page): Promise<number> {
-  await page.setViewportSize({ width: 1500, height: 950 });
+async function open(page: Page): Promise<void> {
+  await page.setViewportSize({ width: 1500, height: 1100 });
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();
@@ -14,75 +18,81 @@ async function open(page: Page): Promise<number> {
   await page.locator(".stage-panel button.mode").click();
   await page.locator(".dv-tab", { hasText: /^FramePath$/ }).click();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "hips" }));
-  return page.evaluate(() => { const s = (window as unknown as Live).boneburst.session; return Math.round(s.length(s.animation) * s.fps); });
 }
 
 const frame = (page: Page) => page.evaluate(() => (window as unknown as Live).boneburst.session.frame);
 const seek = (page: Page, f: number) => page.evaluate((n) => (window as unknown as Live).boneburst.session.seek(n), f);
-/** Q or W with nothing focused, as the shortcuts take them. */
 const press = async (page: Page, key: "q" | "w") => { await page.evaluate(() => (document.activeElement as HTMLElement | null)?.blur()); await page.keyboard.press(key); };
+/** The hips' translate key frames in the first animation. */
+const hipFrames = (page: Page) => page.evaluate(() => { const s = (window as unknown as Live).boneburst.session; return s.doc.animations[0]!.bones!.find((b) => b.name === "hips")!.timelines.find((t) => t.name === "translate")!.keys.map((k) => Math.round((k.time ?? 0) * s.fps)); });
+const button = (page: Page) => page.locator(".panel.motion-path").getByRole("button", { name: "Last frame" });
+/** Opens the popup and types `n`; the animation's last key frame, as the popup says it (the whole animation's, not one bone's). */
+async function setLimit(page: Page, n: number): Promise<number> {
+  await button(page).click();
+  const pop = page.getByRole("dialog", { name: "Last frame" });
+  await pop.getByRole("spinbutton", { name: "Last frame" }).fill(String(n));
+  return Number(/run to frame (\d+)/.exec((await pop.locator(".info").textContent()) ?? "")![1]);
+}
 
-test("the frame lock holds the playhead to the animation and makes Q / W wrap; off, they go past the end as before", async ({ page }) => {
-  const last = await open(page);
-  expect(last).toBeGreaterThan(2);
-  const lock = page.locator(".panel.motion-path").getByRole("button", { name: "Frame lock" });
-  await expect(lock).toHaveAttribute("aria-pressed", "false");
-  await seek(page, last);
-  await press(page, "w");
-  expect(await frame(page)).toBe(last + 1);
-  // On: the playhead past the end comes back to the last frame.
-  await lock.click();
-  await expect(lock).toHaveAttribute("aria-pressed", "true");
-  expect(await frame(page)).toBe(last);
+test("the button shows 30; the playhead stops there and Q / W wrap round", async ({ page }) => {
+  await open(page);
+  await expect(button(page)).toHaveText("30");
+  await seek(page, 40);
+  expect(await frame(page)).toBe(30);
   await press(page, "w");
   expect(await frame(page)).toBe(0);
   await press(page, "q");
-  expect(await frame(page)).toBe(last);
-  await press(page, "q");
-  expect(await frame(page)).toBe(last - 1);
-  await seek(page, last + 10);
-  expect(await frame(page)).toBe(last);
-  // An edit that shortens the animation (its keys after half a second dropped) brings a locked playhead back to the new end.
-  await seek(page, last);
-  const shorter = await page.evaluate(() => {
-    type Doc = { animations: { bones?: { timelines: { keys: { time?: number }[] }[] }[]; slots?: unknown; [k: string]: unknown }[] };
-    const s = (window as unknown as { boneburst: { session: { history: { apply(l: string, e: (d: Doc) => Doc): void }; changed(): void; frame: number; fps: number; animation: unknown; length(a: unknown): number } } }).boneburst.session;
-    s.history.apply("Shorten", (d) => {
-      const out = structuredClone(d), a = out.animations[0]! as Record<string, unknown>;
-      // Every key list in the animation, however deep (bones, slots, deforms, draw order): its keys after half a second dropped.
-      const walk = (o: unknown): void => {
-        if (Array.isArray(o)) { o.forEach(walk); return; }
-        if (!o || typeof o !== "object" || Object.getPrototypeOf(o) !== Object.prototype) return;
-        const r = o as Record<string, unknown>;
-        for (const list of ["keys", "drawOrder"]) if (Array.isArray(r[list])) r[list] = (r[list] as { time?: number }[]).filter((k) => (k.time ?? 0) <= 0.5);
-        Object.values(r).forEach(walk);
-      };
-      walk(a);
-      return out;
-    });
-    s.changed();
-    return Math.round(s.length(s.animation) * s.fps);
-  });
-  expect(shorter).toBeLessThan(last);
-  expect(await frame(page)).toBe(shorter);
-  // Kept per browser.
-  expect(await page.evaluate(() => localStorage.getItem("boneburst.frameLock"))).toBe("1");
-  await lock.click();
-  await expect(lock).toHaveAttribute("aria-pressed", "false");
-  await press(page, "w");
-  expect(await frame(page)).toBe(shorter + 1);
+  expect(await frame(page)).toBe(30);
 });
 
-test("Fit is an icon at the strip's right end: after Node zooms into one span, it shows the whole animation again", async ({ page }) => {
+test("the popup's Set only keeps the keys and moves the stop; a value past the keys offers just Set", async ({ page }) => {
   await open(page);
-  const panel = page.locator(".panel.motion-path");
-  await expect(panel.locator(".lp-speed-bar").getByRole("button", { name: "Fit", exact: true })).toHaveCount(0);
-  const points = () => page.evaluate(() => (window as unknown as Live).boneburst.motionPath.speedPoints.map((p) => p.x));
-  await expect.poll(async () => (await points()).length).toBeGreaterThan(3);
-  const whole = await points();
-  await page.evaluate(() => (window as unknown as Live).boneburst.session.seek(0));
-  await panel.getByRole("button", { name: "Node", exact: true }).click();
-  await expect.poll(async () => (await points())[1]! - (await points())[0]!).toBeGreaterThan((whole[1]! - whole[0]!) * 2);
-  await panel.getByRole("button", { name: /^Fit: the whole animation/ }).click();
-  await expect.poll(points).toEqual(whole);
+  const keys = await hipFrames(page);
+  const end = await setLimit(page, 20);
+  const pop = page.getByRole("dialog", { name: "Last frame" });
+  expect(end).toBeGreaterThan(30);
+  await expect(pop).toContainText(`Its keys run to frame ${end}, past 20`);
+  await pop.getByRole("button", { name: "Set only" }).click();
+  await expect(pop).toHaveCount(0);
+  await expect(button(page)).toHaveText("20");
+  expect(await hipFrames(page)).toEqual(keys);
+  await seek(page, 25);
+  expect(await frame(page)).toBe(20);
+  await setLimit(page, 60);
+  await expect(pop.getByRole("button", { name: "Pack into 0–60" })).toHaveCount(0);
+  await pop.getByRole("button", { name: "Set", exact: true }).click();
+  await expect(button(page)).toHaveText("60");
+});
+
+test("Pack scales every key into the last frame, one undo step", async ({ page }) => {
+  await open(page);
+  const keys = await hipFrames(page), done = await page.evaluate(() => (window as unknown as Live).boneburst.session.history.entries.done);
+  const end = await setLimit(page, 24);
+  await page.getByRole("dialog", { name: "Last frame" }).getByRole("button", { name: "Pack into 0–24" }).click();
+  // Scaled by the whole animation's length: its last key (another bone's) lands on 24, the hips' keys in proportion.
+  expect(await hipFrames(page)).toEqual(keys.map((f) => Math.round((f * 24) / end)));
+  await expect(button(page)).toHaveText("24");
+  expect(await page.evaluate(() => (window as unknown as Live).boneburst.session.history.entries.done)).toBe(done + 1);
+  await page.evaluate(() => { const s = (window as unknown as Live).boneburst.session; s.history.undo(); s.changed(); });
+  expect(await hipFrames(page)).toEqual(keys);
+});
+
+test("Trim cuts the keys after the last frame and keys it, one undo step; a Pack that would merge keys is refused in the popup", async ({ page }) => {
+  await open(page);
+  const keys = await hipFrames(page);
+  await setLimit(page, 18);
+  await page.getByRole("dialog", { name: "Last frame" }).getByRole("button", { name: "Trim after 18" }).click();
+  const trimmed = await hipFrames(page);
+  expect(trimmed.at(-1)).toBe(18);
+  expect(trimmed.every((f) => f <= 18)).toBe(true);
+  expect(trimmed.slice(0, -1)).toEqual(keys.filter((f) => f < 18));
+  // Into 3 frames the hips' keys (every 4) would meet: refused, said, nothing changed.
+  const before = await hipFrames(page);
+  await setLimit(page, 3);
+  const pop = page.getByRole("dialog", { name: "Last frame" });
+  await pop.getByRole("button", { name: "Pack into 0–3" }).click();
+  await expect(pop.locator(".msg")).toContainText("nothing was changed");
+  expect(await hipFrames(page)).toEqual(before);
+  await page.keyboard.press("Escape");
+  await expect(pop).toHaveCount(0);
 });

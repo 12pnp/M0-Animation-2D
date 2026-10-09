@@ -60,8 +60,6 @@ files.
 | `mouse-pointer-2.svg` | `icons/mouse-pointer-2.svg` | the Stage matrix's Select column |
 | `eye.svg` | `icons/eye.svg` | the Stage matrix's Visible column |
 | `tag.svg` | `icons/tag.svg` | the Stage matrix's Names column |
-| `lock.svg` | `icons/lock.svg` | FramePath's frame lock, on (FRAMEPATH-SPEED-PLAN step 15) |
-| `lock-open.svg` | `icons/lock-open.svg` | FramePath's frame lock, off |
 | `pin.svg` | `icons/pin.svg` | the Pin bone option |
 | `rotate-ccw.svg` | `icons/rotate-ccw.svg` | the Reset pose tool |
 | `sun.svg` | `icons/sun.svg` | the pick glow button |

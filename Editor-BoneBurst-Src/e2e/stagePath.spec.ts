@@ -5,6 +5,8 @@ import { expect, type Page, test } from "@playwright/test";
 type Live = { boneburst: { session: { select(s: unknown): void }; motionPath: { stageTrail(): { trail: { frames: number; joint: Float64Array }; colour: string } | null } } };
 
 async function open(page: Page): Promise<void> {
+  // Tall enough that the speed graph has its room (the data fields scroll under it: FRAMEPATH-SPEED-PLAN step 24).
+  await page.setViewportSize({ width: 1500, height: 1100 });
   await page.goto("/");
   await page.evaluate(() => localStorage.clear());
   await page.reload();

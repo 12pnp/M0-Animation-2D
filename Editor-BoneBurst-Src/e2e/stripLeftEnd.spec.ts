@@ -1,6 +1,6 @@
 import { expect, type Page, test } from "@playwright/test";
 
-/** FramePath's frame strip, step 22 of docs/FRAMEPATH-SPEED-PLAN.md: the fps field and the lock at its left end, no diamonds in the tab row. */
+/** FramePath's frame strip (docs/FRAMEPATH-SPEED-PLAN.md, steps 22 and 24): the fps field at its left end, the last-frame button by Fit, no diamonds in the tab row. */
 
 type Live = { boneburst: { session: { select(s: unknown): void; seek(f: number): void; fps: number; history: { undo(): void }; changed(): void; doc: { header?: { fps?: number } } }; motionPath: { stripPoints: readonly { i: number; x: number }[] } } };
 
@@ -30,17 +30,15 @@ test("the fps field shows the frame rate and writes it, one undo step, the keys 
   await expect(fps).toHaveValue(String(was));
 });
 
-test("the lock sits in the ruler row left of frame 0 and still locks; the tab row draws no diamond at a key", async ({ page }) => {
+test("the last-frame button sits in the ruler row left of Fit; the tab row draws no diamond at a key", async ({ page }) => {
   await open(page);
-  const panel = page.locator(".panel.motion-path"), lock = panel.getByRole("button", { name: "Frame lock" }), strip = panel.locator(".lp-keystrip");
-  const pts = await page.evaluate(() => (window as unknown as Live).boneburst.motionPath.stripPoints);
-  const sb = (await strip.boundingBox())!, lb = (await lock.boundingBox())!;
-  // Key 1 is on frame 0: the lock ends left of it, inside the ruler row (the strip's top 24 px).
-  expect(lb.x + lb.width).toBeLessThanOrEqual(sb.x + pts[0]!.x);
+  const panel = page.locator(".panel.motion-path"), limit = panel.getByRole("button", { name: "Last frame" }), fit = panel.getByRole("button", { name: /^Fit: the whole animation/ }), strip = panel.locator(".lp-keystrip");
+  const sb = (await strip.boundingBox())!, lb = (await limit.boundingBox())!, fb = (await fit.boundingBox())!;
+  expect(lb.x + lb.width).toBeLessThanOrEqual(fb.x);
   expect(lb.y + lb.height).toBeLessThanOrEqual(sb.y + 26);
-  await lock.click();
-  await expect(lock).toHaveAttribute("aria-pressed", "true");
+  await expect(limit).toHaveText("30");
   // Where key 2's diamond was drawn (the tab row's middle): no accent blue.
+  const pts = await page.evaluate(() => (window as unknown as Live).boneburst.motionPath.stripPoints);
   const blue = await strip.evaluate((c: HTMLCanvasElement, x) => { const k = c.width / c.getBoundingClientRect().width, d = c.getContext("2d")!.getImageData(Math.round(x * k), Math.round(35 * k), 1, 1).data; return d[2]! > d[0]! + 80; }, pts[1]!.x);
   expect(blue).toBe(false);
 });

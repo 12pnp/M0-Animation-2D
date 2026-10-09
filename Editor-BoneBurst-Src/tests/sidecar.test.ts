@@ -63,6 +63,10 @@ describe("sidecar edits", () => {
     const back = readSidecar(writeSidecar(s)).sidecar;
     expect(viewOf(back)).toEqual({ camera: { x: 1.23, y: -5, zoom: 2.1235 }, skin: "alt", animation: "run", bone: "hips", loopOff: ["jump"] });
     expect(back.view.get("later")).toBe(1);
+    // Each animation's last frame (docs/FRAME-LIMIT-PLAN.md), a value that does not read left out.
+    const limits = readSidecar(writeSidecar(withView(EMPTY_SIDECAR, { frameLimits: { run: 24, jump: 50 } }))).sidecar;
+    expect(viewOf(limits).frameLimits).toEqual({ run: 24, jump: 50 });
+    expect(viewOf({ ...EMPTY_SIDECAR, view: new Map<string, Json>([["frameLimits", new Map<string, Json>([["run", 0], ["walk", 2.5], ["idle", 12]])]]) }).frameLimits).toEqual({ idle: 12 });
     expect(viewOf(withView(back, {}))).toEqual({});
     expect(viewOf({ ...EMPTY_SIDECAR, view: new Map<string, Json>([["camera", new Map<string, Json>([["x", 1], ["y", 2], ["zoom", 0]])], ["skin", 3]]) })).toEqual({});
   });

@@ -51,6 +51,9 @@ export function fileSource(f: File): Source {
  * shown skin, the selection, the animation shown and its playhead. Listeners hear every change.
  * The rig is built once per document; the pose once per change of what is shown.
  */
+/** An animation's last frame unless it has its own (docs/FRAME-LIMIT-PLAN.md). */
+export const DEFAULT_FRAME_LIMIT = 30;
+
 export class Session {
   history: History<Skeleton> | null = null;
   name = "";
@@ -111,8 +114,8 @@ export class Session {
   time = 0;
   playing = false;
   loop = true;
-  /** FramePath's frame lock (docs/FRAMEPATH-SPEED-PLAN.md, step 15): a seek is held to the animation's frames and Q / W wrap round. */
-  frameLock = false;
+  /** Each animation's last frame where it is not the default (docs/FRAME-LIMIT-PLAN.md); kept in the project's view. */
+  private frameLimitMap = new Map<string, number>();
   /** What the next playback step does to physics: start it over, then step it. */
   private physics: "reset" | "update" = "reset";
   /** The last playback step: its number (so each step poses anew) and its physics. */
@@ -243,7 +246,7 @@ export class Session {
 
   changed(): void {
     this.followReimports();
-    // The frame lock holds the playhead whatever moved the end: a shorter animation shown, its last keys deleted, an undo (step 15).
+    // The frame limit holds the playhead whatever moved it there (step 24).
     const last = this.lastFrame();
     if (last !== null && !this.playing && this.frame > last) this.time = Math.fround(frameTime(last, this.fps));
     for (const f of this.listeners) f();
@@ -383,16 +386,34 @@ export class Session {
     this.changed();
   }
 
-  /** One frame on (`by` 1) or back (-1): Q and W. With the frame lock on, past the last frame is 0 and before 0 the last frame. */
+  /** One frame on (`by` 1) or back (-1): Q and W. With a frame limit, past it is 0 and before 0 the limit. */
   stepFrame(by: 1 | -1): void {
     const last = this.lastFrame(), f = this.frame + by;
     this.seek(last === null ? f : f > last ? 0 : f < 0 ? last : f);
   }
 
-  /** The animation's last frame while the frame lock holds the playhead; null when it is off or there is no animation. */
+  /** The last frame the playhead may go to: the shown animation's; null with none shown. */
   private lastFrame(): number | null {
-    const a = this.animation;
-    return this.frameLock && a ? timeFrame(this.length(a), this.fps) : null;
+    return this.animation ? this.frameLimitOf(this.animation.name) : null;
+  }
+
+  /** An animation's last frame (docs/FRAME-LIMIT-PLAN.md): its own, or the default. */
+  frameLimitOf(name: string): number {
+    return this.frameLimitMap.get(name) ?? DEFAULT_FRAME_LIMIT;
+  }
+
+  /** The animations' last frames that are not the default, for the project's view. */
+  get frameLimits(): Readonly<Record<string, number>> {
+    return Object.fromEntries(this.frameLimitMap);
+  }
+
+  /** Set an animation's last frame (a whole number from 1). Not an edit of the document: kept in the project's view. A playhead past it comes back to it. */
+  setFrameLimit(name: string, frame: number): void {
+    if (!(Number.isInteger(frame) && frame >= 1) || this.frameLimitOf(name) === frame) return;
+    const next = new Map(this.frameLimitMap);
+    if (frame === DEFAULT_FRAME_LIMIT) next.delete(name); else next.set(name, frame);
+    this.frameLimitMap = next;
+    this.changed();
   }
 
   /** Play. In Pose mode this first switches to Animate (the last animation shown, or the first), then plays. */
@@ -630,6 +651,7 @@ export class Session {
     if (v.animation !== undefined && doc.animations?.some((a) => a.name === v.animation)) this.shown = v.animation;
     if (v.bone !== undefined && doc.bones?.some((b) => b.name === v.bone)) this.selected = { kind: "bone", name: v.bone };
     this.loopOffSet = new Set(v.loopOff ?? []);
+    this.frameLimitMap = new Map(Object.entries(v.frameLimits ?? {}));
     this.loopRev++;
     this.openedCamera = v.camera ?? null;
     this.changed();
@@ -700,6 +722,7 @@ export class Session {
     this.playing = false;
     this.poser = null;
     this.loopOffSet = new Set();
+    this.frameLimitMap = new Map();
     this.closed = null;
     this.issues = all;
     this.posed = null;

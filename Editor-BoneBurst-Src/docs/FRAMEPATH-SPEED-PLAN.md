@@ -633,3 +633,34 @@ panel's Info text is rewritten for the panel as it is (the picture's ⌘ and Shi
 still told a person to drag the speed graph's points. The panel's id stays `motionPath`, so a layout or view saved before still opens;
 the code keeps its names (`motionPanel.ts`, `MotionPathPanel`). e2e that find the tab, the Panels list entry, the activity button, the
 Info dialog or the popout by name now use "FramePath"; vitest and e2e pass (the 3 AI-bridge tests aside).
+
+## Step 24: a last-frame number instead of the lock; the graphs out of the scrolling area (2026-10-09, the owner's note with a screenshot)
+
+> 1 remove lockIcon, then convert to add number at red box for set max limit, default set 30. 2 at red line at scrolling, take all the
+> graphs out of the zone that can scroll, fix space for graph.
+
+```mermaid
+flowchart LR
+    NUM["last frame field (ruler row, right, by Fit)<br/>default 30, kept per browser"] -->|"Session.frameLimit"| SEEK["seek(): held to 0 … limit"]
+    NUM --> STEP["stepFrame(): Q / W wrap limit ↔ 0"]
+    LOWER["under the picture"] --> FIXED["frame strip · Curves · speed graph: fixed"]
+    LOWER --> SCROLL["the key's data fields: the only part that scrolls"]
+```
+
+1. The frame lock (step 15) is replaced, not kept beside: `Session.frameLock` becomes `Session.frameLimit` (a frame, or null), and with
+   an animation shown `seek` holds the playhead to 0 … that frame and Q / W wrap there. A number field at the ruler row's right end, left
+   of Fit, sets it: whole frames from 1, default 30, kept per browser (`boneburst.frameLimit`). The lock button, its code and its two
+   icons (`lock.svg`, `lock-open.svg`, vendored for it) are deleted.
+2. Under the picture only the key's data fields scroll: the area holding the speed column no longer scrolls; the Curves view and the
+   speed graph keep their room (at least 140 px, or the height set with the green line) and the fields take what is left, scrolling there.
+3. Tests: `frameLock.spec.ts` becomes the limit's (the default 30, held seek, Q / W wrapping at it, a new value kept); the strip test
+   finds the field left of Fit; a data-row button no longer scrolls the graphs out of sight.
+
+### Result (step 24)
+
+1. **Superseded by docs/FRAME-LIMIT-PLAN.md** (the owner, the same day): the number field became a button showing the animation's last
+   frame, a popup to set it with Pack, Trim or Set only, and the limit is per animation in the project's view, not per browser. The lock
+   (step 15), its code and its two Lucide icons are deleted.
+2. Done: the area under the strip no longer scrolls (`overflow: clip`, so a field brought into view cannot scroll it either); the graphs
+   ask for 170 px first (or the green line's height) and give way to 64 px in a short panel; the fields take the rest, at least 48 px, and
+   scroll there. Tests run in a 1100 px window where they read the graph's pixels (`stagePath.spec.ts`).

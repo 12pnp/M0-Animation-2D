@@ -3,8 +3,8 @@ import { EditRefused } from "@/edit/history";
 import { drawnVertices } from "@/engine/draw";
 import { boneInherit } from "@/model/defaults";
 import type { Key, Skeleton } from "@/model/skeleton";
-import { DEFAULT_FPS, frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
-import { iconButton, setIcon } from "../icons";
+import { animationDuration, DEFAULT_FPS, frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
+import { iconButton } from "../icons";
 import { graphColours, speedColour } from "../graphLook";
 import { CurvesView } from "./curvesView";
 import { pickColour } from "../colourPopup";
@@ -15,6 +15,7 @@ import { deleteTranslateKeys, translateKeyCount } from "@/edit/pathKeys";
 import { alongChord, clampSpeed, keyChords, keyHandles, keyReaches, keySpeedPairs, multiplierOf, retimeTranslateKey, setKeyHandles, setSpanEase, setTranslateKeyReaches, spanEase, type SpanEase, setTranslateKeySpeeds, spanSpeedSamples, SPEED_MAX, SPEED_MIN, translateNodes, type Vec } from "@/edit/keySpeed";
 import { deleteKeys, setKey } from "@/edit/keys";
 import { FPS_RANGE, keysOffFrame, setFps } from "@/edit/header";
+import { packAnimation, trimAnimation } from "@/edit/fitLength";
 import { localPoint, pageScale } from "../pageScale";
 import { labelStep, RULER, secondsSinceLastKey } from "../timeline/layout";
 import type { Session } from "../session";
@@ -49,7 +50,6 @@ const STAGE_PATH_KEY = "boneburst.motionPath.stagePath";
 /** The Curves sub-panel's width at first, and the least it and the speed graph keep (docs/CURVES-PANEL-PLAN.md). */
 const DEFAULT_CURVES = 170, MIN_CURVES = 90, MIN_GRAPH_WIDTH = 160;
 const CURVES_KEY = "boneburst.motionPath.curvesWidth";
-const FRAME_LOCK_KEY = "boneburst.frameLock";
 const PAST = "rgb(230, 64, 51)", FUTURE = "rgb(51, 179, 77)";
 const LAYERS_KEY = "boneburst.motionPath.layers";
 const TIERS_KEY = "boneburst.motionPath.tiers";
@@ -224,7 +224,8 @@ export class MotionPathPanel {
   /** The document's frame rate, at the ruler row's left end (step 22). */
   private readonly fpsBox = document.createElement("label");
   private readonly fpsInput = document.createElement("input");
-  private readonly lockBtn = document.createElement("button");
+  /** The last frame the playhead goes to (step 24), at the ruler row's right end by Fit. */
+  private readonly limitBtn = document.createElement("button");
   /** FramePath keys whose mode was chosen where the file cannot show it (Mirror or Break at 0 and 0, Break on equal speeds), and for which bone. */
   private keyModes = new Map<string, "mirror" | "break">();
   /** The speed graph's own leg mode per key, where the data cannot show it: Broken on equal speeds and reaches (step 11). */
@@ -410,19 +411,11 @@ export class MotionPathPanel {
     this.fpsInput.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); this.fpsInput.blur(); } if (e.key === "Escape") { this.fpsInput.value = String(this.session.fps); this.fpsInput.blur(); } });
     this.fpsInput.addEventListener("change", () => this.setFrameRate(this.fpsInput.value));
     this.fpsBox.append(this.fpsInput, Object.assign(document.createElement("span"), { textContent: "fps" }));
-    this.lockBtn.type = "button";
-    this.lockBtn.className = "lp-framelock";
-    this.lockBtn.setAttribute("aria-label", "Frame lock");
-    iconButton(this.lockBtn, "lockOpen", false);
-    try { session.frameLock = localStorage.getItem(FRAME_LOCK_KEY) === "1"; } catch { /* off */ }
-    this.lockBtn.addEventListener("click", () => {
-      session.frameLock = !session.frameLock;
-      try { localStorage.setItem(FRAME_LOCK_KEY, session.frameLock ? "1" : "0"); } catch { /* not kept */ }
-      // On: a playhead already past the end comes back into the animation.
-      if (session.frameLock) session.seek(session.frame);
-      this.slotSig = "";
-      this.schedule();
-    });
+    this.limitBtn.type = "button";
+    this.limitBtn.className = "lp-striplimit";
+    this.limitBtn.setAttribute("aria-label", "Last frame");
+    this.limitBtn.setAttribute("aria-haspopup", "dialog");
+    this.limitBtn.addEventListener("click", () => this.openLimitPopup());
     // Shift pressed or let go with the pointer still over a key: it turns red or back.
     for (const type of ["keydown", "keyup"] as const) window.addEventListener(type, (e) => { if (e.key === "Shift") this.updateDelHover(e.shiftKey); if (e.key === "Meta" || e.key === "Control") this.updateRetimeHover(e.metaKey || e.ctrlKey); if (["Shift", "Meta", "Control"].includes(e.key)) this.updatePathHover(e.metaKey || e.ctrlKey, e.shiftKey); });
     // The line that gives the picture or the strip and graph more room sits right under the picture, above the zoom bar (the owner, 2026-10-09).
@@ -1503,11 +1496,68 @@ export class MotionPathPanel {
     return null;
   }
 
-  /** The frame lock in the ruler row just left of frame 0, placed from where the graph starts (it follows the Curves view's width). */
-  private placeLock(): void {
-    const k = pageScale(), bar = this.slotBar.getBoundingClientRect(), g = this.speedCanvas.getBoundingClientRect();
-    if (!this.speedCanvas.isConnected || bar.width <= 0) return;
-    this.lockBtn.style.left = `${Math.max(44, (g.left - bar.left) / k + this.plot().l - 30)}px`;
+
+
+  /**
+   * The last-frame popup (docs/FRAME-LIMIT-PLAN.md, step 3), by the strip's button: the frame, and when the animation's keys run past it,
+   * Pack (every key scaled into it), Trim (the keys after it cut, the value at it keyed) or Set only (the keys kept). Pack and Trim are one
+   * undo step each; the frame itself is the project's view, not the document. Escape, Close or a click outside closes it.
+   */
+  private openLimitPopup(): void {
+    const s = this.session, a = s.animation;
+    if (!a) return;
+    const doc = this.element.ownerDocument, name = a.name, end = timeFrame(animationDuration(a), s.fps);
+    doc.querySelector(".lp-limit-popup")?.remove();
+    const pop = doc.createElement("div"), input = doc.createElement("input"), info = doc.createElement("p"), row = doc.createElement("div"), msg = doc.createElement("p");
+    pop.className = "lp-limit-popup";
+    pop.setAttribute("role", "dialog");
+    pop.setAttribute("aria-label", "Last frame");
+    const title = Object.assign(doc.createElement("div"), { className: "title", textContent: `${name}: last frame` });
+    input.type = "number";
+    input.min = "1";
+    input.step = "1";
+    input.value = String(s.frameLimitOf(name));
+    input.setAttribute("aria-label", "Last frame");
+    info.className = "info";
+    msg.className = "msg";
+    row.className = "row";
+    const close = (): void => { pop.remove(); doc.removeEventListener("pointerdown", outside, true); };
+    const outside = (e: Event): void => { if (!pop.contains(e.target as Node) && e.target !== this.limitBtn) close(); };
+    const done = (n: number, said: string): void => { s.setFrameLimit(name, n); s.seek(s.frame); close(); this.onStatus(said); };
+    const run = (label: string, edit: (d: Skeleton) => Skeleton, n: number, said: string): void => {
+      try { s.history?.apply(label, edit); } catch (err) { if (!(err instanceof EditRefused)) throw err; msg.textContent = err.message; return; }
+      s.changed();
+      done(n, said);
+    };
+    const button = (text: string, tip: string, act: () => void): HTMLButtonElement => { const b = this.button(text, tip); b.addEventListener("click", act); return b; };
+    const update = (): void => {
+      const n = Math.round(Number(input.value)), ok = Number.isFinite(n) && n >= 1;
+      msg.textContent = "";
+      info.textContent = `Its keys run to frame ${end}.`;
+      if (!ok) { row.replaceChildren(); return; }
+      if (n >= end) { row.replaceChildren(button("Set", `The playhead stops at frame ${n}`, () => done(n, `${name}: the playhead stops at frame ${n}.`))); return; }
+      info.textContent = `Its keys run to frame ${end}, past ${n}:`;
+      row.replaceChildren(
+        button(`Pack into 0–${n}`, `Every key of ${name} scaled into frames 0 to ${n}: the whole motion plays in ${n} frames`, () => run(`Pack ${name} into ${n} frames`, packAnimation(name, n, s.fps), n, `${name} packed into frames 0–${n}.`)),
+        button(`Trim after ${n}`, `The keys after frame ${n} cut; every list keyed at ${n} with its value there, so the motion up to it is the same`, () => run(`Trim ${name} after frame ${n}`, trimAnimation(name, n, s.fps), n, `${name} trimmed after frame ${n}.`)),
+        button("Set only", `The keys stay; the playhead stops at frame ${n}`, () => done(n, `${name}: the playhead stops at frame ${n}; its keys after it stay.`)),
+      );
+    };
+    input.addEventListener("input", update);
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); (row.querySelector("button") as HTMLButtonElement | null)?.click(); } });
+    // Escape closes it wherever the focus is in it (a button after a refused Pack too).
+    pop.addEventListener("keydown", (e) => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); } });
+    const closeBtn = button("Close", "Close without changing anything", close);
+    closeBtn.className = "close";
+    pop.append(title, input, info, row, msg, closeBtn);
+    update();
+    doc.body.append(pop);
+    const r = this.limitBtn.getBoundingClientRect(), k = pageScale();
+    pop.style.top = `${(r.bottom + 4) / k}px`;
+    pop.style.left = `${Math.max(8, Math.min(r.right / k - 260, (doc.defaultView?.innerWidth ?? 1000) / k - 268))}px`;
+    setTimeout(() => doc.addEventListener("pointerdown", outside, true));
+    input.focus();
+    input.select();
   }
 
   /** The fps field committed: the document's frame rate, as the Inspector sets it (one undo step; keys keep their times). */
@@ -1569,13 +1619,13 @@ export class MotionPathPanel {
     // The picked key is the one on the playhead's frame; a hand-broken leg is remembered only while the bone and animation stay.
     this.selKey = keys ? this.keyAtFrame(s.frame) : -1;
     if (`${a?.name}/${bone}` !== this.keyBrokenFor) { this.keyBrokenFor = `${a?.name}/${bone}`; this.keyModes.clear(); this.speedModes.clear(); }
-    if (this.keyStrip.parentElement !== this.slotBar) this.slotBar.replaceChildren(this.keyToggle, this.keyStrip, this.fpsBox, this.stripFit, this.lockBtn);
+    if (this.keyStrip.parentElement !== this.slotBar) this.slotBar.replaceChildren(this.keyToggle, this.keyStrip, this.fpsBox, this.limitBtn, this.stripFit);
     if (this.fpsInput.ownerDocument.activeElement !== this.fpsInput) this.fpsInput.value = String(s.fps);
     this.fpsInput.disabled = !s.doc;
-    const locked = s.frameLock;
-    setIcon(this.lockBtn, locked ? "lock" : "lockOpen");
-    this.lockBtn.setAttribute("aria-pressed", String(locked));
-    this.lockBtn.title = locked ? "Frame lock on: the playhead stays on the animation's frames, and Q / W wrap from the last frame to 0 and back. Click to free it" : "Frame lock: hold the playhead to the animation's frames (0 to the last), and make Q / W wrap round";
+    const limit = a ? s.frameLimitOf(a.name) : null;
+    this.limitBtn.textContent = limit === null ? "–" : String(limit);
+    this.limitBtn.disabled = !a;
+    this.limitBtn.title = a ? `${a.name}'s last frame: the playhead stops at frame ${limit}, and Q / W wrap round to 0 after it. Click to change it` : "An animation's last frame (in Animate mode)";
     this.keyToggle.disabled = !show;
     this.keyToggle.classList.toggle("on", this.selKey >= 0);
     this.keyToggle.title = this.selKey >= 0 ? `Delete the translate key on frame ${s.frame}` : `Key ${bone ?? "the bone"}'s place on frame ${s.frame} (where it is there now, so the motion does not change)`;
@@ -1640,7 +1690,6 @@ export class MotionPathPanel {
    * two keys (its length in frames and seconds, the playhead's span lit) with a diamond on each key.
    */
   private drawKeyStrip(): void {
-    this.placeLock();
     const s = this.session, a = s.animation, keys = this.keyNodes(), c = this.keyStrip;
     this.stripDots = [];
     if (!c.isConnected) return;
@@ -2003,14 +2052,14 @@ export class MotionPathPanel {
   }
 
   /** What the Curves view shows: the span the playhead is in (the strip's lit tab), its ease, and the playhead across it; or why nothing. */
-  private curveSpan(): { index: number; ease: SpanEase; at: number } | string {
+  private curveSpan(): { index: number; ease: SpanEase; at: number; from: number; to: number } | string {
     const s = this.session, bone = s.selectedBone, keys = this.keyNodes();
     if (!keys || bone === null || !s.animation) return this.keyHint();
     const span = this.litSpan();
     if (!span) return `Frame ${s.frame}: past the last key, so there is no span to ease. Pick a span on the strip or the graph.`;
     const index = keys.findIndex((k) => timeFrame(keyTime(k), s.fps) === span[0]);
     if (index < 0 || !keys[index + 1]) return "No span here.";
-    return { index, ease: spanEase(bone, keys[index]!, keys[index + 1]!), at: (s.frame - span[0]) / Math.max(1, span[1] - span[0]) };
+    return { index, ease: spanEase(bone, keys[index]!, keys[index + 1]!), at: (s.frame - span[0]) / Math.max(1, span[1] - span[0]), from: span[0], to: span[1] };
   }
 
   /**
@@ -2077,6 +2126,11 @@ export class MotionPathPanel {
   /** The Curves view's handles on its canvas (for tests). */
   get curveHandles(): readonly { side: "out" | "in"; x: number; y: number }[] {
     return this.curves.handlePoints;
+  }
+
+  /** The Curves view's frame numbers on top (for tests). */
+  get curveFrameLabels(): readonly string[] {
+    return this.curves.frameLabels;
   }
 
   /** The graph's own height, when set; the area under the picture then scrolls if the graph is taller than it. */

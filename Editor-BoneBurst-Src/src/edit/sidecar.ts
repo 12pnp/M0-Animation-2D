@@ -32,23 +32,28 @@ export interface View {
   readonly bone?: string;
   /** The animations whose Loop tick is off (docs/LOOP-PLAN.md): every other one is a loop. */
   readonly loopOff?: readonly string[];
+  /** Each animation's last frame where it is not the default (docs/FRAME-LIMIT-PLAN.md): the playhead stops there. */
+  readonly frameLimits?: Readonly<Record<string, number>>;
 }
 
 /** The sidecar with `view` written over the keys it names; other view keys (a newer editor's) kept. */
 export function withView(s: Sidecar, view: View): Sidecar {
   const out = new Map<string, Json>(s.view);
-  for (const k of ["camera", "skin", "animation", "bone", "loopOff"]) out.delete(k);
+  for (const k of ["camera", "skin", "animation", "bone", "loopOff", "frameLimits"]) out.delete(k);
   if (view.camera) out.set("camera", new Map<string, Json>([["x", at2(view.camera.x)], ["y", at2(view.camera.y)], ["zoom", Math.round(view.camera.zoom * 1e4) / 1e4]]));
   if (view.skin !== undefined) out.set("skin", view.skin);
   if (view.animation !== undefined) out.set("animation", view.animation);
   if (view.bone !== undefined) out.set("bone", view.bone);
   if (view.loopOff?.length) out.set("loopOff", [...view.loopOff]);
+  const limits = Object.entries(view.frameLimits ?? {});
+  if (limits.length) out.set("frameLimits", new Map<string, Json>(limits));
   return { ...s, view: out };
 }
 
 /** The view a sidecar keeps, with what does not read left out. */
 export function viewOf(s: Sidecar): View {
-  const cam = s.view.get("camera"), skin = s.view.get("skin"), animation = s.view.get("animation"), bone = s.view.get("bone"), loopOff = s.view.get("loopOff");
+  const cam = s.view.get("camera"), skin = s.view.get("skin"), animation = s.view.get("animation"), bone = s.view.get("bone"), loopOff = s.view.get("loopOff"), limits = s.view.get("frameLimits");
+  const frameLimits = limits instanceof Map ? Object.fromEntries([...limits].filter((e): e is [string, number] => typeof e[1] === "number" && Number.isInteger(e[1]) && e[1] >= 1)) : {};
   const num = (o: unknown, k: string) => (o instanceof Map && typeof o.get(k) === "number" ? (o.get(k) as number) : undefined);
   const x = num(cam, "x"), y = num(cam, "y"), zoom = num(cam, "zoom");
   return {
@@ -57,6 +62,7 @@ export function viewOf(s: Sidecar): View {
     ...(typeof animation === "string" ? { animation } : {}),
     ...(typeof bone === "string" ? { bone } : {}),
     ...(Array.isArray(loopOff) && loopOff.every((n) => typeof n === "string") && loopOff.length ? { loopOff: loopOff as string[] } : {}),
+    ...(Object.keys(frameLimits).length ? { frameLimits } : {}),
   };
 }
 
