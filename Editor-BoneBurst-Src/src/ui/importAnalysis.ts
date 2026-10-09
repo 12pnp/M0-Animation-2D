@@ -53,37 +53,66 @@ export function analyseOpen(a: OpenAnalysis, convertOnly = false): Promise<OpenC
 
     const s = a.skeleton, anims = s.animations ?? [], findings = framePathReport(s);
     const fps = s.header?.fps;
+    // A title, a row of tabs (Summary · Where · Convert), the tab shown, and the buttons, always in sight.
     dialog.append(h(convertOnly ? `Convert ${a.name} to FramePath` : `Open ${a.name}`));
-    const facts = document.createElement("dl");
-    facts.className = "facts";
-    for (const [k, v] of [
-      ["Spine", s.header?.spine ?? "not said"],
-      ["Frame rate", fps !== undefined ? `${fps} fps` : `not set (${DEFAULT_FPS} fps)`],
-      ["Bones", String(s.bones?.length ?? 0)],
-      ["Slots", String(s.slots?.length ?? 0)],
-      ["Skins", String(s.skins?.length ?? 0)],
-      ["Animations", String(anims.length)],
-      ...(a.issues ? [["Read with notes", `${a.issues} (shown after opening)`]] : []),
-    ] as const) facts.append(Object.assign(document.createElement("dt"), { textContent: k }), Object.assign(document.createElement("dd"), { textContent: v }));
-    if (!convertOnly) dialog.append(facts, h("FramePath"));
+    const tabBar = document.createElement("div"), pages = document.createElement("div");
+    tabBar.className = "tabs";
+    tabBar.setAttribute("role", "tablist");
+    pages.className = "pages";
+    dialog.append(tabBar, pages, row);
+    const tabs: { tab: HTMLButtonElement; page: HTMLElement }[] = [];
+    const show = (i: number): void => tabs.forEach((t, j) => { t.tab.setAttribute("aria-selected", String(i === j)); t.tab.tabIndex = i === j ? 0 : -1; t.page.hidden = i !== j; });
+    const addTab = (label: string): HTMLElement => {
+      const tab = Object.assign(document.createElement("button"), { type: "button", textContent: label }), page = document.createElement("section");
+      tab.setAttribute("role", "tab");
+      page.setAttribute("role", "tabpanel");
+      page.setAttribute("aria-label", label);
+      const i = tabs.length;
+      tab.addEventListener("click", () => show(i));
+      tab.addEventListener("keydown", (e) => { if (e.key === "ArrowRight" || e.key === "ArrowLeft") { const n = (i + (e.key === "ArrowRight" ? 1 : tabs.length - 1)) % tabs.length; show(n); tabs[n]!.tab.focus(); } });
+      tabs.push({ tab, page });
+      tabBar.append(tab);
+      pages.append(page);
+      return page;
+    };
+
+    const summary = addTab("Summary");
+    if (!convertOnly) {
+      const facts = document.createElement("dl");
+      facts.className = "facts";
+      for (const [k, v] of [
+        ["Spine", s.header?.spine ?? "not said"],
+        ["Frame rate", fps !== undefined ? `${fps} fps` : `not set (${DEFAULT_FPS} fps)`],
+        ["Bones", String(s.bones?.length ?? 0)],
+        ["Slots", String(s.slots?.length ?? 0)],
+        ["Skins", String(s.skins?.length ?? 0)],
+        ["Animations", String(anims.length)],
+        ...(a.issues ? [["Read with notes", `${a.issues} (shown after opening)`]] : []),
+      ] as const) facts.append(Object.assign(document.createElement("dt"), { textContent: k }), Object.assign(document.createElement("dd"), { textContent: v }));
+      summary.append(h("The file"), facts);
+    }
+    summary.append(h("FramePath"));
 
     if (!findings.length) {
-      dialog.append(p("FramePath can edit every bone's motion as it is: each keeps its translate in one list, x and y timed together."), row);
+      summary.append(p("FramePath can edit every bone's motion as it is: each keeps its translate in one list, x and y timed together."));
       if (convertOnly) row.append(button("Close", () => finish({ action: "cancel" }), true));
       else row.append(button("Cancel", () => finish({ action: "cancel" })), button("Open", () => finish({ action: "open" }), true));
+      show(0);
       document.body.append(dialog);
       dialog.showModal();
       return;
     }
 
     const split = findings.filter((f) => f.split), apart = findings.filter((f) => f.apart), curves = apart.reduce((n, f) => n + f.apart!, 0);
-    dialog.append(p([
+    summary.append(p([
       split.length ? `${split.length} bone${split.length === 1 ? "" : "s"} keep x and y as separate lists, which FramePath cannot edit.` : "",
       curves ? `${curves} curve${curves === 1 ? "" : "s"} time x and y apart, which FramePath shows as near, not exact.` : "",
     ].filter(Boolean).join(" ")));
-    // The details: each animation and bone.
-    const details = document.createElement("details");
-    details.append(Object.assign(document.createElement("summary"), { textContent: `Where (${findings.length})` }));
+    const summaryResult = p("", "result");
+    summary.append(summaryResult, p("Where lists each animation and bone; Convert sets how the timing is matched.", "note"));
+
+    // Where: each animation and bone.
+    const where = addTab(`Where (${findings.length})`);
     const table = document.createElement("table");
     table.innerHTML = "<thead><tr><th>Animation</th><th>Bone</th><th>Found</th></tr></thead>";
     const body = document.createElement("tbody");
@@ -94,12 +123,12 @@ export function analyseOpen(a: OpenAnalysis, convertOnly = false): Promise<OpenC
       body.append(tr);
     }
     table.append(body);
-    details.append(table);
-    dialog.append(details);
+    where.append(table);
 
-    // The options: the timing (Decision 2) and the tolerance (Decision 3).
+    // Convert: the timing (Decision 2) and the tolerance (Decision 3).
+    const convert = addTab("Convert");
     const options = document.createElement("fieldset");
-    options.append(Object.assign(document.createElement("legend"), { textContent: "Converting: x and y timing" }));
+    options.append(Object.assign(document.createElement("legend"), { textContent: "x and y timing" }));
     let timing: TimingMode = "split";
     for (const t of TIMINGS) {
       const label = document.createElement("label"), radio = Object.assign(document.createElement("input"), { type: "radio", name: "timing", value: t.value, checked: t.value === timing });
@@ -113,18 +142,18 @@ export function analyseOpen(a: OpenAnalysis, convertOnly = false): Promise<OpenC
     tol.addEventListener("change", measure);
     options.append(tolLabel);
     const result = p("", "result");
-    dialog.append(options, result, p(convertOnly ? "The conversion is one undo step; the file on disk changes only when it is saved." : "The conversion is one undo step after opening; the file on disk changes only when it is saved.", "note"), row);
+    convert.append(options, result, p(convertOnly ? "The conversion is one undo step; the file on disk changes only when it is saved." : "The conversion is one undo step after opening; the file on disk changes only when it is saved.", "note"));
 
     const opts = (): FramePathOptions => ({ timing, tolerance: Math.max(0.01, Number(tol.value) || 0.5) });
-    // What converting with these options does, measured (a large file takes a moment).
+    // What converting with these options does, measured (a large file takes a moment); said on Summary and Convert alike.
     let pending = 0;
     function measure(): void {
       const ticket = ++pending;
-      result.textContent = "Measuring…";
+      result.textContent = summaryResult.textContent = "Measuring…";
       setTimeout(() => {
         if (ticket !== pending) return;
         const r = convertToFramePath(s, opts());
-        result.textContent = `Converting adds ${r.added} key${r.added === 1 ? "" : "s"}; the bones move at most ${Math.round(r.worst * 100) / 100} units from where they were${r.worst === 0 ? " (the same)" : ""}, as the curves are drawn (Spine plays a curve in 10 straight steps, which can add a little).`;
+        result.textContent = summaryResult.textContent = `Converting adds ${r.added} key${r.added === 1 ? "" : "s"}; the bones move at most ${Math.round(r.worst * 100) / 100} units from where they were${r.worst === 0 ? " (the same)" : ""}, as the curves are drawn (Spine plays a curve in 10 straight steps, which can add a little).`;
       }, 30);
     }
     if (convertOnly) row.append(button("Cancel", () => finish({ action: "cancel" })), button("Convert", () => finish({ action: "open", convert: opts() }), true));
@@ -133,6 +162,7 @@ export function analyseOpen(a: OpenAnalysis, convertOnly = false): Promise<OpenC
       button("Open as is", () => finish({ action: "open" })),
       button("Convert to FramePath and open", () => finish({ action: "open", convert: opts() }), true),
     );
+    show(0);
     document.body.append(dialog);
     dialog.showModal();
     measure();

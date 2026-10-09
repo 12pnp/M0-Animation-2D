@@ -28,9 +28,9 @@ test("a split export: the window says what it found; Convert to FramePath opens 
   const win = page.getByRole("dialog", { name: "Open: analysis" });
   await expect(win).toContainText("Open walker.json");
   await expect(win).toContainText("1 bone keeps x and y as separate lists".replace("keeps", "keep"));
-  await win.getByText("Where (1)").click();
+  await win.getByRole("tab", { name: "Where (1)" }).click();
   await expect(win.locator("tbody tr")).toHaveText([/walk\s*hips\s*separate x \(2 keys\) and y \(3\)/]);
-  await expect(win.locator(".result")).toContainText("Converting adds");
+  await expect(win.locator(".result").first()).toContainText("Converting adds");
   await win.getByRole("button", { name: "Convert to FramePath and open" }).click();
   await expect(win).toHaveCount(0);
   await expect.poll(() => timelines(page)).toEqual(["translate"]);
@@ -55,6 +55,7 @@ test("the timing options and the tolerance are there; Leave turns the tolerance 
   const open = await start(page);
   await open.setInputFiles([file("walker.json", SPLIT)]);
   const win = page.getByRole("dialog", { name: "Open: analysis" });
+  await win.getByRole("tab", { name: "Convert" }).click();
   const tol = win.getByRole("spinbutton", { name: "Tolerance" });
   await expect(tol).toHaveValue("0.5");
   await expect(win.getByRole("radio", { name: /Match, and cut spans/ })).toBeChecked();
@@ -88,7 +89,7 @@ test("the owner's sample: 22 bones with separate lists and 21 curves timed apart
   const win = page.getByRole("dialog", { name: "Open: analysis" });
   await expect(win).toContainText("22 bones keep x and y as separate lists");
   await expect(win).toContainText("21 curves time x and y apart");
-  await expect(win.locator(".result")).toContainText("Converting adds", { timeout: 20_000 });
+  await expect(win.locator(".result").first()).toContainText("Converting adds", { timeout: 20_000 });
 });
 
 test("opened as is, later: the split bone's hint offers Convert…, and FramePath's ⋮ menu Convert to FramePath…; each one undo step (step 3)", async ({ page }) => {
@@ -118,4 +119,21 @@ test("opened as is, later: the split bone's hint offers Convert…, and FramePat
   // Nothing left to convert: the menu item is off.
   await panel.getByRole("button", { name: "FramePath menu" }).click();
   await expect(page.getByRole("menuitem", { name: "Convert to FramePath…" })).toBeDisabled();
+});
+
+test("the window: 840 × 1050 held to the screen; tabs Summary · Where · Convert, one shown at a time, the buttons always in sight", async ({ page }) => {
+  await page.setViewportSize({ width: 1600, height: 1200 });
+  const open = await start(page);
+  await open.setInputFiles([file("walker.json", SPLIT)]);
+  const win = page.getByRole("dialog", { name: "Open: analysis" }), box = (await win.boundingBox())!;
+  expect(Math.round(box.width)).toBe(840);
+  expect(Math.round(box.height)).toBe(1050);
+  await expect(win.getByRole("tab")).toHaveText(["Summary", "Where (1)", "Convert"]);
+  await expect(win.getByRole("tab", { name: "Summary" })).toHaveAttribute("aria-selected", "true");
+  await expect(win.getByRole("tabpanel", { name: "Summary" })).toBeVisible();
+  await expect(win.getByRole("tabpanel", { name: "Convert" })).toBeHidden();
+  await win.getByRole("tab", { name: "Convert" }).click();
+  await expect(win.getByRole("tabpanel", { name: "Convert" })).toBeVisible();
+  await expect(win.getByRole("tabpanel", { name: "Summary" })).toBeHidden();
+  await expect(win.getByRole("button", { name: "Convert to FramePath and open" })).toBeVisible();
 });

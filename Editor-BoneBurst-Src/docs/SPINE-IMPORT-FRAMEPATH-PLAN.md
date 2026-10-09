@@ -200,3 +200,13 @@ is off.
 docs/SPEC.md: §5 says a Spine export opens through the analysis window (what it shows, its choices, what opens without it); §6a's
 diagram has the conversion's way into the keys and a paragraph on `edit/toFramePath.ts`. The FramePath panel's Info names Convert to
 FramePath… and the split bone's Convert…. THIRD-PARTY-NOTICES unchanged: nothing was taken in.
+
+### The window's layout (done, 2026-10-09; the owner: "1.5 × w and 1.75 × h, then a top toolbar of tabs for clean sections")
+
+The window is 840 × 1050 (it was 560 wide and as tall as its content, about 600), held to 94 % × 92 % of the screen. Under its title a row
+of tabs: **Summary** (the file's facts, what FramePath cannot take, the measured result), **Where (n)** (each animation and bone, the
+table's head staying in sight as it scrolls; it was folded under a "Where" toggle) and **Convert** (the timing and the tolerance, the
+measured result again). One tab shows at a time and scrolls on its own; the buttons stay at the bottom; ← and → move between tabs. A
+file with nothing to convert, and the convert form, have the Summary tab only, or no file facts. `importAnalysis.spec.ts` (7) checks the
+size, the three tabs, one page shown at a time, and the buttons in sight; the options test opens the Convert tab first. Seen on
+Playwright screenshots of the sample (Summary and Where).
