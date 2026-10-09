@@ -591,3 +591,6 @@ checks the hand for each.
 **Revised (step 19, the owner's twenty-seventh note: "when cmd + click node menu, add Delete option too"):** the ⌘ + click menu on
 a key's dot ends with **Delete key n (Shift + click)**, the same delete as a Shift + click there. `legMenu.spec.ts` checks it is in
 the menu, and that choosing it deletes that key as one undo step.
+
+**Superseded in part (2026-10-09):** the speed graph's drags (the point's, step 3 and 7; the legs', step 3; the reach's, step 10) are
+gone: the speed graph is a preview and a span's timing is edited in the Curves view (docs/CURVES-PANEL-PLAN.md, steps 2 and 3).

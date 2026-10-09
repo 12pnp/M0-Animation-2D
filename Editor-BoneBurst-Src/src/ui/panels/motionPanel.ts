@@ -6,12 +6,13 @@ import type { Key, Skeleton } from "@/model/skeleton";
 import { frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
 import { iconButton, setIcon } from "../icons";
 import { graphColours } from "../graphLook";
+import { CurvesView } from "./curvesView";
 import { pickColour } from "../colourPopup";
 import { showContextMenu } from "../contextMenu";
 import type { MenuItem } from "../menubar";
 import type { MotionMemory } from "../viewMemory";
 import { deleteTranslateKeys, translateKeyCount } from "@/edit/pathKeys";
-import { alongChord, clampSpeed, keyChords, keyHandles, keyReaches, keySpeedPairs, multiplierOf, retimeTranslateKey, setKeyHandles, setTranslateKeyReaches, setTranslateKeySpeeds, spanSpeedSamples, SPEED_MAX, SPEED_MIN, translateNodes, type Vec } from "@/edit/keySpeed";
+import { alongChord, clampSpeed, keyChords, keyHandles, keyReaches, keySpeedPairs, multiplierOf, retimeTranslateKey, setKeyHandles, setSpanEase, setTranslateKeyReaches, spanEase, type SpanEase, setTranslateKeySpeeds, spanSpeedSamples, SPEED_MAX, SPEED_MIN, translateNodes, type Vec } from "@/edit/keySpeed";
 import { deleteKeys, setKey } from "@/edit/keys";
 import { localPoint, pageScale } from "../pageScale";
 import { labelStep, RULER, secondsSinceLastKey } from "../timeline/layout";
@@ -44,6 +45,9 @@ const GRAPH_KEY = "boneburst.motionPath.graphHeight";
 /** FramePath's handles on the picture and its speed curve, and the path on the Stage, until a colour is picked (docs/STAGE-PATH-PLAN.md). */
 const PATH_COLOUR = "#ff9f1c";
 const STAGE_PATH_KEY = "boneburst.motionPath.stagePath";
+/** The Curves sub-panel's width at first, and the least it and the speed graph keep (docs/CURVES-PANEL-PLAN.md). */
+const DEFAULT_CURVES = 170, MIN_CURVES = 90, MIN_GRAPH_WIDTH = 160;
+const CURVES_KEY = "boneburst.motionPath.curvesWidth";
 const FRAME_LOCK_KEY = "boneburst.frameLock";
 const PAST = "rgb(230, 64, 51)", FUTURE = "rgb(51, 179, 77)";
 const LAYERS_KEY = "boneburst.motionPath.layers";
@@ -189,6 +193,11 @@ export class MotionPathPanel {
   private lowerHeight = DEFAULT_LOWER;
   /** The height was set by a drag (or kept from before); until then the area is the usual height, or less in a small panel. */
   private lowerSet = false;
+  /** The Curves sub-panel left of the speed graph (docs/CURVES-PANEL-PLAN.md), the row holding both, the line between them and its width. */
+  private readonly curves: CurvesView;
+  private readonly graphRow = document.createElement("div");
+  private readonly curvesSplit = document.createElement("div");
+  private curvesWidth = DEFAULT_CURVES;
   /** The speed graph, and its points on the canvas as last drawn; the point being dragged. */
   private readonly speedCanvas = document.createElement("canvas");
   /** The green line under the speed graph: drag it to make the graph taller or shorter (double-click: it fills the room again). */
@@ -198,14 +207,11 @@ export class MotionPathPanel {
   private readonly viewBar = document.createElement("div");
   private readonly zoomLabel = document.createElement("span");
   private speedDots: { i: number; x: number; y: number }[] = [];
-  private speedDrag: number | null = null;
   /** The speed graph's legs as last drawn, the one being dragged, the visible window over the animation (0..1), a pan in progress and the cap being dragged. */
   private speedLegs: { i: number; side: "out" | "in"; x: number; y: number }[] = [];
   /** The leg being dragged and where the drag began across the graph: sideways past a few pixels it sets the leg's reach (step 10). */
-  private legDrag: { i: number; side: "out" | "in"; x0: number } | null = null;
   private gView = { x0: 0, x1: 1 };
   private graphPan: { x: number; x0: number; x1: number } | null = null;
-  private capDrag = false;
   private gViewFor = "";
   private slotSig = "";
   /** FramePath: the translate key picked (-1: none), and the animation and bone it was picked in (docs/FRAMEPATH-SPEED-PLAN.md). */
@@ -236,8 +242,6 @@ export class MotionPathPanel {
   private delHover: { where: "graph" | "strip"; i: number } | null = null;
   /** Where the pointer last was over the graph or the strip, so pressing or letting go of Shift lights or clears the red key. */
   private lastOver: { where: "graph" | "strip"; x: number; y: number } | null = null;
-  /** The speed graph's leg under the pointer: drawn lit. */
-  private speedHover: { i: number; side: "out" | "in" } | null = null;
   /** The box the view was fitted to, as last drawn. */
   private box: Box | null = null;
   /** Hold that box after an edit too, until Fit or another bone, animation or space: the picture does not jump when a drag lets go. */
@@ -355,6 +359,22 @@ export class MotionPathPanel {
     this.lower.className = "lp-lower";
     this.lower.append(this.slotBar, this.dataBox);
     this.speedCanvas.className = "lp-speed-canvas";
+    this.curves = new CurvesView({
+      span: () => this.curveSpan(),
+      colours: () => ({ path: this.stagePath.colour, ...this.legColours(this.stagePath.colour) }),
+      begin: (label) => { this.session.pause(); this.session.history?.begin(label); },
+      end: () => { this.session.history?.end(); this.slotSig = ""; this.schedule(); },
+      apply: (index, ease, side) => this.applySpanEase(index, ease, side),
+    });
+    this.graphRow.className = "lp-speed-row";
+    this.curvesSplit.className = "lp-curves-split";
+    this.curvesSplit.title = "Drag to give the Curves view or the speed graph more room (double-click: back to the usual)";
+    this.curvesSplit.setAttribute("role", "separator");
+    this.curvesSplit.setAttribute("aria-orientation", "vertical");
+    this.graphRow.append(this.curves.element, this.curvesSplit, this.speedCanvas);
+    try { const w = Number(localStorage.getItem(CURVES_KEY)); if (Number.isFinite(w) && w >= MIN_CURVES) this.curvesWidth = w; } catch { /* the usual */ }
+    this.applyCurvesWidth();
+    this.curvesSplitDrag();
     try { const h = Number(localStorage.getItem(LOWER_KEY)); if (Number.isFinite(h) && h >= MIN_LOWER) { this.lowerHeight = h; this.lowerSet = true; } } catch { /* the usual */ }
     try { const h = Number(localStorage.getItem(GRAPH_KEY)); if (Number.isFinite(h) && h >= MIN_GRAPH) this.graphHeight = h; } catch { /* the usual */ }
     this.speedGrip.className = "lp-grip";
@@ -1234,18 +1254,7 @@ export class MotionPathPanel {
     this.applyAtKey(i, label, (index) => setTranslateKeyReaches(a.name, bone, index, r));
   }
 
-  /** A leg of key `i` dragged to canvas x: its reach, the share of its span between the key and x; in Mirror the other straight side too. */
-  private dragKeyReach(i: number, side: "in" | "out", x: number): void {
-    const s = this.session, a = s.animation, bone = s.selectedBone, keys = this.keyNodes(), k = keys?.[i];
-    if (!a || bone === null || !keys || !k) return;
-    const t = this.gp(x) * s.length(a), here = keyTime(k), other = keys[side === "out" ? i + 1 : i - 1];
-    if (!other) return;
-    const r = Math.round(Math.max(0, Math.min(1, (side === "out" ? t - here : here - t) / Math.abs(keyTime(other) - here))) * 1000) / 1000;
-    const now = keyReaches(bone, keys)[i]!, flip = side === "out" ? "in" : "out";
-    if (now[side] === null) { this.onStatus(`Key ${i + 1}: the span ${side === "out" ? "after" : "before"} it is curved, so its leg has no reach (its time handle is its speed).`); return; }
-    this.setKeyReaches(i, this.speedMode(i) === "broken" || now[flip] === null ? { [side]: r } : { in: r, out: r });
-    this.onStatus(`Key ${i + 1} · reach ${side}: ${Math.round(r * 100)}% of the span`);
-  }
+
 
   /** A key's point on the graph: its speed, the middle of in and out when they differ; null when both sides are stepped. */
   private keyPoint(pr: { in: number | null; out: number | null }): number | null {
@@ -1407,11 +1416,7 @@ export class MotionPathPanel {
     this.onStatus(`Key ${d.i + 1} · handle ${d.side}: x ${v[0]}, y ${v[1]}${this.keyMode(d.i) === "break" ? "" : " (the other handle follows: Break frees it)"}`);
   }
 
-  /** A leg of key `i` dragged to speed `v`: that side, and when the legs are Linked the other side too. */
-  private dragKeyLeg(i: number, side: "in" | "out", v: number): void {
-    if (this.speedMode(i) === "broken") this.setKeySpeeds(i, { [side]: v });
-    else this.setKeySpeed(i, v);
-  }
+
 
   /** Delete FramePath key `i` (Shift + click on its point or diamond); one undo step. */
   private deleteKeyAt(i: number): void {
@@ -1816,8 +1821,8 @@ export class MotionPathPanel {
       b.addEventListener("click", () => this.setSpeedLegs(i, how));
       legs.append(b);
     };
-    legMode("Linked", "linked", "The speed legs linked: the speed and reach arriving are the ones leaving; dragging either leg moves both");
-    legMode("Broken", "broken", "The speed legs free: the speed and reach arriving and leaving differ");
+    legMode("Linked", "linked", "The speed legs linked: the speed and reach arriving are the ones leaving; dragging either of the key's handles in Curves moves both");
+    legMode("Broken", "broken", "The speed legs free: the speed and reach arriving and leaving differ; a handle dragged in Curves moves only its side");
     const fields = doc.createElement("div");
     fields.className = "lp-fields";
     fields.append(title,
@@ -1874,7 +1879,7 @@ export class MotionPathPanel {
     // The speed values: 0 (the even pace) a full line, the limits dashed, the rest faint.
     g.font = `10px ${mono}`;
     g.textBaseline = "middle";
-    g.textAlign = "right";
+    g.textAlign = "left";
     for (const v of [SPEED_MIN, 0, 1, 2, 3, 4, SPEED_MAX]) {
       const y = Math.round(Y(v)) + 0.5, edge = v === SPEED_MIN || v === SPEED_MAX;
       g.strokeStyle = line;
@@ -1884,7 +1889,7 @@ export class MotionPathPanel {
       g.globalAlpha = 1;
       g.setLineDash([]);
       g.fillStyle = v === 0 ? text : muted;
-      g.fillText(String(v), l - 6, y);
+      g.fillText(String(v), r + 6, y);
     }
     g.save();
     g.beginPath(); g.rect(l, 0, r - l, h); g.clip();
@@ -1914,7 +1919,7 @@ export class MotionPathPanel {
         if (sv === null || red || !on) continue;
         // A straight side's leg reaches as far into its span as the key's speed lasts (step 10); a curved side's is a short stem.
         const r = reaches[i]![side], to = keys[side === "in" ? i - 1 : i + 1];
-        const hx = r !== null && to ? X(keyTime(k) + (keyTime(to) - keyTime(k)) * r) : x + (side === "in" ? -LEG : LEG), hy = Y(sv), lit = (this.speedHover?.i === i && this.speedHover.side === side) || (this.legDrag?.i === i && this.legDrag.side === side);
+        const hx = r !== null && to ? X(keyTime(k) + (keyTime(to) - keyTime(k)) * r) : x + (side === "in" ? -LEG : LEG), hy = Y(sv), lit = false;
         g.strokeStyle = lit ? "#ffffff" : legs[side];
         g.globalAlpha = lit || on ? 0.9 : 0.6;
         g.beginPath(); g.moveTo(x, y); g.lineTo(hx, hy); g.stroke();
@@ -1950,6 +1955,7 @@ export class MotionPathPanel {
     const title = doc.createElement("span");
     title.className = "title";
     title.textContent = `Speed · ${SPEED_MIN} to ${SPEED_MAX}: the bone goes 1 + it times as fast`;
+    title.title = "A preview of every span's speed: click a point or a span to pick it; its timing is eased in Curves, on the left";
     // Fit is an icon at the strip's right end (step 15); Node stays here.
     const fitNode = this.button("Node", "Fit the picked key's span: from it to the next key");
     fitNode.addEventListener("click", () => this.fitGraph(true));
@@ -1967,14 +1973,91 @@ export class MotionPathPanel {
     swatch.style.background = this.stagePath.colour;
     swatch.addEventListener("click", () => pickColour(swatch, this.stagePath.colour, (hex) => this.setStagePath({ colour: hex })));
     head.append(title, stage, swatch, fitNode);
-    col.append(head, this.speedCanvas, this.speedGrip);
+    col.append(head, this.graphRow, this.speedGrip);
     return col;
+  }
+
+  /** What the Curves view shows: the span the playhead is in (the strip's lit tab), its ease, and the playhead across it; or why nothing. */
+  private curveSpan(): { index: number; ease: SpanEase; at: number } | string {
+    const s = this.session, bone = s.selectedBone, keys = this.keyNodes();
+    if (!keys || bone === null || !s.animation) return this.keyHint();
+    const span = this.litSpan();
+    if (!span) return `Frame ${s.frame}: past the last key, so there is no span to ease. Pick a span on the strip or the graph.`;
+    const index = keys.findIndex((k) => timeFrame(keyTime(k), s.fps) === span[0]);
+    if (index < 0 || !keys[index + 1]) return "No span here.";
+    return { index, ease: spanEase(bone, keys[index]!, keys[index + 1]!), at: (s.frame - span[0]) / Math.max(1, span[1] - span[0]) };
+  }
+
+  /**
+   * A span's ease written from the Curves view (docs/CURVES-PANEL-PLAN.md): its kind (one undo step), or one handle while a drag is
+   * under way. The handle is a key's leg (out: the span's first key, in: its last); when that key's speed legs are Linked, its other
+   * leg, in the span on its other side, takes the same speed and reach (Decision 2).
+   */
+  private applySpanEase(index: number, ease: { kind: SpanEase["kind"]; out?: Vec; in?: Vec }, side?: "out" | "in"): void {
+    const s = this.session, a = s.animation, bone = s.selectedBone, h = s.history;
+    if (!a || bone === null || !h) return;
+    const key = side === "out" ? index : side === "in" ? index + 1 : -1, linked = key >= 0 && this.speedMode(key) === "linked";
+    try {
+      h.apply(side ? "step" : `Make the span after key ${index + 1} ${ease.kind}`, setSpanEase(a.name, bone, index, ease));
+      if (linked && side) {
+        const keys = this.keyNodes()!, other = side === "out" ? "in" : "out", pr = keySpeedPairs(bone, keys)[key]!, rc = keyReaches(bone, keys)[key]!;
+        const v = pr[side], r = rc[side];
+        if (v !== null && pr[other] !== null) h.apply("step", setTranslateKeySpeeds(a.name, bone, key, { [other]: v }));
+        if (r !== null && rc[other] !== null) h.apply("step", setTranslateKeyReaches(a.name, bone, key, { [other]: r }));
+      }
+    } catch (err) {
+      if (!(err instanceof EditRefused)) throw err;
+      this.onStatus(err.message);
+      return;
+    }
+    s.changed();
+  }
+
+  /** The Curves view's width, held so the speed graph keeps room. */
+  private applyCurvesWidth(): void {
+    this.curves.element.style.width = `${this.curvesWidth}px`;
+  }
+
+  /** The line between the Curves view and the speed graph is dragged: right gives Curves more room. */
+  private curvesSplitDrag(): void {
+    const g = this.curvesSplit;
+    g.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      g.setPointerCapture(e.pointerId);
+      const x0 = e.clientX, w0 = this.curvesWidth, room = this.graphRow.getBoundingClientRect().width / pageScale();
+      const move = (ev: PointerEvent): void => {
+        this.curvesWidth = Math.round(Math.max(MIN_CURVES, Math.min(room - MIN_GRAPH_WIDTH, w0 + (ev.clientX - x0) / pageScale())));
+        this.applyCurvesWidth();
+        this.schedule();
+      };
+      const up = (): void => {
+        g.removeEventListener("pointermove", move);
+        g.removeEventListener("pointerup", up);
+        g.removeEventListener("pointercancel", up);
+        try { localStorage.setItem(CURVES_KEY, String(this.curvesWidth)); } catch { /* not kept */ }
+      };
+      g.addEventListener("pointermove", move);
+      g.addEventListener("pointerup", up);
+      g.addEventListener("pointercancel", up);
+    });
+    g.addEventListener("dblclick", () => {
+      this.curvesWidth = DEFAULT_CURVES;
+      this.applyCurvesWidth();
+      try { localStorage.removeItem(CURVES_KEY); } catch { /* not kept */ }
+      this.schedule();
+    });
+  }
+
+  /** The Curves view's handles on its canvas (for tests). */
+  get curveHandles(): readonly { side: "out" | "in"; x: number; y: number }[] {
+    return this.curves.handlePoints;
   }
 
   /** The graph's own height, when set; the area under the picture then scrolls if the graph is taller than it. */
   private applyGraph(): void {
-    this.speedCanvas.style.flex = this.graphHeight === null ? "" : "none";
-    this.speedCanvas.style.height = this.graphHeight === null ? "" : `${this.graphHeight}px`;
+    this.graphRow.style.flex = this.graphHeight === null ? "" : "none";
+    this.graphRow.style.height = this.graphHeight === null ? "" : `${this.graphHeight}px`;
     this.dataBox.classList.toggle("tall", this.graphHeight !== null);
   }
 
@@ -1986,7 +2069,7 @@ export class MotionPathPanel {
       e.preventDefault();
       g.setPointerCapture(e.pointerId);
       root.classList.add("bb-gripping-row");
-      const y0 = e.clientY, h0 = this.speedCanvas.getBoundingClientRect().height / pageScale();
+      const y0 = e.clientY, h0 = this.graphRow.getBoundingClientRect().height / pageScale();
       const move = (ev: PointerEvent): void => { this.graphHeight = Math.max(MIN_GRAPH, Math.round(h0 + (ev.clientY - y0) / pageScale())); this.applyGraph(); this.schedule(); };
       const up = (): void => {
         g.removeEventListener("pointermove", move);
@@ -2051,7 +2134,8 @@ export class MotionPathPanel {
   private plot(): { l: number; r: number; t: number; b: number } {
     const c = this.speedCanvas;
     // Room on the right for the strip's Fit and lock icons, so no frame is drawn under them (step 15).
-    return { l: 40, r: Math.max(41, c.clientWidth - 34), t: 10, b: Math.max(11, c.clientHeight - 8) };
+    // The value labels on the right (step 3 of docs/CURVES-PANEL-PLAN.md: the Curves view is on the left).
+    return { l: 10, r: Math.max(11, c.clientWidth - 40), t: 10, b: Math.max(11, c.clientHeight - 8) };
   }
 
   /** The canvas x of a share of the animation (0..1) in the visible window, and back. */
@@ -2083,6 +2167,7 @@ export class MotionPathPanel {
   /** The speed graph and the frame strip above it. */
   private drawSpeed(): void {
     this.drawKeySpeed();
+    this.curves.draw();
     this.drawKeyStrip();
   }
 
@@ -2116,16 +2201,9 @@ export class MotionPathPanel {
     return this.speedLegs;
   }
 
-  /** The speed value a point of the graph's canvas stands for, not held to the range. */
-  private valueAtY(y: number): number {
-    const { t, b } = this.plot();
-    return SPEED_MAX - ((y - t) / (b - t)) * (SPEED_MAX - SPEED_MIN);
-  }
 
-  /** The speed value a point of the graph's canvas stands for (held to the range). */
-  private speedAtY(y: number): number {
-    return clampSpeed(this.valueAtY(y));
-  }
+
+
 
   /** The point of the graph under a canvas point, or -1. */
   private speedDotAt(x: number, y: number): number {
@@ -2134,29 +2212,17 @@ export class MotionPathPanel {
     return best;
   }
 
-  /** The leg under a canvas point, or null. */
-  private speedLegAt(x: number, y: number): { i: number; side: "out" | "in" } | null {
-    let best: { i: number; side: "out" | "in" } | null = null, bestD = 9;
-    for (const d of this.speedLegs) { const q = Math.hypot(d.x - x, d.y - y); if (q <= bestD) { best = { i: d.i, side: d.side }; bestD = q; } }
-    return best;
-  }
-
-  /** The playhead goes to the frame under the graph's top edge where it was pressed. */
-  private scrubGraph(x: number): void {
-    const a = this.session.animation;
-    if (a) this.session.seek(timeFrame(Math.min(1, Math.max(0, this.gp(x))) * this.session.length(a), this.session.fps));
-  }
-
   /**
-   * The graph's mouse: its top edge scrubs, a leg drags its side's speed (Alt + drag breaks the key's handles first), a point drags up or down
-   * for its speed (Shift: in steps of 0.1), Shift + click on a point deletes its key, double-click on a point or a leg makes the key Plain; the
-   * middle button pans; the wheel zooms over the frames (a sideways wheel or Shift + wheel pans); ⌘ + click or right-click opens the menu.
+   * The speed graph's mouse (docs/CURVES-PANEL-PLAN.md, step 3: a preview, nothing on it is dragged): a click on a key's point goes to
+   * that key, a click elsewhere puts the playhead on the frame under it (so the Curves view shows that span); Shift + click on a point
+   * deletes its key; double-click on a point links its speed legs, elsewhere fits the graph; ⌘ + click or right-click opens the menu;
+   * the middle button pans and the wheel zooms over the frames (a sideways wheel or Shift + wheel pans).
    */
   private speedEvents(): void {
     const c = this.speedCanvas, at = (e: PointerEvent | MouseEvent): [number, number] => localPoint(c, e as PointerEvent);
     c.addEventListener("contextmenu", (e) => { e.preventDefault(); const [x, y] = at(e); this.graphMenu(x, y, e.clientX, e.clientY); });
     c.addEventListener("pointerdown", (e) => {
-      const [x, y] = at(e), { t } = this.plot();
+      const [x, y] = at(e);
       if (e.button === 1) {
         e.preventDefault();
         this.graphPan = { x: e.clientX, x0: this.gView.x0, x1: this.gView.x1 };
@@ -2166,39 +2232,12 @@ export class MotionPathPanel {
       }
       if (e.button !== 0) return;
       if (e.metaKey) { e.preventDefault(); this.graphMenu(x, y, e.clientX, e.clientY); return; }
-      if (e.shiftKey && this.speedDotAt(x, y) >= 0) { e.preventDefault(); this.deleteKeyAt(this.speedDotAt(x, y)); return; }
-      if (y < t && this.speedLegAt(x, y) === null && this.speedDotAt(x, y) < 0) {
-        e.preventDefault();
-        this.session.pause();
-        this.capDrag = true;
-        c.setPointerCapture(e.pointerId);
-        this.scrubGraph(x);
-        return;
-      }
-      // A key's point wins over a leg near it: every key shows its legs, and a key moved close to another sits under that one's leg.
-      const leg = this.speedDotAt(x, y) >= 0 ? null : this.speedLegAt(x, y);
-      if (leg) {
-        e.preventDefault();
-        this.pickKey(leg.i);
-        this.legDrag = { ...leg, x0: x };
-        this.session.history?.begin(`Set the ${leg.side} speed of key ${leg.i + 1}`);
-        // Alt + drag breaks the speed legs first, so only the one held moves.
-        const k = this.keyNodes()?.[leg.i];
-        if (e.altKey && k) this.speedModes.set(this.keyId(k), "broken");
-        c.setPointerCapture(e.pointerId);
-        this.slotSig = "";
-        this.schedule();
-        return;
-      }
       const i = this.speedDotAt(x, y);
-      if (i < 0) return;
+      if (e.shiftKey && i >= 0) { e.preventDefault(); this.deleteKeyAt(i); return; }
       e.preventDefault();
-      this.pickKey(i);
-      this.speedDrag = i;
-      this.session.history?.begin(`Set the speed of key ${i + 1}`);
-      c.setPointerCapture(e.pointerId);
-      this.slotSig = "";
-      this.schedule();
+      if (i >= 0) { this.pickKey(i); return; }
+      const a = this.session.animation;
+      if (a) { this.session.pause(); this.session.seek(timeFrame(Math.min(1, Math.max(0, this.gp(x))) * this.session.length(a), this.session.fps)); }
     });
     c.addEventListener("pointermove", (e) => {
       const [x, y] = at(e);
@@ -2207,37 +2246,15 @@ export class MotionPathPanel {
         this.setView(this.graphPan.x0 - d, this.graphPan.x1 - d);
         return;
       }
-      if (this.capDrag) { this.scrubGraph(x); return; }
-      if (this.legDrag) {
-        const raw = this.speedAtY(y);
-        this.dragKeyLeg(this.legDrag.i, this.legDrag.side, e.shiftKey ? clampSpeed(Math.round(raw * 10) / 10) : Math.round(raw * 100) / 100);
-        // Sideways it sets the reach too, once past a few pixels (an up-and-down drag wobbles).
-        if (Math.abs(x - this.legDrag.x0) >= 4) { this.dragKeyReach(this.legDrag.i, this.legDrag.side, x); this.legDrag.x0 = Number.NEGATIVE_INFINITY; }
-        this.schedule();
-        return;
-      }
       this.lastOver = { where: "graph", x, y };
-      if (this.speedDrag === null) this.updateDelHover(e.shiftKey);
-      if (this.speedDrag === null) {
-        const over = this.speedLegAt(x, y);
-        if (over?.i !== this.speedHover?.i || over?.side !== this.speedHover?.side) { this.speedHover = over; this.schedule(); }
-      }
-      if (this.speedDrag === null) { c.style.cursor = y < this.plot().t ? "ew-resize" : this.speedLegAt(x, y) ? "pointer" : this.speedDotAt(x, y) >= 0 ? "ns-resize" : ""; return; }
-      // Up and down only: the point sets its key's speed, never its frame (step 13).
-      const raw = this.speedAtY(y), v = e.shiftKey ? clampSpeed(Math.round(raw * 10) / 10) : Math.round(raw * 100) / 100;
-      this.setKeySpeed(this.speedDrag, clampSpeed(v));
-      this.schedule();
+      this.updateDelHover(e.shiftKey);
+      // The hand over a point (a click goes to its key), the arrow elsewhere.
+      c.style.cursor = this.speedDotAt(x, y) >= 0 ? "pointer" : "";
     });
     const end = (): void => {
+      if (!this.graphPan) return;
       this.graphPan = null;
-      this.capDrag = false;
       c.style.cursor = "";
-      if (this.legDrag) { this.legDrag = null; this.session.history?.end(); this.slotSig = ""; this.schedule(); return; }
-      if (this.speedDrag === null) return;
-      this.speedDrag = null;
-      this.session.history?.end();
-      this.slotSig = "";
-      this.schedule();
     };
     c.addEventListener("pointerup", end);
     c.addEventListener("pointercancel", end);
@@ -2252,11 +2269,11 @@ export class MotionPathPanel {
       const k = Math.exp(e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), anchor = this.gp(x), w = Math.min(1, Math.max(0.02, span * k)), f = (x - l) / (r - l);
       this.setView(anchor - f * w, anchor + (1 - f) * w);
     }, { passive: false });
-    c.addEventListener("pointerleave", () => { this.lastOver = null; this.updateDelHover(false); if (this.speedHover) { this.speedHover = null; this.schedule(); } });
+    c.addEventListener("pointerleave", () => { this.lastOver = null; this.updateDelHover(false); });
     c.addEventListener("dblclick", (e) => {
-      const [x, y] = at(e), leg = this.speedLegAt(x, y), i = this.speedDotAt(x, y);
-      if (leg || i >= 0) { this.setSpeedLegs(leg ? leg.i : i, "linked"); return; }
-      if (y >= this.plot().t) this.fitGraph(false);
+      const [x, y] = at(e), i = this.speedDotAt(x, y);
+      if (i >= 0) { this.setSpeedLegs(i, "linked"); return; }
+      this.fitGraph(false);
     });
   }
 

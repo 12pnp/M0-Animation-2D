@@ -851,6 +851,16 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 .lp-zoom-label { min-width: 3.5em; text-align: center; color: var(--muted); font-family: var(--font-mono); }
 .lp-speed .title { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lp-speed-canvas { flex: 1; min-height: 0; width: 100%; display: block; touch-action: none; }
+/* The Curves sub-panel left of the speed graph, and the line between them (docs/CURVES-PANEL-PLAN.md). */
+.lp-speed-row { flex: 1; min-height: 0; display: flex; align-items: stretch; }
+.lp-speed-row .lp-speed-canvas { flex: 1; min-width: 0; height: auto; }
+.lp-curves { flex: none; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.lp-curves-bar { display: flex; gap: 2px; }
+.lp-curves-bar button { flex: 1; min-width: 0; padding: 1px 0; }
+.lp-curves-canvas { flex: 1; min-height: 0; width: 100%; display: block; touch-action: none; }
+.lp-curves-note { margin: 0; font-size: 11px; color: var(--muted); }
+.lp-curves-split { flex: none; width: 7px; cursor: ew-resize; touch-action: none; background: linear-gradient(var(--line), var(--line)) center / 1px 100% no-repeat; }
+.lp-curves-split:hover, .lp-curves-split:active { background: linear-gradient(var(--accent), var(--accent)) center / 3px 100% no-repeat; }
 .lp-lower[hidden], .lp-split[hidden] { display: none; }
 .motion-path .lp-body { min-height: 120px; }
 

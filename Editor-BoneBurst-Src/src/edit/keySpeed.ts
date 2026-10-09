@@ -349,3 +349,56 @@ export function retimeTranslateKey(animation: string, bone: string, index: numbe
     return withKeys(a, translatePath(bone), out);
   });
 }
+
+/** A span as Spine's Curves view shows it (docs/CURVES-PANEL-PLAN.md): its kind, and each end's handle as [time across, progress up], 0 to 1 over the span. */
+export interface SpanEase {
+  readonly kind: "stepped" | "linear" | "bezier";
+  readonly out: Vec;
+  readonly in: Vec;
+}
+
+/**
+ * The span from `k` to `next` as a Curves view: across, each time handle's share of the span's time (x's and y's averaged); up, how
+ * far each path handle reaches along the chord (`out · chord ÷ |chord|²` from the start, `1 + in · chord ÷ |chord|²` from the end).
+ * On a straight span that is the handle's share of the chord (steps 8 and 10); with no chord, the thirds.
+ */
+export function spanEase(bone: string, k: Key, next: Key): SpanEase {
+  const sp = spanOf(bone, k, next), c = curveOf(k), kind = k.curve === "stepped" ? "stepped" : c ? "bezier" : "linear";
+  const { curve: _, ...plain } = k, h = spanHandles(bone, c ? k : (plain as Key), next)!;
+  const [u1, u2] = c && sp.dt > 0 ? timeHandles(c, sp) : [1 / 3, 2 / 3];
+  const c2 = sp.cl * sp.cl, along = (v: Vec): number => (v[0] * sp.chord[0] + v[1] * sp.chord[1]) / c2;
+  return { kind, out: [r4(u1), c2 > 1e-12 ? r4(along(h.out)) : 1 / 3], in: [r4(u2), c2 > 1e-12 ? r4(1 + along(h.in)) : 2 / 3] };
+}
+
+/**
+ * The span after the bone's translate key `index` written as a Curves view (docs/CURVES-PANEL-PLAN.md, step 1). `kind` stepped or
+ * linear drops the handles; bezier writes them, a side not given kept as it is. Across, a time handle held inside the span; up, the
+ * path handle moved along the chord only (`out + Δup · chord`), so what it has across the chord, its bend, stays (Decision 1). The
+ * keys' places stay.
+ */
+export function setSpanEase(animation: string, bone: string, index: number, ease: { kind: SpanEase["kind"]; out?: Vec | undefined; in?: Vec | undefined }): Edit<Skeleton> {
+  return onAnimation(animation, (a) => {
+    if ([ease.out, ease.in].some((h) => h !== undefined && !(Number.isFinite(h[0]) && Number.isFinite(h[1])))) throw new EditRefused("A handle must be two numbers.");
+    const keys = translateNodes(a, bone);
+    if (keys === null) throw new EditRefused(`${bone} keys translate as separate x and y: FramePath needs the combined translate keys.`);
+    const k = keys[index], next = keys[index + 1];
+    if (!k || !next) throw new EditRefused(`${bone}'s translate key ${index + 1} in ${animation} has no span after it.`);
+    const { curve: _, ...plain } = k;
+    let made: Key;
+    if (ease.kind === "stepped") made = { ...plain, curve: "stepped" } as Key;
+    else if (ease.kind === "linear") made = plain as Key;
+    else {
+      const sp = spanOf(bone, k, next), now = spanEase(bone, k, next), h = spanHandles(bone, curveOf(k) ? k : (plain as Key), next)!;
+      const out = ease.out ?? now.out, into = ease.in ?? now.in, hold = (x: number): number => Math.min(1, Math.max(0, x));
+      // Up moves the path handle along the chord by the change, from where it is now unrounded (nothing to move with no chord).
+      const c2 = sp.cl * sp.cl, along = (v: Vec): number => (v[0] * sp.chord[0] + v[1] * sp.chord[1]) / c2;
+      // An up value within the read-back's rounding (four places) of where the handle is: unchanged, so an across-only drag moves no path.
+      const slide = (v: Vec, dy: number): Vec => (c2 > 1e-12 && Math.abs(dy) > 5e-5 ? [v[0] + dy * sp.chord[0], v[1] + dy * sp.chord[1]] : v);
+      const o = ease.out ? slide(h.out, out[1] - along(h.out)) : h.out, i = ease.in ? slide(h.in, into[1] - (1 + along(h.in))) : h.in;
+      const ta = sp.t0 + hold(out[0]) * sp.dt, tb = sp.t0 + hold(into[0]) * sp.dt, curve: number[] = [];
+      for (let ch = 0; ch < 2; ch++) curve.push(shortFloat(ta), shortFloat(sp.a[ch]! + o[ch]!), shortFloat(tb), shortFloat(sp.b[ch]! + i[ch]!));
+      made = { ...plain, curve } as Key;
+    }
+    return withKeys(a, translatePath(bone), keys.map((key, j) => (j === index ? made : key)));
+  });
+}

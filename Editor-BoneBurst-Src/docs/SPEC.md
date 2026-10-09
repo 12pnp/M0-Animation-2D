@@ -191,15 +191,30 @@ TwinSpline (a path in the sidecar with a speed spline and a clock of its own, do
 
 ```mermaid
 flowchart LR
-    K["translate keys of the bone<br/>(the document)"] -->|"keyHandles · keySpeedPairs"| FP["edit/keySpeed.ts"]
-    FP --> UI["Motion Path panel<br/>frame strip · speed graph · handles on the picture"]
-    UI -->|"setKeyHandles · setTranslateKeySpeeds"| K
+    K["translate keys of the bone<br/>(the document)"] -->|"keyHandles · keySpeedPairs · keyReaches · spanEase"| FP["edit/keySpeed.ts"]
+    FP --> PIC["picture: the path,<br/>its keys' handles"]
+    FP --> CV["Curves view: the playhead's span<br/>(ui/panels/curvesView.ts)"]
+    FP --> SG["speed graph: every span,<br/>a preview"]
+    PIC -->|"setKeyHandles"| K
+    CV -->|"setSpanEase"| K
+    ROW["key's data row"] -->|"setTranslateKeySpeeds · setTranslateKeyReaches"| K
+    STRIP["frame strip"] -->|"retimeTranslateKey"| K
     K -->|"exported as is"| U["Spine JSON → Unity bake"]
 ```
 
-- A key's handles (in and out) are vectors in the bone's translate units, written as each span's Bezier curve; a speed is a
-  handle's length over a third of its span's chord, minus 1, held to −0.99…5 (`SPEED_MIN`, `SPEED_MAX`, `clampSpeed` in
-  `edit/keySpeed.ts`). Mirror, Break and Plain are read from the handles.
+- A span between two keys is one Bezier per channel, x and y written with the same time handles, so the bone follows exactly the 2D
+  Bezier of the two keys and their path handles (`setKeyHandles`; vectors in the bone's translate units). The path handles are the
+  path's shape; the time handles its timing.
+- A key's speed (in and out) is how fast the bone goes there over the span's even pace, minus 1, held to −0.99…5 (`SPEED_MIN`,
+  `SPEED_MAX`, `clampSpeed`). On a straight span (both path handles along the chord) it is the velocity, a handle's share of the chord
+  over its time handle's share of the span, and the time handle is free: its share is the leg's **reach** (`keyReaches`,
+  `setTranslateKeyReaches`). On a curved span it is the rate along the path, from the time handle alone (`1 ÷ (3 u)`), so a shape never
+  changes a speed (docs/FRAMEPATH-SPEED-PLAN.md, steps 8–10).
+- The Curves view reads and writes a span as Spine's Curves view does (`spanEase`, `setSpanEase`; docs/CURVES-PANEL-PLAN.md): across, a
+  time handle's share; up, how far its path handle reaches along the chord. Up changes the path handle along the chord only, so its bend
+  across the chord stays.
+- Mirror, Break and Plain (the path's handles) and Linked, Broken (the speed legs) are read from the keys; a choice the file cannot show
+  is kept by the panel while the bone and animation stay.
 - No sidecar data, no bake, no clock of its own: what plays in the editor is what Spine and Unity play.
 
 ## 7. Interface (E2–E4)
@@ -293,16 +308,27 @@ the skeleton's when nothing is selected) and Snapping (the snapping settings, `u
 the colour set under Tree (`treeGuideColour`).
 
 **The Motion Path panel** (`ui/panels/motionPanel.ts`) is FramePath's editor (§6a, docs/FRAMEPATH-SPEED-PLAN.md), for the
-selected bone and the animation shown. From the top: the header (the Path layer toggle, FramePath's name with its ⋮ menu: Closed,
-Delete FramePath data; then what else the picture shows: Image, Bone and Onion with a count either side, tiers of bones above and
-below or frames before and after, `ui/stage/tiers.ts`, docs/SHOW-STEPPERS-PLAN.md; Length; the handle toggles and their axes); a
-line saying what FramePath shows for the bone; the picture (the bone's trail with a dot per frame, the bone and its image at the
-playhead, onion skin, the rotate, move, scale and shear handles, each non-Plain key's handles; wheel zooms, the middle button pans,
-F or Fit fits); the view bar (zoom − and +, Fit); and under a splitter you drag, the ◆ toggle and the frame strip (drawn as the
-Timeline's top), the key on the playhead's frame (place, speed in and out, Mirror · Break · Plain) and the speed graph (a point and
-two legs per key; Shift + click deletes a key; in its header Stage draws the bone's world path on the Stage, and a swatch
-sets the colour of that path, the speed curve and the picture's key handles, kept per browser: docs/STAGE-PATH-PLAN.md). Edits are
-history steps.
+selected bone and the animation shown. From the top:
+
+- **The header**: the Path layer toggle, FramePath's name with its ⋮ menu (Closed, Delete FramePath data), then what else the picture
+  shows: Image, Bone and Onion with a count either side (tiers of bones above and below, or frames before and after:
+  `ui/stage/tiers.ts`, docs/SHOW-STEPPERS-PLAN.md), Length, and the handle toggles with their axes. Under it a line saying what
+  FramePath shows for the bone.
+- **The picture**: the bone's trail in the path colour, a dot on each keyed frame, the span the playhead is in lit in the accent; the
+  bone and its image at the playhead, onion skin, the rotate, move, scale and shear handles, and the picked key's path handles (in and
+  out in their own colours, Preferences ▸ Timeline). A dot drags the bone at that frame; ⌘ + click on the path adds a key, on a key's dot
+  opens Mirror · Break · Plain · Delete; Shift + click on a key's dot deletes it; while ⌘ or Shift is held the click is previewed. Wheel
+  zooms, the middle button pans, F or Fit fits; the view bar under it has zoom − and +, and Fit.
+- **Under a splitter you drag**: the ◆ toggle and the frame strip (drawn as the Timeline's top: a tab per span, the playhead's lit;
+  ⌘ + drag on a key's diamond moves the key in time and keeps its place and the path; at its right end Fit and the frame lock, which
+  holds the playhead to the animation and makes Q / W wrap). Then the **Curves view** (`ui/panels/curvesView.ts`: the playhead's span,
+  stepped · linear · bezier, its two handles dragged; docs/CURVES-PANEL-PLAN.md), a resize line, and the **speed graph**, a preview of
+  every span: a click picks a key or a span, Shift + click deletes a key, ⌘ + click or right-click opens Linked · Broken · Delete;
+  nothing on it drags. Its header: Stage draws the bone's world path on the Stage, a swatch sets the path colour
+  (docs/STAGE-PATH-PLAN.md), Node fits the picked key's span. Last, **the key's data row**: its place, speed and reach in and out, the
+  speed legs (Linked · Broken) and the path (Mirror · Break · Plain).
+
+Edits are history steps; a drag is one.
 
 ## 8. AI tools (E5)
 

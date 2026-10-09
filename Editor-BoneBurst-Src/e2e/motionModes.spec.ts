@@ -250,18 +250,24 @@ test("the strip and the speed graph always show, with no bone selected too; the 
   expect((await lower.boundingBox())!.height).toBeGreaterThan(h0 + 40);
 });
 
-test("a point on the speed graph moves only up and down: a sideways drag leaves its key on its frame (step 13)", async ({ page }) => {
+test("the speed graph is a preview: dragging a point changes nothing; a click on it goes to its key (CURVES-PANEL-PLAN step 3)", async ({ page }) => {
   await page.setViewportSize({ width: 1500, height: 950 });
   await open(page, "hips");
   const panel = panelOf(page);
   const times = await hipsKeys(page);
+  const curves = () => page.evaluate(() => JSON.stringify((window as unknown as Live).boneburst.session.doc.animations[0]!.bones!.find((b) => b.name === "hips")!.timelines.find((t) => t.name === "translate")!.keys));
+  const before = await curves();
   await expect.poll(() => page.evaluate(() => (window as unknown as Points).boneburst.motionPath.speedPoints.length)).toBe(times.length);
   const p = await page.evaluate(() => (window as unknown as Points).boneburst.motionPath.speedPoints.find((q) => q.i === 3)!);
   const prev = await page.evaluate(() => (window as unknown as Points).boneburst.motionPath.speedPoints.find((q) => q.i === 2)!);
   const box = (await panel.locator(".lp-speed-canvas").boundingBox())!;
+  // Up and sideways: once a drag set the speed (step 7) or moved the key (step 13); now nothing is written.
   await page.mouse.move(box.x + p.x, box.y + p.y);
   await page.mouse.down();
-  await page.mouse.move(box.x + (p.x + prev.x) / 2, box.y + p.y, { steps: 5 });
+  await page.mouse.move(box.x + (p.x + prev.x) / 2, box.y + p.y - 30, { steps: 5 });
   await page.mouse.up();
-  expect(await hipsKeys(page)).toEqual(times);
+  expect(await curves()).toBe(before);
+  // The press was a click on key 4's point: the playhead is on it.
+  const fps = await page.evaluate(() => (window as unknown as Seek).boneburst.session.fps);
+  expect(await page.evaluate(() => (window as unknown as Seek).boneburst.session.frame)).toBe(Math.round(times[3]! * fps));
 });
