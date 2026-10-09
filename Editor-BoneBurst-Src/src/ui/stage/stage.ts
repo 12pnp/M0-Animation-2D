@@ -31,6 +31,7 @@ import { type SnapOptions, type Snapped, type SnapTargets, snapPoint } from "./s
 import { brush, brushWeights } from "./weightBrush";
 import { hitReference, movedReference, type Placed, referenceCorner, referenceQuad, scaledReference } from "./references";
 import { keysOf } from "../shortcuts";
+import type { BoneTrail } from "./trail";
 
 /** How far from the selected bone's origin a press still grabs it, in pixels (the gizmo's ring). */
 const GRAB = 56;
@@ -202,6 +203,8 @@ export class Stage {
   boneColour: string | null = null;
   /** The colour the selected bone and its gizmo are drawn in; null: the theme's accent. */
   selectedBoneColour: string | null = null;
+  /** The selected bone's path over the animation, from the Motion Path panel's Stage toggle (docs/STAGE-PATH-PLAN.md); set by the app. */
+  motionTrail: () => { trail: BoneTrail; colour: string } | null = () => null;
   /** What the drag snapped to this step, drawn until the drag ends. */
   private snapped: Snapped | null = null;
   /** A weight-brush stroke under way (E6 step 4f), and where the pointer is on screen for the circle. */
@@ -370,6 +373,7 @@ export class Stage {
     }
     if (this.session.pinned.size && !this.session.animation) this.drawPins(g);
     this.drawGlow(g, p, this.selectedBoneColour ?? selected);
+    this.drawMotionTrail(g);
     if (this.names.bones) this.drawBoneNames(g, css.getPropertyValue("--text").trim() || "#ffffff");
     if (this.show.constraints) { this.drawShapes(g, p, selected); this.drawConstraints(g, p, css, selected); }
     const sel = this.selectedIndex();
@@ -384,6 +388,35 @@ export class Stage {
     if (this.snapped && (this.drag || this.vertexDrag)) this.drawSnapped(g, this.snapped, selected);
     this.drawChosenReference(g, selected);
     if (this.show.rulers) this.drawRulers(g, css);
+  }
+
+  /** The selected bone's joint over every frame: a line through them, a dot each frame, a ring at the playhead. A frame with no pose breaks the line. */
+  private drawMotionTrail(g: CanvasRenderingContext2D): void {
+    const shown = this.motionTrail();
+    if (!shown) return;
+    const { trail, colour } = shown, pts: ([number, number] | null)[] = [];
+    for (let f = 0; f <= trail.frames; f++) {
+      const x = trail.joint[f * 2]!, y = trail.joint[f * 2 + 1]!;
+      pts.push(Number.isFinite(x) && Number.isFinite(y) ? toScreen(this.camera, this.size, x, y) : null);
+    }
+    g.save();
+    g.strokeStyle = g.fillStyle = colour;
+    g.lineWidth = 1.5;
+    g.lineJoin = "round";
+    g.globalAlpha = 0.85;
+    g.beginPath();
+    let open = false;
+    for (const q of pts) {
+      if (!q) { open = false; continue; }
+      if (open) g.lineTo(q[0], q[1]); else g.moveTo(q[0], q[1]);
+      open = true;
+    }
+    g.stroke();
+    g.globalAlpha = 1;
+    for (const q of pts) if (q) { g.beginPath(); g.arc(q[0], q[1], 2, 0, Math.PI * 2); g.fill(); }
+    const here = pts[Math.min(trail.frames, Math.max(0, this.session.frame))];
+    if (here) { g.lineWidth = 2; g.beginPath(); g.arc(here[0], here[1], 5, 0, Math.PI * 2); g.stroke(); }
+    g.restore();
   }
 
   /** Each reference with its picture's size; null where the picture is missing. */

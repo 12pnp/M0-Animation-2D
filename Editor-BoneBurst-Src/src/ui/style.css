@@ -868,6 +868,8 @@ dialog.preferences .pref-themes .theme-now { color: var(--muted); }
 .lp-speed-bar { display: flex; align-items: center; gap: 6px; min-width: 0; }
 .lp-speed-bar .title { flex: 1; min-width: 0; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lp-speed-bar button { flex: none; padding: 0 8px; font-size: 11px; }
+/* The Stage toggle and the path colour beside it (docs/STAGE-PATH-PLAN.md). */
+.lp-speed-bar .lp-swatch { width: 22px; height: 18px; padding: 0; border: 1px solid var(--line); border-radius: 4px; }
 
 /* FramePath's name in the Motion Path header, with a ⋮ at its end. */
 .lp-tabs { display: flex; gap: 6px; flex: 0 0 auto; }

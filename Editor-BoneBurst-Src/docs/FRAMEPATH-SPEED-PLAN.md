@@ -177,3 +177,191 @@ flowchart LR
 - `motionPanel.ts`: `moveKeyTo` moves the dragged key with `moveKeys` (held between its neighbours, inside the animation; the playhead follows it); sideways movement under 6 px is ignored so an up-and-down drag does not nudge the key.
 - `timeline/timeline.ts`: `graphChannels` leaves out bones' `translate`; `translateLeftOut` draws the note. ⌘A on the graph therefore selects no translate keys either.
 - e2e: a new test in `motionModes.spec.ts` drags a point sideways (the key moves earlier) and past its neighbour (it stops one frame after it). `graph.spec.ts`'s geometry helper leaves translate out as the graph now does, and its "dragged up" check asks for a smaller rise (the value scale is tighter without translate's large values); `copyPaste.spec.ts`'s ⌘A count no longer needs ten keys. vitest 766 and e2e 120 pass.
+
+## Step 8: a speed never moves the path (2026-10-09, the owner's ninth note)
+
+> why when I adjust a speed node, the FramePath moves too? Refactor: the FramePath can't change, I just want the speed to change.
+
+Since step 5 a speed was a handle's **length**, so a speed bent a curved span, and a speed above 2 made the bone run past the next key and come back (the handle reached beyond it). Now shape and speed are two separate parts of the same Spine curve:
+
+```mermaid
+flowchart LR
+    SHAPE["value handles (x, y)<br/>key + out · next + in"] -->|"where the bone goes"| PATH["the path on the picture"]
+    TIME["time handles, shared by x and y<br/>t0 + u1·Δt · t0 + u2·Δt"] -->|"when it gets there"| SPEED["the speed graph"]
+    PATH -. "unchanged by" .- TIME
+```
+
+- **Why it is exact.** Both channels use the same time handles, so x(s) and y(s) still share one parameter s: the curve the bone follows is the 2D Bezier of the value handles whatever the time handles are. The time handles only change how fast s runs.
+- **Speed at a side.** The bone's velocity there over the span's even pace: for the start, `|out| ÷ (u1 · |chord|)`, so a speed m = 1 + s is written as `u1 = |out| ÷ (m · |chord|)`; the end alike with `in` and `1 − u2`. Read back from any curve as the velocity its handles give, channel by channel.
+- **Range.** A time handle must stay inside its span (0 ≤ u ≤ 1) or the curve runs back in time. On a curved span the slowest speed is therefore `|handle| ÷ |chord| − 1`; asking for less gives that, and the field shows what was reached. On a **straight** span the handle's length along the chord does not change the line, so it is chosen with the speed: a third of the chord up to speed 2, then the whole chord with the time handle shortened, so −0.99 to 5 all fit and the bone never passes the next key.
+- **Modes are the shape only.** Plain: a straight span (handles along the chord, inside it), no handles on the picture, and the speed as it was. Mirror and Break: the path's handles, opposite or free. On the speed graph, the in and out speeds are linked unless the key is Break, as before. Setting a shape keeps both speeds; setting a speed keeps the shape.
+
+### Result (step 8)
+
+- `src/edit/keySpeed.ts`: `spanHandles` reads the value handles as they are; `spanEnds` reads a speed as the velocity a span's handles give at its end over the even pace (files from steps 1–7, written with the time handles at the thirds, read the same); one writer, `spanCurve`, places the time handles for the speeds and keeps the value handles; `setKeyHandles` keeps a span's speeds, `setTranslateKeySpeeds` keeps its shape. `alongChord` (exported) tells a straight span, within a thousandth of a radian since handles are kept to four places.
+- Tests (`tests/keySpeed.test.ts`, 16): the bone follows the 2D Bezier of the handles; **a speed of −0.3, 1 or 4 on a curved key leaves its handles as they were and every pose on the same curve** (and the timing does change); on a straight span speeds −0.99, 2 and 5 read back and the bone never leaves the segment; a speed slower than a curved handle allows gives the slowest it allows; a new handle keeps the speeds. The "keeps the handle" and "never leaves the segment" checks fail on step 7's code (the handle grew, the bone passed the next key at speed 5).
+- `motionPanel.ts`: Plain reads as a straight span at any speed and keeps the speeds when chosen; Mirror links the speeds again (in takes out's); the speed graph's legs show on every key; a press on the graph takes a key's point before a leg near it.
+- e2e (`motionModes.spec.ts`): the modes test now checks the picture's handles and that Plain keeps the speeds; the picture test checks Plain by its handles, not by "no curve". vitest 769, e2e 120 pass.
+
+## Step 9: two duties, nothing shared (2026-10-09, the owner's tenth note)
+
+> why when I drag a node's leg in FramePath, the speed graph changes too? It must be separate duties: 1 FramePath, where the bone moves; 2 the speed graph, how fast it moves.
+
+Step 8 kept a key's speed when its handle moved, but the speed graph drew the bone's **velocity**, which on a curved span also depends on the curve's shape: the handle's length changed the graph between the keys (and, past the time handle's reach, at the key too). Now each view reads only its own half of the curve:
+
+```mermaid
+flowchart LR
+    PIC["FramePath picture<br/>(handles, modes)"] -->|"writes / reads"| V["value handles<br/>where the bone goes"]
+    SG["speed graph<br/>(points, legs)"] -->|"writes / reads"| T["time handles<br/>how fast along the path"]
+    V -. "never touches" .- T
+```
+
+- **On a curved span the speed is the rate along the path**: how fast the curve's own parameter runs against the span's even pace, from the time handles alone (`1 ÷ (3 u1)` at the start, `1 ÷ (3 (1 − u2))` at the end, and in between the time curve's slope). Moving a value handle changes nothing on the graph.
+- **On a straight span** the rate along the path and the velocity are the same thing, and the handle's length along the chord is invisible, so step 8 stays: the speed is the velocity, the length chosen with it, −0.99 to 5.
+- **Range on a curved span**: a time handle stays inside its span, so the slowest at a key is a third of the even pace (speed −0.67); asking for less gives that and the field shows it. The fastest is 5, as everywhere.
+- **Straight to curved**: when a handle drag bends a straight span, its speeds carry over (held to −0.67), so the graph stays unless a speed was slower than that.
+
+### Result (step 9)
+
+- `src/edit/keySpeed.ts`: `isStraight` tells the two cases; on a curved span `spanEnds` and `spanSpeedSamples` read the time handles alone (`timeHandles`, `timeSlope`) and `spanCurve` writes them from the speeds alone (`u = 1 ÷ (3 m)`); straight spans as in step 8. A curved span saved by steps 5–8 now reads its speed from its time handles (at the thirds: 0), not from its handle's length.
+- Tests (`tests/keySpeed.test.ts`, 17): **moving the path handles of a curved key three ways leaves the speed graph's samples across both spans, and the key's speeds, exactly as they were** (on step 8's code the graph moved with the shape); the slowest speed on a curved span is −2/3. vitest 770 pass; the e2e suite passes except `e2e/stagePath.spec.ts`, which belongs to another session's work in progress (`docs/STAGE-PATH-PLAN.md`), not to this step.
+
+## Step 10: a leg's length is its reach (2026-10-09, the owner's eleventh note)
+
+> at Speed Graph must can change size long leg too
+
+The owner chose: a leg's length is its **reach** (After Effects' influence): how far into the span the key's speed lasts, as a share of
+the span's time. **Straight spans only.** On a straight span the speed is `|handle| ÷ (u · |chord|)`, so the time handle `u` is free
+once the speed is set: the reach is `u`, and the handle along the chord becomes `m · u · |chord|` (so `u ≤ 1 ÷ m`). On a curved span
+the time handle is the speed and the value handles are the path (step 9): nothing is left over, so its legs keep their usual length.
+
+```mermaid
+flowchart LR
+    LEG["speed graph leg<br/>drag: up/down speed m · sideways reach u"] -->|"setTranslateKeyReaches"| SC["spanCurve()<br/>straight: time handle u<br/>value handle m·u·chord"]
+    SC --> FILE["key.curve (Spine bezier)"]
+    FILE -->|"keyReaches()"| LEG
+    CURVED["curved span"] -.->|"no reach: u is the speed"| LEG
+```
+
+1. `src/edit/keySpeed.ts`: `keyReaches(bone, keys)` reads each key's reach in and out (null on a curved, stepped or missing span);
+   `setTranslateKeyReaches(animation, bone, index, { in, out })` writes it on straight spans, held to `0.02 … min(1, 1 ÷ m)` and to the
+   two reaches of a span summing to at most 1; a curved span is refused. A speed change keeps the reach (held to `1 ÷ m`), unless the
+   handle was at the whole chord, which is where a speed over 3 put it: then the usual third comes back.
+2. The graph draws a straight span's leg reaching `u` of its span in time; a curved span's leg keeps the 22 px stem. A leg dragged
+   sideways (after 4 px) sets its reach, up and down its speed; Mirror reaches both sides, Break one. The key's data gets a **Reach**
+   row (in and out, % of the span), off on a curved side.
+3. Tests: a table of reach writes (kept speed, the bounds, a curved span refused, a speed change keeping the reach); e2e: a leg dragged
+   sideways changes the reach and not the speed.
+
+### Result (step 10)
+
+- `src/edit/keySpeed.ts`: `keyReaches`, `setTranslateKeyReaches`, `REACH_MIN`, `REACH_PLAIN`; `spanCurve` takes the reaches (the handle along
+  the chord is `m · u`); `spanNow` keeps a straight span's reach through a speed or handle edit. As planned, plus: the side being set wins
+  when the two reaches of a span would overlap (the other side's reach is what it leaves).
+- `motionPanel.ts`: a straight side's leg is drawn reaching `u` of its span; a curved side keeps the 22 px stem. A leg dragged sideways past
+  4 px sets its reach (Mirror and Plain: both straight sides; Break: its own), and a curved side says why it has none. The key's data has
+  **Reach** in and out (% of the span), off on a curved side.
+- Tests: `tests/keySpeed.test.ts` (6 new, 23): reach read and set, the speed and the line kept, a longer reach holds the speed further in,
+  the bounds, the overlap, a speed change keeping the reach, curved and stepped spans refused. `e2e/speedReach.spec.ts`: a leg dragged
+  sideways shortens its reach and keeps its speed, and a typed reach lengthens the leg; it fails with the sideways drag switched off.
+  vitest 776 pass; e2e 119 pass, the 3 failing are the AI-bridge tests (`askAi`, `dailyDriver`, `mcpFlow`), which could not reach the
+  bridge from a dev server on another port (the usual 5185 was taken by `npm start`), not this step.
+- Note for use: at the whole-animation zoom a short span's legs are short; **Node** fits the picked key's span so they can be grabbed.
+
+## Step 11: each view its own mode (2026-10-09, the owner's twelfth note)
+
+> each graph muse seperate mode of graph change , now it sync
+
+One mode per key (Mirror · Break · Plain) drove both views: Mirror linked the path's handles **and** the speeds, Break freed both. The
+owner chose: **each view its own mode**. The picture keeps **Mirror · Break · Plain** for the path's handles; the speed graph gets
+**Linked · Broken** for the key's legs (speed and reach). Neither reads nor writes the other, as step 9 did for the data.
+
+```mermaid
+flowchart LR
+    PM["Path: Mirror · Break · Plain<br/>keyMode() · setKeyLegs()"] -->|"value handles"| PATH["picture: handle tips"]
+    SM["Speed legs: Linked · Broken<br/>speedMode() · setSpeedLegs()"] -->|"speeds · reaches"| GRAPH["speed graph: legs"]
+    PM -.->|"no longer"| GRAPH
+```
+
+1. `motionPanel.ts`: `speedMode(i)` reads Linked when the in and out speeds (and reaches, where both sides have one) are equal, else
+   Broken; a Broken chosen on equal values is remembered as the path's Break is (`speedModes`, cleared with `keyModes`). `setSpeedLegs`:
+   Linked sets in to out (speed and reach), Broken frees them.
+2. `keyMode` no longer compares speeds (Mirror is the handles in line), and Mirror no longer copies the speed. A leg's drag, the Speed
+   and Reach fields follow `speedMode`; Alt + drag on a leg breaks the speed legs, on a handle tip the path's.
+3. The key's data: **Path** (Mirror · Break · Plain) and **Speed legs** (Linked · Broken). The speed graph's right-click menu and
+   double-click are about its own legs (double-click: Linked); the picture's stay about the path.
+4. e2e: the three-modes test splits in two: the path's modes leave the speeds alone, and Linked · Broken leave the path alone.
+
+### Result (step 11)
+
+- `motionPanel.ts`: `speedMode` / `setSpeedLegs` / `speedModes` as planned; `keyMode` reads Mirror from the handles alone and Mirror no
+  longer copies the speed. The leg drag, the reach drag and the Speed and Reach fields follow `speedMode`; Alt + drag on a leg breaks the
+  speed legs. The key's data: **Speed legs** (Linked · Broken) and **Path** (Mirror · Break · Plain). The graph's right-click menu is
+  Linked · Broken · Delete; a double-click on a point or leg links its legs (it used to make the path Plain).
+- One thing that still moves with a speed, by step 8's design: on a **straight** span the path handle's length along the line is part of
+  how the speed is stored, so its tip slides along the same line when the speed changes. The path (the line) does not change.
+- e2e (`motionModes.spec.ts`): the three-modes test is now two: the path's modes keep the speeds (it fails with Mirror copying the
+  speed again), and Linked · Broken keep the path's mode and its handles' directions. vitest 776 pass; e2e 120 pass, the 3 failing are
+  the AI-bridge tests again (`askAi`, `dailyDriver`, `mcpFlow`: no bridge from the dev server on 5199), not this step.
+
+## Step 12: a quieter picture (2026-10-09, the owner's thirteenth note)
+
+> at FramePath remove small pink dot in line between dot ,and show leg only on selected node
+
+```mermaid
+flowchart LR
+    TRAIL["drawPath(): trail.joint"] --> KEYED["keyed frame: pink dot"]
+    TRAIL --> HERE["playhead: white ring"]
+    TRAIL -.->|"removed"| SMALL["unkeyed frame: small dot"]
+    SEL["selKey (playhead's key)"] --> HAND["drawKeyHandles(): that key's handles only"]
+```
+
+1. `drawPath`: an unkeyed frame gets no dot; the line, the keyed dots, the playhead's ring and a click on any frame of the line stay.
+2. `drawKeyHandles`: only the picked key (the one on the playhead's frame) shows its in and out handles; the others none.
+
+### Result (step 12)
+
+As planned. `drawPath` skips unkeyed frames' dots (the line and a click on it stay); `drawKeyHandles` draws only `selKey`'s handles.
+e2e: the picture's modes test now checks that key 4's handles go when the playhead is on key 3 and come back on key 4 (it fails with
+every key's handles drawn); Motion Path, speed reach and Stage path e2e (13) pass. The dots were checked on a Playwright screenshot of
+the picture: keyed dots and the playhead's ring only. The Stage's path (docs/STAGE-PATH-PLAN.md) keeps a dot per frame: not asked.
+
+**Revised (step 12, the owner's fourteenth note: "speed graph legs only on selected node too"):** the speed graph draws only the picked
+key's legs (`drawKeySpeed`); every key keeps its point, which still drags and picks. The e2e check below covers it.
+
+## Step 13: the speed graph's point moves up and down only (2026-10-09, the owner's fifteenth note)
+
+> node at Speed path disable it to cant move in x axis
+
+Step 7's sideways drag is taken out: a point on the speed graph sets its key's speed and never its frame (the frame strip and the
+Timeline move keys in time). `moveKeyTo` and `speedDragX` are deleted; the point's cursor is `ns-resize`. The legs still drag sideways
+for their reach (step 10).
+
+```mermaid
+flowchart LR
+    PT["speed graph point drag"] -->|"y"| SPEED["setKeySpeed()"]
+    PT -.->|"x: removed"| MOVE["moveKeyTo() (deleted)"]
+    LEG["leg drag"] -->|"y speed · x reach"| REACH["setKeyReaches()"]
+```
+
+Result: done. e2e: step 7's test is replaced by one that drags key 4's point halfway to key 3 and finds every key on its frame.
+
+## Step 14: Auto Key is the Timeline's, FramePath always keys (2026-10-09, the owner's sixteenth note)
+
+> clean up about autoKey in TimeLine and in FramePath path, it must separate sync. autoKey for timeLine only, if i drag in FramePath, it must sep
+
+FramePath read the Stage's Auto Key (`motionPanel.autoKey = () => stage.autoKey`, LOCALPATH-EDIT-PLAN step 3): off, a drag on the
+picture posed the bone unkeyed. Now the two are apart: **Auto Key belongs to the Stage and the Timeline**; a drag on FramePath's
+picture always writes keys, and never changes or reads Auto Key. This replaces LOCALPATH-EDIT-PLAN step 3's Auto Key rule.
+
+```mermaid
+flowchart LR
+    AK["Auto Key button<br/>(Timeline bar)"] --> ST["Stage drags · TransformStrip"]
+    AK -.->|"removed"| FP["FramePath picture drag"]
+    FP -->|"always"| KB["keyBone() · one undo step"]
+```
+
+Result: done. `MotionPathPanel.autoKey` and its wiring in `app.ts` are deleted; `BoneEdit.key` is never null, so the unkeyed branch
+(`setUnkeyed`) is gone from the panel. Auto Key's tooltip says FramePath's drags always key. e2e (`motionPanelEdit.spec.ts`): with
+Auto Key off, a drag on the picture still writes the key as one undo step, and Auto Key stays off (on the old code the drag posed the
+bone unkeyed, which this test reads as no key written).

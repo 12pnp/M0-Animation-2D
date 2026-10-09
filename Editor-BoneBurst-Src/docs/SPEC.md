@@ -300,7 +300,9 @@ line saying what FramePath shows for the bone; the picture (the bone's trail wit
 playhead, onion skin, the rotate, move, scale and shear handles, each non-Plain key's handles; wheel zooms, the middle button pans,
 F or Fit fits); the view bar (zoom − and +, Fit); and under a splitter you drag, the ◆ toggle and the frame strip (drawn as the
 Timeline's top), the key on the playhead's frame (place, speed in and out, Mirror · Break · Plain) and the speed graph (a point and
-two legs per key; Shift + click deletes a key). Edits are history steps.
+two legs per key; Shift + click deletes a key; in its header Stage draws the bone's world path on the Stage, and a swatch
+sets the colour of that path, the speed curve and the picture's key handles, kept per browser: docs/STAGE-PATH-PLAN.md). Edits are
+history steps.
 
 ## 8. AI tools (E5)
 

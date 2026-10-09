@@ -63,6 +63,25 @@ test("dragging a mark moves the bone at that frame, as one undo step, and seeks 
   await expect.poll(() => page.evaluate((f) => (window as unknown as Live).boneburst.motionPath.grabPoints.marks.slice(f * 2, f * 2 + 2), frame)).toEqual([expect.closeTo(x + 30, 0), expect.closeTo(y - 20, 0)]);
 });
 
+test("Auto Key is the Timeline's and the Stage's: with it off, a drag on the FramePath picture still keys (FRAMEPATH-SPEED-PLAN step 14)", async ({ page }) => {
+  await open(page, "head");
+  const autoKey = page.getByRole("button", { name: /^Auto Key: / });
+  await autoKey.click();
+  await expect(autoKey).toHaveAttribute("aria-pressed", "false");
+  const { frame, x, y, steps } = await page.evaluate(() => {
+    const live = (window as unknown as Live).boneburst, m = live.motionPath.grabPoints.marks, here = live.session.frame;
+    let f = 0;
+    while (f === here || !Number.isFinite(m[f * 2]!)) f++;
+    return { frame: f, x: m[f * 2]!, y: m[f * 2 + 1]!, steps: live.session.history.entries.done };
+  });
+  const before = await keyAt(page, "head", "translate", frame);
+  await drag(page, [x, y], [30, -20]);
+  expect(await keyAt(page, "head", "translate", frame)).not.toBe(before);
+  expect(await page.evaluate(() => (window as unknown as Live).boneburst.session.history.entries.done)).toBe(steps + 1);
+  // The Stage's setting is left as it was.
+  await expect(autoKey).toHaveAttribute("aria-pressed", "false");
+});
+
 test("Shift holds the drag to one axis", async ({ page }) => {
   await open(page, "head");
   const { frame, x, y } = await page.evaluate(() => {

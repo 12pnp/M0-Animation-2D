@@ -23,7 +23,7 @@ test("FramePath is the panel's one mode: no tabs, no TwinSpline, no path control
   await expect(panel.getByRole("tab")).toHaveCount(0);
   await expect(panel.getByText("TwinSpline")).toHaveCount(0);
   await expect(panel.getByRole("combobox", { name: "Parent bone" })).toHaveCount(0);
-  await expect(panel.getByRole("button", { name: /Play|Both|Stop|Stage/ })).toHaveCount(0);
+  await expect(panel.getByRole("button", { name: /^(Play|Both|Stop|Stage)$/ })).toHaveCount(0);
   await expect(panel.locator(".lp-keystrip")).toBeVisible();
   await page.evaluate(() => (window as unknown as Live).boneburst.session.select({ kind: "bone", name: "head" }));
   await expect(panel.locator(".lp-motion .lp-hint")).toContainText("no translate keys");
@@ -112,28 +112,69 @@ const goToKey = async (page: Page, n: number): Promise<void> => {
   await page.evaluate((t) => { const s = (window as unknown as Seek).boneburst.session; s.seek(Math.round(t * s.fps)); }, times[n]!);
 };
 
-test("FramePath's three modes: a key starts Plain (no handles); Break lets out differ from in, Mirror links them, Plain puts both to 0 and hides the handles", async ({ page }) => {
+test("FramePath's three path modes leave the speeds alone: a key starts Plain (no path handles); Mirror curves the path, Break and Plain keep the speeds as they were", async ({ page }) => {
   await open(page, "hips");
   const panel = panelOf(page);
   await goToKey(page, 2);
   const speedIn = panel.getByRole("spinbutton", { name: "Speed in" }), speedOut = panel.getByRole("spinbutton", { name: "Speed out" });
-  const handles = () => page.evaluate(() => (window as unknown as { boneburst: { motionPath: { speedHandles: readonly { i: number }[] } } }).boneburst.motionPath.speedHandles.filter((h) => h.i === 2).length);
+  // The path's handles on the picture (the speed graph's legs show on every key, step 8).
+  const handles = () => page.evaluate(() => (window as unknown as { boneburst: { motionPath: { keyHandlePoints: readonly { i: number }[] } } }).boneburst.motionPath.keyHandlePoints.filter((h) => h.i === 2).length);
   await expect(panel.getByRole("button", { name: "Plain", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect.poll(handles).toBe(0);
-  await panel.getByRole("button", { name: "Break", exact: true }).click();
-  await expect(panel.getByRole("button", { name: "Break", exact: true })).toHaveAttribute("aria-pressed", "true");
+  // Different speeds in and out first (the speed legs broken), then each path mode: the speeds stay (step 11).
+  await panel.getByRole("button", { name: "Broken", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Broken", exact: true })).toHaveAttribute("aria-pressed", "true");
   await speedOut.fill("1.5");
   await speedOut.press("Enter");
   await expect(speedOut).toHaveValue("1.5");
   await expect(speedIn).toHaveValue("0");
   await panel.getByRole("button", { name: "Mirror", exact: true }).click();
-  await expect(speedIn).toHaveValue("1.5");
   await expect(panel.getByRole("button", { name: "Mirror", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect.poll(handles).toBe(2);
+  await expect(speedIn).toHaveValue("0");
+  await expect(speedOut).toHaveValue("1.5");
+  await expect(panel.getByRole("button", { name: "Broken", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await panel.getByRole("button", { name: "Break", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Break", exact: true })).toHaveAttribute("aria-pressed", "true");
   await panel.getByRole("button", { name: "Plain", exact: true }).click();
   await expect(speedIn).toHaveValue("0");
-  await expect(speedOut).toHaveValue("0");
+  await expect(speedOut).toHaveValue("1.5");
   await expect.poll(handles).toBe(0);
+});
+
+test("the speed legs' own mode leaves the path alone: Linked moves both speeds, Broken one; Linked again takes in from out", async ({ page }) => {
+  await open(page, "hips");
+  const panel = panelOf(page);
+  await goToKey(page, 2);
+  const speedIn = panel.getByRole("spinbutton", { name: "Speed in" }), speedOut = panel.getByRole("spinbutton", { name: "Speed out" });
+  const tips = () => page.evaluate(() => (window as unknown as { boneburst: { motionPath: { keyHandlePoints: readonly { i: number }[] } } }).boneburst.motionPath.keyHandlePoints.filter((h) => h.i === 2).length);
+  // The path at key 3: the directions of its in and out handles, from the file. A straight span's handle slides along its line with
+  // the speed (step 8), so its length is the speed's; its direction is the path's.
+  const shape = () => page.evaluate(() => {
+    const k = (window as unknown as { boneburst: { session: { doc: { animations: { bones: { name: string; timelines: { name: string; keys: { x?: number; y?: number; curve?: number[] }[] }[] }[] }[] } } } }).boneburst.session.doc.animations[0]!.bones.find((b) => b.name === "hips")!.timelines.find((t) => t.name === "translate")!.keys;
+    // A span with no curve is the straight line: its handles point along it.
+    const dir = (x: number, y: number): number => Math.round(Math.atan2(y, x) * 1000) / 1000, a = k[1]!, b = k[2]!, c = k[3]!;
+    const bx = b.x ?? 0, by = b.y ?? 0;
+    return [a.curve ? dir(a.curve[3]! - bx, a.curve[7]! - by) : dir((a.x ?? 0) - bx, (a.y ?? 0) - by), b.curve ? dir(b.curve[1]! - bx, b.curve[5]! - by) : dir((c.x ?? 0) - bx, (c.y ?? 0) - by)];
+  });
+  await panel.getByRole("button", { name: "Mirror", exact: true }).click();
+  await expect.poll(tips).toBe(2);
+  const before = await shape();
+  await expect(panel.getByRole("button", { name: "Linked", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await speedOut.fill("1");
+  await speedOut.press("Enter");
+  await expect(speedIn).toHaveValue("1");
+  await panel.getByRole("button", { name: "Broken", exact: true }).click();
+  await expect(panel.getByRole("button", { name: "Broken", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await speedOut.fill("2");
+  await speedOut.press("Enter");
+  await expect(speedIn).toHaveValue("1");
+  await expect(speedOut).toHaveValue("2");
+  await panel.getByRole("button", { name: "Linked", exact: true }).click();
+  await expect(speedIn).toHaveValue("2");
+  // The path's mode and shape did not move.
+  await expect(panel.getByRole("button", { name: "Mirror", exact: true })).toHaveAttribute("aria-pressed", "true");
+  expect(await shape()).toEqual(before);
 });
 
 test("FramePath: Shift + click deletes a key, on the speed graph's point and on the strip's diamond", async ({ page }) => {
@@ -177,8 +218,14 @@ test("FramePath's modes on the picture: Mirror gives a key two handles in line a
   const after = await tips(), ain = after.find((p) => p.side === "in")!, bin = before.find((p) => p.side === "in")!;
   expect(Math.hypot(ain.x - bin.x, ain.y - bin.y)).toBeGreaterThan(5);
   await expect(panel.getByRole("button", { name: "Mirror", exact: true })).toHaveAttribute("aria-pressed", "true");
+  // Only the picked key shows its handles (step 12): on key 3, key 4's are gone; back on key 4 they return.
+  await goToKey(page, 2);
+  await expect.poll(async () => (await tips()).length).toBe(0);
+  await goToKey(page, 3);
+  await expect.poll(async () => (await tips()).length).toBe(2);
+  // Plain straightens the path (no handles on the picture); a speed the key had stays in its curve (step 8).
   await panel.getByRole("button", { name: "Plain", exact: true }).click();
-  await expect.poll(curves).toEqual([false, false]);
+  await expect(panel.getByRole("button", { name: "Plain", exact: true })).toHaveAttribute("aria-pressed", "true");
   await expect.poll(async () => (await tips()).length).toBe(0);
 });
 
@@ -203,29 +250,18 @@ test("the strip and the speed graph always show, with no bone selected too; the 
   expect((await lower.boundingBox())!.height).toBeGreaterThan(h0 + 40);
 });
 
-test("a point on the speed graph drags sideways too: its key moves to the frame under it, held between its neighbours", async ({ page }) => {
+test("a point on the speed graph moves only up and down: a sideways drag leaves its key on its frame (step 13)", async ({ page }) => {
   await page.setViewportSize({ width: 1500, height: 950 });
   await open(page, "hips");
   const panel = panelOf(page);
-  const times = await hipsKeys(page), fps = await page.evaluate(() => (window as unknown as Seek).boneburst.session.fps);
-  const frame = (t: number): number => Math.round(t * fps);
+  const times = await hipsKeys(page);
   await expect.poll(() => page.evaluate(() => (window as unknown as Points).boneburst.motionPath.speedPoints.length)).toBe(times.length);
   const p = await page.evaluate(() => (window as unknown as Points).boneburst.motionPath.speedPoints.find((q) => q.i === 3)!);
-  const box = (await panel.locator(".lp-speed-canvas").boundingBox())!, prev = (await page.evaluate(() => (window as unknown as Points).boneburst.motionPath.speedPoints.find((q) => q.i === 2)!));
-  // Halfway towards key 3 (index 2): the key moves earlier, but not onto its neighbour.
+  const prev = await page.evaluate(() => (window as unknown as Points).boneburst.motionPath.speedPoints.find((q) => q.i === 2)!);
+  const box = (await panel.locator(".lp-speed-canvas").boundingBox())!;
   await page.mouse.move(box.x + p.x, box.y + p.y);
   await page.mouse.down();
   await page.mouse.move(box.x + (p.x + prev.x) / 2, box.y + p.y, { steps: 5 });
   await page.mouse.up();
-  const after = await hipsKeys(page);
-  expect(after).toHaveLength(times.length);
-  expect(frame(after[3]!)).toBeLessThan(frame(times[3]!));
-  expect(frame(after[3]!)).toBeGreaterThan(frame(times[2]!));
-  // Dragged past the neighbour, it stops one frame after it.
-  const q = await page.evaluate(() => (window as unknown as Points).boneburst.motionPath.speedPoints.find((r) => r.i === 3)!);
-  await page.mouse.move(box.x + q.x, box.y + q.y);
-  await page.mouse.down();
-  await page.mouse.move(box.x + prev.x - 40, box.y + q.y, { steps: 5 });
-  await page.mouse.up();
-  expect(frame((await hipsKeys(page))[3]!)).toBe(frame(times[2]!) + 1);
+  expect(await hipsKeys(page)).toEqual(times);
 });

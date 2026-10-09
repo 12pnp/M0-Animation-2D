@@ -4,12 +4,13 @@ import { EditRefused, type Edit } from "./history";
 import { onAnimation, withKeys } from "./keys";
 
 /**
- * FramePath's handles and speeds (docs/FRAMEPATH-SPEED-PLAN.md, steps 1–5). Each translate key has a handle out (into the span after
- * it) and a handle in (from the span before), vectors in the bone's translate units. A span is written with its time handles at a third
- * and two thirds and its value handles at `key + out` and `next + in` on x and y: both channels then share one parameter, so the span is
- * exactly the 2D Bezier of those four points. The speed at a side is the handle's length over a third of that span's chord, minus 1:
- * speed s means the bone moves 1 + s times as fast as the span's even pace there. Handles on the chord at a third are the straight,
- * even line, written as no curve.
+ * FramePath's handles and speeds (docs/FRAMEPATH-SPEED-PLAN.md, steps 1–8). Each translate key has a handle out (into the span after
+ * it) and a handle in (from the span before), vectors in the bone's translate units: the span's value handles are `key + out` and
+ * `next + in` on x and y. Both channels share the span's two time handles, so x and y share one parameter and the bone follows exactly
+ * the 2D Bezier of those four points, whatever the time handles are: the value handles are the path's shape, the time handles its
+ * speed (step 8), and neither moves the other. Speed s at a side means the bone moves 1 + s times as fast as the span's even pace there:
+ * on a curved span the pace along its path, from the time handles alone, so a shape never changes a speed (step 9); on a straight span
+ * the velocity, which is the same thing there.
  */
 
 export type Vec = readonly [number, number];
@@ -23,6 +24,10 @@ export function clampSpeed(v: number): number {
   if (!Number.isFinite(v)) return 0;
   return Math.round(Math.min(SPEED_MAX, Math.max(SPEED_MIN, v)) * 1e4) / 1e4;
 }
+
+/** A straight span's reach (its time handle, a share of the span): the least, and where a span with no curve has it. */
+export const REACH_MIN = 0.02;
+export const REACH_PLAIN = 1 / 3;
 
 /** The multiplier a speed value makes: 0.01 to 6. */
 export const multiplierOf = (speed: number): number => 1 + clampSpeed(speed);
@@ -43,35 +48,51 @@ const place = (bone: string, k: Key): Vec => {
 const len = (v: Vec): number => Math.hypot(v[0], v[1]);
 const r4 = (v: number): number => Math.round(v * 1e4) / 1e4 + 0;
 
-/** The handles of the span from `k` to `next` (out of `k`, into `next`); null for a stepped span. A straight span's are on its chord at a third. */
+/** A span's ends: places, times, chord. */
+interface Span { readonly a: Vec; readonly b: Vec; readonly t0: number; readonly dt: number; readonly chord: Vec; readonly cl: number }
+
+function spanOf(bone: string, k: Key, next: Key): Span {
+  const a = place(bone, k), b = place(bone, next), chord: Vec = [b[0] - a[0], b[1] - a[1]];
+  return { a, b, t0: keyTime(k), dt: keyTime(next) - keyTime(k), chord, cl: len(chord) };
+}
+
+const curveOf = (k: Key): readonly number[] | null => (Array.isArray(k.curve) && k.curve.length >= 8 ? (k.curve as readonly number[]) : null);
+
+/** The path's handles of the span from `k` to `next` (out of `k`, into `next`): its value handles less the keys; null for a stepped span. A straight span's are on its chord at a third. */
 export function spanHandles(bone: string, k: Key, next: Key): { out: Vec; in: Vec } | null {
   if (k.curve === "stepped") return null;
-  const a = place(bone, k), b = place(bone, next), t0 = keyTime(k), dt = keyTime(next) - t0;
-  const third: { out: Vec; in: Vec } = { out: [(b[0] - a[0]) / 3, (b[1] - a[1]) / 3], in: [(a[0] - b[0]) / 3, (a[1] - b[1]) / 3] };
-  if (!Array.isArray(k.curve) || k.curve.length < 8 || dt <= 0) return third;
-  const c = k.curve as readonly number[], out: number[] = [], into: number[] = [];
-  for (let ch = 0; ch < 2; ch++) {
-    // A handle whose time is not at the third reads as the velocity it gives: its value offset scaled to a time offset of a third.
-    const u1 = (c[ch * 4]! - t0) / dt, u2 = (c[ch * 4 + 2]! - t0) / dt;
-    const o = c[ch * 4 + 1]! - a[ch]!, i = c[ch * 4 + 3]! - b[ch]!;
-    out.push(u1 > 1e-9 ? o / (3 * u1) : o);
-    into.push(1 - u2 > 1e-9 ? i / (3 * (1 - u2)) : i);
-  }
-  // The times are stored as short floats, so a third is not exactly a third: a handle reads back to four places.
-  return { out: [r4(out[0]!), r4(out[1]!)], in: [r4(into[0]!), r4(into[1]!)] };
+  const sp = spanOf(bone, k, next), c = curveOf(k);
+  if (!c) return { out: [r4(sp.chord[0] / 3), r4(sp.chord[1] / 3)], in: [r4(-sp.chord[0] / 3), r4(-sp.chord[1] / 3)] };
+  return { out: [r4(c[1]! - sp.a[0]), r4(c[5]! - sp.a[1])], in: [r4(c[3]! - sp.b[0]), r4(c[7]! - sp.b[1])] };
 }
 
-/** A handle's speed over a span's chord: |handle| ÷ (|chord| ÷ 3) − 1; 0 on a span that does not move. */
-function speedOf(handle: Vec, chord: number): number {
-  return chord > 1e-9 ? r4(len(handle) / (chord / 3) - 1) : 0;
-}
-
-/** The speed at the start and the end of the span from `k` to `next`; null for a stepped span. */
+/** The speed at the start and the end of the span from `k` to `next`: the velocity its handles give there over the even pace; null for a stepped span. */
 export function spanEnds(bone: string, k: Key, next: Key): { start: number; end: number } | null {
-  const h = spanHandles(bone, k, next);
-  if (!h) return null;
-  const a = place(bone, k), b = place(bone, next), chord = Math.hypot(b[0] - a[0], b[1] - a[1]);
-  return { start: speedOf(h.out, chord), end: speedOf(h.in, chord) };
+  if (k.curve === "stepped") return null;
+  const sp = spanOf(bone, k, next), c = curveOf(k);
+  if (!c || sp.cl <= 1e-9 || sp.dt <= 0) return { start: 0, end: 0 };
+  // A curved span's speed is the rate along its path, from the time handles alone (step 9): its shape never changes it.
+  if (!isStraight(bone, k, next)) {
+    const [u1, u2] = timeHandles(c, sp), rate = (u: number): number => (u > 1e-9 ? 1 / (3 * u) : 1 + SPEED_MAX);
+    return { start: r4(rate(u1) - 1), end: r4(rate(1 - u2) - 1) };
+  }
+  const pace = sp.cl / sp.dt, t1 = sp.t0 + sp.dt;
+  // Each channel's slope at the end of its handle; a handle with no time length is as fast as the speed range allows.
+  const rate = (dv: number, dtime: number): number => (dtime > 1e-9 ? dv / dtime : Math.sign(dv) * pace * (1 + SPEED_MAX));
+  const start = Math.hypot(rate(c[1]! - sp.a[0], c[0]! - sp.t0), rate(c[5]! - sp.a[1], c[4]! - sp.t0));
+  const end = Math.hypot(rate(sp.b[0] - c[3]!, t1 - c[2]!), rate(sp.b[1] - c[7]!, t1 - c[6]!));
+  return { start: r4(start / pace - 1), end: r4(end / pace - 1) };
+}
+
+/** A curve's time handles as fractions of its span (0..1), x's and y's averaged (a file of ours writes them equal). */
+function timeHandles(c: readonly number[], sp: Span): [number, number] {
+  return [((c[0]! + c[4]!) / 2 - sp.t0) / sp.dt, ((c[2]! + c[6]!) / 2 - sp.t0) / sp.dt];
+}
+
+/** Whether the span from `k` to `next` is a straight line: both its path handles along its chord (a stepped span is not). */
+export function isStraight(bone: string, k: Key, next: Key): boolean {
+  const h = spanHandles(bone, k, next), sp = spanOf(bone, k, next);
+  return !!h && sp.cl > 1e-9 && alongChord(h.out, sp.chord, 1, sp.cl) && alongChord(h.in, sp.chord, -1, sp.cl);
 }
 
 /** Each key's speed: where the bone leaves it (the last key: where it arrives); null where that span is stepped. */
@@ -89,6 +110,25 @@ export function keySpeedPairs(bone: string, keys: readonly Key[]): { in: number 
   return keys.map((k, i) => {
     const prev = keys[i - 1], next = keys[i + 1];
     return { in: prev ? spanEnds(bone, prev, k)?.end ?? null : null, out: next ? spanEnds(bone, k, next)?.start ?? null : null };
+  });
+}
+
+/**
+ * Each key's reach arriving (`in`) and leaving (`out`), a share of that span's time (step 10): how far into the span the key's speed
+ * lasts. Only a straight span has one (on a curved span the time handle is the speed); null on a curved, stepped or missing span.
+ */
+export function keyReaches(bone: string, keys: readonly Key[]): { in: number | null; out: number | null }[] {
+  const reach = (k: Key, next: Key, end: 0 | 1): number | null => {
+    if (k.curve === "stepped" || !isStraight(bone, k, next)) return null;
+    const sp = spanOf(bone, k, next), c = curveOf(k);
+    if (sp.dt <= 0) return null;
+    if (!c) return REACH_PLAIN;
+    const [u1, u2] = timeHandles(c, sp);
+    return r4(end === 0 ? u1 : 1 - u2);
+  };
+  return keys.map((k, i) => {
+    const prev = keys[i - 1], next = keys[i + 1];
+    return { in: prev ? reach(prev, k, 1) : null, out: next ? reach(k, next, 0) : null };
   });
 }
 
@@ -114,6 +154,12 @@ export function spanSpeedSamples(bone: string, k: Key, next: Key, n: number): { 
   if (k.curve === "stepped") return [];
   const a = place(bone, k), b = place(bone, next), t0 = keyTime(k), dt = keyTime(next) - t0, chord = Math.hypot(b[0] - a[0], b[1] - a[1]);
   const c = Array.isArray(k.curve) && k.curve.length >= 8 ? (k.curve as readonly number[]) : null, out: { t: number; v: number }[] = [];
+  // A curved span: the rate along its path, the time curve's alone (step 9).
+  if (c && chord > 1e-9 && dt > 0 && !isStraight(bone, k, next)) {
+    const [u1, u2] = timeHandles(c, spanOf(bone, k, next));
+    for (let j = 0; j <= n; j++) { const u = j / n, du = timeSlope(u1, u2, u); out.push({ t: t0 + u * dt, v: du > 1e-9 ? 1 / du - 1 : SPEED_MAX }); }
+    return out;
+  }
   for (let j = 0; j <= n; j++) {
     const u = j / n, t = t0 + u * dt;
     if (chord <= 1e-9 || dt <= 0) { out.push({ t, v: 0 }); continue; }
@@ -121,6 +167,15 @@ export function spanSpeedSamples(bone: string, k: Key, next: Key, n: number): { 
     out.push({ t, v: Math.hypot(vx, vy) / (chord / dt) - 1 });
   }
   return out;
+}
+
+/** The slope of a span's time curve (0, u1, u2, 1) against its parameter where it reaches time `u` (0..1): 1 is the even pace. */
+function timeSlope(u1: number, u2: number, u: number): number {
+  const at = (s: number): number => 3 * (1 - s) ** 2 * s * u1 + 3 * (1 - s) * s * s * u2 + s ** 3;
+  let lo = 0, hi = 1;
+  for (let k = 0; k < 40; k++) { const mid = (lo + hi) / 2; if (at(mid) < u) lo = mid; else hi = mid; }
+  const s = (lo + hi) / 2;
+  return 3 * (1 - s) ** 2 * u1 + 6 * (1 - s) * s * (u2 - u1) + 3 * s * s * (1 - u2);
 }
 
 /** Channel `ch`'s rate of change (units a second) at the span's time `u` (0..1): its Bezier's s found by bisection on time. */
@@ -134,46 +189,87 @@ function channelRate(c: readonly number[], ch: number, t0: number, dt: number, v
   return du > 1e-9 ? d(v0, w1, w2, v1, s) / du / dt : 0;
 }
 
-/** The span's curve for its handles: none when both lie on the chord at a third (the straight, even line). */
-function curveFor(a: Vec, b: Vec, t0: number, t1: number, out: Vec, into: Vec): number[] | undefined {
-  const near = (h: Vec, w: Vec): boolean => Math.abs(h[0] - w[0]) <= 1e-4 && Math.abs(h[1] - w[1]) <= 1e-4;
-  const chord: Vec = [b[0] - a[0], b[1] - a[1]];
-  if (near(out, [chord[0] / 3, chord[1] / 3]) && near(into, [-chord[0] / 3, -chord[1] / 3])) return undefined;
-  const dt = t1 - t0, curve: number[] = [];
-  for (let ch = 0; ch < 2; ch++) curve.push(shortFloat(t0 + dt / 3), shortFloat(a[ch]! + out[ch]!), shortFloat(t1 - dt / 3), shortFloat(b[ch]! + into[ch]!));
+/** Whether a handle lies along the chord (`sign` 1: forwards from the start, -1: back from the end) and inside it: then the span's line is straight. */
+export function alongChord(h: Vec, chord: Vec, sign: number, cl: number = len(chord)): boolean {
+  const l = len(h);
+  if (l <= 1e-9) return true;
+  // Within a thousandth of a radian: handles are kept to four places, so a straight one is a hair off the chord.
+  return Math.abs(h[0] * chord[1] - h[1] * chord[0]) <= 1e-3 * l * cl && sign * (h[0] * chord[0] + h[1] * chord[1]) > 0 && l <= cl * (1 + 1e-4) + 1e-4;
+}
+
+/**
+ * The span's curve for its path handles and the speeds (multipliers `ms`, `me`) at its start and end: the value handles as given,
+ * each time handle placed so the bone has that speed there (`u = |handle| ÷ (m · |chord|)`, held inside the span). A straight span's
+ * handles are chosen with the speed (a third of the chord up to speed 2, then all of it), which keeps the line and lets every speed
+ * fit. None when it is the straight line at an even pace.
+ */
+function spanCurve(sp: Span, out: Vec, into: Vec, ms: number, me: number, ro?: number, ri?: number): number[] | undefined {
+  let o = out, i = into;
+  const straight = sp.cl > 1e-9 && alongChord(out, sp.chord, 1, sp.cl) && alongChord(into, sp.chord, -1, sp.cl);
+  if (straight) {
+    // The handle's share of the chord: the speed times the reach (step 10), else a third of the chord up to speed 2, then all of it.
+    const reachOf = (m: number, r: number | undefined): number => Math.min(1 / m, 1, Math.max(REACH_MIN, r ?? REACH_PLAIN));
+    let uo = reachOf(ms, ro), ui = reachOf(me, ri);
+    // The two reaches of a span cover it at most once (the time curve stays one way); the side not given gives way.
+    if (uo + ui > 1) { if (ri === undefined || ro !== undefined) ui = Math.max(REACH_MIN, 1 - uo); else uo = Math.max(REACH_MIN, 1 - ui); }
+    const part = (m: number, u: number): number => Math.min(1, m * u);
+    o = [sp.chord[0] * part(ms, uo), sp.chord[1] * part(ms, uo)];
+    i = [-sp.chord[0] * part(me, ui), -sp.chord[1] * part(me, ui)];
+    if (Math.abs(ms - 1) <= 1e-6 && Math.abs(me - 1) <= 1e-6 && Math.abs(uo - REACH_PLAIN) <= 1e-6 && Math.abs(ui - REACH_PLAIN) <= 1e-6) return undefined;
+  }
+  // Straight: the velocity, |handle| ÷ (u · |chord|). Curved: the rate along the path, 1 ÷ (3 u), whatever the handles (step 9).
+  const u = (h: Vec, m: number): number => (sp.cl <= 1e-9 ? 1 / 3 : Math.min(1, Math.max(1e-4, straight ? len(h) / (m * sp.cl) : 1 / (3 * m))));
+  const ta = sp.t0 + u(o, ms) * sp.dt, tb = sp.t0 + sp.dt - u(i, me) * sp.dt, curve: number[] = [];
+  if (sp.cl <= 1e-9 && len(o) <= 1e-9 && len(i) <= 1e-9) return undefined;
+  for (let ch = 0; ch < 2; ch++) curve.push(shortFloat(ta), shortFloat(sp.a[ch]! + o[ch]!), shortFloat(tb), shortFloat(sp.b[ch]! + i[ch]!));
   return curve;
 }
 
-/** The handles at the bone's translate key `index` set: `in` shapes the span before it, `out` the span after; a side left out keeps its span as it was. */
+/** The translate keys with the spans key `index` touches rewritten: `out` (the span after) and `in` (the span before) give each its handles and speeds. */
+function rewrite(animation: string, bone: string, index: number, touch: { in: boolean; out: boolean }, make: (k: Key, after: Key, j: number) => SpanNow): Edit<Skeleton> {
+  return onAnimation(animation, (a) => {
+    const keys = translateNodes(a, bone);
+    if (keys === null) throw new EditRefused(`${bone} keys translate as separate x and y: FramePath needs the combined translate keys.`);
+    if (!(index >= 0 && index < keys.length)) throw new EditRefused(`${bone} has no translate key ${index + 1} in ${animation}.`);
+    if (keys.length < 2) throw new EditRefused(`${bone} has one translate key in ${animation}: a handle or a speed needs a span to the next key.`);
+    const next = keys.map((k, j) => {
+      const after = keys[j + 1];
+      if (!after || !((j === index && touch.out) || (j === index - 1 && touch.in))) return k;
+      const { curve: _, ...rest } = k, m = make(k, after, j), curve = spanCurve(spanOf(bone, k, after), m.out, m.in, m.ms, m.me, m.ro, m.ri);
+      return (curve ? { ...rest, curve } : rest) as Key;
+    });
+    return withKeys(a, translatePath(bone), next);
+  });
+}
+
+/** A span as an edit sees it: its path handles, the speed multipliers at its ends and, on a straight span, the reaches kept. */
+interface SpanNow { out: Vec; in: Vec; ms: number; me: number; ro?: number | undefined; ri?: number | undefined }
+
+/**
+ * What a span has now: its path handles, the speed multipliers at its ends (a stepped span: the straight line at an even pace) and a
+ * straight span's reaches. A handle at the whole chord was put there by a speed over 3, not by a reach: its reach is the usual one.
+ */
+function spanNow(bone: string, k: Key, after: Key): SpanNow {
+  const { curve: _, ...plain } = k, h = spanHandles(bone, k, after) ?? spanHandles(bone, plain as Key, after)!, e = spanEnds(bone, k, after) ?? { start: 0, end: 0 };
+  const now: SpanNow = { out: h.out, in: h.in, ms: 1 + clampSpeed(e.start), me: 1 + clampSpeed(e.end) };
+  const c = curveOf(k), sp = spanOf(bone, k, after);
+  if (c && k.curve !== "stepped" && sp.dt > 0 && isStraight(bone, k, after)) {
+    const [u1, u2] = timeHandles(c, sp), full = (v: Vec): boolean => len(v) >= sp.cl * (1 - 1e-3);
+    if (!full(h.out)) now.ro = u1;
+    if (!full(h.in)) now.ri = 1 - u2;
+  }
+  return now;
+}
+
+/** The path's handles at the bone's translate key `index` set: `in` shapes the span before it, `out` the span after. The speeds stay; a side left out keeps its span as it was. */
 export function setKeyHandles(animation: string, bone: string, index: number, handles: { in?: Vec | undefined; out?: Vec | undefined }): Edit<Skeleton> {
   return (doc) => {
     if ([handles.in, handles.out].some((h) => h !== undefined && !(Number.isFinite(h[0]) && Number.isFinite(h[1])))) throw new EditRefused("A handle must be two numbers.");
-    return onAnimation(animation, (a) => {
-      const keys = translateNodes(a, bone);
-      if (keys === null) throw new EditRefused(`${bone} keys translate as separate x and y: FramePath needs the combined translate keys.`);
-      if (!(index >= 0 && index < keys.length)) throw new EditRefused(`${bone} has no translate key ${index + 1} in ${animation}.`);
-      if (keys.length < 2) throw new EditRefused(`${bone} has one translate key in ${animation}: a handle needs a span to the next key.`);
-      const next = keys.map((k, j) => {
-        const after = keys[j + 1];
-        // Only the spans a given side touches: the one before for `in`, the one after for `out`.
-        if (!after || !((j === index && handles.out !== undefined) || (j === index - 1 && handles.in !== undefined))) return k;
-        // A stepped span's other side starts from the straight line.
-        const { curve: _, ...rest } = k, was = spanHandles(bone, k, after) ?? spanHandles(bone, rest as Key, after)!;
-        const out = j === index ? handles.out ?? was.out : was.out, into = j + 1 === index ? handles.in ?? was.in : was.in;
-        const curve = curveFor(place(bone, k), place(bone, after), keyTime(k), keyTime(after), out, into);
-        return (curve ? { ...rest, curve } : rest) as Key;
-      });
-      return withKeys(a, translatePath(bone), next);
+    return rewrite(animation, bone, index, { in: handles.in !== undefined, out: handles.out !== undefined }, (k, after, j) => {
+      const now = spanNow(bone, k, after);
+      return { ...now, out: j === index ? handles.out ?? now.out : now.out, in: j + 1 === index ? handles.in ?? now.in : now.in };
     })(doc);
   };
-}
-
-/** A handle with the length for `speed` over a span's chord, along `dir` (or along `fallback` when `dir` has no length). */
-function handleFor(speed: number, chord: Vec, dir: Vec | null, fallback: Vec): Vec {
-  const c = len(chord), d = dir && len(dir) > 1e-9 ? dir : fallback, l = len(d);
-  if (c <= 1e-9 || l <= 1e-9) return [0, 0];
-  const k = ((1 + speed) * c) / 3 / l;
-  return [d[0] * k, d[1] * k];
 }
 
 /**
@@ -184,16 +280,43 @@ export function setTranslateKeySpeed(animation: string, bone: string, index: num
   return setTranslateKeySpeeds(animation, bone, index, { in: speed, out: speed });
 }
 
-/** The speed arriving at (`in`) and leaving (`out`) the bone's translate key `index`: each handle's length, its direction kept; a side left out keeps what it has. */
+/**
+ * The reach arriving at (`in`) and leaving (`out`) the bone's translate key `index` (step 10): how far into each straight span its
+ * speed lasts, a share of the span's time, held to REACH_MIN … min(1, 1 ÷ speed). The speeds and the line stay. A curved span has no
+ * reach (its time handle is its speed): refused.
+ */
+export function setTranslateKeyReaches(animation: string, bone: string, index: number, reaches: { in?: number | undefined; out?: number | undefined }): Edit<Skeleton> {
+  return (doc) => {
+    if ([reaches.in, reaches.out].some((v) => v !== undefined && !Number.isFinite(v))) throw new EditRefused("A reach must be a number.");
+    return rewrite(animation, bone, index, { in: reaches.in !== undefined, out: reaches.out !== undefined }, (k, after, j) => {
+      if (k.curve === "stepped" || !isStraight(bone, k, after)) throw new EditRefused(`Key ${j === index ? index + 1 : index}'s span to key ${j === index ? index + 2 : index + 1} is curved or stepped: only a straight span has a reach (a curved span's time handle is its speed).`);
+      const now = spanNow(bone, k, after), c = curveOf(k), [u1, u2] = c ? timeHandles(c, spanOf(bone, k, after)) : [REACH_PLAIN, 1 - REACH_PLAIN];
+      // The side set wins over the other: held to what the other side leaves of the span.
+      const out = j === index ? reaches.out : undefined, into = j + 1 === index ? reaches.in : undefined;
+      return {
+        ...now,
+        ro: out !== undefined ? Math.min(out, 1 - (into ?? 1 - u2!)) : now.ro,
+        ri: into !== undefined ? Math.min(into, 1 - (out ?? u1!)) : now.ri,
+      };
+    })(doc);
+  };
+}
+
+/**
+ * The speed arriving at (`in`) and leaving (`out`) the bone's translate key `index`, held to the range: the time handles move, the
+ * path does not (step 8). On a curved span a speed slower than its handle allows comes out as the slowest it allows; a side left
+ * out keeps what it has.
+ */
 export function setTranslateKeySpeeds(animation: string, bone: string, index: number, speeds: { in?: number | undefined; out?: number | undefined }): Edit<Skeleton> {
   return (doc) => {
     if ([speeds.in, speeds.out].some((v) => v !== undefined && !Number.isFinite(v))) throw new EditRefused("A speed must be a number.");
-    const a = doc.animations?.find((x) => x.name === animation), keys = a ? translateNodes(a, bone) : null, k = keys?.[index];
-    // No such key: setKeyHandles gives the refusal.
-    if (!keys || !k || keys.length < 2) return setKeyHandles(animation, bone, index, { out: [0, 0] })(doc);
-    const h = keyHandles(bone, keys)[index]!, c = keyChords(bone, keys)[index]!, handles: { in?: Vec; out?: Vec } = {};
-    if (speeds.out !== undefined && c.out) handles.out = handleFor(speeds.out, c.out, h.out, c.out);
-    if (speeds.in !== undefined && c.in) handles.in = handleFor(speeds.in, c.in, h.in, [-c.in[0], -c.in[1]]);
-    return setKeyHandles(animation, bone, index, handles)(doc);
+    return rewrite(animation, bone, index, { in: speeds.in !== undefined, out: speeds.out !== undefined }, (k, after, j) => {
+      const now = spanNow(bone, k, after);
+      return {
+        ...now,
+        ms: j === index && speeds.out !== undefined ? 1 + clampSpeed(speeds.out) : now.ms,
+        me: j + 1 === index && speeds.in !== undefined ? 1 + clampSpeed(speeds.in) : now.me,
+      };
+    })(doc);
   };
 }

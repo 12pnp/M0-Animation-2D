@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { keyHandles, keySpeedPairs, keySpeeds, setKeyHandles, setTranslateKeySpeed, setTranslateKeySpeeds, spanSpeedSamples, translateNodes } from "@/edit/keySpeed";
+import { keyHandles, keyReaches, keySpeedPairs, keySpeeds, REACH_MIN, setKeyHandles, setTranslateKeyReaches, setTranslateKeySpeed, setTranslateKeySpeeds, spanSpeedSamples, translateNodes } from "@/edit/keySpeed";
 import { plainJson } from "@/io/json";
 import { readSkeleton } from "@/io/skeletonRead";
 import { skeletonToJson } from "@/io/skeletonWrite";
@@ -106,24 +106,126 @@ describe("handles: the path's shape (step 5)", () => {
     expect(nodes(s)[1]!.curve).toBeUndefined();
   });
 
-  it("the span is the 2D Bezier of the key, its handles and the next key: the bone passes its middle point at the middle time", () => {
+  /** The bone's places across span 0 → 1 (the first second), at `n` + 1 times. */
+  const across = (doc0: Skeleton, n = 40): [number, number][] => Array.from({ length: n + 1 }, (_, j) => at(doc0, j / n));
+  /** How far a point is from the 2D Bezier P0 P1 P2 P3, sampled finely. */
+  const offCurve = (q: [number, number], P: [number, number][]): number => {
+    let best = Infinity;
+    for (let j = 0; j <= 2000; j++) {
+      const s = j / 2000, w = [(1 - s) ** 3, 3 * (1 - s) ** 2 * s, 3 * (1 - s) * s * s, s ** 3];
+      const x = w.reduce((m, c, k) => m + c * P[k]![0], 0), y = w.reduce((m, c, k) => m + c * P[k]![1], 0);
+      best = Math.min(best, Math.hypot(q[0] - x, q[1] - y));
+    }
+    return best;
+  };
+
+  it("the bone follows the 2D Bezier of the key, its handles and the next key", () => {
     const s = setKeyHandles("walk", "hip", 1, { in: [-10, 15], out: [10, 15] })(doc(LINE));
-    // Span 0 → 1: P0 (0,0), P1 (10,0), P2 (30-10, 0+15), P3 (30,0); its middle is (P0 + 3 P1 + 3 P2 + P3) / 8.
-    const [x, y] = at(s, 0.5);
-    expect(x).toBeCloseTo((0 + 30 + 60 + 30) / 8, 0);
-    expect(y).toBeCloseTo((0 + 0 + 45 + 0) / 8, 0);
+    // Span 0 → 1: P0 (0,0), P1 (10,0), P2 (30-10, 0+15), P3 (30,0). The engine draws a Bezier in straight steps, so within a unit.
+    const P: [number, number][] = [[0, 0], [10, 0], [20, 15], [30, 0]];
+    for (const q of across(s)) expect(offCurve(q, P)).toBeLessThan(1);
+    expect(Math.max(...across(s).map((q) => q[1]))).toBeGreaterThan(5);
   });
 
-  it("a speed set on a curved key keeps the handle's direction and sets its length", () => {
+  it("a speed never moves the path: on a curved span the bone stays on the same curve, only sooner or later", () => {
+    const shaped = setKeyHandles("walk", "hip", 1, { in: [-10, 15], out: [10, 15] })(doc(LINE)), P: [number, number][] = [[0, 0], [10, 0], [20, 15], [30, 0]];
+    for (const v of [-0.3, 1, 4]) {
+      const s = setTranslateKeySpeeds("walk", "hip", 1, { in: v })(shaped);
+      expect(keyHandles("hip", nodes(s))[1]).toEqual(keyHandles("hip", nodes(shaped))[1]);
+      for (const q of across(s)) expect(offCurve(q, P)).toBeLessThan(1);
+    }
+    // The timing did change: the bone is elsewhere on the curve at the same time.
+    const fast = setTranslateKeySpeeds("walk", "hip", 1, { in: 4 })(shaped);
+    expect(Math.hypot(at(fast, 0.5)[0] - at(shaped, 0.5)[0], at(fast, 0.5)[1] - at(shaped, 0.5)[1])).toBeGreaterThan(1);
+  });
+
+  it("on a straight span every speed fits and the bone never passes the next key", () => {
+    for (const v of [-0.99, 2, 5]) {
+      const s = setTranslateKeySpeeds("walk", "hip", 0, { out: v })(doc(LINE));
+      expect(keySpeedPairs("hip", nodes(s))[0]!.out).toBeCloseTo(v, 3);
+      for (const q of across(s)) { expect(q[0]).toBeGreaterThanOrEqual(-1e-6); expect(q[0]).toBeLessThanOrEqual(30 + 1e-6); expect(Math.abs(q[1])).toBeLessThan(1e-6); }
+    }
+  });
+
+  it("a speed on a curved key keeps its handle and reads back; slower than the handle allows gives the slowest it allows", () => {
     const s0 = setKeyHandles("walk", "hip", 1, { in: [-6, 8], out: [6, 8] })(doc(LINE));
     const s = setTranslateKeySpeeds("walk", "hip", 1, { out: 2 })(s0);
-    const out = keyHandles("hip", nodes(s))[1]!.out!;
-    expect(out[1] / out[0]).toBeCloseTo(8 / 6, 4);
-    expect(Math.hypot(out[0], out[1])).toBeCloseTo(30, 3);
-    expect(keySpeedPairs("hip", nodes(s))[1]!.out).toBeCloseTo(2, 4);
+    expect(keyHandles("hip", nodes(s))[1]!.out).toEqual([6, 8]);
+    expect(keySpeedPairs("hip", nodes(s))[1]!.out).toBeCloseTo(2, 3);
+    // On a curved span the time handle reaches the span's end at a third of the even pace: speed −2/3 is the slowest (step 9).
+    const slow = setTranslateKeySpeeds("walk", "hip", 1, { out: -0.9 })(s0);
+    expect(keySpeedPairs("hip", nodes(slow))[1]!.out).toBeCloseTo(1 / 3 - 1, 3);
+  });
+
+  it("moving a path handle on a curved span leaves the speed graph exactly as it was (step 9)", () => {
+    const curved = setTranslateKeySpeeds("walk", "hip", 1, { in: 1.2, out: 0.4 })(setKeyHandles("walk", "hip", 1, { in: [-6, 8], out: [6, 8] })(doc(LINE)));
+    const graph = (d: Skeleton) => [0, 1].flatMap((j) => spanSpeedSamples("hip", nodes(d)[j]!, nodes(d)[j + 1]!, 12).map((q) => Math.round(q.v * 1e3) / 1e3));
+    for (const h of [[-20, 25], [-2, 1], [-15, -10]] as const) {
+      const moved = setKeyHandles("walk", "hip", 1, { in: [h[0], h[1]], out: [-h[0], -h[1]] })(curved);
+      expect(graph(moved)).toEqual(graph(curved));
+      expect(keySpeedPairs("hip", nodes(moved))[1]).toEqual(keySpeedPairs("hip", nodes(curved))[1]);
+    }
+  });
+
+  it("a new handle keeps the speeds", () => {
+    const fast = setTranslateKeySpeeds("walk", "hip", 1, { out: 1.5 })(doc(LINE));
+    const s = setKeyHandles("walk", "hip", 1, { out: [8, 12] })(fast);
+    expect(keySpeedPairs("hip", nodes(s))[1]!.out).toBeCloseTo(1.5, 3);
   });
 
   it("refuses a handle that is not two numbers", () => {
     expect(() => setKeyHandles("walk", "hip", 0, { out: [Number.NaN, 0] })(doc(LINE))).toThrow(/two numbers/);
+  });
+});
+
+describe("reach: a leg's length on a straight span (step 10)", () => {
+  const reaches = (s: Skeleton) => keyReaches("hip", nodes(s));
+
+  it("a span with no curve reaches a third each side; the ends have one side", () => {
+    expect(reaches(doc(THREE))).toEqual([{ in: null, out: 1 / 3 }, { in: 1 / 3, out: 1 / 3 }, { in: 1 / 3, out: null }]);
+  });
+
+  it("is set and read back on its own side; the speeds and the line stay", () => {
+    const fast = setTranslateKeySpeed("walk", "hip", 1, 1)(doc(THREE));
+    const s = setTranslateKeyReaches("walk", "hip", 1, { out: 0.45 })(fast);
+    expect(reaches(s)[1]).toEqual({ in: reaches(fast)[1]!.in, out: 0.45 });
+    expect(reaches(s)[2]!.in).toBeCloseTo(1 / 3, 4);
+    const before = keySpeedPairs("hip", nodes(fast))[1]!, after = keySpeedPairs("hip", nodes(s))[1]!;
+    expect(after.out).toBeCloseTo(before.out!, 3);
+    expect(after.in).toBeCloseTo(before.in!, 3);
+    for (const t of [1.2, 1.5, 1.8]) expect(at(s, t)[0]).toBeCloseTo(30, 4);
+  });
+
+  it("a longer reach keeps the key's speed further into the span", () => {
+    const fast = setTranslateKeySpeed("walk", "hip", 1, 1)(doc(THREE));
+    const short = setTranslateKeyReaches("walk", "hip", 1, { out: 0.1 })(fast), long = setTranslateKeyReaches("walk", "hip", 1, { out: 0.45 })(fast);
+    const v = (s: Skeleton) => spanSpeedSamples("hip", nodes(s)[1]!, nodes(s)[2]!, 10)[2]!.v;
+    expect(v(long)).toBeGreaterThan(v(short) + 0.1);
+  });
+
+  it("is held to REACH_MIN, to 1 ÷ the speed's multiplier, and to what the other side leaves of the span", () => {
+    const base = doc(THREE);
+    expect(reaches(setTranslateKeyReaches("walk", "hip", 1, { out: 0 })(base))[1]!.out).toBeCloseTo(REACH_MIN, 4);
+    const fast = setTranslateKeySpeed("walk", "hip", 1, 3)(base);
+    expect(reaches(setTranslateKeyReaches("walk", "hip", 1, { out: 0.9 })(fast))[1]!.out).toBeCloseTo(0.25, 4);
+    const both = setTranslateKeyReaches("walk", "hip", 2, { in: 0.9 })(base);
+    expect(reaches(both)[2]!.in).toBeCloseTo(1 - 1 / 3, 4);
+    expect(reaches(both)[1]!.out).toBeCloseTo(1 / 3, 4);
+  });
+
+  it("a speed change keeps the reach; a handle a speed over 3 pushed to the whole chord gets the usual third back", () => {
+    const set = setTranslateKeyReaches("walk", "hip", 1, { out: 0.2 })(setTranslateKeySpeed("walk", "hip", 1, 1)(doc(THREE)));
+    expect(reaches(setTranslateKeySpeeds("walk", "hip", 1, { out: 0.5 })(set))[1]!.out).toBeCloseTo(0.2, 4);
+    const pushed = setTranslateKeySpeeds("walk", "hip", 1, { out: 4 })(doc(THREE));
+    expect(reaches(pushed)[1]!.out).toBeCloseTo(0.2, 4);
+    expect(reaches(setTranslateKeySpeeds("walk", "hip", 1, { out: 0 })(pushed))[1]!.out).toBeCloseTo(1 / 3, 4);
+  });
+
+  it("a curved span has none, and a reach there is refused; so are a stepped span and a reach that is not a number", () => {
+    const curved = setKeyHandles("walk", "hip", 1, { out: [20, 10] })(doc(THREE));
+    expect(reaches(curved)[1]!.out).toBeNull();
+    expect(() => setTranslateKeyReaches("walk", "hip", 1, { out: 0.3 })(curved)).toThrow(/curved/);
+    expect(() => setTranslateKeyReaches("walk", "hip", 0, { out: 0.3 })(doc([{ x: 0, curve: "stepped" }, { time: 1, x: 10 }]))).toThrow(/stepped/);
+    expect(() => setTranslateKeyReaches("walk", "hip", 1, { out: Number.NaN })(doc(THREE))).toThrow(/number/);
   });
 });

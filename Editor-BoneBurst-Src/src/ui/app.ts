@@ -236,7 +236,7 @@ export function mountApp(root: HTMLElement): void {
     autoKeyBtn.setAttribute("aria-pressed", String(stage.autoKey));
     say(stage.autoKey ? "Auto Key on: dragging keys the animation." : `Auto Key off: dragging poses the bone unkeyed; press Key (${keysOf("key")}) to key it.`);
   };
-  const autoKeyBtn = iconButton(button("Auto Key", "Auto Key: with an animation chosen, a drag on the stage keys it. Off, a drag poses the bone without keying until you press Key", toggleAutoKey), "autoKey", false);
+  const autoKeyBtn = iconButton(button("Auto Key", "Auto Key: with an animation chosen, a drag on the stage keys it. Off, a drag poses the bone without keying until you press Key. FramePath's drags always key", toggleAutoKey), "autoKey", false);
   autoKeyBtn.setAttribute("aria-pressed", "true");
   const SPACES: ReadonlyArray<{ space: Space; label: string; tip: string }> = [
     { space: "local", label: "Local", tip: "Move, scale or shear along the bone's own axes" },
@@ -371,7 +371,8 @@ export function mountApp(root: HTMLElement): void {
   const tagsPanel = new TagsPanel(session);
   tagsPanel.onStatus = (m) => say(m);
   const motionPanel = new MotionPathPanel(session);
-  motionPanel.autoKey = () => stage.autoKey;
+  stage.motionTrail = () => motionPanel.stageTrail();
+  motionPanel.onStagePath = () => stage.redraw();
   const skinsPanel = new SkinsPanel(session);
   const animationsPanel = new AnimationsPanel(session);
   // Ask AI (E5 step 9): the bridge's model with the editor's tools; sending connects the AI button.

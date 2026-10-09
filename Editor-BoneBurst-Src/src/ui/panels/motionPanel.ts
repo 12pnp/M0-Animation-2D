@@ -5,12 +5,13 @@ import { boneInherit } from "@/model/defaults";
 import type { Key, Skeleton } from "@/model/skeleton";
 import { frameTime, keyLists, keyTime, timeFrame } from "@/model/timelines";
 import { iconButton } from "../icons";
+import { pickColour } from "../colourPopup";
 import { showContextMenu } from "../contextMenu";
 import type { MenuItem } from "../menubar";
 import type { MotionMemory } from "../viewMemory";
 import { deleteTranslateKeys, translateKeyCount } from "@/edit/pathKeys";
-import { clampSpeed, keyChords, keyHandles, keySpeedPairs, multiplierOf, setKeyHandles, setTranslateKeySpeeds, spanSpeedSamples, SPEED_MAX, SPEED_MIN, translateNodes, type Vec } from "@/edit/keySpeed";
-import { deleteKeys, moveKeys, setKey } from "@/edit/keys";
+import { alongChord, clampSpeed, keyChords, keyHandles, keyReaches, keySpeedPairs, multiplierOf, setKeyHandles, setTranslateKeyReaches, setTranslateKeySpeeds, spanSpeedSamples, SPEED_MAX, SPEED_MIN, translateNodes, type Vec } from "@/edit/keySpeed";
+import { deleteKeys, setKey } from "@/edit/keys";
 import { localPoint, pageScale } from "../pageScale";
 import { labelStep, RULER, secondsSinceLastKey } from "../timeline/layout";
 import type { Session } from "../session";
@@ -41,8 +42,9 @@ const KEY_Y = RULER + KEY_TABS / 2;
 const DEFAULT_LOWER = 270, MIN_LOWER = 150, MIN_PICTURE = 120, MIN_GRAPH = 60;
 const LOWER_KEY = "boneburst.motionPath.lower";
 const GRAPH_KEY = "boneburst.motionPath.graphHeight";
-/** FramePath's handles on the picture and its speed curve. */
+/** FramePath's handles on the picture and its speed curve, and the path on the Stage, until a colour is picked (docs/STAGE-PATH-PLAN.md). */
 const PATH_COLOUR = "#ff9f1c";
+const STAGE_PATH_KEY = "boneburst.motionPath.stagePath";
 const PAST = "rgb(230, 64, 51)", FUTURE = "rgb(51, 179, 77)";
 const LAYERS_KEY = "boneburst.motionPath.layers";
 const TIERS_KEY = "boneburst.motionPath.tiers";
@@ -71,8 +73,8 @@ interface BoneEdit {
   readonly axes: readonly [Point, Point];
   /** Where the drag began, on the canvas. */
   readonly start: [number, number];
-  /** The animation and time to key, or null to pose without keying (Auto Key off). */
-  readonly key: { animation: string; time: number } | null;
+  /** The animation and time to key: a FramePath drag always keys, whatever the Stage's Auto Key (docs/FRAMEPATH-SPEED-PLAN.md, step 14). */
+  readonly key: { animation: string; time: number };
   /** Closed FramePath: the time of the frame at the other end, keyed with the same pose as the drag moves this one; null otherwise. */
   readonly otherEnd: number | null;
   // Rotate only: the joint and the pointer in the panel's space, the bone's matrix, and the turn so far.
@@ -163,8 +165,6 @@ export class MotionPathPanel {
   private marks: Float64Array = new Float64Array(0);
   /** Said in the status line; set by the app. */
   onStatus: (message: string) => void = () => {};
-  /** Whether a drag keys the animation (the Stage's Auto Key); set by the app. Off, a drag poses the bone without keying. */
-  autoKey: () => boolean = () => true;
   /** How the panel maps a point of the bone's space onto the canvas, as last drawn: the inverse of `at`. */
   private mapping: { width: number; height: number; k: number; cx: number; cy: number } | null = null;
   /** The rotation handle beyond the bone's tip at the playhead, on the canvas, when the bone can be turned. */
@@ -199,11 +199,10 @@ export class MotionPathPanel {
   private readonly zoomLabel = document.createElement("span");
   private speedDots: { i: number; x: number; y: number }[] = [];
   private speedDrag: number | null = null;
-  /** Where that drag began across the graph: a sideways move under a few pixels does not move the key (an up-and-down drag wobbles). */
-  private speedDragX = 0;
   /** The speed graph's legs as last drawn, the one being dragged, the visible window over the animation (0..1), a pan in progress and the cap being dragged. */
   private speedLegs: { i: number; side: "out" | "in"; x: number; y: number }[] = [];
-  private legDrag: { i: number; side: "out" | "in" } | null = null;
+  /** The leg being dragged and where the drag began across the graph: sideways past a few pixels it sets the leg's reach (step 10). */
+  private legDrag: { i: number; side: "out" | "in"; x0: number } | null = null;
   private gView = { x0: 0, x1: 1 };
   private graphPan: { x: number; x0: number; x1: number } | null = null;
   private capDrag = false;
@@ -216,6 +215,8 @@ export class MotionPathPanel {
   private readonly keyToggle = document.createElement("button");
   /** FramePath keys whose mode was chosen where the file cannot show it (Mirror or Break at 0 and 0, Break on equal speeds), and for which bone. */
   private keyModes = new Map<string, "mirror" | "break">();
+  /** The speed graph's own leg mode per key, where the data cannot show it: Broken on equal speeds and reaches (step 11). */
+  private speedModes = new Map<string, "broken">();
   private keyBrokenFor = "";
   /** FramePath's handles on the picture as last drawn (with the key's joint in the panel's space and its parent matrix), the one dragged, and the parent matrices at the keys. */
   private keyHandlePts: { i: number; side: "in" | "out"; x: number; y: number; jx: number; jy: number; m: Matrix }[] = [];
@@ -238,6 +239,11 @@ export class MotionPathPanel {
   /** What the move arrows follow: the parent's axes (as the Stage's default) or the world's. */
   private axes: "parent" | "world" = "parent";
   private readonly axesBtn = document.createElement("button");
+  /** The selected bone's path on the Stage, and the colour it, FramePath's handles and the speed curve are drawn in (docs/STAGE-PATH-PLAN.md). */
+  private stagePath = { on: false, colour: PATH_COLOUR };
+  private stageCache: { doc: Skeleton; images: unknown; skin: string | null; animation: string; bone: string; fps: number; trail: BoneTrail | null } | null = null;
+  /** The Stage toggle or the colour changed; set by the app (the Stage draws again). */
+  onStagePath: () => void = () => {};
   /** The move arrows at the playhead's joint, on the canvas as last drawn. */
   private arrows: { axis: 0 | 1; x0: number; y0: number; x1: number; y1: number }[] = [];
 
@@ -271,6 +277,11 @@ export class MotionPathPanel {
       iconButton(this.layerBtns[g], g, false);
     }
     try { if (localStorage.getItem(AXES_KEY) === "world") this.axes = "world"; } catch { /* storage blocked: the default */ }
+    try {
+      const kept = JSON.parse(localStorage.getItem(STAGE_PATH_KEY) ?? "{}") as { on?: unknown; colour?: unknown };
+      if (typeof kept.on === "boolean") this.stagePath.on = kept.on;
+      if (typeof kept.colour === "string" && /^#[0-9a-f]{6}$/i.test(kept.colour)) this.stagePath.colour = kept.colour;
+    } catch { /* storage blocked: off, the usual colour */ }
     this.axesBtn.type = "button";
     this.axesBtn.addEventListener("click", () => {
       this.axes = this.axes === "parent" ? "world" : "parent";
@@ -541,6 +552,30 @@ export class MotionPathPanel {
     return c2.trail || (!anim && c2.extent) ? { trail: c2.trail, bone, extent: c2.extent } : `${bone} has no pose in this skin.`;
   }
 
+  /**
+   * What the Stage draws of the selected bone when Stage is on: its joint's path in world space over
+   * the animation shown, and the colour. Null when off, in Pose mode, or with no bone.
+   */
+  stageTrail(): { trail: BoneTrail; colour: string } | null {
+    const s = this.session, doc = s.closedDoc(), anim = s.animation, bone = s.selectedBone;
+    if (!this.stagePath.on || !doc || !anim || bone === null) return null;
+    const c = this.stageCache;
+    if (!c || c.doc !== doc || c.images !== s.images || c.skin !== s.skin || c.animation !== anim.name || c.bone !== bone || c.fps !== s.fps) {
+      this.stageCache = { doc, images: s.images, skin: s.skin, animation: anim.name, bone, fps: s.fps, trail: boneTrail(this.posers(), s.skin, anim.name, bone, s.fps, s.length(anim), "world") };
+    }
+    const trail = this.stageCache!.trail;
+    return trail ? { trail, colour: this.stagePath.colour } : null;
+  }
+
+  /** Stage on or off, or a new colour: kept, the panel and the Stage drawn again. */
+  private setStagePath(next: Partial<{ on: boolean; colour: string }>): void {
+    this.stagePath = { ...this.stagePath, ...next };
+    try { localStorage.setItem(STAGE_PATH_KEY, JSON.stringify(this.stagePath)); } catch { /* not kept */ }
+    this.slotSig = "";
+    this.schedule();
+    this.onStagePath();
+  }
+
   /** The tiers the picture must have room for: the most asked for by Bone or Image, above and below. */
   private tiersFor(): [number, number] {
     return [Math.min(ALL, Math.max(this.counts.bone.a, this.counts.image.a)), Math.min(ALL, Math.max(this.counts.bone.b, this.counts.image.b))];
@@ -631,7 +666,7 @@ export class MotionPathPanel {
       }
     }
     if (this.show.path && trail) this.drawPath(g, trail, bone, at, here, { accent, muted });
-    if (trail) this.drawKeyHandles(g, trail, at, PATH_COLOUR);
+    if (trail) this.drawKeyHandles(g, trail, at, this.stagePath.colour);
     if (trail && index !== undefined && p.rig.active[index] && !constraintDriving(s.doc!, bone)) {
       if (this.show.move) this.drawArrows(g, p, index, to, at);
       if (this.show.rotate) this.drawHandle(g, p, index, to, at, accent);
@@ -763,11 +798,11 @@ export class MotionPathPanel {
       marks.push(px, py);
       g.beginPath();
       if (f === here) { g.fillStyle = "#ffffff"; g.strokeStyle = DOT; g.lineWidth = 3; g.arc(px, py, 6, 0, Math.PI * 2); g.fill(); g.stroke(); continue; }
+      // Only keyed frames get a dot (step 12); an unkeyed frame is still on the line, and a click there still goes to it.
+      if (!keyed.has(f)) continue;
       g.fillStyle = DOT;
-      g.globalAlpha = keyed.has(f) ? 1 : 0.65;
-      g.arc(px, py, keyed.has(f) ? 4 : 2, 0, Math.PI * 2);
+      g.arc(px, py, 4, 0, Math.PI * 2);
       g.fill();
-      g.globalAlpha = 1;
     }
     this.marks = Float64Array.from(marks);
     if (this.show.length) this.drawLengths(g, trail, at);
@@ -897,17 +932,16 @@ export class MotionPathPanel {
     if (kind === "move") s.seek(frame);
     const p = s.pose(), index = p?.bones.get(bone), b = doc.bones?.find((o) => o.name === bone);
     if (!p || index === undefined || !b) return false;
-    const parent = parentMatrix(p, index), matrix = boneMatrix(p, index), unkeyed = !this.autoKey(), [ox, oy] = fromParent(p, index, 0, 0, this.originName());
+    const parent = parentMatrix(p, index), matrix = boneMatrix(p, index), [ox, oy] = fromParent(p, index, 0, 0, this.originName());
     const to = (px: number, py: number): [number, number] => (this.space === "parent" ? fromParent(p, index, px, py, this.originName()) : [px, py]);
     const joint = to(matrix[4], matrix[5]), at = this.spaceAt(x, y) ?? joint;
     this.edit = {
       bone, kind, frame: s.frame, from: animatedLocal(p, index), parent, origin: [-ox, -oy], axis, axes: spaceAxes(this.axes, matrix, parent), start: [x, y],
-      key: unkeyed ? null : { animation: anim.name, time: s.keyTime },
-      otherEnd: unkeyed || kind !== "move" ? null : this.otherEndTime(frame),
+      key: { animation: anim.name, time: s.keyTime },
+      otherEnd: kind !== "move" ? null : this.otherEndTime(frame),
       joint, matrix, sign: turnSign(parent, boneInherit(b), p.rig.scaleX * p.rig.scaleY < 0), inherit: boneInherit(b), last: at, turned: 0, lock: null,
     };
-    if (unkeyed) this.onStatus(`Unkeyed pose of ${bone}: press Key to key it; moving the playhead drops it.`);
-    else s.history!.begin(`${{ move: "Move", rotate: "Rotate", scale: "Scale", shear: "Shear" }[kind]} ${bone} at frame ${s.frame}`);
+    s.history!.begin(`${{ move: "Move", rotate: "Rotate", scale: "Scale", shear: "Shear" }[kind]} ${bone} at frame ${s.frame}`);
     return true;
   }
 
@@ -963,11 +997,8 @@ export class MotionPathPanel {
       said = `${e.bone} · frame ${e.frame} · rotation ${r}°`;
     }
     try {
-      if (e.key === null) s.setUnkeyed(e.bone, local);
-      else {
-        s.history!.apply("step", keyBone(e.key.animation, e.bone, [property], local, e.key.time));
-        if (e.otherEnd !== null) s.history!.apply("step", keyBone(e.key.animation, e.bone, [property], local, e.otherEnd));
-      }
+      s.history!.apply("step", keyBone(e.key.animation, e.bone, [property], local, e.key.time));
+      if (e.otherEnd !== null) s.history!.apply("step", keyBone(e.key.animation, e.bone, [property], local, e.otherEnd));
     } catch (err) {
       if (!(err instanceof EditRefused)) throw err;
       this.onStatus(err.message);
@@ -1127,6 +1158,26 @@ export class MotionPathPanel {
     this.applyAtKey(i, label, (index) => setTranslateKeySpeeds(a.name, bone, index, held));
   }
 
+  /** FramePath key `i`'s reach in and out, a share of each straight span (docs/FRAMEPATH-SPEED-PLAN.md, step 10); a side left out stays. */
+  private setKeyReaches(i: number, r: { in?: number | undefined; out?: number | undefined }, label = `Set the reach of key ${i + 1}`): void {
+    const a = this.session.animation, bone = this.session.selectedBone;
+    if (!a || bone === null) return;
+    this.applyAtKey(i, label, (index) => setTranslateKeyReaches(a.name, bone, index, r));
+  }
+
+  /** A leg of key `i` dragged to canvas x: its reach, the share of its span between the key and x; in Mirror the other straight side too. */
+  private dragKeyReach(i: number, side: "in" | "out", x: number): void {
+    const s = this.session, a = s.animation, bone = s.selectedBone, keys = this.keyNodes(), k = keys?.[i];
+    if (!a || bone === null || !keys || !k) return;
+    const t = this.gp(x) * s.length(a), here = keyTime(k), other = keys[side === "out" ? i + 1 : i - 1];
+    if (!other) return;
+    const r = Math.round(Math.max(0, Math.min(1, (side === "out" ? t - here : here - t) / Math.abs(keyTime(other) - here))) * 1000) / 1000;
+    const now = keyReaches(bone, keys)[i]!, flip = side === "out" ? "in" : "out";
+    if (now[side] === null) { this.onStatus(`Key ${i + 1}: the span ${side === "out" ? "after" : "before"} it is curved, so its leg has no reach (its time handle is its speed).`); return; }
+    this.setKeyReaches(i, this.speedMode(i) === "broken" || now[flip] === null ? { [side]: r } : { in: r, out: r });
+    this.onStatus(`Key ${i + 1} · reach ${side}: ${Math.round(r * 100)}% of the span`);
+  }
+
   /** A key's point on the graph: its speed, the middle of in and out when they differ; null when both sides are stepped. */
   private keyPoint(pr: { in: number | null; out: number | null }): number | null {
     if (pr.in === null) return pr.out;
@@ -1148,17 +1199,48 @@ export class MotionPathPanel {
   private keyMode(i: number): "mirror" | "break" | "plain" {
     const keys = this.keyNodes(), bone = this.session.selectedBone, k = keys?.[i];
     if (!keys || !k || bone === null) return "plain";
-    const h = keyHandles(bone, keys)[i]!, c = keyChords(bone, keys)[i]!, pr = keySpeedPairs(bone, keys)[i]!, chosen = this.keyModes.get(this.keyId(k));
-    const onChord = (v: Vec | null, chord: Vec | null, sign: number): boolean => !v || !chord || (Math.abs(v[0] - (sign * chord[0]) / 3) <= 1e-3 && Math.abs(v[1] - (sign * chord[1]) / 3) <= 1e-3);
+    const h = keyHandles(bone, keys)[i]!, c = keyChords(bone, keys)[i]!, chosen = this.keyModes.get(this.keyId(k));
+    // Plain is the straight line, at whatever speed (step 8: a speed on a straight span sets its handle's length along the chord).
+    const onChord = (v: Vec | null, chord: Vec | null, sign: number): boolean => !v || !chord || alongChord(v, chord, sign);
     if (onChord(h.out, c.out, 1) && onChord(h.in, c.in, -1)) return chosen ?? "plain";
     if (chosen === "break" || !h.in || !h.out) return chosen ?? "mirror";
     const li = Math.hypot(h.in[0], h.in[1]), lo = Math.hypot(h.out[0], h.out[1]);
     const inLine = Math.abs(h.in[0] * h.out[1] - h.in[1] * h.out[0]) <= 1e-3 * Math.max(1, li * lo) && h.in[0] * h.out[0] + h.in[1] * h.out[1] <= 0;
-    return inLine && Math.abs((pr.in ?? 0) - (pr.out ?? 0)) <= 1e-3 ? "mirror" : "break";
+    // The path's own: the speeds are the speed graph's (step 11).
+    return inLine ? "mirror" : "break";
   }
 
   /**
-   * Mirror, Break or Plain on key `i`. Plain: both handles back on their chords at a third (straight lines, an even pace). Mirror: the in
+   * Key `i`'s speed legs on the graph (docs/FRAMEPATH-SPEED-PLAN.md, step 11), apart from the path's mode: Linked when the speed in
+   * and out are equal, and the reaches too where both sides have one; else Broken. Broken chosen on equal values is kept by the panel.
+   */
+  private speedMode(i: number): "linked" | "broken" {
+    const keys = this.keyNodes(), bone = this.session.selectedBone, k = keys?.[i];
+    if (!keys || !k || bone === null) return "linked";
+    if (this.speedModes.has(this.keyId(k))) return "broken";
+    const pr = keySpeedPairs(bone, keys)[i]!, rc = keyReaches(bone, keys)[i]!;
+    const same = (a: number | null, b: number | null, eps: number): boolean => a === null || b === null || Math.abs(a - b) <= eps;
+    return same(pr.in, pr.out, 1e-3) && same(rc.in, rc.out, 1e-3) ? "linked" : "broken";
+  }
+
+  /** Linked: the speed and reach arriving take the ones leaving. Broken: each leg free. The path is not touched. */
+  private setSpeedLegs(i: number, how: "linked" | "broken"): void {
+    const keys = this.keyNodes(), bone = this.session.selectedBone, k = keys?.[i];
+    if (!keys || !k || bone === null) return;
+    const id = this.keyId(k);
+    if (how === "broken") this.speedModes.set(id, "broken");
+    else {
+      this.speedModes.delete(id);
+      const pr = keySpeedPairs(bone, keys)[i]!, rc = keyReaches(bone, keys)[i]!;
+      if (pr.in !== null && pr.out !== null && Math.abs(pr.in - pr.out) > 1e-3) this.setKeySpeeds(i, { in: pr.out }, `Link the speeds of key ${i + 1}`);
+      if (rc.in !== null && rc.out !== null && Math.abs(rc.in - rc.out) > 1e-3) this.setKeyReaches(i, { in: rc.out }, `Link the reaches of key ${i + 1}`);
+    }
+    this.slotSig = "";
+    this.schedule();
+  }
+
+  /**
+   * Mirror, Break or Plain on key `i`. Plain: both handles back on their chords (straight lines; the speeds stay). Mirror: the in
    * handle turns opposite the out handle at the same speed. Break: each handle free.
    */
   private setKeyLegs(i: number, how: "mirror" | "break" | "plain"): void {
@@ -1172,7 +1254,10 @@ export class MotionPathPanel {
       }));
     } else {
       this.keyModes.set(id, how);
-      if (how === "mirror" && h.in && h.out && c.in && c.out) this.setKeyHandleAt(i, "out", h.out, `Mirror the handles of key ${i + 1}`, true);
+      if (how === "mirror" && h.in && h.out && c.in && c.out) {
+        // The handles only: the speeds are the speed graph's Linked · Broken (step 11).
+        this.setKeyHandleAt(i, "out", h.out, `Mirror the handles of key ${i + 1}`, true);
+      }
     }
     this.slotSig = "";
     this.schedule();
@@ -1217,7 +1302,8 @@ export class MotionPathPanel {
     g.lineWidth = 1.5;
     keys.forEach((k, i) => {
       const f = timeFrame(keyTime(k), s.fps), m = mats[i];
-      if (f > trail.frames || !m || this.keyMode(i) === "plain") return;
+      // Only the picked key's handles (step 12).
+      if (i !== this.selKey || f > trail.frames || !m || this.keyMode(i) === "plain") return;
       const jx = trail.joint[f * 2]!, jy = trail.joint[f * 2 + 1]!;
       if (!Number.isFinite(jx) || !Number.isFinite(jy)) return;
       const [cx, cy] = at(jx, jy);
@@ -1252,31 +1338,10 @@ export class MotionPathPanel {
     this.onStatus(`Key ${d.i + 1} · handle ${d.side}: x ${v[0]}, y ${v[1]}${this.keyMode(d.i) === "break" ? "" : " (the other handle follows: Break frees it)"}`);
   }
 
-  /** A leg of key `i` dragged to speed `v`: that side, and in Mirror the other side too. */
+  /** A leg of key `i` dragged to speed `v`: that side, and when the legs are Linked the other side too. */
   private dragKeyLeg(i: number, side: "in" | "out", v: number): void {
-    if (this.keyMode(i) === "break") this.setKeySpeeds(i, { [side]: v });
+    if (this.speedMode(i) === "broken") this.setKeySpeeds(i, { [side]: v });
     else this.setKeySpeed(i, v);
-  }
-
-  /** Key `i` moved to the frame under the speed graph's x, held between the keys either side and inside the animation; its curves follow. */
-  private moveKeyTo(i: number, x: number): void {
-    const s = this.session, a = s.animation, bone = s.selectedBone, keys = this.keyNodes(), k = keys?.[i];
-    if (!a || bone === null || !keys || !k || !s.history) return;
-    const end = timeFrame(s.length(a), s.fps), from = timeFrame(keyTime(k), s.fps);
-    const lo = i > 0 ? timeFrame(keyTime(keys[i - 1]!), s.fps) + 1 : 0, hi = i < keys.length - 1 ? timeFrame(keyTime(keys[i + 1]!), s.fps) - 1 : end;
-    const to = Math.min(hi, Math.max(lo, Math.round(Math.min(1, Math.max(0, this.gp(x))) * s.length(a) * s.fps)));
-    if (to === from) return;
-    try {
-      s.history.apply(`Move key ${i + 1} of ${bone}`, moveKeys(a.name, [{ path: { section: "bones", owner: bone, timeline: "translate" }, time: keyTime(k) }], to - from, s.fps));
-    } catch (err) {
-      if (!(err instanceof EditRefused)) throw err;
-      this.onStatus(err.message);
-      return;
-    }
-    // The playhead goes with the key, so the key stays the picked one.
-    s.seek(to);
-    s.changed();
-    this.onStatus(`${bone}: key ${i + 1} on frame ${to}.`);
   }
 
   /** Delete FramePath key `i` (Shift + click on its point or diamond); one undo step. */
@@ -1310,12 +1375,12 @@ export class MotionPathPanel {
     const s = this.session, a = s.animation, bone = s.selectedBone, keys = this.keyNodes(), show = !!keys;
     // The picked key is the one on the playhead's frame; a hand-broken leg is remembered only while the bone and animation stay.
     this.selKey = keys ? this.keyAtFrame(s.frame) : -1;
-    if (`${a?.name}/${bone}` !== this.keyBrokenFor) { this.keyBrokenFor = `${a?.name}/${bone}`; this.keyModes.clear(); }
+    if (`${a?.name}/${bone}` !== this.keyBrokenFor) { this.keyBrokenFor = `${a?.name}/${bone}`; this.keyModes.clear(); this.speedModes.clear(); }
     if (this.keyStrip.parentElement !== this.slotBar) this.slotBar.replaceChildren(this.keyToggle, this.keyStrip);
     this.keyToggle.disabled = !show;
     this.keyToggle.classList.toggle("on", this.selKey >= 0);
     this.keyToggle.title = this.selKey >= 0 ? `Delete the translate key on frame ${s.frame}` : `Key ${bone ?? "the bone"}'s place on frame ${s.frame} (where it is there now, so the motion does not change)`;
-    const sig = !show ? "k" : `k|${a?.name}/${bone}|${JSON.stringify(keys)}|${s.frame}|${this.framesClosed}|${[...this.keyModes]}`;
+    const sig = !show ? "k" : `k|${a?.name}/${bone}|${JSON.stringify(keys)}|${s.frame}|${this.framesClosed}|${[...this.keyModes]}|${[...this.speedModes.keys()]}`;
     if (sig === this.slotSig) return;
     this.slotSig = sig;
     this.renderKeyData(keys ?? []);
@@ -1516,7 +1581,7 @@ export class MotionPathPanel {
     const frame = timeFrame(keyTime(k), s.fps), end = timeFrame(s.length(a), s.fps);
     title.textContent = `Key ${i + 1} of ${keys.length} · frame ${frame} of ${end}${this.framesClosed && (i === 0 || i === keys.length - 1) ? " · closed: moves with key " + (i === 0 ? keys.length : 1) : ""}`;
     // The speed arriving and leaving (docs/FRAMEPATH-SPEED-PLAN.md, step 3): an end key has one side; a stepped span's side reads "stepped".
-    const pr = keySpeedPairs(bone, keys)[i]!, current = this.keyMode(i), broken = current === "break";
+    const pr = keySpeedPairs(bone, keys)[i]!, current = this.keyMode(i), broken = this.speedMode(i) === "broken";
     const side = (which: "in" | "out"): (HTMLElement | string)[] => {
       const v = pr[which], read = doc.createElement("span");
       read.className = "read";
@@ -1529,6 +1594,17 @@ export class MotionPathPanel {
       input.disabled = missing;
       return [which === "in" ? "in" : "out", input, read];
     };
+    // The reach each side, % of its span (step 10): only a straight span has one.
+    const rc = keyReaches(bone, keys)[i]!;
+    const reach = (which: "in" | "out"): (HTMLElement | string)[] => {
+      const v = rc[which], input = num(v === null ? 0 : Math.round(v * 1000) / 10, which === "in" ? "Reach in" : "Reach out", (n) => this.setKeyReaches(i, broken || rc.in === null || rc.out === null ? { [which]: n / 100 } : { in: n / 100, out: n / 100 }));
+      input.min = "2";
+      input.max = "100";
+      input.step = "1";
+      input.disabled = v === null;
+      input.title = v === null ? "A curved or missing span has no reach: its time handle is its speed" : "How far into the span the key's speed lasts, % of the span's time (the leg's length on the graph)";
+      return [which, input, "%"];
+    };
     const modes = doc.createElement("div");
     modes.className = "row buttons";
     const mode = (label: string, how: "mirror" | "break" | "plain", tip: string, on: boolean): void => {
@@ -1538,14 +1614,26 @@ export class MotionPathPanel {
       b.addEventListener("click", () => this.setKeyLegs(i, how));
       modes.append(b);
     };
-    mode("Mirror", "mirror", "Two handles, linked: dragging either moves both", current === "mirror");
-    mode("Break", "break", "Two handles, each free: the speed arriving and the speed leaving differ", broken);
-    mode("Plain", "plain", "No handles: the speed is 0 both sides, so between two plain keys the bone moves at an even pace in a straight line", current === "plain");
+    mode("Mirror", "mirror", "The path's two handles, linked: dragging either moves both (the speeds are the speed legs')", current === "mirror");
+    mode("Break", "break", "The path's two handles, each free (the speeds are the speed legs')", current === "break");
+    mode("Plain", "plain", "No handles on the path: a straight line to the keys either side (the speed stays as it is)", current === "plain");
+    // The speed graph's own legs (step 11): apart from the path's mode.
+    const legs = doc.createElement("div");
+    legs.className = "row buttons";
+    const legMode = (label: string, how: "linked" | "broken", tip: string): void => {
+      const b = this.button(label, tip), on = (how === "broken") === broken;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", String(on));
+      b.addEventListener("click", () => this.setSpeedLegs(i, how));
+      legs.append(b);
+    };
+    legMode("Linked", "linked", "The speed legs linked: the speed and reach arriving are the ones leaving; dragging either leg moves both");
+    legMode("Broken", "broken", "The speed legs free: the speed and reach arriving and leaving differ");
     const fields = doc.createElement("div");
     fields.className = "lp-fields";
     fields.append(title,
       row("Place", "x", num(k.x ?? 0, "Key x", (v) => place(v, k.y ?? 0)), "y", num(k.y ?? 0, "Key y", (v) => place(k.x ?? 0, v))),
-      row("Speed", ...side("in"), ...side("out")), row("Legs", modes));
+      row("Speed", ...side("in"), ...side("out")), row("Reach", ...reach("in"), ...reach("out")), row("Speed legs", legs), row("Path", modes));
     box.replaceChildren(this.speedColumn(doc), fields);
     this.drawSpeed();
   }
@@ -1596,7 +1684,7 @@ export class MotionPathPanel {
     }
     g.save();
     g.beginPath(); g.rect(l, 0, r - l, h); g.clip();
-    const pairs = keySpeedPairs(bone, keys), colour = PATH_COLOUR, { x0, x1 } = this.gView;
+    const pairs = keySpeedPairs(bone, keys), reaches = keyReaches(bone, keys), colour = this.stagePath.colour, { x0, x1 } = this.gView;
     // Each span's speed across its time; a stepped span has none.
     g.strokeStyle = colour;
     g.lineWidth = 1.5;
@@ -1618,8 +1706,11 @@ export class MotionPathPanel {
       const red = this.delHover?.where === "graph" && this.delHover.i === i;
       for (const side of ["in", "out"] as const) {
         const sv = pr[side];
-        if (sv === null || red || this.keyMode(i) === "plain") continue;
-        const hx = x + (side === "in" ? -LEG : LEG), hy = Y(sv), lit = (this.speedHover?.i === i && this.speedHover.side === side) || (this.legDrag?.i === i && this.legDrag.side === side);
+        // Only the picked key's speed legs (step 12); its point shows on every key.
+        if (sv === null || red || !on) continue;
+        // A straight side's leg reaches as far into its span as the key's speed lasts (step 10); a curved side's is a short stem.
+        const r = reaches[i]![side], to = keys[side === "in" ? i - 1 : i + 1];
+        const hx = r !== null && to ? X(keyTime(k) + (keyTime(to) - keyTime(k)) * r) : x + (side === "in" ? -LEG : LEG), hy = Y(sv), lit = (this.speedHover?.i === i && this.speedHover.side === side) || (this.legDrag?.i === i && this.legDrag.side === side);
         g.strokeStyle = lit ? "#ffffff" : colour;
         g.globalAlpha = lit || on ? 0.9 : 0.6;
         g.beginPath(); g.moveTo(x, y); g.lineTo(hx, hy); g.stroke();
@@ -1659,7 +1750,19 @@ export class MotionPathPanel {
     fitAll.addEventListener("click", () => this.fitGraph(false));
     fitNode.addEventListener("click", () => this.fitGraph(true));
     fitNode.disabled = this.selKey < 0;
-    head.append(title, fitAll, fitNode);
+    // Stage draws the bone's path on the Stage; the swatch is its colour, the speed curve's and the handles' (docs/STAGE-PATH-PLAN.md).
+    const stage = this.button("Stage", this.stagePath.on ? "Hide the bone's path on the Stage" : "Show the bone's path on the Stage, in the swatch's colour");
+    stage.className = "lp-stagepath";
+    stage.setAttribute("aria-label", "Path on Stage");
+    stage.classList.toggle("on", this.stagePath.on);
+    stage.setAttribute("aria-pressed", String(this.stagePath.on));
+    stage.addEventListener("click", () => this.setStagePath({ on: !this.stagePath.on }));
+    const swatch = this.button("", "The path's colour: on the Stage, the speed curve and the handles on the picture");
+    swatch.className = "lp-swatch";
+    swatch.setAttribute("aria-label", "Path colour");
+    swatch.style.background = this.stagePath.colour;
+    swatch.addEventListener("click", () => pickColour(swatch, this.stagePath.colour, (hex) => this.setStagePath({ colour: hex })));
+    head.append(title, stage, swatch, fitAll, fitNode);
     col.append(head, this.speedCanvas, this.speedGrip);
     return col;
   }
@@ -1867,15 +1970,16 @@ export class MotionPathPanel {
         this.scrubGraph(x);
         return;
       }
-      const leg = this.speedLegAt(x, y);
+      // A key's point wins over a leg near it: every key shows its legs, and a key moved close to another sits under that one's leg.
+      const leg = this.speedDotAt(x, y) >= 0 ? null : this.speedLegAt(x, y);
       if (leg) {
         e.preventDefault();
         this.pickKey(leg.i);
-        this.legDrag = leg;
+        this.legDrag = { ...leg, x0: x };
         this.session.history?.begin(`Set the ${leg.side} speed of key ${leg.i + 1}`);
-        // Alt + drag breaks the legs first, so only the one held moves.
+        // Alt + drag breaks the speed legs first, so only the one held moves.
         const k = this.keyNodes()?.[leg.i];
-        if (e.altKey && k) this.keyModes.set(this.keyId(k), "break");
+        if (e.altKey && k) this.speedModes.set(this.keyId(k), "broken");
         c.setPointerCapture(e.pointerId);
         this.slotSig = "";
         this.schedule();
@@ -1886,7 +1990,6 @@ export class MotionPathPanel {
       e.preventDefault();
       this.pickKey(i);
       this.speedDrag = i;
-      this.speedDragX = x;
       this.session.history?.begin(`Set the speed of key ${i + 1}`);
       c.setPointerCapture(e.pointerId);
       this.slotSig = "";
@@ -1903,6 +2006,8 @@ export class MotionPathPanel {
       if (this.legDrag) {
         const raw = this.speedAtY(y);
         this.dragKeyLeg(this.legDrag.i, this.legDrag.side, e.shiftKey ? clampSpeed(Math.round(raw * 10) / 10) : Math.round(raw * 100) / 100);
+        // Sideways it sets the reach too, once past a few pixels (an up-and-down drag wobbles).
+        if (Math.abs(x - this.legDrag.x0) >= 4) { this.dragKeyReach(this.legDrag.i, this.legDrag.side, x); this.legDrag.x0 = Number.NEGATIVE_INFINITY; }
         this.schedule();
         return;
       }
@@ -1912,9 +2017,8 @@ export class MotionPathPanel {
         const over = this.speedLegAt(x, y);
         if (over?.i !== this.speedHover?.i || over?.side !== this.speedHover?.side) { this.speedHover = over; this.schedule(); }
       }
-      if (this.speedDrag === null) { c.style.cursor = y < this.plot().t ? "ew-resize" : this.speedLegAt(x, y) ? "pointer" : this.speedDotAt(x, y) >= 0 ? "move" : ""; return; }
-      // Sideways the key moves to the frame under the pointer; up and down sets its speed (docs/FRAMEPATH-SPEED-PLAN.md, step 7).
-      if (Math.abs(x - this.speedDragX) >= 6) this.moveKeyTo(this.speedDrag, x);
+      if (this.speedDrag === null) { c.style.cursor = y < this.plot().t ? "ew-resize" : this.speedLegAt(x, y) ? "pointer" : this.speedDotAt(x, y) >= 0 ? "ns-resize" : ""; return; }
+      // Up and down only: the point sets its key's speed, never its frame (step 13).
       const raw = this.speedAtY(y), v = e.shiftKey ? clampSpeed(Math.round(raw * 10) / 10) : Math.round(raw * 100) / 100;
       this.setKeySpeed(this.speedDrag, clampSpeed(v));
       this.schedule();
@@ -1946,20 +2050,19 @@ export class MotionPathPanel {
     c.addEventListener("pointerleave", () => { this.lastOver = null; this.updateDelHover(false); if (this.speedHover) { this.speedHover = null; this.schedule(); } });
     c.addEventListener("dblclick", (e) => {
       const [x, y] = at(e), leg = this.speedLegAt(x, y), i = this.speedDotAt(x, y);
-      if (leg || i >= 0) { this.setKeyLegs(leg ? leg.i : i, "plain"); return; }
+      if (leg || i >= 0) { this.setSpeedLegs(leg ? leg.i : i, "linked"); return; }
       if (y >= this.plot().t) this.fitGraph(false);
     });
   }
 
-  /** The menu of the speed graph over a key's point: its mode, and its delete. */
+  /** The menu of the speed graph over a key's point: its speed legs' mode (not the path's), and its delete. */
   private graphMenu(x: number, y: number, cx: number, cy: number): void {
     const i = this.speedDotAt(x, y);
     if (i < 0) return;
-    const current = this.keyMode(i);
+    const current = this.speedMode(i);
     showContextMenu(cx, cy, [
-      { label: `Mirror: key ${i + 1}'s handles linked`, checked: current === "mirror", run: () => this.setKeyLegs(i, "mirror") },
-      { label: `Break: key ${i + 1}'s handles free`, checked: current === "break", run: () => this.setKeyLegs(i, "break") },
-      { label: `Plain: key ${i + 1} with no handles`, checked: current === "plain", run: () => this.setKeyLegs(i, "plain") },
+      { label: `Linked: key ${i + 1}'s speed legs move together`, checked: current === "linked", run: () => this.setSpeedLegs(i, "linked") },
+      { label: `Broken: key ${i + 1}'s speed legs free`, checked: current === "broken", run: () => this.setSpeedLegs(i, "broken") },
       {},
       { label: `Delete key ${i + 1} (Shift + click)`, run: () => this.deleteKeyAt(i) },
     ]);
@@ -2115,7 +2218,7 @@ export class MotionPathPanel {
     const edit = this.edit;
     if (edit) {
       this.edit = null;
-      if (edit.key !== null) this.session.history?.end();
+      this.session.history?.end();
       this.session.changed();
     }
     this.dragging = null;
